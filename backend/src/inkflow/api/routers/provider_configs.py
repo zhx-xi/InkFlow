@@ -37,6 +37,7 @@ from inkflow.domain.ports.provider_config_errors import (
     ProviderConfigServiceError,
 )
 from inkflow.domain.services.provider_config_service import ProviderConfigService
+from inkflow.infrastructure.llm import capability_probe
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
 from inkflow.logging import instrument
 
@@ -123,9 +124,21 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 def _to_response(pc: ProviderConfig, key_manager: APIKeyManager) -> dict:
-    """实体 → 响应字典：契约 8 键 + max_retries/timeout + key_saved 标记."""
+    """实体 → 响应字典：契约 8 键 + key_saved + models[].supports_reasoning 探针填充（§5.4）."""
     data = pc.model_dump(mode="json")
     data["key_saved"] = pc.name in key_manager.list_providers()
+    models = data.get("models")
+    if isinstance(models, list):
+        for entry in models:
+            if not isinstance(entry, dict) or entry.get("supports_reasoning") is not None:
+                continue
+            try:
+                entry["supports_reasoning"] = capability_probe.supports_reasoning_for_model(
+                    f"{pc.name}/{entry['id']}"
+                )
+            except Exception:
+                # 探针契约本应永不 raise；此处防御兜底，单条失败不打崩列表端点
+                entry["supports_reasoning"] = False
     return data
 
 

@@ -143,7 +143,10 @@ class TestProviderConfig:
         )
         dumped = cfg.model_dump(mode="json")
         assert dumped["id"] == 1
-        assert dumped["models"] == [{"id": "gpt-4o", "type": "chat", "roles": ["writing"]}]
+        # F59-M2 (#963)：ProviderModel 序列化显式携带 supports_reasoning 三态（None=自动探针）
+        assert dumped["models"] == [
+            {"id": "gpt-4o", "type": "chat", "roles": ["writing"], "supports_reasoning": None}
+        ]
         assert isinstance(dumped["created_at"], str)
         reloaded = ProviderConfig.model_validate(dumped)
         assert reloaded == cfg

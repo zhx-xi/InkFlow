@@ -73,7 +73,7 @@ async def _assemble(
         conversation_id=None,
     )
     # RED 期字段不存在 → 显式 setattr 保证契约输入成立（不依赖字段存在）
-    setattr(data, "reasoning_effort", request_effort)
+    data.reasoning_effort = request_effort
 
     proj_svc = MagicMock()
     if project_svc_error:
@@ -88,7 +88,9 @@ async def _assemble(
     try:
         patches = {
             "inkflow.api.deps.build_deep_agent": MagicMock(),
-            "inkflow.api.deps.build_save_draft_tool": MagicMock(return_value=_fake_tool("save_draft")),
+            "inkflow.api.deps.build_save_draft_tool": MagicMock(
+                return_value=_fake_tool("save_draft")
+            ),
             "inkflow.api.deps.build_reader_tools": MagicMock(return_value=[]),
             "inkflow.api.deps.build_setting_write_tools": MagicMock(return_value=[]),
             "inkflow.api.deps.build_setting_update_tools": MagicMock(return_value=[]),
@@ -114,7 +116,7 @@ async def _assemble(
             "inkflow.api.deps.get_agent_service": MagicMock(),
             "inkflow.api.deps.get_agent_entity_service": MagicMock(),
             "inkflow.api.deps.get_context_service": MagicMock(),
-            "inkflow.api.deps.get_project_service": proj_svc,
+            "inkflow.api.deps.get_project_service": MagicMock(return_value=proj_svc),
             "inkflow.api.deps.get_conversation_service": MagicMock(return_value=conv_svc),
             "inkflow.infrastructure.llm.provider_config.get_provider_config": MagicMock(
                 return_value=_provider_cfg()

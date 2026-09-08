@@ -642,7 +642,7 @@ DEFAULT_SETTINGS = {
     "font": "sans",
     "close_behavior": "tray",
     "tray_hint_dismissed": False,
-    "default_words": 800000,
+    "default_words": 800000, "default_reasoning_effort": "default",
     "agent_max_steps": 12,
     "agent_token_budget": 32000,
     "agent_max_total_tool_calls": 20,

@@ -21,6 +21,7 @@ from pydantic_settings import (
 )
 
 from inkflow.domain.models.provider_config import ProviderDefault
+from inkflow.domain.models.reasoning import ReasoningEffort
 
 
 def get_instance_env_path() -> Path:
@@ -261,6 +262,14 @@ class InkFlowConfig(BaseSettings):
     llm_temperature: float = 0.7
     """LLM 默认温度参数。"""
 
+    llm_reasoning_effort: ReasoningEffort = "default"
+    """全局默认思考档位（F59 spec §2.2，七档枚举，默认跟随模型/供应商）。
+
+    config.json 白名单键 default.reasoning_effort（CLI config set 自动可用）；
+    F32 设置 DB 键 default_reasoning_effort 经 SettingsService 双向同步本字段
+    （D-1 方案 A：本单例为装配层唯一读取点，DB 有值时 DB 优先）。
+    """
+
     llm_max_retries: int = 3
     """LLM 调用失败自动重试次数。"""
 
@@ -376,6 +385,7 @@ CONFIG_WHITELIST: dict[str, str] = {
     "data-dir": "data_dir",
     "default.model": "llm_default_model",
     "default.temperature": "llm_temperature",
+    "default.reasoning_effort": "llm_reasoning_effort",
     "context.max_ratio": "context_max_ratio",
     "context.default_window": "context_default_window",
     "server.host": "server_host",

@@ -146,7 +146,9 @@ class TestResolveReasoningEffort:
     def test_explicit_none_level_overrides_project(self) -> None:
         """"none"（显式关闭）同样是值：区别于 None（未配置=跟随上级）。"""
         assert (
-            resolve_reasoning_effort(request_effort="none", project_effort="high", global_effort=None)
+            resolve_reasoning_effort(
+                request_effort="none", project_effort="high", global_effort=None
+            )
             == "none"
         )
 
@@ -170,8 +172,10 @@ class TestProviderModelSupportsReasoning:
     def test_manual_true_false_roundtrip(self) -> None:
         from inkflow.domain.models.provider_config import ProviderModel
 
-        assert ProviderModel(id="a", type="chat", supports_reasoning=True).supports_reasoning is True
-        assert ProviderModel(id="b", type="chat", supports_reasoning=False).supports_reasoning is False
+        m_true = ProviderModel(id="a", type="chat", supports_reasoning=True)
+        m_false = ProviderModel(id="b", type="chat", supports_reasoning=False)
+        assert m_true.supports_reasoning is True
+        assert m_false.supports_reasoning is False
         # JSON 列往返（repo _to_domain 形态）
         dumped = ProviderModel(id="c", type="chat", supports_reasoning=False).model_dump()
         assert dumped["supports_reasoning"] is False

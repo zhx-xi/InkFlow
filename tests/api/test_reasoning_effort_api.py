@@ -35,8 +35,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from inkflow.api.app import app
-from inkflow.api.deps import get_agent_run_repo, get_chat_agent_service
-from inkflow.api.deps import get_db
+from inkflow.api.deps import get_agent_run_repo, get_chat_agent_service, get_db
 from inkflow.api.routers.chat_stream import get_chat_service
 from inkflow.domain.models.agent_run import AgentRun
 
@@ -139,12 +138,16 @@ class TestChatAgentStreamReasoningValidation:
         assert "litellm" not in text.lower(), "不得泄漏 litellm 类型/包名"
         assert detail.strip()
 
-    async def test_null_level_ok(self, client, override_agent_service, override_agent_run_repo) -> None:
+    async def test_null_level_ok(
+        self, client, override_agent_service, override_agent_run_repo
+    ) -> None:
         """显式 null=未覆盖（按项目>全局解析），200 合法。"""
         resp = await client.post(ENDPOINT_AGENT, json=_chat_payload(reasoning_effort=None))
         assert resp.status_code == 200
 
-    async def test_absent_level_ok(self, client, override_agent_service, override_agent_run_repo) -> None:
+    async def test_absent_level_ok(
+        self, client, override_agent_service, override_agent_run_repo
+    ) -> None:
         resp = await client.post(ENDPOINT_AGENT, json=_chat_payload())
         assert resp.status_code == 200
 
@@ -220,21 +223,24 @@ class TestProjectReasoningRoundtrip:
     async def test_patch_and_get_config_level(self, client) -> None:
         created = await client.post("/api/v1/projects", json={"name": "F59 测试项目"})
         assert created.status_code in (200, 201), created.text
-        pid = created.json()["id"]
+        url = f"/api/v1/projects/{created.json()['id']}"
 
-        resp = await client.patch(f"/api/v1/projects/{pid}", json={"config": {"reasoning_effort": "high"}})
+        resp = await client.patch(
+            url, json={"config": {"reasoning_effort": "high"}}
+        )
         assert resp.status_code == 200, resp.text
         assert resp.json()["config"]["reasoning_effort"] == "high"
 
-        readback = await client.get(f"/api/v1/projects/{pid}")
+        readback = await client.get(url)
         assert readback.status_code == 200
         assert readback.json()["config"]["reasoning_effort"] == "high"
 
     async def test_patch_null_clears_to_follow_global(self, client) -> None:
         created = await client.post("/api/v1/projects", json={"name": "F59 清除项目"})
         pid = created.json()["id"]
-        await client.patch(f"/api/v1/projects/{pid}", json={"config": {"reasoning_effort": "low"}})
-        resp = await client.patch(f"/api/v1/projects/{pid}", json={"config": {"reasoning_effort": None}})
+        url0 = f"/api/v1/projects/{pid}"
+        await client.patch(url0, json={"config": {"reasoning_effort": "low"}})
+        resp = await client.patch(url0, json={"config": {"reasoning_effort": None}})
         assert resp.status_code == 200, resp.text
         assert resp.json()["config"]["reasoning_effort"] is None
 
@@ -252,6 +258,20 @@ class TestProjectReasoningRoundtrip:
 
 @pytest.mark.asyncio
 class TestSettingsReasoningSync:
+    """D-1 方案 A（拍板 B 则本组翻转）。
+
+    ⚠️ 桥回灌写的是进程级 config 单例——类级 autouse 备份/恢复，防跨文件
+    污染（test_settings_api 空表全等断言依赖默认值，全量 api 轨共进程）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_config_singleton(self):
+        from inkflow.core.config import config
+
+        original = config.llm_reasoning_effort
+        yield
+        config.llm_reasoning_effort = original
+
     async def test_patch_and_get(self, client) -> None:
         resp = await client.patch(ENDPOINT_SETTINGS, json={"default_reasoning_effort": "medium"})
         assert resp.status_code == 200, f"D-1 方案 A：F32 字段落 DB（拍板 B 翻转本组）{resp.text}"
@@ -267,12 +287,11 @@ class TestSettingsReasoningSync:
         """同步桥（#987 方案 A 镜像）：PATCH 后内存 config.llm_reasoning_effort 即更新。"""
         from inkflow.core.config import config
 
-        original = config.llm_reasoning_effort
         try:
             await client.patch(ENDPOINT_SETTINGS, json={"default_reasoning_effort": "high"})
-            assert config.llm_reasoning_effort == "high", "GUI 全局档位必须即时生效（装配链读点同步）"
+            assert config.llm_reasoning_effort == "high", "GUI 全局档位必须即时生效"
         finally:
-            config.llm_reasoning_effort = original
+            config.llm_reasoning_effort = "default"
 
     async def test_get_default_reflects_config(self, client) -> None:
         """未持久化时 GET 回显启动源现值（读点收口 config）。"""
@@ -305,9 +324,12 @@ class TestProviderConfigsSupportsReasoningEcho:
         """每条 chat 模型带 supports_reasoning bool：null→探测填充；手动值原样。"""
         await self._seed(client, db_session)
         # patch 探测链：m1（无手动值）恒 False —— 防 litellm 表版本漂移
+        def _probe(model_full, provider=None, manual=None):
+            return bool(manual) if manual is not None else False
+
         monkeypatch.setattr(
             "inkflow.infrastructure.llm.capability_probe.supports_reasoning_for_model",
-            lambda model_full, provider=None, manual=None: bool(manual) if manual is not None else False,
+            _probe,
         )
         resp = await client.get("/api/v1/provider-configs")
         assert resp.status_code == 200

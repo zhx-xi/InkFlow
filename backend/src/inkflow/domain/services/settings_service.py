@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 
+from inkflow.core.config import config
 from inkflow.domain.models.settings import (
     AppSettings,
     AppSettingsUpdate,
@@ -34,12 +35,17 @@ class SettingsService:
         注意：updates 已由 DTO（extra='forbid' + Literal 枚举）完成值域校验，
         本方法只负责「非 None 字段」筛选与编码，不重复校验。
         """
+        non_none_updates = updates.model_dump(exclude_none=True)
         payload: dict[str, str] = {}
-        for field, value in updates.model_dump(exclude_none=True).items():
+        for field, value in non_none_updates.items():
             key = SettingsKey(field)  # 白名单：字段名 = SettingsKey 值
             payload[key.value] = json.dumps(value)
         if payload:
             await self._repository.set_many(payload)
+        # D-1 方案 A 同步桥（#987 镜像）：GUI PATCH 思考档位 → 回灌 config 单例，
+        # 装配层读取点（config.llm_reasoning_effort）立即生效。
+        if "default_reasoning_effort" in non_none_updates:
+            config.llm_reasoning_effort = non_none_updates["default_reasoning_effort"]
         return await self.get_settings()
 
     @staticmethod
@@ -58,4 +64,8 @@ class SettingsService:
                 continue  # 防御：脏数据不阻塞读（§7 边界 #6）
         current = AppSettings().model_dump()
         current.update({k: v for k, v in merged.items() if k in current})
+        # D-1 方案 A（F59 spec §3.4）：DB 无 default_reasoning_effort 键时回读
+        # config 单例当前值（启动源 config.json/env 在 GUI 可见）；DB 有值则 DB 优先。
+        if "default_reasoning_effort" not in merged:
+            current["default_reasoning_effort"] = config.llm_reasoning_effort
         return AppSettings(**current)
