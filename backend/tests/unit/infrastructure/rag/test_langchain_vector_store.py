@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import chromadb
 import pytest
+from chromadb.config import Settings
 from langchain_core.embeddings import Embeddings
 
 from inkflow.domain.ports.extraction_errors import VectorStoreError
@@ -260,7 +261,13 @@ async def test_collection_per_entity_type(tmp_path: Path) -> None:
     )
     await vector_store.index(make_entity("c1", EntityType.CHARACTER, "p1", "苹果"))
     await vector_store.index(make_entity("s1", EntityType.SETTING, "p1", "香蕉"))
-    client = chromadb.PersistentClient(path=str(tmp_path / "chroma"))
+    # #946: 校验读客户端必须与生产同 settings——chromadb SharedSystemClient 按
+    # 持久化目录进程级缓存 system，同目录二次创建时 settings 不一致会直接
+    # ValueError（store 侧已统一传 anonymized_telemetry=False）。
+    client = chromadb.PersistentClient(
+        path=str(tmp_path / "chroma"),
+        settings=Settings(anonymized_telemetry=False),
+    )
     names = {collection.name for collection in client.list_collections()}
     assert names == {"inkflow_character", "inkflow_setting"}
 

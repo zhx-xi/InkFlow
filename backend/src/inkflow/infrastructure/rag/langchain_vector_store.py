@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import chromadb
+from chromadb.config import Settings
 from langchain_core.embeddings import Embeddings
 from loguru import logger
 
@@ -58,6 +59,7 @@ class LangChainVectorStore:
       ProviderConfig 注册表 type="embedding" 条目；测试 FakeEmbeddings）——懒加载
     - chromadb 同步 API 用 asyncio.to_thread 包装（不阻塞事件循环）
     - chromadb 操作全程持有 threading.Lock 串行化（PersistentClient 非线程安全，#468）
+    - chromadb 客户端统一传 Settings(anonymized_telemetry=False)（#946 关闭匿名遥测）
     - 距离度量 cosine；relevance_score = 1 - distance
     """
 
@@ -179,6 +181,18 @@ class LangChainVectorStore:
 
     # ── 私有: chromadb 同步操作（由 asyncio.to_thread 包装调用）──
 
+    def _create_client(self) -> chromadb.ClientAPI:
+        """创建 chromadb 持久化客户端——统一关闭匿名遥测（#946）。
+
+        Settings(anonymized_telemetry=False)：chromadb 默认 True 会把本地运行
+        数据经 OTLP 上报外部；本项目本地优先，遥测必须关闭。本方法是**唯一**
+        客户端创建入口（_get_collection / _get_meta_collection 共用）。
+        """
+        return chromadb.PersistentClient(
+            path=str(self._persist_dir),
+            settings=Settings(anonymized_telemetry=False),
+        )
+
     def _get_collection(self, entity_type: EntityType) -> chromadb.Collection:
         """懒初始化: 首次调用创建 PersistentClient 并 get_or_create 目标 collection。
 
@@ -186,7 +200,7 @@ class LangChainVectorStore:
         """
         if entity_type not in self._collections:
             if self._client is None:
-                self._client = chromadb.PersistentClient(path=str(self._persist_dir))
+                self._client = self._create_client()
             self._collections[entity_type] = self._client.get_or_create_collection(
                 name=f"inkflow_{entity_type.value}",
                 # hnsw:sync_threshold=3：chromadb 1.x HNSW 默认 WAL-only（<1000 条不落盘），
@@ -475,7 +489,7 @@ class LangChainVectorStore:
         """
         if self._meta_collection is None:
             if self._client is None:
-                self._client = chromadb.PersistentClient(path=str(self._persist_dir))
+                self._client = self._create_client()
             self._meta_collection = self._client.get_or_create_collection(
                 name=self._META_COLLECTION
             )

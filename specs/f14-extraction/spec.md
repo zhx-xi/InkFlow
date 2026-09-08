@@ -1006,6 +1006,8 @@ class LangChainVectorStore:
     - embeddings 由构造注入（生产 HuggingFaceBgeEmbeddings(BAAI/bge-small-zh-v1.5)，
       测试 FakeEmbeddings）——BGE 模型首次使用需联网下载 ~100MB，懒加载（§7/§11 影响）
     - chromadb 同步 API 用 asyncio.to_thread 包装（不阻塞事件循环）
+    - chromadb 客户端统一传 Settings(anonymized_telemetry=False)（#946 关闭匿名遥测，
+      本地运行数据不出本机）
     - 距离度量 cosine；relevance_score = 1 - distance
     """
 

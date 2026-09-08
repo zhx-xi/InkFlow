@@ -11,6 +11,7 @@
 
 ### 修复
 - **config.json 全局配置只写不读（#987）**：`config.json` 并入 pydantic 启动源（方案 A，`ConfigJsonSettingsSource` 镜像 #977 instance.env 源形态），优先级链 init > 进程 env > instance.env > .env > config.json > secrets——GUI 设置页/`config set`/#735 D2 自动配置三路写入的全局默认模型等键内核重启后不再静默丢失。debug 键 F51 D1/D8 语义零翻转。
+- **chromadb 匿名遥测关闭（#946）**：`LangChainVectorStore` 的两条 chromadb 客户端创建路径（实体 collection `_get_collection` / 指纹 meta collection `_get_meta_collection`）收敛到唯一入口 `_create_client()`，统一传 `Settings(anonymized_telemetry=False)`——chromadb 默认 `True`，未显式关闭会把本地运行数据经 OTLP 上报外部；测试侧直连 chroma 的校验客户端（持久化/一致性 journey）同步关闭，本地与 CI 运行均不外泄。
 
 ## [0.13.0] - 2026-09-08
 
