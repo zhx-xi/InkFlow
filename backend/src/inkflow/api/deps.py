@@ -22,7 +22,7 @@ from inkflow.api.deps_chat_agent import (
     _make_draft_volume_lookup,  # noqa: F401  # deps_agentic_writer 经 deps_module 调用期解析，保持命名空间
     get_chat_agent_service,
 )
-from inkflow.api.deps_draft import make_outline_bindder
+from inkflow.api.deps_draft import make_outline_autolinker, make_outline_bindder
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
@@ -179,8 +179,8 @@ def get_project_service(
 def get_chapter_service(
     db: AsyncSession,
 ) -> ChapterService:
-    """获取 ChapterService 实例（注入数据库 session）."""
-    return ChapterService(db)
+    """获取 ChapterService 实例（注入数据库 session + #1001 章级大纲自动关联器）."""
+    return ChapterService(db, outline_autolinker=make_outline_autolinker(db))
 
 
 def get_writing_service(
