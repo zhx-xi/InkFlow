@@ -10,8 +10,10 @@
  * cleanup 重试 + 不吞错契约（#1033，CI run 34252685269 / job 102150759463 实证）：
  * Windows 上 app.close() 后内核 python 子进程可能仍持有 <dataDir>/inkflow.db 与 chroma
  * sqlite 句柄 → rmSync force:true 只吞 ENOENT，EPERM/EBUSY/ENOTEMPTY/EACCES 仍会抛进
- * finally 使全 PASS 用例误红。故 rmDirWithRetry 仅对瞬态码重试（默认 15 次 × 200ms ≈ 3s
+ * finally 使全 PASS 用例误红。故 rmDirWithRetry 仅对瞬态码重试（默认 40 次 × 250ms = 10s
  * 预算），非瞬态码 / 非 Error 立即重抛，耗尽后抛最后一次错误——绝不吞错掩盖用例结论；
+ * 实测（probe，#1033）：并行双实例正常释放约 10ms（3/3 轮），10s 预算为 AV 扫描 /
+ * 冷启动瞬态留约 1000x 余量——罕见瞬时锁而非永久泄漏；
  * spec 清理前应先 ensureProcessExited 等内核释放句柄。同类两处历史 try/catch 吞错
  * （e2e-debug-triad / e2e-packaged）已统一委托本模块，不再吞。
  *
@@ -41,13 +43,13 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
 
 /**
  * 删除目录并仅对瞬态错误码重试（#1033）。
- * - 总尝试次数 = retries + 1（默认 16 次），两次尝试之间 sleep(delayMs)
+ * - 总尝试次数 = retries + 1（默认 41 次，预算 40 × 250ms = 10s），两次尝试之间 sleep(delayMs)
  * - 仅当抛错 code ∈ TRANSIENT_RM_CODES 才重试；其他错误码 / 非 Error 立即重抛
  * - 尝试耗尽 → 抛最后一次错误（绝不吞错）
  */
 export async function rmDirWithRetry(dir: string, options?: RmDirRetryOptions): Promise<void> {
-  const retries = options?.retries ?? 15;
-  const delayMs = options?.delayMs ?? 200;
+  const retries = options?.retries ?? 40;
+  const delayMs = options?.delayMs ?? 250;
   const rm = options?.rm ?? ((d: string) => rmSync(d, { recursive: true, force: true }));
   const sleep = options?.sleep ?? realSleep;
   let lastError: unknown;
