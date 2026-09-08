@@ -2,9 +2,9 @@
 
 server.py（mcp 2.0 SDK）装配形态（2026-08-16 mcp==2.0.0 API 实证）：
 - build_mcp_server(tools=None) -> mcp.server.Server：on_list_tools / on_call_tool
-  回调装配（mcp 2.0 构造器参数），tools 缺省 = build_mcp_tools()（15 工具）。
+  回调装配（mcp 2.0 构造器参数），tools 缺省 = build_mcp_tools()（18 工具）。
 - list_tools_result(tools) -> mt.ListToolsResult：tools/list handler 核心
-  （纯函数，供测试直接调用）——恰好 15 项 Tool，name/description/inputSchema 非空。
+  （纯函数，供测试直接调用）——恰好 18 项 Tool，name/description/inputSchema 非空。
 - call_tool_result(tools, name, arguments) -> mt.CallToolResult：tools/call handler
   核心——按 name 查工具 → 信封透传（isError = not ok）；未知工具 → isError。
 - main() async：stdio_server() → server.run(read_stream, write_stream,
@@ -101,12 +101,12 @@ class TestListTools:
     """tools/list 装配（spec §4.1/§4.2 渐进发现）。"""
 
     @pytest.mark.asyncio
-    async def test_list_tools_returns_15(self):
+    async def test_list_tools_returns_18(self):
         from inkflow.mcp.server import list_tools_result
 
         result = await list_tools_result(build_mcp_tools())
         assert isinstance(result, mt.ListToolsResult)
-        assert len(result.tools) == 15
+        assert len(result.tools) == 18
 
     @pytest.mark.asyncio
     async def test_tool_metadata_nonempty(self):
@@ -142,6 +142,9 @@ class TestListTools:
             "search",
             "manage_session",
             "tool_search",
+            "manage_book",
+            "manage_config",
+            "manage_log",
         ]
 
 

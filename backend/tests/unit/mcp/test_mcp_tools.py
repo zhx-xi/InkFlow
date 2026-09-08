@@ -1,6 +1,6 @@
 """F20 MCP 工具工厂端点映射契约（M2 验收）— spec §2.2/§4/§9（Issue #49，RED 阶段测试契约）。
 
-15 个 MCP 工具工厂（Q1=A 聚合 manage_* / Q2=A 契约同源）：
+18 个 MCP 工具工厂（Q1=A 聚合 manage_* / Q2=A 契约同源；#933 扩充 15→18）：
 - manage_tools.py:   build_manage_project_tool / build_manage_chapter_tool /
                      build_manage_character_tool / build_manage_relation_tool /
                      build_manage_timeline_tool / build_manage_world_tool /
@@ -8,6 +8,8 @@
 - operation_tools.py: build_write_tool / build_audit_tool / build_extract_tool /
                       build_export_tool / build_search_tool（5 个）
 - session_tools.py:  build_manage_session_tool / build_tool_search_tool（2 个）
+- book_tools.py:     build_manage_book_tool（1 个，#933）
+- inspect_tools.py:  build_manage_config_tool / build_manage_log_tool（2 个，#933）
 
 每个工厂返回 MCPTool（mcp/tools/__init__.py 定义：spec: ToolSpec + func）。
 func 签名：async def func(**kwargs) -> str（信封 JSON 字符串，对齐 F26 _ok/_fail）。
@@ -16,7 +18,7 @@ func 签名：async def func(**kwargs) -> str（信封 JSON 字符串，对齐 F
 1. MCPTool（mcp/tools/__init__.py）：
    - @dataclass: spec: ToolSpec / func: Callable[..., Awaitable[str]]
    - ToolSpec 直接复用 F26（inkflow.domain.models.agent_tools，import 不复制）。
-   - MCP_TOOL_REGISTRY: list[MCPTool]（15 项，顺序 = spec §4.1 表）+
+   - MCP_TOOL_REGISTRY: list[MCPTool]（18 项，顺序 = spec §4.1 表）+
      build_mcp_tools() -> list[MCPTool]（装配工厂函数，tools/list 数据源）。
 
 2. 工具 func 内部访问 client 的形态（🔴 load-bearing，测试 patch 依赖此形态）：
@@ -209,13 +211,13 @@ def _last_call(client: FakeClient) -> tuple[str, str, object, object]:
 
 
 class TestRegistryContract:
-    """注册表 + 工厂面（spec §4.1 15 工具 / §4.2 同源）。"""
+    """注册表 + 工厂面（spec §4.1 18 工具 / §4.2 同源）。"""
 
-    def test_registry_has_15_tools(self):
-        assert len(MCP_TOOL_REGISTRY) == 15
+    def test_registry_has_18_tools(self):
+        assert len(MCP_TOOL_REGISTRY) == 18
 
-    def test_build_mcp_tools_returns_15(self):
-        assert len(build_mcp_tools()) == 15
+    def test_build_mcp_tools_returns_18(self):
+        assert len(build_mcp_tools()) == 18
 
     def test_registry_names_match_spec(self):
         expected = [
@@ -234,6 +236,9 @@ class TestRegistryContract:
             "search",
             "manage_session",
             "tool_search",
+            "manage_book",
+            "manage_config",
+            "manage_log",
         ]
         assert [t.spec.name for t in MCP_TOOL_REGISTRY] == expected
 
