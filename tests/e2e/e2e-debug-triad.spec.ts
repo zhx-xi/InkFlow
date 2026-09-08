@@ -32,7 +32,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
-import { rmDirWithRetry } from './e2e-isolation';
+import { ensureProcessExited, rmDirWithRetry } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -121,12 +121,14 @@ test.describe.configure({ timeout: 180_000 });
 
 test('A 三层联动开：INKFLOW_DEBUG=1 → debug token + /docs 200 + DevTools 自动开（§2.7 用例 1）', async () => {
   const iso = makeIsolation();
+  let kernelPid: number | undefined;
   try {
     const env = { ...baseEnv(), INKFLOW_DEBUG: '1', INKFLOW_DATA_DIR: iso.dir };
     const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR, env });
     try {
       await app.firstWindow();
       const kernel = await waitKernelInfo(app);
+      kernelPid = kernel.pid;
       // 【G 现 PASS】serve debug → 可预测 token（GUI→内核 env 继承实证）
       expect(kernel.token).toBe('inkflow-debug-token');
       // 【G】G1 修复后 docs 门控按 config.debug 放行 → 仍 200（现恒 200，守护 debug 路径不破）
@@ -139,18 +141,24 @@ test('A 三层联动开：INKFLOW_DEBUG=1 → debug token + /docs 200 + DevTools
       await app.close();
     }
   } finally {
+    // 等内核进程释放 inkflow.db/chroma 句柄后再删除隔离目录（Windows EPERM 根因，#1033）
+    if (kernelPid !== undefined) {
+      await ensureProcessExited(kernelPid, { timeoutMs: 10_000 });
+    }
     await iso.cleanup();
   }
 });
 
 test('B 默认关：无 INKFLOW_DEBUG → 随机 token + /docs 404（G1 RED）+ DevTools 不开（§2.7 用例 2）', async () => {
   const iso = makeIsolation();
+  let kernelPid: number | undefined;
   try {
     const env = { ...baseEnv(), INKFLOW_DATA_DIR: iso.dir };
     const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR, env });
     try {
       await app.firstWindow();
       const kernel = await waitKernelInfo(app);
+      kernelPid = kernel.pid;
       // 【G 现 PASS】非 debug → 随机 token（≠ debug 常量）
       expect(kernel.token).not.toBe('inkflow-debug-token');
       // 【R 核心 RED：当前恒 200】非 debug 默认 /docs 必须 404（G1 docs 门控）
@@ -164,6 +172,10 @@ test('B 默认关：无 INKFLOW_DEBUG → 随机 token + /docs 404（G1 RED）+ 
       await app.close();
     }
   } finally {
+    // 等内核进程释放 inkflow.db/chroma 句柄后再删除隔离目录（Windows EPERM 根因，#1033）
+    if (kernelPid !== undefined) {
+      await ensureProcessExited(kernelPid, { timeoutMs: 10_000 });
+    }
     await iso.cleanup();
   }
 });
@@ -173,6 +185,7 @@ test('C env=0 > instance.env=1：APPDATA 预置 instance.env=1 + env 显式 0 �
   // data 隔离：内核 data_dir 走 launch env INKFLOW_DATA_DIR（instance.env 未写该键）
   const appdataIso = makeIsolation('inkflow-e2e-debug-appdata-');
   const dataIso = makeIsolation('inkflow-e2e-debug-data-');
+  let kernelPid: number | undefined;
   try {
     fs.mkdirSync(path.join(appdataIso.dir, 'InkFlow'), { recursive: true });
     fs.writeFileSync(
@@ -190,6 +203,7 @@ test('C env=0 > instance.env=1：APPDATA 预置 instance.env=1 + env 显式 0 �
     try {
       await app.firstWindow();
       const kernel = await waitKernelInfo(app);
+      kernelPid = kernel.pid;
       // 【G 现 PASS】env 显式 0 不被 instance.env=1 覆盖（D8）→ 非 debug 随机 token
       expect(kernel.token).not.toBe('inkflow-debug-token');
       // 【R 经 G1】内核层 debug=False → /docs 404（当前恒 200 → FAIL）
@@ -198,6 +212,10 @@ test('C env=0 > instance.env=1：APPDATA 预置 instance.env=1 + env 显式 0 �
       await app.close();
     }
   } finally {
+    // 等内核进程释放 inkflow.db/chroma 句柄后再删除隔离目录（Windows EPERM 根因，#1033）
+    if (kernelPid !== undefined) {
+      await ensureProcessExited(kernelPid, { timeoutMs: 10_000 });
+    }
     await appdataIso.cleanup();
     await dataIso.cleanup();
   }
