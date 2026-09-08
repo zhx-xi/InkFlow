@@ -11,6 +11,8 @@ export interface ProviderModel {
   roles: string[];
   /** F59 M2 回显：模型是否支持思考；null/undefined = 未探测（能力未知） */
   supports_reasoning?: boolean | null;
+  /** F59 #965：手动覆盖标记（仅注册表存有手动值时响应携带；其余条目无此键） */
+  supports_reasoning_manual?: boolean | null;
 }
 
 export interface ProviderConfig {
@@ -69,6 +71,12 @@ interface ModelsState {
   loadProviders: () => Promise<void>;
   addProvider: (input: AddProviderInput) => Promise<ProviderConfig>;
   addModel: (providerId: number, model: ProviderModel) => Promise<void>;
+  /** F59 #965：手动覆盖思考能力（true/false=强制，null=恢复自动探测）→ PATCH models 全量替换 */
+  setModelReasoning: (
+    providerId: number,
+    modelId: string,
+    value: boolean | null,
+  ) => Promise<void>;
   deleteProvider: (id: number) => Promise<void>;
   selectModel: (id: string | null) => void;
   setRoleBinding: (role: keyof RoleBindingDraft, modelId: string) => void;
@@ -137,6 +145,32 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     } catch (err) {
       // 失败：error 设置 + 列表不变（deleteProvider 同款语义）；
       // #125 契约升级：rethrow（不吞）——AddModelDialog 批量保存依赖 reject 感知失败行
+      set({ error: errorMessage(err) });
+      throw err;
+    }
+  },
+
+  setModelReasoning: async (providerId, modelId, value) => {
+    try {
+      const target = get().providers.find((p) => p.id === providerId);
+      if (!target) throw new Error('Provider 不存在');
+      // 全量替换：目标模型 supports_reasoning=value，其余模型原样保留（PATCH 覆盖语义）
+      const models = target.models.map((m) =>
+        m.id === modelId ? { ...m, supports_reasoning: value } : m,
+      );
+      const updated = await apiFetch<ProviderConfig>(
+        `/api/v1/provider-configs/${providerId}`,
+        {
+          method: 'PATCH',
+          body: { models },
+        },
+      );
+      set((s) => ({
+        providers: s.providers.map((p) => (p.id === providerId ? updated : p)),
+        error: null,
+      }));
+    } catch (err) {
+      // 失败：error 设置 + 列表不变（镜像 addModel）；rethrow 供 UI 感知失败
       set({ error: errorMessage(err) });
       throw err;
     }

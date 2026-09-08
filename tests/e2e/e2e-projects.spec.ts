@@ -290,6 +290,47 @@ test('项目页：删除项目列表同步消失 + 空态（projects-empty + CTA
   }
 });
 
+// ────────────────────────────────────────────────────────────────
+// 7. #965 F59-M4：项目设定页「Agent思考强度设定」→ 选「高」→ 重新进入 → 回显
+// ────────────────────────────────────────────────────────────────
+test('项目设定页：选「高」→ 重新进入 → 回显「高」（Agent思考强度设定）', async () => {
+  const { app, window, kernel } = await launchApp();
+  try {
+    const name = `E2E-思考-${Date.now()}`;
+    await createProjectViaUi(window, name);
+    await gotoNav(window, '项目');
+
+    // 经内核 API 取项目 id（卡片菜单 testid 依赖数字 id）
+    const { items } = await fetchKernel(kernel, '/api/v1/projects');
+    const proj = items.find((p: { name: string }) => p.name === name);
+    expect(proj, '内核应存在该项目').toBeTruthy();
+    const id = proj.id;
+
+    // 进入项目设定页：卡片菜单 → 「修改」→ /settings/project
+    await window.getByTestId(`project-card-menu-${id}`).click();
+    await window.getByTestId(`project-edit-${id}`).click();
+
+    // #965：设定页出现「Agent思考强度设定」下拉（GREEN 前无 ps-thinking-effort → element-missing）
+    const effort = window.getByTestId('ps-thinking-effort');
+    await expect(effort).toBeVisible({ timeout: 15_000 });
+
+    // 选「高」
+    await effort.click();
+    await window.getByRole('option', { name: '高', exact: true }).click();
+    await expect(effort).toContainText('高');
+
+    // 回到项目页（触发 loadProjects 重拉后端 config）再重进设定页 → 回显「高」
+    await gotoNav(window, '项目');
+    await expect(window.getByTestId('project-card').filter({ hasText: name })).toHaveCount(1);
+    await window.getByTestId(`project-card-menu-${id}`).click();
+    await window.getByTestId(`project-edit-${id}`).click();
+
+    await expect(window.getByTestId('ps-thinking-effort')).toContainText('高', { timeout: 15_000 });
+  } finally {
+    await app.close();
+  }
+});
+
 /** 直调内核 API（E3 契约 helper 复制：带 token + 204 短路；spec 自包含不 import） */
 async function fetchKernel(kernel: KernelInfo, path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(`http://127.0.0.1:${kernel.port}${path}`, {

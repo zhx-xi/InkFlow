@@ -11,6 +11,7 @@ import { useI18n } from '../i18n/useI18n';
 import type { ProviderConfig, ProviderModel } from '../stores/models';
 import { useModelsStore } from '../stores/models';
 import { useToastStore } from '../stores/toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export function ModelsPanel() {
   const { t } = useI18n();
@@ -18,6 +19,7 @@ export function ModelsPanel() {
   const loading = useModelsStore((s) => s.loading);
   const loadProviders = useModelsStore((s) => s.loadProviders);
   const addModel = useModelsStore((s) => s.addModel);
+  const setModelReasoning = useModelsStore((s) => s.setModelReasoning);
   const deleteProvider = useModelsStore((s) => s.deleteProvider);
   const pushToast = useToastStore((s) => s.pushToast);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -168,6 +170,7 @@ export function ModelsPanel() {
               <th className="py-2 pr-3 font-medium">{t('m.table.type')}</th>
               <th className="py-2 pr-3 font-medium">{t('m.table.roles')}</th>
               <th className="py-2 pr-3 font-medium">{t('m.table.provider')}</th>
+              <th className="py-2 pr-3 font-medium">{t('m.table.reasoning')}</th>
             </tr>
           </thead>
           <tbody>
@@ -196,6 +199,53 @@ export function ModelsPanel() {
                   </div>
                 </td>
                 <td className="py-2 pr-3 text-ink-2">{m.providerName}</td>
+                <td className="py-2 pr-3">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {m.supports_reasoning === true && (
+                      <span
+                        data-testid={`model-reasoning-badge-${m.id}`}
+                        className="rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 text-[11px] text-ok"
+                      >
+                        {t('m.supportsReasoning')}
+                      </span>
+                    )}
+                    {m.supports_reasoning_manual != null && (
+                      <span
+                        data-testid={`model-reasoning-manual-${m.id}`}
+                        className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2"
+                      >
+                        {t('m.reasoningManual')}
+                      </span>
+                    )}
+                    <Select
+                      value={
+                        m.supports_reasoning_manual == null
+                          ? 'auto'
+                          : String(m.supports_reasoning_manual)
+                      }
+                      onValueChange={(v) =>
+                        void setModelReasoning(
+                          m.providerId,
+                          m.id,
+                          v === 'auto' ? null : v === 'true',
+                        )
+                      }
+                    >
+                      <SelectTrigger
+                        data-testid={`model-reasoning-${m.id}`}
+                        aria-label={t('m.table.reasoning')}
+                        className="w-32"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">{t('m.reasoningAuto')}</SelectItem>
+                        <SelectItem value="true">{t('m.reasoningForceOn')}</SelectItem>
+                        <SelectItem value="false">{t('m.reasoningForceOff')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

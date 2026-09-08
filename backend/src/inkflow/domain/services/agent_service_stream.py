@@ -19,6 +19,7 @@ from inkflow.domain.ports.agent_pipeline import (
     PipelineStage,
     PipelineStreamEvent,
 )
+from inkflow.domain.services.model_resolution import resolve_reasoning_effort
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,15 @@ class AgentServiceStreamMixin:
         if project is None:
             raise AgentServiceError("项目不存在")
 
+        # F59-M4：step 1 后解析思考档位（项目 > 全局；全空 → "default" 恒非 None）
+        from inkflow.core.config import config  # F59-M4: 全局兜底档位
+
+        effort = resolve_reasoning_effort(
+            None,
+            project.config.reasoning_effort,
+            config.llm_reasoning_effort,
+        )
+
         # 2. 获取模板
         template = self._get_template(request.pipeline)
         if template is None:
@@ -212,6 +222,7 @@ class AgentServiceStreamMixin:
             project_id=str(request.project_id),
             chapter_id=str(request.chapter_id) if request.chapter_id else None,
             variables=request.variables,
+            reasoning_effort=effort,
         )
         return (
             stages,

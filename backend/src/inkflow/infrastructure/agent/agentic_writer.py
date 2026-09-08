@@ -139,6 +139,7 @@ def build_agentic_writer(
     expected_chapter_id: uuid.UUID | None = None,
     expected_source_outline_id: uuid.UUID | None = None,
     expected_volume_outline_id: uuid.UUID | None = None,
+    reasoning_effort: str | None = None,
 ):
     """组装 agent：白名单过滤工具 + skill 拼接 → build_deep_agent（deepagents ReAct 循环）.
 
@@ -164,6 +165,8 @@ def build_agentic_writer(
             工具（create 落库 drafts.source_outline_id；chat 轨 None）.
         expected_volume_outline_id: #996 卷 outline 节点锚点——透传给 save_draft
             工具（volume_lookup 回退键；chat 轨 None）.
+        reasoning_effort: F59-M4 可选思考档位——透传 build_deep_agent
+            （default/None 由 capability_probe 剥离，本层只解析不判断能力）.
 
     Returns:
         DeepAgentInvokeAdapter（包装 deepagents CompiledStateGraph，服务层
@@ -206,6 +209,7 @@ def build_agentic_writer(
         tools=tools,
         system_prompt=system_prompt,
         profile_key=profile_key,
+        reasoning_effort=reasoning_effort,
     )
     return DeepAgentInvokeAdapter(agent)
 

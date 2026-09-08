@@ -448,6 +448,23 @@ export const en: Record<string, string> = {
   'm.fetchModels': 'Fetch models',
   'm.fetchingModels': 'Fetching…',
   'm.fetchModelsFailed': 'Failed to fetch models: {reason}',
+  // F59 #965 (M4): model "thinking" capability badges + manual override
+  'm.table.reasoning': 'Thinking',
+  'm.supportsReasoning': 'Supports thinking',
+  'm.reasoningManual': 'Manual',
+  'm.reasoningAuto': 'Auto',
+  'm.reasoningForceOn': 'Force on',
+  'm.reasoningForceOff': 'Force off',
+  // F59 #965 (M4): Agent thinking intensity (project writing chain + global default)
+  'agent.thinking.label': 'Agent Thinking Intensity',
+  'agent.thinking.globalLabel': 'Global Default Thinking Intensity',
+  'agent.thinking.none': 'Off',
+  'agent.thinking.minimal': 'Lowest',
+  'agent.thinking.low': 'Low',
+  'agent.thinking.medium': 'Medium',
+  'agent.thinking.high': 'High',
+  'agent.thinking.xhigh': 'Extreme',
+  'agent.thinking.default': 'Model default',
   'write.newChapter': 'New chapter',
   // #999: chapter-title format conflict dialog (ProjectTree)
   'tree.formatDialog.title': 'Chapter Numbering Conflict',

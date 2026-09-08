@@ -133,6 +133,9 @@ class PipelineContext:
     variables: dict[str, str] = field(default_factory=dict)
     """用户定义的变量，可在 Prompt 中使用 {variable} 引用。"""
 
+    reasoning_effort: str | None = None
+    """思考档位（F59 §2.3）：装配层解析后注入；None=不注入（构造点自行读配置被禁止）。"""
+
 
 class PipelineStreamEvent:
     """管线执行流式事件（#642-1 SSE 帧源）。"""

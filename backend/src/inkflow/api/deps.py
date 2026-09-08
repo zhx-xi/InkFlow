@@ -236,9 +236,15 @@ def get_draft_service(
 def get_agentic_writer_service(
     db: AsyncSession = Depends(get_db),
 ) -> AgenticWriterService:
-    """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）."""
+    """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）。
+
+    F59-M4（B7）：本轨装配期为同步函数、无 project_id → 只按全局档位解析
+    （与既有 resolve_llm_credentials(config.llm_default_model) 的「该轨模型也
+    只读全局」行为一致）。
+    """
     from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
+    from inkflow.domain.services.model_resolution import resolve_reasoning_effort
     from inkflow.infrastructure.agent.agentic_writer import (
         AgenticWriterDeps,
         build_agentic_writer,
@@ -278,9 +284,12 @@ def get_agentic_writer_service(
             system_prompt=system_prompt,
             expected_project_id=request.project_id,
             expected_chapter_id=request.chapter_id,
+            reasoning_effort=effort,
         )
     # 模型/密钥/base_url 同源装配（#758 空默认回退首个 chat provider，镜像 #738，防空 key 500）
     model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
+    # F59-M4（B7）：全局思考档位（None 项目级 → 全局兜底；全 None → "default"）
+    effort = resolve_reasoning_effort(None, None, config.llm_reasoning_effort)
     return AgenticWriterService(
         agent_factory=_build_agent,
         draft_service=draft_service,

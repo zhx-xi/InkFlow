@@ -32,6 +32,8 @@ export interface AppSettings {
   kg_extract_interval_hours: number;
   /** #479：知识图谱提取方式（rule=仅规则 / ai=仅 AI / both=规则+AI，spec §5.5.2） */
   kg_extract_method: 'rule' | 'ai' | 'both';
+  /** F59 #965：全局默认思考强度（七档英文枚举；PATCH /settings 白名单键 default.reasoning_effort） */
+  default_reasoning_effort?: string;
 }
 
 /** F32（#152）：PATCH /settings 请求体——部分更新，只发用户改动字段（响应恒为合并后全量） */

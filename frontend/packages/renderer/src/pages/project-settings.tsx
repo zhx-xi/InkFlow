@@ -12,6 +12,9 @@ import { AGENT_DEFAULT_SENTINEL, useProjectStore } from '../stores/project';
 import { useTagsStore } from '../stores/tags';
 import { useTemplatesStore } from '../stores/templates';
 
+/** F59 #965：Agent 思考强度七档（值=英文枚举，与后端 ReasoningEffort 对齐） */
+const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'default'] as const;
+
 export function ProjectSettingsPage() {
   const { t } = useI18n();
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
@@ -119,6 +122,35 @@ export function ProjectSettingsPage() {
                 {chatModelOptions.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </section>
+
+        {/* F59-M4：Agent 思考强度设定（模型绑定之后、Agent 模板之前；Q3 不加说明文案） */}
+        <section className="rounded-lg border border-line bg-surface p-6 shadow-card">
+          <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+            <span>{t('agent.thinking.label')}</span>
+            <Select
+              value={config.reasoning_effort ?? 'default'}
+              onValueChange={(v) => {
+                setConfig({ reasoning_effort: v });
+                persist();
+              }}
+            >
+              <SelectTrigger
+                data-testid="ps-thinking-effort"
+                aria-label={t('agent.thinking.label')}
+                className="w-56"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REASONING_LEVELS.map((level) => (
+                  <SelectItem key={level} value={level}>
+                    {t(`agent.thinking.${level}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
