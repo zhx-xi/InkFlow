@@ -182,12 +182,15 @@ export async function fetchChatMessages(
   conversationId: string,
   offset = 0,
   limit = 50,
+  /** #1015：归档会话只读加载——true 时拼 include_deleted=true（缺省/ false 不携带，既有 wire 逐字不变） */
+  opts?: { includeDeleted?: boolean },
 ): Promise<{ items: ChatMessageDto[]; total: number; offset: number; limit: number }> {
   const qs = new URLSearchParams({
     conversation_id: conversationId,
     offset: String(offset),
     limit: String(limit),
   });
+  if (opts?.includeDeleted === true) qs.set('include_deleted', 'true');
   return apiFetch(`/api/v1/chat/messages?${qs.toString()}`, { method: 'GET' });
 }
 

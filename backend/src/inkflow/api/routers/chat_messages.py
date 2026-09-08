@@ -92,12 +92,16 @@ async def list_messages(
     conversation_id: uuid.UUID = Query(...),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    include_deleted: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """线程 chat 消息列表（升序，分页）。"""
+    """线程 chat 消息列表（升序，分页）。
+
+    include_deleted=true 时含已归档消息（#1015 归档会话只读详情）。
+    """
     svc = get_chat_message_service(db)
     items, total = await svc.list_messages_by_conversation(
-        conversation_id, offset=offset, limit=limit
+        conversation_id, offset=offset, limit=limit, include_deleted=include_deleted
     )
     return {
         "items": [_message_to_json(m) for m in items],
