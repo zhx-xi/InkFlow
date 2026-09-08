@@ -116,6 +116,7 @@ from inkflow.cli.commands import (  # noqa: E402  # app 定义后导入
     book_cmd,
     chapter,
     character,
+    chat_cmd,
     export,
     extract,
     foreshadowing,
@@ -170,3 +171,5 @@ app.add_typer(skills_app, name="skills")
 app.command(name="serve")(_serve_fn)
 # search 同款：单命令组压平，command() 直接注册避免 inkflow search search 嵌套
 app.command(name="search")(search.search_cmd)
+# chat 同款：单命令组压平，command() 直接注册避免 inkflow chat chat 嵌套
+app.command(name="chat")(chat_cmd.chat_cmd)

@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import typer
 from pydantic import ValidationError
@@ -203,6 +203,50 @@ def list_categories_cmd(
     else:
         for item in categories:
             typer.echo(f"  {item['category']}: {item['count']} 条")
+
+
+# ---------------------------------------------------------------------------
+# category 子组  —  inkflow world category add --project-id <uuid> --name <str>
+# ---------------------------------------------------------------------------
+
+
+category_app = typer.Typer(name="category", help="世界观分类管理", no_args_is_help=True)
+
+
+@category_app.command("add")
+@instrument(caller_type="cli")
+def add_category_cmd(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
+    name: str = typer.Option(..., "--name", "-n", help="分类名"),
+    kind: Literal["geo", "abstract"] = typer.Option(
+        "geo", "--kind", help="分类类型 geo|abstract"
+    ),
+) -> None:
+    """注册自定义世界观分类（#389；同名 → 422 VALIDATION_ERROR 透传）"""
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            category: dict = await client.post(
+                f"/projects/{pid}/world-categories",
+                json={"name": name, "kind": kind},
+            )
+            return category
+
+    category = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, category)
+    else:
+        typer.echo(f"✅ 分类创建成功: [{category['name']}] ({category['kind']})")
+
+
+# ── 注册 category 子组 ──
+
+app.add_typer(category_app, name="category")
 
 
 # ---------------------------------------------------------------------------
