@@ -13,6 +13,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { rmDirWithRetry } from './e2e-isolation';
 
 const PACKAGED_DIR = process.env.INKFLOW_PACKAGED_DIR;
 const PACKAGED_EXE = PACKAGED_DIR ? path.join(PACKAGED_DIR, 'InkFlow.exe') : '';
@@ -145,7 +146,8 @@ test.afterEach(async () => {
   }
   try { fs.rmSync(KERNEL_STATE_FILE, { force: true }); } catch { /* 清理瞬态文件 */ }
   if (currentIsolation) {
-    try { fs.rmSync(currentIsolation, { recursive: true, force: true }); } catch { /* 句柄占用：清理失败不阻塞结论 */ }
+    // #1033：不再吞错——瞬态 EPERM/EBUSY 等由 rmDirWithRetry 重试，其余错误照抛
+    await rmDirWithRetry(currentIsolation);
     currentIsolation = undefined;
   }
 });
