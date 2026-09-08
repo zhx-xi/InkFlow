@@ -20,6 +20,7 @@ InkFlowHTTPClient 调内核 REST API（spec §4；Issue #169 CLI 恒经 HTTP）�
 from __future__ import annotations
 
 import asyncio
+import json as jsonlib
 import uuid
 from pathlib import Path
 from typing import Any
@@ -239,10 +240,33 @@ def update_character(
     group_id: str | None = typer.Option(
         None, "--group-id", help='新分组 ID (UUID)；传空字符串 "" 表示清除分组'
     ),
+    role_rank: str | None = typer.Option(
+        None, "--role-rank", help="角色等级（写入 extra.role_rank；与 --extra-json 互斥）"
+    ),
+    extra_json: str | None = typer.Option(
+        None, "--extra-json", help="extra 整体替换 JSON 对象字符串（校验留给服务端 DTO）"
+    ),
 ) -> None:
     """更新角色（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
+    extra_dict: dict[str, Any] | None = None
+    if role_rank is not None and extra_json is not None:
+        print_error(
+            cli_ctx,
+            "VALIDATION_ERROR",
+            "--role-rank 与 --extra-json 不能同时使用（extra 为整体替换语义）",
+        )
+    if extra_json is not None:
+        try:
+            parsed_value = jsonlib.loads(extra_json)
+        except ValueError as exc:
+            print_error(cli_ctx, "VALIDATION_ERROR", f"--extra-json 不是合法 JSON: {exc}")
+            raise typer.Exit(1) from None  # print_error 已退出，此行不可达（静态分析用）
+        if not isinstance(parsed_value, dict):
+            print_error(cli_ctx, "VALIDATION_ERROR", "--extra-json 必须是 JSON 对象（dict）")
+            raise typer.Exit(1) from None  # print_error 已退出，此行不可达（静态分析用）
+        extra_dict = parsed_value
 
     async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
@@ -258,6 +282,10 @@ def update_character(
             update_fields["group_ids"] = (
                 [] if group_id == "" else [str(_parse_uuid(cli_ctx, group_id, "分组不存在"))]
             )
+        if role_rank is not None:
+            update_fields["extra"] = {"role_rank": role_rank}
+        elif extra_dict is not None:
+            update_fields["extra"] = extra_dict
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
