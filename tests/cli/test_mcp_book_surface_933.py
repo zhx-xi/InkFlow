@@ -355,7 +355,13 @@ class TestMcpBookJourneyLlM933:
         run, err = await _call(
             stdio_llm_env,
             "manage_book",
-            {"action": "run", "writing_plan_id": plan_id, "mode": "static"},
+            {
+                "action": "run",
+                "writing_plan_id": plan_id,
+                "mode": "static",
+                # 上限护栏：真实 LLM 只写 1 章（缺省 max_chapters=100 会跑满全书）
+                "limits": {"max_chapters": 1},
+            },
         )
         assert err is False, run
         assert run["ok"] is True
