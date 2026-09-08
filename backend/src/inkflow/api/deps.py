@@ -15,10 +15,15 @@ from inkflow.api._chat_auth import (  # 集中 re-export 保持 deps 命名空�
     get_agent_service,
     get_conversation_service,
 )
-from inkflow.api.deps_chat_agent import _make_draft_volume_lookup, get_chat_agent_service
+from inkflow.api.deps_agentic_writer import (
+    get_agentic_writer_service,  # noqa: F401  # 集中 re-export 保持 deps 命名空间不变
+)
+from inkflow.api.deps_chat_agent import (
+    _make_draft_volume_lookup,  # noqa: F401  # deps_agentic_writer 经 deps_module 调用期解析，保持命名空间
+    get_chat_agent_service,
+)
 from inkflow.api.deps_draft import make_outline_bindder
 from inkflow.core.database import async_session_factory, get_session
-from inkflow.domain.models.agent_run import AgenticWriteRequest
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
@@ -31,7 +36,6 @@ from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services._style_llm_analyzer import StyleLLMAnalyzer
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
-from inkflow.domain.services.agentic_writer_service import AgenticWriterService
 from inkflow.domain.services.audit_log_service import AuditLogService
 from inkflow.domain.services.audit_service import AuditService
 from inkflow.domain.services.chapter_audit_service import ChapterAuditService
@@ -230,72 +234,6 @@ def get_draft_service(
         outline_bindder=make_outline_bindder(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
-    )
-
-
-def get_agentic_writer_service(
-    db: AsyncSession = Depends(get_db),
-) -> AgenticWriterService:
-    """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）。
-
-    F59-M4（B7）：本轨装配期为同步函数、无 project_id → 只按全局档位解析
-    （与既有 resolve_llm_credentials(config.llm_default_model) 的「该轨模型也
-    只读全局」行为一致）。
-    """
-    from inkflow.api._llm_resolver import resolve_llm_credentials
-    from inkflow.core.config import config
-    from inkflow.domain.services.model_resolution import resolve_reasoning_effort
-    from inkflow.infrastructure.agent.agentic_writer import (
-        AgenticWriterDeps,
-        build_agentic_writer,
-        build_writer_agent_system_prompt,
-    )
-    # 循环依赖注意：直接 Python 调用无 FastAPI 依赖缓存——内联构建共享同源实例
-    draft_service = DraftService(
-        draft_repo=SQLiteDraftRepository(db),
-        chapter_service=get_chapter_service(db),
-        audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
-        memory_service=get_memory_service(db),
-    )
-    audit_service = AuditLogService(SQLiteAuditLogRepository(db))
-    deps = AgenticWriterDeps(
-        character_service=get_character_service(db),
-        foreshadowing_service=get_foreshadowing_service(db),
-        summary_service=get_summary_service(db),
-        chapter_audit_service=get_chapter_audit_service(db),
-        draft_service=draft_service,
-        audit_service=audit_service,
-        # #976 D3（2026-09-06 拍板扩展）：agentic 轨按章 id 反查卷（同 chat 语义）
-        volume_lookup=_make_draft_volume_lookup(db),
-    )
-    prompt_manager = LangChainPromptManager()
-    def _build_agent(request: AgenticWriteRequest) -> object:
-        """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
-        system_prompt = build_writer_agent_system_prompt(
-            prompt_manager,
-            project_id=request.project_id,
-            chapter_id=request.chapter_id,
-        )
-        return build_agentic_writer(
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
-            deps=deps,
-            system_prompt=system_prompt,
-            expected_project_id=request.project_id,
-            expected_chapter_id=request.chapter_id,
-            reasoning_effort=effort,
-        )
-    # 模型/密钥/base_url 同源装配（#758 空默认回退首个 chat provider，镜像 #738，防空 key 500）
-    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
-    # F59-M4（B7）：全局思考档位（None 项目级 → 全局兜底；全 None → "default"）
-    effort = resolve_reasoning_effort(None, None, config.llm_reasoning_effort)
-    return AgenticWriterService(
-        agent_factory=_build_agent,
-        draft_service=draft_service,
-        audit_service=audit_service,
-        run_repo=SQLiteAgentRunRepository(db),
-        chapter_service=get_chapter_service(db),
     )
 
 
