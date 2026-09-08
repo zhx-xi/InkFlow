@@ -15,7 +15,8 @@
  *
  * 基建自包含（#140 spec 自包含原则：readKernelInfo/waitKernelInfo 复制，
  * 不 import 其他 spec）。launch 全部传 env（含 INKFLOW_DATA_DIR=<mkdtemp> 隔离，
- * 真实用户数据零污染 + 防 config.json 锚点漂移；afterEach/finally rmSync）。
+ * 真实用户数据零污染 + 防 config.json 锚点漂移；finally 清理统一委托
+ * e2e-isolation.rmDirWithRetry（#1033：瞬态 EPERM 重试，不吞错）。
  * instance.env 文件写入在 spec 内用 node:fs（跑在 Node 端，纯 ASCII 内容）。
  *
  * 运行（GREEN 后）：INKFLOW_KERNEL_CMD=<backend venv> python -m inkflow serve --port 0
@@ -31,6 +32,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
+import { rmDirWithRetry } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -64,18 +66,13 @@ async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Pro
   throw new Error(`__kernelInfo 未在 ${timeoutMs}ms 内注入（内核未就绪）`);
 }
 
-/** mkdtemp 隔离目录（每次 launch 独立；cleanup 幂等兜底 Windows 句柄占用） */
-function makeIsolation(prefix = 'inkflow-e2e-debug-'): { dir: string; cleanup: () => void } {
+/** mkdtemp 隔离目录（每次 launch 独立；cleanup 委托 rmDirWithRetry 重试瞬态句柄占用） */
+function makeIsolation(prefix = 'inkflow-e2e-debug-'): { dir: string; cleanup: () => Promise<void> } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   return {
     dir,
-    cleanup: () => {
-      try {
-        fs.rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // Windows 偶发句柄占用：临时目录清理失败不阻塞用例结论
-      }
-    },
+    // #1033：不再吞错——瞬态码交给 rmDirWithRetry 重试，其余错误照抛
+    cleanup: () => rmDirWithRetry(dir),
   };
 }
 
@@ -142,7 +139,7 @@ test('A 三层联动开：INKFLOW_DEBUG=1 → debug token + /docs 200 + DevTools
       await app.close();
     }
   } finally {
-    iso.cleanup();
+    await iso.cleanup();
   }
 });
 
@@ -167,7 +164,7 @@ test('B 默认关：无 INKFLOW_DEBUG → 随机 token + /docs 404（G1 RED）+ 
       await app.close();
     }
   } finally {
-    iso.cleanup();
+    await iso.cleanup();
   }
 });
 
@@ -201,7 +198,7 @@ test('C env=0 > instance.env=1：APPDATA 预置 instance.env=1 + env 显式 0 �
       await app.close();
     }
   } finally {
-    appdataIso.cleanup();
-    dataIso.cleanup();
+    await appdataIso.cleanup();
+    await dataIso.cleanup();
   }
 });

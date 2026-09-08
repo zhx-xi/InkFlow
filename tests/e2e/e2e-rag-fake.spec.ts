@@ -270,6 +270,7 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
     if (fake) {
       fake.kill();
     }
-    iso.cleanup();
+    // #1033：cleanup 带瞬态 EPERM 重试（等内核释放 chroma 句柄后再删不吞错）
+    await iso.cleanup();
   }
 });

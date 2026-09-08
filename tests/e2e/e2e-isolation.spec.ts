@@ -5,7 +5,8 @@
  * 各自 createIsolatedEnv(tag) → 独立 INKFLOW_DATA_DIR（内核数据）+ 独立
  * --user-data-dir（渲染层）→ 独立 electron.launch → 内核 API 建唯一项目
  * （ASCII 名 `ISO-<A|B>-<ts>`）→ 各自 GET /projects 只见自己的项目（total 恒 1）
- * → 数据目录物理独立（tag 前缀 mkdtemp 不同）且各含 inkflow.db → finally cleanup。
+ * → 数据目录物理独立（tag 前缀 mkdtemp 不同）且各含 inkflow.db → finally 先
+ * ensureProcessExited 等内核退出（释放 inkflow.db/chroma 句柄，#1033）再 cleanup。
  *
  * 隔离机制依赖 G4（main.ts resolveKernelStatePath dev 分支感知 INKFLOW_DATA_DIR）：
  * G4 前壳复用判定读共享 backend/data/kernel.json → 后 launch 可能复用前一内核 →
@@ -23,7 +24,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
-import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
+import { createIsolatedEnv, ensureProcessExited, type IsolatedEnv } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -96,6 +97,7 @@ for (const [tag, label] of [
   test(`iso-${label}：独立数据目录 + 内核只见自己的项目（${tag}）`, async () => {
     const iso = createIsolatedEnv(tag);
     let app: ElectronApplication | undefined;
+    let kernelPid: number | undefined;
     try {
       // ③a 两数据目录物理不同：tag 前缀 mkdtemp 天然不等（字符串断言见本行前缀）
       expect(path.basename(iso.dataDir)).toMatch(new RegExp(`^inkflow-e2e-${tag}-`));
@@ -104,6 +106,7 @@ for (const [tag, label] of [
 
       const launched = await launchIsolated(iso);
       app = launched.app;
+      kernelPid = launched.kernel.pid;
 
       // ① 各建唯一项目（ASCII 名含 worker 标签 + 时间戳）
       const name = `ISO-${label}-${Date.now()}`;
@@ -135,7 +138,11 @@ for (const [tag, label] of [
       if (app) {
         await app.close();
       }
-      iso.cleanup();
+      // 等内核进程退出、释放 inkflow.db/chroma 句柄（Windows EPERM 根因），再带重试删目录
+      if (kernelPid !== undefined) {
+        await ensureProcessExited(kernelPid, { timeoutMs: 10_000 });
+      }
+      await iso.cleanup();
     }
   });
 }
