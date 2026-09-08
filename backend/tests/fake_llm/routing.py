@@ -13,6 +13,7 @@ class Fixture:
     kind: str  # "correct" | "error" | "timeout" | "malformed" | "empty"
     status_code: int  # 200 for correct，4xx/5xx for error
     content: str = ""  # 正常场景的 assistant content（error 场景为空）
+    reasoning_content: str = ""  # #964：思考内容（reasoning delta / message 注入）
     error_code: str | None = None  # e.g. "rate_limit_exceeded" / "unauthorized" / "server_error"
     error_message: str | None = None
     delay_seconds: float = 0.0  # timeout 场景 > 0
@@ -34,6 +35,12 @@ def _load_fixture(scene: str) -> dict:
 
 _SCENARIO_DEFAULTS: dict[str, Fixture] = {
     "correct": Fixture(kind="correct", status_code=200, content="这是确定性 fake 响应"),
+    "reasoning": Fixture(
+        kind="correct",
+        status_code=200,
+        content="这是带思考的确定性响应",
+        reasoning_content="先分析再回答",
+    ),
     "error-401": Fixture(
         kind="error", status_code=401, error_code="unauthorized", error_message="Invalid API key"
     ),
@@ -65,6 +72,7 @@ def _scenario_fixture(scene: str) -> Fixture:
         kind=str(data.get("kind", base.kind)),
         status_code=int(data.get("status_code", base.status_code)),
         content=str(data.get("content", base.content)),
+        reasoning_content=str(data.get("reasoning_content", base.reasoning_content)),
         error_code=data.get("error_code", base.error_code),
         error_message=data.get("error_message", base.error_message),
         delay_seconds=float(data.get("delay_seconds", base.delay_seconds)),

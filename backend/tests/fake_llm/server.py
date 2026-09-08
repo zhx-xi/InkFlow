@@ -73,7 +73,12 @@ def create_app(dim: int = 8) -> FastAPI:
                     "choices": [
                         {
                             "index": 0,
-                            "message": {"role": "assistant", "content": fixture.content},
+                            "message": {
+                                "role": "assistant",
+                                "content": fixture.content,
+                                # #964：reasoning_content 常带（空串也带上，形状稳定）
+                                "reasoning_content": fixture.reasoning_content,
+                            },
                             "finish_reason": "stop",
                         }
                     ],
@@ -84,6 +89,27 @@ def create_app(dim: int = 8) -> FastAPI:
         # 流式：SSE delta 帧 + data: [DONE]
         async def _sse_stream() -> AsyncGenerator[str, None]:
             content = fixture.content or "ok"
+            reasoning = fixture.reasoning_content or ""
+            # #964：reasoning_content delta 帧按 2 字符切块，先于 content delta 发出
+            for i in range(0, len(reasoning), 2):
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "id": "chatcmpl-fake",
+                            "object": "chat.completion.chunk",
+                            "model": model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"reasoning_content": reasoning[i : i + 2]},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                    )
+                    + "\n\n"
+                )
             for ch in content[:4]:
                 yield (
                     "data: "
