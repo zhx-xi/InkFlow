@@ -331,13 +331,22 @@ async def _seed_builtin_providers(db_session):
 
 
 def _assert_models_contract(models) -> None:
-    """models 数组契约：每项 {id 非空, type ∈ chat|embedding, roles list}（#4）。"""
+    """models 数组契约：每项 {id 非空, type ∈ chat|embedding, roles list}（#4）
+    + F59-M2 (#963) 每条含 supports_reasoning bool（手动值回显/探测填充）。"""
     assert isinstance(models, list)
     for m in models:
         assert isinstance(m, dict)
         assert "id" in m and str(m["id"]).strip(), "model id 缺失或空白"
         assert m["type"] in ("chat", "embedding"), f"非法 model type: {m['type']}"
         assert isinstance(m.get("roles", []), list)
+        assert isinstance(m.get("supports_reasoning"), bool), (
+            f"models[].supports_reasoning 必须为 bool（F59 §5.4 回显）: {m}"
+        )
+
+
+def _strip_reasoning(models: list[dict]) -> list[dict]:
+    """存量整 dict 全等断言用：剥离 F59-M2 回显字段后比对（请求载荷无该键）。"""
+    return [{k: v for k, v in m.items() if k != "supports_reasoning"} for m in models]
 
 
 def _assert_response_contract(data: dict) -> None:
@@ -526,7 +535,7 @@ class TestCreateProviderConfig:
         assert data["name"] == "my-provider"
         assert data["base_url"] == "https://example.com/v1"
         assert data["default_model"] == "my-provider/my-model"
-        assert data["models"] == payload["models"]
+        assert _strip_reasoning(data["models"]) == payload["models"]
         assert data["key_saved"] is False
         assert fake.list_calls >= 1
 
@@ -541,7 +550,9 @@ class TestCreateProviderConfig:
             )
         ).scalar_one()
         assert str(row.id) == str(data["id"])
-        assert row.models == payload["models"]
+        # F59-M2：落库 models JSON 携 supports_reasoning=None（三态=未手动设置，探测在
+        # router 回显层填充）→ 存量全等断言剥离该键后比对
+        assert _strip_reasoning(row.models) == payload["models"]
 
     @pytest.mark.parametrize(
         "body",
@@ -614,7 +625,7 @@ class TestGetProviderConfig:
         assert str(data["id"]) == str(row.id)
         assert data["name"] == "openai"
         assert data["base_url"] == "https://api.openai.com/v1"
-        assert data["models"] == [
+        assert _strip_reasoning(data["models"]) == [
             {"id": "gpt-4o-mini", "type": "chat", "roles": ["writing"]},
         ]
         assert data["key_saved"] is False
@@ -664,7 +675,7 @@ class TestUpdateProviderConfig:
         assert data["default_model"] == "my-provider/new-model"
         # exclude_unset 浅合并：未提供字段原样保留
         assert data["base_url"] == "https://example.com/v1"
-        assert data["models"] == [{"id": "m1", "type": "chat", "roles": []}]
+        assert _strip_reasoning(data["models"]) == [{"id": "m1", "type": "chat", "roles": []}]
         assert data["key_saved"] is False
 
     async def test_patch_empty_body_ok(
@@ -703,7 +714,7 @@ class TestUpdateProviderConfig:
             },
         )
         assert resp.status_code == 200
-        assert resp.json()["models"] == [
+        assert _strip_reasoning(resp.json()["models"]) == [
             {"id": "new-model", "type": "embedding", "roles": ["rag"]},
         ]
 

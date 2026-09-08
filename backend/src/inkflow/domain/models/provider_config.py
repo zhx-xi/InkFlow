@@ -41,11 +41,14 @@ class ProviderModel(BaseModel):
         id: 模型标识（如 "gpt-4o"），必填非空白.
         type: 模型类型，仅 chat / embedding 二值.
         roles: 角色用途标记列表，默认空.
+        supports_reasoning: 手动能力覆盖（None=自动探针 §5.4 / True/False=用户强制）.
     """
 
     id: str
     type: Literal["chat", "embedding"]
     roles: list[str] = Field(default_factory=list)
+    supports_reasoning: bool | None = None
+    """能力探针手动覆盖（F59 §5.4）：None=自动探针；True/False=用户强制。存 JSON 列，零迁移。"""
 
     @field_validator("id")
     @classmethod

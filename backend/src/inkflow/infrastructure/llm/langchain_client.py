@@ -15,6 +15,7 @@ from langchain_litellm import ChatLiteLLM
 from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse, StreamEvent, TokenUsage
 from inkflow.domain.ports.llm_errors import LLMRequestError
+from inkflow.infrastructure.llm.capability_probe import apply_reasoning_effort
 from inkflow.infrastructure.llm.provider_config import (
     LLMProviderConfig,
     get_provider_config,
@@ -62,8 +63,15 @@ class LangChainLLMClient:
         if not messages:
             raise ValueError("messages cannot be empty")
 
+        reasoning_effort = kwargs.get("reasoning_effort")
+        if not isinstance(reasoning_effort, str):
+            reasoning_effort = None
         return await self._chat_async(
-            messages, model=model, temperature=temperature, max_tokens=max_tokens
+            messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
 
     @instrument(caller_type="llm")
@@ -74,6 +82,7 @@ class LangChainLLMClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
     ) -> ChatResponse:
         """异步聊天实现。"""
         model_str = model or self._default_model
@@ -92,6 +101,7 @@ class LangChainLLMClient:
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
 
         langchain_messages = self._to_langchain_messages(messages)
@@ -140,6 +150,9 @@ class LangChainLLMClient:
         if not messages:
             raise ValueError("messages cannot be empty")
 
+        reasoning_effort = kwargs.get("reasoning_effort")
+        if not isinstance(reasoning_effort, str):
+            reasoning_effort = None
         model_str = model or self._default_model
         provider, model_name = parse_model_string(model_str)
         provider_cfg = get_provider_config(provider, api_key=self._api_key)
@@ -149,6 +162,7 @@ class LangChainLLMClient:
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
 
         langchain_messages = self._to_langchain_messages(messages)
@@ -209,6 +223,7 @@ class LangChainLLMClient:
         model_name: str = "",
         temperature: float | None = None,
         max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
     ) -> ChatLiteLLM:
         """创建 ChatLiteLLM 实例（经 litellm 前缀口径 + api_base 支持多 Provider，
         ADR-051）。
@@ -217,6 +232,9 @@ class LangChainLLMClient:
         spec f59 §5.1 ⚠️ 行）；api_key/api_base 为 ChatLiteLLM 原生字段名；
         max_retries/request_timeout 直传 litellm 顶层参数——禁 num_retries（实证
         tenacity × openai SDK 双层叠加重试是缺陷，只许单层）。
+
+        reasoning_effort: F59 可选思考档位——经 apply_reasoning_effort 注入
+        ChatLiteLLM kwargs（default/None 不发送；超能力软降级见 §5.5）。
         """
         model = model_name or provider_cfg.default_model
         if model and "/" not in model:
@@ -224,8 +242,9 @@ class LangChainLLMClient:
         temp = temperature if temperature is not None else self._temperature
         base_url = self._openai_api_base or provider_cfg.base_url
 
+        full_model = litellm_model_name(model, base_url)
         chat_kwargs: dict[str, object] = {
-            "model": litellm_model_name(model, base_url),
+            "model": full_model,
             "temperature": temp,
             "max_retries": provider_cfg.max_retries,
             "request_timeout": float(provider_cfg.timeout),
@@ -236,6 +255,11 @@ class LangChainLLMClient:
             chat_kwargs["api_base"] = base_url
         if max_tokens is not None:
             chat_kwargs["max_tokens"] = max_tokens
+        chat_kwargs = apply_reasoning_effort(
+            chat_kwargs,
+            model_full=full_model,
+            effort=reasoning_effort,
+        )
 
         return ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM 构造参数
 

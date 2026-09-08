@@ -53,7 +53,7 @@ from inkflow.domain.models.settings import (
 
 
 def _defaults() -> dict:
-    """17 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
+    """18 字段默认字典（§2.1 表 + §2.2 AppSettings 默认值）。
 
     F27 扩展（#160 Q2 拍板）：agent_max_steps/agent_token_budget/
     agent_max_total_tool_calls 预算护栏设置键（ADR-C 默认值 12/32K/20；
@@ -71,6 +71,7 @@ def _defaults() -> dict:
         "close_behavior": "tray",
         "tray_hint_dismissed": False,
         "default_words": 800000,
+        "default_reasoning_effort": "default",
         "agent_max_steps": 12,
         "agent_token_budget": 32000,
         "agent_max_total_tool_calls": 20,
@@ -127,6 +128,7 @@ class TestAppSettings:
             "kg_extract_enabled": False,
             "kg_extract_interval_hours": 24,
             "kg_extract_method": "rule",
+            "default_reasoning_effort": "default",
         }
 
     def test_json_roundtrip(self):
@@ -198,7 +200,7 @@ class TestSettingsKey:
     """SettingsKey 枚举契约（§2.2，service 白名单依赖 value 构造）。"""
 
     def test_members_and_values(self):
-        """17 成员 + value 与 §2.1 设置键名一一对应（#479 追加 kg_extract_* 三键）。"""
+        """18 成员 + value 与 §2.1 设置键名一一对应（#479 kg_extract_* / #963 reasoning）。"""
         assert {k.name: k.value for k in SettingsKey} == {
             "THEME": "theme",
             "BG": "bg",
@@ -207,6 +209,7 @@ class TestSettingsKey:
             "CLOSE_BEHAVIOR": "close_behavior",
             "TRAY_HINT_DISMISSED": "tray_hint_dismissed",
             "DEFAULT_WORDS": "default_words",
+            "DEFAULT_REASONING_EFFORT": "default_reasoning_effort",
             "AGENT_MAX_STEPS": "agent_max_steps",
             "AGENT_TOKEN_BUDGET": "agent_token_budget",
             "AGENT_MAX_TOTAL_TOOL_CALLS": "agent_max_total_tool_calls",

@@ -3657,6 +3657,12 @@ export interface components {
              */
             close_behavior: "tray" | "quit";
             /**
+             * Default Reasoning Effort
+             * @default default
+             * @enum {string}
+             */
+            default_reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "default";
+            /**
              * Default Words
              * @default 800000
              */
@@ -3741,6 +3747,8 @@ export interface components {
             bg?: ("default" | "parchment" | "navy" | "ochre") | null;
             /** Close Behavior */
             close_behavior?: ("tray" | "quit") | null;
+            /** Default Reasoning Effort */
+            default_reasoning_effort?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "default") | null;
             /** Default Words */
             default_words?: number | null;
             /** Font */
@@ -4084,6 +4092,8 @@ export interface components {
             project_id: string;
             /** Prompt */
             prompt?: string | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
         };
         /**
          * ConfigUpdate
@@ -4921,6 +4931,7 @@ export interface components {
          *
          *     Attributes:
          *         model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.
+         *         reasoning_effort: 项目级思考档位（F59 §2.2；None=跟随全局，显式 null 清除）.
          *         agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
          *         agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
          *         agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
@@ -4991,6 +5002,11 @@ export interface components {
              * @description 默认 AI 模型（None=未配置，装配时回退全局默认）
              */
             model?: string | null;
+            /**
+             * Reasoning Effort
+             * @description 项目级思考档位（F59 spec §2.2）：None=跟随全局；显式 null 序列化保持零迁移
+             */
+            reasoning_effort?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "default") | null;
             /** Role Architect Temperature */
             role_architect_temperature?: number | null;
             /** Role Auditor Temperature */
@@ -5139,12 +5155,15 @@ export interface components {
          *         id: 模型标识（如 "gpt-4o"），必填非空白.
          *         type: 模型类型，仅 chat / embedding 二值.
          *         roles: 角色用途标记列表，默认空.
+         *         supports_reasoning: 手动能力覆盖（None=自动探针 §5.4 / True/False=用户强制）.
          */
         ProviderModel: {
             /** Id */
             id: string;
             /** Roles */
             roles?: string[];
+            /** Supports Reasoning */
+            supports_reasoning?: boolean | null;
             /**
              * Type
              * @enum {string}

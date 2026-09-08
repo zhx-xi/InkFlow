@@ -99,6 +99,8 @@ async def get_chat_agent_service(
 
     from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
+    from inkflow.domain.models.project import Project
+    from inkflow.domain.services.model_resolution import resolve_reasoning_effort
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
     from inkflow.infrastructure.agent.tools.agent_chain_tools import AgentChainToolDeps
     from inkflow.infrastructure.agent.tools.delete_tools import DeleteToolDeps
@@ -115,6 +117,22 @@ async def get_chat_agent_service(
     # 空默认/named provider 无 key → fail-fast 422 + 诊断日志，绝不遍历注册表
     # 取 models[0]（embedding 误装配为 chat 的缺陷通道，#929 R1/#738 回退废止）。
     model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
+
+    # F59-M2：思考档位三级解析（请求 > 项目 > 全局，spec §2.2）；项目查询失败/项目
+    # 不存在 → 软回退全局（§5.5 spirit），绝不因档位解析阻断 chat 装配。
+    project_effort: str | None = None
+    try:
+        project_svc = deps_module.get_project_service(db)
+        project: Project | None = await project_svc.get(uuid.UUID(data.project_id))
+        if project is not None:
+            project_effort = getattr(project.config, "reasoning_effort", None)
+    except Exception:
+        pass
+    effort = resolve_reasoning_effort(
+        request_effort=getattr(data, "reasoning_effort", None),
+        project_effort=project_effort,
+        global_effort=config.llm_reasoning_effort,
+    )
 
     # #766 阶段② 装配守卫：读 conversation.delete_permission 决定是否挂载删除工具
     # （manual=不注册；ask_once/auto=注册，func 内部按授权分支 interrupt 或直接执行）。
@@ -159,6 +177,7 @@ async def get_chat_agent_service(
             ),
             system_prompt=getattr(agent, "system_prompt", "") or "",
             profile_key=None,
+            reasoning_effort=effort,
         )
         # 鸭子类型：deepagents CompiledStateGraph 提供 ainvoke（Runnable 契约）
         result = await built_agent.ainvoke(
@@ -307,6 +326,7 @@ async def get_chat_agent_service(
         ],
         system_prompt=_CHAT_SYSTEM_AGENT_PROMPT,
         profile_key=None,
+        reasoning_effort=effort,
     )
     # #821：InMemorySaver 需要 thread_id —— conversation_id 缺失时生成稳定 uuid 兜底
     thread_id = str(data.conversation_id) if data.conversation_id else str(uuid.uuid4())

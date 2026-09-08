@@ -16,6 +16,8 @@
   "log.event.kernel_spawn_error": "Kernel spawn failed: {error}",
   "api.error.project_not_found": "Project not found: {project_id}",
   "api.error.validation_failed": "Request validation failed",
+  "api.error.reasoning_effort_invalid": "Invalid reasoning effort level; choose from the seven supported levels",
+  "log.check.reasoning_downgrade": "Reasoning downgraded: model {model} does not support level {effort}; reasoning parameter stripped",
   "agent.scope.domain.outline": "Outline",
   "agent.scope.domain.character": "Characters",
   "agent.scope.domain.world": "World Building",

@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+from inkflow.domain.models.reasoning import ReasoningEffort
+
 ThemeName = Literal["paper", "night", "ink"]
 ThemeBg = Literal["default", "parchment", "navy", "ochre"]
 Lang = Literal["zh", "en"]
@@ -29,6 +31,7 @@ class SettingsKey(StrEnum):
     CLOSE_BEHAVIOR = "close_behavior"
     TRAY_HINT_DISMISSED = "tray_hint_dismissed"
     DEFAULT_WORDS = "default_words"
+    DEFAULT_REASONING_EFFORT = "default_reasoning_effort"
     AGENT_MAX_STEPS = "agent_max_steps"
     AGENT_TOKEN_BUDGET = "agent_token_budget"
     AGENT_MAX_TOTAL_TOOL_CALLS = "agent_max_total_tool_calls"
@@ -57,6 +60,7 @@ class AppSettings(BaseModel):
     close_behavior: CloseBehavior = "tray"
     tray_hint_dismissed: bool = False
     default_words: int = 800000
+    default_reasoning_effort: ReasoningEffort = "default"
     agent_max_steps: int = 12
     agent_token_budget: int = 32000
     agent_max_total_tool_calls: int = 20
@@ -110,6 +114,7 @@ class AppSettingsUpdate(BaseModel):
     close_behavior: CloseBehavior | None = None
     tray_hint_dismissed: bool | None = None
     default_words: int | None = None
+    default_reasoning_effort: ReasoningEffort | None = None
     agent_max_steps: int | None = None
     agent_token_budget: int | None = None
     agent_max_total_tool_calls: int | None = None

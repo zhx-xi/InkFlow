@@ -261,13 +261,24 @@ class TestProviderConfigRepository:
         assert got.max_retries == 5
         assert got.timeout == 60
 
-        # DB 行存 dict 列表（ProviderModel.model_dump() 产物）
+        # DB 行存 dict 列表（ProviderModel.model_dump() 产物；F59-M2 含三态
+        # supports_reasoning=None 显式键）
         row = await db_session.execute(
             select(ProviderConfigORM).where(ProviderConfigORM.id == saved.id)
         )
         assert row.scalar_one().models == [
-            {"id": "gpt-4o", "type": "chat", "roles": ["writing", "audit"]},
-            {"id": "text-embedding-3-small", "type": "embedding", "roles": []},
+            {
+                "id": "gpt-4o",
+                "type": "chat",
+                "roles": ["writing", "audit"],
+                "supports_reasoning": None,
+            },
+            {
+                "id": "text-embedding-3-small",
+                "type": "embedding",
+                "roles": [],
+                "supports_reasoning": None,
+            },
         ]
 
     async def test_models_empty_by_default(self, db_session):

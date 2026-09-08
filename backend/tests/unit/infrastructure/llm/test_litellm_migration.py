@@ -548,3 +548,82 @@ class TestErrorContractPreserved:
         ):
             await client.chat([ChatMessage(role="user", content="hi")], model="zhipu/glm-4.5")
         assert ei.value.provider == "zhipu"
+
+
+# ── G. F59-M2 (#963): 构造点 reasoning_effort 注入 ─────────────────
+
+
+class TestBuildDeepAgentReasoningInjection:
+    """spec §5.2/§8.2 harness 行：build_deep_agent 签名增可选 reasoning_effort，
+    经 apply_reasoning_effort 进 ChatLiteLLM kwargs（default/None 不发；超能力
+    软降级剥离见 test_capability_probe）。"""
+
+    @pytest.fixture
+    def harness_patches(self):
+        from unittest import mock
+
+        with (
+            mock.patch("inkflow.infrastructure.agent.deepagents.harness.ChatLiteLLM") as chat_cls,
+            mock.patch(
+                "inkflow.infrastructure.agent.deepagents.harness.create_deep_agent",
+                return_value=MagicMock(name="agent"),
+            ) as create,
+        ):
+            yield chat_cls, create
+
+    def test_high_injects_kwarg(self, harness_patches) -> None:
+        """deepseek 支持思考（litellm 表实证）→ kwargs 含 reasoning_effort='high'。"""
+        from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+
+        chat_cls, _ = harness_patches
+        build_deep_agent(
+            model="deepseek/deepseek-v4-flash",
+            api_key="sk-test",
+            base_url="https://api.deepseek.com/v1",
+            tools=[],
+            system_prompt="p",
+            reasoning_effort="high",
+        )
+        assert chat_cls.call_args[1]["reasoning_effort"] == "high"
+
+    def test_default_omits_kwarg(self, harness_patches) -> None:
+        """🔴 M2 验收：'default' 档 → kwargs 完全不含 reasoning_effort 键（§5.2）。"""
+        from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+
+        chat_cls, _ = harness_patches
+        build_deep_agent(
+            model="deepseek/deepseek-v4-flash",
+            api_key="sk-test",
+            base_url="https://api.deepseek.com/v1",
+            tools=[],
+            system_prompt="p",
+            reasoning_effort="default",
+        )
+        assert "reasoning_effort" not in chat_cls.call_args[1]
+
+    def test_absent_omits_kwarg(self, harness_patches) -> None:
+        """护栏（向后兼容）：不传参数 → 现状 kwargs 形态不破（M1 既有调用方零改动）。"""
+        from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+
+        chat_cls, _ = harness_patches
+        build_deep_agent(
+            model="zhipu/glm-4.5", api_key="sk-test", base_url="https://x/v1",
+            tools=[], system_prompt="p",
+        )
+        assert "reasoning_effort" not in chat_cls.call_args[1]
+
+    def test_unsupported_model_soft_downgrades(self, harness_patches) -> None:
+        """§5.5 软降级在构造点生效：zai/glm-4.5（探测 False，实证）传 high →
+        ChatLiteLLM kwargs 剥离（不发思考参数，不断流）。"""
+        from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
+
+        chat_cls, _ = harness_patches
+        build_deep_agent(
+            model="zhipu/glm-4.5",
+            api_key="sk-test",
+            base_url="https://x/v1",
+            tools=[],
+            system_prompt="p",
+            reasoning_effort="high",
+        )
+        assert "reasoning_effort" not in chat_cls.call_args[1]

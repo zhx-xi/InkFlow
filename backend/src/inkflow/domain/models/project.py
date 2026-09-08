@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from inkflow.domain.models.reasoning import ReasoningEffort
+
 # 225 拍板——字符串 "__default__" = 跟随默认（预留 sentinel，前端本期不暴露中间态 UI）。
 AGENT_DEFAULT_SENTINEL = "__default__"
 
@@ -85,6 +87,7 @@ class ProjectConfig(BaseModel):
 
     Attributes:
         model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.
+        reasoning_effort: 项目级思考档位（F59 §2.2；None=跟随全局，显式 null 清除）.
         agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
         agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；"__default__"=跟随默认）.
@@ -111,6 +114,10 @@ class ProjectConfig(BaseModel):
 
     model: str | None = Field(
         default=None, description="默认 AI 模型（None=未配置，装配时回退全局默认）"
+    )
+    reasoning_effort: ReasoningEffort | None = Field(
+        default=None,
+        description="项目级思考档位（F59 spec §2.2）：None=跟随全局；显式 null 序列化保持零迁移",
     )
     agent_architect: str | None = None
     agent_writer: str | None = None

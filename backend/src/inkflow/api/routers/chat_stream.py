@@ -15,8 +15,10 @@ import inkflow.api.deps as deps_module
 from inkflow.api.deps import get_agent_run_repo, get_chat_agent_service
 from inkflow.core.config import config
 from inkflow.domain.models.agent_run import AgentRun, AgentRunStatus, AgentStep
+from inkflow.domain.models.reasoning import REASONING_EFFORTS
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatService, ChatStreamEvent
+from inkflow.i18n.resolver import t
 from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
 from inkflow.infrastructure.agent.pipeline_templates import _CHAT_ASSISTANT_PROMPT
 from inkflow.infrastructure.database.repositories.agent_run_repo import (
@@ -54,6 +56,8 @@ class ChatStreamRequest(BaseModel):
     chapter_id: str | None = None
     chapter_context: str | None = None
     conversation_id: str | None = None  # #766 阶段②：装配守卫按会话删除授权注入删除工具
+    # F59 §3.1：每轮可选思考档位（plain str；handler 按七档校验并 422，agent 消费见 §2.3/M8）
+    reasoning_effort: str | None = None
 
 
 # #597 循环依赖规避：deps.get_chat_agent_service 的函数体惰性 import ChatStreamRequest
@@ -61,6 +65,15 @@ class ChatStreamRequest(BaseModel):
 # 需从 deps 模块全局解析该注解名，故此处把本类显式注册进 deps 命名空间（f27 绑定名
 # 同一性不受影响，dependency_overrides 仍以 deps 模块函数对象为键）。
 deps_module.ChatStreamRequest = ChatStreamRequest  # type: ignore[misc]  # 运行时注册：FastAPI 需从 deps 全局解析注解名（mypy 静态视图禁止对模块级类型属性重赋值）
+
+
+def _reject_invalid_reasoning_effort(value: str | None) -> None:
+    """F59 §3.3：请求档位非七档 → 422 i18n 自定义文案（不泄漏原始值/pydantic 原文）。"""
+    if value is not None and value not in REASONING_EFFORTS:
+        raise HTTPException(
+            status_code=422,
+            detail=t("messages", "api.error.reasoning_effort_invalid"),
+        )
 
 
 def get_chat_service() -> ChatService:
@@ -227,6 +240,7 @@ async def stream_chat(
     svc: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """chat 流式对话 — SSE 逐 token 推送（帧协议见测试契约）。"""
+    _reject_invalid_reasoning_effort(data.reasoning_effort)
     prompt = (data.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="chat 流式请求需要 prompt")
@@ -266,6 +280,7 @@ async def stream_chat_agent(
     steps（on_chat_model_end + on_tool_end）→ 流结束 repo.save(completed) →
     done 帧回传 run_id；LLMRequestError → error 帧 + save(failed) 防御。
     """
+    _reject_invalid_reasoning_effort(data.reasoning_effort)
     prompt = (data.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="chat 流式请求需要 prompt")

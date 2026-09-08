@@ -576,6 +576,20 @@
             "title": "Close Behavior",
             "type": "string"
           },
+          "default_reasoning_effort": {
+            "default": "default",
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "default"
+            ],
+            "title": "Default Reasoning Effort",
+            "type": "string"
+          },
           "default_words": {
             "default": 800000,
             "title": "Default Words",
@@ -733,6 +747,26 @@
               }
             ],
             "title": "Close Behavior"
+          },
+          "default_reasoning_effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Reasoning Effort"
           },
           "default_words": {
             "anyOf": [
@@ -1578,6 +1612,17 @@
               }
             ],
             "title": "Prompt"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
           }
         },
         "required": [
@@ -3359,7 +3404,7 @@
         "type": "object"
       },
       "ProjectConfig": {
-        "description": "项目 AI 写作配置，可序列化为 JSON 进行导入/导出.\n\nAttributes:\n    model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.\n    agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_worldview: 世界观顾问 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_polisher: 润色师 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_roles: 自定义角色三态字段（key 带 agent_ 前缀，value 三态语义\n        与 agent_* 完全一致；spec §5.3.4 数据面）.\n    temperature: 生成温度 (0.0 - 2.0).\n    role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.\n    role_writer_temperature: 写手角色独立温度（None = 跟随默认）.\n    role_auditor_temperature: 审阅角色独立温度（None = 跟随默认）.\n    role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.\n    template_id: 引用的 AgentTemplate id（str 存储于 config JSON；\n        None = 未引用，回退默认装配，spec §9.2）.\n    chapter_title_format: 章节标题序号格式（'arabic'=第N章 /\n        'chinese'=第X章；#999 契约 §3，零迁移默认 arabic）.\n    writing_style: 写作风格描述.\n    supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.\n    extra: 扩展配置字典.",
+        "description": "项目 AI 写作配置，可序列化为 JSON 进行导入/导出.\n\nAttributes:\n    model: 默认 AI 模型名称（None=未配置，装配时回退全局默认）.\n    reasoning_effort: 项目级思考档位（F59 §2.2；None=跟随全局，显式 null 清除）.\n    agent_architect: 架构师 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_writer: 写手 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_auditor: 审阅 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_reviser: 修订 Agent 模型（None=关闭；字符串=指定模型；\"__default__\"=跟随默认）.\n    agent_worldview: 世界观顾问 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_polisher: 润色师 Agent 模型（v1.5 #484；None=关闭；字符串=指定模型；\n        \"__default__\"=跟随默认）.\n    agent_roles: 自定义角色三态字段（key 带 agent_ 前缀，value 三态语义\n        与 agent_* 完全一致；spec §5.3.4 数据面）.\n    temperature: 生成温度 (0.0 - 2.0).\n    role_architect_temperature: 架构师角色独立温度（None = 跟随默认）.\n    role_writer_temperature: 写手角色独立温度（None = 跟随默认）.\n    role_auditor_temperature: 审阅角色独立温度（None = 跟随默认）.\n    role_reviser_temperature: 修订角色独立温度（None = 跟随默认）.\n    template_id: 引用的 AgentTemplate id（str 存储于 config JSON；\n        None = 未引用，回退默认装配，spec §9.2）.\n    chapter_title_format: 章节标题序号格式（'arabic'=第N章 /\n        'chinese'=第X章；#999 契约 §3，零迁移默认 arabic）.\n    writing_style: 写作风格描述.\n    supervisor: 项目级 Supervisor/HITL 配置（None = 未启用，零迁移）.\n    extra: 扩展配置字典.",
         "properties": {
           "agent_architect": {
             "anyOf": [
@@ -3493,6 +3538,27 @@
             ],
             "description": "默认 AI 模型（None=未配置，装配时回退全局默认）",
             "title": "Model"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "项目级思考档位（F59 spec §2.2）：None=跟随全局；显式 null 序列化保持零迁移",
+            "title": "Reasoning Effort"
           },
           "role_architect_temperature": {
             "anyOf": [
@@ -3887,7 +3953,7 @@
         "type": "object"
       },
       "ProviderModel": {
-        "description": "单个模型条目（§8.2① models 元素契约）.\n\nAttributes:\n    id: 模型标识（如 \"gpt-4o\"），必填非空白.\n    type: 模型类型，仅 chat / embedding 二值.\n    roles: 角色用途标记列表，默认空.",
+        "description": "单个模型条目（§8.2① models 元素契约）.\n\nAttributes:\n    id: 模型标识（如 \"gpt-4o\"），必填非空白.\n    type: 模型类型，仅 chat / embedding 二值.\n    roles: 角色用途标记列表，默认空.\n    supports_reasoning: 手动能力覆盖（None=自动探针 §5.4 / True/False=用户强制）.",
         "properties": {
           "id": {
             "title": "Id",
@@ -3899,6 +3965,17 @@
             },
             "title": "Roles",
             "type": "array"
+          },
+          "supports_reasoning": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Reasoning"
           },
           "type": {
             "enum": [
