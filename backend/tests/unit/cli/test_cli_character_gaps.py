@@ -161,3 +161,155 @@ def test_update_group_description_only_skips_name(cli_runner: CliRunner, fake_ht
     assert result.exit_code == 0
     call_kwargs = fake_http_client.patch.await_args.kwargs
     assert call_kwargs["json"] == {"description": "新说明"}
+
+
+# ---------------------------------------------------------------------------
+# #981 — character update --role-rank / --extra-json 扩参契约（RED）
+# 契约规则（父侧定稿）: .hermes/plans/red-981-b-character.md 规则 1-8。
+# 未实现前: CLI 尚不识别上述两选项 → click 拒绝未知选项 exit 2，期望值断言失败即 RED。
+# ---------------------------------------------------------------------------
+
+
+def test_981_character_update_name_only_has_no_extra(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则1+7：仅 --name → body 只含 name 且不含 extra 键（exclude_unset 零破坏）。"""
+    fake_http_client.patch.return_value = _make_character(name="新名")
+
+    result = cli_runner.invoke(
+        app,
+        ["update", "--id", str(uuid.uuid4()), "--name", "新名"],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 0
+    call = fake_http_client.patch.await_args
+    assert call.kwargs["json"] == {"name": "新名"}
+    assert "extra" not in call.kwargs["json"]
+
+
+def test_981_character_update_role_rank_sets_extra(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则2：--role-rank protagonist → body extra == {"role_rank": "protagonist"}。"""
+    fake_http_client.patch.return_value = _make_character(extra={"role_rank": "protagonist"})
+
+    result = cli_runner.invoke(
+        app,
+        ["update", "--id", str(uuid.uuid4()), "--role-rank", "protagonist"],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 0
+    call = fake_http_client.patch.await_args
+    assert call.kwargs["json"] == {"extra": {"role_rank": "protagonist"}}
+
+
+def test_981_character_update_extra_json_passes_full_object(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则3：--extra-json 合法对象 → body extra 为解析后的完整 dict。"""
+    fake_http_client.patch.return_value = _make_character(
+        extra={"role_rank": "major", "origin": "蜀山"}
+    )
+
+    result = cli_runner.invoke(
+        app,
+        [
+            "update",
+            "--id",
+            str(uuid.uuid4()),
+            "--extra-json",
+            '{"role_rank": "major", "origin": "蜀山"}',
+        ],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 0
+    call = fake_http_client.patch.await_args
+    assert call.kwargs["json"]["extra"] == {"role_rank": "major", "origin": "蜀山"}
+
+
+def test_981_character_update_both_extra_options_conflict(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则4：--role-rank + --extra-json 同传 → 本地冲突报错，不发 HTTP。"""
+    result = cli_runner.invoke(
+        app,
+        [
+            "update",
+            "--id",
+            str(uuid.uuid4()),
+            "--role-rank",
+            "protagonist",
+            "--extra-json",
+            '{"role_rank": "major"}',
+        ],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 1
+    assert "❌" in result.stderr
+    fake_http_client.patch.assert_not_awaited()
+
+
+def test_981_character_update_extra_json_invalid_rejected(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则5：--extra-json 非法 JSON（'{bad'）→ VALIDATION_ERROR，不发 HTTP。"""
+    result = cli_runner.invoke(
+        app,
+        ["update", "--id", str(uuid.uuid4()), "--extra-json", "{bad"],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 1
+    assert "❌" in result.stderr
+    fake_http_client.patch.assert_not_awaited()
+
+
+def test_981_character_update_extra_json_non_object_list_rejected(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则6a：--extra-json '[1, 2]' 非对象 → VALIDATION_ERROR，不发 HTTP。"""
+    result = cli_runner.invoke(
+        app,
+        ["update", "--id", str(uuid.uuid4()), "--extra-json", "[1, 2]"],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 1
+    assert "❌" in result.stderr
+    fake_http_client.patch.assert_not_awaited()
+
+
+def test_981_character_update_extra_json_non_object_string_rejected(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则6b：--extra-json '"x"' 非对象 → VALIDATION_ERROR，不发 HTTP。"""
+    result = cli_runner.invoke(
+        app,
+        ["update", "--id", str(uuid.uuid4()), "--extra-json", '"x"'],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 1
+    assert "❌" in result.stderr
+    fake_http_client.patch.assert_not_awaited()
+
+
+def test_981_character_update_role_rank_pass_through_no_enum_check(
+    cli_runner: CliRunner, fake_http_client
+) -> None:
+    """#981 规则8：--role-rank boss（非枚举值）→ 不做本地校验，透传 body extra。"""
+    fake_http_client.patch.return_value = _make_character(extra={"role_rank": "boss"})
+
+    result = cli_runner.invoke(
+        app,
+        ["update", "--id", str(uuid.uuid4()), "--role-rank", "boss"],
+        obj=CliContext(),
+    )
+
+    assert result.exit_code == 0
+    call = fake_http_client.patch.await_args
+    assert call.kwargs["json"] == {"extra": {"role_rank": "boss"}}
