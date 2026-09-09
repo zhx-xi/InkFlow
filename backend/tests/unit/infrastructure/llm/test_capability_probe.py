@@ -217,17 +217,46 @@ class TestApplyReasoningEffort:
         assert params.get("model") == "zai/glm-4.5"
         assert params.get("effort") == "high"
 
-    def test_none_level_passthrough_unsupported(
+    def test_none_level_stripped_silently_when_probe_unsupported(
         self, loguru_records: list[dict]
     ) -> None:
-        """N-1：能力不支持 + effort="none" → 显式关闭请求透传（§5.5 行 2 恒思考
-        模型类由 provider 处理，§7.3 既有错误映射兜底）。"""
+        """#1054（N-1 修正）：探测不支持 + effort="none" → **剥离且不告警**。
+
+        N-1 原前提「none 显式关闭依赖 litellm 翻译」被实证证伪：翻译器不含该
+        参数时 litellm 直接 UnsupportedParamsError（与值无关）→ 注入即断流。
+        语义：该模型本就不思考，none 天然满足，无需告警。
+        """
         out = apply_reasoning_effort(
             {"model": "zai/glm-4.5"},
             model_full="zai/glm-4.5",
             effort="none",
         )
-        assert out.get("reasoning_effort") == "none"
+        assert "reasoning_effort" not in out
+        assert not _warn_records(loguru_records)
+
+    def test_none_still_injected_when_translator_supports(
+        self, loguru_records: list[dict]
+    ) -> None:
+        """反护栏：deepseek 翻译器含该参数 → none 照常注入（显式关闭语义保留）。"""
+        out = apply_reasoning_effort(
+            {"model": "deepseek/deepseek-v4-flash"},
+            model_full="deepseek/deepseek-v4-flash",
+            effort="none",
+        )
+        assert out["reasoning_effort"] == "none"
+        assert not _warn_records(loguru_records)
+
+    def test_manual_false_none_stripped_silently(
+        self, loguru_records: list[dict]
+    ) -> None:
+        """手动强制不支持 + none → 同样剥离不告警（能力面与传输面一致）。"""
+        out = apply_reasoning_effort(
+            {"model": "brandnew/x1"},
+            model_full="brandnew/x1",
+            effort="none",
+            manual=False,
+        )
+        assert "reasoning_effort" not in out
         assert not _warn_records(loguru_records)
 
     def test_manual_true_rescues_injection(

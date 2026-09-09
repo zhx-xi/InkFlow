@@ -3,7 +3,8 @@
 - supports_reasoning_for_model: 手动覆盖 > 模型级 supports_reasoning 表 >
   provider 级 get_supported_openai_params 兜底；探针永不抛异常。
 - apply_reasoning_effort: 构造点统一入口——default/None 不发送；支持则注入；
-  不支持且非 none 则剥离并发 WARNING；none 透传（显式关闭语义）。
+  不支持且非 none 则剥离并发 WARNING；探测不支持且 none → 剥离且不告警
+  （#1054：模型本就不思考，none 天然满足）。
   决策点包含翻译器门禁：探测链判 True 但 litellm 翻译器无 reasoning 参数时
   软降级（reason=translator_unsupported），绝不冒泡（#1044 D4）。
 - to_chat_model_kwargs: 为 ChatLiteLLM 传输形态适配器——构造点必须串联
@@ -98,7 +99,8 @@ def apply_reasoning_effort(
     - effort 为 None / "default" → 返回副本且不含 reasoning_effort 键；
     - 能力支持 → out["reasoning_effort"] = effort（含 "none" 透传）；
     - 能力不支持且 effort 非 {"default", "none"} → 剥离 + WARNING（软降级）；
-    - 能力不支持且 effort == "none" → 透传（显式关闭由上游处理，不告警）。
+    - 能力不支持且 effort == "none" → 剥离且不告警（#1054：none 天然满足；
+      翻译器无该参数时注入即断流）。
     """
     out = dict(kwargs)
     if effort is None or effort == "default":
@@ -108,12 +110,14 @@ def apply_reasoning_effort(
         provider=provider,
         manual=manual,
     )
-    if not supported and effort != "none":
+    if not supported:
+        if effort == "none":
+            # #1054：模型本就不思考，none 天然满足 → 剥离且不告警（翻译器
+            # 不含该参数时注入即 UnsupportedParamsError 断流）
+            return out
         _warn_downgrade(model_full, effort, "capability_unsupported")
         return out
-    if supported and manual is None and not _translator_supports_reasoning(
-        model_full, provider
-    ):
+    if manual is None and not _translator_supports_reasoning(model_full, provider):
         # #1044 D4：探测链判 True 但翻译器无该参数 → SDK 本地 UnsupportedParamsError（断流）
         _warn_downgrade(model_full, effort, "translator_unsupported")
         return out
