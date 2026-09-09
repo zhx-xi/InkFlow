@@ -2196,7 +2196,10 @@ export interface paths {
         };
         /**
          * List Outlines
-         * @description 获取项目内大纲列表（搜索 + 分页 + point_count 聚合，spec §3.2）。
+         * @description 获取项目内大纲列表（搜索 + 层级过滤 + 分页 + point_count 聚合，spec §3.2）。
+         *
+         *     #1002：显式传入 level（overall/volume/chapter）时透传给服务层过滤，
+         *     未知取值透传匹配 -> 200 空 items；不传时行为完全不变（保持精确签名契约）。
          */
         get: operations["list_outlines_api_v1_projects__project_id__outlines_get"];
         put?: never;
@@ -10795,6 +10798,7 @@ export interface operations {
                 sort_desc?: boolean;
                 offset?: number;
                 limit?: number;
+                level?: string | null;
             };
             header?: never;
             path: {

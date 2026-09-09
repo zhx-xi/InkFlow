@@ -22,7 +22,7 @@ import { RelationForm, type KnowledgeRelationFormData } from '../components/know
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
 import { LibraryItemList } from '../components/LibraryItemList';
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
-import { OutlineTree, type OutlineItemDTO, type OutlineLevel } from '../components/OutlineTree';
+import { OutlineTree, type OutlineLevel } from '../components/OutlineTree';
 import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
@@ -32,6 +32,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
 import { useWorldCategories, type WorldCategoryEntity } from '../hooks/useWorldCategories';
+import { OUTLINE_PAGE_SIZE, useOutlineLibrary } from '../hooks/useOutlineLibrary';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -136,8 +137,6 @@ export function LibraryPage() {
   const [workbenchActive, setWorkbenchActive] = useState(false);
   // F43 P4（§5.16）：时间线完整双视图——event_timeline 存 items（列表/空态），narrative_order 单独存
   const [timelineNarrative, setTimelineNarrative] = useState<TimelineEventDTO[]>([]);
-  // F43 P3（§5.15）：章节标题映射（chapter_id → title，大纲 tab 加载时拉取）
-  const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({});
   // F48：知识图谱 tab——图谱视图/关系列表切换 + 图谱数据 + 关系增删改表单态
   const [kgView, setKgView] = useState<'graph' | 'list'>('graph');
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
@@ -147,6 +146,12 @@ export function LibraryPage() {
   const [editingRelation, setEditingRelation] = useState<KnowledgeRelation | null>(null);
   const [pendingRelationDelete, setPendingRelationDelete] = useState<KnowledgeRelation | null>(null);
   const characterDetailRef = useRef<LibraryCharacterDetailHandle>(null);
+
+  // #1002：大纲 tab 数据装配（排序 toggle/顶层分页/卷章全量缓存，含章标题映射）——自本文件拆出以守 900 行护栏
+  const outlineLib = useOutlineLibrary(currentProjectId, activeCat, reloadKey);
+  // #1002：outline tab 的 loading/error 由 hook 持有；其余分类沿用通用 effect 态（非 outline 行为零改动）
+  const viewLoading = activeCat === 'outline' ? outlineLib.loading : loading;
+  const viewFailed = activeCat === 'outline' ? outlineLib.loadFailed : loadFailed;
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // knowledge 无创建端点（图谱关系编辑走画布/列表内交互），对话框仅在五个可创建分类下渲染
@@ -253,33 +258,6 @@ export function LibraryPage() {
     };
   }, [currentProjectId, reloadKey, workbenchActive]);
 
-  // F43 P3：章节标题映射（章关联徽标）
-  useEffect(() => {
-    if (!currentProjectId || activeCat !== 'outline') {
-      setChapterTitles({});
-      return;
-    }
-    let cancelled = false;
-    void apiFetch<{ items?: Array<{ id: string | number; title?: string }> }>(
-      `/api/v1/projects/${currentProjectId}/chapters`,
-    )
-      .then((data) => {
-        if (cancelled) return;
-        const map: Record<string, string> = {};
-        for (const ch of data.items ?? []) {
-          const title = ch.title?.trim();
-          if (title) map[String(ch.id)] = title;
-        }
-        setChapterTitles(map);
-      })
-      .catch(() => {
-        if (!cancelled) setChapterTitles({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentProjectId, activeCat]);
-
   // URL cat 变化（AppNav 直达）→ 同步激活 tab
   useEffect(() => {
     const p = searchParams.get('cat');
@@ -320,6 +298,12 @@ export function LibraryPage() {
           setLoading(false);
           setLoadFailed(true);
         });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (current.key === 'outline') {
+      // #1002：outline tab 由 useOutlineLibrary 两路拉取（overall 顶层分页 + 卷章全量缓存），generic 不再重复拉
       return () => {
         cancelled = true;
       };
@@ -525,11 +509,6 @@ export function LibraryPage() {
       return next;
     });
   };
-  // #649：AI 生成成功 → 新大纲插入树顶部（OutlineTree 回调；不做整表 reload，避免响应竞态覆盖新大纲）
-  const handleOutlineGenerated = (outline: OutlineItemDTO) => {
-    setItems((prev) => [outline, ...prev.filter((i) => String(i.id) !== String(outline.id))]);
-  };
-
   // #675：outline 新增入口（＋整本/＋卷/＋章细纲）→ 打开创建对话框并预填层级上下文
   const handleOutlineAdd = (ctx: { level: OutlineLevel; parentId?: string | number | null }) => {
     setEditing(null);
@@ -616,13 +595,13 @@ export function LibraryPage() {
                 <AIExtractEntry />
               </div>
             )}
-            {loading ? (
+            {viewLoading ? (
               <div data-testid="library-list" className="space-y-2">
                 <Skeleton className="h-11 w-full" />
                 <Skeleton className="h-11 w-full" />
                 <Skeleton className="h-11 w-full" />
               </div>
-            ) : loadFailed ? (
+            ) : viewFailed ? (
               <div
                 data-testid="library-error"
                 className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
@@ -696,10 +675,16 @@ export function LibraryPage() {
               />
             ) : activeCat === 'outline' ? (
               <OutlineTree
-                outlines={items}
-                chapterTitles={chapterTitles}
+                outlines={outlineLib.treeItems}
+                chapterTitles={outlineLib.chapterTitles}
                 projectId={currentProjectId}
-                onOutlineGenerated={handleOutlineGenerated}
+                sortDesc={outlineLib.sortDesc}
+                onSortChange={outlineLib.setSortDesc}
+                total={outlineLib.total}
+                page={outlineLib.page}
+                onPageChange={outlineLib.setPage}
+                pageSize={OUTLINE_PAGE_SIZE}
+                onOutlineGenerated={outlineLib.handleOutlineGenerated}
                 onEdit={(item) => {
                   setEditing(item);
                   setCreateOpen(true);

@@ -854,3 +854,38 @@ class TestCreateOutlineConfigNormalization:
         added = mock_repo.add.await_args.args[0]
         assert added.name == "第3章 风"
         assert created.name == "第3章 风"
+
+
+class TestListOutlinesLevel1002:
+    """#1002 RED: service.list_outlines level 显式透传契约（spec §14.1）."""
+
+    async def test_list_outlines_level_overall_forwarded(self, service, mock_repo) -> None:
+        """SL1: 显式 level='overall' -> repo.list 收到 level='overall'."""
+        mock_repo.list = AsyncMock(return_value=([], 0))
+        await service.list_outlines(PID, level="overall")
+        assert mock_repo.list.call_args.kwargs["level"] == "overall"
+
+    async def test_list_outlines_level_default_none(self, service, mock_repo) -> None:
+        """SL2（RED 期即 PASS 回归护栏）: 不传 level -> kwargs.get('level') is None."""
+        mock_repo.list = AsyncMock(return_value=([], 0))
+        await service.list_outlines(PID)
+        assert mock_repo.list.call_args.kwargs.get("level") is None
+
+    async def test_list_outlines_full_kwargs_transmit(self, service, mock_repo) -> None:
+        """SL3: 全参一次透传 search/sort_by='sort_order'/sort_desc/offset/limit/level."""
+        mock_repo.list = AsyncMock(return_value=([], 0))
+        await service.list_outlines(
+            PID,
+            search="觉醒",
+            sort_by="sort_order",
+            sort_desc=False,
+            offset=10,
+            limit=10,
+            level="volume",
+        )
+        assert mock_repo.list.call_args.kwargs["level"] == "volume"
+        assert mock_repo.list.call_args.kwargs["sort_by"] == "sort_order"
+        assert mock_repo.list.call_args.kwargs["sort_desc"] is False
+        assert mock_repo.list.call_args.kwargs["search"] == "觉醒"
+        assert mock_repo.list.call_args.kwargs["offset"] == 10
+        assert mock_repo.list.call_args.kwargs["limit"] == 10

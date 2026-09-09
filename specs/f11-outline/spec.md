@@ -885,10 +885,13 @@ variables:
 | 参数 | 默认值 | 约束 | 说明 |
 |------|--------|------|------|
 | `search` | — | — | 对 name 不区分大小写子串匹配（icontains） |
-| `sort_by` | `updated_at` | `name` / `updated_at` / `created_at` | 排序字段 |
+| `sort_by` | `updated_at` | `name` / `updated_at` / `created_at` / `sort_order` | 排序字段；`sort_order` 升序 = 叙事正序（#1002，GUI 大纲树用） |
 | `sort_desc` | `true` | — | 降序 |
 | `offset` / `limit` | 0 / 50 | offset ≥ 0, limit [1, 100] | 分页 |
+| `level` | —（不过滤） | `overall` / `volume` / `chapter`（透传匹配，不校验枚举） | #1002 层级过滤：传入时仅返回该层级大纲（与 search/排序/分页可组合）；未知取值 → 200 空 items（同 search 无结果语义） |
 
+- **#1002 顶层分页契约**：GUI 大纲树按「顶层（level=overall）分页 + 树内卷/章全量」消费本端点——顶层页 = `?level=overall&sort_by=sort_order&sort_desc=<asc?false:true>&offset=<页偏移>&limit=<页大小>`；卷/章全量 = 复用无 level 全量列表按 `offset/limit（limit≤100）` 循环拉全后合并去重（实现注：前端合并 overall 页 + 全量列表，overall 行以分页路为准、分页为空时全量兜底；树内兄弟顺序由前端按 sort_order 本地排序，后端拉取顺序不构成契约）。不传 `level` 的既有调用面行为完全不变（router 仅在显式传入时透传，保持精确签名契约，同 create 端点 volume_id 先例）。
+- **`sort_by=sort_order` 二级稳定键 `id ASC`**：sort_order 允许重复（默认全 0），分页要求行序确定，否则翻页漂移；二级键不随 sort_desc 镜像（desc 时 = sort_order DESC, id ASC）。
 - **情节点列表**：固定 `position ASC, created_at ASC` 稳定排序，无排序/分页参数（大纲内情节点通常 ≤ 数百，YAGNI）
 - **弧线列表**：固定 `name ASC`（组织维度按名浏览），无排序/分页参数
 - 情节点/弧线**内容全文检索**不在 F11 范围（F22 搜索服务，§10）
@@ -1227,7 +1230,7 @@ F11 被依赖:
 | 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
 |------|---------|--------------|------|------|------|
 | POST /projects/{project_id}/outlines | 项目存在 | 校验 name（非空/≤50/项目内活动唯一）→ 创建 | 201 + Outline | 404「项目不存在」；422「大纲名不能为空」/「大纲名不能超过 50 个字符」/「同名大纲已存在（大纲名在项目内必须唯一）」 | description>5000 / sort_order<0 → 422；软删后同名可再建（partial unique） |
-| GET /projects/{project_id}/outlines | 项目存在 | 搜索/排序/分页 → 过滤活动大纲 | 200 + {items,total,offset,limit}（含 point_count 聚合） | 404「项目不存在」 | search 空不过滤；limit≤100；分页越界 → 空 items |
+| GET /projects/{project_id}/outlines | 项目存在 | 搜索/层级过滤（#1002 `level`）/排序/分页 → 过滤活动大纲 | 200 + {items,total,offset,limit}（含 point_count 聚合） | 404「项目不存在」 | search 空不过滤；limit≤100；分页越界 → 空 items；`level` 传入 → 仅该层级（未知 level → 空 items）；`sort_by=sort_order` 支持（§6.3，#1002） |
 | GET /outlines/{outline_id} | 大纲存在 | 查询 + plot_points 聚合（活动、position 升序、arc_name JOIN） | 200 + Outline JSON | 404「大纲不存在」 | 无效 UUID → 404（_parse_id） |
 | PATCH /outlines/{outline_id} | 大纲存在 | 部分更新（exclude_unset） | 200 + Outline | 404「大纲不存在」；422（name 非法/同名冲突） | 字段不传=不改 |
 | DELETE /outlines/{outline_id} | 大纲存在 | 软删除 + 情节点级联软删 | 204 | 404「大纲不存在」（不存在/已软删） | 不传 force=软删；?force=true=物理删除（情节点 FK CASCADE 级联物理删，弧线不受影响） |

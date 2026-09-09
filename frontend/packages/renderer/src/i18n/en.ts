@@ -201,6 +201,12 @@ export const en: Record<string, string> = {
   'lib.generate.progressStage': 'Generating outline…',
   'lib.generate.progressCount': 'Items generated: {n}',
   'lib.generate.done': 'Outline generated',
+  // #1002: outline sort toggle + top-level paging (specs/f19-gui/outline.md §2 / §3 N6)
+  'lib.sort.asc': 'Asc',
+  'lib.sort.desc': 'Desc',
+  'lib.page.prev': 'Previous',
+  'lib.page.next': 'Next',
+  'lib.page.info': 'Page {page} / {pages} · {total} entries',
   'lib.tlView.narrative': 'Narrative order',
   'lib.tlView.world': 'World time',
   'lib.tlCheck': 'Consistency check',

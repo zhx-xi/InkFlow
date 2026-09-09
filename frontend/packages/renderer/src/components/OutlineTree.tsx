@@ -22,6 +22,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Loader2, Pencil, Trash2, Wand2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { ConfirmDialog } from './ConfirmDialog';
+import { OutlinePager, OutlineSortToggle } from './OutlineTreeBar';
+import { buildOutlineTree, type OutlineTreeNode } from './outline-model';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
@@ -48,12 +50,10 @@ export interface OutlineItemDTO extends LibraryItemDTO {
   parent_id?: string | number | null;
   chapter_id?: string | number | null;
   point_count?: number;
-}
-
-/** 前端建树节点（parent_id 树，孤儿降级顶层） */
-interface OutlineTreeNode {
-  item: OutlineItemDTO;
-  children: OutlineTreeNode[];
+  /** #1002：兄弟排序主键（缺省 0；后端响应本就含该字段） */
+  sort_order?: number | null;
+  /** #1002：同 sort_order 的稳定 tie-break（created_at 新在前） */
+  created_at?: string | null;
 }
 
 export interface OutlineTreeProps {
@@ -71,31 +71,20 @@ export interface OutlineTreeProps {
   projectId?: string;
   /** #649：AI 生成成功回调（父级把新大纲插入树顶部） */
   onOutlineGenerated?: (outline: OutlineItemDTO) => void;
+  /** #1002：排序方向受控 props（false=正序，默认；true=倒序） */
+  sortDesc?: boolean;
+  /** #1002：点击 asc/desc → 通知父级重拉 overall（参数 = 新方向） */
+  onSortChange?: (desc: boolean) => void;
+  /** #1002：顶层分页受控 props（total>pageSize 才渲染分页条） */
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  onPageChange?: (p: number) => void;
 }
 
 /** level 归一化：缺失/非法 level 按 overall 兜底（兼容旧数据，顶层渲染） */
 function normalizeLevel(level: unknown): OutlineLevel {
   return OUTLINE_LEVELS.includes(level as OutlineLevel) ? (level as OutlineLevel) : 'overall';
-}
-
-/** §5.14：items → 树——overall 顶层；volume 挂 overall；chapter 挂 volume；孤儿（parent 缺失）降级顶层 */
-function buildOutlineTree(items: OutlineItemDTO[]): OutlineTreeNode[] {
-  const nodes = new Map<string, OutlineTreeNode>();
-  for (const item of items) {
-    nodes.set(String(item.id), { item, children: [] });
-  }
-  const roots: OutlineTreeNode[] = [];
-  for (const item of items) {
-    const node = nodes.get(String(item.id));
-    if (!node) continue;
-    const parentId = item.parent_id;
-    if (parentId !== null && parentId !== undefined && nodes.has(String(parentId))) {
-      nodes.get(String(parentId))!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return roots;
 }
 
 function OutlineNodeView({
@@ -318,10 +307,16 @@ export function OutlineTree({
   arcs,
   projectId,
   onOutlineGenerated,
+  sortDesc = false,
+  onSortChange,
+  total = 0,
+  page = 0,
+  onPageChange,
+  pageSize = 10,
 }: OutlineTreeProps) {
   const { t } = useI18n();
   const hasOverall = outlines.some((o) => normalizeLevel(o.level) === 'overall');
-  const roots = useMemo(() => buildOutlineTree(outlines), [outlines]);
+  const roots = useMemo(() => buildOutlineTree(outlines, sortDesc), [outlines, sortDesc]);
   const [collapsed, setCollapsed] = useState<Set<string | number>>(new Set());
   const [pointsByChapter, setPointsByChapter] = useState<Record<string, PlotPointDTO[]>>({});
   const fetchedRef = useRef<Set<string>>(new Set());
@@ -683,35 +678,39 @@ export function OutlineTree({
         data-testid="library-list"
         className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"
       >
-        {/* #649：大纲 tab 顶部工具栏——AI 生成（进行中禁用 + 转圈反馈） */}
-        {projectId && (
-          <div className="flex items-center justify-end gap-2 border-b border-line px-4 py-2.5">
-            {projectId && !hasOverall && (
+        {/* #1002：大纲 tab 顶部工具栏——左侧排序分段控件（恒渲染，独立于 projectId gate）；
+            右侧「＋整本/AI 生成」入口仅项目上下文渲染 */}
+        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+          <OutlineSortToggle sortDesc={sortDesc} onSortChange={onSortChange} />
+          {projectId && (
+            <div className="flex items-center gap-2">
+              {projectId && !hasOverall && (
+                <button
+                  type="button"
+                  data-testid="outline-add-overall"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => handleAdd({ level: 'overall', parentId: null })}
+                >
+                  {t('lib.addOverall')}
+                </button>
+              )}
               <button
                 type="button"
-                data-testid="outline-add-overall"
+                data-testid="library-ai-generate"
+                disabled={generating}
                 className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => handleAdd({ level: 'overall', parentId: null })}
+                onClick={() => setGenerateOpen(true)}
               >
-                {t('lib.addOverall')}
+                {generating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {t('lib.aiGenerate')}
               </button>
-            )}
-            <button
-              type="button"
-              data-testid="library-ai-generate"
-              disabled={generating}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => setGenerateOpen(true)}
-            >
-              {generating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {t('lib.aiGenerate')}
-            </button>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
         <div data-testid="outline-tree" className="divide-y divide-line">
           {roots.length === 0 ? (
             <div className="px-4 py-8 text-center text-[13px] text-ink-2">{t('common.empty')}</div>
@@ -737,6 +736,15 @@ export function OutlineTree({
             ))
           )}
         </div>
+        {/* #1002：顶层分页条（树下方、故事弧区上方；仅 total > pageSize 渲染） */}
+        {(total ?? 0) > (pageSize ?? 10) && (
+          <OutlinePager
+            total={total ?? 0}
+            page={page ?? 0}
+            pageSize={pageSize ?? 10}
+            onPageChange={onPageChange}
+          />
+        )}
         {/* #649：故事弧区（独立面板；空态「暂无故事弧」） */}
         {projectId && (
           <div data-testid="outline-arcs" className="border-t border-line">

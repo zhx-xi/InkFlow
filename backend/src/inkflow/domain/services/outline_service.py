@@ -290,8 +290,9 @@ class OutlineService:
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        level: str | None = None,
     ) -> tuple[list[Outline], int]:
-        """分页查询项目内大纲列表，支持名称模糊搜索（spec §6.3）.
+        """分页查询项目内大纲列表，支持名称模糊搜索与层级过滤（spec §6.3）.
 
         Args:
             project_id: 项目主键（支持 int 或 UUID）.
@@ -300,6 +301,7 @@ class OutlineService:
             sort_desc: 是否倒序.
             offset: 分页偏移.
             limit: 分页大小.
+            level: 层级过滤（overall/volume/chapter，None=不过滤，#1002）.
 
         Returns:
             (当前页大纲列表, 符合条件的总记录数).
@@ -311,6 +313,7 @@ class OutlineService:
             sort_desc=sort_desc,
             offset=offset,
             limit=limit,
+            level=level,
         )
 
     async def auto_link_chapter(

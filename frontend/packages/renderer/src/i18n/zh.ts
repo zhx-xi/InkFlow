@@ -199,6 +199,12 @@ export const zh = {
   'lib.generate.progressStage': '正在生成大纲…',
   'lib.generate.progressCount': '已生成条目：{n}',
   'lib.generate.done': '大纲已生成',
+  // #1002：大纲排序切换 + 顶层分页（specs/f19-gui/outline.md §2 / §3 N6）
+  'lib.sort.asc': '正序',
+  'lib.sort.desc': '倒序',
+  'lib.page.prev': '上一页',
+  'lib.page.next': '下一页',
+  'lib.page.info': '第 {page} / {pages} 页 · 共 {total} 条',
   'lib.tlView.narrative': '叙事序',
   'lib.tlView.world': '世界序',
   'lib.tlCheck': '一致性检查',

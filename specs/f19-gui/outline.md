@@ -17,7 +17,7 @@
 ├──────────────────────────────────────────────────────────────┤
 │ 分类 tab：角色│世界观│大纲│时间线│伏笔│知识图谱              │
 ├──────────────────────────────────────────────────────────────┤
-│ 卡片工具栏：[＋整本]（仅无整体时）  [AI 生成大纲]            │
+│ 卡片工具栏：[排序 正序↑/倒序↓]（#1002） [＋整本]（仅无整体时）  [AI 生成大纲]            │
 │ ┌──────────────────────────────────────────────────────────┐ │
 │ │ 三级树（缩进 + toggle + 级别徽标 + 名称 + 层级动作按钮） │ │
 │ │   ├─ [整体] 青云志·全书                 ＋卷             │ │
@@ -27,6 +27,7 @@
 │ │   │  │  └─ [章] 第13章 断剑 [关联章节]    ＋情节点       │ │
 │ │   │  └─ [卷] 第二卷·山门风波            ＋章             │ │
 │ │ 悬停行操作 [编辑][删除]；章行未关联=虚线[关联章节]按钮   │ │
+│ 顶层分页（#1002，树下方 border-t）：[上一页] 第 1 / 3 页 [下一页] │
 │ │ 故事弧区（卡片底 border-t）：[＋新建故事弧]              │ │
 │ │   剑心蒙尘 [3]  下山历练 [5]  剑冢秘辛 [2]               │ │
 │ └──────────────────────────────────────────────────────────┘ │
@@ -58,6 +59,8 @@
 | 情节点编辑/删除 | 悬停显现 | 编辑 → PlotPointDialog 预填（PATCH 仅变化字段）/ 删除 → ConfirmDialog（outline-point-confirm） | saving | 该章情节点强制刷新 | err toast | 删除真删；编辑无变化字段不请求 |
 | 故事弧 CRUD | ＋新建 / 行内编辑/删除 | ArcDialog（名称必填）/ ConfirmDialog（outline-arc-confirm） | saving | 本地回写列表（不整表重拉）；删除本地移除 | err toast | point_count 徽标后端聚合；删除真删 |
 | 树 toggle（outline-toggle） | 展开态 | 收起/展开 | 情节点按需拉取（仅展开且 point_count>0 时触发） | 情节点区渲染 | 拉取失败 → 该章空列表 + err toast | 本地缓存：收起再展开不重拉（O8 契约） |
+| 排序切换（outline-sort-asc / outline-sort-desc，#1002） | 默认正序（asc 高亮，aria-pressed=true） | 点击切换 asc/desc → 重拉 level=overall 当前页（`sort_by=sort_order&sort_desc=<asc?false:true>`，后端按序分页）+ 树本地重排全部层级兄弟（卷/章全量缓存不重拉，前端 buildOutlineTree 按 sort_order 排） | 重新拉取中 loading | 树顺序立即更新（每一层兄弟独立排序，缺省 sort_order=0；同值按 created_at 倒序稳定——最新在前，保 AI 生成「插树顶」语义） | 拉取失败 err toast（树保持原数据） | 卡片工具栏分段控件（同 logs 先例形态）；两按钮恒在 |
+| 顶层分页（outline-page-prev / outline-page-info / outline-page-next，#1002） | 仅 overall 总数 > 10（pageSize=10）时渲染；首页 prev disabled，末页 next disabled | 点击 → offset±10 重拉 level=overall 当前页（卷/章全量缓存不重拉）+ 面包屑不变 | 拉取中 loading | 树切换为该页整体及其子孙（卷/章按 parent_id 归属；父级不在当前页的卷/章隐藏，null parent 孤儿仍降级顶层） | err toast + 停留原页 | info=「第 {page} / {pages} 页 · 共 {total} 条」（lib.page.*，zh/en 双语）；增删/生成后 total 变化 → 页码收敛到最后一页 |
 | 创建/编辑大纲对话框 | 层级 select（随上下文限选项）+ 名称必填 + 描述 | 保存 | saving「保存中…」 | POST/PATCH → 关框 + 树刷新 | err toast | ESC/取消关闭；遮罩点击不关闭；level 缺失按 overall 兜底 |
 
 ## 3. 验收
@@ -67,3 +70,4 @@
 - N3：情节点按需拉取 + 本地缓存 + 行内编辑/删除（PATCH 仅变化字段）
 - N4：章关联选择器 → 📎 徽标即时显示（#676 解除占位）
 - N5：故事弧 CRUD + AI 生成大纲（loading 反馈 + 树顶插入 + 情节点/弧线回填）
+- N6（#1002）：排序 toggle（outline-sort-asc/-desc，默认正序）→ 树内各层兄弟按 sort_order asc/desc 重排；顶层分页（outline-page-prev/-info/-next，pageSize=10，total>10 才渲染）→ 翻页仅重拉 level=overall，树 = 当前页整体 + 其子孙；AI 生成插树顶与排序共存（新大纲 sort_order=0 → asc 序最前）；既有孤儿/兜底语义不回退（null parent 降级顶层，父级在未载入页的卷/章隐藏）
