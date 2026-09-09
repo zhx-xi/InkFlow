@@ -195,3 +195,92 @@ class TestManageToolsCoverage:
 
         obj = _M()
         assert _manage_serialize(obj) is obj
+
+# ── #933 新模块覆盖率补测（book_tools / inspect_tools）──────────────
+# 两新模块沿用既有骨架（各自 `_HTTPClient` Protocol + `_serialize_data`），
+# 与 manage/operation/session 同形 → 需补 Protocol 存根 + serialize 分支。
+# 函数内 lazy import：避免 E402（模块级 import 不在文件顶部）。
+
+
+class TestBookInspectProtocolStubs933:
+    """_HTTPClient Protocol `...` 存根覆盖（book_tools / inspect_tools）。"""
+
+    @pytest.mark.asyncio
+    async def test_book_http_protocol_stubs(self):
+        from inkflow.mcp.tools.book_tools import _HTTPClient as BookHTTPClient
+
+        class _BookConcrete(BookHTTPClient):
+            pass
+
+        client = _BookConcrete()
+        assert await client.get("/x") is None
+        assert await client.post("/x", json={}) is None
+        assert await client.patch("/x", json={}) is None
+        assert await client.delete("/x") is None
+        assert await client.get_raw("/x") is None
+
+    @pytest.mark.asyncio
+    async def test_inspect_http_protocol_stubs(self):
+        from inkflow.mcp.tools.inspect_tools import _HTTPClient as InspectHTTPClient
+
+        class _InspectConcrete(InspectHTTPClient):
+            pass
+
+        client = _InspectConcrete()
+        assert await client.get("/x") is None
+        assert await client.post("/x", json={}) is None
+        assert await client.patch("/x", json={}) is None
+        assert await client.delete("/x") is None
+        assert await client.get_raw("/x") is None
+
+
+class TestBookInspectSerialize933:
+    """_serialize_data list / model_dump 分支覆盖（book_tools / inspect_tools）。"""
+
+    def test_book_serialize_list(self):
+        from inkflow.mcp.tools.book_tools import _serialize_data
+
+        assert _serialize_data([1, {"a": 2}]) == [1, {"a": 2}]
+
+    def test_book_serialize_model_dump_dict(self):
+        from inkflow.mcp.tools.book_tools import _serialize_data
+
+        class _M:
+            def model_dump(self, mode=None):
+                return {"x": 1}
+
+        assert _serialize_data(_M()) == {"x": 1}
+
+    def test_book_serialize_model_dump_non_dict(self):
+        from inkflow.mcp.tools.book_tools import _serialize_data
+
+        class _M:
+            def model_dump(self, mode=None):
+                return [1, 2, 3]
+
+        obj = _M()
+        assert _serialize_data(obj) is obj
+
+    def test_inspect_serialize_list(self):
+        from inkflow.mcp.tools.inspect_tools import _serialize_data
+
+        assert _serialize_data([1, {"a": 2}]) == [1, {"a": 2}]
+
+    def test_inspect_serialize_model_dump_dict(self):
+        from inkflow.mcp.tools.inspect_tools import _serialize_data
+
+        class _M:
+            def model_dump(self, mode=None):
+                return {"x": 1}
+
+        assert _serialize_data(_M()) == {"x": 1}
+
+    def test_inspect_serialize_model_dump_non_dict(self):
+        from inkflow.mcp.tools.inspect_tools import _serialize_data
+
+        class _M:
+            def model_dump(self, mode=None):
+                return [1, 2, 3]
+
+        obj = _M()
+        assert _serialize_data(obj) is obj

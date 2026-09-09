@@ -1,4 +1,4 @@
-"""F20 MCP 工具参数模型 —— 15 个工具 action 枚举 + 领域可选字段（Issue #49）。
+"""F20 MCP 工具参数模型 —— 18 个工具 action 枚举 + 领域可选字段（Issue #49/#933）。
 
 每个模型：action: Literal[...] 必填（路由子操作）+ 领域可选字段默认 None；
 model_json_schema() 产物直接映射 MCP 协议 inputSchema（spec §2.2，Q1=A）。
@@ -139,9 +139,11 @@ class ManageForeshadowingParams(BaseModel):
 
 
 class WriteParams(BaseModel):
-    """写作工具参数：generate/continue/revise（同步返回拼接结果，Q3=A）。"""
+    """写作工具参数：generate/continue/revise + 草稿确认（#933，Q3=A）。"""
 
-    action: Literal["generate", "continue", "revise"]
+    action: Literal[
+        "generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"
+    ]
     project_id: str | None = None
     chapter_id: str | None = None
     outline: str | None = None
@@ -152,6 +154,68 @@ class WriteParams(BaseModel):
     target_words: int | None = None
     context: str | None = None
     style_hint: str | None = None
+    draft_id: str | None = None
+    status: str | None = None
+    source_outline_id: str | None = None
+    title: str | None = None
+
+
+class ManageBookParams(BaseModel):
+    """书级编排工具参数：访谈式 Planner + 书级运行（#933，F44 零新增端点）。"""
+
+    action: Literal[
+        "plan_start",
+        "plan_respond",
+        "plan_auto",
+        "plan_show",
+        "plan_confirm",
+        "run",
+        "status",
+        "confirm",
+        "intervene",
+        "summary",
+    ]
+    project_id: str | None = None
+    one_liner: str | None = None
+    mode: str | None = None
+    source_outline_id: str | None = None
+    session_id: str | None = None
+    answers: dict[str, str] | None = None
+    auto: bool | None = None
+    confirm: bool | None = None
+    writing_plan_id: str | None = None
+    limits: dict[str, int] | None = None
+    config: dict | None = None
+    run_id: str | None = None
+    approved: bool | None = None
+    decision: str | None = None
+    intervene_action: str | None = None
+    target: str | None = None
+    to: str | None = None
+    payload: dict | None = None
+
+
+class ManageConfigParams(BaseModel):
+    """环境自检工具参数（只读）：provider_list / llm_status（#933）。"""
+
+    action: Literal["provider_list", "llm_status"]
+    project_id: str | None = None
+
+
+class ManageLogParams(BaseModel):
+    """日志巡检工具参数（只读）：query（#933，结构化日志查询）。"""
+
+    action: Annotated[Literal["query"], WithJsonSchema({"type": "string", "enum": ["query"]})]
+    level: str | None = None
+    caller_type: str | None = None
+    project_id: str | None = None
+    from_ts: str | None = None
+    to_ts: str | None = None
+    q: str | None = None
+    correlation_id: str | None = None
+    trace_id: str | None = None
+    page: int | None = None
+    limit: int | None = None
 
 
 class AuditParams(BaseModel):
@@ -228,6 +292,9 @@ ALL_SCHEMAS: dict[str, type[BaseModel]] = {
     "ManageOutlineParams": ManageOutlineParams,
     "ManageForeshadowingParams": ManageForeshadowingParams,
     "WriteParams": WriteParams,
+    "ManageBookParams": ManageBookParams,
+    "ManageConfigParams": ManageConfigParams,
+    "ManageLogParams": ManageLogParams,
     "AuditParams": AuditParams,
     "ExtractParams": ExtractParams,
     "ExportParams": ExportParams,

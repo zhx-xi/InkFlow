@@ -91,7 +91,7 @@ def _compact(mapping: dict[str, object]) -> dict[str, object]:
 async def _route_write(
     client: _HTTPClient, params: WriteParams, timeout: float | None
 ) -> object:
-    """write action 路由：非流式端点同步返回（Q3=A，spec §2.2 映射表）。"""
+    """write action 路由：非流式端点同步返回 + 草稿确认（Q3=A，#933）。"""
     if params.action == "generate":
         return await client.post(
             "/writing/generate",
@@ -121,6 +121,24 @@ async def _route_write(
                 }
             ),
             timeout=timeout,
+        )
+    if params.action == "confirm_draft":
+        return await client.post(
+            f"/agent/drafts/{params.draft_id}/confirm",
+            json=_compact(
+                {
+                    "chapter_id": params.chapter_id,
+                    "source_outline_id": params.source_outline_id,
+                    "title": params.title,
+                }
+            ),
+        )
+    if params.action == "reject_draft":
+        return await client.post(f"/agent/drafts/{params.draft_id}/reject", json={})
+    if params.action == "draft_list":
+        return await client.get(
+            "/agent/drafts",
+            params=_compact({"project_id": params.project_id, "status": params.status}),
         )
     # revise：feedback 优先；instruction 仅校验用，不转发到端点
     return await client.post(
@@ -198,7 +216,7 @@ async def _route_search(client: _HTTPClient, params: SearchParams) -> object:
 
 
 def build_write_tool() -> MCPTool:
-    """写作：续写下一章 / 续写指定章 / 按指令修订（同步返回拼接结果）。"""
+    """写作：续写下一章 / 续写指定章 / 按指令修订 / 草稿确认（同步返回拼接结果）。"""
 
     @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
@@ -209,6 +227,18 @@ def build_write_tool() -> MCPTool:
                 "INVALID_ARGS",
                 str(exc),
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
+            )
+        if params.action in ("confirm_draft", "reject_draft") and params.draft_id is None:
+            return _error(
+                "INVALID_ARGS",
+                f"{params.action} 需要 draft_id",
+                "请提供 draft_id（可经 draft_list 查询待确认草稿）后重试",
+            )
+        if params.action == "draft_list" and params.project_id is None:
+            return _error(
+                "INVALID_ARGS",
+                "draft_list 需要 project_id",
+                "请提供 project_id（可经 manage_project list 查询）后重试",
             )
         try:
             from inkflow.infrastructure.http import (
@@ -238,7 +268,10 @@ def build_write_tool() -> MCPTool:
     return MCPTool(
         spec=ToolSpec(
             name="write",
-            description="写作：续写下一章 / 续写指定章 / 按指令修订",
+            description=(
+                "写作：续写下一章 / 续写指定章 / 按指令修订 "
+                "/ 草稿确认（confirm_draft/reject_draft/draft_list）"
+            ),
             input_schema=WriteParams.model_json_schema(),
         ),
         func=_impl,

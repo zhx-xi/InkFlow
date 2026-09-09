@@ -14,6 +14,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 # 主契约：inkflow.mcp.tools 包不存在 → 收集期 ModuleNotFoundError（规则 1c）
+from inkflow.mcp.tools.book_tools import (
+    build_manage_book_tool,
+)
+from inkflow.mcp.tools.inspect_tools import (
+    build_manage_config_tool,
+    build_manage_log_tool,
+)
 from inkflow.mcp.tools.manage_tools import (
     build_manage_chapter_tool,
     build_manage_character_tool,
@@ -191,6 +198,10 @@ _ALL_FACTORIES: dict[str, tuple[object, dict]] = {
     "search": (build_search_tool, {"action": "search", "query": "q"}),
     "manage_session": (build_manage_session_tool, {"action": "list"}),
     "tool_search": (build_tool_search_tool, {"action": "list"}),
+    # #933 新增工具（book/config/log）——错误分支与既有工厂同形，纳入统一参数化
+    "manage_book": (build_manage_book_tool, {"action": "status", "run_id": "r1"}),
+    "manage_config": (build_manage_config_tool, {"action": "provider_list"}),
+    "manage_log": (build_manage_log_tool, {"action": "query"}),
 }
 
 # tool_search 不走 HTTP（本地装配，spec §7 #15）——HTTP 类错误测试

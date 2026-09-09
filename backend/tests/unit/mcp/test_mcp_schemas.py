@@ -1,9 +1,10 @@
 """F20 MCP 工具参数模型 schema 契约（M1 验收）— spec §2.2/§9（Issue #49，RED 阶段测试契约）。
 
-15 个 MCP 工具参数模型（Q1=A 聚合 manage_*，action 枚举路由子操作）：
+18 个 MCP 工具参数模型（Q1=A 聚合 manage_*，action 枚举路由子操作；#933 扩充）：
 manage_project / manage_chapter / manage_character / manage_relation /
 manage_timeline / manage_world / manage_outline / manage_foreshadowing /
-write / audit / extract / export / search / manage_session / tool_search。
+write / audit / extract / export / search / manage_session / tool_search /
+manage_book / manage_config / manage_log。
 
 每个模型：action: Literal[...]（必填，枚举路由）+ 领域可选字段（str | None = None，
 对某 action 无效的字段 LLM 不传）。模型生成 JSON Schema（model_json_schema()）
@@ -34,9 +35,11 @@ session_tools.py 并列于 mcp/tools/）：
   ManageForeshadowingParams: action=create/list/get/update/delete/resolve/reopen
                             project_id, id, title, description, priority, location,
                             event_id, status, search, force
-  WriteParams:              action=generate/continue/revise
+  WriteParams:              action=generate/continue/revise/confirm_draft/reject_draft/
+                            draft_list（#933 扩充草稿面）
                             project_id, chapter_id, outline, existing_content, content,
-                            feedback, instruction, target_words, context, style_hint
+                            feedback, instruction, target_words, context, style_hint,
+                            draft_id, status, source_outline_id, title
   AuditParams:              action=project/chapter
                             project_id, chapter_id, include_static
   ExtractParams:            action=extract/reindex/retrieve
@@ -48,10 +51,14 @@ session_tools.py 并列于 mcp/tools/）：
   ManageSessionParams:      action=create/list/get/pause/resume/complete/fail/add_log
                             project_id, id, session_type, title, description, logs, result_json
   ToolSearchParams:         action=list
+  ManageBookParams:         action=plan_start/plan_respond/plan_auto/plan_show/
+                            plan_confirm/run/status/confirm/intervene/summary（#933）
+  ManageConfigParams:       action=provider_list/llm_status（#933，只读）
+  ManageLogParams:          action=query（#933）
 - action 字段类型 Literal[...]（str 子集，model_json_schema 生成 enum 数组）。
 - 领域字段全部可选（str | int | bool | None，默认 None）；id/project_id 等 ID 字段
   为 str（LLM 透传 JSON 字符串，工具层直接拼端点路径）。
-- 模块还导出 ALL_SCHEMAS: dict[str, type[BaseModel]]（15 模型名→类，供注册表/
+- 模块还导出 ALL_SCHEMAS: dict[str, type[BaseModel]]（18 模型名→类，供注册表/
   tools/list 生成 inputSchema）。
 
 ── RED 形态说明 ─────────────────────────────────────────────────
@@ -76,9 +83,12 @@ from inkflow.mcp.tools.schemas import (
     AuditParams,
     ExportParams,
     ExtractParams,
+    ManageBookParams,
     ManageChapterParams,
     ManageCharacterParams,
+    ManageConfigParams,
     ManageForeshadowingParams,
+    ManageLogParams,
     ManageOutlineParams,
     ManageProjectParams,
     ManageRelationParams,
@@ -176,7 +186,7 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
         ],
     ),
     "WriteParams": (
-        ["generate", "continue", "revise"],
+        ["generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"],
         [
             "project_id",
             "chapter_id",
@@ -188,6 +198,63 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
             "target_words",
             "context",
             "style_hint",
+            "draft_id",
+            "status",
+            "source_outline_id",
+            "title",
+        ],
+    ),
+    "ManageBookParams": (
+        [
+            "plan_start",
+            "plan_respond",
+            "plan_auto",
+            "plan_show",
+            "plan_confirm",
+            "run",
+            "status",
+            "confirm",
+            "intervene",
+            "summary",
+        ],
+        [
+            "project_id",
+            "one_liner",
+            "mode",
+            "source_outline_id",
+            "session_id",
+            "answers",
+            "auto",
+            "confirm",
+            "writing_plan_id",
+            "limits",
+            "config",
+            "run_id",
+            "approved",
+            "decision",
+            "intervene_action",
+            "target",
+            "to",
+            "payload",
+        ],
+    ),
+    "ManageConfigParams": (
+        ["provider_list", "llm_status"],
+        ["project_id"],
+    ),
+    "ManageLogParams": (
+        ["query"],
+        [
+            "level",
+            "caller_type",
+            "project_id",
+            "from_ts",
+            "to_ts",
+            "q",
+            "correlation_id",
+            "trace_id",
+            "page",
+            "limit",
         ],
     ),
     "AuditParams": (
@@ -232,16 +299,19 @@ _MODEL_ATTR: dict[str, Any] = {
     "SearchParams": SearchParams,
     "ManageSessionParams": ManageSessionParams,
     "ToolSearchParams": ToolSearchParams,
+    "ManageBookParams": ManageBookParams,
+    "ManageConfigParams": ManageConfigParams,
+    "ManageLogParams": ManageLogParams,
 }
 
 
 class TestSchemasContract:
-    """15 参数模型：action 枚举 + 关键字段 + JSON Schema 生成（M1）。"""
+    """18 参数模型：action 枚举 + 关键字段 + JSON Schema 生成（M1）。"""
 
     def test_all_models_present(self):
-        """ALL_SCHEMAS 恰好 15 个模型名，与契约表一致。"""
+        """ALL_SCHEMAS 恰好 18 个模型名，与契约表一致。"""
         assert set(ALL_SCHEMAS) == set(_CONTRACT)
-        assert len(ALL_SCHEMAS) == 15
+        assert len(ALL_SCHEMAS) == 18
 
     @pytest.mark.parametrize("model_name", list(_CONTRACT))
     def test_action_enum_valid_values(self, model_name):

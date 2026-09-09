@@ -13,7 +13,7 @@ taskkill 进程树 + CI 环境跳过——GitHub Actions 沙箱拉起内核秒�
    create_initialization_options())）。
 2. 启动时**不主动** ensure_kernel（惰性，首次 tools/call 前）；tools/list 不触发
    内核（纯装配，spec §7 #14）。
-3. initialize → server_info.name == "inkflow"；tools/list → 恰好 15 工具；
+3. initialize → server_info.name == "inkflow"；tools/list → 恰好 18 工具；
    tools/call manage_project list → 信封 {"ok": true, "data": {"items": [...]}}。
 4. 冷启动链路：内核未运行 → tools/call → ensure_kernel 自动拉起 → 调用成功
    （spec §5.2/§7 #1；本文件用例 5 验证无内核自动拉起）。
@@ -128,7 +128,7 @@ class TestMcpStdioRealKernel:
 
     @pytest.mark.asyncio
     async def test_initialize_and_list_tools(self, mcp_env):
-        """initialize → server_info.name=inkflow；tools/list 恰好 15 工具。"""
+        """initialize → server_info.name=inkflow；tools/list 恰好 18 工具。"""
         from mcp.client.session import ClientSession
         from mcp.client.stdio import stdio_client
 
@@ -139,7 +139,7 @@ class TestMcpStdioRealKernel:
             init = await session.initialize()
             assert init.server_info.name == "inkflow"
             result = await session.list_tools()
-            assert len(result.tools) == 15
+            assert len(result.tools) == 18
 
     @pytest.mark.asyncio
     async def test_call_tool_manage_project_list(self, mcp_env):
