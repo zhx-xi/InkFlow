@@ -7,6 +7,7 @@
  *   左栏项目树、右栏 right-rail 保持。
  * - 场景 B（章节选中）：现有章节内 ChatPanel（inline，chat-resize-handle 80~480px）完整保留，不改。
  * - 空态守卫：无章节时不应渲染「生成/续写」触发点（EditorToolbar）——全局 chat 页只对话，不触发管线生成流。
+ * - #1003：无章节时同样不渲染草稿审批入口（drafts-approval-button 随 EditorToolbar 消失）。
  *
  * TDD RED：全局 chat 页未实现（writing.tsx 无 currentChapterId===null 分支，ChatPanel 仅章节内渲染）→
  * 场景 A 用例 FAIL；场景 B 用例为守护用例（当前实现已满足，PASS）。
@@ -114,6 +115,8 @@ describe('写作页 — 无章节 → 全局 chat 页 / 章节内 ChatPanel（#7
     // 无章节不渲染编辑工具栏 / 章节编辑器
     expect(screen.queryByTestId('editor-toolbar')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chapter-editor')).not.toBeInTheDocument();
+    // #1003：审批入口随工具栏消失（global chat 页不显示草稿审批入口）
+    expect(screen.queryByTestId('drafts-approval-button')).not.toBeInTheDocument();
     // 右栏保持（上下文注入仍有用）
     expect(screen.getByTestId('right-rail')).toBeInTheDocument();
   });
