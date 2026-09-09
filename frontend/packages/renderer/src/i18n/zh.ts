@@ -832,5 +832,16 @@ export const zh = {
   'memory.cat.user.style_word': '用词',
   'memory.cat.user.structure': '结构',
   'memory.cat.user.other': '其他',
+  // F59-M3 (#964)：chat 页思考级别选择器（本批只用 reasoning.chat.* + reasoning.level.*；
+  // M4 #965 用 reasoning.settings.* 分键，避免撞车）
+  'reasoning.chat.label': '思考级别',
+  'reasoning.chat.disabledTooltip': '当前模型不支持思考',
+  'reasoning.level.none': '关闭思考',
+  'reasoning.level.minimal': '最低',
+  'reasoning.level.low': '低',
+  'reasoning.level.medium': '中',
+  'reasoning.level.high': '高',
+  'reasoning.level.xhigh': '极高',
+  'reasoning.level.default': '跟随模型默认',
 } as const;
 export type ZhKey = keyof typeof zh;

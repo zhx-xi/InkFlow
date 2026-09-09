@@ -9,6 +9,8 @@ export interface ProviderModel {
   id: string;
   type: 'chat' | 'embedding';
   roles: string[];
+  /** F59 M2 回显：模型是否支持思考；null/undefined = 未探测（能力未知） */
+  supports_reasoning?: boolean | null;
 }
 
 export interface ProviderConfig {
@@ -183,4 +185,26 @@ export async function ensureModelReady(): Promise<boolean> {
     await s.loadProviders();
   }
   return hasChatModel(useModelsStore.getState().providers);
+}
+
+/** F59-M3 (#964)：provider/model → supports_reasoning 能力判定（chat 选择器置灰数据源）。
+ *
+ * 模型串须为 'provider/model' 形态：先按 provider 名找 ProviderConfig，再按模型 id 找
+ * ProviderModel；找不到 / model 为空 / supports_reasoning 为 null|undefined → null
+ * （未知 = 不禁用，软降级 A5）；否则返回该布尔值。
+ */
+export function modelSupportsReasoning(
+  providers: ProviderConfig[],
+  model: string | null | undefined,
+): boolean | null {
+  if (!model) return null;
+  const sep = model.indexOf('/');
+  if (sep === -1) return null;
+  const providerName = model.slice(0, sep);
+  const modelId = model.slice(sep + 1);
+  const provider = providers.find((p) => p.name === providerName);
+  const entry = provider?.models.find((m) => m.id === modelId);
+  if (!entry) return null;
+  const supports = entry.supports_reasoning;
+  return supports === undefined || supports === null ? null : supports;
 }

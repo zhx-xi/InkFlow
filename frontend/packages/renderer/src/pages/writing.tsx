@@ -417,6 +417,7 @@ export function WritingPage() {
               <ChatPanel
                 variant="full"
                 projectId={effectiveProjectId}
+                model={model}
                 streamSink={streamSinkRef}
                 conversationId={urlConversationId}
               />
@@ -455,6 +456,7 @@ export function WritingPage() {
                   projectId={effectiveProjectId}
                   chapterId={currentChapterId ?? undefined}
                   chapterContent={content}
+                  model={model}
                   streamSink={streamSinkRef}
                   conversationId={urlConversationId}
                 />

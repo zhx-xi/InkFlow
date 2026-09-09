@@ -829,4 +829,15 @@ export const en: Record<string, string> = {
   'memory.cat.user.style_word': 'Wording',
   'memory.cat.user.structure': 'Structure',
   'memory.cat.user.other': 'Other',
+  // F59-M3 (#964): chat thinking-level selector (this batch only reasoning.chat.* +
+  // reasoning.level.*; M4 #965 uses reasoning.settings.* keys to avoid collision)
+  'reasoning.chat.label': 'Thinking level',
+  'reasoning.chat.disabledTooltip': 'Current model does not support thinking',
+  'reasoning.level.none': 'Off',
+  'reasoning.level.minimal': 'Minimal',
+  'reasoning.level.low': 'Low',
+  'reasoning.level.medium': 'Medium',
+  'reasoning.level.high': 'High',
+  'reasoning.level.xhigh': 'Extra high',
+  'reasoning.level.default': 'Model default',
 };

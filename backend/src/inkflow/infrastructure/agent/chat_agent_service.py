@@ -29,6 +29,30 @@ def _chunk_stream(text: str, size: int = 6) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
 
 
+def _text_content(content: object) -> str:
+    """把模型输出 content 归一化为纯文本（#964 / F59-M3）。
+
+    E1 实证：langchain-litellm 在 reasoning_content 存在时把 content 变成
+    `[{'type':'thinking','thinking':...}, '正文']` 形态的 list——若直接当 str 塞进
+    delta 帧，前端会渲染成 `[object Object]`。此处 str → 原样；list → 取 str 项与
+    {"type":"text"} 块的 text（跳过 thinking 块）；其他类型 → ""。
+    思考文本不在此处输出（由 reasoning 帧承载）。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return ""
+
+
 def _extract_reasoning_content(output: object) -> str:
     """从 on_chat_model_end 的 AIMessage 提取思考内容（reasoning_content，#727）。
 
@@ -167,15 +191,17 @@ class ChatAgentService:
                     break
                 if ev.get("event") == "on_chat_model_stream" and ev.get("run_type") == "llm":
                     chunk = ev.get("data", {}).get("chunk")
-                    yield ChatStreamEvent(type="delta", delta=chunk.content)
-                    streamed_any = True
+                    text = _text_content(chunk.content)
+                    if text:
+                        yield ChatStreamEvent(type="delta", delta=text)
+                        streamed_any = True
                 elif ev.get("event") == "on_chat_model_end":
                     output = ev.get("data", {}).get("output")
                     # #727：思考过程帧在 done/delta 之前产出（无思考时不影响原有行为）
                     reasoning = _extract_reasoning_content(output)
                     if reasoning:
                         yield ChatStreamEvent(type="reasoning", delta=reasoning, done=False)
-                    content = getattr(output, "content", "") or ""
+                    content = _text_content(getattr(output, "content", ""))
                     if content and not streamed_any:
                         for c in _chunk_stream(content, size=6):
                             await asyncio.sleep(0.05)

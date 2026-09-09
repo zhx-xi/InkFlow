@@ -16,6 +16,8 @@ export interface ChatStreamBody {
   prompt: string;
   chapter_id?: string;
   chapter_context?: string;
+  /** F59 §3.1（#964）：思考档位（仅 agent 轨 /api/v1/chat/agent/stream）；'default' 不发本键 */
+  reasoning_effort?: string;
 }
 
 export interface ChatStreamFrame {

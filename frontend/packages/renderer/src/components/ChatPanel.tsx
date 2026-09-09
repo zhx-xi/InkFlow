@@ -31,11 +31,18 @@ import { errorMessage } from '../api/client';
 import type { PipelineStreamSink } from '../hooks/useExecutionPoll';
 import { useI18n } from '../i18n/useI18n';
 import { parseChatReply, type ChatIntent } from '../lib/chatIntent';
+import {
+  DEFAULT_REASONING_EFFORT,
+  readReasoningEffort,
+  writeReasoningEffort,
+} from '../lib/reasoningEffort';
 import { useChapterStore } from '../stores/chapter';
-import { ensureModelReady } from '../stores/models';
+import { ensureModelReady, modelSupportsReasoning, useModelsStore } from '../stores/models';
 import { useToastStore } from '../stores/toast';
 import { ChatArchivedBanner } from './ChatArchivedBanner';
 import { ChatDeleteAuthControl } from './ChatDeleteAuthControl';
+import { ChatStreamBlocks } from './ChatStreamBlocks';
+import { ThinkingLevelSelect } from './ThinkingLevelSelect';
 
 export interface ChatPanelProps {
   projectId: string;
@@ -47,6 +54,8 @@ export interface ChatPanelProps {
   variant?: 'inline' | 'full';
   /** #840：URL 指定会话 id——提供时直接加载该会话（跳过“最新活跃线程/新建”解析） */
   conversationId?: string;
+  /** #964：当前模型（'provider/model' 形态；空 = 未知，不禁用选择器——软降级 A5） */
+  model?: string | null;
 }
 
 interface ChatEntry {
@@ -79,9 +88,15 @@ export function ChatPanel({
   streamSink,
   variant = 'inline',
   conversationId: requestedConversationId,
+  model,
 }: ChatPanelProps) {
   const { t } = useI18n();
   const isFull = variant === 'full';
+  // #964：思考档位能力数据源（provider-configs 回显 supports_reasoning，M2 已提供）
+  const providers = useModelsStore((s) => s.providers);
+  const modelsLoading = useModelsStore((s) => s.loading);
+  const loadProviders = useModelsStore((s) => s.loadProviders);
+  const capability = modelSupportsReasoning(providers, model);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [toolEntries, setToolEntries] = useState<ToolEntry[]>([]);
@@ -125,10 +140,24 @@ export function ChatPanel({
   // #719：run_id 捕获（中断时调后端 abort）
   const runIdRef = useRef<string | null>(null);
   const reasoningSeqRef = useRef(0);
+  // #964：思考级别档位（localStorage per-project 记忆，跨刷新保持）
+  const [reasoningEffort, setReasoningEffort] = useState<string>(() =>
+    readReasoningEffort(projectId),
+  );
+  useEffect(() => {
+    setReasoningEffort(readReasoningEffort(projectId));
+  }, [projectId]);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   // #745：提交/加载历史后强制滚底标记（effect 消费后复位）
   const pendingScrollRef = useRef(false);
+
+  // #964：model 已知但注册表未加载 → 静默拉取能力数据（失败不 toast，capability 保持 null）
+  useEffect(() => {
+    if (model && providers.length === 0 && !modelsLoading) {
+      void loadProviders();
+    }
+  }, [model, providers.length, modelsLoading, loadProviders]);
 
   /** #547/#840/#1015：挂载 / projectId / conversationId 变化 → 加载历史（失败静默；URL 指定归档会话只读） */
   useEffect(() => {
@@ -330,6 +359,12 @@ export function ChatPanel({
     setInterruptPayload(null);
   }, []);
 
+  /** #964：改选档位 → setState + localStorage 落库（仅作用于下一轮发送） */
+  const handleReasoningEffortChange = useCallback((v: string) => {
+    setReasoningEffort(v);
+    writeReasoningEffort(projectIdRef.current, v);
+  }, []);
+
   const toggleBlock = useCallback((key: string) => {
     setExpandedBlocks((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
@@ -408,13 +443,18 @@ export function ChatPanel({
       prompt,
       ...(chapterId ? { chapter_id: chapterId } : {}),
       ...(chapterContent ? { chapter_context: chapterContent } : {}),
+      // #964：条件转发——default 不发 reasoning_effort 键（镜像后端「default 不发参数」；
+      // 既有 streamChat exact-body 断言零破坏）
+      ...(reasoningEffort !== DEFAULT_REASONING_EFFORT
+        ? { reasoning_effort: reasoningEffort }
+        : {}),
     };
     void streamChat(body, { onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt }).then(
       (abort) => {
         abortRef.current = abort;
       },
     );
-  }, [input, projectId, chapterId, chapterContent, onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt, t]);
+  }, [input, projectId, chapterId, chapterContent, reasoningEffort, onDelta, onDone, onError, onToolCall, onToolResult, onRunStart, onReasoning, onInterrupt, t]);
 
   /** #719：中断当前流式运行 */
   const handleInterrupt = useCallback(() => {
@@ -636,89 +676,12 @@ export function ChatPanel({
           }
           style={isFull ? undefined : { height }}
         >
-          {/* #727：思考过程折叠块 */}
-          {reasoningEntries.map((entry, index) => {
-            const blockKey = `reasoning-${index}`;
-            const open = !!expandedBlocks[blockKey];
-            return (
-              <div
-                key={blockKey}
-                data-testid={`chat-reasoning-${index}`}
-                aria-expanded={open}
-                className="rounded-md border border-line bg-surface px-3 py-2 text-[12px]"
-                onClick={() => toggleBlock(blockKey)}
-              >
-                <button
-                  type="button"
-                  data-testid={`chat-reasoning-toggle-${index}`}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-1.5 text-left"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleBlock(blockKey);
-                  }}
-                >
-                  <span className="inline-block w-3 shrink-0 text-ink-3">{open ? '▾' : '›'}</span>
-                  <span className="text-ink">🧠</span>
-                  <span className="font-medium text-ink">{t('write.chat.thinking')}</span>
-                  <span className="ml-auto text-[11px] text-ink-3">{t('write.chat.thinking')}</span>
-                </button>
-                {open && (
-                  <div className="mt-1 whitespace-pre-wrap border-t border-line pt-1 text-ink-2">
-                    {entry.text}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {/* #727：工具调用/结果折叠块（#597 旧 testid 兼容） */}
-          {toolEntries.map((entry, index) => (
-            <div
-              key={`tool-${entry.id}-${index}`}
-              data-testid={`chat-tool-${index}`}
-              aria-expanded={!!expandedBlocks[`tool-${index}`]}
-              className="rounded-md border border-line bg-surface px-3 py-2 text-[12px]"
-              onClick={() => toggleBlock(`tool-${index}`)}
-            >
-              <button
-                type="button"
-                data-testid={`chat-tool-toggle-${index}`}
-                aria-expanded={!!expandedBlocks[`tool-${index}`]}
-                className="flex w-full items-center gap-1.5 text-left"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleBlock(`tool-${index}`);
-                }}
-              >
-                <span className="inline-block w-3 shrink-0 text-ink-3">
-                  {expandedBlocks[`tool-${index}`] ? '▾' : '›'}
-                </span>
-                <span className="text-ink">🔧</span>
-                <span className="font-medium text-ink" data-testid={`chat-tool-call-${index}`} data-name={entry.name}>
-                  {entry.name}
-                </span>
-                <span className="ml-auto text-[11px] text-ink-3">{t('write.chat.toolCall')}</span>
-              </button>
-              {expandedBlocks[`tool-${index}`] && (
-                <div className="mt-1 space-y-1 border-t border-line pt-1">
-                  <div className="text-ink-2">参数: {JSON.stringify(entry.args)}</div>
-                </div>
-              )}
-              {/* #597 兼容：result testid 常驻 DOM */}
-              {entry.result !== null && (
-                <div data-testid={`chat-tool-result-${index}`} className="text-ink-2">
-                  {expandedBlocks[`tool-${index}`] && (
-                    <>
-                      <span className={entry.result.includes('"ok": false') ? 'text-err' : 'text-ink'}>
-                        {entry.result.includes('"ok": false') ? '❌ ' : '✅ '}
-                      </span>
-                      <span className="whitespace-pre-wrap">{entry.result}</span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+          <ChatStreamBlocks
+            reasoningEntries={reasoningEntries}
+            toolEntries={toolEntries}
+            expandedBlocks={expandedBlocks}
+            onToggle={toggleBlock}
+          />
           {messages.map((m) => {
             const id = m.id;
             return m.kind === 'user' ? (
@@ -871,6 +834,14 @@ export function ChatPanel({
               </button>
             )}
           </div>
+          {/* #964：思考级别选择器（textarea 行下方；capability=false 置灰 + tooltip，
+              未知/null 不禁用——软降级 A5） */}
+          <ThinkingLevelSelect
+            value={reasoningEffort}
+            onChange={handleReasoningEffortChange}
+            disabled={capability === false}
+            disabledTooltip={t('reasoning.chat.disabledTooltip')}
+          />
         </div>
       )}
       {(expanded || isFull) && messages.length > 0 && (

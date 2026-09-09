@@ -685,7 +685,8 @@ jobs:
       - name: E2E writing (Playwright _electron writing page)
         # --retries=1（#455）：该 job 在 Windows runner 环境不稳定（Electron+真实内核时序 + GH Actions 429 限流），
         # 失败用例自动重跑 1 次吸收环境抖动；真实功能缺陷重跑仍失败不受掩盖（对齐 #451 e2e-frontend-settings）
-        run: pnpm --filter inkflow-electron test:e2e e2e-writing e2e-audit e2e-writer-chat --retries=1
+        # #964：e2e-f59-reasoning（chat 页思考级别选择器 + reasoning 渲染，fake LLM + preseed 内核）并入本 job
+        run: pnpm --filter inkflow-electron test:e2e e2e-writing e2e-audit e2e-writer-chat e2e-f59-reasoning --retries=1
 
   e2e-frontend-library:
     # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
