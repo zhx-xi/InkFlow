@@ -91,7 +91,7 @@ const attachResidualDiagnostics = (
     }
     (error as { dir?: string }).dir = dir;
     (error as { residuals?: string[] }).residuals = residuals;
-    if (error instanceof Error) {
+    if (error instanceof Error && !error.message.includes('残留前 ')) {
       error.message += `（残留前 ${residuals.length} 项: ${residuals.join(' | ')}）`;
     }
   } catch {
@@ -152,14 +152,15 @@ export function isProcessAlive(pid: number): boolean {
 export async function waitForProcessExit(
   pid: number,
   timeoutMs = 10_000,
-  isAlive: (pid: number) => boolean = isProcessAlive
+  isAlive: (pid: number) => boolean = isProcessAlive,
+  sleep: (ms: number) => Promise<void> = realSleep
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!isAlive(pid)) {
       return true;
     }
-    await realSleep(100);
+    await sleep(100);
   }
   return !isAlive(pid);
 }
@@ -186,7 +187,7 @@ export async function ensureProcessExited(
 ): Promise<void> {
   const { timeoutMs = 10_000, graceMs = 2_000, isAlive = isProcessAlive, sleep = realSleep } = options;
   const kill = options.kill ?? ((p: number) => process.kill(p));
-  if (await waitForProcessExit(pid, timeoutMs, isAlive)) {
+  if (await waitForProcessExit(pid, timeoutMs, isAlive, sleep)) {
     return;
   }
   try {
@@ -195,6 +196,26 @@ export async function ensureProcessExited(
     void err;  // best-effort: swallow all kill errors (ESRCH / EPERM / others)
   }
   await sleep(graceMs);
+}
+
+/**
+ * 半启动失败兜底（#1059）：run 抛错时 close app 恰好 1 次，再重抛原错误对象。
+ * run 成功 → 原样返回结果且不调 close；close 自身抛错被吞，绝不掩盖原始错误。
+ */
+export async function withAppClosedOnFailure<T>(
+  app: { close(): Promise<void> },
+  run: () => Promise<T>
+): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    try {
+      await app.close();
+    } catch {
+      // 半启动失败的 close 兜底：绝不掩盖原始错误
+    }
+    throw err;
+  }
 }
 
 export interface CleanupTarget {

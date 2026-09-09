@@ -29,7 +29,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
-import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
+import { createIsolatedEnv, withAppClosedOnFailure, type IsolatedEnv } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -116,9 +116,12 @@ async function launchIsolated(
     cwd: FRONTEND_DIR,
     env: iso.env as Record<string, string>,
   });
-  const window = await app.firstWindow();
-  const kernel = await waitKernelInfo(app);
-  return { app, window, kernel };
+  // #1059：firstWindow / waitKernelInfo 半途失败（内核冷启动超时等）→ 兜底 close 不留孤儿
+  return withAppClosedOnFailure(app, async () => {
+    const window = await app.firstWindow();
+    const kernel = await waitKernelInfo(app);
+    return { app, window, kernel };
+  });
 }
 
 /** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置） */
@@ -204,11 +207,13 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
   const iso = createIsolatedEnv('rag-fake');
   let fake: { port: number; kill: () => void } | undefined;
   let app: ElectronApplication | undefined;
+  let kernelPid: number | undefined;
   try {
     // ① fake embedding server（G2 前无 /v1/embeddings → 后续 reindex 失败 = RED）
     fake = await spawnFakeServer();
     const launched = await launchIsolated(iso);
     app = launched.app;
+    kernelPid = launched.kernel.pid;
     const { window, kernel } = launched;
     await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
 
@@ -276,13 +281,15 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
       )
       .toEqual({ stale: false, reason: null });
   } finally {
+    // #1059：pid 必须在 app.close() 之前取（close 后 process() 句柄已失效）
+    const electronPid = app?.process()?.pid;
     if (app) {
       await app.close();
     }
     if (fake) {
       fake.kill();
     }
-    // #1033：cleanup 带瞬态 EPERM 重试（等内核释放 chroma 句柄后再删不吞错）
-    await iso.cleanup();
+    // #1033/#1059：cleanup 先等句柄持有者（内核 + 渲染层）退出，再带瞬态 EPERM 重试删目录
+    await iso.cleanup({ pids: [kernelPid, electronPid] });
   }
 });

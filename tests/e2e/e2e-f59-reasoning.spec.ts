@@ -38,7 +38,12 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
-import { createIsolatedEnv, ensureProcessExited, type IsolatedEnv } from './e2e-isolation';
+import {
+  createIsolatedEnv,
+  ensureProcessExited,
+  withAppClosedOnFailure,
+  type IsolatedEnv,
+} from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -148,9 +153,12 @@ async function launchIsolated(
     cwd: FRONTEND_DIR,
     env: iso.env as Record<string, string>,
   });
-  const window = await app.firstWindow();
-  const kernel = await waitKernelInfo(app);
-  return { app, window, kernel };
+  // #1059：firstWindow / waitKernelInfo 半途失败（内核冷启动超时等）→ 兜底 close 不留孤儿
+  return withAppClosedOnFailure(app, async () => {
+    const window = await app.firstWindow();
+    const kernel = await waitKernelInfo(app);
+    return { app, window, kernel };
+  });
 }
 
 /** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置） */
