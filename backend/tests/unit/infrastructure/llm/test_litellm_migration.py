@@ -572,7 +572,11 @@ class TestBuildDeepAgentReasoningInjection:
             yield chat_cls, create
 
     def test_high_injects_kwarg(self, harness_patches) -> None:
-        """deepseek 支持思考（litellm 表实证）→ kwargs 含 reasoning_effort='high'。"""
+        """deepseek 支持思考（litellm 表实证）→ model_kwargs 含 reasoning_effort='high'。
+
+        #1044 D1：顶层 kwargs 被 ChatLiteLLM pydantic 静默丢弃，唯一通道是
+        model_kwargs（litellm.py:475 **self.model_kwargs）。
+        """
         from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
 
         chat_cls, _ = harness_patches
@@ -584,10 +588,13 @@ class TestBuildDeepAgentReasoningInjection:
             system_prompt="p",
             reasoning_effort="high",
         )
-        assert chat_cls.call_args[1]["reasoning_effort"] == "high"
+        assert chat_cls.call_args[1]["model_kwargs"]["reasoning_effort"] == "high"
+        assert "reasoning_effort" not in chat_cls.call_args[1], (
+            "顶层键被静默丢弃（#1044 D1），不得再发"
+        )
 
     def test_default_omits_kwarg(self, harness_patches) -> None:
-        """🔴 M2 验收：'default' 档 → kwargs 完全不含 reasoning_effort 键（§5.2）。"""
+        """🔴 M2 验收：'default' 档 → kwargs 完全不含思考参数键（§5.2）。"""
         from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
 
         chat_cls, _ = harness_patches
@@ -600,6 +607,7 @@ class TestBuildDeepAgentReasoningInjection:
             reasoning_effort="default",
         )
         assert "reasoning_effort" not in chat_cls.call_args[1]
+        assert "model_kwargs" not in chat_cls.call_args[1]
 
     def test_absent_omits_kwarg(self, harness_patches) -> None:
         """护栏（向后兼容）：不传参数 → 现状 kwargs 形态不破（M1 既有调用方零改动）。"""
@@ -611,6 +619,7 @@ class TestBuildDeepAgentReasoningInjection:
             tools=[], system_prompt="p",
         )
         assert "reasoning_effort" not in chat_cls.call_args[1]
+        assert "model_kwargs" not in chat_cls.call_args[1]
 
     def test_unsupported_model_soft_downgrades(self, harness_patches) -> None:
         """§5.5 软降级在构造点生效：zai/glm-4.5（探测 False，实证）传 high →

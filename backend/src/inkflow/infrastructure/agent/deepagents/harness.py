@@ -21,7 +21,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from inkflow.infrastructure.agent.deepagents.profiles import ensure_profile
 from inkflow.infrastructure.agent.tools import Tool
-from inkflow.infrastructure.llm.capability_probe import apply_reasoning_effort
+from inkflow.infrastructure.llm.capability_probe import (
+    apply_reasoning_effort,
+    to_chat_model_kwargs,
+)
 from inkflow.infrastructure.llm.provider_config import litellm_model_name
 
 # deepagents 0.7.5 的 create_deep_agent 返回 CompiledStateGraph；任务契约将该返回值
@@ -126,10 +129,12 @@ def build_deep_agent(
         chat_kwargs["api_key"] = api_key
     if base_url:
         chat_kwargs["api_base"] = base_url
-    chat_kwargs = apply_reasoning_effort(
-        chat_kwargs,
-        model_full=mapped_model,
-        effort=reasoning_effort,
+    chat_kwargs = to_chat_model_kwargs(
+        apply_reasoning_effort(
+            chat_kwargs,
+            model_full=mapped_model,
+            effort=reasoning_effort,
+        )
     )
     chat = ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM pydantic 构造参数
     if profile_key is None:

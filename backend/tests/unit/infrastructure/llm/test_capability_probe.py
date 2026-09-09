@@ -280,13 +280,147 @@ class TestChatLiteLLMCtorWiring:
         return mock_cls.call_args[1]
 
     def test_high_injects_kwarg(self) -> None:
+        """#1044 D1：注入必须走 model_kwargs（顶层键被 ChatLiteLLM pydantic 丢弃）。"""
         kwargs = self._call(model_name="deepseek-v4-flash", reasoning_effort="high")
-        assert kwargs["reasoning_effort"] == "high"
+        assert kwargs["model_kwargs"]["reasoning_effort"] == "high"
+        assert "reasoning_effort" not in kwargs, (
+            "顶层 reasoning_effort 被 ChatLiteLLM 静默丢弃（#1044 D1），不得再发"
+        )
 
     def test_default_omits_kwarg(self) -> None:
         kwargs = self._call(model_name="deepseek-v4-flash", reasoning_effort="default")
+        assert "model_kwargs" not in kwargs
         assert "reasoning_effort" not in kwargs
 
     def test_absent_omits_kwarg(self) -> None:
         kwargs = self._call(model_name="deepseek-v4-flash")
+        assert "model_kwargs" not in kwargs
         assert "reasoning_effort" not in kwargs
+
+
+class TestTranslatorGateDecision:
+    """#1044 D4：探测链判 True 但 litellm 翻译器无参数 → 决策点软降级（不注入）。
+
+    实证（litellm 1.99 + langchain-litellm 0.7.1）：
+    - ``supports_reasoning("dashscope/qwen3-max")`` = True，但
+      ``get_supported_openai_params("qwen3-max", "dashscope")`` 无
+      reasoning_effort/thinking → 注入即 SDK 本地 ``UnsupportedParamsError``（断流）。
+    - ``none`` 档同样必炸（SDK 校验不看值），必须一并剥离。
+    """
+
+    def test_dashscope_probe_true_but_gate_strips(self, loguru_records: list[dict]) -> None:
+        assert supports_reasoning_for_model("dashscope/qwen3-max") is True, (
+            "本用例前提：探测链判 True（D4 的矛盾面）"
+        )
+        out = apply_reasoning_effort(
+            {"model": "dashscope/qwen3-max"},
+            model_full="dashscope/qwen3-max",
+            effort="high",
+        )
+        assert "reasoning_effort" not in out
+        warns = _warn_records(loguru_records)
+        assert warns, "翻译器无参数必须软降级留痕（WARNING）"
+        extra = warns[-1]["extra"]
+        assert extra.get("message_key") == "log.check.reasoning_downgrade"
+        params = extra.get("params") or {}
+        assert params.get("reason") == "translator_unsupported"
+        assert params.get("model") == "dashscope/qwen3-max"
+
+    def test_dashscope_none_also_stripped(self, loguru_records: list[dict]) -> None:
+        """none 档也送不出去：翻译器无该参数时 SDK 一律 UnsupportedParamsError。"""
+        out = apply_reasoning_effort(
+            {"model": "dashscope/qwen3-max"},
+            model_full="dashscope/qwen3-max",
+            effort="none",
+        )
+        assert "reasoning_effort" not in out
+        assert _warn_records(loguru_records)
+
+    def test_deepseek_gate_passes(self, loguru_records: list[dict]) -> None:
+        """主路径回归锁：deepseek 翻译器含 reasoning_effort → 照常注入、无告警。"""
+        out = apply_reasoning_effort(
+            {"model": "deepseek/deepseek-v4-flash"},
+            model_full="deepseek/deepseek-v4-flash",
+            effort="high",
+        )
+        assert out["reasoning_effort"] == "high"
+        assert not _warn_records(loguru_records)
+
+    def test_gate_lookup_exception_soft_degrades(
+        self, loguru_records: list[dict], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """翻译器查询异常 → 剥离 + WARNING（绝不冒泡、绝不断流）。"""
+        import litellm
+
+        monkeypatch.setattr(litellm, "supports_reasoning", lambda *_a, **_k: True)
+
+        def _boom(*_a: object, **_k: object) -> list[str]:
+            raise RuntimeError("translator table explode")
+
+        monkeypatch.setattr(litellm, "get_supported_openai_params", _boom)
+        out = apply_reasoning_effort(
+            {"model": "some/model"}, model_full="some/model", effort="high"
+        )
+        assert "reasoning_effort" not in out
+        warns = _warn_records(loguru_records)
+        assert warns
+        assert (warns[-1]["extra"].get("params") or {}).get("reason") == (
+            "translator_unsupported"
+        )
+
+    def test_manual_override_exempt_from_translator_gate(
+        self, loguru_records: list[dict]
+    ) -> None:
+        """§7 边界 #2 新模型通道：manual=True 是用户显式断言，不受翻译器门禁约束。
+
+        生产两构造点不传 manual（仅注册表回显用），故 D4 主链路仍受门禁保护。
+        """
+        out = apply_reasoning_effort(
+            {"model": "brandnew/x1"},
+            model_full="brandnew/x1",
+            effort="high",
+            manual=True,
+        )
+        assert out["reasoning_effort"] == "high"
+        assert not _warn_records(loguru_records)
+
+
+class TestTransportAdapter:
+    """#1044 D1：决策 dict → ChatLiteLLM 构造 kwargs（reasoning_effort 搬进 model_kwargs）。"""
+
+    def test_moves_effort_into_model_kwargs(self) -> None:
+        from inkflow.infrastructure.llm.capability_probe import to_chat_model_kwargs
+
+        out = to_chat_model_kwargs({"model": "m", "reasoning_effort": "high"})
+        assert out["model_kwargs"] == {"reasoning_effort": "high"}
+        assert "reasoning_effort" not in out
+
+    def test_no_effort_key_is_noop(self) -> None:
+        from inkflow.infrastructure.llm.capability_probe import to_chat_model_kwargs
+
+        out = to_chat_model_kwargs({"model": "m"})
+        assert out == {"model": "m"}
+        assert "model_kwargs" not in out
+
+    def test_merges_existing_model_kwargs(self) -> None:
+        from inkflow.infrastructure.llm.capability_probe import to_chat_model_kwargs
+
+        out = to_chat_model_kwargs(
+            {
+                "model": "m",
+                "model_kwargs": {"extra_body": {"x": 1}},
+                "reasoning_effort": "none",
+            }
+        )
+        assert out["model_kwargs"] == {
+            "extra_body": {"x": 1},
+            "reasoning_effort": "none",
+        }
+
+    def test_does_not_mutate_input(self) -> None:
+        from inkflow.infrastructure.llm.capability_probe import to_chat_model_kwargs
+
+        base = {"model": "m", "reasoning_effort": "high"}
+        out = to_chat_model_kwargs(base)
+        assert out is not base
+        assert base == {"model": "m", "reasoning_effort": "high"}
