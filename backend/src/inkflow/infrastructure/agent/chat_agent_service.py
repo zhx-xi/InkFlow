@@ -6,6 +6,7 @@ astream_events 属基础设施职责）。接收已装配的 deepagents Compiled
 #615 增量：on_chat_model_end（完整 AIMessage）→ AgentStep 收集（含 tool_calls/
 tokens），on_tool_end 按 run_id 回填 result/is_error；流结束后端点经
 consume_trace() 取回 (steps, final_content, token_usage_total) 落 AgentRun。
+#1045: content normalized via the shared llm.content_text normalizer.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from langgraph.errors import GraphRecursionError
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.services.chat_service import ChatStreamEvent
+from inkflow.infrastructure.llm.content_text import content_text
 from inkflow.infrastructure.llm.redact import redact_step
 from inkflow.logging import instrument
 
@@ -27,30 +29,6 @@ from inkflow.logging import instrument
 def _chunk_stream(text: str, size: int = 6) -> list[str]:
     """#642：完整响应按固定大小切块，模拟流式增量输出。"""
     return [text[i : i + size] for i in range(0, len(text), size)]
-
-
-def _text_content(content: object) -> str:
-    """把模型输出 content 归一化为纯文本（#964 / F59-M3）。
-
-    E1 实证：langchain-litellm 在 reasoning_content 存在时把 content 变成
-    `[{'type':'thinking','thinking':...}, '正文']` 形态的 list——若直接当 str 塞进
-    delta 帧，前端会渲染成 `[object Object]`。此处 str → 原样；list → 取 str 项与
-    {"type":"text"} 块的 text（跳过 thinking 块）；其他类型 → ""。
-    思考文本不在此处输出（由 reasoning 帧承载）。
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and item.get("type") == "text":
-                text = item.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        return "".join(parts)
-    return ""
 
 
 def _extract_reasoning_content(output: object) -> str:
@@ -191,7 +169,7 @@ class ChatAgentService:
                     break
                 if ev.get("event") == "on_chat_model_stream" and ev.get("run_type") == "llm":
                     chunk = ev.get("data", {}).get("chunk")
-                    text = _text_content(chunk.content)
+                    text = content_text(chunk.content)
                     if text:
                         yield ChatStreamEvent(type="delta", delta=text)
                         streamed_any = True
@@ -201,7 +179,7 @@ class ChatAgentService:
                     reasoning = _extract_reasoning_content(output)
                     if reasoning:
                         yield ChatStreamEvent(type="reasoning", delta=reasoning, done=False)
-                    content = _text_content(getattr(output, "content", ""))
+                    content = content_text(getattr(output, "content", ""))
                     if content and not streamed_any:
                         for c in _chunk_stream(content, size=6):
                             await asyncio.sleep(0.05)
@@ -324,7 +302,7 @@ class ChatAgentService:
             )
             if call_id:
                 self._tool_call_index[call_id] = (step_index, tool_index)
-        content = getattr(output, "content", "") or ""
+        content = content_text(getattr(output, "content", "") or "")
         tokens = int(
             (getattr(output, "response_metadata", None) or {})
             .get("usage", {})

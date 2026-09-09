@@ -10,6 +10,9 @@
 2. content 为纯 str 时行为不变（回归守护）。
 3. content 为纯 thinking 块（无正文）→ 不产出非 str delta；reasoning 帧仍产出。
 4. on_chat_model_stream 的 chunk.content 为 thinking-block 列表 → 不产出非 str delta。
+6. （#1045）on_chat_model_end 块列表 content → trace 的 AgentStep.message_content /
+   final_content 恒 str、无 error 帧、reasoning 保留思考。
+7. （#1045）content 归一语义统一：非 text / None 形态 → 空串（禁 str() repr 泄漏）。
 
 当前实现把 list 直接塞 delta → 本批对块路径逐用例 FAIL（delta 是 list / 含 thinking 文本）。
 写法镜像 test_chat_agent_service.py 的 `_ReasoningAgent` / `_make_svc` / `_drain` 形态（只读参考，
@@ -21,6 +24,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from langchain_core.messages import AIMessage
 
 BASE_PROMPT = "你是 InkFlow 系统级写作 Agent"
 PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000"
@@ -199,3 +203,51 @@ class TestTextContentDefensive:
         assert [ev for ev in frames if ev.type == "delta"] == []
         assert not any(ev.type == "reasoning" for ev in frames)
         assert frames[-1].type == "done"
+
+
+class TestTraceContentNormalization:
+    """契约 6（#1045）：on_chat_model_end 块列表 content → trace 恒 str、无 error 帧。
+
+    背景（#966 M5 真实 deepseek-v4-flash 2/2 复现）：#964 只归一了 delta 帧，
+    `_collect_model_end` 仍把 output.content 原值（块列表）传给
+    `AgentStep(message_content: str)` → ValidationError → 流处理 except 捕获 →
+    终帧 error 断流、AgentRun 落 failed。思考链路必须由 reasoning 字段承载，
+    不得随正文归一一起丢失。
+    """
+
+    @pytest.mark.asyncio
+    async def test_block_list_content_collects_str_trace_without_error_frame(self) -> None:
+        output = AIMessage(
+            content=[THINKING_BLOCK, TEXT_BLOCK],
+            additional_kwargs={"reasoning_content": "思考A"},
+        )
+        svc = _make_svc(_ReasoningEndAgent(output))
+        frames = await _drain(svc)
+
+        assert not any(f.type == "error" for f in frames), (
+            "块列表 content 触发 AgentStep ValidationError → error 帧（#1045 根因）"
+        )
+        steps, final_content, _ = svc.consume_trace()
+        assert len(steps) == 1
+        assert isinstance(steps[0].message_content, str)
+        assert steps[0].message_content == "正文内容"
+        assert "思考A" not in steps[0].message_content
+        # 思考链路保留（reasoning 字段承载，不得随正文归一一起丢）
+        assert steps[0].reasoning == "思考A"
+        assert isinstance(final_content, str)
+        assert final_content == "正文内容"
+
+
+class TestSharedContentTextSemantics:
+    """契约 7（#1045）：content 归一语义统一——非 text 形态不得 str() repr 泄漏。
+
+    langchain_client 侧 `_content_text` 与 chat_agent_service 侧归一必须同语义
+    （#976 全路径统一）：未知/None 形态 → 空串，绝不 str() repr 进正文或 AgentStep。
+    """
+
+    def test_non_text_content_yields_empty_not_repr(self) -> None:
+        from inkflow.infrastructure.llm.langchain_client import _content_text
+
+        assert _content_text({"type": "thinking", "thinking": "X"}) == ""
+        assert _content_text(None) == ""
+        assert _content_text([{"type": "thinking", "thinking": "X"}, 42, TEXT_BLOCK]) == "正文内容"

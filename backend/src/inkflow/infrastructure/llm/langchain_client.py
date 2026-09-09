@@ -16,6 +16,7 @@ from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse, StreamEvent, TokenUsage
 from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.infrastructure.llm.capability_probe import apply_reasoning_effort
+from inkflow.infrastructure.llm.content_text import content_text
 from inkflow.infrastructure.llm.provider_config import (
     LLMProviderConfig,
     get_provider_config,
@@ -299,37 +300,6 @@ class LangChainLLMClient:
         )
 
 
-def _text_block_text(block: dict[str, object]) -> str:
-    """提取 type=="text" 内容块的文本：text 键优先，缺失回退 content 键（OpenAI
-    兼容形态，不得静默丢成空串）；非 str 值经 str()；两键均缺 → ""（不把
-    None repr 进正文）。"""
-    value = block.get("text")
-    if value is None:
-        value = block.get("content")
-    if value is None:
-        return ""
-    return value if isinstance(value, str) else str(value)
-
-
 def _content_text(content: object) -> str:
-    """提取 LLM 响应/流块的纯文本内容（chat 与 stream 共用，#962 实证）。
-
-    ChatLiteLLM 把 reasoning 内容规范进 content=[thinking, text, ...] 块列表，
-    写作链/流式消费面必须只取 type=="text" 块拼接，防思考过程泄漏进正文；
-    纯 str 原样透传。
-
-    防御兜底（#962 评审）：text 块优先 text 键、回退 content 键；未包 list 的
-    裸 dict 按单个 content-part 解析（type=="text" 时取键值，防 str() repr
-    泄漏进正文）；其余形态按旧轨 str() 兜底。
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, dict) and content.get("type") == "text":
-        return _text_block_text(content)
-    if isinstance(content, list):
-        return "".join(
-            _text_block_text(block)
-            for block in content
-            if isinstance(block, dict) and block.get("type") == "text"
-        )
-    return str(content)
+    """Delegate to the shared normalizer (unified in #1045)."""
+    return content_text(content)
