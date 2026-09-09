@@ -24,7 +24,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
-import { createIsolatedEnv, ensureProcessExited, type IsolatedEnv } from './e2e-isolation';
+import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -147,14 +147,13 @@ for (const [tag, label] of [
         .poll(() => existsSync(path.join(iso.dataDir, 'inkflow.db')), { timeout: 10_000 })
         .toBe(true);
     } finally {
+      const electronPid = app?.process()?.pid;
       if (app) {
         await app.close();
       }
-      // 等内核进程退出、释放 inkflow.db/chroma 句柄（Windows EPERM 根因），再带重试删目录
-      if (kernelPid !== undefined) {
-        await ensureProcessExited(kernelPid, { timeoutMs: 10_000 });
-      }
-      await iso.cleanup();
+      // #1040：先取 pid 再 close；cleanup 内部先等内核 + 渲染进程退出（释放 inkflow.db/chroma
+      // 句柄，Windows EPERM 根因）再带预算删目录，不吞错
+      await iso.cleanup({ pids: [kernelPid, electronPid], timeoutMs: 10_000 });
     }
   });
 }

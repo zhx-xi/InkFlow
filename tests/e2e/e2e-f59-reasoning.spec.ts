@@ -389,17 +389,15 @@ test('支持思考的模型 → 选 high → 思考区块出现（主闭环）',
     await expect(aiMsg).toContainText(/\S/);
     await expect(aiMsg).not.toContainText('[object Object]');
   } finally {
+    const electronPid = app?.process()?.pid;
     if (app) {
       await app.close();
     }
     if (fake) {
       fake.kill();
     }
-    if (kernelPid) {
-      await ensureProcessExited(kernelPid);
-    }
-    // #1033：cleanup 带瞬态 EPERM 重试（等内核释放 chroma 句柄后再删不吞错）
-    await iso.cleanup();
+    // #1040：cleanup 内部先等内核 + 渲染进程退出（释放 chroma 句柄）再带预算删目录，不吞错
+    await iso.cleanup({ pids: [kernelPid, electronPid] });
   }
 });
 
@@ -435,15 +433,14 @@ test('不支持思考的模型 → 控件置灰', async () => {
     await expect(tooltip).toBeVisible();
     await expect(tooltip).toContainText('当前模型不支持思考');
   } finally {
+    const electronPid = app?.process()?.pid;
     if (app) {
       await app.close();
     }
     if (fake) {
       fake.kill();
     }
-    if (kernelPid) {
-      await ensureProcessExited(kernelPid);
-    }
-    await iso.cleanup();
+    // #1040：cleanup 内部先等内核 + 渲染进程退出（释放 chroma 句柄）再带预算删目录，不吞错
+    await iso.cleanup({ pids: [kernelPid, electronPid] });
   }
 });
