@@ -23,6 +23,7 @@ import {
   ensureProcessExited,
   rmDirWithRetry,
   waitForProcessExit,
+  withAppClosedOnFailure,
   type IsolatedEnv,
 } from './e2e-isolation';
 
@@ -187,7 +188,9 @@ describe('waitForProcessExit / ensureProcessExited（#1033：注入探活，无�
       })
     ).resolves.toBeUndefined();
     expect(kill).toHaveBeenCalledTimes(1);
-    expect(sleep).toHaveBeenCalledTimes(1);
+    // #1059：注入 sleep 现已透传到轮询（DI 接缝补全）→ 总次数不再恒为 1；
+    // 保留原意「kill 后仍走 grace 等待」= 最后一次 sleep 是 graceMs(0)
+    expect(sleep).toHaveBeenLastCalledWith(0);
   });
 });
 
@@ -275,7 +278,7 @@ describe('cleanupIsolatedEnv（#1040：先等句柄持有者退出再删；userD
 });
 
 describe('rmDirWithRetry 残留诊断（#1040：耗尽报错带残留清单前 N 项，仍抛原错误对象）', () => {
-  it('耗尽后保留原错误对象 + 附加残留清单（注入 lister）', async () => {
+  it('非瞬态立即重抛：保留原错误对象 + 附加残留清单（注入 lister）', async () => {
     const dir = path.join(tmpdir(), 'rm-residual-injected-tmp');
     const err = new Error('EPERM: operation not permitted, unlink ...');
     const rm = vi.fn(() => {
@@ -331,3 +334,71 @@ describe('rmDirWithRetry 残留诊断（#1040：耗尽报错带残留清单前 N
     expect(err.residuals).toBeUndefined();
     expect(err.dir).toBeUndefined();
   });
+
+describe('withAppClosedOnFailure（#1059：半启动失败不留孤儿 Electron）', () => {
+  it('run 成功 → 原样返回结果且不 close', async () => {
+    const close = vi.fn(async () => undefined);
+    const result = await withAppClosedOnFailure({ close }, async () => 'ok');
+    expect(result).toBe('ok');
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('run 抛错 → close 恰好 1 次且重抛原错误', async () => {
+    const err = new Error('waitKernelInfo 超时');
+    const close = vi.fn(async () => undefined);
+    await expect(
+      withAppClosedOnFailure({ close }, async () => {
+        throw err;
+      })
+    ).rejects.toBe(err);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('close 自身抛错不掩盖原错误（仍重抛原错误）', async () => {
+    const err = new Error('launch 半途失败');
+    const close = vi.fn(async () => {
+      throw new Error('close boom');
+    });
+    await expect(
+      withAppClosedOnFailure({ close }, async () => {
+        throw err;
+      })
+    ).rejects.toBe(err);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('残留诊断幂等 / 轮询 sleep DI（#1059：低危观察项收编）', () => {
+  it('同一错误对象跨两次调用：message 残留标记只追加一次（幂等）', async () => {
+    const dir = path.join(tmpdir(), 'rm-residual-idempotent-tmp');
+    const err = new Error('EPERM: operation not permitted');
+    const rm = vi.fn(() => {
+      throw err;
+    });
+    const listResiduals = vi.fn(() => ['a']);
+    const options = { retries: 0, rm, sleep: async () => undefined, listResiduals };
+    await expect(rmDirWithRetry(dir, options)).rejects.toBe(err);
+    await expect(rmDirWithRetry(dir, options)).rejects.toBe(err);
+    expect((err.message.match(/残留前 /g) ?? []).length).toBe(1);
+    expect(listResiduals).toHaveBeenCalledTimes(2);
+  });
+
+  it('waitForProcessExit：注入 sleep 生效（轮询间隔走 DI，不再硬编码真实等待）', async () => {
+    const isAlive = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const sleep = vi.fn(async () => undefined);
+    await expect(waitForProcessExit(4246, 10_000, isAlive, sleep)).resolves.toBe(true);
+    expect(sleep).toHaveBeenCalledWith(100);
+    expect(isAlive).toHaveBeenCalledTimes(2);
+  });
+
+  it('ensureProcessExited：注入 sleep 透传到轮询', async () => {
+    const isAlive = vi.fn(() => true);
+    const kill = vi.fn();
+    const sleep = vi.fn(async () => undefined);
+    await expect(
+      ensureProcessExited(4247, { timeoutMs: 200, graceMs: 0, isAlive, kill, sleep })
+    ).resolves.toBeUndefined();
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(sleep.mock.calls.some((c) => c[0] === 100)).toBe(true);
+  });
+});

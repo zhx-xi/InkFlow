@@ -24,7 +24,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
-import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
+import { createIsolatedEnv, withAppClosedOnFailure, type IsolatedEnv } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -94,9 +94,12 @@ async function launchIsolated(
     // IsolatedEnv.env 类型带 undefined（process.env 展开）——运行时均为字符串
     env: iso.env as Record<string, string>,
   });
-  await app.firstWindow();
-  const kernel = await waitKernelInfo(app);
-  return { app, kernel };
+  // #1059：firstWindow / waitKernelInfo 半途失败（内核冷启动超时等）→ 兜底 close 不留孤儿
+  return withAppClosedOnFailure(app, async () => {
+    await app.firstWindow();
+    const kernel = await waitKernelInfo(app);
+    return { app, kernel };
+  });
 }
 
 // 两用例真并发 = 文件级 parallel（配合 --workers=2）；独立数据目录故并发安全

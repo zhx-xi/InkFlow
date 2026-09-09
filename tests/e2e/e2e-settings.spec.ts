@@ -17,7 +17,7 @@
  * 二次 launch 显式复用同一目录；普通用例沿用既有模式。
  */
 import path from 'node:path';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   test,
@@ -26,6 +26,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { rmDirWithRetry, USER_DATA_RM_BUDGET } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -321,11 +322,8 @@ test.describe('F32 设置持久化（#152）', () => {
         await second.app.close();
       }
     } finally {
-      try {
-        rmSync(userDataDir, { recursive: true, force: true });
-      } catch {
-        // 临时目录清理失败（Windows 文件锁）不阻塞用例
-      }
+      // #1059：统一走 rmDirWithRetry（瞬态码重试 + 耗尽抛原错误 + 残留诊断），不再吞错
+      await rmDirWithRetry(userDataDir, USER_DATA_RM_BUDGET);
     }
   });
 });
@@ -600,11 +598,8 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
     await second.app.close();
   }
 
-  try {
-    rmSync(userDataDir, { recursive: true, force: true });
-  } catch {
-    // 临时目录清理失败（Windows 文件锁）不阻塞用例
-  }
+  // #1059：统一走 rmDirWithRetry（瞬态码重试 + 耗尽抛原错误 + 残留诊断），不再吞错
+  await rmDirWithRetry(userDataDir, USER_DATA_RM_BUDGET);
 });
 
 // ────────────────────────────────────────────────────────────────
@@ -758,11 +753,8 @@ test.describe('RAG 向量状态区块（#276）', () => {
       await expect(window.getByTestId('rag-reindex-btn')).toBeVisible();
     } finally {
       await app.close();
-      try {
-        rmSync(userDataDir, { recursive: true, force: true });
-      } catch {
-        // Windows 文件锁：临时目录清理失败不阻塞用例
-      }
+      // #1059：统一走 rmDirWithRetry（瞬态码重试 + 耗尽抛原错误 + 残留诊断），不再吞错
+      await rmDirWithRetry(userDataDir, USER_DATA_RM_BUDGET);
     }
   });
 
@@ -786,11 +778,8 @@ test.describe('RAG 向量状态区块（#276）', () => {
       // 不点击确认：真实 reindex 会调 embedding API 失败（E2E 无真实端点）——本用例只锁 UI 链路
     } finally {
       await app.close();
-      try {
-        rmSync(userDataDir, { recursive: true, force: true });
-      } catch {
-        // Windows 文件锁：临时目录清理失败不阻塞用例
-      }
+      // #1059：统一走 rmDirWithRetry（瞬态码重试 + 耗尽抛原错误 + 残留诊断），不再吞错
+      await rmDirWithRetry(userDataDir, USER_DATA_RM_BUDGET);
     }
   });
 
@@ -817,11 +806,8 @@ test.describe('RAG 向量状态区块（#276）', () => {
       await expect(window.getByTestId('rag-reindex-btn')).not.toBeVisible();
     } finally {
       await app.close();
-      try {
-        rmSync(userDataDir, { recursive: true, force: true });
-      } catch {
-        // Windows 文件锁：临时目录清理失败不阻塞用例
-      }
+      // #1059：统一走 rmDirWithRetry（瞬态码重试 + 耗尽抛原错误 + 残留诊断），不再吞错
+      await rmDirWithRetry(userDataDir, USER_DATA_RM_BUDGET);
     }
   });
 
@@ -882,11 +868,8 @@ test.describe('RAG 向量状态区块（#276）', () => {
       await second.app.close();
     }
 
-    try {
-      rmSync(userDataDir, { recursive: true, force: true });
-    } catch {
-      // Windows 文件锁：临时目录清理失败不阻塞用例
-    }
+    // #1059：统一走 rmDirWithRetry（瞬态码重试 + 耗尽抛原错误 + 残留诊断），不再吞错
+    await rmDirWithRetry(userDataDir, USER_DATA_RM_BUDGET);
   });
 });
 // ─────────────────────────────────────────────────────────────────────────────
