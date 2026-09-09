@@ -81,6 +81,7 @@ markers = [
     "api: API 集成测试 — FastAPI TestClient/ASGITransport",
     "cli: CLI 集成测试 — CliRunner + 临时 SQLite",
     "e2e: 端到端测试 — 完整用户链路（未来）",
+    "e2e_ai: real-model E2E (local keys only, CI skip)",
     "chapter: 卷/章节功能相关测试",
     "project: 项目管理功能相关测试",
     "writing: AI 写作功能相关测试",
