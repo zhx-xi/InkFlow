@@ -3,7 +3,7 @@
  * 与 chat-ux.ts / writing-ux.ts / sessions-ux.ts 同模式）。useI18n 聚合。
  */
 export const sessionUxZh: Record<string, string> = {
-  'nav.group.sessions': '会话',
+  'session.group.title': '会话',
   'session.time.today': '今天',
   'session.time.week': '本周',
   'session.time.earlier': '更早',
@@ -12,7 +12,7 @@ export const sessionUxZh: Record<string, string> = {
 };
 
 export const sessionUxEn: Record<string, string> = {
-  'nav.group.sessions': 'Sessions',
+  'session.group.title': 'Sessions',
   'session.time.today': 'Today',
   'session.time.week': 'This Week',
   'session.time.earlier': 'Earlier',
