@@ -122,7 +122,19 @@ async function docsStatus(port: number): Promise<number> {
 
 /** 读主进程 __kernelInfo 钩子（打包 + debug 门控放行才暴露） */
 async function readKernelInfoHook(app: ElectronApplication): Promise<KernelState | undefined> {
-  return app.evaluate(() => (globalThis as { __kernelInfo?: KernelState }).__kernelInfo);
+  // 根治（#1041）：evaluate 返回 JSON 字符串快照——序列化在主进程内同步完成，
+  // 跨边界只传原始 string，消除 object round-trip 的 GC 竞态（#451/#455 签名族）；
+  // 瞬态异常（GC / Target closed）等价「__kernelInfo 尚未注入」→ undefined，
+  // 轮询继续——waitKernelInfo 超时耗尽仍响亮抛错（对齐 readTrayInfo 防御先例）。
+  try {
+    const raw = await app.evaluate(() => {
+      const info = (globalThis as { __kernelInfo?: KernelState }).__kernelInfo;
+      return info ? JSON.stringify(info) : null;
+    });
+    return raw ? (JSON.parse(raw) as KernelState) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 主窗口 DevTools 是否打开（无窗口视为 false） */

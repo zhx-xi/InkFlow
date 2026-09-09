@@ -42,7 +42,19 @@ interface KernelInfo {
 async function readKernelInfo(
   app: ElectronApplication
 ): Promise<KernelInfo | undefined> {
-  return app.evaluate(() => (globalThis as { __kernelInfo?: KernelInfo }).__kernelInfo);
+  // 根治（#1041）：evaluate 返回 JSON 字符串快照——序列化在主进程内同步完成，
+  // 跨边界只传原始 string，消除 object round-trip 的 GC 竞态（#451/#455 签名族）；
+  // 瞬态异常（GC / Target closed）等价「__kernelInfo 尚未注入」→ undefined，
+  // 轮询继续——waitKernelInfo 超时耗尽仍响亮抛错（对齐 readTrayInfo 防御先例）。
+  try {
+    const raw = await app.evaluate(() => {
+      const info = (globalThis as { __kernelInfo?: KernelInfo }).__kernelInfo;
+      return info ? JSON.stringify(info) : null;
+    });
+    return raw ? (JSON.parse(raw) as KernelInfo) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 30s） */
@@ -119,7 +131,9 @@ test('设置页：Agent 分类 → AgentChainCard（四角色+四开关）与默
     // AgentChainCard（迁移自旧 agents 页，testid 不变）
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
-    await expect(chain.getByRole('switch')).toHaveCount(4);
+    // #1041：内置四行 mount 后经 loadAgents 异步派生（#473 R1 真源），CI 慢轮
+    // 默认 expect 5s 内行未渲染 → 显式等待行就绪 30s（对齐 app-nav 60s 门控先例）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
     await expect(chain).toContainText('架构师');
     await expect(chain).toContainText('写手');
     await expect(chain).toContainText('审校员');
@@ -354,6 +368,8 @@ test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态�
 
     // 无当前项目：agent store 纯内存 config={} → 初始全 off 可稳定断言；
     // 逐个角色：初始 off → 点开 on → 再点回 off（getByRole name 子串匹配在 card 内唯一）
+    // #1041：内置四行经 loadAgents 异步派生——先等行就绪（CI 慢轮根因）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
     const roles = ['架构师', '写手', '审校员', '修订师'];
     for (const name of roles) {
       const sw = chain.getByRole('switch', { name });
@@ -465,6 +481,9 @@ test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
+    // #1041：内置行经 loadAgents 异步派生（#473 R1 真源），先等行就绪再操作开关
+    // （CI 慢轮下默认 5s expect 会 element(s) not found——本轮 settings job 实锤）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
     const writer = chain.getByRole('switch', { name: '写手' });
 
     // #225 语义：新项目默认 config.agent_* = null = 关闭 → 初始 off
@@ -528,6 +547,11 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
 
     await gotoNav(first.window, '设置');
     await first.window.getByTestId('settings-cat-agent').click();
+    // #1041：内置行经 loadAgents 异步派生——等行就绪再操作（CI 慢轮 element 缺席根因）
+    await expect(first.window.getByTestId('agent-chain-card').getByRole('switch')).toHaveCount(
+      4,
+      { timeout: 30_000 },
+    );
     const writer = first.window.getByTestId('agent-chain-card').getByRole('switch', { name: '写手' });
     await expect(writer).not.toBeChecked(); // 新项目默认 null = 关闭
 
@@ -564,6 +588,11 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
     // ② UI 状态：设置页 Agent 分类 → Writer 开关显示关闭（重启后不误恢复开启）
     await gotoNav(second.window, '设置');
     await second.window.getByTestId('settings-cat-agent').click();
+    // #1041：同第一程——等内置行就绪再断言开关态（CI 慢轮根因之二）
+    await expect(second.window.getByTestId('agent-chain-card').getByRole('switch')).toHaveCount(
+      4,
+      { timeout: 30_000 },
+    );
     await expect(
       second.window.getByTestId('agent-chain-card').getByRole('switch', { name: '写手' })
     ).not.toBeChecked();

@@ -37,7 +37,19 @@ interface KernelInfo {
 async function readKernelInfo(
   app: ElectronApplication
 ): Promise<KernelInfo | undefined> {
-  return app.evaluate(() => (globalThis as { __kernelInfo?: KernelInfo }).__kernelInfo);
+  // 根治（#1041）：evaluate 返回 JSON 字符串快照——序列化在主进程内同步完成，
+  // 跨边界只传原始 string，消除 object round-trip 的 GC 竞态（#451/#455 签名族）；
+  // 瞬态异常（GC / Target closed）等价「__kernelInfo 尚未注入」→ undefined，
+  // 轮询继续——waitKernelInfo 超时耗尽仍响亮抛错（对齐 readTrayInfo 防御先例）。
+  try {
+    const raw = await app.evaluate(() => {
+      const info = (globalThis as { __kernelInfo?: KernelInfo }).__kernelInfo;
+      return info ? JSON.stringify(info) : null;
+    });
+    return raw ? (JSON.parse(raw) as KernelInfo) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 60s） */
