@@ -1,9 +1,10 @@
 # F59 思考模式（Reasoning Effort）+ LLM 出口统一 LiteLLM
 
-> **Spec 版本**: v1.3
+> **Spec 版本**: v1.4
 > **Spec 变更**: v1.1（2026-09-06）：待澄清 Q1/Q2/Q3 拍板并融入原节（Q1=A 软降级+WARNING 确认 §5.5/§3.3；Q2=B 前端 localStorage per-project §3.4/§12 D8；Q3=设定页控件文案直写「Agent思考强度设定」§3.4/§12 D9）；§12 D5 去「待澄清」挂账。
 > **Spec 变更**: v1.2（2026-09-06）：评审修订——① 能力面端点纠正为 `GET /api/v1/provider-configs`（§3.1/§5.4/§8.2 宿主文件补 provider_configs.py）；② 项目配置路由纠正为 `PATCH /projects/{project_id}`（§3.1）；③ 设置更新纠正为 PATCH（§3.1/§3.4）；④ legacy `/stream` 不新增字段（前端仅消费 agent 轨、legacy 帧编码无 reasoning 帧，§3.1/§10 登记）；⑤ zhipu→zai 前缀口径实证保留（§5.1）；⑥ 能力探测装配机制表述回正（§5.4）；⑦ 后端 i18n 文件列入 MODIFY（§8.2）；⑧ AGENTS.md §2 技术栈行纳入同步面（§8.2/M6）。
 > **Spec 变更**: v1.3（2026-09-09，M4 实现批）：① `GET /provider-configs` models[] 手动覆盖项额外回显 `supports_reasoning_manual`（§3.1/§3.4，GUI「手动」角标数据源；探测项不带该键，向后兼容）；② 管线角色装配（`PipelineContext.reasoning_effort`）+ F27 agentic writer + book writer_factory 注入档位（§2.3 运行时流转落地）。
+> **Spec 变更**: v1.4（2026-09-09，#1044/#1054 实现批实证回填）：① §5.2 注入通道精确化为 `model_kwargs={"reasoning_effort": ...}`（顶层构造 kwargs 被 langchain-litellm 0.7.1 pydantic 静默丢弃，echo-server 实证）；② §5.2/§5.4 决策点新增**翻译器门禁**（探测判支持但 `get_supported_openai_params()` 不含思考参数 → 软降级剥离 + WARNING `reason=translator_unsupported`，杜绝 SDK 本地 `UnsupportedParamsError` 断流）；③ §5.5 降级表补 `translator_unsupported` 行与「探测/手动不支持 + none → 剥离不告警」行（N-1 前提被证伪）。
 > **日期**: 2026-09-06
 > **依据**: 用户需求（chat 页每轮可选思考档位 + 写作链/全自动设定页配置）+ 三轮实证调查（/models 探测、provider 专项包、LiteLLM SDK 源码核验）
 > **模块类型**: 跨端（backend LLM 基建 + API + GUI），含既有模块（F5 LLM Provider / F23 SSE / F32 设置 / F47 chat 执行细节）增量——无新业务实体
@@ -189,7 +190,13 @@ OpenAI 兼容第三方）litellm 走 `openai/` 前缀 + `api_base`。
 
 ### 5.2 思考参数注入
 
-- `ChatLiteLLM` 构造 kwargs 增加可选 `reasoning_effort=<解析结果>`。
+- 思考参数经 `model_kwargs={"reasoning_effort": <解析结果>}` 传入 `ChatLiteLLM`
+  （#1044 实证：顶层构造 kwargs 被 langchain-litellm 0.7.1 pydantic 静默丢弃、
+  线上 body 无思考参数；`model_kwargs` 是参数进 litellm 的唯一通道，
+  `litellm.py:475` `**self.model_kwargs`）。
+- **注入前经翻译器门禁**：`litellm.get_supported_openai_params()` 不含
+  `reasoning_effort`/`thinking` → 软降级剥离 + WARNING（`reason=translator_unsupported`），
+  杜绝「探测判支持但 SDK 本地 `UnsupportedParamsError`」断流（#1044 D4；§5.5 表）。
 - **不发**档位为 `default`（解析链终点为 `default` 时 kwargs 完全不加该键，等价现状）。
 - `none`：litellm 对支持方翻译为关闭（deepseek transformation：`reasoning_effort="none"` → `thinking.type="disabled"`，实证源码 40-59 行）。
 - 多轮思考回传（DeepSeek「reasoning_content 必须原样传回」约束）：**由 litellm
@@ -215,6 +222,9 @@ embedding、风格分析单次调用（`_style_llm_analyzer`）等不注入 reas
 - 探测逻辑封装 `infrastructure/llm/capability_probe.py`（新文件，≈30 行），经
   `api/deps.py` 装配注入路由（与既有 infra 接线同风格）；返回值仅 bool，不泄漏
   litellm 类型（§5.6 依赖方向成立）。
+- **探测面 ≠ 传输面**（#1044 实证）：注入决策点另加翻译器门禁（§5.2）——探测判 True
+  但翻译器无参数时剥离 + WARNING；GUI 仍按探测链显示能力（能力是模型属性，缺的是
+  litellm 翻译器），差异由 §5.5 降级表 + WARNING 留痕表达。
 
 ### 5.5 超出能力时的降级规则
 
@@ -222,6 +232,8 @@ embedding、风格分析单次调用（`_style_llm_analyzer`）等不注入 reas
 |------|------|
 | 模型不支持思考 + 请求/项目档位 ≠ default/none | **软降级**：剥离思考参数发起调用 + `loguru WARNING`（锚文本「思考模式降级」，message_key i18n）；SSE 正常无 reasoning 帧。理由：写作主流程不因参数偏好阻断（区别于 ADR-049 模型缺失的硬故障——模型缺失仍 422 fail-fast）。**Q1 拍板 ✅ 2026-09-06** |
 | 模型恒思考不可关（如 glm-5.3 类） + 档位=none | 同上软降级 + WARNING（无法关闭，保持开）；GUI 选择器对该类模型锁定显示为不可关（能力值 `always_on` 表达，v1 由 `supports_reasoning=true` + 手动覆盖近似表达，不建第四态——§10） |
+| 探测判支持但 litellm 翻译器无思考参数（dashscope/qwen 类）+ 档位任意（含 none） | **软降级**：剥离 + WARNING（`reason=translator_unsupported`）——参数无法送达（SDK `check_valid_params` 本地拦截），行为等同 `default`。上游 litellm 补翻译后自动放行（ADR-051 零方言映射，不自行加映射）。**#1044 实证 ✅ 2026-09-09** |
+| 模型不支持思考（探测 False 或手动 False）+ 档位=none | 剥离且**不告警**（`none` 天然满足：该模型本就不思考）。**#1054 拍板 A ✅ 2026-09-09**——N-1「none 透传」前提被实证证伪（翻译器无该参数时注入即 `UnsupportedParamsError` 断流） |
 
 ### 5.6 依赖方向检查
 
