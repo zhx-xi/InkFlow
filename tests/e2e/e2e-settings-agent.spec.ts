@@ -252,6 +252,9 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
+    // #1041：内置四行经 loadAgents 异步派生（#473 R1 真源），等行就绪再断言
+    //（CI 慢轮默认 5s expect 会 element(s) not found）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
     const writer = chain.getByRole('switch', { name: '写手' });
     await expect(writer).not.toBeChecked(); // 新项目默认 agent_writer=null=关闭
 
@@ -340,6 +343,8 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     await gotoNav(first.window, '设置');
     await first.window.getByTestId('settings-cat-agent').click();
     const chain = first.window.getByTestId('agent-chain-card');
+    // #1041：内置行经 loadAgents 异步派生——等行就绪再点开关（CI 慢轮根因）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
     const writer = chain.getByRole('switch', { name: '写手' });
     await writer.click();
     await chain.getByTestId('agent-model-select-agent_writer').click();
@@ -372,7 +377,8 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
     await gotoNav(second.window, '设置');
     await second.window.getByTestId('settings-cat-agent').click();
     const chain = second.window.getByTestId('agent-chain-card');
-    await expect(chain.getByRole('switch', { name: '写手' })).toBeChecked();
+    // #1041：重启第二程——写手行 toBeChecked 依赖 loadAgents 异步行，显式 30s 门控
+    await expect(chain.getByRole('switch', { name: '写手' })).toBeChecked({ timeout: 30_000 });
     await expect(chain.getByTestId('agent-model-select-agent_writer')).toContainText('deepseek/deepseek-v4-flash');
   } finally {
     await second.app.close();
@@ -406,6 +412,8 @@ test('设置页：#269 执行顺序上移/下移 → 内核 config.agent_order �
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
+    // #1041：内置行经 loadAgents 异步派生——等行就绪再点开关（CI 慢轮根因）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
 
     // 多角色开启（默认模板模式：config.agent_order 空，开关不写 order，B1 语义）
     await chain.getByRole('switch', { name: '写手' }).click();
@@ -463,6 +471,8 @@ test('设置页：#269 执行顺序边界（首层上移按钮禁用 / 末层下
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
+    // #1041：移动按钮挂在内置行上——等行就绪再断言（CI 慢轮根因）
+    await expect(chain.getByRole('switch')).toHaveCount(4, { timeout: 30_000 });
 
     // 边界：architect=首层（上移禁用）/ reviser=末层（下移禁用）；中间层双向可用
     await expect(chain.getByTestId('agent-order-move-up-agent_architect')).toBeDisabled();
@@ -500,7 +510,10 @@ test('设置页：#295/#296 自定义角色行渲染（显示名/裸名回退 + 
     await expect(chain).toBeVisible();
 
     // 自定义行渲染：显示名 = role.name ?? 裸名；4 内置 + 2 自定义 = 6 开关
-    await expect(chain.getByRole('switch', { name: '资料研究员' })).toBeVisible();
+    // #1041：内置+自定义行均经 loadAgents/loadTemplates 异步派生，显式 30s 门控
+    await expect(chain.getByRole('switch', { name: '资料研究员' })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(chain.getByRole('switch', { name: 'editor' })).toBeVisible();
     await expect(chain.getByRole('switch')).toHaveCount(6);
 
@@ -540,7 +553,10 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
     await window.getByTestId('settings-cat-agent').click();
     const chain = window.getByTestId('agent-chain-card');
     await expect(chain).toBeVisible();
+    // #1041：行经 loadAgents/loadTemplates 异步派生（本用例 = 模板项目：4 内置 + 2
+    // 自定义 = 6 开关，不能等固定 4）——直接等目标自定义行就绪再操作（CI 慢轮根因）
     const researcher = chain.getByRole('switch', { name: '资料研究员' });
+    await expect(researcher).toBeVisible({ timeout: 30_000 });
     await expect(researcher).not.toBeChecked(); // 新项目 agent_roles 缺省 → 自定义角色关闭
 
     // 三态 1：自定义开关开 → agent_roles[agent_researcher] = sentinel __default__（写 dict 非顶层）
@@ -634,9 +650,10 @@ test('#484 添加角色：角色池选择世界观顾问 → 内核 config.agent
     await expect(chain.getByRole('switch', { name: '世界观顾问' })).toHaveCount(0);
 
     // 点添加角色 → 角色池出现世界观顾问选项（未在链中）
+    // #1041：角色池 = agents 真源派生（loadAgents 异步），CI 慢轮 30s 门控
     await chain.getByTestId('agent-chain-add-role').click();
     const worldviewOption = window.getByTestId('agent-chain-role-option-agent_worldview');
-    await expect(worldviewOption).toBeVisible();
+    await expect(worldviewOption).toBeVisible({ timeout: 30_000 });
 
     // 选择 → 世界观顾问行出现（开关）+ 落库三态 sentinel + agent_order 显式化（默认 4 层 + 末尾层）
     await worldviewOption.click();
