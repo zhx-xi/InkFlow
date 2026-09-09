@@ -1,17 +1,18 @@
 # F5: LLM Provider 适配层 (llm_service) — 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
+> **Spec 版本**: 1.1 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
+> **Spec 变更**: v1.1（2026-09-09）：LLM 出口统一 LiteLLM（F59 M1，ADR-051 取代 ADR-005v2 决策）——旧实现类名表述融入原节全部修订为 ChatLiteLLM（正文/架构图/流程/路由/重试/测试策略/10.1 状态流表 + 修改履历列）。
 > **所属阶段**: Phase 1 — Sprint 1.2（数据层+LLM 适配）
 > **依赖**: 无（F5 是 F3/F4/F6 的前置依赖）
-> **参考 ADR**: [ADR-005v2](../../adr/llm/ADR-005v2.md) (LangChain ChatOpenAI 兼容路由), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离规则)
+> **参考 ADR**: [ADR-051](../../adr/llm/ADR-051.md) (LLM 出口统一 LiteLLM), [ADR-005v2](../../adr/llm/ADR-005v2.md) (已被 ADR-051 取代), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离规则)
 > **状态**: ✅ 已实现（PR #16）
 
 ---
 
 ## 1. 概述
 
-实现 LLM Provider 抽象层的**基础设施侧**：`LangChainLLMClient`（基于 ChatOpenAI + custom base_url，ADR-005v2）、`LangChainPromptManager`（基于 ChatPromptTemplate + YAML）、和 `APIKeyManager`（AES-256-GCM 加密）。
+实现 LLM Provider 抽象层的**基础设施侧**：`LangChainLLMClient`（基于 ChatLiteLLM，litellm 统一出口，ADR-051）、`LangChainPromptManager`（基于 ChatPromptTemplate + YAML）、和 `APIKeyManager`（AES-256-GCM 加密）。
 
 **核心价值**: 领域层通过 `LLMClientProtocol` / `PromptTemplateProtocol` 使用 LLM，但不感知 LangChain。新增 Provider 只需环境变量注入 API Key，零代码改动。
 
@@ -26,7 +27,7 @@
                                         ↑ (依赖倒置)
                                  infrastructure/llm/LangChainLLMClient
                                         ↓ (内部使用)
-                                 langchain_openai.ChatOpenAI（custom base_url）
+                                 langchain_litellm.ChatLiteLLM（litellm Provider 路由）
 
  domain/ 不 import langchain（CI 强制检查）
  domain/ 不 import infrastructure/
@@ -65,7 +66,7 @@
 
 ### 4.1 LangChainLLMClient (`infrastructure/llm/langchain_client.py`)
 
-实现 `LLMClientProtocol`，内部使用 `ChatOpenAI`（custom base_url 兼容多 Provider）。
+实现 `LLMClientProtocol`，内部使用 `ChatLiteLLM`（litellm 统一出口，api_base 兼容多 Provider，ADR-051）。
 
 | 方法 | 说明 |
 |------|------|
@@ -73,11 +74,11 @@
 | `chat_stream(messages, *, model, temperature, max_tokens)` → `AsyncGenerator[StreamEvent]` | 流式逐 token |
 | `count_tokens(messages, *, model)` → `int` | tiktoken 估算，回退字符数/4 |
 
-**内部流程**: `ChatMessage(domain)` → `HumanMessage/SystemMessage(LangChain)` → `ChatOpenAI.ainvoke` → `AIMessage` → `ChatResponse(domain)`
+**内部流程**: `ChatMessage(domain)` → `HumanMessage/SystemMessage(LangChain)` → `ChatLiteLLM.ainvoke` → `AIMessage` → `ChatResponse(domain)`
 
-**Provider 路由**: `model` 参数格式 `provider/model_name`（如 `openai/gpt-4o`），解析 provider → 查 API Key → 注入 ChatOpenAI（base_url 按 Provider 配置覆盖）。
+**Provider 路由**: `model` 参数格式 `provider/model_name`（如 `openai/gpt-4o`），解析 provider → `get_provider_config`（注册表优先 + API Key 注入，ADR-051）→ 模型名经 litellm 前缀口径校准 → 注入 ChatLiteLLM（api_base 按 Provider 配置覆盖）。
 
-**重试**: LangChain 内置 `with_retry()` + 指数退避，max_retries 默认 3，超时 120s。耗尽后抛出 `LLMRequestError`。401 认证错误不重试。
+**重试**: `max_retries`/`request_timeout` 直传 ChatLiteLLM 顶层参数（单层重试，默认 3、超时 120s；禁 `num_retries`——实证 tenacity × openai SDK 双层叠加重试为缺陷，#962）。耗尽或上游异常 → `LLMRequestError`（retries_exhausted=True）；401/403 认证错误不重试（SDK 按状态码语义直接抛错）。
 
 > **YAGNI 决策**: 不显式维护 `ProviderManager` 类。Provider 配置通过 Pydantic Settings 环境变量注入，`LangChainLLMClient` 在调用时按需解析。
 
@@ -171,7 +172,7 @@ backend/tests/
 
 ```
 集成测试: langchain_client + real LLM (手动触发)  ≤ 1
-单元测试: Mock ChatOpenAI → LangChainLLMClient      7 cases
+单元测试: Mock ChatLiteLLM → LangChainLLMClient     7 cases
 单元测试: LangChainPromptManager (虚拟模板)           7 cases
 单元测试: APIKeyManager (加解密往返)                  10 cases
 ```
@@ -213,12 +214,12 @@ backend/tests/
 
 ### 10.1 LangChainLLMClient 方法状态流
 
-| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
-|------|------|------|------|------|------|
-| chat(messages, *, model, temperature, max_tokens) | API Key 已配置 | 解析 provider/model → 注入 ChatOpenAI → ainvoke → 映射 ChatResponse | ChatResponse | LLMRequestError（Key 未配置 / 401 不重试 / 重试耗尽 / 模型不支持） | 重试 ≤3 + 指数退避，超时 120s；401/403 不重试；model 格式 provider/model_name |
-| chat_stream(messages, *, model, temperature, max_tokens) | 同上 | 流式逐 token | AsyncGenerator[StreamEvent]（is_final 收尾） | stream 中断 → LLMRequestError | — |
-| count_tokens(messages, *, model) | — | tiktoken 估算 | int | — | 无 tokenizer 模型 → 回退字符数/4 + WARNING；空消息 → 0 |
-| chat([]) | — | 空消息调用 | — | ValueError("messages cannot be empty") | 前置校验，非 LLM 错误 |
+| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 | 修改履历 |
+|------|------|------|------|------|------|---------|
+| chat(messages, *, model, temperature, max_tokens) | API Key 已配置 | 解析 provider/model → 注入 ChatLiteLLM → ainvoke → 映射 ChatResponse | ChatResponse | LLMRequestError（Key 未配置 / 401 不重试 / 重试耗尽 / 模型不支持） | max_retries ≤3 单层重试（litellm 顶层，禁 num_retries），超时 120s；401/403 不重试；model 格式 provider/model_name | 2026-09-09：LLM 出口迁移 ChatLiteLLM（ADR-051） |
+| chat_stream(messages, *, model, temperature, max_tokens) | 同上 | 流式逐 token | AsyncGenerator[StreamEvent]（is_final 收尾） | stream 中断 → LLMRequestError | — | — |
+| count_tokens(messages, *, model) | — | tiktoken 估算 | int | — | 无 tokenizer 模型 → 回退字符数/4 + WARNING；空消息 → 0 | — |
+| chat([]) | — | 空消息调用 | — | ValueError("messages cannot be empty") | 前置校验，非 LLM 错误 | — |
 
 ### 10.2 LangChainPromptManager 方法状态流
 
