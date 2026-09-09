@@ -98,6 +98,7 @@ body[data-state="general"] .view-general,
 body[data-state="saving"] .view-general,
 body[data-state="saved"] .view-general,
 body[data-state="models"] .view-models,
+body[data-state="reasoning"] .view-models,
 body[data-state="account"] .view-account,
 body[data-state="note"] .view-note{display:block}
 
@@ -127,6 +128,7 @@ body[data-state="note"] .view-note{display:block}
 .select-box{display:flex;align-items:center;justify-content:space-between;gap:8px;width:224px;height:34px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:0 10px}
 .select-box svg{width:14px;height:14px;color:var(--ink-3);flex:none}
 .select-box.sm{width:208px;height:30px;font-size:12px}
+.select-box.mini{width:112px;height:26px;font-size:12px;padding:0 8px}
 .btn-accent{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:6px 16px}
 .btn-accent:hover{background:var(--accent-hover)}
 .btn-accent:disabled{opacity:.6;cursor:not-allowed}
@@ -188,6 +190,7 @@ kbd{display:inline-block;border:1px solid var(--line);border-radius:4px;backgrou
 .model-table td{padding:8px 12px 8px 0;border-bottom:1px solid var(--line)}
 .model-table tr:last-child td{border-bottom:none}
 .model-table .mid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink)}
+.reasoning-cell{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .rag-status .fresh{font-size:12px;color:var(--ok);display:flex;align-items:center;gap:6px}
 .rag-status .fresh svg{width:14px;height:14px}
 
@@ -206,6 +209,7 @@ kbd{display:inline-block;border:1px solid var(--line);border-radius:4px;backgrou
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
+body[data-shot="1"] .demo-bar{display:none}
 </style>
 </head>
 <body data-state="general">
@@ -394,6 +398,14 @@ kbd{display:inline-block;border:1px solid var(--line);border-radius:4px;backgrou
                 </div>
               </section>
 
+              <!-- F59-M4 (#965)：GlobalReasoningEffortCard（LLM 区，全局默认模型之后） -->
+              <section class="card card-pad" data-testid="global-reasoning-effort-card">
+                <div class="frow">
+                  <span class="field-label">全局默认思考强度</span>
+                  <span class="select-box" data-testid="global-reasoning-effort-select" aria-label="全局默认思考强度">跟随模型默认<span data-ic="chevron-down"></span></span>
+                </div>
+              </section>
+
               <section class="card card-pad">
                 <div class="frow-row">
                   <h2>模型管理</h2>
@@ -450,16 +462,16 @@ kbd{display:inline-block;border:1px solid var(--line);border-radius:4px;backgrou
                 <table class="model-table" style="margin-top:12px" data-testid="model-table">
                   <thead>
                     <tr>
-                      <th>模型 ID</th><th>类型</th><th>角色用途</th><th>Provider</th>
+                      <th>模型 ID</th><th>类型</th><th>角色用途</th><th>Provider</th><th>思考</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr><td class="mid">deepseek-chat</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">DeepSeek</td></tr>
-                    <tr><td class="mid">deepseek-reasoner</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">DeepSeek</td></tr>
-                    <tr><td class="mid">deepseek-embedding</td><td><span class="badge">embedding</span></td><td><span class="badge">RAG embedding</span></td><td style="color:var(--ink-2)">DeepSeek</td></tr>
-                    <tr><td class="mid">gpt-4o</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">OpenAI</td></tr>
-                    <tr><td class="mid">text-embedding-3-large</td><td><span class="badge">embedding</span></td><td><span class="badge">RAG embedding</span></td><td style="color:var(--ink-2)">OpenAI</td></tr>
-                    <tr><td class="mid">claude-sonnet-4</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">Anthropic</td></tr>
+                    <tr data-testid="model-row-deepseek-chat"><td class="mid">deepseek-chat</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">DeepSeek</td><td><div class="reasoning-cell"><span class="badge ok" data-testid="model-reasoning-badge-deepseek-chat">支持思考</span><span class="select-box mini" data-testid="model-reasoning-deepseek-chat">自动探测<span data-ic="chevron-down"></span></span></div></td></tr>
+                    <tr data-testid="model-row-deepseek-reasoner"><td class="mid">deepseek-reasoner</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">DeepSeek</td><td><div class="reasoning-cell"><span class="badge ok" data-testid="model-reasoning-badge-deepseek-reasoner">支持思考</span><span class="badge" data-testid="model-reasoning-manual-deepseek-reasoner">手动</span><span class="select-box mini" data-testid="model-reasoning-deepseek-reasoner">强制支持<span data-ic="chevron-down"></span></span></div></td></tr>
+                    <tr data-testid="model-row-deepseek-embedding"><td class="mid">deepseek-embedding</td><td><span class="badge">embedding</span></td><td><span class="badge">RAG embedding</span></td><td style="color:var(--ink-2)">DeepSeek</td><td><div class="reasoning-cell"><span class="select-box mini" data-testid="model-reasoning-deepseek-embedding">自动探测<span data-ic="chevron-down"></span></span></div></td></tr>
+                    <tr data-testid="model-row-gpt-4o"><td class="mid">gpt-4o</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">OpenAI</td><td><div class="reasoning-cell"><span class="badge ok" data-testid="model-reasoning-badge-gpt-4o">支持思考</span><span class="select-box mini" data-testid="model-reasoning-gpt-4o">自动探测<span data-ic="chevron-down"></span></span></div></td></tr>
+                    <tr data-testid="model-row-text-embedding-3-large"><td class="mid">text-embedding-3-large</td><td><span class="badge">embedding</span></td><td><span class="badge">RAG embedding</span></td><td style="color:var(--ink-2)">OpenAI</td><td><div class="reasoning-cell"><span class="select-box mini" data-testid="model-reasoning-text-embedding-3-large">自动探测<span data-ic="chevron-down"></span></span></div></td></tr>
+                    <tr data-testid="model-row-claude-sonnet-4"><td class="mid">claude-sonnet-4</td><td><span class="badge">chat</span></td><td><span class="badge">写作</span></td><td style="color:var(--ink-2)">Anthropic</td><td><div class="reasoning-cell"><span class="select-box mini" data-testid="model-reasoning-claude-sonnet-4">自动探测<span data-ic="chevron-down"></span></span></div></td></tr>
                   </tbody>
                 </table>
               </section>
@@ -528,6 +540,7 @@ kbd{display:inline-block;border:1px solid var(--line);border-radius:4px;backgrou
       <option value="saving">保存中…</option>
       <option value="saved">已保存</option>
       <option value="models">模型分类</option>
+      <option value="reasoning">模型分类 · 思考强度（F59）</option>
       <option value="account">账户分类</option>
       <option value="note">Agent/模板/Skill 说明</option>
     </select>
@@ -599,7 +612,7 @@ const NOTE_DESCS = {
 function setState(s){
   document.body.dataset.state = s;
   document.querySelectorAll('.cat-btn').forEach(b=>{
-    b.classList.toggle('active', b.dataset.cat === s);
+    b.classList.toggle('active', b.dataset.cat === s || (s === 'reasoning' && b.dataset.cat === 'models'));
   });
   const ind = document.querySelector('[data-testid="settings-save-indicator"]');
   ind.className = 'save-indicator ' + (s === 'saving' ? 'saving' : s === 'saved' ? 'saved' : 'idle');
@@ -621,7 +634,7 @@ document.querySelectorAll('.cat-btn').forEach(b=>{
 document.getElementById('stateSel').addEventListener('change', e=>setState(e.target.value));
 document.getElementById('themeSel').addEventListener('change', e=>setTheme(e.target.value));
 /* hash 驱动初始状态（截图脚本用 file://...html#state） */
-const STATES = ['general','saving','saved','models','account','note'];
+const STATES = ['general','saving','saved','models','reasoning','account','note'];
 const init = location.hash.replace('#','');
 if (STATES.includes(init)) setState(init);
 window.addEventListener('hashchange', ()=>{
