@@ -313,3 +313,21 @@ describe('rmDirWithRetry 残留诊断（#1040：耗尽报错带残留清单前 N
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+  it('注入 lister 抛错不改变主流程结论：不附加诊断且仍抛原错误对象', async () => {
+    const dir = path.join(tmpdir(), 'rm-residual-lister-throws-tmp');
+    const err: { code: string; dir?: string; residuals?: string[] } = { code: 'EPERM' };
+    const rm = vi.fn(() => {
+      throw err;
+    });
+    const listResiduals = vi.fn(() => {
+      throw new Error('lister boom');
+    });
+    await expect(
+      rmDirWithRetry(dir, { retries: 1, rm, sleep: async () => undefined, listResiduals })
+    ).rejects.toBe(err);
+    // 诊断是旁路：自身故障不得替换原错误，也不得留下半截诊断
+    expect(listResiduals).toHaveBeenCalledTimes(1);
+    expect(err.residuals).toBeUndefined();
+    expect(err.dir).toBeUndefined();
+  });

@@ -84,11 +84,19 @@ const attachResidualDiagnostics = (
   if (typeof error !== 'object' || error === null) {
     return;
   }
-  const residuals = listResiduals(dir, residualLimit);
-  (error as { dir?: string }).dir = dir;
-  (error as { residuals?: string[] }).residuals = residuals;
-  if (error instanceof Error) {
-    error.message += `（残留前 ${residuals.length} 项: ${residuals.join(' | ')}）`;
+  try {
+    const residuals = listResiduals(dir, residualLimit);
+    if (!Array.isArray(residuals)) {
+      return;
+    }
+    (error as { dir?: string }).dir = dir;
+    (error as { residuals?: string[] }).residuals = residuals;
+    if (error instanceof Error) {
+      error.message += `（残留前 ${residuals.length} 项: ${residuals.join(' | ')}）`;
+    }
+  } catch {
+    // lister/附加诊断自身故障属旁路：不附加半截诊断，原错误对象原样继续抛出
+    return;
   }
 };
 
