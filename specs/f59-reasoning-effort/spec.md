@@ -1,10 +1,11 @@
 # F59 思考模式（Reasoning Effort）+ LLM 出口统一 LiteLLM
 
-> **Spec 版本**: v1.4
+> **Spec 版本**: v1.5
 > **Spec 变更**: v1.1（2026-09-06）：待澄清 Q1/Q2/Q3 拍板并融入原节（Q1=A 软降级+WARNING 确认 §5.5/§3.3；Q2=B 前端 localStorage per-project §3.4/§12 D8；Q3=设定页控件文案直写「Agent思考强度设定」§3.4/§12 D9）；§12 D5 去「待澄清」挂账。
 > **Spec 变更**: v1.2（2026-09-06）：评审修订——① 能力面端点纠正为 `GET /api/v1/provider-configs`（§3.1/§5.4/§8.2 宿主文件补 provider_configs.py）；② 项目配置路由纠正为 `PATCH /projects/{project_id}`（§3.1）；③ 设置更新纠正为 PATCH（§3.1/§3.4）；④ legacy `/stream` 不新增字段（前端仅消费 agent 轨、legacy 帧编码无 reasoning 帧，§3.1/§10 登记）；⑤ zhipu→zai 前缀口径实证保留（§5.1）；⑥ 能力探测装配机制表述回正（§5.4）；⑦ 后端 i18n 文件列入 MODIFY（§8.2）；⑧ AGENTS.md §2 技术栈行纳入同步面（§8.2/M6）。
 > **Spec 变更**: v1.3（2026-09-09，M4 实现批）：① `GET /provider-configs` models[] 手动覆盖项额外回显 `supports_reasoning_manual`（§3.1/§3.4，GUI「手动」角标数据源；探测项不带该键，向后兼容）；② 管线角色装配（`PipelineContext.reasoning_effort`）+ F27 agentic writer + book writer_factory 注入档位（§2.3 运行时流转落地）。
 > **Spec 变更**: v1.4（2026-09-09，#1044/#1054 实现批实证回填）：① §5.2 注入通道精确化为 `model_kwargs={"reasoning_effort": ...}`（顶层构造 kwargs 被 langchain-litellm 0.7.1 pydantic 静默丢弃，echo-server 实证）；② §5.2/§5.4 决策点新增**翻译器门禁**（探测判支持但 `get_supported_openai_params()` 不含思考参数 → 软降级剥离 + WARNING `reason=translator_unsupported`，杜绝 SDK 本地 `UnsupportedParamsError` 断流）；③ §5.5 降级表补 `translator_unsupported` 行与「探测/手动不支持 + none → 剥离不告警」行（N-1 前提被证伪）。
+> **Spec 变更**: v1.5（2026-09-10，#1047 收口批）：§9.1 ③ / §13 M5 dashscope 实证项收口——workspace 无 `qwen-plan` 别名（实际 `qwen3.8-max`，#966 端点接受 reasoning_effort 已实证）；端点专项形态实测按用户拍板取消（暂无 dashscope provider 支持计划），降级为离线 SDK 验证（LiteLLM 包调用不报错 + 档位决策不抛异常）；结论沉淀 ADR-051「实证清单修订记录」R1-R3。
 > **日期**: 2026-09-06
 > **依据**: 用户需求（chat 页每轮可选思考档位 + 写作链/全自动设定页配置）+ 三轮实证调查（/models 探测、provider 专项包、LiteLLM SDK 源码核验）
 > **模块类型**: 跨端（backend LLM 基建 + API + GUI），含既有模块（F5 LLM Provider / F23 SSE / F32 设置 / F47 chat 执行细节）增量——无新业务实体
@@ -330,7 +331,7 @@ reasoning 已覆盖）。
 - **真实 AI**（e2e-ai-backend / e2e-ai-embedding 开关，CI 默认 skip）：
   ① deepseek-v4-flash 开 high → 收到非空 reasoning 帧；
   ② 多轮回传实证（第二轮请求带首轮 assistant reasoning_content 不报错——litellm 自动补）；
-  ③ dashscope/qwen-plan `enable_thinking` 透传实测（ADR-051 实证清单唯一推断项，必测）；
+  ③ dashscope `enable_thinking`/`reasoning_effort` 透传实测（ADR-051 实证清单唯一推断项）——**✅ 收口（2026-09-10，ADR-051 修订记录 R1-R3）**：workspace 无字面 `qwen-plan` 别名（实际模型名 `qwen3.8-max`，#966 真实 key 实证端点接受 `reasoning_effort=high` HTTP 200）；litellm 1.99.0 dashscope 翻译器无思考参数 → 生产链路经翻译器门禁软降级（#1044/#1054）；端点专项形态实测按用户拍板取消（暂无 dashscope provider 支持计划，#1047），降级为离线 SDK 验证（包调用不报错 + 档位决策不抛异常，15/15 PASS）；
   ④ embedding 迁移后维度探测一致。
 - **前端**（Vitest）：选择器渲染/禁用态（`supports_reasoning=false` 置灰）/选中传参
   断言 + **UI 元素必须出现断言**（#793 纪律）。
@@ -411,7 +412,7 @@ reasoning 已覆盖）。
 | M2 解析链 | 三级优先级单测 + API 422 + `default` 不发参数断言 | 9.1 单元/API |
 | M3 chat 闭环 | GUI 选择器出现且默认「跟随模型默认」；选 high 发送 → fake 注入 reasoning_content → 流式思考区块渲染；不支持模型（能力 false）控件置灰 | Playwright + Vitest（UI 必须出现断言） |
 | M4 写作链/全自动闭环 | 设定页保存档位 → PATCH 回显；管线装配日志断言 kwargs 含档位；agentic AgentRun trace steps 含 reasoning（#740 路径） | tests/api + e2e-ai-backend 真实抽测（deepseek high） |
-| M5 真实模型实证 | e2e-ai-backend：deepseek 思考帧非空 + 多轮回传 + dashscope enable_thinking 透传 + zhipu glm-4.5 软降级日志，四项各有 PASS 记录 | e2e-ai-*（本地开关模式） |
+| M5 真实模型实证 | e2e-ai-backend：deepseek 思考帧非空 + 多轮回传 + dashscope 透传（✅ 收口：workspace `qwen3.8-max` 接受 reasoning_effort，无 qwen-plan 别名；专项形态实测按拍板取消改离线 SDK 验证，ADR-051 R1-R3）+ zhipu glm-4.5 软降级日志，四项各有 PASS 记录 | e2e-ai-*（本地开关模式）+ `tests/e2e_ai/test_dashscope_enable_thinking_passthrough.py` |
 | M6 治理 | f5/f4-pipeline spec 修订融合（修改履历列）+ AGENTS.md 同步（**§2 技术栈行** + §1 功能表/§3/§8）+ ADR-051 状态✅ + 设计双件套（chat/设定页 ASCII 线框 + design/GUI HTML/PNG） | docs 收尾 PR 审查 |
 
 验收命令基线：`cd backend; uv run pytest tests/unit/ -q`、`uv run pytest ../tests/api/ -q`、
