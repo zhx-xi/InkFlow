@@ -7,7 +7,7 @@ export const zh = {
   'nav.expand': '展开', 'nav.collapse': '折叠',
   'nav.group.writing': '写作区', 'nav.group.library': '设定库',
   'nav.group.system': '系统',
-  'nav.group.sessions': '会话列表',
+  'nav.group.sessions': '会话',
   'nav.lib.characters': '角色',
   'nav.lib.world': '世界观',
   'nav.lib.outline': '大纲',

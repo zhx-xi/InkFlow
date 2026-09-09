@@ -128,13 +128,13 @@
 ### 5.1 逻辑/文案补充
 
 - `nav.sessions`（AppNav 左导航「会话」按钮，跳 `/sessions`）→ **「会话详情」** / "Session Detail"。
-- `nav.group.sessions`（AppNav 左导航会话分组标题）→ **「会话列表」** / "Session List"（#1016 键位拆分后仅 AppNav 消费，见 §7）。
-- `session.group.title`（SessionBar 栏内短头，新增键，见 §7）→ **「会话」** / "Sessions"。
+- `nav.group.sessions`（AppNav 左导航会话分组标题）→ **「会话」** / "Sessions"（#1016 键位拆分后仅 AppNav 消费；文案于 #1016 后续修正对调，见 §8）。
+- `session.group.title`（SessionBar 栏内标题，新增键，见 §7）→ **「会话列表」** / "Session List"（与会话页 header 一致）。
 - `sessions.title`（会话页 header）→ **「会话列表」** / "Session List"。
 
 ### 5.2 验收补充
 
-- N10：左侧导航「会话」按钮显示「会话详情」、跳 /sessions；AppNav 会话分组标题（`nav-group-sessions`）与会话页 header 显示「会话列表」；SessionBar 栏内短头（`session-bar-header`）显示「会话」（#1016 拆分键位，见 §7）。zh/en 两端一致。
+- N10：左侧导航「会话」按钮显示「会话详情」、跳 /sessions；AppNav 会话分组标题（`nav-group-sessions`）显示「会话」；SessionBar 栏内标题（`session-bar-header`）与会话页 header 显示「会话列表」（#1016 拆分键位 + 文案对调，见 §7/§8）。zh/en 两端一致。
 
 ## 6. #1015 三类卡点击查看详情（详情弹层 + 归档只读贯通）
 
@@ -181,8 +181,8 @@
 
 ### 7.1 逻辑/文案
 
-- `nav.group.sessions`（zh.ts/en.ts）→ **仅 AppNav 分组标题**（`nav-group-sessions`）消费：**「会话列表」** / "Session List"，与会话页 header `sessions.title` 一致。
-- `session.group.title`（session-ux.ts，新增键）→ SessionBar 栏内 section 头（`session-bar-header`）：**「会话」** / "Sessions"。
+- `nav.group.sessions`（zh.ts/en.ts）→ **仅 AppNav 分组标题**（`nav-group-sessions`）消费：**「会话」** / "Sessions"（§8 修正后）。
+- `session.group.title`（session-ux.ts，新增键）→ SessionBar 栏内标题（`session-bar-header`）：**「会话列表」** / "Session List"，与会话页 header `sessions.title` 一致（§8 修正后）。
 - `session-ux.ts` 删除重复定义的 `nav.group.sessions`（zh/en 两处）。
 
 ### 7.2 护栏（i18n 聚合重复键检测）
@@ -191,6 +191,21 @@
 
 ### 7.3 验收补充
 
-- N17：AppNav `nav-group-sessions` 分组标题 = 「会话列表」/ "Session List"（与会话页 header 一致）。
-- N18：SessionBar `session-bar-header` 短头 = 「会话」/ "Sessions"（不回退为「会话列表」）。
+- N17/N18：**已被 §8.2 的 N20/N21 取代**（首版映射的验收项；文案对调拍板见 §8，勿再引用旧编号）。
 - N19：i18n 跨域字典重复键断言零命中（zh/en 两侧）。
+
+## 8. #1016 后续修正（2026-09-09 拍板）：分组标题与会话栏标题文案对调
+
+> §7 落地（PR #1051 / merge 7d29505）后，用户看真实渲染截图指出**位置反了**：期望上方分组标题=**「会话」**、下方会话栏标题=**「会话列表」**（会话栏才是与 /sessions 页同名的「会话列表」）。
+
+### 8.1 逻辑/文案（最终口径）
+
+- `nav.group.sessions`（`zh.ts:10` / `en.ts:14`）= **「会话」** / "Sessions" → AppNav 分组标题（`nav-group-sessions`）。
+- `session.group.title`（`session-ux.ts:6,15`）= **「会话列表」** / "Session List" → SessionBar 栏内标题（`session-bar-header`），与会话页 header `sessions.title` 一致。
+- 键位拆分与消费方归属不变（AppNav→`nav.group.sessions`、SessionBar→`session.group.title`）；本次仅**对调两侧文案值**（组件零改动）。
+
+### 8.2 验收（取代 N17/N18）
+
+- N20：AppNav `nav-group-sessions` = 「会话」/ "Sessions"。
+- N21：SessionBar `session-bar-header` = 「会话列表」/ "Session List"（与会话页 header 一致）。
+- N19 重复键护栏不变（零命中）。

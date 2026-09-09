@@ -10,7 +10,7 @@
 - **serve debug 自动弹 /docs 逃生门（#949）**：新增进程 env `INKFLOW_DEBUG_NO_BROWSER`（`1`/`true`/`on`，trim+lowercase，判据对齐 `INKFLOW_DEBUG`），为真时 debug 分支跳过自动打开 `/docs` 的 `threading.Timer` 注册（e2e 真实拉起内核的用例每例弹一次浏览器，纯副作用零断言贡献）。默认行为不变（未设仍自动弹，F51 D2 拍板）；`--open-browser` 显式路径不受影响；token / docs 门控 / 日志级别 / DevTools 联动全部不变。e2e（e2e-debug-triad `baseEnv()` / e2e-packaged `launchPackaged()`）统一注入该 env 消除测试弹窗。
 
 ### 修复
-- **i18n 同名键冲突导致会话分组标题被静默覆盖（#1016）**：`nav.group.sessions` 在 `zh.ts`/`en.ts` 与 `session-ux.ts` 重复定义，`useI18n` 展开合并时后者覆盖前者——AppNav 会话分组标题被「会话」吞掉（应为「会话列表」）。拆分键位（SessionBar 栏内短头改用专属键 `session.group.title`=「会话」/「Sessions」，`nav.group.sessions` 仅归 AppNav 消费）；`i18n.contract.test` 新增跨域重复键护栏（13 个来源字典两两 key 交集必须为空，zh/en 两侧），根治「后写吞前写」整族问题。
+- **i18n 同名键冲突导致会话分组标题被静默覆盖（#1016）**：`nav.group.sessions` 在 `zh.ts`/`en.ts` 与 `session-ux.ts` 重复定义，`useI18n` 展开合并时后者覆盖前者，左导航文案被静默改写。拆分键位：`nav.group.sessions`（AppNav 分组标题）=「会话」/ "Sessions"、新键 `session.group.title`（SessionBar 栏内标题）=「会话列表」/ "Session List"（与会话页 header 一致）；`i18n.contract.test` 新增跨域重复键护栏（13 个来源字典两两 key 交集必须为空，zh/en 两侧），根治「后写吞前写」整族问题。
 - **config.json 全局配置只写不读（#987）**：`config.json` 并入 pydantic 启动源（方案 A，`ConfigJsonSettingsSource` 镜像 #977 instance.env 源形态），优先级链 init > 进程 env > instance.env > .env > config.json > secrets——GUI 设置页/`config set`/#735 D2 自动配置三路写入的全局默认模型等键内核重启后不再静默丢失。debug 键 F51 D1/D8 语义零翻转。
 - **chromadb 匿名遥测关闭（#946）**：`LangChainVectorStore` 的两条 chromadb 客户端创建路径（实体 collection `_get_collection` / 指纹 meta collection `_get_meta_collection`）收敛到唯一入口 `_create_client()`，统一传 `Settings(anonymized_telemetry=False)`——chromadb 默认 `True`，未显式关闭会把本地运行数据经 OTLP 上报外部；测试侧直连 chroma 的校验客户端（持久化/一致性 journey）同步关闭，本地与 CI 运行均不外泄。
 
