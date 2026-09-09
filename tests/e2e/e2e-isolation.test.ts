@@ -5,7 +5,7 @@
  * - dataDir     = mkdtempSync(join(tmpdir(), `inkflow-e2e-${tag}-`))   （内核数据隔离）
  * - userDataDir = 同上、`-ud` 后缀                                      （渲染层 --user-data-dir）
  * - env         = { ...process.env, INKFLOW_DATA_DIR: dataDir } + extra 覆盖（extra 优先）
- * - cleanup     = async rmDirWithRetry（#1033：仅瞬态码重试、非瞬态立即抛、耗尽抛最后错误）
+ * - cleanup     = async cleanupIsolatedEnv（#1040：先等句柄持有者退出；dataDir 40×250ms / userDataDir 80×500ms）
  *
  * 纯 Node 模块（禁 import @playwright/test，#415 vitest 加载约束）；spec（e2e-isolation.spec.ts
  * / e2e-rag-fake.spec.ts）与 vitest 双加载。
@@ -14,10 +14,11 @@
  * vitest import 期 Cannot find export（本文件 collection FAIL）。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  cleanupIsolatedEnv,
   createIsolatedEnv,
   ensureProcessExited,
   rmDirWithRetry,
@@ -187,5 +188,128 @@ describe('waitForProcessExit / ensureProcessExited（#1033：注入探活，无�
     ).resolves.toBeUndefined();
     expect(kill).toHaveBeenCalledTimes(1);
     expect(sleep).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('cleanupIsolatedEnv（#1040：先等句柄持有者退出再删；userDataDir 预算放宽）', () => {
+  it('pid 已退出 → 单次探活零等待，随后按序删除 dataDir/userDataDir', async () => {
+    const iso = createIsolatedEnv('c1');
+    created.push(iso);
+    const isAlive = vi.fn(() => false);
+    const sleep = vi.fn(async () => undefined);
+    const rmDir = vi.fn(async () => undefined);
+    await cleanupIsolatedEnv(iso, { pids: [4242], isAlive, sleep, rmDir });
+    // 已退出：单次探活、零 sleep（不引入无谓等待）
+    expect(isAlive).toHaveBeenCalledTimes(1);
+    expect(isAlive).toHaveBeenCalledWith(4242);
+    expect(sleep).not.toHaveBeenCalled();
+    // 两目录各删一次，顺序 = dataDir → userDataDir
+    expect(rmDir).toHaveBeenCalledTimes(2);
+    expect(rmDir.mock.calls[0][0]).toBe(iso.dataDir);
+    expect(rmDir.mock.calls[1][0]).toBe(iso.userDataDir);
+    // 先等（探活）再删（调用序）
+    expect(isAlive.mock.invocationCallOrder[0]).toBeLessThan(rmDir.mock.invocationCallOrder[0]);
+  });
+
+  it('pid 未退出 → 轮询等到退出后才删（等待严格先于删除）', async () => {
+    const iso = createIsolatedEnv('c2');
+    created.push(iso);
+    const isAlive = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const rmDir = vi.fn(async () => undefined);
+    await cleanupIsolatedEnv(iso, { pids: [4243], timeoutMs: 5_000, isAlive, rmDir });
+    // 首次探活存活 → 轮询一次 → 第二次死亡 → 才删
+    expect(isAlive).toHaveBeenCalledTimes(2);
+    expect(isAlive.mock.invocationCallOrder[1]).toBeLessThan(rmDir.mock.invocationCallOrder[0]);
+  });
+
+  it('pid 超时仍存活 → best-effort kill 后仍继续删除（不抛）', async () => {
+    const iso = createIsolatedEnv('c3');
+    created.push(iso);
+    const isAlive = vi.fn(() => true);
+    const kill = vi.fn();
+    const sleep = vi.fn(async () => undefined);
+    const rmDir = vi.fn(async () => undefined);
+    await expect(
+      cleanupIsolatedEnv(iso, { pids: [4244], timeoutMs: 50, graceMs: 0, isAlive, kill, sleep, rmDir })
+    ).resolves.toBeUndefined();
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(rmDir).toHaveBeenCalledTimes(2);
+  });
+
+  it('pids 含 undefined（未 launch / 无 pid）→ 跳过等待，仅删目录', async () => {
+    const iso = createIsolatedEnv('c4');
+    created.push(iso);
+    const isAlive = vi.fn(() => false);
+    const rmDir = vi.fn(async () => undefined);
+    await cleanupIsolatedEnv(iso, { pids: [undefined, undefined], isAlive, rmDir });
+    expect(isAlive).not.toHaveBeenCalled();
+    expect(rmDir).toHaveBeenCalledTimes(2);
+  });
+
+  it('userDataDir 预算放宽（80×500ms），dataDir 保持 40×250ms', async () => {
+    const iso = createIsolatedEnv('c5');
+    created.push(iso);
+    const rmDir = vi.fn(async () => undefined);
+    await cleanupIsolatedEnv(iso, { rmDir });
+    expect(rmDir).toHaveBeenNthCalledWith(
+      1,
+      iso.dataDir,
+      expect.objectContaining({ retries: 40, delayMs: 250 })
+    );
+    expect(rmDir).toHaveBeenNthCalledWith(
+      2,
+      iso.userDataDir,
+      expect.objectContaining({ retries: 80, delayMs: 500 })
+    );
+  });
+
+  it('真实删除两目录（无注入，端到端）', async () => {
+    const iso = createIsolatedEnv('c6');
+    expect(existsSync(iso.dataDir)).toBe(true);
+    expect(existsSync(iso.userDataDir)).toBe(true);
+    await cleanupIsolatedEnv(iso, { pids: [] });
+    expect(existsSync(iso.dataDir)).toBe(false);
+    expect(existsSync(iso.userDataDir)).toBe(false);
+  });
+});
+
+describe('rmDirWithRetry 残留诊断（#1040：耗尽报错带残留清单前 N 项，仍抛原错误对象）', () => {
+  it('耗尽后保留原错误对象 + 附加残留清单（注入 lister）', async () => {
+    const dir = path.join(tmpdir(), 'rm-residual-injected-tmp');
+    const err = new Error('EPERM: operation not permitted, unlink ...');
+    const rm = vi.fn(() => {
+      throw err;
+    });
+    const listResiduals = vi.fn(() => ['GPUCache/index', 'Local Storage/leveldb/LOCK']);
+    await expect(
+      rmDirWithRetry(dir, {
+        retries: 1,
+        rm,
+        sleep: async () => undefined,
+        listResiduals,
+        residualLimit: 2,
+      })
+    ).rejects.toBe(err);
+    expect(listResiduals).toHaveBeenCalledWith(dir, 2);
+    expect(err.message).toContain('GPUCache/index');
+    expect((err as Error & { residuals?: string[] }).residuals).toEqual([
+      'GPUCache/index',
+      'Local Storage/leveldb/LOCK',
+    ]);
+  });
+
+  it('默认 lister 列出真实目录条目（耗尽路径，非 Error 也附加诊断）', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rm-residual-real-'));
+    writeFileSync(path.join(dir, 'locked.txt'), 'x');
+    const err: { code: string; residuals?: string[] } = { code: 'EPERM' };
+    const rm = vi.fn(() => {
+      throw err;
+    });
+    await expect(rmDirWithRetry(dir, { retries: 0, rm, sleep: async () => undefined })).rejects.toBe(
+      err
+    );
+    expect(err.residuals).toContain('locked.txt');
+    rmSync(dir, { recursive: true, force: true });
   });
 });
