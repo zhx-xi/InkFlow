@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { Compass, FileText, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Compass, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auditChapter, confirmAudit, type AuditReportDto } from '../api/audit';
 import { createChatConversation, saveChatMessage } from '../api/chat';
@@ -363,25 +363,6 @@ export function WritingPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* #976 草稿常显顶栏：审批入口常驻（计数 = store pendingDrafts；>0 时圆点高亮） */}
-      <div
-        data-testid="writing-topbar"
-        className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-line bg-surface-2 px-2"
-      >
-        <button
-          type="button"
-          data-testid="drafts-approval-button"
-          aria-label={t('write.drafts.openApprove')}
-          onClick={() => setDraftsOpen(true)}
-          className="flex items-center gap-1.5 rounded px-2 py-1 text-[12px] text-ink-2 transition duration-150 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-        >
-          <FileText className="h-4 w-4" aria-hidden="true" />
-          <span>{t('write.drafts.pending', { count: pendingDrafts.length })}</span>
-          {pendingDrafts.length > 0 && (
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-accent" />
-          )}
-        </button>
-      </div>
       <div className="flex min-h-0 flex-1">
         <aside
           data-testid="project-tree"
@@ -445,6 +426,8 @@ export function WritingPage() {
                   }
                 }}
                 onExtract={() => setExtractOpen(true)}
+                pendingDraftsCount={pendingDrafts.length}
+                onOpenDrafts={() => setDraftsOpen(true)}
               />
               {view === 'editor' ? (
                 <ChapterEditor onEditorKeyDown={handleKeyDown} onContentChange={handleContentChange} />

@@ -27,6 +27,13 @@
  * RED 预期（追加用例）：当前 EditorToolbar 无 onAudit prop 与审计按钮 →
  * 既有用例保持绿 + 新用例 element-missing（getByRole button 审计 找不到）；
  * tsc --noEmit 报 onAudit 属性缺失（TS2322，属 RED 的一部分）。
+ *
+ * #1003 草稿审批入口移入工具栏行最右（2026-09-09）追加契约：
+ * - 新 prop：`pendingDraftsCount?: number`（默认 0）+ `onOpenDrafts?: () => void`（可选，兼容既有调用点）
+ * - onOpenDrafts 传入时：工具栏末尾渲染 ml-auto 右对齐分组（按钮直接父节点 = 该分组，
+ *   且分组是 toolbar 最后一个元素子节点）；分组内 `drafts-approval-button`
+ *   （文案 write.drafts.pending；pendingDraftsCount>0 时渲染圆点 drafts-approval-dot）
+ * - onOpenDrafts 未传时：不渲染审批入口（既有调用点零改动）
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -215,5 +222,41 @@ describe('工具栏 — 风格检测按钮（T2 风格检测）', () => {
     const auditBtn = within(toolbar).getByRole('button', { name: '审计' });
     const styleBtn = within(toolbar).getByTestId('toolbar-style-analyze');
     expect(auditBtn.compareDocumentPosition(styleBtn)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+});
+
+describe('工具栏 — 草稿审批入口移至工具栏行最右（#1003）', () => {
+  it('传入 onOpenDrafts → drafts-approval-button 在 ml-auto 分组内且为工具栏最右；无草稿不渲染圆点', () => {
+    renderToolbar({ pendingDraftsCount: 0, onOpenDrafts: vi.fn() });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    const btn = within(toolbar).getByTestId('drafts-approval-button');
+    expect(btn).toHaveTextContent('草稿 (0)');
+    // #1003 契约：按钮直接父节点 = ml-auto 右对齐分组，且该分组是工具栏最后一个元素子节点
+    const group = btn.parentElement as HTMLElement;
+    expect(group.className).toContain('ml-auto');
+    expect(toolbar.lastElementChild).toBe(group);
+    // 无待审批草稿 → 无高亮圆点
+    expect(within(btn).queryByTestId('drafts-approval-dot')).not.toBeInTheDocument();
+  });
+
+  it('pendingDraftsCount=2 → 文案「草稿 (2)」+ 圆点保留（#976 契约不回归）', () => {
+    renderToolbar({ pendingDraftsCount: 2, onOpenDrafts: vi.fn() });
+    const btn = within(screen.getByTestId('editor-toolbar')).getByTestId('drafts-approval-button');
+    expect(btn).toHaveTextContent('草稿 (2)');
+    expect(within(btn).getByTestId('drafts-approval-dot')).toBeInTheDocument();
+  });
+
+  it('点击 drafts-approval-button → onOpenDrafts 被调用', async () => {
+    const user = userEvent.setup();
+    const onOpenDrafts = vi.fn();
+    renderToolbar({ pendingDraftsCount: 0, onOpenDrafts });
+    const toolbar = screen.getByTestId('editor-toolbar');
+    await user.click(within(toolbar).getByTestId('drafts-approval-button'));
+    expect(onOpenDrafts).toHaveBeenCalledTimes(1);
+  });
+
+  it('未传 onOpenDrafts → 不渲染审批入口（兼容既有调用点）', () => {
+    renderToolbar();
+    expect(screen.queryByTestId('drafts-approval-button')).not.toBeInTheDocument();
   });
 });

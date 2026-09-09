@@ -836,9 +836,10 @@ describe('写作页 — 生成→新会话（#763：createChatConversation + 去
 });
 
 /**
- * #976 草稿常显：顶栏 writing-topbar + drafts-approval-button（计数）+ 审批弹层 + 双轨树草稿节点。
+ * #976 草稿常显 + #1003 审批入口移入工具栏：drafts-approval-button（计数）+ 审批弹层 + 双轨树草稿节点。
  * 契约：pendingCount = useChapterStore.pendingDrafts.length；按钮文案 t('write.drafts.pending', {count})；
  * 点击打开 DraftApprovalDrawer（listDrafts 请求发出）；树内渲染 draft-{id} 节点 + badge。
+ * #1003：独立顶栏 writing-topbar 已删除；审批入口位于 editor-toolbar 行最右（ml-auto 分组）。
  * ⚠️ 只扩展 apiFetchMock 分发器（drafts 路由），不改既有断言值。
  */
 describe('写作页 — #976 草稿常显（顶栏 + 审批弹层 + 双轨树，RED 契约）', () => {
@@ -859,10 +860,11 @@ describe('写作页 — #976 草稿常显（顶栏 + 审批弹层 + 双轨树，
     });
   }
 
-  it('【R】顶栏 writing-topbar 存在 + drafts-approval-button 文案含「草稿 (0)」（无草稿）', () => {
+  it('【R】#1003 顶栏移除：writing-topbar 不存在；drafts-approval-button 位于 editor-toolbar 内（无草稿）', () => {
     renderWritingPage();
-    expect(screen.getByTestId('writing-topbar')).toBeInTheDocument();
-    expect(screen.getByTestId('drafts-approval-button')).toHaveTextContent('草稿 (0)');
+    expect(screen.queryByTestId('writing-topbar')).not.toBeInTheDocument();
+    const toolbar = screen.getByTestId('editor-toolbar');
+    expect(within(toolbar).getByTestId('drafts-approval-button')).toHaveTextContent('草稿 (0)');
   });
 
   it('【R】drafts-approval-button 文案含「草稿 (2)」（seed 2 草稿）', async () => {

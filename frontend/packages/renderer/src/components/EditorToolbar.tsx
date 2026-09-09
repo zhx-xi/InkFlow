@@ -1,5 +1,5 @@
 /** 编辑器工具栏（spec §4.2.1 Q2 拍板 C）：默认 opacity 0.35、hover 编辑器区域全显 + 快捷键 */
-import { Eye, FileSearch, Gauge, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
+import { Eye, FileSearch, FileText, Gauge, Redo2, Save, ScanSearch, Sparkles, Undo2, Wand2, Zap } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 export interface EditorToolbarProps {
@@ -23,6 +23,10 @@ export interface EditorToolbarProps {
   onToggleAuto?: () => void;
   /** #652：AI 提取（打开提取弹窗；仅传入时渲染图标，兼容既有调用点） */
   onExtract?: () => void;
+  /** #1003：待审批草稿数（>0 时按钮显示高亮圆点）；缺省 0 */
+  pendingDraftsCount?: number;
+  /** #1003：打开草稿审批弹层；未传入时不渲染审批入口（兼容既有调用点） */
+  onOpenDrafts?: () => void;
 }
 
 const ICON_BTN_CLS =
@@ -43,6 +47,8 @@ export function EditorToolbar({
   autoWriteEnabled,
   onToggleAuto,
   onExtract,
+  pendingDraftsCount = 0,
+  onOpenDrafts,
 }: EditorToolbarProps) {
   const { t } = useI18n();
   return (
@@ -157,6 +163,27 @@ export function EditorToolbar({
         >
           <FileSearch className="h-4 w-4" aria-hidden="true" />
         </button>
+      )}
+      {onOpenDrafts && (
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            data-testid="drafts-approval-button"
+            aria-label={t('write.drafts.openApprove')}
+            onClick={onOpenDrafts}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-[12px] text-ink-2 transition duration-150 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          >
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            <span>{t('write.drafts.pending', { count: pendingDraftsCount })}</span>
+            {pendingDraftsCount > 0 && (
+              <span
+                data-testid="drafts-approval-dot"
+                aria-hidden="true"
+                className="h-1.5 w-1.5 rounded-full bg-accent"
+              />
+            )}
+          </button>
+        </div>
       )}
     </div>
   );
