@@ -131,7 +131,7 @@ function mockOutlineApi(state: State, opts?: { generate?: () => Promise<unknown>
     if (path === '/api/v1/projects') {
       return { items: [projectP1], total: 1, offset: 0, limit: 50 };
     }
-    if (path === '/api/v1/projects/p1/outlines' && (!init?.method || init.method === 'GET')) {
+    if (path.startsWith('/api/v1/projects/p1/outlines') && (!init?.method || init.method === 'GET')) {
       return { items: state.outlines, total: state.outlines.length, offset: 0, limit: 50 };
     }
     if (path === '/api/v1/projects/p1/chapters') return { items: [], total: 0, offset: 0, limit: 50 };

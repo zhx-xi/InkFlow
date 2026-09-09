@@ -81,9 +81,9 @@ function renderLibrary(initialPath = '/library') {
   );
 }
 
-/** 端点命中断言（宽容单参/双参：契约 = 拉取了该端点，不约束 init 形状） */
+/** 端点命中断言（宽容单参/双参：契约 = 拉取了该端点，不约束 init 形状；strip querystring 兼容新消费带 query） */
 function fetchCalled(path: string): boolean {
-  return apiFetchMock.mock.calls.some((c) => c[0] === path);
+  return apiFetchMock.mock.calls.some((c) => String(c[0]).split('?')[0] === path);
 }
 
 beforeEach(() => {
@@ -95,7 +95,7 @@ beforeEach(() => {
     if (path === '/api/v1/projects') return { items: [projectP1, projectP2], total: 2, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/characters') return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p2/characters') return { items: [{ id: 'c2', name: '沈砚' }], total: 1, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/outlines') return { items: [{ id: 'o1', name: '卷一 风起' }], total: 1, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/projects/p1/outlines')) return { items: [{ id: 'o1', name: '卷一 风起' }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/knowledge-graph') return { nodes: [], edges: [] };
     // 时间线 = TimelineView 形状（backend timeline.py L365-377：event_timeline/narrative_order，无 items）
     if (path === '/api/v1/projects/p1/timeline')
@@ -494,7 +494,7 @@ describe('设定库页 — #196 分类实体手动创建', () => {
   it('创建保存失败：POST reject → err toast + 对话框保持打开（可修改重试）', async () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/outlines') {
+      if (path.startsWith('/api/v1/projects/p1/outlines')) {
         // GET 空列表（空态）；POST 失败（reject）——区分 method，否则 POST 也命中空列表分支 resolve
         if (init?.method === 'POST') throw new Error('创建失败');
         return { items: [], total: 0, offset: 0, limit: 50 };

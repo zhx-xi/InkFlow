@@ -89,8 +89,9 @@ class OutlineRepositoryProtocol(Protocol):
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        level: str | None = None,
     ) -> tuple[builtins.list[Outline], int]:
-        """分页查询项目内大纲列表，支持名称模糊搜索.
+        """分页查询项目内大纲列表，支持名称模糊搜索与层级过滤.
 
         Args:
             project_id: 项目主键（int）.
@@ -99,6 +100,7 @@ class OutlineRepositoryProtocol(Protocol):
             sort_desc: 是否倒序.
             offset: 分页偏移.
             limit: 分页大小.
+            level: 层级过滤（overall / volume / chapter，None=不过滤，#1002）.
 
         Returns:
             (大纲列表, 总数) 元组.

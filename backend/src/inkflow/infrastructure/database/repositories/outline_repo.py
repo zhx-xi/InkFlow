@@ -189,8 +189,12 @@ class SQLiteOutlineRepository:
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        level: str | None = None,
     ) -> tuple[builtins.list[Outline], int]:
-        """分页查询项目内大纲列表，支持名称模糊搜索.
+        """分页查询项目内大纲列表，支持名称模糊搜索与层级过滤（spec §6.3）.
+
+        Args:
+            level: 层级过滤（overall / volume / chapter，None=不过滤，#1002）.
 
         Returns:
             (当前页大纲列表, 符合条件的总记录数).
@@ -201,14 +205,22 @@ class SQLiteOutlineRepository:
         if search:
             base = base.where(OutlineORM.name.icontains(search))
 
-        # 总数（分页前）
+        # 层级过滤（#1002）: level 显式传入时仅返回该层级
+        if level is not None:
+            base = base.where(OutlineORM.level == level)
+
+        # 总数（分页前）——与数据共用 base → total 为过滤后总数
         count_stmt = select(func.count()).select_from(base.subquery())
         count_result = await self._session.execute(count_stmt)
         total = count_result.scalar_one()
 
-        # 排序 + 分页
+        # 排序 + 分页（#1002: sort_order 二级稳定键 id ASC，不随 sort_desc 镜像）
         sort_col = getattr(OutlineORM, sort_by, OutlineORM.updated_at)
-        base = base.order_by(sort_col.desc() if sort_desc else sort_col.asc())
+        order = sort_col.desc() if sort_desc else sort_col.asc()
+        if sort_by == "sort_order":
+            base = base.order_by(order, OutlineORM.id.asc())
+        else:
+            base = base.order_by(order)
         base = base.offset(offset).limit(limit)
 
         result = await self._session.execute(base)

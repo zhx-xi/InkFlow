@@ -682,3 +682,118 @@ class TestP5HardDeleteCleansChildrenAndPoints:
 
         points = await repo.list_points(child.id.int)
         assert points == []
+
+
+@pytest.mark.integration
+class TestOutlineListLevel1002:
+    """#1002 RED: 大纲列表 level 过滤 + sort_order 稳定排序契约（spec §6.3/§14.1）."""
+
+    async def test_list_level_filter_overall(self, db_session, project):
+        """RL1: level='overall' 仅返回 overall 层级，total 只计过滤后."""
+        repo = SQLiteOutlineRepository(db_session)
+        for n in ("overall_1", "overall_2"):
+            await repo.add(_outline(project, n, level="overall"))
+        for n in ("volume_1", "volume_2"):
+            await repo.add(_outline(project, n, level="volume"))
+        for n in ("chapter_1", "chapter_2"):
+            await repo.add(_outline(project, n, level="chapter"))
+
+        outlines, total = await repo.list(project.id, level="overall")
+        assert total == 2
+        assert {o.level for o in outlines} == {"overall"}
+        assert {o.name for o in outlines} == {"overall_1", "overall_2"}
+
+    async def test_list_level_none_returns_all(self, db_session, project):
+        """RL2: level=None（显式）与不传参等值 -> 全层级."""
+        repo = SQLiteOutlineRepository(db_session)
+        await repo.add(_outline(project, "a", level="overall"))
+        await repo.add(_outline(project, "b", level="chapter"))
+
+        outlines, total = await repo.list(project.id, level=None)
+        assert total == 2
+        assert len(outlines) == 2
+
+    async def test_list_level_unknown_returns_empty(self, db_session, project):
+        """RL3: 未知 level='bogus' 透传匹配 -> 空 items（不抛异常）."""
+        repo = SQLiteOutlineRepository(db_session)
+        await repo.add(_outline(project, "a", level="overall"))
+
+        outlines, total = await repo.list(project.id, level="bogus")
+        assert outlines == []
+        assert total == 0
+
+    async def test_list_level_with_search_intersection(self, db_session, project):
+        """RL4: level + search 组合过滤，total=交集数."""
+        repo = SQLiteOutlineRepository(db_session)
+        await repo.add(_outline(project, "alpha_overall", level="overall"))
+        await repo.add(_outline(project, "beta_overall", level="overall"))
+        await repo.add(_outline(project, "alpha_volume", level="volume"))
+
+        outlines, total = await repo.list(project.id, level="overall", search="alpha")
+        assert total == 1
+        assert [o.name for o in outlines] == ["alpha_overall"]
+
+    async def test_list_level_with_pagination(self, db_session, project):
+        """RL5: level + offset/limit，过滤后分页，total 恒为过滤后总数."""
+        repo = SQLiteOutlineRepository(db_session)
+        for so, n in ((1, "A"), (2, "B"), (3, "C")):
+            await repo.add(_outline(project, n, level="overall", sort_order=so))
+        await repo.add(_outline(project, "volume", level="volume"))
+
+        outlines, total = await repo.list(
+            project.id,
+            level="overall",
+            sort_by="sort_order",
+            sort_desc=False,
+            offset=1,
+            limit=1,
+        )
+        assert total == 3
+        assert [o.name for o in outlines] == ["B"]
+
+    async def test_list_sort_order_asc_stable(self, db_session, project):
+        """RS1: sort_by='sort_order' asc=1,2,3；tie 时次级 id ASC = 插入序."""
+        repo = SQLiteOutlineRepository(db_session)
+        await repo.add(_outline(project, "c", sort_order=3))
+        await repo.add(_outline(project, "a", sort_order=1))
+        await repo.add(_outline(project, "b", sort_order=2))
+        await repo.add(_outline(project, "d", sort_order=2))  # tie with b
+
+        outlines, _ = await repo.list(project.id, sort_by="sort_order", sort_desc=False)
+        assert [o.name for o in outlines] == ["a", "b", "d", "c"]
+        tie = [o.name for o in outlines if o.sort_order == 2]
+        assert tie == ["b", "d"]  # 次级 id ASC，插入序
+
+    async def test_list_sort_order_desc_tie_id_still_asc(self, db_session, project):
+        """RS2: sort_by='sort_order' desc=3,2,1；tie 时次级仍 id ASC（不镜像）."""
+        repo = SQLiteOutlineRepository(db_session)
+        await repo.add(_outline(project, "c", sort_order=3))
+        await repo.add(_outline(project, "a", sort_order=1))
+        await repo.add(_outline(project, "b", sort_order=2))
+        await repo.add(_outline(project, "d", sort_order=2))
+
+        outlines, _ = await repo.list(project.id, sort_by="sort_order", sort_desc=True)
+        assert [o.name for o in outlines] == ["c", "b", "d", "a"]
+
+    async def test_list_sort_order_pagination(self, db_session, project):
+        """RS3: sort_by='sort_order' + offset/limit，asc 稳定分页语义."""
+        repo = SQLiteOutlineRepository(db_session)
+        for so in range(1, 6):
+            await repo.add(_outline(project, f"n{so}", sort_order=so))
+
+        page, total = await repo.list(
+            project.id, sort_by="sort_order", sort_desc=False, offset=2, limit=2
+        )
+        assert total == 5
+        assert [o.name for o in page] == ["n3", "n4"]
+
+    async def test_list_existing_sort_keys_regression(self, db_session, project):
+        """RS4（RED 期即 PASS 回归护栏）: 既有 updated_at/name/created_at 排序键可用."""
+        repo = SQLiteOutlineRepository(db_session)
+        await repo.add(_outline(project, "charlie"))
+        await repo.add(_outline(project, "alpha"))
+        await repo.add(_outline(project, "bravo"))
+
+        by_name, total = await repo.list(project.id, sort_by="name", sort_desc=False)
+        assert total == 3
+        assert [o.name for o in by_name] == ["alpha", "bravo", "charlie"]
