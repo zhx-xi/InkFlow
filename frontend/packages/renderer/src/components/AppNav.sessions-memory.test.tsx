@@ -12,7 +12,7 @@
  * RED 预期：nav-item-sessions / nav-item-memory 缺失 → element-missing（类 3 契约缺口）。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AppNav } from './AppNav';
@@ -97,19 +97,20 @@ describe('AppNav — 记忆导航项（#486）', () => {
 
 /* ============================== #1016 会话分组标题键位拆分（nav.group.sessions 专属 AppNav 消费） ============================== */
 
-describe('AppNav — #1016 会话分组标题（与会话页 header 一致，非 SessionBar 短名）', () => {
-  it('zh：nav-group-sessions 标题 = 「会话列表」', () => {
+describe('AppNav — #1016 会话分组标题（短名「会话」；#1016 后续修正对调文案）', () => {
+  it('zh：nav-group-sessions 分组标题 = 「会话」（精确取分组头 span，避免与栏内标题混淆）', () => {
     renderNav();
     const group = screen.getByTestId('nav-group-sessions');
-    // RED：session-ux 的 'nav.group.sessions'='会话' 覆盖 zh.ts 的「会话列表」→ FAIL
-    expect(within(group).getByText('会话列表')).toBeInTheDocument();
+    const groupLabel = group.firstElementChild?.querySelector('span')?.textContent?.trim();
+    // RED：首版映射为「会话列表」→ FAIL；GREEN 对调为「会话」
+    expect(groupLabel).toBe('会话');
   });
 
-  it('en：nav-group-sessions 标题 = "Session List"', () => {
+  it('en：nav-group-sessions 分组标题 = "Sessions"', () => {
     useThemeStore.setState({ lang: 'en' });
     renderNav();
     const group = screen.getByTestId('nav-group-sessions');
-    // RED：session-ux En 的 'Sessions' 覆盖 en.ts 的 'Session List' → FAIL
-    expect(within(group).getByText('Session List')).toBeInTheDocument();
+    const groupLabel = group.firstElementChild?.querySelector('span')?.textContent?.trim();
+    expect(groupLabel).toBe('Sessions');
   });
 });

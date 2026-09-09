@@ -11,7 +11,7 @@ export const en: Record<string, string> = {
   'nav.group.writing': 'Writing Area',
   'nav.group.library': 'Library',
   'nav.group.system': 'System',
-  'nav.group.sessions': 'Session List',
+  'nav.group.sessions': 'Sessions',
   'nav.lib.characters': 'Characters',
   'nav.lib.world': 'World',
   'nav.lib.outline': 'Outline',
