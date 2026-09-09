@@ -15,7 +15,10 @@ from langchain_litellm import ChatLiteLLM
 from inkflow.core.config import config
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse, StreamEvent, TokenUsage
 from inkflow.domain.ports.llm_errors import LLMRequestError
-from inkflow.infrastructure.llm.capability_probe import apply_reasoning_effort
+from inkflow.infrastructure.llm.capability_probe import (
+    apply_reasoning_effort,
+    to_chat_model_kwargs,
+)
 from inkflow.infrastructure.llm.content_text import content_text
 from inkflow.infrastructure.llm.provider_config import (
     LLMProviderConfig,
@@ -256,10 +259,12 @@ class LangChainLLMClient:
             chat_kwargs["api_base"] = base_url
         if max_tokens is not None:
             chat_kwargs["max_tokens"] = max_tokens
-        chat_kwargs = apply_reasoning_effort(
-            chat_kwargs,
-            model_full=full_model,
-            effort=reasoning_effort,
+        chat_kwargs = to_chat_model_kwargs(
+            apply_reasoning_effort(
+                chat_kwargs,
+                model_full=full_model,
+                effort=reasoning_effort,
+            )
         )
 
         return ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM 构造参数
