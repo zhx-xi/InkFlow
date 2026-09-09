@@ -1320,3 +1320,60 @@ POST /outlines/generate (mode=replace)
 ### 15.4 测试锚点（RED 契约）
 
 `backend/tests/unit/test_outline_replace.py`（A1-A14 领域/服务/管线）+ `backend/tests/unit/api/routers/test_outline_replace_api.py`（B1-B7 HTTP）；既有 §9 用例（new 模式）零回归（mode 默认值=现行为）。
+
+---
+
+## 16. 增量（#1001）：章级大纲 ↔ 章节正文自动关联（弱依赖 A）
+
+### 16.1 背景与拍板
+
+章级大纲（`Outline.level=chapter`）与写作章节默认不自动关联（手动入口 = 「关联章节」→ `PATCH /api/v1/outlines/{id} {chapter_id}`）。#1001 拍板：**正文出现后自动回填** `outlines.chapter_id`；匹配策略 **A（弱依赖）= 同项目内「章级大纲名 == 章节标题」精确匹配**。**不新增字段/实体/端点/CLI 命令**，复用既有 `outlines.chapter_id`。
+
+### 16.2 领域契约（OutlineService）
+
+**`auto_link_chapter(outline_id, chapter_id) -> bool`**（领域面镜像 `api/deps_draft.make_outline_bindder`）
+
+全部条件满足才写库：
+
+1. outline 存在；
+2. `level == "chapter"`（非章级不绑）；
+3. `chapter_id IS NULL`（**只填空，不覆盖已有绑定**——已有绑定无论指向哪一章都不动，保留手动兜底，不静默改错）；
+4. 注入 `chapter_repo` 时校验章存在且与大纲同项目（未注入 → 跳过校验，向后兼容）。
+
+返回 `True` = 本次新建关联；`False` = 未写（不存在/非章级/已绑定/跨项目/章不存在）。**幂等**：重复调用第二次返回 `False`，不重复写。
+
+**`auto_link_chapter_by_title(project_id, chapter_id, chapter_title) -> uuid.UUID | None`**
+
+反查 + 绑定（**#999 形态不对称感知**——章标题按 `fmt=None` 落库，章级大纲名按项目已选格式归一（默认 arabic `第1章 启程`），原样字符串比对在默认 GUI 路径必然不命中，故按候选形态点查）：
+
+- 空白标题 → `None`（不查库）；
+- 候选形态集合 = `{title.strip(), normalize_chapter_title(title, "arabic"), normalize_chapter_title(title, "chinese")}` 去重；
+- 逐个 `repo.get_by_name(project_id, 候选)`（项目内名称唯一索引点查）→ 过滤 `level == "chapter"` → 按大纲 id 去重；
+- **唯一命中**（恰 1 条）→ 调 `auto_link_chapter`，返回大纲 id（未写则 `None`）；
+- 0 条 / ≥2 条 → `None`，不写（多义不自动改，保留手动）。DB 层 `uq_outlines_active_name` 保证同名唯一，≥2 条 = 不同形态各存一条（防御分支）。
+
+### 16.3 触发点（ChapterService，正文「出现」= 非空白内容首次落盘）
+
+| 入口 | 触发条件 |
+|------|----------|
+| `create_chapter(content=非空白)` | 创建即带正文 |
+| `update_chapter(dto.content 非空白)` | 落库前 content 空白/None → 落库后非空白 |
+
+- **非首次**（落库前已有正文）→ 不触发（重复写入不重复；仅改标题不重触发）。
+- 注入形态：`ChapterService(db, outline_autolinker=Callable[[uuid.UUID, uuid.UUID, str], Awaitable[None]] | None)`；装配 = `api/deps_draft.make_outline_autolinker(db)`（镜像 `make_outline_bindder` 的工厂形态，自建 `OutlineService` 避免 deps.py 成环）返回 `OutlineService.auto_link_chapter_by_title`，`api/deps.get_chapter_service` 就地注入（⚠️ deps.py 恰 900 行零余量 → 只替换既有 `return ChapterService(db)` 行，不得净增行）。未注入（`None`）→ 空操作。
+- **弱依赖铁律**：自动关联任何异常**不得影响正文落盘**（吞异常，镜像 `make_outline_bindder` / `_volume_lookup` 永不抛错语义）。
+- 草稿确认流（`DraftService.confirm` 自动建章 → `update_chapter(content)`）经同一触发点生效（#996 验收）；`source_outline_id` 显式回填（#988 D4）保留且在其后执行（显式优先）。
+
+### 16.4 已知边界（不在范围内）
+
+- 标题/大纲名落库后被改名 → 不重触发（仅「首次正文落盘」入口）。
+- 匹配覆盖「原样 / arabic / chinese」三种候选形态（见 §16.2）；跨形态命中到不同大纲 → 多义不自动改。
+- 无 API 契约变化（openapi 快照零联动，`ChapterUpdate` 不变）。
+
+### 16.5 测试锚点（RED 契约）
+
+- `backend/tests/unit/domain/services/test_outline_autolink_1001.py`（领域面：直接绑定 + 反查唯一/无命中/同名多条/非章级/模糊不采用/已绑不覆盖）
+- `backend/tests/unit/domain/services/test_chapter_autolink_1001.py`（触发点：首次/重复/空白/仅改标题/未注入/异常吞掉）
+- `tests/integration/test_outline_autolink_1001.py`（真 DB 闭环：正文落盘 → `SELECT outlines.chapter_id`；幂等；无命中；已绑不覆盖；草稿确认 #996 路径）
+- `tests/api/test_chapter_autolink_1001.py`（HTTP 装配闭环：PATCH 正文 → `GET /projects/{pid}/outlines` 的 `chapter_id` 非空）
+

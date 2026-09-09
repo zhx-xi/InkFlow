@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.domain.models.chapter import (
@@ -53,13 +54,24 @@ def _to_int(val: int | uuid.UUID) -> int:
     return val
 
 
+# #1001 正文落盘自动关联器：(project_id, chapter_id, chapter_title) -> None
+OutlineAutolinker = Callable[[uuid.UUID, uuid.UUID, str], Awaitable[object]]
+
+
 class ChapterService:
     """章节业务服务."""
 
-    def __init__(self, db_session, outline_repo=None, project_repo=None) -> None:
+    def __init__(
+        self,
+        db_session,
+        outline_repo=None,
+        project_repo=None,
+        outline_autolinker: OutlineAutolinker | None = None,
+    ) -> None:
         self._repo = SQLiteChapterRepository(db_session)
         self._outline_repo = outline_repo or SQLiteOutlineRepository(db_session)
         self._project_repo = project_repo or SQLiteProjectRepository(db_session)
+        self._outline_autolinker = outline_autolinker
 
     # ---- Volume ----
 
@@ -152,6 +164,7 @@ class ChapterService:
             updated_at=_utcnow(),
         )
         created = await self._repo.add_chapter(ch)
+        await self._auto_link_outline(created)
         log_structured(
             level="INFO",
             caller_type="api",
@@ -186,12 +199,36 @@ class ChapterService:
         self, chapter_id: int | uuid.UUID, dto: ChapterUpdate
     ) -> Chapter | None:
         cid = _to_int(chapter_id)
+        if cid > 2**63 - 1:
+            return None  # 随机 uuid4 溢出 SQLite INTEGER：必然不存在 → 404 语义
         existing = await self._repo.get_chapter(cid)
         if existing is None:
             return None
         update_data = dto.model_dump(exclude_unset=True)
         updated = existing.model_copy(update=update_data)
-        return await self._repo.update_chapter(updated)
+        saved = await self._repo.update_chapter(updated)
+        await self._auto_link_outline(saved, existing)
+        return saved
+
+    async def _auto_link_outline(
+        self, saved: Chapter, before: Chapter | None = None
+    ) -> None:
+        """#1001：正文首次非空白落盘 → 触发章级大纲自动关联（弱依赖）.
+
+        触发条件：落库后正文非空白，且落库前无正文（``before=None`` 视为创建）。
+        未注入关联器 → 空操作；关联异常一律吞掉（不得影响正文落盘，镜像
+        ``make_outline_bindder`` / ``_volume_lookup`` 的永不抛错语义）。
+        """
+        if self._outline_autolinker is None:
+            return
+        if not (saved.content or "").strip():
+            return
+        if before is not None and (before.content or "").strip():
+            return  # 非首次落盘（已有正文）→ 不重触发
+        try:
+            await self._outline_autolinker(saved.project_id, saved.id, saved.title)
+        except Exception:  # 弱依赖：自动关联失败不得影响正文落盘
+            return
 
     async def delete_chapter(self, chapter_id: int | uuid.UUID) -> bool:
         return await self._repo.delete_chapter(_to_int(chapter_id))

@@ -43,3 +43,28 @@ def make_outline_bindder(
             await db.commit()
 
     return _outline_bindder
+
+
+def make_outline_autolinker(
+    db: AsyncSession,
+) -> Callable[[uuid.UUID, uuid.UUID, str], Awaitable[object]]:
+    """#1001 正文落盘 → 章级大纲自动关联器工厂（弱依赖，永不抛错）.
+
+    返回 (project_id, chapter_id, chapter_title) 的 async 绑定器 =
+    OutlineService.auto_link_chapter_by_title：同项目内唯一精确同名章级大纲才回填，
+    0/多条命中或已绑定别的章 → 不写。自建 OutlineService（不 import deps.py，
+    成环规避）；generator 不注入（本路径不触发生成）。
+    """
+    from inkflow.domain.services.outline_service import OutlineService
+    from inkflow.infrastructure.database.repositories.chapter_repo import (
+        SQLiteChapterRepository,
+    )
+    from inkflow.infrastructure.database.repositories.outline_repo import (
+        SQLiteOutlineRepository,
+    )
+
+    service = OutlineService(
+        repository=SQLiteOutlineRepository(db),
+        chapter_repo=SQLiteChapterRepository(db),
+    )
+    return service.auto_link_chapter_by_title

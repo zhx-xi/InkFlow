@@ -313,6 +313,73 @@ class OutlineService:
             limit=limit,
         )
 
+    async def auto_link_chapter(
+        self, outline_id: int | uuid.UUID, chapter_id: int | uuid.UUID
+    ) -> bool:
+        """#1001 正文落盘自动关联：章级大纲只填空绑定（弱依赖 A）.
+
+        Args:
+            outline_id: 章级大纲主键（int 或 UUID）.
+            chapter_id: 目标写作章节 UUID（int 亦兼容）.
+
+        Returns:
+            True = 本次新建关联；False = 未写（不存在/非章级/已绑定/跨项目/章不存在）.
+        """
+        outline = await self._repo.get(_to_int_id(outline_id))
+        if outline is None or outline.level != "chapter":
+            return False
+        if outline.chapter_id is not None:
+            return False  # 只填空：已绑定（含重复写入）不覆盖，保留手动兜底
+        chapter_uuid = (
+            chapter_id if isinstance(chapter_id, uuid.UUID) else uuid.UUID(int=chapter_id)
+        )
+        if self._chapter_repo is not None:
+            chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+            if chapter is None or chapter.project_id != outline.project_id:
+                return False
+        await self._repo.update(outline.model_copy(update={"chapter_id": chapter_uuid}))
+        return True
+
+    async def auto_link_chapter_by_title(
+        self,
+        project_id: int | uuid.UUID,
+        chapter_id: int | uuid.UUID,
+        chapter_title: str,
+    ) -> uuid.UUID | None:
+        """#1001 按「章级大纲名 == 章节标题」唯一命中反查并回填.
+
+        #999 形态不对称：章标题按 ``fmt=None`` 落库、章级大纲名按项目已选格式
+        归一（默认 arabic）→ 按「原样 / arabic / chinese」候选形态逐一点查去重。
+
+        Args:
+            project_id: 项目主键（int 或 UUID）.
+            chapter_id: 目标写作章节 UUID.
+            chapter_title: 章节标题（精确匹配章级大纲名）.
+
+        Returns:
+            唯一命中且完成绑定时返回该大纲 UUID；空白标题/0 命中/≥2 命中/
+            已绑定别的章 → None（不静默改错，保留手动「关联章节」兜底）.
+        """
+        title = (chapter_title or "").strip()
+        if not title:
+            return None
+        candidates = {
+            title,
+            normalize_chapter_title(title, "arabic"),
+            normalize_chapter_title(title, "chinese"),
+        }
+        pid_int = _to_int_id(project_id)
+        hits: dict[uuid.UUID, Outline] = {}
+        for candidate in candidates:
+            found = await self._repo.get_by_name(pid_int, candidate)
+            if found is not None and found.level == "chapter":
+                hits[found.id] = found
+        if len(hits) != 1:
+            return None
+        target = next(iter(hits.values()))
+        linked = await self.auto_link_chapter(target.id, chapter_id)
+        return target.id if linked else None
+
     async def update_outline(
         self, outline_id: int | uuid.UUID, update: OutlineUpdate
     ) -> Outline | None:

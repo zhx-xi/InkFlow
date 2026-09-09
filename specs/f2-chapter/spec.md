@@ -210,6 +210,7 @@ def count_words(content: str) -> int:
 | 更新不存在的章节 | 404: "章节不存在" |
 | order_index 不传 | 自动取当前最大值 + 1.0 |
 | 空内容字数 | word_count = 0 |
+| 章节正文首次非空白落盘（create 带正文 / update 空→非空白） | 触发章级大纲自动关联（#1001 弱依赖 A：同项目「大纲名 == 章节标题」唯一命中才回填 `outlines.chapter_id`；同名多条/无命中 → 不动，手动兜底；关联异常不影响落盘）——契约详见 `specs/f11-outline/spec.md` §16 |
 
 ---
 
