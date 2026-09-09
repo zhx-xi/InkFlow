@@ -130,7 +130,13 @@ def _to_response(pc: ProviderConfig, key_manager: APIKeyManager) -> dict:
     models = data.get("models")
     if isinstance(models, list):
         for entry in models:
-            if not isinstance(entry, dict) or entry.get("supports_reasoning") is not None:
+            if not isinstance(entry, dict):
+                continue
+            raw = entry.get("supports_reasoning")
+            if raw is not None:
+                # F59-M4 (B8)：注册表存有手动覆盖值 → 新增可选键回显（= 原始存储值）；
+                # 手动值即有效值，不探测（探测填充的条目不得出现该键，向后兼容）
+                entry["supports_reasoning_manual"] = raw
                 continue
             try:
                 entry["supports_reasoning"] = capability_probe.supports_reasoning_for_model(

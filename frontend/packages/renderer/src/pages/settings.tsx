@@ -7,6 +7,7 @@ import { AgentChainCard } from '../components/AgentChainCard';
 import { AgentList } from '../components/AgentList';
 import { AppearanceCard } from '../components/AppearanceCard';
 import { GlobalDefaultModelCard } from '../components/GlobalDefaultModelCard';
+import { GlobalReasoningEffortCard } from '../components/GlobalReasoningEffortCard';
 import { KnowledgeExtractCard } from '../components/knowledge-graph/KnowledgeExtractCard';
 import { McpSettingsCard } from '../components/McpSettingsCard';
 import { ModelsPanel } from '../components/ModelsPanel';
@@ -771,6 +772,7 @@ export function SettingsPage() {
           {activeCat === 'models' && (
             <div className="space-y-5">
               <GlobalDefaultModelCard />
+              <GlobalReasoningEffortCard />
               <ModelsPanel />
               <RagStatusCard />
             </div>

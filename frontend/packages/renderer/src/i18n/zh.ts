@@ -447,6 +447,23 @@ export const zh = {
   'm.fetchModels': '获取模型',
   'm.fetchingModels': '获取中…',
   'm.fetchModelsFailed': '获取模型失败: {reason}',
+  // F59 #965（M4）：模型「思考」能力徽标 + 手动覆盖入口
+  'm.table.reasoning': '思考',
+  'm.supportsReasoning': '支持思考',
+  'm.reasoningManual': '手动',
+  'm.reasoningAuto': '自动探测',
+  'm.reasoningForceOn': '强制支持',
+  'm.reasoningForceOff': '强制不支持',
+  // F59 #965（M4）：Agent 思考强度（写作链/全自动项目级 + 全局默认）
+  'agent.thinking.label': 'Agent思考强度设定',
+  'agent.thinking.globalLabel': '全局默认思考强度',
+  'agent.thinking.none': '关闭',
+  'agent.thinking.minimal': '最低',
+  'agent.thinking.low': '低',
+  'agent.thinking.medium': '中',
+  'agent.thinking.high': '高',
+  'agent.thinking.xhigh': '极高',
+  'agent.thinking.default': '跟随模型默认',
   // 写作页
   'write.newChapter': '新建章节',
   // #999：章节标题格式冲突弹窗（ProjectTree）
@@ -833,7 +850,7 @@ export const zh = {
   'memory.cat.user.structure': '结构',
   'memory.cat.user.other': '其他',
   // F59-M3 (#964)：chat 页思考级别选择器（本批只用 reasoning.chat.* + reasoning.level.*；
-  // M4 #965 用 reasoning.settings.* 分键，避免撞车）
+  // M4 #965 用 agent.thinking.* 分键，避免撞车）
   'reasoning.chat.label': '思考级别',
   'reasoning.chat.disabledTooltip': '当前模型不支持思考',
   'reasoning.level.none': '关闭思考',

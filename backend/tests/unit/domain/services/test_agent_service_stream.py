@@ -607,3 +607,72 @@ class TestStreamPipelineStageSnapshot:
 
         assert store.update_calls[-1]["status"] == "completed"
         assert store.update_calls[-1]["stages"] == []
+
+
+# ── F59-M4 (#965) B2: _build_pipeline_context 思考档位三级解析 ──
+
+
+class TestBuildPipelineContextReasoningEffort:
+    """B2 _build_pipeline_context 在项目加载后解析 reasoning_effort 并写入 context。
+
+    RED：当前实现 context 构造不解析档位、PipelineContext 也无 reasoning_effort 字段
+    → 断言访问 context.reasoning_effort 抛 AttributeError（B1/B2 缺功能）。
+    复用既有静态路径装配 harness，不改动任何既有用例断言。
+    """
+
+    async def _build_context(self, svc) -> PipelineContext:
+        """复用静态路径装配：设置 getter/mocker，构建 context（镜像既有 happy path）。"""
+        svc._get_template = lambda name: _make_template()
+        svc._load_template = AsyncMock(return_value=None)
+        svc._merge_role_configs = AsyncMock(return_value=[_make_stage()])
+        with (
+            patch(
+                "inkflow.domain.services.agent_service._apply_agent_order",
+                return_value=[_make_stage()],
+            ),
+            patch(
+                "inkflow.domain.services.agent_service._apply_agent_relations",
+                return_value=([_make_stage()], []),
+            ),
+        ):
+            _, context, _, _, _ = await svc._build_pipeline_context(_request())
+        return context
+
+    async def test_project_level_high_wins(self, monkeypatch) -> None:
+        """项目档位 'high' + 全局任意 → context.reasoning_effort == 'high'。"""
+        from inkflow.core.config import config
+
+        monkeypatch.setattr(config, "llm_reasoning_effort", "medium")
+        svc, _, _, _ = _build_svc(
+            project=_make_project(config=ProjectConfig(reasoning_effort="high"))
+        )
+        context = await self._build_context(svc)
+        assert context.reasoning_effort == "high", (
+            f"项目档位必须优先（B2），实得 {getattr(context, 'reasoning_effort', None)!r}"
+        )
+
+    async def test_global_level_when_project_none(self, monkeypatch) -> None:
+        """项目 None + 全局 'medium' → context.reasoning_effort == 'medium'。"""
+        from inkflow.core.config import config
+
+        monkeypatch.setattr(config, "llm_reasoning_effort", "medium")
+        svc, _, _, _ = _build_svc(
+            project=_make_project(config=ProjectConfig(reasoning_effort=None))
+        )
+        context = await self._build_context(svc)
+        assert context.reasoning_effort == "medium", (
+            f"项目 None 时取全局档位（B2），实得 {getattr(context, 'reasoning_effort', None)!r}"
+        )
+
+    async def test_default_when_both_unset(self, monkeypatch) -> None:
+        """项目 None + 全局 'default' → context.reasoning_effort == 'default'（恒非 None）。"""
+        from inkflow.core.config import config
+
+        monkeypatch.setattr(config, "llm_reasoning_effort", "default")
+        svc, _, _, _ = _build_svc(
+            project=_make_project(config=ProjectConfig(reasoning_effort=None))
+        )
+        context = await self._build_context(svc)
+        assert context.reasoning_effort == "default", (
+            f"双空时必须给 default 兜底（B2），实得 {getattr(context, 'reasoning_effort', None)!r}"
+        )

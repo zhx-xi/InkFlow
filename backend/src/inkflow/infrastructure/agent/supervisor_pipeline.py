@@ -171,7 +171,10 @@ async def _decide_next_action(
     for attempt in range(_MAX_DECISION_ATTEMPTS):
         messages = _build_decision_messages(state, config, attempt)
         try:
-            response = await llm.chat(messages)
+            # F59-M4 (B4)：决策调用同样按 context 思考档位透传（None 不发 / 非 None 原样）
+            effort = getattr(state["context"], "reasoning_effort", None)
+            extra = {} if effort is None else {"reasoning_effort": effort}
+            response = await llm.chat(messages, **extra)
         except Exception:
             continue
         raw_decision = response.content

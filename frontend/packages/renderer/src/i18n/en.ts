@@ -448,6 +448,23 @@ export const en: Record<string, string> = {
   'm.fetchModels': 'Fetch models',
   'm.fetchingModels': 'Fetching…',
   'm.fetchModelsFailed': 'Failed to fetch models: {reason}',
+  // F59 #965 (M4): model "thinking" capability badges + manual override
+  'm.table.reasoning': 'Thinking',
+  'm.supportsReasoning': 'Supports thinking',
+  'm.reasoningManual': 'Manual',
+  'm.reasoningAuto': 'Auto',
+  'm.reasoningForceOn': 'Force on',
+  'm.reasoningForceOff': 'Force off',
+  // F59 #965 (M4): Agent thinking intensity (project writing chain + global default)
+  'agent.thinking.label': 'Agent Thinking Intensity',
+  'agent.thinking.globalLabel': 'Global Default Thinking Intensity',
+  'agent.thinking.none': 'Off',
+  'agent.thinking.minimal': 'Lowest',
+  'agent.thinking.low': 'Low',
+  'agent.thinking.medium': 'Medium',
+  'agent.thinking.high': 'High',
+  'agent.thinking.xhigh': 'Extreme',
+  'agent.thinking.default': 'Model default',
   'write.newChapter': 'New chapter',
   // #999: chapter-title format conflict dialog (ProjectTree)
   'tree.formatDialog.title': 'Chapter Numbering Conflict',
@@ -830,7 +847,7 @@ export const en: Record<string, string> = {
   'memory.cat.user.structure': 'Structure',
   'memory.cat.user.other': 'Other',
   // F59-M3 (#964): chat thinking-level selector (this batch only reasoning.chat.* +
-  // reasoning.level.*; M4 #965 uses reasoning.settings.* keys to avoid collision)
+  // reasoning.level.*; M4 #965 uses agent.thinking.* keys to avoid collision)
   'reasoning.chat.label': 'Thinking level',
   'reasoning.chat.disabledTooltip': 'Current model does not support thinking',
   'reasoning.level.none': 'Off',

@@ -78,3 +78,76 @@ def test_book_service_volume_pipeline_assembly():
         if getattr(pipeline, name, None) is None
     ]
     assert missing == [], f"volume_pipeline 装配缺口: {missing}"
+
+
+# ── F59-M4 (#965) B6: writer_factory 按 cfg.reasoning_effort 解析思考档位 ──
+
+
+def test_writer_factory_passes_project_reasoning_effort():
+    """B6：cfg.reasoning_effort='high' → writer_factory 传该档位给 build_agentic_writer。
+
+    RED：当前 _writer_factory 调用 build_agentic_writer 未传 reasoning_effort → mock kwargs
+    无该键 → None != 'high' 翻红（B6 缺功能）。
+
+    build_agentic_writer 是 _build_book_service 内的局部绑定（闭包捕获），故须在
+    get_book_service 装配期 patch 源模块，让闭包快照到 mock（post-assembly patch 无效）。
+    """
+    import uuid
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    from inkflow.domain.models.project import ProjectConfig
+
+    cfg = ProjectConfig.model_construct(reasoning_effort="high")
+    with (
+        patch("inkflow.infrastructure.agent.agentic_writer.build_agentic_writer") as m_baw,
+        patch(
+            "inkflow.infrastructure.database.repositories.project_repo.SQLiteProjectRepository.get",
+            new=AsyncMock(return_value=SimpleNamespace(config=cfg)),
+        ),
+    ):
+        svc = _get_book_service()
+        factory = svc._writer_factory
+        result = asyncio.run(
+            factory(
+                system_prompt="你是章节写手",
+                expected_project_id=uuid.UUID("550e8400-e29b-41d4-a716-446655440000"),
+                expected_chapter_id=None,
+            )
+        )
+
+    assert m_baw.call_args.kwargs.get("reasoning_effort") == "high", (
+        f"writer_factory 必须把项目档位透传给 build_agentic_writer（B6），"
+        f"实得 kwargs={m_baw.call_args.kwargs!r}"
+    )
+    assert result is m_baw.return_value, "writer_factory 必须透传 build_agentic_writer 返回值"
+
+
+def test_writer_factory_uses_global_when_cfg_missing():
+    """B6：cfg=None（无项目级）→ writer_factory 按全局档位解析传给 build_agentic_writer。
+
+    RED：当前 _writer_factory 未传 reasoning_effort → None != 全局值 翻红（B6 缺功能）。
+    """
+    from unittest.mock import patch
+
+    from inkflow.core.config import config
+
+    original = config.llm_reasoning_effort
+    config.llm_reasoning_effort = "medium"
+    try:
+        with patch("inkflow.infrastructure.agent.agentic_writer.build_agentic_writer") as m_baw:
+            svc = _get_book_service()
+            factory = svc._writer_factory
+            asyncio.run(
+                factory(
+                    system_prompt="你是章节写手",
+                    expected_project_id=None,
+                    expected_chapter_id=None,
+                )
+            )
+        assert m_baw.call_args.kwargs.get("reasoning_effort") == "medium", (
+            f"cfg 缺失时 writer_factory 必须按全局档位解析（B6），"
+            f"实得 kwargs={m_baw.call_args.kwargs!r}"
+        )
+    finally:
+        config.llm_reasoning_effort = original

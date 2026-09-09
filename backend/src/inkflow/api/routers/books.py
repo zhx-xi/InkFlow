@@ -339,6 +339,15 @@ def _build_book_service(db: AsyncSession) -> BookService:
             if expected_project_id is not None
             else None
         )
+        # F59-M4 (B6)：项目级 cfg.reasoning_effort > 全局 config.llm_reasoning_effort
+        # （写作链/全自动轨无请求级；cfg 缺失/无字段 → 全局档位兜底）
+        from inkflow.domain.services.model_resolution import resolve_reasoning_effort
+
+        effort = resolve_reasoning_effort(
+            None,
+            getattr(cfg, "reasoning_effort", None),
+            config.llm_reasoning_effort,
+        )
         model, api_key, base_url = resolve_llm_credentials(
             config.llm_default_model,
             project_model=getattr(cfg, "model", None),
@@ -353,6 +362,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
             expected_chapter_id=expected_chapter_id,
             expected_source_outline_id=expected_source_outline_id,
             expected_volume_outline_id=expected_volume_outline_id,
+            reasoning_effort=effort,
         )
 
     if _book_volume_pipeline is None:

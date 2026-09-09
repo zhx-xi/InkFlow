@@ -48,6 +48,8 @@ export interface ProjectConfig {
   auto_write_enabled?: boolean;
   /** #999：全书章节标题序号格式（arabic=第N章 / chinese=第X章；缺省=arabic，零迁移） */
   chapter_title_format?: 'arabic' | 'chinese';
+  /** F59 #965：项目级 Agent 思考档位（写作链/全自动共用；null=跟随全局，零迁移） */
+  reasoning_effort?: string | null;
 }
 
 export interface NewProjectInput {

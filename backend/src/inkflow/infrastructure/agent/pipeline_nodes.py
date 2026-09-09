@@ -108,11 +108,15 @@ async def _call_llm_node(state: PipelineState, stage_id: str, upstream_keys: lis
     max_attempts = stage.max_retries + 1
     for attempt in range(1, max_attempts + 1):
         try:
+            # F59-M4 (B3)：context 思考档位透传——None 不发；非 None（含 default）原样透传
+            effort = getattr(state["context"], "reasoning_effort", None)
+            extra = {} if effort is None else {"reasoning_effort": effort}
             response = await llm.chat(
                 messages,
                 model=stage.agent.model,
                 temperature=stage.agent.temperature,
                 max_tokens=stage.agent.max_tokens,
+                **extra,
             )
         except Exception as e:
             last_error = e

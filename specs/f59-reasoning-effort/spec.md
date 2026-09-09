@@ -1,8 +1,9 @@
 # F59 思考模式（Reasoning Effort）+ LLM 出口统一 LiteLLM
 
-> **Spec 版本**: v1.2
+> **Spec 版本**: v1.3
 > **Spec 变更**: v1.1（2026-09-06）：待澄清 Q1/Q2/Q3 拍板并融入原节（Q1=A 软降级+WARNING 确认 §5.5/§3.3；Q2=B 前端 localStorage per-project §3.4/§12 D8；Q3=设定页控件文案直写「Agent思考强度设定」§3.4/§12 D9）；§12 D5 去「待澄清」挂账。
 > **Spec 变更**: v1.2（2026-09-06）：评审修订——① 能力面端点纠正为 `GET /api/v1/provider-configs`（§3.1/§5.4/§8.2 宿主文件补 provider_configs.py）；② 项目配置路由纠正为 `PATCH /projects/{project_id}`（§3.1）；③ 设置更新纠正为 PATCH（§3.1/§3.4）；④ legacy `/stream` 不新增字段（前端仅消费 agent 轨、legacy 帧编码无 reasoning 帧，§3.1/§10 登记）；⑤ zhipu→zai 前缀口径实证保留（§5.1）；⑥ 能力探测装配机制表述回正（§5.4）；⑦ 后端 i18n 文件列入 MODIFY（§8.2）；⑧ AGENTS.md §2 技术栈行纳入同步面（§8.2/M6）。
+> **Spec 变更**: v1.3（2026-09-09，M4 实现批）：① `GET /provider-configs` models[] 手动覆盖项额外回显 `supports_reasoning_manual`（§3.1/§3.4，GUI「手动」角标数据源；探测项不带该键，向后兼容）；② 管线角色装配（`PipelineContext.reasoning_effort`）+ F27 agentic writer + book writer_factory 注入档位（§2.3 运行时流转落地）。
 > **日期**: 2026-09-06
 > **依据**: 用户需求（chat 页每轮可选思考档位 + 写作链/全自动设定页配置）+ 三轮实证调查（/models 探测、provider 专项包、LiteLLM SDK 源码核验）
 > **模块类型**: 跨端（backend LLM 基建 + API + GUI），含既有模块（F5 LLM Provider / F23 SSE / F32 设置 / F47 chat 执行细节）增量——无新业务实体
@@ -115,7 +116,7 @@ ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "
 | `GET /api/v1/projects/{id}` | 响应 config 回显 `reasoning_effort` | 新增 |
 | `PATCH /api/v1/settings`（`settings.py:218`） | 全局默认：新增 `default.reasoning_effort` 白名单键 | 新增 |
 | `GET /api/v1/settings` | 回显 `default.reasoning_effort` | 新增 |
-| `GET /api/v1/provider-configs`（models 列表面，`provider_configs.py:132`） | 响应 models[] 条目新增 `supports_reasoning: bool`（读取时探测填充，见 §5.4） | 新增 |
+| `GET /api/v1/provider-configs`（models 列表面，`provider_configs.py:132`） | 响应 models[] 条目新增 `supports_reasoning: bool`（读取时探测填充，见 §5.4）；手动覆盖项**额外**回显 `supports_reasoning_manual: bool`（仅注册表存有手动值时出现——§3.4「手动」角标数据源） | 新增 |
 | 写作链端点（`/writing/*`、agentic、book） | **不新增请求字段**：档位恒从项目>全局解析 | — |
 
 SSE 帧协议不变：`reasoning` 帧（#727 契约）在开了思考的模型上自然多产出；未开思考无该帧。legacy `POST /api/v1/chat/stream` **不接入**（其 `_encode_legacy_frame` 帧型仅 delta/done/error、不产 reasoning 帧，且无前端消费方——登记 §10）。
@@ -149,7 +150,7 @@ run_started → reasoning(多次) → delta(多次) → tool 帧(如有) → don
 | 思考级别选择器（7 档下拉/分段） | chat 输入框底部，模型选择器旁（参考 Hermes） | 默认「跟随模型默认」；仅作用于**下一轮发送**；档位记忆=前端 localStorage per-project（跨刷新保持，不落后端库，Q2 拍板 ✅）；当前模型 `supports_reasoning=false` → 控件整体禁用 + tooltip |
 | 「Agent思考强度设定」下拉（7 档） | 项目设定页 AI 配置区（模型字段下方） | 控件标签即「Agent思考强度设定」（英文 "Agent Thinking Intensity"，Q3 拍板 ✅），不加两行说明文案；保存走 PATCH config |
 | 全局默认思考级别 | 设置页 LLM 区（默认模型下方） | 走 PATCH settings（`settings.py:218`）；`default.reasoning_effort` |
-| 能力徽标 | 设置页 provider 模型列表 | `supports_reasoning` 真值显示「支持思考」徽标，假值不显示；手动覆盖项显示「手动」角标 |
+| 能力徽标 | 设置页 provider 模型列表 | `supports_reasoning` 真值显示「支持思考」徽标，假值不显示；手动覆盖项显示「手动」角标（数据源 = 响应可选键 `supports_reasoning_manual`，§3.1）；每模型三态编辑入口（自动探测/强制支持/强制不支持 → PATCH models[] 全量替换） |
 
 ---
 
