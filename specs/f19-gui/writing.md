@@ -31,7 +31,7 @@
 - 参考锚点（以真实组件为准：pages/writing.tsx + components/ProjectTree、EditorToolbar、ContextPanel、ChatPanel、ChatDeleteAuthControl、StatusBar、ChapterSummaryPanel、AuditDialog、StyleAnalyzeDialog、AIExtractDialog、AutoAuthorizationDialog）：
   - 布局：全高 flex 三栏 — 左项目树（aside project-tree）/ 中编辑器区（main）/ 右上下文栏（aside right-rail）
   - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
-  - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用）
+  - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用）；工具栏行**最右**为草稿审批入口（`drafts-approval-button`，`ml-auto` 右对齐分组，无选中章节不渲染 —— 见 §9）
   - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel，面板高度各自 90~540px
   - 空态：无任何项目 → WritingEmptyState（Compass 图标 + 文案 + 「返回项目页」按钮 navigate('/projects')）
   - 流式时序：续写/生成 → ensureModelReady 前置校验（未配置 warn toast「模型未配置」不启动）→ 创建 chat 会话（失败静默降级）→ start(mode) → SSE 流式（status=running）→ done 帧 finalOutput 落章（setContent）+ 归档 AI chat 消息；error 帧展示错误
@@ -186,3 +186,29 @@
 
 - N18：工具循环触发递归上限 → 对话不显示「工具执行失败」裸异常，优雅结束（done 帧 + 已流出部分结果）。
 - N19：astream_events config 含 `recursion_limit > 25`（护栏非默认 25）。
+
+## 9. 草稿审批入口（#976 常显 → #1003 移入工具栏行最右）
+
+> 本节锁**位置与可见性**契约；草稿确认/拒绝/展开全文等行为见 f44/f27 草稿域，不在此重复。
+
+### 9.1 画面/布局补充
+
+- 审批入口 `drafts-approval-button` 位于**编辑态** `EditorToolbar` 行**最右**：工具栏末尾渲染一个 `ml-auto` 右对齐分组（按钮直接父节点 = 该分组，且该分组是工具栏最后一个元素子节点）。
+- #976 引入的独立顶栏 `writing-topbar`（页面顶部独占一行）**已废弃移除**（#1003）。
+- **无选中章节**（`currentChapterId === null`，global chat 页）不渲染 `EditorToolbar` → 审批入口**不显示**（#1003 拍板）。
+- 入口随工具栏 `opacity-[0.35]` 默认淡化、hover 编辑器区全显（沿用既有工具栏交互，#1003 拍板保持）。
+
+### 9.2 动作样式补充
+
+| 控件 | 初始态 | 点击后 | 边界 |
+|------|--------|--------|------|
+| 草稿审批入口（drafts-approval-button） | FileText 图标 + 文案 `t('write.drafts.pending', {count})`；`pendingDraftsCount > 0` 时显示高亮圆点 `drafts-approval-dot` | 置 `draftsOpen = true` → 打开 `DraftApprovalDrawer`（`open = draftsOpen \|\| approvalRequest !== null`） | 未传 `onOpenDrafts` 不渲染入口（兼容既有调用点）；无选中章节不渲染 |
+
+- `EditorToolbar` 契约：新增可选 props `pendingDraftsCount?: number`（默认 0）与 `onOpenDrafts?: () => void`。
+- 计数来源：`useChapterStore.pendingDrafts.length`。
+- **保底通道不变**：左树双击草稿节点 → `approvalRequest` 仍可唤起审批弹层；`DraftApprovalDrawer` 行为不变。
+
+### 9.3 验收补充
+
+- N20：编辑态工具栏行最右出现审批入口（计数文案 + `pendingDraftsCount > 0` 圆点）；点击 → 审批弹层打开；`writing-topbar` 不再存在。
+- N21：无选中章节（global chat 页）不渲染审批入口；树双击草稿节点仍可打开审批弹层。
