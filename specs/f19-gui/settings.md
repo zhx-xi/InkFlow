@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/settings/settings.html + settings-<state>.png（分类导航 / 常规面板 / 保存指示 / 模型分类 / 模板分类等状态截图）
+- 原型引用：design/GUI/settings/settings.html + settings-<state>.png（分类导航 / 常规面板 / 保存指示 / 模型分类（含 F59 思考档位）/ 模板分类等状态截图）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 
@@ -24,13 +24,13 @@
 │ 激活项高亮│                                                   │
 └──────────┴───────────────────────────────────────────────────┘
 ```
-- 参考锚点（以真实组件为准：pages/settings.tsx + components/AppearanceCard、AgentChainCard、AgentList、GlobalDefaultModelCard、ModelsPanel、RagStatusCard、KnowledgeExtractCard、McpSettingsCard、SkillList、TemplateDialog；Agent/模板分类细节见 agent.md）：
+- 参考锚点（以真实组件为准：pages/settings.tsx + components/AppearanceCard、AgentChainCard、AgentList、GlobalDefaultModelCard、GlobalReasoningEffortCard、ModelsPanel、RagStatusCard、KnowledgeExtractCard、McpSettingsCard、SkillList、TemplateDialog；Agent/模板分类细节见 agent.md）：
   - 布局：全高 flex — 左 192px 分类导航（w-48，border-r，bg-surface-2，6 项带图标）+ 右滚动面板（标题 h1「设置」+ 面板内容，px-8）
   - 分类：常规（SlidersHorizontal）/ 模型（Cpu）/ Agent（Bot）/ 模板（FileText）/ 技能（BookOpen）/ 账户（UserRound）；激活项 bg-accent-weak + text-accent + aria-current=page，未激活 hover 高亮
   - URL 联动：分类切换写入 ?cat= 查询参数；外部进入 /settings?cat=agent 等直达对应分类（AppNav 快捷入口）
   - 保存指示器（#189）：面板顶部 h-4 文案行，idle 时 opacity-0 隐藏，保存中「保存中」text-ink-3，已保存「已保存」text-ok 约 2s 后自动隐藏
   - 常规面板（GeneralPanel）：AppearanceCard（三主题缩略预览 + 背景随主题过滤 + 语言切换）→ 编辑器字体 Select → 关闭窗口时 Select → 首次托盘提示 Switch → 新章节默认字数 number → 快捷键一览（5 组 kbd 只读）→ KnowledgeExtractCard → McpSettingsCard
-  - 模型分类：GlobalDefaultModelCard + ModelsPanel（Provider 列表/模型表/角色绑定）+ RagStatusCard；技能分类：SkillList；账户分类：AccountPanel
+  - 模型分类：GlobalDefaultModelCard + GlobalReasoningEffortCard（F59-M4 全局默认思考强度）+ ModelsPanel（Provider 列表/模型表含思考列/角色绑定）+ RagStatusCard；技能分类：SkillList；账户分类：AccountPanel
   - 模型分类 RAG 区块（RagStatusCard）：标题「向量检索（RAG）」固定渲染；下方内容卡 `rag-status-card` 恒渲染（修复 #824 区块空——不再整体依赖 status 布尔），内分两区：① embedding 模型展示 + 向量模型 Select（全局配置，来自 provider 注册表，无项目亦可操作），② 项目索引状态区（有项目+已加载 → fresh/stale/no_embedding/重建按钮；无项目 → 空态「请先在项目页选择项目」；有项目但未加载 → 加载态）。未配 embedding（reason=no_embedding）→ 空态「未配置 embedding 模型」
   - 即改即存：所有设置项（Select/Switch/number）修改即触发保存，不经「保存按钮」；统一反馈走顶部保存指示器 + ok/err toast
 - 布局说明：设置页为左导航右面板的标准设置布局，六分类经 URL cat 参数可直达。常规面板自上而下按「外观 → 编辑器 → 窗口行为 → 默认值 → 快捷键 → 扩展卡片」分组堆叠，每项独立即改即存，页面顶部提供全局保存状态指示。
@@ -51,10 +51,13 @@
 | 快捷键一览 | 只读列表（Ctrl+Z/Y/S/Enter/Shift+Enter 五组 kbd 样式） | — | — | — | — | 展示性控件，无交互 | — |
 | 知识图谱定时提取卡片 | 三键回显数据源（全局设置快照 fetchSettings） | 修改定时配置 | saving | saved | 失败提示 | 数据源由常规面板单次 fetch 注入（避免卡片二次 GET） | — |
 | MCP 接入面板 | MCP 服务配置列表 | 增删改配置 | 保存中 | 配置生效 | 失败 toast | 挂载于常规分类底部 | — |
-| 模型分类（三卡） | GlobalDefaultModelCard + ModelsPanel + RagStatusCard | Provider CRUD / 模型多选批量测试 / 角色绑定 / RAG 状态查看 | 测试连接中 / 保存中 | 列表刷新 + 状态标记 | 测试失败行标红 + 原因 toast | 角色绑定区依赖 #107 agent-templates；API Key 加密存储 | 2026-08-31：RAG 区块空修复 + 补元素出现断言 |
+| 模型分类（四卡） | GlobalDefaultModelCard + GlobalReasoningEffortCard + ModelsPanel + RagStatusCard | Provider CRUD / 模型多选批量测试 / 角色绑定 / 思考档位与能力徽标（见下两行）/ RAG 状态查看 | 测试连接中 / 保存中 | 列表刷新 + 状态标记 | 测试失败行标红 + 原因 toast | 角色绑定区依赖 #107 agent-templates；API Key 加密存储 | 2026-08-31：RAG 区块空修复 + 补元素出现断言；2026-09-09：+GlobalReasoningEffortCard 与模型表思考列（F59-M4） |
 | 模型分类（RAG 区块） | 标题「向量检索（RAG）」+ embedding 模型展示（rag-model-name）+ 向量模型 Select（rag-embedding-select）+ 索引状态卡（rag-status-card）+ 重建按钮（rag-reindex-btn）；无项目 → 空态（rag-empty「请先在项目页选择项目」）；未配 embedding → 空态（rag-no-embedding） | 切换向量模型 → putEmbeddingModel 全局配置；点重建 → 确认弹窗（rag-confirm-dialog）→ postVectorReindex | 保存中 / 重建中 | 状态刷新 + ok toast | err toast + 状态保持 | 无项目不空置（恒渲染内容卡）；元素必须出现断言防区块空回归 | 新增 |
 | 技能分类 | SkillList | 查看/启用技能 | — | — | — | 挂载于 skills 分类 | — |
 | 账户分类 | AccountPanel | 账户信息查看/管理 | — | — | — | 挂载于 account 分类 | — |
+| 全局默认思考强度卡片（GlobalReasoningEffortCard） | 模型分类 LLM 区「全局默认模型」卡片之下（global-reasoning-effort-card）：标签「全局默认思考强度」+ Select（global-reasoning-effort-select）默认「跟随模型默认」 | 选择七档 → PATCH /api/v1/settings（default.reasoning_effort，英文枚举；PATCH 即改即存） | 保存中 | ok toast「已保存」+ Select 值更新 | err toast「保存失败」+ 值保持 | 挂载时 GET /settings 回填（失败静默回退 default）；七档文案 agent.thinking.*（关闭/最低/低/中/高/极高/跟随模型默认）；「Agent思考强度设定」为项目级标签，本页用全局标签 | 2026-09-09：新增（F59-M4） |
+| 模型表 · 思考列（能力徽标 + 手动三态） | 模型分类模型表新增「思考」列：`supports_reasoning=true` → 绿「支持思考」徽标（model-reasoning-badge-<id>）；`supports_reasoning_manual` 有值 → 另显「手动」角标（model-reasoning-manual-<id>）；每模型 Select（model-reasoning-<id>）三态：自动探测/强制支持/强制不支持 | 改三态 → PATCH /api/v1/provider-configs models[]（全量替换） | 保存中 | 徽标/角标随响应刷新 | 失败 err toast + 值回弹 | 探测值（supports_reasoning）不落库、仅手动覆盖持久化；`supports_reasoning_manual` 为响应可选键（手动覆盖项才回显）；徽标数据源 = provider-configs 响应（F59 spec §3.4/§5.4） | 2026-09-09：新增（F59-M4） |
+| 项目设定页 · Agent思考强度设定（路由 /settings/project，项目卡「修改」进入；本页规格族内暂归 settings.md 登记） | 项目设定页 AI 配置区「模型绑定」卡片之下：标签直写「Agent思考强度设定」（ps-thinking-effort），无说明文案（Q3 拍板）；默认「跟随模型默认」 | 选择七档 → PATCH /api/v1/projects/{id} config（ProjectUpdate.reasoning_effort，即改即存） | 保存中 | PATCH 回显 + ok toast | 非法档位 → 422（自定义文案，不泄漏 pydantic 原文）；失败 err toast | 七档覆盖写作链 + 全自动写作（项目级一档 D7）；`default`/None=跟随全局（config.llm_reasoning_effort）；管线装配软降级见 F59 spec §5.5 | 2026-09-09：新增（F59-M4） |
 
 ## 3. 验收
 
@@ -64,3 +67,6 @@
 - N4：外观三主题/背景/语言直达生效，并与顶栏 Select 双通道联动
 - N5：模型/技能/账户分类可正常进入与渲染（模型 CRUD 等细节按对应规格验收）
 - N6：设置→模型页「向量检索（RAG）」区块**元素必须出现**（用户要求，防回归）：① 标题「向量检索（RAG）」渲染；② embedding 模型展示（`rag-status-card` 内 `rag-model-name`）+ 向量模型 Select（`rag-embedding-select`）渲染；③ 匹配状态卡（`rag-status-card`）+ 全量重建按钮（`rag-reindex-btn`，stale 时）渲染；④ 未配 embedding → 空态文案「未配置 embedding 模型」出现；⑤ **无当前项目时区块不空置**——渲染空态「请先在项目页选择项目」（修复 #824 区块空）
+- N7：设置→模型分类 UI 必须出现——「全局默认模型」之下渲染「全局默认思考强度」卡片（global-reasoning-effort-card，标签 + global-reasoning-effort-select），默认值「跟随模型默认」；修改走 PATCH settings `default.reasoning_effort`，成功 ok toast、失败 err toast（F59 spec §3.1/§3.4）
+- N8：设置→模型分类 UI 必须出现——模型表含「思考」列：思考能力 true 行显示「支持思考」徽标（model-reasoning-badge-<id>）、手动覆盖行另显「手动」角标，每模型三态 Select（自动探测/强制支持/强制不支持，model-reasoning-<id>）；PATCH models[] 全量替换持久化，探测结果不落库（F59 spec §5.4）
+- N9：项目设定页（/settings/project）UI 必须出现——「模型绑定」卡片之下「Agent思考强度设定」下拉（ps-thinking-effort），默认跟随模型默认；保存走 PATCH project config `reasoning_effort`，非法值 422 自定义文案；范围 = 写作链 + 全自动写作项目级一档（F59 spec §3.1/§3.4/§12 D7）

@@ -24,7 +24,7 @@
 | F2 `chapter_service` | 卷/章节管理：层级结构、章节移动、状态流转、标题双编号归一化（#999） | `inkflow volume create/list/delete` · `inkflow chapter create/list/get/update/delete` | `/api/v1/projects/{id}/volumes` · `/chapters` · `/chapters/normalize-titles`（#999） | [`specs/f2-chapter/`](specs/f2-chapter/spec.md) | ✅ PR #9 |
 | F3 `writing_service` | AI 写作管道：生成 → 续写 → 修订 | `inkflow write next/continue/revise` | `/api/v1/write/generate|continue|revise` | [`specs/f3-writing/`](specs/f3-writing/spec.md) | ✅ PR #21 |
 | F4 `agent_service` | Agent 编排：架构师/写手/审阅/修订角色链（LangGraph StateGraph） | `inkflow agent run/status/validate/template` | `/api/v1/pipelines/*` | [`specs/f4-pipeline-engine/`](specs/f4-pipeline-engine/spec.md) | ✅ PR #22 |
-| F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatOpenAI 兼容路由）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |
+| F5 `llm_service` | LLM Provider 适配（OpenAI/DeepSeek/…，ChatLiteLLM litellm 统一出口，2026-09 F59 迁移，ADR-051）；API Key AES-256-GCM 加密存储 | `inkflow llm list/set-key` | 配置侧（无 REST 端点） | [`specs/f5-llm-provider/`](specs/f5-llm-provider/spec.md) | ✅ PR #16 |
 | F6 `context_service` | 上下文管理：角色/世界观/伏笔/时间线注入 + 章节摘要（分层 Token 预算） | 经写作管道自动装配 | `/api/v1/context/assemble` · `/chapters/{id}/summary` | [`specs/f6-context/`](specs/f6-context/spec.md) | ✅ PR #27 |
 | F7 `cli_interface` | 全局 CLI 约定：JSON 信封 / 退出码 / 错误码（`--json` 全局选项） | 所有 `inkflow` 命令 | — | [`specs/f7-cli/`](specs/f7-cli/spec.md) | ✅ PR #28 |
 | F8 CI 治理 | 测试分层（unit / integration / CLI）+ CI 门禁（ruff + mypy + pytest + 覆盖率） | — | — | [ADR-018](adr/test-ci/ADR-018.md)（无独立 spec） | ✅ PRs #24+#25 |
@@ -195,6 +195,19 @@
 
 **0.13.0 交付实证**：61/61 issues 全关（milestone #16，v0.13.0-rc6 验证通过）· F58 Chat Agent 层级化工具矩阵 + 域×CRUD Scope 授权（Phase 1）· F44 写章链路根治（唯一草稿/树常显/锚点/幂等/回填）· planner 产物质量三连（#927 动态提问 / #977 配置穿透 / #995 短名）· 地图工作台 + 写作页 + 配置治理修复批。**F58 Phase 2（A2 动态重绑定）与 #980-2b（卷分组数据模型）归 0.14.0 未做。**
 
+### 1.12 F59 思考档位（reasoning effort，0.14.0 进行中）
+
+| Issue | 内容 | 交付 | 状态 |
+|-------|------|------|------|
+| #962 | F59 M1 LLM 出口统一迁移 LiteLLM：三构造点 ChatLiteLLM/LiteLLMEmbeddings + zhipu→zai 前缀口径（ADR-051） | PR #1024 | ✅ |
+| #963 | F59 M2 思考档位三级解析链 + API 字段（422 校验）+ 能力探测三级链（capability_probe） | PR #1026 | ✅ |
+| #964 | F59 M3 chat 页思考级别选择器（七档 + per-project 记忆）+ reasoning 流式区块渲染 | PR #1038 | ✅ |
+| #965 | F59 M4 设定页全局默认思考强度 + 项目「Agent思考强度设定」+ 模型能力徽标 + 管线装配注入 | PR #1037 | ✅ |
+| #966 | F59 M5 真实模型实证（e2e-ai-backend 本地开关：deepseek 思考帧非空/多轮回传/dashscope enable_thinking/zhipu 软降级） | PR #1048 | ✅ |
+| #967 | F59 M6 治理收尾：f5/f4 spec 融合 + AGENTS.md/功能表/README 同步 + 设计双件套（chat/设定页） | 本 PR（docs） | 🔄 |
+
+**0.14.0 状态**：F59 M1-M5 已合入 main（2026-09-09，PR #1024/#1026/#1038/#1037/#1048，M5 实证证据见 #966）；M6 治理收尾（本 PR）进行中。0.13.0 遗留项（F58 Phase 2 A2 动态重绑定、#980-2b 卷分组数据模型）同归 0.14.0。
+
 ---
 
 ## 二、规划中功能
@@ -232,6 +245,7 @@
 | 0.12.0 | AI 全自动写作 + 内置内容补全 | Agent 全自动写作（#551 自主编排 + #598 全自动写一卷/几章 + 首次显式授权 + 项目级开关）· Chat 接入 deepagents 系统级 Agent + 工具流式 + 删书级编排入口（#597）· F49 长期记忆衰减（#617 衰减 + #618 显式覆盖/LLM 冲突判定 + #619 GUI 设置/管理/remove + #620 spec）· 卷数据模型统一（#592，Volume↔卷纲显式关联 F56）· 项目标签化（#595 tags 迁 genres + #596 三处 GUI）· ContextPanel 接 API（#594）+ F6 上下文数据源补齐（#593）· 设定库 GUI 补全批（#648-#658 十项入口）· MCP 分发引导（#563）· 大纲分级/关联章节选择器（#675/#676）· 检索跳转详情（#683）· 上下文注入选择器（#704）· 角色多分组 N:M（#701）· LangSmith 追踪（#629，F50）· 统一 AI 执行视图（#599）· 机密脱敏（#614）+ trace 补全（#615）· 检索索引重建异步化（#659）· 内置 agent/skills 提示词补全（#550）· 缺陷链修复（#634/#640/#641/#642/#646/#665/#674/#677-#682/#696/#697/#699/#703/#708/#710/#711 等） | ✅ 已交付（2026-08-30 里程碑 65/65 issues 全关，v0.12.0 正式发布） |
 | 0.12.1 | 0.12.0 rc10 GUI 反馈 + 后续修复批 | 0.12.0 发布后 GUI 使用反馈 + rc 验证发现的后续修复批（缺陷链：GUI 交互/数据一致性/上轮修复不完整回归） | ✅ 已交付（2026-09-01 里程碑 77/77 issues 全关，v0.12.1 正式发布） |
 | 0.13.0 | Chat Agent 工具矩阵 + Scope 授权 + 写章链路根治 | F58 Chat Agent 工具面（#954 grants 授权数据面 + #955 大纲域层级化工具矩阵 + #956 其他域读缺口 + #957 GUI scope 勾选矩阵）· F44 写章链路（#975 双写草稿守卫 + #976 草稿树常显审批 + #996 save_draft 锚点传递 + #997 同章幂等覆盖 + #994 source_outline_id 回填）· planner 质量（#927 产物质量 + #977 访谈静默回退/instance.env 全键生效 + #995 主角短名）· 地图工作台（#973 maps 快照 + #978 删除钮重叠 + #979 pin 标签可点）· 写作页（#980 章节树布局 2a + #998 双滚动条 + #999 章节标题归一化）· 配置治理（#985 settings e2e 红 + #989 模板快照竞态 + #946 chroma 遥测 + #949 debug 逃生门）· rc 缺陷链（#929/#953 book run 阻断 + rc1-rc6 迭代） | ✅ 已交付（v0.13.0-rc6 验证通过，61/61 issues 全关；F58 实现 PR #969/#970/#971/#972，#980-2b 卷分组归 0.14.0，待正式发布） |
+| 0.14.0 | 思考档位（Reasoning Effort）+ 0.13.0 遗留收尾 | F59（#960 spec + #962-#967：M1 LLM 出口统一 LiteLLM · M2 解析链/API/能力探测 · M3 chat 思考级别选择器 + reasoning 渲染 · M4 设定页全局默认/项目档位/能力徽标 + 管线装配 · M5 真实模型实证 · M6 治理 docs）· 0.13.0 遗留（F58 Phase 2 A2 动态重绑定 · #980-2b 卷分组数据模型） | 🔄 进行中（M1-M5 已合入，PR #1024/#1026/#1038/#1037/#1048；M6 = 本 docs PR） |
 | 1.0.0 | 本地完全可用 | CLI + GUI + skills + MCP 四界面齐备 + 跨平台 + 文档 + Phase 3 Gate | 🔜 |
 | 2.0.0 | 云端 | F18 云 Web · 用户 API · Admin 后台 · GUI 远程模式（云存档/异地写作） | 🔜 |
 
