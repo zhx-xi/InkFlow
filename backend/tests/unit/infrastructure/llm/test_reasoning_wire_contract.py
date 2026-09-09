@@ -212,6 +212,22 @@ class TestTranslatorGateWire:
             "capability_unsupported"
         )
 
+    async def test_zai_none_reaches_wire_clean_without_warning(
+        self, echo_base: str, loguru_records: list[dict]
+    ) -> None:
+        """#1054：探测不支持的模型 + ``none`` → 剥离不告警，且请求仍到达端点。
+
+        请求到达 = 未被 litellm ``check_valid_params`` 本地拦截（N-1 透传会
+        UnsupportedParamsError 断流）；无思考键 = 已剥离；无 WARNING = none
+        对该模型天然满足（本就不思考）。
+        """
+        body = await _invoke_via_client(
+            echo_base, provider="zhipu", model_name="glm-4.5", effort="none"
+        )
+        leaked = [key for key in REASONING_WIRE_KEYS if key in body]
+        assert not leaked, f"none 档在无翻译器 provider 上必须剥离，实际 {leaked}"
+        assert not _warns(loguru_records), "模型本就不思考，none 天然满足，不应告警"
+
 
 class TestHarnessWireContract:
     """构造点 2：build_deep_agent 直传的 ChatLiteLLM 实例同 wire 契约。"""
