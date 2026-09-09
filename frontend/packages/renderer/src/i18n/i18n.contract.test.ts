@@ -14,6 +14,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { agentScopeUxEn, agentScopeUxZh } from './agent-scope-ux';
 import { bookEn, bookZh } from './book';
 import { chatDeleteUxEn, chatDeleteUxZh } from './chat-delete-ux';
 import { chatUxEn, chatUxZh } from './chat-ux';
@@ -317,5 +318,71 @@ describe('F58 i18n 契约：agent.scope 域词条（#957 §4.1）', () => {
     for (const [d, v] of Object.entries(DOMAIN_VALUES_EN)) {
       expect(en.t(`agent.scope.domain.${d}`)).toBe(v);
     }
+  });
+});
+
+/**
+ * #1016：i18n 跨域重复键护栏（根治「后写吞前写」整族问题）。
+ *
+ * 根因：useI18n.ts 用对象展开合并 13 个来源字典，同名键由展开顺序**静默**决定胜者——
+ * `session-ux` 的 'nav.group.sessions' 覆盖了 zh.ts 的「会话列表」，AppNav 分组标题被
+ * 静默改成「会话」。契约：各来源字典 key 集合两两互斥；新增词条撞键必须在此 FAIL。
+ * 来源清单须与 useI18n.ts 的 dicts 组合保持一致（新增域字典时同步登记）。
+ */
+describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静默覆盖）', () => {
+  const sourcesZh: Array<[string, Dict]> = [
+    ['zh', zh as Dict],
+    ['role-enhance', roleEnhanceZh],
+    ['extract-keys', extractZh],
+    ['world-cat-kind', worldCatKindZh],
+    ['chat-ux', chatUxZh],
+    ['chat-delete-ux', chatDeleteUxZh],
+    ['sessions-ux', sessionsUxZh],
+    ['writing-ux', writingUxZh],
+    ['agent-scope-ux', agentScopeUxZh],
+    ['session-ux', sessionUxZh],
+    ['log', logZh],
+    ['book', bookZh],
+    ['logs-ux', logsUxZh],
+  ];
+  const sourcesEn: Array<[string, Dict]> = [
+    ['en', en],
+    ['role-enhance', roleEnhanceEn],
+    ['extract-keys', extractEn],
+    ['world-cat-kind', worldCatKindEn],
+    ['chat-ux', chatUxEn],
+    ['chat-delete-ux', chatDeleteUxEn],
+    ['sessions-ux', sessionsUxEn],
+    ['writing-ux', writingUxEn],
+    ['agent-scope-ux', agentScopeUxEn],
+    ['session-ux', sessionUxEn],
+    ['log', logEn],
+    ['book', bookEn],
+    ['logs-ux', logsUxEn],
+  ];
+
+  /** 顺序遍历各来源字典，返回「key（先定义域 ∩ 后定义域）」清单（撞键即非空） */
+  function findDuplicateKeys(sources: Array<[string, Dict]>): string[] {
+    const owner = new Map<string, string>();
+    const dups: string[] = [];
+    for (const [name, dict] of sources) {
+      for (const key of Object.keys(dict)) {
+        const first = owner.get(key);
+        if (first === undefined) {
+          owner.set(key, name);
+        } else {
+          dups.push(`${key}（${first} ∩ ${name}）`);
+        }
+      }
+    }
+    return dups.sort();
+  }
+
+  it('zh 侧：13 个来源字典两两无同名键', () => {
+    expect(findDuplicateKeys(sourcesZh)).toEqual([]);
+  });
+
+  it('en 侧：13 个来源字典两两无同名键', () => {
+    expect(findDuplicateKeys(sourcesEn)).toEqual([]);
   });
 });

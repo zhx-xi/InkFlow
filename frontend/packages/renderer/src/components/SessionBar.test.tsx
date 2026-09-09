@@ -284,3 +284,25 @@ describe('SessionBar — #825 折叠按钮位置（「会话」标题行最右�
     expect(header.contains(screen.getByTestId('session-bar-toggle'))).toBe(true);
   });
 });
+
+/* ============================== #1016 会话栏短头专属键位（session.group.title，与 AppNav 分组标题解耦） ============================== */
+
+describe('SessionBar — #1016 栏内短头文案（session.group.title 专属键）', () => {
+  it('zh：session-bar-header 短头 = 「会话」（不回退为「会话列表」）', async () => {
+    fetchMock.mockResolvedValue({ items: [], total: 0 });
+    renderBar();
+    const header = await screen.findByTestId('session-bar-header');
+    // 护栏：键位拆分后 SessionBar 必须继续用短名，防「删重复键但不换消费方」式修复
+    expect(within(header).getByText('会话')).toBeInTheDocument();
+    expect(within(header).queryByText('会话列表')).not.toBeInTheDocument();
+  });
+
+  it('en：session-bar-header 短头 = "Sessions"（非 "Session List"）', async () => {
+    useThemeStore.setState({ lang: 'en' });
+    fetchMock.mockResolvedValue({ items: [], total: 0 });
+    renderBar();
+    const header = await screen.findByTestId('session-bar-header');
+    expect(within(header).getByText('Sessions')).toBeInTheDocument();
+    expect(within(header).queryByText('Session List')).not.toBeInTheDocument();
+  });
+});
