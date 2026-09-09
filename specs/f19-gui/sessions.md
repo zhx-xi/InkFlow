@@ -128,12 +128,13 @@
 ### 5.1 逻辑/文案补充
 
 - `nav.sessions`（AppNav 左导航「会话」按钮，跳 `/sessions`）→ **「会话详情」** / "Session Detail"。
-- `nav.group.sessions`（SessionBar 分组标题，新增键）→ **「会话列表」** / "Session List"。
+- `nav.group.sessions`（AppNav 左导航会话分组标题）→ **「会话列表」** / "Session List"（#1016 键位拆分后仅 AppNav 消费，见 §7）。
+- `session.group.title`（SessionBar 栏内短头，新增键，见 §7）→ **「会话」** / "Sessions"。
 - `sessions.title`（会话页 header）→ **「会话列表」** / "Session List"。
 
 ### 5.2 验收补充
 
-- N10：左侧导航「会话」按钮显示「会话详情」、跳 /sessions；SessionBar 分组标题与会话页 header 显示「会话列表」。zh/en 两端一致。
+- N10：左侧导航「会话」按钮显示「会话详情」、跳 /sessions；AppNav 会话分组标题（`nav-group-sessions`）与会话页 header 显示「会话列表」；SessionBar 栏内短头（`session-bar-header`）显示「会话」（#1016 拆分键位，见 §7）。zh/en 两端一致。
 
 ## 6. #1015 三类卡点击查看详情（详情弹层 + 归档只读贯通）
 
@@ -171,3 +172,25 @@
 ### 6.4 数据源裁定留痕
 
 - issue 建议执行会话详情消费 `GET /agent/runs/{id}`（F27 轨迹）——源码实证 F24 sessions 与 F27 agent_runs 两表无关联（sessions.id=int PK→UUID(int=id)；agent_runs.id=uuid4 字符串；无外键/无映射字段，#379 同族），以其为详情源必 404。裁定：v1 执行会话详情 = 既有 sessions 详情 + logs 端点（元信息+履历），agentic 轨迹贯通另立 issue。
+
+## 7. #1016 i18n 同名键冲突（会话分组标题）与重复键护栏
+
+> 现象：v0.13.0-rc6 左导航「会话详情」上方分组标题显示**「会话」**，与 /sessions 页标题「会话列表」不一致。
+> 根因：`nav.group.sessions` 一个键被两个文案需求共用——AppNav 分组标题（期望「会话列表」）与 SessionBar 栏内短头（期望「会话」）；
+> 且该键在 `zh.ts`/`en.ts` 与 `session-ux.ts` 重复定义，`useI18n` 展开合并时 `sessionUxZh/En` 在后 → 静默覆盖（#762 拆 session-ux 域时撞键引入）。
+
+### 7.1 逻辑/文案
+
+- `nav.group.sessions`（zh.ts/en.ts）→ **仅 AppNav 分组标题**（`nav-group-sessions`）消费：**「会话列表」** / "Session List"，与会话页 header `sessions.title` 一致。
+- `session.group.title`（session-ux.ts，新增键）→ SessionBar 栏内 section 头（`session-bar-header`）：**「会话」** / "Sessions"。
+- `session-ux.ts` 删除重复定义的 `nav.group.sessions`（zh/en 两处）。
+
+### 7.2 护栏（i18n 聚合重复键检测）
+
+- `i18n.contract.test.ts` 新增契约：`useI18n` 聚合的全部来源字典（zh + 12 个域字典）**两两 key 交集必须为空**（zh 侧 / en 侧各一条断言）。同名键由展开顺序静默决定胜者，重复即 FAIL——根治「后写吞前写」整族问题。
+
+### 7.3 验收补充
+
+- N17：AppNav `nav-group-sessions` 分组标题 = 「会话列表」/ "Session List"（与会话页 header 一致）。
+- N18：SessionBar `session-bar-header` 短头 = 「会话」/ "Sessions"（不回退为「会话列表」）。
+- N19：i18n 跨域字典重复键断言零命中（zh/en 两侧）。

@@ -101,7 +101,7 @@ export function SessionBar({ projectId }: { projectId?: string | null }) {
     >
       <div data-testid="session-bar-header" className="flex items-center justify-between">
         <span className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-ink-3">
-          {t('nav.group.sessions')}
+          {t('session.group.title')}
         </span>
         <button
           type="button"
