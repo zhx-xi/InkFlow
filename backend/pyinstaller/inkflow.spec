@@ -78,6 +78,21 @@ for _pkg in ("deepagents", "langchain_openai", "langchain_core", "langgraph"):
     binaries += _b
     hiddenimports += _h
 
+# #1072（rc1 发布阻断）：litellm/langchain_litellm 全家——ADR-051（#1024）已把 LLM 出口
+# 迁移到 ChatLiteLLM/LiteLLMEmbeddings，langchain_client.py 模块级 `from langchain_litellm
+# import ChatLiteLLM` → langchain_litellm.chat_models.litellm 模块级 `import litellm`。
+# 此前 excludes 里的 "litellm" 是 ADR-005v2 时代残留：排除后打包版任一 CLI 命令在 import
+# 期即 ModuleNotFoundError（--version exit 1），发布流水线 smoke 失败、package-electron 被
+# 跳过（v0.14.0-rc1 实证）。litellm 的 provider 适配器由 importlib 动态加载，静态分析同样
+# 不可见，故按 #253/#710 先例 collect_all 三件套一次性收集（仅移除 excludes 仍会漏）。
+# ⚠️ tokenizers 亦须随之收集：litellm/utils.py:49 模块级 `from tokenizers import Tokenizer`
+#    （Rust 扩展，同 tiktoken 形态），排除后仍会在 litellm 导入链上炸（rc1 修复第二轮实证）。
+for _pkg in ("litellm", "langchain_litellm", "tokenizers"):
+    _d, _b, _h = collect_all(_pkg)
+    datas += _d
+    binaries += _b
+    hiddenimports += _h
+
 # 运行时钩子（冒烟 2 实测）：冻结版 PyInstaller 引导器在 Windows 上重定向
 # stdout/stderr 时忽略 PYTHONUTF8/PYTHONIOENCODING，退化为区域编码（本机 cp936），
 # serve 打印 emoji 等字符直接 UnicodeEncodeError（Electron 内核以管道捕获 stdout
@@ -119,13 +134,13 @@ a = Analysis(
         #    拖回 torch/transformers/sentence_transformers 全家，T0 瘦身全废。
     ],
     # T0 排除清单（spike 2026-08-06 定稿，spec §3.3/§4.4）：
-    # chromadb 云组件（onnxruntime/kubernetes/tokenizers——API embedding 路径不可达）
-    # + ADR-005v2 残留（litellm）+ torch 族兜底（静态分析误跟时强制不进包）。
+    # chromadb 云组件（onnxruntime/kubernetes）+ torch 族兜底（静态分析误跟时强制不进包）。
+    # ⚠️ #1072：litellm 曾在此列为「ADR-005v2 残留」、tokenizers 曾作为 chromadb 云组件排除，
+    #    但 ADR-051（#1024）后二者均为 litellm 运行链硬依赖 → 必须收集（见上方 collect_all），
+    #    勿再加回。
     excludes=[
         "onnxruntime",
         "kubernetes",
-        "tokenizers",
-        "litellm",
         "torch",
         "transformers",
         "sentence_transformers",
@@ -192,8 +207,6 @@ a_mcp = Analysis(
     excludes=[
         "onnxruntime",
         "kubernetes",
-        "tokenizers",
-        "litellm",
         "torch",
         "transformers",
         "sentence_transformers",
