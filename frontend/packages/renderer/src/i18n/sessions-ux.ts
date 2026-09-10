@@ -9,6 +9,10 @@ export const sessionsUxZh: Record<string, string> = {
   // #1015 会话详情弹层 + 归档 AI 对话只读横幅
   'sessions.detail.loadFailed': '详情加载失败',
   'sessions.detail.unanswered': '（未回答）',
+  // #1029 决策轨迹区块（ADR-056 软锚 sessions.context.agent_run_id）
+  'sessions.detail.trace': '决策轨迹',
+  'sessions.detail.traceLink': '查看执行详情',
+  'sessions.detail.traceFailed': '决策轨迹加载失败',
   'write.chat.archivedBanner': '该会话已归档，仅供查看',
 };
 
@@ -22,5 +26,9 @@ export const sessionsUxEn: Record<string, string> = {
   // #1015 session detail dialog + archived AI chat read-only banner
   'sessions.detail.loadFailed': 'Failed to load details',
   'sessions.detail.unanswered': '(unanswered)',
+  // #1029 decision trace block (ADR-056 soft anchor sessions.context.agent_run_id)
+  'sessions.detail.trace': 'Decision Trace',
+  'sessions.detail.traceLink': 'View execution detail',
+  'sessions.detail.traceFailed': 'Failed to load decision trace',
   'write.chat.archivedBanner': 'This conversation is archived (read-only)',
 };

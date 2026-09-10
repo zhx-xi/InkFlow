@@ -2,11 +2,15 @@
  * #1015 会话详情弹层（访谈卡 / 执行卡统一只读详情，N11-N13/N16）。
  * - ex：会话元信息 + 履历日志时间线，懒加载 GET /api/v1/sessions/{id}/logs；
  * - pl：planner 快照，懒加载 GET /api/v1/agent/books/planner/{id}；
+ * - #1029：ex 会话 context 含 agent_run_id 软锚（ADR-056）→ 追加决策轨迹区块，
+ *   懒加载 GET /api/v1/agent/runs/{id}（失败仅占位，不影响其余部分）；
  * - 归档执行会话（is_deleted=true）底部提供恢复入口；内容始终只读。
  */
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchSessionLogs, type SessionLogDto, type SessionViewDto } from '../api/sessions';
 import { getPlannerSession, type PlannerSessionDto } from '../api/books';
+import { getRun, type AgentRunDto, type AgentStepDto } from '../api/runs';
 import { useI18n } from '../i18n/useI18n';
 import { formatTimestamp } from '../lib/log-format';
 
@@ -26,30 +30,79 @@ type DetailData =
   | { kind: 'pl'; planner: PlannerSessionDto }
   | { kind: 'ex'; logs: SessionLogDto[] };
 
+/** #1029 软锚读取：context['agent_run_id'] 为非空字符串才算锚（无键/空串 = 存量会话降级） */
+function readAgentRunId(context: unknown): string | null {
+  if (typeof context !== 'object' || context === null || Array.isArray(context)) return null;
+  const raw = (context as Record<string, unknown>)['agent_run_id'];
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed !== '' ? trimmed : null;
+}
+
+/** #1029 轻量轨迹行：步骤序号 + 工具名（多个逗号连接）+ 各 tool_call 结果摘要 */
+function renderTraceStep(step: AgentStepDto) {
+  const toolNames = step.tool_calls.map((call) => call.tool_name).filter((name) => name !== '');
+  const results = step.tool_calls.map((call) => call.result).filter((text) => text !== '');
+  return (
+    <div
+      key={step.index}
+      data-testid={`session-detail-trace-${step.index}`}
+      className="rounded-md border border-line bg-surface-2 px-3 py-2"
+    >
+      <div className="text-ink">
+        <span className="text-ink-2">{step.index + 1}.</span> {toolNames.join(', ')}
+      </div>
+      {results.length > 0 ? (
+        <div className="mt-1 whitespace-pre-wrap text-ink-2">{results.join(' / ')}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SessionDetailDialog({
   target,
   onClose,
   onRestoreSession,
 }: SessionDetailDialogProps) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [data, setData] = useState<DetailData | null>(null);
+  const [trace, setTrace] = useState<AgentRunDto | null>(null);
+  const [traceFailed, setTraceFailed] = useState(false);
+  const agentRunId = target.kind === 'ex' ? readAgentRunId(target.view.session.context) : null;
 
-  // 懒加载：target 变化触发；cancelled 标志防卸载后 setState
+  // 懒加载：target 变化触发；cancelled 标志防卸载后 setState；轨迹与日志/快照并行加载
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setFailed(false);
     setData(null);
+    setTrace(null);
+    setTraceFailed(false);
+    const runId = target.kind === 'ex' ? readAgentRunId(target.view.session.context) : null;
+    // #1029：轨迹错误独立捕获——run 加载失败不置 failed（弹层其余部分照常渲染）
+    const loadTrace = async () => {
+      if (!runId) return;
+      try {
+        const dto = await getRun(runId);
+        if (!cancelled) setTrace(dto);
+      } catch {
+        if (!cancelled) setTraceFailed(true);
+      }
+    };
     const run = async () => {
       try {
         if (target.kind === 'pl') {
           const planner = await getPlannerSession(target.planner.id);
           if (!cancelled) setData({ kind: 'pl', planner });
         } else {
-          const res = await fetchSessionLogs(target.view.session.id, { limit: 200 });
-          if (!cancelled) setData({ kind: 'ex', logs: res.items });
+          const [logs] = await Promise.all([
+            fetchSessionLogs(target.view.session.id, { limit: 200 }),
+            loadTrace(),
+          ]);
+          if (!cancelled) setData({ kind: 'ex', logs: logs.items });
         }
       } catch {
         if (!cancelled) setFailed(true);
@@ -142,6 +195,37 @@ export function SessionDetailDialog({
                 </div>
               ))}
             </div>
+            {agentRunId ? (
+              <div className="mt-3 rounded-md border border-line px-3 py-2">
+                <div className="font-medium text-ink">{t('sessions.detail.trace')}</div>
+                {traceFailed ? (
+                  <div
+                    data-testid="session-detail-trace-error"
+                    role="alert"
+                    className="mt-2 text-[12px] text-err"
+                  >
+                    {t('sessions.detail.traceFailed')}
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-2 space-y-1">
+                      {(trace?.steps ?? []).map((step) => renderTraceStep(step))}
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="session-detail-trace-link"
+                      className="mt-2 text-[12px] text-accent transition-colors hover:text-accent-hover"
+                      onClick={() => {
+                        const chapterId = trace?.chapter_id;
+                        navigate(chapterId ? `/writing?chapter_id=${chapterId}` : '/writing');
+                      }}
+                    >
+                      {t('sessions.detail.traceLink')}
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
