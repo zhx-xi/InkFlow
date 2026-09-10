@@ -12,6 +12,8 @@ export interface ChapterMeta {
   volume_id: string | null;
   order_index: number;
   word_count: number;
+  /** #1017：章级写作要求（NULL=继承项目 config.writing_style，非空=本章覆盖） */
+  writing_requirements?: string | null;
 }
 
 /** #976 草稿双轨树节点（kind='draft'：不进 ChapterMeta/字数统计，仅树轨渲染） */
@@ -85,6 +87,8 @@ interface ChapterState {
   createChapter: (projectId: string, title: string, volumeId?: string) => Promise<ChapterMeta>;
   moveChapter: (chapterId: string, targetVolumeId: string | null) => Promise<ChapterMeta>;
   patchChapter: (chapterId: string, title: string) => Promise<ChapterMeta>;
+  /** #1017：章级写作要求保存（传 null = 清除覆盖回继承） */
+  patchWritingRequirements: (chapterId: string, value: string | null) => Promise<ChapterMeta>;
   deleteChapter: (chapterId: string) => Promise<void>;
   /** #999：全书章节标题批量归一化（POST 成功 → 内部 loadChapterTree 刷新树） */
   normalizeChapterTitles: (projectId: string, format: 'arabic' | 'chinese') => Promise<NormalizeTitlesResult>;
@@ -177,7 +181,15 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const chapter = await apiFetch<Chapter>(`/api/v1/chapters/${chapterId}`, undefined);
-      set({ currentChapterId: chapter.id, content: chapter.content, loading: false });
+      // #1017：章详情回读带 writing_requirements → 同步回列表项（含字段存在性）
+      set((s) => ({
+        currentChapterId: chapter.id,
+        content: chapter.content,
+        loading: false,
+        chapters: s.chapters.some((c) => c.id === chapter.id)
+          ? s.chapters.map((c) => (c.id === chapter.id ? { ...c, ...chapter } : c))
+          : [...s.chapters, chapter],
+      }));
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
     }
@@ -214,6 +226,16 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     const patched = await apiFetch<ChapterMeta>(`/api/v1/chapters/${chapterId}`, {
       method: 'PATCH',
       body: { title },
+    });
+    set((s) => ({ chapters: s.chapters.map((c) => (c.id === patched.id ? patched : c)) }));
+    return patched;
+  },
+
+  // #1017：章级写作要求（body 恒带 writing_requirements 键；null = 清除覆盖回继承）
+  patchWritingRequirements: async (chapterId, value) => {
+    const patched = await apiFetch<ChapterMeta>(`/api/v1/chapters/${chapterId}`, {
+      method: 'PATCH',
+      body: { writing_requirements: value },
     });
     set((s) => ({ chapters: s.chapters.map((c) => (c.id === patched.id ? patched : c)) }));
     return patched;

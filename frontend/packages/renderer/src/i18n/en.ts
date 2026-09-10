@@ -527,6 +527,13 @@ export const en: Record<string, string> = {
   'write.context.injectSelect': '+ Select inject',
   'write.context.pickerSearch': 'Search existing settings...',
   'write.context.pickerAppend': 'Append inject',
+  // #1017: three-layer writing requirements (chapter bar + project-level input)
+  'write.context.chapterHint': 'Chapter writing requirements',
+  'write.context.requiredInherit': 'Inherit project writing requirements',
+  'write.context.requiredInheritBtn': 'Reset to inherit',
+  'write.context.projectRequired': 'Writing requirements',
+  'write.context.projectRequiredHint':
+    'Project-wide default style; individual chapters can override in the writing page',
   'write.stream.generating': 'Generating',
   'write.stream.stop': 'Stop',
   'write.stream.done': '{words} words · {model} · format {valid}',

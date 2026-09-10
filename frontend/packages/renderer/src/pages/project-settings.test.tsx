@@ -290,13 +290,69 @@ describe('ProjectSettingsPage — #482 项目聚合设置页', () => {
     });
   });
 
-  it('挂载播种：agent store 无 agent 字段 → loadFromProject(project.config)，输入框回显项目值', () => {
+  it('挂载播种：agent store 无 agent 字段 → loadFromProject(project.config)，输入框回显项目值', async () => {
     seedProjectConfig({ default_words: 500000, writing_style: '明快' });
     render(<ProjectSettingsPage />);
 
     // 播种守卫放行（config 无 agent_* / model 键）→ 全量 loadFromProject
     expect(useAgentStore.getState().config).toEqual({ default_words: 500000, writing_style: '明快' });
     expect(screen.getByTestId('ps-words-input')).toHaveValue(500000);
+  });
+});
+
+/**
+ * #1017 项目级「写作要求」输入（spec f6-context/gui-panel.md §3.1 三层表 + §5.1.2）
+ * 契约：新增 textarea `ps-writing-style`，blur 持久化 config.writing_style（走统一 saveConfig → PATCH 全量 config）。
+ */
+describe('ProjectSettingsPage — #1017 项目级写作要求输入', () => {
+  it('渲染 ps-writing-style 并回显项目 config.writing_style', async () => {
+    seedProjectConfig({ writing_style: '文风冷峻，多用短句' });
+    render(<ProjectSettingsPage />);
+
+    expect(screen.getByTestId('ps-writing-style')).toHaveValue('文风冷峻，多用短句');
+  });
+
+  it('无 writing_style → 渲染空 textarea（缺省 = 空，不报错）', async () => {
+    seedProjectConfig({});
+    render(<ProjectSettingsPage />);
+
+    expect(screen.getByTestId('ps-writing-style')).toHaveValue('');
+  });
+
+  it('输入 + 失焦 → PATCH body.config.writing_style 为输入值', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ writing_style: '' });
+    render(<ProjectSettingsPage />);
+
+    const box = screen.getByTestId('ps-writing-style');
+    await user.type(box, '慢热日常，克制抒情');
+    await user.tab(); // blur → persist
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/p1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({
+            config: expect.objectContaining({ writing_style: '慢热日常，克制抒情' }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('未变更直接失焦 → 不发 PATCH（dirty 守卫）', async () => {
+    const user = userEvent.setup();
+    seedProjectConfig({ writing_style: '已有风格' });
+    render(<ProjectSettingsPage />);
+
+    await user.click(screen.getByTestId('ps-writing-style'));
+    await user.tab();
+
+    expect(apiFetchMock).not.toHaveBeenCalledWith(
+      '/api/v1/projects/p1',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
   });
 });
 

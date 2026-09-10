@@ -68,6 +68,8 @@ export function WritingPage() {
   const loadChapterTree = useChapterStore((s) => s.loadChapterTree);
   const currentChapterId = useChapterStore((s) => s.currentChapterId);
   const saveContent = useChapterStore((s) => s.saveContent);
+  // #1017：章级写作要求保存动作（ContextPanel 章级栏 blur 回调驱动）
+  const patchWritingRequirements = useChapterStore((s) => s.patchWritingRequirements);
   const content = useChapterStore((s) => s.content);
   const chapters = useChapterStore((s) => s.chapters);
   const chaptersLoading = useChapterStore((s) => s.loading);
@@ -357,6 +359,9 @@ export function WritingPage() {
 
   const currentChapter = chapters.find((c) => c.id === currentChapterId);
   const displayWords = currentChapter?.word_count ?? 0;
+  // #1017：写作要求三层合成（章级覆盖 ?? 项目级 ?? ''）→ 传 ContextPanel 的 assemble 口径
+  const projectWritingStyle = currentProject?.config?.writing_style ?? '';
+  const effectiveWritingRequirements = currentChapter?.writing_requirements ?? projectWritingStyle;
   // #724：上下文注入等从项目 model 开始，项目未设时回退全局默认模型
   const model = currentProject?.config?.model || globalDefaultModel || null;
   const generating = status === 'running';
@@ -494,7 +499,12 @@ export function WritingPage() {
                   projectId={effectiveProjectId}
                   chapterId={currentChapterId}
                   model={model}
-                  writingRequirements={currentProject?.config?.writing_style ?? '上下文预览'}
+                  writingRequirements={effectiveWritingRequirements}
+                  projectWritingStyle={projectWritingStyle}
+                  chapterWritingRequirements={currentChapter?.writing_requirements ?? null}
+                  onWritingRequirementsChange={(value) => {
+                    if (currentChapterId) void patchWritingRequirements(currentChapterId, value);
+                  }}
                 />
               </div>
               <div
