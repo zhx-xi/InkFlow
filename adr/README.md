@@ -46,6 +46,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-029](architecture/ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖 | ✅ 已接受 | 2026-08-07 |
 | [ADR-053](architecture/ADR-053.md) | 数据面变更统一推送 — 领域事件源 + SSE 广播 + GUI 订阅失效 | ✅ 已接受 | 2026-09-07 |
 | [ADR-055](architecture/ADR-055.md) | 时间存储与显示口径 — 存储/传输一律 UTC，面向用户显示一律本地时区 | ✅ 已接受 | 2026-09-10 |
+| [ADR-056](architecture/ADR-056.md) | 会话 ↔ agentic 执行轨迹关联 — sessions.context 软锚（agent_run_id） | ✅ 已接受 | 2026-09-10 |
 
 ### 数据库（database）
 
@@ -178,6 +179,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **CLI**: Typer + 恒经 HTTP + F7 契约 + 独立产物（ADR-046 [cli/](cli/ADR-046.md)）
 - **MCP**: 官方 SDK + stdio + 薄客户端经 HTTP（ADR-023 [mcp/](mcp/ADR-023.md)）
 - **GUI**: Electron 壳 + 共享 React 渲染层（ADR-020 [gui/](gui/ADR-020.md)）
+- **执行轨迹关联**: 会话 ↔ agentic run 用 `sessions.context` 软锚（`agent_run_id`，零迁移；仅新发起生效，存量不回溯）（ADR-056 [architecture/](architecture/ADR-056.md)）
 - **CI 质量**: Reviewdog + Ruff 统一门禁（ADR-017 [test-ci/](test-ci/ADR-017.md)）
 - **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018 [test-ci/](test-ci/ADR-018.md)）
 - **CI 真实 AI**: label 触发 + workflow_dispatch 兜底（ADR-026 [test-ci/](test-ci/ADR-026.md)）
