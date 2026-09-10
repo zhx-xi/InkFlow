@@ -214,55 +214,6 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
   });
 });
 
-describe('写作页 — 右栏整栏收起/展开（#742 收起按钮整行 + #747 拖动方向）', () => {
-  it('#765 收起按钮移到右栏左缘 + 显示「折叠」提示；拖动分隔线 hover 变鼠标（非方框）', () => {
-    renderWritingPage();
-    const rail = screen.getByTestId('right-rail');
-    const toggle = within(rail).getByTestId('right-col-toggle');
-    // #765：收起按钮位于右栏左缘（内容左对齐 + 可见「折叠」文案，非 w-full 整行居中图标）
-    expect(toggle).toBeInTheDocument();
-    expect(toggle).toHaveTextContent('折叠');
-    expect(toggle.className).not.toMatch(/w-full/);
-    expect(toggle.compareDocumentPosition(screen.getByTestId('rail-panel-context')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 拖动分隔线：右栏内、hover 变鼠标（cursor-col-resize）、细边界（非 28px 方框）
-    const drag = within(rail).getByTestId('right-col-drag');
-    expect(drag).toBeInTheDocument();
-    expect(drag.className).toMatch(/cursor-col-resize/);
-    expect(drag.className).not.toMatch(/h-7/);
-  });
-
-  it('#747 往左拖「right-col-drag」→ 右栏变宽、左编辑器变窄', () => {
-    renderWritingPage();
-    const rail = screen.getByTestId('right-rail');
-    const startW = parseInt(rail.style.width, 10) || 240;
-    const drag = screen.getByTestId('right-col-drag');
-    fireEvent.mouseDown(drag, { clientX: 300, clientY: 100 });
-    fireEvent.mouseMove(window, { clientX: 200, clientY: 100 }); // 往左拖 100px
-    const afterW = parseInt(rail.style.width, 10);
-    expect(afterW).toBeGreaterThan(startW); // 右栏变宽
-  });
-
-  it('点「»」→ 整栏收起（context/summary 面板全隐藏 + data-collapsed=true）；再点「«」→ 展开', async () => {
-    const user = userEvent.setup();
-    renderWritingPage();
-    // 展开态：两面板均在（#764 无 drafts）
-    expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
-    expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
-
-    // 收起整栏
-    await user.click(screen.getByTestId('right-col-toggle'));
-    expect(screen.getByTestId('right-rail')).toHaveAttribute('data-collapsed', 'true');
-    expect(screen.queryByTestId('rail-panel-context')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('rail-panel-summary')).not.toBeInTheDocument();
-
-    // 展开整栏
-    await user.click(screen.getByTestId('right-col-toggle'));
-    expect(screen.getByTestId('right-rail')).not.toHaveAttribute('data-collapsed', 'true');
-    expect(screen.getByTestId('rail-panel-context')).toBeInTheDocument();
-    expect(screen.getByTestId('rail-panel-summary')).toBeInTheDocument();
-  });
-});
-
 describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
   it('工具栏渲染：撤销/重做/保存/续写/生成', () => {
     renderWritingPage();

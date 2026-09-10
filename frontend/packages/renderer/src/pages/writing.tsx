@@ -458,7 +458,7 @@ export function WritingPage() {
             data-testid="right-col-toggle"
             aria-label={railCollapsed ? '展开右栏' : '收起右栏'}
             onClick={() => setRailCollapsed((c) => !c)}
-            className="flex h-auto shrink-0 items-center justify-start gap-1 self-start border-b border-line px-2 py-1.5 text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
+            className="flex h-auto w-full shrink-0 items-center justify-center gap-1 border-b border-line px-2 py-1.5 text-[12px] text-ink-3 hover:bg-surface-3 hover:text-ink"
           >
             {railCollapsed ? (
               <>
