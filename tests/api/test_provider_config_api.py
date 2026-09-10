@@ -14,8 +14,7 @@
 （NEW ×7 文件结构）、§8.5/§8.6（测试策略与验收 M1）。spec §8.3 既有端点
 `/settings/llm-keys`、`/settings/llm/test`（#79）本文件不覆盖（test_settings_api.py
 已契约）。测试方式镜像 tests/api/test_settings_api.py（契约 docstring 风格 +
-无 token 模式）与 tests/api/test_chapter_api.py（ASGITransport + override_get_db
-真实 DB 模式）。
+无 token 模式）与 tests/api/test_chapter_api.py（ASGITransport + override_get_db 真实 DB）。
 
 ════════════════════════════════════════════════════════════════════
 设计假设（GREEN 实现必须满足的契约，逐条对应下方测试）
@@ -25,9 +24,8 @@
    inkflow.api.app），`override_get_db` fixture（tests/api/conftest.py）将
    get_db 替换为测试 db_session（tests/conftest.py 内存 SQLite），app 与测试
    共享同一数据库。本文件模块级 `import inkflow.api.routers.provider_configs`
-   为 RED 收集断言（模块不存在 → 全文件收集期 ModuleNotFoundError，
-   即预期失败形态）。所有用例显式
-   `@pytest.mark.asyncio`（免疫 pytest-asyncio strict/auto 模式差异）。
+   为 RED 收集断言（模块不存在 → 全文件收集期 ModuleNotFoundError，即预期失败
+   形态）。所有用例显式 `@pytest.mark.asyncio`（免疫 pytest-asyncio strict/auto 差异）。
 
 2. 【无 token 模式——硬性契约】本文件所有用例依赖 env
    `INKFLOW_SERVER_TOKEN` 未设置时中间件直通（test_settings_api.py 设计
@@ -528,7 +526,8 @@ class TestCreateProviderConfig:
             ],
         }
 
-        resp = await client.post(ENDPOINT, json=payload)
+        # #936 C: 无 Key 而新增条目必过门禁 → force 跳过
+        resp = await client.post(f"{ENDPOINT}?force=true", json=payload)
         assert resp.status_code == 201
         data = resp.json()
         _assert_response_contract(data)
@@ -705,8 +704,9 @@ class TestUpdateProviderConfig:
         )
         patch_key_manager([])
 
+        # #936 C：替换引入新条目 → 必过门禁；无 Key → force=true 跳过
         resp = await client.patch(
-            f"{ENDPOINT}/{row.id}",
+            f"{ENDPOINT}/{row.id}?force=true",
             json={
                 "models": [
                     {"id": "new-model", "type": "embedding", "roles": ["rag"]},

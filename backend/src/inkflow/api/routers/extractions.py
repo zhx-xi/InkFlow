@@ -64,6 +64,7 @@ from inkflow.domain.ports.outline_errors import (
     OutlineGenerationError,
     OutlineNameConflictError,
 )
+from inkflow.domain.ports.provider_config_errors import ProviderConfigServiceError
 from inkflow.domain.ports.style_errors import StyleValidationError
 from inkflow.domain.ports.timeline_errors import TimelineExtractionError
 from inkflow.domain.ports.vector_store import EntityType
@@ -185,16 +186,28 @@ class EmbeddingModelRequest(BaseModel):
 @instrument(caller_type="api")
 async def set_embedding_model(
     data: EmbeddingModelRequest,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """切换激活 embedding 模型（#525）— 存在性校验 + 服务层唯一激活。"""
+    """切换激活 embedding 模型（#525）— 存在性校验 + 服务层唯一激活。
+
+    #936 C：查询参数 `force=true` 跳过保存前 embedding 探测门禁（透传 service）。
+    """
     svc = get_provider_config_service(db)
     pc = await svc.get_by_name(data.provider)
     if pc is None:
         raise HTTPException(status_code=404, detail="Provider 不存在")
     if not any(m.id == data.model_id for m in pc.models):
         raise HTTPException(status_code=404, detail="模型不存在")
-    await svc.set_embedding_model(data.provider, data.model_id)
+    try:
+        # 未显式 force 时不传该 kwarg（既有契约调用形态零变更，#936 向后兼容）
+        if force:
+            await svc.set_embedding_model(data.provider, data.model_id, force=True)
+        else:
+            await svc.set_embedding_model(data.provider, data.model_id)
+    except ProviderConfigServiceError as exc:
+        # #936 C：探测门禁失败 → 422（消息即 detail，镜像 provider_configs 映射）
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"ok": True, "provider": data.provider, "model_id": data.model_id}
 
 

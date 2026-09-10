@@ -167,11 +167,15 @@ async def list_provider_configs(
 @instrument(caller_type="api")
 async def create_provider_config(
     data: ProviderConfigCreate,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """新建 Provider — 201 + 完整响应结构（含 key_saved）."""
+    """新建 Provider — 201 + 完整响应结构（含 key_saved）.
+
+    #936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。
+    """
     svc = _get_svc(db)
-    pc = await _run_service(svc.create(data))
+    pc = await _run_service(svc.create(data, force=force))
     return _to_response(pc, _get_key_manager())
 
 
@@ -231,12 +235,16 @@ async def get_provider_config(
 async def update_provider_config(
     provider_config_id: str,
     data: ProviderConfigUpdate,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """部分更新（exclude_unset 浅合并；models 整体替换）；不存在 → 404."""
+    """部分更新（exclude_unset 浅合并；models 整体替换）；不存在 → 404.
+
+    #936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。
+    """
     pid = _parse_id(provider_config_id)
     svc = _get_svc(db)
-    pc = await _run_service(svc.update(pid, data))
+    pc = await _run_service(svc.update(pid, data, force=force))
     return _to_response(pc, _get_key_manager())
 
 

@@ -2558,6 +2558,8 @@ export interface paths {
         /**
          * Create Provider Config
          * @description 新建 Provider — 201 + 完整响应结构（含 key_saved）.
+         *
+         *     #936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。
          */
         post: operations["create_provider_config_api_v1_provider_configs_post"];
         delete?: never;
@@ -2614,6 +2616,8 @@ export interface paths {
         /**
          * Update Provider Config
          * @description 部分更新（exclude_unset 浅合并；models 整体替换）；不存在 → 404.
+         *
+         *     #936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。
          */
         patch: operations["update_provider_config_api_v1_provider_configs__provider_config_id__patch"];
         trace?: never;
@@ -3193,6 +3197,8 @@ export interface paths {
         /**
          * Set Embedding Model
          * @description 切换激活 embedding 模型（#525）— 存在性校验 + 服务层唯一激活。
+         *
+         *     #936 C：查询参数 `force=true` 跳过保存前 embedding 探测门禁（透传 service）。
          */
         put: operations["set_embedding_model_api_v1_vector_embedding_model_put"];
         post?: never;
@@ -11630,7 +11636,9 @@ export interface operations {
     };
     create_provider_config_api_v1_provider_configs_post: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11758,7 +11766,9 @@ export interface operations {
     };
     update_provider_config_api_v1_provider_configs__provider_config_id__patch: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 provider_config_id: string;
@@ -12949,7 +12959,9 @@ export interface operations {
     };
     set_embedding_model_api_v1_vector_embedding_model_put: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;

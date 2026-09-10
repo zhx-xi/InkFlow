@@ -49,8 +49,13 @@ export function ModelsPanel() {
     void loadProviders();
   };
 
-  const handleAddModel = async (providerId: number, model: ProviderModel) => {
-    await addModel(providerId, model);
+  const handleAddModel = async (
+    providerId: number,
+    model: ProviderModel,
+    options?: { force?: boolean },
+  ) => {
+    // #936 C：透传 force（用户确认强制保存后跳过探测门禁）
+    await addModel(providerId, model, options);
   };
 
   // #125：以 AddModelDialog 逐行结果为准（不再读 store.error 的「最后一次调用」）

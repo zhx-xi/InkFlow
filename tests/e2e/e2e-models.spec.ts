@@ -324,6 +324,12 @@ test('模型管理：添加模型（选 Provider + 模型行出现 + 计数更�
     await expect(dialog.getByRole('button', { name: '添加一行' })).toBeVisible();
 
     await dialog.getByRole('button', { name: '保存', exact: true }).click();
+    // #936 C：E2E 环境无有效 API Key → 保存前探测门禁拒绝 → 弹「强制保存」确认框；
+    // 走 GUI 逃生门（本 PR 新增的用户路径），确认后以 force=true 落库。
+    const gateConfirm = window.getByTestId('probe-gate-confirm');
+    await expect(gateConfirm).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('probe-gate-detail')).toContainText(modelId);
+    await window.getByTestId('probe-gate-force').click();
     await expect(dialog).toHaveCount(0);
 
     // 模型表出现该行（含模型 ID）+ provider 计数更新为「1 个模型」

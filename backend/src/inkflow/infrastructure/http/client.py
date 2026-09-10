@@ -94,6 +94,9 @@ class InkFlowHTTPClient:
     async def post(self, path, *, params=None, json=None, timeout=None) -> dict:
         return await self._request("POST", path, params=params, json=json, timeout=timeout)
 
+    async def put(self, path, *, params=None, json=None, timeout: float | None = None) -> dict:
+        return await self._request("PUT", path, params=params, json=json, timeout=timeout)
+
     async def patch(self, path, *, params=None, json=None, timeout: float | None = None) -> dict:
         return await self._request("PATCH", path, params=params, json=json, timeout=timeout)
 

@@ -70,12 +70,18 @@ interface ModelsState {
 
   loadProviders: () => Promise<void>;
   addProvider: (input: AddProviderInput) => Promise<ProviderConfig>;
-  addModel: (providerId: number, model: ProviderModel) => Promise<void>;
+  /** #936 C：options.force=true 跳过保存前探测门禁（用户确认强制保存后调用） */
+  addModel: (
+    providerId: number,
+    model: ProviderModel,
+    options?: { force?: boolean },
+  ) => Promise<void>;
   /** F59 #965：手动覆盖思考能力（true/false=强制，null=恢复自动探测）→ PATCH models 全量替换 */
   setModelReasoning: (
     providerId: number,
     modelId: string,
     value: boolean | null,
+    options?: { force?: boolean },
   ) => Promise<void>;
   deleteProvider: (id: number) => Promise<void>;
   selectModel: (id: string | null) => void;
@@ -125,12 +131,14 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     }
   },
 
-  addModel: async (providerId, model) => {
+  addModel: async (providerId, model, options) => {
     try {
       const target = get().providers.find((p) => p.id === providerId);
       if (!target) throw new Error('Provider 不存在');
+      const force = options?.force === true;
+      // #936 C：探测门禁失败 → 422（detail 含 force 提示）；force=true 重发跳过门禁
       const updated = await apiFetch<ProviderConfig>(
-        `/api/v1/provider-configs/${providerId}`,
+        `/api/v1/provider-configs/${providerId}${force ? '?force=true' : ''}`,
         {
           method: 'PATCH',
           // 后端 ProviderConfigUpdate.models 为 exclude_unset 整体替换：
@@ -150,7 +158,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     }
   },
 
-  setModelReasoning: async (providerId, modelId, value) => {
+  setModelReasoning: async (providerId, modelId, value, options) => {
     try {
       const target = get().providers.find((p) => p.id === providerId);
       if (!target) throw new Error('Provider 不存在');
@@ -158,8 +166,10 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       const models = target.models.map((m) =>
         m.id === modelId ? { ...m, supports_reasoning: value } : m,
       );
+      // #936 C：条目内容有变 → 过探测门禁；force=true 跳过（用户确认强制保存）
+      const force = options?.force === true;
       const updated = await apiFetch<ProviderConfig>(
-        `/api/v1/provider-configs/${providerId}`,
+        `/api/v1/provider-configs/${providerId}${force ? '?force=true' : ''}`,
         {
           method: 'PATCH',
           body: { models },

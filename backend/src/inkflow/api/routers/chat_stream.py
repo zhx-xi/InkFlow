@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import inkflow.api.deps as deps_module
+from inkflow.api._llm_resolver import resolve_chat_model
 from inkflow.api.deps import get_agent_run_repo, get_chat_agent_service
 from inkflow.core.config import config
 from inkflow.domain.models.agent_run import AgentRun, AgentRunStatus, AgentStep
@@ -29,6 +30,11 @@ from inkflow.infrastructure.llm.redact import load_known_keys, redact_secrets
 from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/chat", tags=["AI 对话"])
+
+
+def _chat_run_model() -> str:
+    """chat run 落库 model 字段（#936 A 项：走单值守卫，空默认 → 422 而非空串落库）。"""
+    return resolve_chat_model(config.llm_default_model)
 
 
 _inflight_runs: dict[str, asyncio.Event] = {}
@@ -203,7 +209,7 @@ async def _save_failed_run(
             steps=steps,
             final_content=final_content,
             token_usage_total=token_total,
-            model=config.llm_default_model,
+            model=_chat_run_model(),
             terminated_by="",
         )
     )
@@ -225,7 +231,7 @@ async def _end_run_terminated(
             steps=steps,
             final_content=final_content,
             token_usage_total=token_total,
-            model=config.llm_default_model,
+            model=_chat_run_model(),
             terminated_by="user",
         )
     )
@@ -340,7 +346,7 @@ async def stream_chat_agent(
                             steps=steps,
                             final_content=final_content,
                             token_usage_total=token_total,
-                            model=config.llm_default_model,
+                            model=_chat_run_model(),
                             terminated_by="llm",
                         )
                     )

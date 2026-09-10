@@ -18,6 +18,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from inkflow.api._llm_resolver import resolve_chat_model
 from inkflow.api.deps import (
     get_chapter_service,
     get_context_service,
@@ -31,6 +32,12 @@ from inkflow.domain.ports.context_errors import ContextBudgetExceededError
 from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1/context", tags=["上下文管理"])
+
+
+def _resolve_summary_model(project_model: str | None) -> str:
+    """摘要生成 model 解析（#936 A 项：项目模型优先 → 全局默认守卫；空 → 422）."""
+    model = project_model or ""
+    return resolve_chat_model(app_config.llm_default_model, project_model=model or None)
 
 
 # ── 组装上下文 ───────────────────────────────────────────────────
@@ -73,15 +80,13 @@ async def get_chapter_summary(
 
     svc = get_summary_service(db)
     try:
-        # #329：model 走项目 config.model（与写作链路一致）→ 回退全局默认
+        # #329：model 走项目 config.model（与写作链路一致）→ 回退全局默认（#936 守卫）
         cid_int = cid.int
         chapter = await get_chapter_service(db).get_chapter(cid_int)
         if chapter is None:
             raise HTTPException(status_code=404, detail="章节不存在")
         project = await get_project_service(db).get(chapter.project_id)
-        model = project.config.model if project else ""
-        if not model:
-            model = app_config.llm_default_model
+        model = _resolve_summary_model(project.config.model if project else None)
         summary_text = await svc.ensure_summary(cid, model=model)
         return {"summary": summary_text, "chapter_id": str(cid)}
     except ValueError as e:
@@ -105,15 +110,13 @@ async def refresh_chapter_summary(
 
     svc = get_summary_service(db)
     try:
-        # #329：model 走项目 config.model（与写作链路一致）→ 回退全局默认
+        # #329：model 走项目 config.model（与写作链路一致）→ 回退全局默认（#936 守卫）
         cid_int = cid.int
         chapter = await get_chapter_service(db).get_chapter(cid_int)
         if chapter is None:
             raise HTTPException(status_code=404, detail="章节不存在")
         project = await get_project_service(db).get(chapter.project_id)
-        model = project.config.model if project else ""
-        if not model:
-            model = app_config.llm_default_model
+        model = _resolve_summary_model(project.config.model if project else None)
         summary_text = await svc.ensure_summary(cid, model=model, force=True)
         return {"summary": summary_text, "chapter_id": str(cid)}
     except ValueError as e:

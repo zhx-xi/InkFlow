@@ -183,7 +183,7 @@ class PlannerService:
         prompt_manager: object | None = None,
         outline_repo: object | None = None,
         project_repo: object | None = None,  # 新增：#520 形态鸭子 .get(int)->Project|None
-        llm_default_model: str = config.llm_default_model,  # 新增：镜像 character_service.py:94
+        llm_default_model: str | None = None,  # 新增：镜像 character_service.py:94
     ) -> None:
         self._repo = repo
         self._write_auto = write_auto
@@ -194,7 +194,10 @@ class PlannerService:
         self._prompt_manager = prompt_manager
         self._outline_repo = outline_repo
         self._project_repo = project_repo
-        self._llm_default_model = llm_default_model
+        # #936 A 项：默认参惰性化（构造期读当前配置，避免 import 快照冻结）
+        self._llm_default_model = (
+            llm_default_model if llm_default_model is not None else config.llm_default_model
+        )
         self._last_llm_confirmed_items: list[dict] = []
         """最近一轮 _generate_questions 提取的 confirmed_items（副作用暂存）."""
         self._last_llm_conflicts: list[dict] = []

@@ -190,7 +190,8 @@ async function ensureConfiguredChatModel(kernel: KernelInfo): Promise<void> {
     deduped.length !== deepseek.models.length ||
     !deepseek.models.some((m: { id: string }) => m.id === modelId)
   ) {
-    await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
+    // #936 C：PATCH 补 chat 模型触发保存前探测门禁（预置阶段无凭据）→ force=true 跳过
+    await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}?force=true`, {
       method: 'PATCH',
       body: JSON.stringify({
         models: [...deduped, { id: modelId, type: 'chat', roles: [] }],

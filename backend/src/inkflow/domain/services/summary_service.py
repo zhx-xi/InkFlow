@@ -22,6 +22,7 @@ from inkflow.domain.ports.context_errors import SummaryGenerationError
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
 from inkflow.domain.ports.summary_repository import SummaryRepositoryProtocol
+from inkflow.domain.services.model_resolution import resolve_model
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +125,13 @@ class SummaryService:
                 ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages
             ]
 
-            # #470: 无 provider 前缀（如新项目默认 "gpt-4o"）→ 回退全局默认（有前缀）
-            resolved_model = model
-            if "/" not in model:
-                resolved_model = config.llm_default_model
+            # #470: 无 provider 前缀（如新项目默认 "gpt-4o"）→ 回退全局默认（有前缀）。
+            # #936 A 项：经 resolve_model 单一入口走守卫语义（domain 层不 import api 层
+            # resolver，依赖方向）；此处是「无前缀回退」非装配点，空值保持既有降级行为。
+            resolved_model = (
+                resolve_model(None, None, model if "/" in model else config.llm_default_model)
+                or ""
+            )
 
             response = await self._llm.chat(messages, model=resolved_model)
             summary = response.content.strip()

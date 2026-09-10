@@ -174,10 +174,15 @@ async function setupLlmForProject(kernel: KernelInfo, projectId: string): Promis
   const models = existing.some((m) => m.id === modelId && m.type === 'chat')
     ? existing
     : [...existing, { id: modelId, type: 'chat' }];
-  const modelRes = await kernelFetch(kernel, `/api/v1/provider-configs/${provider!.id}`, {
-    method: 'PATCH',
-    body: { models },
-  });
+  // #936 C：PATCH 补 chat 模型触发保存前探测门禁（预置阶段无凭据）→ force=true 跳过
+  const modelRes = await kernelFetch(
+    kernel,
+    `/api/v1/provider-configs/${provider!.id}?force=true`,
+    {
+      method: 'PATCH',
+      body: { models },
+    }
+  );
   expect(modelRes.ok, `${cfg.provider} provider-configs PATCH（补 chat 模型）应成功`).toBe(true);
 
   await setProjectRoleModels(kernel, projectId, cfg.model, { model: cfg.model });

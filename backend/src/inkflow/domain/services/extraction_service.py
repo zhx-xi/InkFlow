@@ -253,7 +253,7 @@ class ExtractionService(_ExtractionRAGMixin):
         fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
         chunking: ChunkingConfig | None = None,
         llm_chunk_analyzer: Callable[[str], Awaitable[list[int]]] | None = None,
-        llm_default_model: str = config.llm_default_model,
+        llm_default_model: str | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
@@ -273,7 +273,10 @@ class ExtractionService(_ExtractionRAGMixin):
         self._fingerprint_provider = fingerprint_provider
         self._chunking = chunking if chunking is not None else ChunkingConfig()
         self._llm_chunk_analyzer = llm_chunk_analyzer
-        self._llm_default_model = llm_default_model
+        # #936 A 项：默认参惰性化（构造期读当前配置，避免 import 快照冻结）
+        self._llm_default_model = (
+            llm_default_model if llm_default_model is not None else config.llm_default_model
+        )
         self._reindex_lock = asyncio.Lock()
 
         # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。

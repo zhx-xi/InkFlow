@@ -134,11 +134,14 @@ class StyleLLMAnalyzer:
         *,
         llm_client: LLMClientProtocol,
         prompt_manager: PromptTemplateProtocol,
-        llm_default_model: str = config.llm_default_model,
+        llm_default_model: str | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompts = prompt_manager
-        self._llm_default_model = llm_default_model
+        # #936 A 项：默认参惰性化（构造期读当前配置，避免 import 快照冻结）
+        self._llm_default_model = (
+            llm_default_model if llm_default_model is not None else config.llm_default_model
+        )
 
     # ── 公共入口 ────────────────────────────────────────────────
 

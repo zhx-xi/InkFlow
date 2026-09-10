@@ -257,3 +257,34 @@ def vector_retrieve_cmd(
     typer.echo(f"🔍 检索结果 (query: {query}, top {top_k}):")
     for i, entity in enumerate(items, 1):
         typer.echo(_retrieved_label(entity, i))
+
+
+# ---------------------------------------------------------------------------
+# set-embedding  — inkflow vector set-embedding --provider <name> --model-id <id> [--force]
+# ---------------------------------------------------------------------------
+
+
+@app.command("set-embedding")
+@instrument(caller_type="cli")
+def vector_set_embedding_cmd(
+    ctx: typer.Context,
+    provider: str = typer.Option(..., "--provider", help="Provider 名称"),
+    model_id: str = typer.Option(..., "--model-id", help="embedding 模型 ID"),
+    force: bool = typer.Option(False, "--force", help="跳过保存前 embedding 探测门禁（#936 C）"),
+) -> None:
+    """切换激活 embedding 模型（PUT /vector/embedding-model，#936）。"""
+    cli_ctx: CliContext = ctx.obj
+    # #936 C：--force → 透传 query force=true（门禁逃生门）
+    path = "/vector/embedding-model?force=true" if force else "/vector/embedding-model"
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.put(path, json={"provider": provider, "model_id": model_id})
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+    else:
+        typer.echo(f"✅ 已切换 embedding 模型: {provider}/{model_id}")

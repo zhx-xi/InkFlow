@@ -457,9 +457,12 @@ def get_session_service(
 def get_provider_config_service(
     db: AsyncSession,
 ) -> ProviderConfigService:
-    """获取 ProviderConfigService 实例（Provider 注册表仓储）."""
+    """获取 ProviderConfigService 实例（Provider 注册表仓储 + #936 C 探测门禁）."""
+    from inkflow.infrastructure.llm.probe import InfrastructureLLMProbe
+
     return ProviderConfigService(
         repository=SQLiteProviderConfigRepository(db),
+        probe=InfrastructureLLMProbe(),
     )
 
 

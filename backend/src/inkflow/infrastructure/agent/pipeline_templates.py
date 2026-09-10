@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, ItemsView, Iterator, KeysView, Mapping, ValuesView
+
 from inkflow.core.config import config
 from inkflow.domain.models.agent_pipeline import PipelineConfig
 from inkflow.domain.ports.agent_pipeline import AgentRole, PipelineStage
@@ -115,34 +117,39 @@ _CHAT_SYSTEM_AGENT_PROMPT = (
 )
 
 
+def _current_default_model() -> str:
+    """读取**当前**全局默认模型（#936 A 项：运行期取值，消除 import 快照）。"""
+    return config.llm_default_model
+
+
 def _build_write_chapter_template() -> PipelineConfig:
     """构建 builtin:write_chapter 模板 — Architect→Writer→Auditor→Reviser 四阶段链。"""
     architect = AgentRole(
         id="architect",
         name="架构师",
         system_prompt=_ARCHITECT_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
     )
     writer = AgentRole(
         id="writer",
         name="写手",
         system_prompt=_WRITER_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.8,
     )
     auditor = AgentRole(
         id="auditor",
         name="审阅",
         system_prompt=_AUDITOR_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.5,
     )
     reviser = AgentRole(
         id="reviser",
         name="修订",
         system_prompt=_REVISER_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.6,
     )
 
@@ -186,28 +193,28 @@ def _build_write_auto_template() -> PipelineConfig:
         id="architect",
         name="架构师",
         system_prompt=_AUTO_ARCHITECT_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
     )
     writer = AgentRole(
         id="writer",
         name="写手",
         system_prompt=_AUTO_WRITER_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.8,
     )
     auditor = AgentRole(
         id="auditor",
         name="审阅",
         system_prompt=_AUTO_AUDITOR_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.5,
     )
     reviser = AgentRole(
         id="reviser",
         name="修订",
         system_prompt=_AUTO_REVISER_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.6,
     )
 
@@ -251,21 +258,21 @@ def _build_write_continue_template() -> PipelineConfig:
         id="writer",
         name="写手",
         system_prompt=_CONTINUE_WRITER_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.8,
     )
     auditor = AgentRole(
         id="auditor",
         name="审阅",
         system_prompt=_CONTINUE_AUDITOR_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.5,
     )
     reviser = AgentRole(
         id="reviser",
         name="修订",
         system_prompt=_CONTINUE_REVISER_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=0.6,
     )
 
@@ -307,7 +314,7 @@ def _build_chat_template() -> PipelineConfig:
         id="chat",
         name="对话助手",
         system_prompt=_CHAT_ASSISTANT_PROMPT,
-        model=config.llm_default_model,
+        model=_current_default_model(),
         temperature=None,  # None = 跟随默认 → 项目顶层温度（spec §9.2.3 温度链）
     )
     stages = [
@@ -321,21 +328,59 @@ def _build_chat_template() -> PipelineConfig:
     )
 
 
-BUILTIN_TEMPLATES: dict[str, PipelineConfig] = {
-    "builtin:write_chapter": _build_write_chapter_template(),
-    "builtin:write_auto": _build_write_auto_template(),
-    "builtin:write_continue": _build_write_continue_template(),
-    "builtin:chat": _build_chat_template(),
+_BUILDERS: dict[str, Callable[[], PipelineConfig]] = {
+    "builtin:write_chapter": _build_write_chapter_template,
+    "builtin:write_auto": _build_write_auto_template,
+    "builtin:write_continue": _build_write_continue_template,
+    "builtin:chat": _build_chat_template,
 }
 
 
+class _LazyTemplateMap(Mapping[str, PipelineConfig]):
+    """`BUILTIN_TEMPLATES` 兼容视图：每次访问按**当前**配置重建（#936 A 项）。
+
+    历史形态是 import 期构造的模块级 dict（快照缺陷源，12 处角色 model 冻结）。
+    保留该名称仅为既有导入面容忍；内部一律经 `_BUILDERS` 惰性重建，不再冻结
+    旧值（非 model 真相源——真相源始终是 config.llm_default_model）。
+    """
+
+    def _rebuild(self) -> dict[str, PipelineConfig]:
+        return {tid: builder() for tid, builder in _BUILDERS.items()}
+
+    def __getitem__(self, key: str) -> PipelineConfig:
+        return _BUILDERS[key]()
+
+    def __contains__(self, key: object) -> bool:
+        return key in _BUILDERS
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(_BUILDERS)
+
+    def __len__(self) -> int:
+        return len(_BUILDERS)
+
+    def keys(self) -> KeysView[str]:
+        return _BUILDERS.keys()
+
+    def values(self) -> ValuesView[PipelineConfig]:
+        return self._rebuild().values()
+
+    def items(self) -> ItemsView[str, PipelineConfig]:
+        return self._rebuild().items()
+
+
+BUILTIN_TEMPLATES: Mapping[str, PipelineConfig] = _LazyTemplateMap()
+
+
 def get_template(template_id: str) -> PipelineConfig | None:
-    """获取内置模板。"""
-    return BUILTIN_TEMPLATES.get(template_id)
+    """获取内置模板（每次调用按**当前**配置重建，#936 A 项：消除 import 快照）。"""
+    builder = _BUILDERS.get(template_id)
+    return builder() if builder is not None else None
 
 
 def list_templates() -> list[dict]:
-    """列出所有模板元信息（不含完整 Prompt）。"""
+    """列出所有模板元信息（不含完整 Prompt；同源 `_BUILDERS` 惰性重建）。"""
+    templates = {tid: builder() for tid, builder in _BUILDERS.items()}
     return [
         {
             "id": tid,
@@ -344,5 +389,5 @@ def list_templates() -> list[dict]:
             "stages": [s.id for s in tpl.stages],
             "source": tpl.source,
         }
-        for tid, tpl in BUILTIN_TEMPLATES.items()
+        for tid, tpl in templates.items()
     ]

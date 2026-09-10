@@ -155,7 +155,9 @@ async function ensureEmbeddingProvider(
   await cleanupRagTestProviders(kernel);
   let created: { status: number; data: unknown };
   try {
-    created = await apiJson(kernel, 'POST', '/api/v1/provider-configs', {
+    // #936 C：key 在本步之后才 POST → 探测门禁必拒（embedding 维度校验需凭据）；
+    // 显式 force=true 跳过
+    created = await apiJson(kernel, 'POST', '/api/v1/provider-configs?force=true', {
       name: 'e2e-rag',
       base_url: 'https://api.test.example/v1',
       models: [{ id: modelId, type: 'embedding' }],
@@ -168,7 +170,7 @@ async function ensureEmbeddingProvider(
       (p) => p.name === 'e2e-rag',
     );
     if (!existing) throw err;
-    created = await apiJson(kernel, 'PATCH', `/api/v1/provider-configs/${existing.id}`, {
+    created = await apiJson(kernel, 'PATCH', `/api/v1/provider-configs/${existing.id}?force=true`, {
       base_url: 'https://api.test.example/v1',
       models: [{ id: modelId, type: 'embedding' }],
     });

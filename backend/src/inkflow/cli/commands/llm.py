@@ -100,6 +100,7 @@ def provider_create(
     models_json: str | None = typer.Option(None, "--models-json", help="模型列表 JSON"),
     max_retries: int | None = typer.Option(None, "--max-retries"),
     timeout: int | None = typer.Option(None, "--timeout"),
+    force: bool = typer.Option(False, "--force", help="跳过保存前模型探测门禁（#936 C）"),
 ) -> None:
     """创建 Provider 注册表条目"""
     cli_ctx: CliContext = ctx.obj
@@ -122,7 +123,8 @@ def provider_create(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.post("/provider-configs", json=body)
+            path = "/provider-configs?force=true" if force else "/provider-configs"
+            return await client.post(path, json=body)
 
     data = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
@@ -142,6 +144,7 @@ def provider_update(
     models_json: str | None = typer.Option(None, "--models-json", help="模型列表 JSON"),
     max_retries: int | None = typer.Option(None, "--max-retries"),
     timeout: int | None = typer.Option(None, "--timeout"),
+    force: bool = typer.Option(False, "--force", help="跳过保存前模型探测门禁（#936 C）"),
 ) -> None:
     """更新 Provider 注册表条目"""
     cli_ctx: CliContext = ctx.obj
@@ -166,7 +169,10 @@ def provider_update(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.patch(f"/provider-configs/{provider_id}", json=body)
+            path = f"/provider-configs/{provider_id}"
+            if force:
+                path += "?force=true"
+            return await client.patch(path, json=body)
 
     data = _run(cli_ctx, _impl)
     print_result(cli_ctx, data)
