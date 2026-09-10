@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -440,3 +441,54 @@ def _async_none():
         return None
 
     return _coro()
+
+
+class TestHttpClientPutCoverage:
+    """`InkFlowHTTPClient.put` 直调覆盖（CI function-coverage 抓 new uncalled）。
+
+    背景：`put` 是 #936 为 `vector set-embedding` CLI 新增的便捷方法
+    （`client.py:97`）；CLI 测试用 mock HTTP 客户端 → 真实 `put` 在 CI 轨从未
+    被调用 → function-coverage 判 `new uncalled` 阻断。本用例同线程直调。
+
+    ⚠️ 复用既有 test_http_client.py 的 mock 轨道（httpx.MockTransport + patch
+    源头模块命名空间），此处以最小内联实现镜像其语义（避免跨模块 fixture 依赖）。
+    """
+
+    async def test_put_dispatches_put_method_with_json(self) -> None:
+        """put(path, json=...) → 底层 _request 收到 method='PUT' 且返回响应 JSON。"""
+        import httpx
+
+        from inkflow.infrastructure.http import InkFlowHTTPClient
+        from inkflow.infrastructure.kernel import KernelHandle
+
+        seen: list[tuple[str, str]] = []
+        body = {"ok": True, "provider": "zhipu", "model_id": "embedding-3"}
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            seen.append((request.method, str(request.url)))
+            return httpx.Response(200, json=body)
+
+        handle = KernelHandle(
+            port=38291,
+            token="t",
+            pid=1,
+            version="0.1.0",
+            started_at=datetime(2026, 9, 10, tzinfo=UTC),
+            reused=True,
+        )
+        real_client = httpx.AsyncClient
+        with patch(
+            "inkflow.infrastructure.http.client.httpx.AsyncClient",
+            side_effect=lambda **kw: real_client(
+                transport=httpx.MockTransport(_handler), **{k: v for k, v in kw.items() if k != "transport"}
+            ),
+        ):
+            async with InkFlowHTTPClient(handle) as client:
+                result = await client.put(
+                    "/vector/embedding-model",
+                    json={"provider": "zhipu", "model_id": "embedding-3"},
+                )
+
+        assert result == body, "put 须原样返回响应 JSON"
+        assert seen and seen[0][0] == "PUT", f"底层方法须为 PUT，实际 {seen}"
+        assert seen[0][1].endswith("/vector/embedding-model"), f"路径透传，实际 {seen}"

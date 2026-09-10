@@ -446,6 +446,11 @@ export const zh = {
   'm.modelId': '模型 ID',
   'm.addRow': '添加一行',
   'm.providerSelect': '选择 Provider',
+  // #936 C：保存前探测门禁失败的强制保存确认框
+  'm.probeGate.title': '模型连通性校验未通过',
+  'm.probeGate.body': '该模型未能通过保存前的连通性校验（可能 Key 未配置、网络不可达或模型不可用）。',
+  'm.probeGate.warning': '强制保存将跳过校验，模型可能无法正常使用；建议先检查配置。',
+  'm.probeGate.force': '仍然强制保存',
   'm.nameInvalid': '仅允许小写字母 / 数字 / 下划线 / 连字符，1-32 字符',
   'm.dialog.testOk': '连接成功',
   'm.dialog.testFail': '连接失败: {reason}',

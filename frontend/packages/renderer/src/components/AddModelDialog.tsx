@@ -9,6 +9,8 @@ import { Plus, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import type { ProviderConfig, ProviderModel } from '../stores/models';
+import { ForceSaveConfirm } from './ForceSaveConfirm';
+import { isForceableProbeRejection } from './probeGate';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface ModelDraftRow {
@@ -34,7 +36,12 @@ export interface AddModelDialogProps {
   open: boolean;
   providers: ProviderConfig[];
   onOpenChange: (open: boolean) => void;
-  onAdd: (providerId: number, model: ProviderModel) => Promise<void>;
+  /** #936 C：options.force=true 跳过保存前探测门禁（用户确认强制保存后） */
+  onAdd: (
+    providerId: number,
+    model: ProviderModel,
+    options?: { force?: boolean },
+  ) => Promise<void>;
   onDone: (result: AddModelsResult) => void;
 }
 
@@ -50,6 +57,8 @@ export function AddModelDialog({
   const [rows, setRows] = useState<ModelDraftRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [candidates, setCandidates] = useState<string[]>([]);
+  /** #936 C：探测门禁拒绝的 detail（非 null → 渲染 ForceSaveConfirm） */
+  const [gateDetail, setGateDetail] = useState<string | null>(null);
 
   const fetchModels = async (provider: ProviderConfig) => {
     try {
@@ -74,6 +83,7 @@ export function AddModelDialog({
     setRows([{ id: '', type: 'chat', roles: '' }]);
     setSaving(false);
     setCandidates([]);
+    setGateDetail(null);
     const first = providers[0];
     if (first) void fetchModels(first);
   }, [open, providers]);
@@ -110,9 +120,57 @@ export function AddModelDialog({
       // #125 逐行 try/catch：失败行收集错误继续下一行，不中断（reject 不逸出）
       let succeeded = 0;
       const errors: string[] = [];
+      let gateDetail: string | null = null;
       for (const model of models) {
         try {
           await onAdd(activeProviderId, model);
+          succeeded += 1;
+        } catch (err) {
+          // #936 C：保存前探测门禁拒绝（422 + force 提示）→ 收集首条，保存结束后
+          // 弹「强制保存」确认框（默认必过、显式逃生；不全路径静默吞错）
+          if (gateDetail === null && isForceableProbeRejection(err)) {
+            gateDetail = errorMessage(err);
+            continue;
+          }
+          errors.push(errorMessage(err));
+        }
+      }
+      if (errors.length === 0 && gateDetail === null) {
+        onDone({ succeeded, failed: 0, errors: [] });
+        onOpenChange(false);
+      } else if (gateDetail !== null) {
+        // 门禁拒绝：保留草稿 + 弹确认框（确认 → force 重发；取消 → 不落库）
+        setGateDetail(gateDetail);
+      } else {
+        // 有失败行：携带结果 + 弹窗不关闭 + 草稿保留（rows state 不清空，可修改重试）
+        onDone({ succeeded, failed: errors.length, errors });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** #936 C：用户确认强制保存 → 以 force=true 重发全部草稿行 */
+  const handleForceSave = async () => {
+    if (saving || activeProviderId === null) return;
+    const models = rows
+      .map((row) => ({
+        id: row.id.trim(),
+        type: row.type,
+        roles: row.roles
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      }))
+      .filter((model) => model.id !== '');
+    setSaving(true);
+    setGateDetail(null);
+    try {
+      let succeeded = 0;
+      const errors: string[] = [];
+      for (const model of models) {
+        try {
+          await onAdd(activeProviderId, model, { force: true });
           succeeded += 1;
         } catch (err) {
           errors.push(errorMessage(err));
@@ -122,7 +180,6 @@ export function AddModelDialog({
         onDone({ succeeded, failed: 0, errors: [] });
         onOpenChange(false);
       } else {
-        // 有失败行：携带结果 + 弹窗不关闭 + 草稿保留（rows state 不清空，可修改重试）
         onDone({ succeeded, failed: errors.length, errors });
       }
     } finally {
@@ -270,6 +327,13 @@ export function AddModelDialog({
           </button>
         </div>
       </div>
+      {/* #936 C：探测门禁拒绝 → 强制保存确认框（覆盖在主弹窗之上，z-[60]） */}
+      <ForceSaveConfirm
+        open={gateDetail !== null}
+        detail={gateDetail ?? ''}
+        onConfirm={() => void handleForceSave()}
+        onCancel={() => setGateDetail(null)}
+      />
     </div>
   );
 }

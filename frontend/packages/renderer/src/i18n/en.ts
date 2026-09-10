@@ -447,6 +447,13 @@ export const en: Record<string, string> = {
   'm.modelId': 'Model ID',
   'm.addRow': 'Add row',
   'm.providerSelect': 'Select provider',
+  // #936 C: force-save confirm dialog for probe-gate rejection
+  'm.probeGate.title': 'Model connectivity check failed',
+  'm.probeGate.body':
+    'This model did not pass the pre-save connectivity check (missing key, unreachable network, or model unavailable).',
+  'm.probeGate.warning':
+    'Force saving skips the check; the model may not work correctly. Consider fixing the config first.',
+  'm.probeGate.force': 'Save anyway',
   'm.nameInvalid': 'Only lowercase letters, digits, underscore and hyphen, 1-32 chars',
   'm.dialog.testOk': 'Connection successful',
   'm.dialog.testFail': 'Connection failed: {reason}',
