@@ -62,6 +62,7 @@ jobs:
       tests: ${{ steps.filter.outputs.tests }}
       frontend: ${{ steps.filter.outputs.frontend }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      contract: ${{ steps.filter.outputs.contract }}
       ci: ${{ steps.filter.outputs.ci }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
@@ -88,6 +89,14 @@ jobs:
             # 之前只命中 tests output，页面级 job 全部 skip → 新增用例 CI 无验证）
             e2e:
               - 'tests/e2e/**'
+            # 契约源文件：被页面级 e2e 硬编码快照断言锁定的后端真相源（#993，#985 教训）。
+            # registry.py 的 GRANT_TOOL_MAP/TOOL_REGISTRY/ALL_TOOL_SPECS 被
+            # tests/e2e/e2e-settings-agents-scope.spec.ts 的 resolved 清单硬编码消费；
+            # 纯后端 PR 不命中 frontend/e2e → 该 e2e job skip → 断裂静默入 main（#972 实证）。
+            # 命中即触发 e2e-frontend-settings，让写侧扩容在肇事 PR 自己的 run 里红。
+            # 扩容规则：新增「被 e2e 硬编码锁定的契约源」时在此追加文件（登记进 docs/contract-guard.md）。
+            contract:
+              - 'backend/src/inkflow/infrastructure/agent/tools/registry.py'
             ci:
               - '.github/**'
             # 文档类变更：分支保护 required checks（lint/unit/build）在 docs-only PR 也必须
@@ -819,9 +828,11 @@ jobs:
         run: pnpm --filter inkflow-electron test:e2e e2e-models
 
   e2e-frontend-settings:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
+    # 第二批：按需触发（frontend/ci/contract 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
+    # #993：contract = 被本 job 的 e2e spec 硬编码快照锁定的契约源（registry.py）——
+    # 纯后端契约源变更也须跑本 job，否则写侧扩容的断裂静默入 main（#985 教训）。
     needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
