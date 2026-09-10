@@ -32,6 +32,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.outline import app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 OID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")
 AID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000003")
@@ -446,6 +448,9 @@ class TestOutlineHumanOutput:
         assert result.exit_code == 0
         for token in ("ID:", "名称:", "第一卷大纲", "描述:", "故事主线概述", "排序:"):
             assert token in result.output
+        # #1000（ADR-055）：创建/更新时间显示本地时区，原始 ISO 不再直出
+        assert local_display("2026-01-01T00:00:00") in result.output
+        assert "2026-01-01T00:00:00" not in result.output
 
     def test_update_only_description(self, cli_runner, fake_http_client):
         """update 仅传 --description → HTTP 调用发生（description 进入 update，命令侧）."""

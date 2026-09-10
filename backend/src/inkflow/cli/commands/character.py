@@ -28,6 +28,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -219,8 +220,8 @@ def get_character(
         if group_display is None:
             group_display = character.get("group_ids") or []
         typer.echo(f"分组:       {', '.join(group_display)}")
-        typer.echo(f"创建时间:   {character['created_at']}")
-        typer.echo(f"更新时间:   {character['updated_at']}")
+        typer.echo(f"创建时间:   {format_local(character['created_at'])}")
+        typer.echo(f"更新时间:   {format_local(character['updated_at'])}")
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +586,7 @@ def get_group_cmd(
         typer.echo(f"名称:       {group['name']}")
         typer.echo(f"说明:       {group['description']}")
         typer.echo(f"排序:       {group['sort_order']}")
-        typer.echo(f"创建时间:   {group['created_at']}")
+        typer.echo(f"创建时间:   {format_local(group['created_at'])}")
 
 
 @group_app.command("update")

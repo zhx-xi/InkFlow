@@ -1,4 +1,7 @@
 # F24: 会话管理（session_service）— 功能规格
+
+> **时间口径（ADR-055 / #1000）**：本模块时间字段（started_at（get 详情「开始:」））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
+>
 > **端**: backend
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-07 | **依据**: PRD v2.1 §6.2 P1-13 会话管理（持久化/多会话/恢复），Constitution P1-P6

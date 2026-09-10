@@ -7,6 +7,7 @@ import json
 
 import typer
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
@@ -152,8 +153,8 @@ def get(
         typer.echo(f"标签:       {', '.join(project['tags'])}")
         typer.echo(f"语言:       {project['language']}")
         typer.echo(f"目标字数:   {project['target_words']}")
-        typer.echo(f"创建时间:   {project['created_at']}")
-        typer.echo(f"更新时间:   {project['updated_at']}")
+        typer.echo(f"创建时间:   {format_local(project['created_at'])}")
+        typer.echo(f"更新时间:   {format_local(project['updated_at'])}")
 
 
 # ---------------------------------------------------------------------------

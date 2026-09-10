@@ -32,6 +32,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.character import app, group_app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
 
@@ -272,6 +274,9 @@ class TestCharacterErrorMapping:
         assert result.exit_code == 0
         for token in ("名称:", "林尘", "性格:", "坚毅", "背景:", "目标:", "分组:"):
             assert token in result.output
+        # #1000（ADR-055）：创建/更新时间显示本地时区（夹具 naive UTC 串），原始 ISO 不再直出
+        assert local_display("2026-01-01T00:00:00") in result.output
+        assert "2026-01-01T00:00:00" not in result.output
 
     def test_relate_human(self, cli_runner, fake_http_client):
         """relate 人类模式 → 关系创建提示."""

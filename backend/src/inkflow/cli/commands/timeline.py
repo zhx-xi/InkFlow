@@ -25,6 +25,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.timeline import TimelineEventUpdate
@@ -307,8 +308,8 @@ def get_event_cmd(
         typer.echo(f"原始时间表达: {event['time_display']}")
         typer.echo(f"叙事位置:     {event['narrative_position']}")
         typer.echo(f"时间线标记:   {event['timeline_flag'] or '（正叙）'}")
-        typer.echo(f"创建时间:     {event['created_at']}")
-        typer.echo(f"更新时间:     {event['updated_at']}")
+        typer.echo(f"创建时间:     {format_local(event['created_at'])}")
+        typer.echo(f"更新时间:     {format_local(event['updated_at'])}")
 
 
 # ---------------------------------------------------------------------------

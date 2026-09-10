@@ -1,4 +1,7 @@
 # F34: 章节审计（chapter_audit）— 功能规格
+
+> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/confirmed_at（--confirm 确认输出 + --history 列表））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
+>
 > **端**: cross
 
 > **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）

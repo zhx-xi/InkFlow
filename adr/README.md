@@ -45,6 +45,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-025](architecture/ADR-025.md) | 依赖锁定策略 — uv + uv.lock + pnpm-lock.yaml | ✅ 已接受 | 2026-08-02 |
 | [ADR-029](architecture/ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖 | ✅ 已接受 | 2026-08-07 |
 | [ADR-053](architecture/ADR-053.md) | 数据面变更统一推送 — 领域事件源 + SSE 广播 + GUI 订阅失效 | ✅ 已接受 | 2026-09-07 |
+| [ADR-055](architecture/ADR-055.md) | 时间存储与显示口径 — 存储/传输一律 UTC，面向用户显示一律本地时区 | ✅ 已接受 | 2026-09-10 |
 
 ### 数据库（database）
 
@@ -166,6 +167,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **数据访问**: Repository 模式（ADR-003 [database/](database/ADR-003.md)），SQLite + AsyncSQLAlchemy
 - **schema 迁移**: Alembic 骨架 + 版本权威（ADR-054 [database/](database/ADR-054.md)）；现有 ensure_* 平移复用为 migration body，lifespan 程序化 `command.upgrade`，CI `alembic check` drift 门禁；生产移除 create_all（0 新增依赖）
 - **数据契约**: Pydantic v2 全栈（ADR-004 [database/](database/ADR-004.md)）
+- **时间口径**: 存储/传输（DB/API/MCP/--json）一律 UTC；GUI/CLI 人类显示一律系统本地时区（ADR-055 [architecture/](architecture/ADR-055.md)；GUI=formatTimestamp/formatClock 本地访问器手拼，CLI=`cli/_time.format_local`，naive 串=UTC 口径先补 tzinfo 再转换；硬约束非配置项）
 - **LLM**: LiteLLM 统一出口 `ChatLiteLLM`/`LitellmEmbeddings` + 思考模式七档（ADR-051 [llm/](llm/ADR-051.md)，取代 ADR-005v2 [llm/](llm/ADR-005v2.md) 的 ChatOpenAI 路线）；模型装配 fail-fast——删除注册表静默回退，`project>global` 无解即 422+诊断日志，model_routing=provider 键内置默认（ADR-049 [llm/](llm/ADR-049.md)）
 - **Agent 编排**: LangGraph StateGraph → deepagents 0.7.5 harness（ADR-006v2 / ADR-035 [agent/](agent/ADR-035.md)）
 - **RAG**: LangChain Chroma + BGE 本地 Embedding（ADR-013 [llm/](llm/ADR-013.md)）

@@ -36,6 +36,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.world import app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
 
@@ -702,6 +704,9 @@ class TestWorldHumanOutput:
             "天地灵气重新复苏。",
         ):
             assert token in result.output
+        # #1000（ADR-055）：创建/更新时间显示本地时区，原始 ISO 不再直出
+        assert local_display("2026-01-01T00:00:00") in result.output
+        assert "2026-01-01T00:00:00" not in result.output
 
     def test_update_human(self, cli_runner, fake_http_client):
         """update 人类模式 → 成功提示."""
