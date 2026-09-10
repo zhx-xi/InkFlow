@@ -40,6 +40,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.foreshadowing import app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
 
@@ -256,11 +258,11 @@ class TestForeshadowingList:
         assert "1. [林晚的身世] (优先级 80, 第 5 章·林晚沐浴场景)" in result.output
 
     def test_list_human_resolved(self, cli_runner, fake_http_client):
-        """已回收伏笔人类模式 → 🔍 摘要（含回收日期）."""
+        """已回收伏笔人类模式 → 🔍 摘要（含回收日期，#1000 本地时区日期）."""
         fake_http_client.get.return_value = {
             "items": [
                 _make_foreshadowing(
-                    status="resolved", resolved_at="2026-08-10T03:00:00"
+                    status="resolved", resolved_at="2026-08-10T20:00:00"
                 )
             ],
             "total": 1,
@@ -274,7 +276,9 @@ class TestForeshadowingList:
         )
         assert result.exit_code == 0
         assert "已回收伏笔 1 条" in result.output
-        assert "[林晚的身世] (回收于 2026-08-10)" in result.output
+        # #1000（ADR-055）：「回收于 <日期>」= 本地时区日期（naive UTC 20:00 → +8 跨日）；
+        # 期望值独立换算，不 import 被测实现
+        assert f"[林晚的身世] (回收于 {local_display('2026-08-10T20:00:00')[:10]})" in result.output
 
     def test_list_params_passthrough(self, cli_runner, fake_http_client):
         """list 状态过滤/搜索/排序/降序参数透传."""
@@ -729,6 +733,10 @@ class TestForeshadowingHumanOutput:
             "（未回收）",
         ):
             assert token in result.output
+        # #1000（ADR-055）：创建/更新时间显示本地时区，原始 ISO 不再直出；
+        # 「（未回收）」回退文案不受影响（resolved_at=None 不走 formatter）
+        assert local_display("2026-08-02T12:00:00") in result.output
+        assert "2026-08-02T12:00:00" not in result.output
 
     def test_update_priority_location(self, cli_runner, fake_http_client):
         """update --priority/--location → 字段进入 body."""

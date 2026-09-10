@@ -2,6 +2,11 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
+// #1000 钉死测试时区基准 Asia/Shanghai —— 使「本地时间显示」类契约断言与 runner/CI
+// 系统时区解耦（Node 运行时 TZ 即时生效；vitest setupFiles 在每个测试环境最先执行）。
+// 日志时间戳本地化（#1000：formatTimestamp/formatClock 改本地访问器）依赖此确定基准。
+process.env.TZ = 'Asia/Shanghai';
+
 // RTL 自动清理（globals 模式下 afterEach 自动注册）
 afterEach(() => {
   cleanup();

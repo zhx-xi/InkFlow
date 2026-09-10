@@ -29,6 +29,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.foreshadowing import (
@@ -89,7 +90,10 @@ def _item_label(foreshadowing: dict) -> str:
     """伏笔列表条目的人类可读表达（spec §4.2）."""
     if foreshadowing["status"] == ForeshadowingStatus.RESOLVED.value:
         if foreshadowing.get("resolved_at") is not None:
-            return f"[{foreshadowing['title']}] (回收于 {foreshadowing['resolved_at'][:10]})"
+            return (
+                f"[{foreshadowing['title']}] "
+                f"(回收于 {format_local(foreshadowing['resolved_at'])[:10]})"
+            )
         return f"[{foreshadowing['title']}] (已回收)"
     loc = f", {foreshadowing['location']}" if foreshadowing.get("location") else ""
     return f"[{foreshadowing['title']}] (优先级 {foreshadowing['priority']}{loc})"
@@ -245,9 +249,11 @@ def get_foreshadowing_cmd(
         typer.echo(f"状态:         {foreshadowing['status']}（{_status_label(foreshadowing)}）")
         typer.echo(f"埋设位置:     {foreshadowing['location'] or '（未记录）'}")
         typer.echo(f"事件锚点:     {foreshadowing['event_id'] or '（未挂接）'}")
-        typer.echo(f"回收时间:     {foreshadowing['resolved_at'] or '（未回收）'}")
-        typer.echo(f"创建时间:     {foreshadowing['created_at']}")
-        typer.echo(f"更新时间:     {foreshadowing['updated_at']}")
+        typer.echo(
+            f"回收时间:     {format_local(foreshadowing['resolved_at']) or '（未回收）'}"
+        )
+        typer.echo(f"创建时间:     {format_local(foreshadowing['created_at'])}")
+        typer.echo(f"更新时间:     {format_local(foreshadowing['updated_at'])}")
 
 
 # ---------------------------------------------------------------------------

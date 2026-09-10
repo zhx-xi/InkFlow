@@ -34,7 +34,7 @@ from typer.testing import CliRunner
 
 from inkflow.__main__ import app
 
-from .conftest import _parse_json_output
+from .conftest import _parse_json_output, local_display
 
 runner = CliRunner()
 
@@ -211,6 +211,10 @@ def test_get_existing(fake_http_client):
     result = runner.invoke(app, ["project", "get", "--id", "1"])
     assert result.exit_code == 0, result.output
     assert "详情测试" in result.output
+    # #1000（ADR-055）：创建/更新时间显示本地时区（夹具播种 naive UTC 串），
+    # 原始 ISO 串（T 分隔）不再直出；期望值 conftest.local_display 独立换算。
+    assert local_display("2026-01-01T00:00:00") in result.output
+    assert "2026-01-01T00:00:00" not in result.output
 
 
 @pytest.mark.project

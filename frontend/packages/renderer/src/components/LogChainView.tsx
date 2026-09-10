@@ -4,7 +4,7 @@
  * 契约要点：
  * - 面板 log-chain-view 由父级独立查询 {trace_id, limit: 200} 喂入（本组件零查询）；
  * - log-chain-node 按 timestamp 升序渲染（API 降序返回 → 组件内排序）；
- * - 节点含简式 UTC 时钟（formatClock 'HH:mm:ss'）+ 可选 log-chain-node-duration /
+ * - 节点含简式本地时钟（formatClock 'HH:mm:ss'）+ 可选 log-chain-node-duration /
  *   log-chain-node-error-code（无 error_code 不渲染）；
  * - 节点可展开 LogDetail（链视图内隐藏只看此链/调用链按钮，防嵌套递归）；
  * - log-chain-back-btn 返回主列表。

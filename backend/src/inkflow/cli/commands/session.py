@@ -31,6 +31,7 @@ from typing import Any
 import typer
 from pydantic import BaseModel, ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.session import (
@@ -309,7 +310,9 @@ def get_session_cmd(
             f"({view['session']['session_type']}/{view['session']['status']})"
         )
         typer.echo(f"项目: {view['session']['project_id']}")
-        typer.echo(f"开始: {view['session']['started_at']} | 日志: {view['log_count']} 条")
+        typer.echo(
+            f"开始: {format_local(view['session']['started_at'])} | 日志: {view['log_count']} 条"
+        )
         typer.echo(f"上下文: {view['session']['context']}")
 
 

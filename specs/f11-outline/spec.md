@@ -1,4 +1,7 @@
 # F11: 大纲管理 (outline_service) — 功能规格
+
+> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
+>
 > **端**: backend
 
 > **Spec 版本**: 1.0 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
@@ -1379,4 +1382,3 @@ POST /outlines/generate (mode=replace)
 - `backend/tests/unit/domain/services/test_chapter_autolink_1001.py`（触发点：首次/重复/空白/仅改标题/未注入/异常吞掉）
 - `tests/integration/test_outline_autolink_1001.py`（真 DB 闭环：正文落盘 → `SELECT outlines.chapter_id`；幂等；无命中；已绑不覆盖；草稿确认 #996 路径）
 - `tests/api/test_chapter_autolink_1001.py`（HTTP 装配闭环：PATCH 正文 → `GET /projects/{pid}/outlines` 的 `chapter_id` 非空）
-

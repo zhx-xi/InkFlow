@@ -35,6 +35,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.character import app, group_app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
 
@@ -399,6 +401,24 @@ class TestGroupCommands:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["name"] == "主角团"
+
+    def test_group_get_human_local_time(self, cli_runner, fake_http_client):
+        """group get 人类模式 → 创建时间显示本地时区（#1000 / ADR-055）.
+
+        夹具 created_at = naive UTC 串；期望值 conftest.local_display 独立换算，
+        原始 ISO 串（T 分隔）不再直出。--json 信封仍透传原始 UTC（ADR-055 数据层）。
+        """
+        fake_http_client.get.return_value = _make_group()
+        result = cli_runner.invoke(
+            group_app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "主角团" in result.output
+        assert "创建时间:" in result.output
+        assert local_display("2026-01-01T00:00:00") in result.output
+        assert "2026-01-01T00:00:00" not in result.output
 
     def test_group_update_json(self, cli_runner, fake_http_client):
         """group update --json → 成功信封 + HTTP 调用."""

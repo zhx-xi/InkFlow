@@ -27,6 +27,7 @@ from typing import Any, Literal
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -278,8 +279,8 @@ def get_setting_cmd(
         typer.echo(f"名称:       {setting['name']}")
         typer.echo(f"类别:       {setting['category']}")
         typer.echo(f"内容:       {setting['content']}")
-        typer.echo(f"创建时间:   {setting['created_at']}")
-        typer.echo(f"更新时间:   {setting['updated_at']}")
+        typer.echo(f"创建时间:   {format_local(setting['created_at'])}")
+        typer.echo(f"更新时间:   {format_local(setting['updated_at'])}")
 
 
 # ---------------------------------------------------------------------------

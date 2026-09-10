@@ -78,6 +78,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.audit_chapter import app  # RED: 命令模块尚不存在
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 CID = uuid.UUID("7a4f2c91-0000-4000-8000-000000000002")
 TS = "2026-08-09T10:00:00Z"
@@ -343,7 +345,10 @@ class TestAuditConfirm:
         assert call.args[0] == f"/projects/{PID}/chapters/{CID}/audit/confirm"
         assert call.kwargs["json"] == {"action": "accept", "note": ""}
         assert "已接受" in result.output
-        assert CONFIRMED_TS in result.output
+        # #1000（ADR-055）：人类输出显示本地时区（原「confirmed_at 原样透传」契约废止）；
+        # 期望值经 conftest.local_display 测试侧独立换算，不 import 被测实现。
+        assert local_display(CONFIRMED_TS) in result.output
+        assert CONFIRMED_TS not in result.output
 
     def test_confirm_reject_with_note(self, cli_runner, fake_http_client):
         """--confirm reject --note → body 含 note → 退出 0「已拒绝」（spec §4 用法 3）。"""
@@ -441,7 +446,10 @@ class TestAuditHistory:
         assert "第 3 章 龙的苏醒" in result.output
         assert "accepted" in result.output
         assert "1 error, 2 warnings, 0 info" in result.output
-        assert CONFIRMED_TS in result.output
+        # #1000（ADR-055）：history 列表的 confirmed_at / created_at 同为人类输出 → 本地时区
+        assert local_display(TS) in result.output
+        assert local_display(CONFIRMED_TS) in result.output
+        assert CONFIRMED_TS not in result.output
 
     def test_history_json_envelope(self, cli_runner, fake_http_client):
         """--history --json → {"ok": true, "data": {total, logs}}。"""

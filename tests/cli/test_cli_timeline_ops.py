@@ -39,6 +39,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.timeline import app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 
 
@@ -352,6 +354,11 @@ class TestTimelineHumanOutput:
             "（正叙）",
         ):
             assert token in result.output
+        # #1000（ADR-055）：创建/更新时间显示本地时区，原始 ISO 不再直出；
+        # 「世界内时间/原始时间表达」= 小说语义时间，不转换（ADR-055 例外条款）
+        assert "青元历 317 年秋" in result.output
+        assert local_display("2026-08-02T12:00:00") in result.output
+        assert "2026-08-02T12:00:00" not in result.output
 
     def test_update_all_fields(self, cli_runner, fake_http_client):
         """update 传全字段 → time_unit/time_display/narrative_position/timeline_flag 进入 body."""

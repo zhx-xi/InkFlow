@@ -28,6 +28,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -211,8 +212,8 @@ def get_outline_cmd(
         typer.echo(f"名称:       {outline['name']}")
         typer.echo(f"描述:       {outline['description']}")
         typer.echo(f"排序:       {outline['sort_order']}")
-        typer.echo(f"创建时间:   {outline['created_at']}")
-        typer.echo(f"更新时间:   {outline['updated_at']}")
+        typer.echo(f"创建时间:   {format_local(outline['created_at'])}")
+        typer.echo(f"更新时间:   {format_local(outline['updated_at'])}")
 
 
 # ---------------------------------------------------------------------------
