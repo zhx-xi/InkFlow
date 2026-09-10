@@ -1205,6 +1205,17 @@
               }
             ],
             "title": "Volume Id"
+          },
+          "writing_requirements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writing Requirements"
           }
         },
         "title": "ChapterUpdate",
