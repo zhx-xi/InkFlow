@@ -453,3 +453,12 @@ class TestTransportAdapter:
         out = to_chat_model_kwargs(base)
         assert out is not base
         assert base == {"model": "m", "reasoning_effort": "high"}
+
+    def test_moves_allowed_params_without_effort(self) -> None:
+        """#1039：仅旁路键（无 effort）也按搬运语义进 model_kwargs——传输层对组合
+        不设前提（防御完备弧锁）。"""
+        from inkflow.infrastructure.llm.capability_probe import to_chat_model_kwargs
+
+        out = to_chat_model_kwargs({"model": "m", "allowed_openai_params": ["reasoning_effort"]})
+        assert out["model_kwargs"] == {"allowed_openai_params": ["reasoning_effort"]}
+        assert "allowed_openai_params" not in out
