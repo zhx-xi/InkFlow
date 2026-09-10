@@ -31,9 +31,12 @@ type DetailData =
   | { kind: 'ex'; logs: SessionLogDto[] };
 
 /** #1029 软锚读取：context['agent_run_id'] 为非空字符串才算锚（无键/空串 = 存量会话降级） */
-function readAgentRunId(context: Record<string, unknown>): string | null {
-  const raw = context['agent_run_id'];
-  return typeof raw === 'string' && raw !== '' ? raw : null;
+function readAgentRunId(context: unknown): string | null {
+  if (typeof context !== 'object' || context === null || Array.isArray(context)) return null;
+  const raw = (context as Record<string, unknown>)['agent_run_id'];
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed !== '' ? trimmed : null;
 }
 
 /** #1029 轻量轨迹行：步骤序号 + 工具名（多个逗号连接）+ 各 tool_call 结果摘要 */
