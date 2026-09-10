@@ -34,6 +34,7 @@ def get_relation_extraction_service(
     均为 factory 形态（G1 契约：AI 门禁调 key_manager_factory().list_providers()）。
     """
     # 延迟 import：get_knowledge_graph_service 在 deps.py 定义，避免模块级循环导入
+    from inkflow.api._llm_resolver import resolve_chat_model
     from inkflow.api.deps import get_knowledge_graph_service
     from inkflow.core.config import config
     from inkflow.infrastructure.database.repositories.chapter_repo import (
@@ -77,7 +78,10 @@ def get_relation_extraction_service(
         map_pin_repo=SQLiteMapRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
         key_manager_factory=lambda: _get_key_manager(),
-        llm_client_factory=lambda: LangChainLLMClient(default_model=config.llm_default_model),
+        # #936 A 项：工厂内惰性读当前配置 + 走守卫（空默认 → 422，非空串装配）
+        llm_client_factory=lambda: LangChainLLMClient(
+            default_model=resolve_chat_model(config.llm_default_model)
+        ),
         llm_default_model=config.llm_default_model,
         extraction_run_repo=None,
     )

@@ -59,9 +59,13 @@ DEFAULT_DELETE_DETAIL = "默认模板不可删除"
 """删除默认模板的 409 detail（API 测试契约 #12 定稿；service 侧 BuiltinError
 消息为「内置模板不可删除」，路由层映射为本契约文案）."""
 
-BUILTIN_DEFAULT_MODEL = config.llm_default_model
-"""内置默认模型（与 pipeline_templates.py 四角色默认一致）.
-roles 输出时 model 为 None 的角色回填该值（spec §9.2.5「关闭 = 该角色使用默认模型」）."""
+def _builtin_default_model() -> str:
+    """内置默认模型（与 pipeline_templates.py 四角色默认一致）.
+
+    roles 输出时 model 为 None 的角色回填该值（spec §9.2.5「关闭 = 该角色使用默认模型」）.
+    #936 A 项：原模块常量 `BUILTIN_DEFAULT_MODEL` 是 import 快照 → 改函数惰性读取。
+    """
+    return config.llm_default_model
 
 
 def _parse_id(id_str: str, detail: str = "模板不存在") -> int:
@@ -126,13 +130,13 @@ def _to_response(template: AgentTemplate, *, used_by: list[dict] | None = None) 
         role_dict = role.model_dump(mode="json")
         # 契约：roles[role].model 必须为 str；未配置角色（None）回填内置默认模型
         # （spec §9.2.5 enabled=False 语义「关闭 = 使用默认模型」）
-        role_dict["model"] = role_dict["model"] or BUILTIN_DEFAULT_MODEL
+        role_dict["model"] = role_dict["model"] or _builtin_default_model()
         roles[key] = role_dict
     # 自定义角色（非四键）：保持四键顺序在前，自定义键追加在后
     for key, role in template.roles.items():
         if key not in ROLE_KEYS:
             role_dict = role.model_dump(mode="json")
-            role_dict["model"] = role_dict["model"] or BUILTIN_DEFAULT_MODEL
+            role_dict["model"] = role_dict["model"] or _builtin_default_model()
             roles[key] = role_dict
     data["roles"] = roles
     if used_by is not None:

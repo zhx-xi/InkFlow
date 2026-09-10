@@ -128,13 +128,16 @@ class OutlineService:
         generator: OutlineGenerator | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
         chapter_repo: ChapterRepositoryProtocol | None = None,
-        llm_default_model: str = config.llm_default_model,
+        llm_default_model: str | None = None,
     ) -> None:
         self._repo = repository
         self._generator = generator
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
-        self._llm_default_model = llm_default_model
+        # #936 A 项：默认参惰性化（构造期读当前配置，避免 import 快照冻结）
+        self._llm_default_model = (
+            llm_default_model if llm_default_model is not None else config.llm_default_model
+        )
 
     # ── Outline ────────────────────────────────────────────────
 

@@ -14129,8 +14129,20 @@
         ]
       },
       "post": {
-        "description": "新建 Provider — 201 + 完整响应结构（含 key_saved）.",
+        "description": "新建 Provider — 201 + 完整响应结构（含 key_saved）.\n\n#936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。",
         "operationId": "create_provider_config_api_v1_provider_configs_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -14286,7 +14298,7 @@
         ]
       },
       "patch": {
-        "description": "部分更新（exclude_unset 浅合并；models 整体替换）；不存在 → 404.",
+        "description": "部分更新（exclude_unset 浅合并；models 整体替换）；不存在 → 404.\n\n#936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。",
         "operationId": "update_provider_config_api_v1_provider_configs__provider_config_id__patch",
         "parameters": [
           {
@@ -14296,6 +14308,16 @@
             "schema": {
               "title": "Provider Config Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
             }
           }
         ],
@@ -16016,8 +16038,20 @@
     },
     "/api/v1/vector/embedding-model": {
       "put": {
-        "description": "切换激活 embedding 模型（#525）— 存在性校验 + 服务层唯一激活。",
+        "description": "切换激活 embedding 模型（#525）— 存在性校验 + 服务层唯一激活。\n\n#936 C：查询参数 `force=true` 跳过保存前 embedding 探测门禁（透传 service）。",
         "operationId": "set_embedding_model_api_v1_vector_embedding_model_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

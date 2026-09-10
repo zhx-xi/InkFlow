@@ -24,6 +24,7 @@ chat 模型**自动设为全局默认**（#735 D2）——未验证过的模型�
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -45,11 +46,16 @@ PROBE_GATE_WARN_ANCHOR = "跳过模型探测门禁"
 
 
 class _FakeConfig:
-    """可写全局默认的 config 替身（llm_default_model 可读可写；data_dir 供落盘）。"""
+    """可写全局默认的 config 替身（llm_default_model 可读可写；data_dir 供落盘）。
 
-    def __init__(self, llm_default_model: str = "") -> None:
+    ⚠️ data_dir 必须指向**临时目录**（每个实例独立 tmp_path）——#735 D2 自动设默认
+    会调 `save_config_json(self._config.data_dir, ...)` 真实落盘；用 Path(".") 会把
+    `backend/config.json` 写进工作区（污染仓库 + 每次跑测试重建）。
+    """
+
+    def __init__(self, llm_default_model: str = "", data_dir: Path | None = None) -> None:
         self.llm_default_model = llm_default_model
-        self.data_dir = Path(".")
+        self.data_dir = data_dir if data_dir is not None else Path(tempfile.mkdtemp())
 
 
 def _mock_repo(existing: ProviderConfig | None = None) -> MagicMock:
@@ -70,23 +76,30 @@ class _FakeProbe:
     probe_embedding(provider, model, api_key, base_url) → int 维度（>0 成功）
     """
 
-    def __init__(self, *, chat_error: Exception | None = None, embedding_dim: int = 1024,
-                 embedding_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        chat_error: Exception | None = None,
+        embedding_dim: int = 1024,
+        embedding_error: Exception | None = None,
+    ) -> None:
         self.chat_error = chat_error
         self.embedding_dim = embedding_dim
         self.embedding_error = embedding_error
         self.chat_calls: list[tuple] = []
         self.embedding_calls: list[tuple] = []
 
-    async def probe_chat(self, provider: str, model: str, api_key: str,
-                         base_url: str | None = None) -> None:
+    async def probe_chat(
+        self, provider: str, model: str, api_key: str, base_url: str | None = None
+    ) -> None:
         """chat 型最小探测——失败时抛异常。"""
         self.chat_calls.append((provider, model, api_key, base_url))
         if self.chat_error is not None:
             raise self.chat_error
 
-    async def probe_embedding(self, provider: str, model: str, api_key: str,
-                              base_url: str | None = None) -> int:
+    async def probe_embedding(
+        self, provider: str, model: str, api_key: str, base_url: str | None = None
+    ) -> int:
         """embedding 型最小探测——返回维度（>0 表示成功）。"""
         self.embedding_calls.append((provider, model, api_key, base_url))
         if self.embedding_error is not None:
@@ -276,24 +289,18 @@ class TestUpdateProbeGate:
         probe = _FakeProbe(chat_error=RuntimeError("should not be called"))
         svc = _svc(repo, probe=probe)
 
-        await svc.update(
-            1, ProviderConfigUpdate(models=[ProviderModel(id="gpt-4o", type="chat")])
-        )
+        await svc.update(1, ProviderConfigUpdate(models=[ProviderModel(id="gpt-4o", type="chat")]))
 
         assert not probe.chat_calls, "条目全等时不应探测（幂等保存零探测）"
 
     async def test_r10_update_type_change_probed_as_new_type(self) -> None:
         """【R】update 改某条目 type（chat→embedding）→ 按**新 type** 探测。"""
-        existing = ProviderConfig(
-            id=1, name="zhipu", models=[ProviderModel(id="m1", type="chat")]
-        )
+        existing = ProviderConfig(id=1, name="zhipu", models=[ProviderModel(id="m1", type="chat")])
         repo = _mock_repo(existing)
         probe = _FakeProbe()
         svc = _svc(repo, probe=probe)
 
-        await svc.update(
-            1, ProviderConfigUpdate(models=[ProviderModel(id="m1", type="embedding")])
-        )
+        await svc.update(1, ProviderConfigUpdate(models=[ProviderModel(id="m1", type="embedding")]))
 
         assert len(probe.embedding_calls) == 1, "type 变更须按新 type 重探"
         assert not probe.chat_calls
@@ -334,9 +341,7 @@ class TestProbeGateCompatibility:
         svc = _svc(repo, probe=None)
 
         await svc.create(
-            ProviderConfigCreate(
-                name="openai", models=[ProviderModel(id="gpt-4o", type="chat")]
-            )
+            ProviderConfigCreate(name="openai", models=[ProviderModel(id="gpt-4o", type="chat")])
         )
 
         repo.add.assert_awaited_once()
@@ -357,9 +362,7 @@ class TestProbeGateCompatibility:
 
         with pytest.raises(ProviderConfigServiceError) as exc_info:
             await svc.create(
-                ProviderConfigCreate(
-                    name="custom", models=[ProviderModel(id="m1", type="chat")]
-                )
+                ProviderConfigCreate(name="custom", models=[ProviderModel(id="m1", type="chat")])
             )
 
         assert "m1" in str(exc_info.value)
