@@ -306,3 +306,106 @@ class TestSeed:
         """幂等性由 repo 保证：第二次调用返回 0，服务层透传。"""
         mock_repo.seed_builtin_providers.return_value = 0
         assert await service.seed_builtin_providers() == 0
+
+
+class TestDataChangeEvents:
+    """#1088 批 A3：ProviderConfig 写路径发布事件（全局域 → project_id=None，spec §15.2.3）。"""
+
+    async def test_create_publishes_global_create(self, service, mock_repo, recorded_events):
+        """create 成功 → provider_config/create，project_id=None。"""
+        mock_repo.add = AsyncMock(return_value=_config(5, "custom"))
+
+        await service.create(ProviderConfigCreate(name="custom"))
+
+        assert len(recorded_events) == 1
+        event = recorded_events[0]
+        assert (event.domain, event.op) == ("provider_config", "create")
+        assert event.resource_id == "5"
+        assert event.project_id is None
+
+    async def test_create_conflict_publishes_nothing(self, service, mock_repo, recorded_events):
+        """反例：同名冲突（写失败）→ 不发布。"""
+        mock_repo.get_by_name.return_value = _config(1, "custom")
+
+        with pytest.raises(ProviderConfigNameConflictError):
+            await service.create(ProviderConfigCreate(name="custom"))
+
+        assert recorded_events == []
+
+    async def test_update_publishes_global_update(self, service, mock_repo, recorded_events):
+        """update 成功 → provider_config/update，project_id=None。"""
+        mock_repo.get.return_value = _config(5, "custom")
+        mock_repo.update.return_value = _config(5, "renamed")
+
+        await service.update(5, ProviderConfigUpdate(name="renamed"))
+
+        assert len(recorded_events) == 1
+        assert (recorded_events[0].domain, recorded_events[0].op) == (
+            "provider_config",
+            "update",
+        )
+        assert recorded_events[0].resource_id == "5"
+        assert recorded_events[0].project_id is None
+
+    async def test_update_missing_publishes_nothing(self, service, mock_repo, recorded_events):
+        """反例：Provider 不存在（抛 404 前无写入）→ 不发布。"""
+        mock_repo.get.return_value = None
+
+        with pytest.raises(ProviderConfigNotFoundError):
+            await service.update(999, ProviderConfigUpdate(name="renamed"))
+
+        assert recorded_events == []
+
+    async def test_delete_publishes_global_delete(self, service, mock_repo, recorded_events):
+        """delete 成功 → provider_config/delete，project_id=None。"""
+        mock_repo.delete.return_value = True
+
+        await service.delete(1)
+
+        assert len(recorded_events) == 1
+        event = recorded_events[0]
+        assert (event.domain, event.op) == ("provider_config", "delete")
+        assert event.resource_id == "1"
+        assert event.project_id is None
+
+    async def test_delete_missing_publishes_nothing(self, service, mock_repo, recorded_events):
+        """反例：repo.delete 返回 False → 抛 404，不发布。"""
+        mock_repo.delete.return_value = False
+
+        with pytest.raises(ProviderConfigNotFoundError):
+            await service.delete(999)
+
+        assert recorded_events == []
+
+    async def test_set_embedding_model_publishes_update_op(
+        self, service, mock_repo, recorded_events
+    ):
+        """set_embedding_model 为语义化操作 → 统一 op='update'（spec §15.6.4）。"""
+        mock_repo.list.return_value = [
+            _config(
+                5,
+                "openai",
+                models=[ProviderModel(id="emb-1", type="chat", roles=["embedding"])],
+            )
+        ]
+
+        await service.set_embedding_model("openai", "emb-1")
+
+        assert len(recorded_events) == 1
+        assert (recorded_events[0].domain, recorded_events[0].op) == (
+            "provider_config",
+            "update",
+        )
+        assert recorded_events[0].resource_id == "5"
+        assert recorded_events[0].project_id is None
+
+    async def test_set_embedding_model_missing_publishes_nothing(
+        self, service, mock_repo, recorded_events
+    ):
+        """反例：目标 provider/model 不存在（写失败）→ 不发布。"""
+        mock_repo.list.return_value = []
+
+        with pytest.raises(ProviderConfigNotFoundError):
+            await service.set_embedding_model("ghost", "emb-1")
+
+        assert recorded_events == []

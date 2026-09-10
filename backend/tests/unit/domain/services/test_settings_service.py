@@ -261,3 +261,42 @@ class TestChunkSettingsPersistence:
         }
         result = await _service(mock_repo).get_settings()
         assert result.model_dump() == _defaults()
+
+
+class TestDataChangeEvents:
+    """#1088 批 A3：settings 写路径发布事件（全局域 → project_id=None，spec §15.2.3）。"""
+
+    async def test_update_settings_publishes_global_event(
+        self, mock_repo: AsyncMock, recorded_events
+    ) -> None:
+        """写成功 → settings/update（resource_id 固定 'global'，全局域 project_id=None）。"""
+        mock_repo.get_all.return_value = {"theme": '"night"'}
+
+        await _service(mock_repo).update_settings(AppSettingsUpdate(theme="night"))
+
+        assert len(recorded_events) == 1
+        event = recorded_events[0]
+        assert (event.domain, event.op) == ("settings", "update")
+        assert event.resource_id == "global"
+        assert event.project_id is None
+
+    async def test_default_reasoning_bridge_also_publishes(
+        self, mock_repo: AsyncMock, recorded_events
+    ) -> None:
+        """反例对照：D-1 思考档位字段同样落库 → 同样发布（走同一写路径）。"""
+        mock_repo.get_all.return_value = {"default_reasoning_effort": '"high"'}
+
+        await _service(mock_repo).update_settings(
+            AppSettingsUpdate(default_reasoning_effort="high")
+        )
+
+        assert [(e.domain, e.op) for e in recorded_events] == [("settings", "update")]
+
+    async def test_empty_payload_publishes_nothing(
+        self, mock_repo: AsyncMock, recorded_events
+    ) -> None:
+        """反例：全部字段为 None（未变更，不落库）→ 不发布（§15.6.4）。"""
+        await _service(mock_repo).update_settings(AppSettingsUpdate())
+
+        mock_repo.set_many.assert_not_awaited()
+        assert recorded_events == []

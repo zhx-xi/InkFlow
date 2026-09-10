@@ -66,6 +66,7 @@ from inkflow.domain.ports.outline_errors import (
 )
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 from inkflow.domain.services._outline_generator import OutlineGenerator
 from inkflow.domain.services.model_resolution import resolve_model
 
@@ -275,7 +276,10 @@ class OutlineService:
             updated_at=now,
         )
         logger.info("创建大纲: project=%s name=%s level=%s", project_id, name, level)
-        return await self._repo.add(outline)
+        created = await self._repo.add(outline)
+        # #1088 批 A3：A 类（首参带 project_id）→ 直接取形参
+        await publish_change("outline", "create", created.id, project_id)
+        return created
 
     async def get_outline(self, outline_id: int | uuid.UUID) -> Outline | None:
         """按主键获取大纲；不存在返回 None（router 转 404）."""
@@ -441,7 +445,11 @@ class OutlineService:
                 exclude_outline_id=_to_int_id(merged.id),
             )
         logger.info("更新大纲: outline_id=%s", outline_id)
-        return await self._repo.update(merged)
+        updated = await self._repo.update(merged)
+        if updated is not None:
+            # #1088 批 A3：B 类 → project_id 取已加载实体（零额外查询，§15.3.2）
+            await publish_change("outline", "update", updated.id, existing.project_id)
+        return updated
 
     async def delete_outline(self, outline_id: int | uuid.UUID) -> bool:
         """真删大纲（v1.1，spec §7: 大纲不存在 → False，router 转 404）.
@@ -454,7 +462,15 @@ class OutlineService:
         """
         oid = _to_int_id(outline_id)
         logger.info("真删大纲: outline_id=%s（情节点由 FK CASCADE 级联）", outline_id)
-        return await self._repo.hard_delete(oid)
+        deleted = await self._repo.hard_delete(oid)
+        if deleted:
+            # #1088 批 A3：薄透传方法（hard_delete 未加载实体）→ 发 None + warning
+            logger.warning(
+                "outline 删除事件缺 project_id（delete_outline 未加载实体，spec §15.3.2）: id=%s",
+                outline_id,
+            )
+            await publish_change("outline", "delete", outline_id, None)
+        return deleted
 
     # ── PlotPoint ──────────────────────────────────────────────
 
@@ -508,7 +524,10 @@ class OutlineService:
             updated_at=now,
         )
         logger.info("创建情节点: outline=%s name=%s position=%s", outline_id, name, position)
-        return await self._repo.add_point(point)
+        created = await self._repo.add_point(point)
+        # #1088 批 A3：project_id 从已加载大纲推出
+        await publish_change("plot_point", "create", created.id, outline.project_id)
+        return created
 
     async def get_point(self, point_id: int | uuid.UUID) -> PlotPoint | None:
         """按主键获取情节点；不存在返回 None（router 转 404）."""
@@ -548,7 +567,11 @@ class OutlineService:
                 updates["arc_id"] = None
         merged = existing.model_copy(update=updates)
         logger.info("更新情节点: point_id=%s", point_id)
-        return await self._repo.update_point(merged)
+        updated = await self._repo.update_point(merged)
+        if updated is not None:
+            # #1088 批 A3：PlotPoint 自带 project_id → 从已加载实体解析
+            await publish_change("plot_point", "update", updated.id, existing.project_id)
+        return updated
 
     async def delete_point(self, point_id: int | uuid.UUID) -> bool:
         """真删情节点（v1.1，spec §7: 情节点不存在 → False，router 转 404）.
@@ -561,7 +584,15 @@ class OutlineService:
         """
         pid = _to_int_id(point_id)
         logger.info("真删情节点: point_id=%s", point_id)
-        return await self._repo.hard_delete_point(pid)
+        deleted = await self._repo.hard_delete_point(pid)
+        if deleted:
+            # #1088 批 A3：薄透传方法（hard_delete_point 未加载实体）→ 发 None + warning
+            logger.warning(
+                "plot_point 删除事件缺 project_id（delete_point 未加载实体，spec §15.3.2）: id=%s",
+                point_id,
+            )
+            await publish_change("plot_point", "delete", point_id, None)
+        return deleted
 
     async def list_points(self, outline_id: int | uuid.UUID) -> list[PlotPoint]:
         """查询大纲内全部情节点（position ASC 稳定排序，spec §6.3）.
@@ -613,7 +644,10 @@ class OutlineService:
             updated_at=now,
         )
         logger.info("创建弧线: project=%s name=%s", project_id, name)
-        return await self._repo.add_arc(arc)
+        created = await self._repo.add_arc(arc)
+        # #1088 批 A3：A 类（首参带 project_id）→ 直接取形参
+        await publish_change("story_arc", "create", created.id, project_id)
+        return created
 
     async def get_arc(self, arc_id: int | uuid.UUID) -> StoryArc | None:
         """按主键获取弧线；不存在返回 None（router 转 404）."""
@@ -646,7 +680,10 @@ class OutlineService:
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
         merged = existing.model_copy(update=updates)
         logger.info("更新弧线: arc_id=%s", arc_id)
-        return await self._repo.update_arc(merged)
+        updated = await self._repo.update_arc(merged)
+        if updated is not None:
+            await publish_change("story_arc", "update", updated.id, existing.project_id)
+        return updated
 
     async def delete_arc(self, arc_id: int | uuid.UUID) -> bool:
         """真删弧线（v1.1，spec §6.2/§7: 成员情节点 arc_id 由 FK SET NULL，情节点本身保留）.
@@ -659,7 +696,15 @@ class OutlineService:
         """
         aid = _to_int_id(arc_id)
         logger.info("真删弧线: arc_id=%s（成员 arc_id 由 FK SET NULL）", arc_id)
-        return await self._repo.hard_delete_arc(aid)
+        deleted = await self._repo.hard_delete_arc(aid)
+        if deleted:
+            # #1088 批 A3：薄透传方法（hard_delete_arc 未加载实体）→ 发 None + warning
+            logger.warning(
+                "story_arc 删除事件缺 project_id（delete_arc 未加载实体，spec §15.3.2）: id=%s",
+                arc_id,
+            )
+            await publish_change("story_arc", "delete", arc_id, None)
+        return deleted
 
     # ── AI 生成入口（spec §5.1 步骤 ①）────────────────────────
 

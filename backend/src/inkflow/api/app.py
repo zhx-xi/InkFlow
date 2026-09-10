@@ -11,6 +11,7 @@ import inkflow
 from inkflow.api.deps import get_provider_config_service
 from inkflow.api.middleware.correlation import CorrelationIdMiddleware
 from inkflow.api.middleware.docs_gate import DocsGateMiddleware
+from inkflow.api.middleware.source import EventSourceMiddleware
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
     agent,
@@ -255,6 +256,11 @@ app.add_middleware(DocsGateMiddleware)
 # ---- X-Correlation-Id 沿用（B4 #496，纯 ASGI；注册在 DocsGate 之后 = 最外层：
 #       请求最早进入即设置 contextvar，覆盖整个请求生命周期的埋点链路） ----
 app.add_middleware(CorrelationIdMiddleware)
+
+# ---- X-Inkflow-Source 发起方标记（#1088 批 A3，纯 ASGI；注册在 CorrelationId 之后 =
+#       最外层：请求最早进入即写 source ContextVar，写路径发布变更事件时判定发起方；
+#       非法/缺失头不设 → 保持默认 unknown，spec §15.2.4） ----
+app.add_middleware(EventSourceMiddleware)
 
 
 # ---- 全局异常处理：RAG 向量库不可用（#341，覆盖端点构造期与前置刷新冒泡）----

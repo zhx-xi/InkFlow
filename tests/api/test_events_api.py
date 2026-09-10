@@ -357,3 +357,59 @@ async def test_write_endpoint_still_201_without_subscribers(override_get_db):
     assert bus.subscriber_count == 0
     assert await publish_change("map", "create", 7, None) is None  # 无订阅者：静默
     assert bus.subscriber_count == 0
+
+
+# ── 批 A3（#1088）：X-Inkflow-Source 中间件 → event source 接线 ──────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_source_header_marks_published_event_source(override_get_db):
+    """#1088 A3：带 X-Inkflow-Source: cli 的写请求 → 其触发的写事件 source == "cli"。
+
+    接线契约（spec §15.2.2 接线约束）：中间件 write contextvar → service 发布读
+    contextvar —— 未接线时该分支为死代码，本用例是唯一的端到端证明。
+    """
+    bus = get_event_bus()
+    probe = AsgiStreamProbe(STREAM_PATH)
+    await probe.open()
+    try:
+        await _wait_for(lambda: bus.subscriber_count == 1)
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"X-Inkflow-Source": "cli"},
+        ) as client:
+            resp = await client.patch("/api/v1/settings", json={"theme": "night"})
+        assert resp.status_code == 200
+
+        await probe.wait_frames(1)
+        frame = probe.frames[0]
+        assert frame["domain"] == "settings"
+        assert frame["source"] == "cli"
+        assert "project_id" not in frame  # 全局域省略该键（§15.2.3）
+    finally:
+        await probe.disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.api
+async def test_illegal_source_header_falls_back_to_unknown(override_get_db):
+    """反例：非法 / 缺失 X-Inkflow-Source → 不设 contextvar，事件 source 兜底 "unknown"。"""
+    bus = get_event_bus()
+    probe = AsgiStreamProbe(STREAM_PATH)
+    await probe.open()
+    try:
+        await _wait_for(lambda: bus.subscriber_count == 1)
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"X-Inkflow-Source": "hacker"},
+        ) as client:
+            resp = await client.patch("/api/v1/settings", json={"theme": "night"})
+        assert resp.status_code == 200
+
+        await probe.wait_frames(1)
+        assert probe.frames[0]["source"] == "unknown"
+    finally:
+        await probe.disconnect()

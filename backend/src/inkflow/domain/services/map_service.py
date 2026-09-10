@@ -43,6 +43,7 @@ from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 from inkflow.infrastructure.assets.map_asset_store import MapAssetStoreProtocol
 
 logger = logging.getLogger(__name__)
@@ -195,13 +196,16 @@ class MapService:
             updated_at=now,
         )
         try:
-            return await self._repo.add(wm)
+            created = await self._repo.add(wm)
         except Exception:
             try:
                 await self._asset_store.delete(rel_path)
             except Exception:
                 logger.warning("创建地图失败后清理图片文件异常: %s", rel_path, exc_info=True)
             raise
+        # #1088 批 A3（spec §15.3.3）：写成功后发布 map 变更事件（A 类——project_id 取形参）
+        await publish_change("map", "create", created.id, created.project_id)
+        return created
 
     async def list_maps(
         self,
@@ -313,7 +317,11 @@ class MapService:
         if "parent_map_id" in update.model_fields_set:
             updates["parent_map_id"] = update.parent_map_id
         merged = existing.model_copy(update=updates)
-        return await self._repo.update(merged)
+        updated = await self._repo.update(merged)
+        # #1088 批 A3（spec §15.3.2 B 类）：project_id 取已加载实体，零额外查询
+        if updated is not None:
+            await publish_change("map", "update", updated.id, existing.project_id)
+        return updated
 
     async def replace_image(
         self,
@@ -390,6 +398,8 @@ class MapService:
             return False
         await self._repo.delete(sid)
         await self._delete_image(existing.image_path)
+        # #1088 批 A3：删除成功后发布（此时实体已不在，GUI refetch 后自然移除）
+        await publish_change("map", "delete", existing.id, existing.project_id)
         return True
 
     async def children(self, map_id: int | uuid.UUID) -> list[WorldMap]:
@@ -417,6 +427,15 @@ class MapService:
             await self._delete_image(self_map.image_path)
         for child in subtree_maps:
             await self._delete_image(child.image_path)
+        # #1088 批 A3：级联删除成功后发布自身 map 事件（self_map 竞态缺失 → None + warning）
+        if self_map is not None:
+            await publish_change("map", "delete", self_map.id, self_map.project_id)
+        else:
+            logger.warning(
+                "map 删除事件缺 project_id（cascade 竞态未取到自身实体，spec §15.3.2）: id=%s",
+                sid,
+            )
+            await publish_change("map", "delete", sid, None)
         return True
 
     async def _delete_reparent(
@@ -476,6 +495,8 @@ class MapService:
         # ④ 真删自身（repo.delete 显式级联其 pins）+ 删自身文件（子图文件保留）
         await self._repo.delete(sid)
         await self._delete_image(existing.image_path)
+        # #1088 批 A3：reparent 删除成功后发布自身 map 事件
+        await publish_change("map", "delete", existing.id, existing.project_id)
         return True
 
     async def _delete_image(self, relative_path: str) -> None:
@@ -550,7 +571,10 @@ class MapService:
             created_at=now,
             updated_at=now,
         )
-        return await self._repo.add_pin(pin)
+        created_pin = await self._repo.add_pin(pin)
+        # #1088 批 A3：map_pin 变更事件（project_id 从方法内已加载的 map 推出）
+        await publish_change("map_pin", "create", created_pin.id, wm.project_id)
+        return created_pin
 
     async def list_pins(
         self, map_id: int | uuid.UUID, location_id: int | uuid.UUID | None = None
@@ -587,11 +611,27 @@ class MapService:
         if "ref_id" in update.model_fields_set:
             updates["ref_id"] = update.ref_id  # F43 P2: 出现即更新（null=清关联）
         merged = existing.model_copy(update=updates)
-        return await self._repo.update_pin(merged)
+        updated = await self._repo.update_pin(merged)
+        if updated is not None:
+            # #1088 批 A3：MapPin 无 project_id 且未加载 map → 发 None + warning（§15.3.2 已知例外）
+            logger.warning(
+                "map_pin 变更事件缺 project_id（update_pin 未加载 map，spec §15.3.2）: pin_id=%s",
+                pin_id,
+            )
+            await publish_change("map_pin", "update", updated.id, None)
+        return updated
 
     async def delete_pin(self, pin_id: int | uuid.UUID) -> bool:
         """真删 pin（透传 repo.delete_pin；不存在返回 False）."""
-        return await self._repo.delete_pin(_to_int_id(pin_id))
+        deleted = await self._repo.delete_pin(_to_int_id(pin_id))
+        if deleted:
+            # #1088 批 A3：薄透传方法未加载实体 → 发 None + warning（§15.3.2 已知例外）
+            logger.warning(
+                "map_pin 变更事件缺 project_id（delete_pin 为薄透传，spec §15.3.2）: pin_id=%s",
+                pin_id,
+            )
+            await publish_change("map_pin", "delete", pin_id, None)
+        return deleted
 
     # ── 项目/地点硬删钩子（D10=b）────────────────────────────────
 

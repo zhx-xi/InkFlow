@@ -31,12 +31,18 @@ import { buildWorldTree, filterWorldTree, WorldNodeView } from '../components/Wo
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
+import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useWorldCategories, type WorldCategoryEntity } from '../hooks/useWorldCategories';
 import { OUTLINE_PAGE_SIZE, useOutlineLibrary } from '../hooks/useOutlineLibrary';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
 type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'knowledge';
+/** F23 §15.6.2（#1088 A3）：本页关心的项目作用域变更域（含子实体独立域）；事件到达一律 FR。 */
+const LIBRARY_DATA_CHANGE_DOMAINS = [
+  'map', 'map_pin', 'character', 'character_group',
+  'character_relation', 'outline', 'plot_point', 'story_arc',
+] as const;
 interface ListResponse {
   items: LibraryItemDTO[];
   total: number;
@@ -149,6 +155,9 @@ export function LibraryPage() {
 
   // #1002：大纲 tab 数据装配（排序 toggle/顶层分页/卷章全量缓存，含章标题映射）——自本文件拆出以守 900 行护栏
   const outlineLib = useOutlineLibrary(currentProjectId, activeCat, reloadKey);
+  // F23 §15.6.2（#1088 批 A3）：数据面变更订阅——外部（CLI/HTTP/MCP/agent）写入 → 事件到达
+  // 后 bump reloadKey，复用既有 effect 全量重拉（maps / 分类列表 / 大纲；FR 粒度裁决，不新增局部更新路径）。
+  useDataChangeSubscription(LIBRARY_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
   // #1002：outline tab 的 loading/error 由 hook 持有；其余分类沿用通用 effect 态（非 outline 行为零改动）
   const viewLoading = activeCat === 'outline' ? outlineLib.loading : loading;
   const viewFailed = activeCat === 'outline' ? outlineLib.loadFailed : loadFailed;
@@ -654,6 +663,7 @@ export function LibraryPage() {
                 worldItems={items}
                 maps={maps}
                 activeMapId={activeMapId}
+                reloadKey={reloadKey}
                 onSelectMap={(mapId) => setActiveMapId(mapId)}
                 onExitWorkbench={() => setWorkbenchActive(false)}
                 onClearMap={() => setActiveMapId(null)}

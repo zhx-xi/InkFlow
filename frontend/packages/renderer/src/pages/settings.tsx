@@ -22,8 +22,11 @@ import {
   fetchSettings,
   patchSettings,
 } from '../api/client';
+import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useI18n } from '../i18n/useI18n';
 import { useAgentStore } from '../stores/agent';
+import { useAgentsStore } from '../stores/agents';
+import { useModelReadinessStore } from '../stores/modelReadiness';
 import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { useProjectStore } from '../stores/project';
 import type { AgentTemplate, AgentTemplateInput } from '../stores/templates';
@@ -34,6 +37,17 @@ import type { FontKey } from '../theme';
 import { cn } from '../lib/cn';
 
 type CatKey = 'general' | 'models' | 'agent' | 'templates' | 'skills' | 'account';
+
+/**
+ * F23 §15.6.2（#1088 批 A3）：设置页关心的数据面变更域——**全部为全局域**
+ * （project_id 缺省，对所有项目页面生效，spec §15.6.3）。
+ */
+const SETTINGS_DATA_CHANGE_DOMAINS = [
+  'agent_template',
+  'settings',
+  'provider_config',
+  'agent',
+] as const;
 
 /** #189：页面顶部保存指示状态（隐藏 / 保存中 / 已保存，参考 Notion/Google Docs 顶部指示模式） */
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -64,7 +78,7 @@ const SHORTCUTS: Array<{ combo: string; labelKey: string }> = [
 ];
 
 /** 常规分类：AppearanceCard（语言/主题/背景，#105 🔴-3）+ 编辑器字体 + 关闭窗口时 + 首次托盘提示 + 新章节默认字数（真实 PATCH）+ 快捷键一览 */
-function GeneralPanel() {
+function GeneralPanel({ reloadKey = 0 }: { reloadKey?: number }) {
   const { t } = useI18n();
   const pushToast = useToastStore((s) => s.pushToast);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
@@ -259,7 +273,7 @@ function GeneralPanel() {
       return () => {
         cancelled = true;
       };
-    }, [currentProjectId]);
+    }, [currentProjectId, reloadKey]);
 
   // #399：订阅式重读——store 外部合并（PATCH 在途完成）→ 输入框自动同步；
   // 守卫：#198 dirty（用户输入中不覆盖）/ String 相等（已同步）跳过；不清 dirty（外部更新非用户输入）
@@ -734,6 +748,28 @@ export function SettingsPage() {
     setSearchParams({ cat: key });
   };
 
+  // F23 §15.6.2（#1088 批 A3）：全局域变更 → 全量重拉本页四路数据面（模板/设置/模型/Agent）。
+  // event = null 表示重连兜底 → 忽略 domain 过滤全刷（§15.5.4）；self-originated（source=gui）
+  // 已在订阅调度层过滤（本地写入走各自 store 局部更新，无需重拉）。
+  const [settingsReloadKey, setSettingsReloadKey] = useState(0);
+  useDataChangeSubscription(SETTINGS_DATA_CHANGE_DOMAINS, (event) => {
+    const domain = event?.domain ?? null;
+    if (domain === null || domain === 'agent_template') {
+      void useTemplatesStore.getState().loadTemplates();
+    }
+    if (domain === null || domain === 'provider_config') {
+      void useModelsStore.getState().loadProviders();
+      void useModelReadinessStore.getState().load();
+    }
+    if (domain === null || domain === 'agent') {
+      void useAgentsStore.getState().loadAgents();
+    }
+    if (domain === null || domain === 'settings') {
+      void useThemeStore.getState().initFromBackend();
+      setSettingsReloadKey((k) => k + 1);
+    }
+  });
+
   return (
     <div data-testid="settings-page" className="flex h-full">
       <nav
@@ -768,7 +804,7 @@ export function SettingsPage() {
           <h1 className="font-serif text-[26px] font-semibold">{t('set.title')}</h1>
         </div>
         <div data-testid="settings-panel" className="px-8 pb-10 pt-4">
-          {activeCat === 'general' && <GeneralPanel />}
+          {activeCat === 'general' && <GeneralPanel reloadKey={settingsReloadKey} />}
           {activeCat === 'models' && (
             <div className="space-y-5">
               <GlobalDefaultModelCard />
