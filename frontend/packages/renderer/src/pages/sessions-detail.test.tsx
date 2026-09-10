@@ -181,6 +181,8 @@ beforeEach(() => {
         title: '第二章草稿润色',
         status: 'completed',
         is_deleted: true,
+        // #1069 NIT-9：completed_at 显示点专项（'2026-08-10T09:30:00Z' → +08 17:30:00）
+        completed_at: '2026-08-10T09:30:00Z',
       }),
     ],
     total: 2,
@@ -369,6 +371,13 @@ describe('#1015 执行会话卡详情弹层（N12/N13，数据源 = sessions 详
     expect(dialog).toBeInTheDocument();
     // 归档元信息 + 日志仍可看（后端 list_logs 不因归档过滤，履历保留契约）
     expect(await screen.findByTestId('session-detail-meta-status')).toHaveTextContent('completed');
+    // #1069 NIT-9：completed_at 经 formatTimestamp 本地显示，原始 ISO 串不直出
+    expect(screen.getByTestId('session-detail-meta-status').parentElement).toHaveTextContent(
+      '2026-08-10 17:30:00',
+    );
+    expect(screen.getByTestId('session-detail-meta-status').parentElement?.textContent).not.toContain(
+      '2026-08-10T09:30:00Z',
+    );
     expect(await screen.findByTestId('session-detail-log-1')).toBeInTheDocument();
     await user.click(await screen.findByTestId('session-detail-restore'));
     await waitFor(() => {
