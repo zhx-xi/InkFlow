@@ -21,6 +21,11 @@ TOOL_NAME_TO_CELL 中，供存量 tool_ids-only 行宽松反查（目录内已�
 build_tools_by_ids/build_tools_by_grants 均调 10 组 build 后按 spec.name 过滤
 拼接（未知名忽略，防御）；None 子 deps 跳过该组 build（delete 子 deps 在
 conversation 删除授权为 manual 时为 None——核心工具本就不允许自定义 agent 勾选）。
+
+本模块的 GRANT_TOOL_MAP / TOOL_REGISTRY / ALL_TOOL_SPECS / TOOL_NAME_TO_CELL 被多处
+测试**硬编码快照断言**消费——改表（增删工具名/调整格值/改计数）前必读联保清单：
+    docs/contract-guard.md
+（含全仓消费面逐条登记 + CI 触发联保说明；改表 PR 须同步复核该清单内全部断言面。）
 """
 
 from __future__ import annotations

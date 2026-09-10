@@ -32,6 +32,7 @@
 | 13 | **新增测试文件 ≠ CI 会跑它** | `backend/tests/` 根目录的 CLI 测试是 CI 盲区；新 CLI 测试文件必须手动加入 ci.yml `integration-cli-backend` job |
 | 14 | **CLI help 断言在 CI 彩色环境失败** | Typer/Rich FORCE_COLOR 把 `--count` 渲染成 `-count`；用 `CliRunner(env={"NO_COLOR": "1"})` |
 | 15 | **PowerShell 不展开 glob** | pytest 收到字面 `test_*.py` 报 no tests ran；CI 必须显式文件列表（ruff 自己支持 glob 可保留） |
+| 26 | **改契约源 → 硬编码快照断言连锁过期** | `agent/tools/registry.py` 的 GRANT_TOOL_MAP/TOOL_REGISTRY/ALL_TOOL_SPECS 被 e2e spec + 单测/API/CLI 测试硬编码消费；改表前读 `docs/contract-guard.md` 联保清单逐条复核（#993，#985 教训） |
 
 ## Windows / 工具链
 
@@ -53,3 +54,4 @@
 | 13 | **Issue/PR 完成后配置同步** | 每个 Issue/PR 完成后检查 AGENTS.md、ADR、pyproject.toml、ci.yml、FEATURES.md 是否过时（#23 教训）；PR 模板已固化该检查 |
 | 24 | **main 分支被直接修改** | 禁止；一切变更走 worktree + PR（docs-only 也走 PR） |
 | 25 | **AGENTS.md 超过 20K 字符** | Hermes 上下文文件 head+tail 截断丢中间；新内容写 ARCHITECTURE.md / docs/ 而非塞入 AGENTS.md |
+| 27 | **契约源变更不触发页面级 e2e** | ci.yml 的 `contract` paths-filter output 命中 registry.py 等契约源即跑 e2e-frontend-settings；新增契约源须同步登记该 filter + docs/contract-guard.md（#993） |

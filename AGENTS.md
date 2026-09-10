@@ -366,6 +366,7 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 | 3 | **CLI 测试用环境变量设置 DB** | 用 `monkeypatch.setattr` 直接替换 `engine` 和 `async_session_factory` |
 | 11 | **单元 + 集成测试不能放在同一命令** | 两个 `tests/` 目录（backend 和顶层）有命名冲突，必须分开跑 |
 | 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml、ci.yml、FEATURES.md 是否过时 |
+| 26 | **改契约源 → 硬编码快照断言连锁过期** | 改 `agent/tools/registry.py` 表前必读 `docs/contract-guard.md` 联保清单；CI `contract` filter 命中即跑 `e2e-frontend-settings`（#993/#985） |
 
 > 完整陷阱清单（UUID.int/跨模块遮蔽/CI 盲区/Windows 坑/流程治理等）见 `ai-traps.md`。
 
