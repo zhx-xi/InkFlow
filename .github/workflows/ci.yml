@@ -46,6 +46,13 @@ on:
 # setenv 无效、无 time.tzset）——已探针实证。全后端套件在 +05:00 下本地实证全绿
 # （6509 unit + 272 cli + 852 integration/api）。
 
+# ── #1083：全部 job 显式设 timeout-minutes（防 runner 挂死静默占位）──
+# 无 timeout 时 GitHub 默认 360min：挂死 job 占 required check 最多 6 小时且
+# 不响应 cancel（PR #1082 实测 unit-backend 卡 22min vs 基线 4m48s）。
+# 数值 = 近期 main 成功 run 的实测最大耗时 × 3-5 倍余量（跨 run 取 max，防
+# 「首次采样的 run 恰好 skipped」踩坑：function-coverage 首采 skipped 曾误设 15min，
+# 实测 max 17.1min → 已被 15min 超时真取消，修正为 55min）。
+
 jobs:
   # ── 变更检测元 job：分层触发决策（dorny/paths-filter）──
   # core   = 核心功能代码 + 依赖配置
@@ -54,6 +61,7 @@ jobs:
   # ci     = CI 配置本身（改 CI 全量重验）
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
@@ -122,6 +130,7 @@ jobs:
       checks: write
       pull-requests: write   # reviewdog github-pr-review
     runs-on: windows-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -195,6 +204,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -247,6 +257,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -296,6 +307,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -343,6 +355,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -390,6 +403,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -442,6 +456,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -491,6 +506,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 15
     env:
       # Windows runner 默认 cp1252（charmap）：serve.py 启动横幅含 🚀/中文 → UnicodeEncodeError
       # → 内核崩溃 exit 1。PYTHONUTF8=1 强制 UTF-8 模式（Python 3.7+），spawn 子进程继承
@@ -543,6 +559,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 25
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -603,6 +620,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -660,6 +678,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 25
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -720,6 +739,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 30
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -777,6 +797,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -836,6 +857,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 35
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -896,6 +918,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       # 同 integration-frontend：内核 spawn 需 UTF-8（Windows runner cp1252 会 UnicodeEncodeError）
       PYTHONUTF8: "1"
@@ -958,6 +981,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -1050,6 +1074,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: backend
@@ -1114,6 +1139,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       # 仓库文件（ci_cd/check_frontend_coverage.py）是 gate 脚本，必须 checkout 才存在。
@@ -1154,6 +1180,7 @@ jobs:
     permissions:
       contents: read
     runs-on: windows-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
