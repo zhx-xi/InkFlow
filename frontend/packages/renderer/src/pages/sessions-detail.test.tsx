@@ -41,6 +41,7 @@ import {
   restoreSession,
 } from '../api/sessions';
 import { getPlannerSession } from '../api/books';
+import { getRun as _getRun } from '../api/runs';
 import { apiFetch } from '../api/client';
 import { useThemeStore } from '../stores/theme';
 import { useProjectStore, type Project } from '../stores/project';
@@ -59,6 +60,10 @@ vi.mock('../api/sessions', () => ({
 vi.mock('../api/books', () => ({
   getPlannerSession: vi.fn(),
 }));
+// #1029：run 轨迹懒加载（ADR-056 软锚 → getRun）
+vi.mock('../api/runs', () => ({
+  getRun: vi.fn(),
+}));
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return { ...actual, apiFetch: vi.fn() };
@@ -69,9 +74,11 @@ const fetchPlannerSessionsMock = vi.mocked(fetchPlannerSessions);
 const restoreSessionMock = vi.mocked(restoreSession);
 const fetchSessionLogsMock = vi.mocked(fetchSessionLogs);
 const getPlannerSessionMock = vi.mocked(getPlannerSession);
+const getRunMock = vi.mocked(_getRun);
 const apiFetchMock = vi.mocked(apiFetch);
 
 import type { PlannerSessionDto, SessionDto, SessionViewDto } from '../api/sessions';
+import type { AgentRunDto } from '../api/runs';
 
 interface ChatConversationDto {
   conversation_id: string;
@@ -170,6 +177,7 @@ beforeEach(() => {
   restoreSessionMock.mockReset();
   fetchSessionLogsMock.mockReset();
   getPlannerSessionMock.mockReset();
+  getRunMock.mockReset();
   apiFetchMock.mockReset();
 
   fetchSessionsMock.mockResolvedValue({
@@ -399,6 +407,169 @@ describe('#1015 执行会话卡详情弹层（N12/N13，数据源 = sessions 详
     await waitFor(() => {
       expect(screen.queryByTestId('session-detail-dialog')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('#1029 执行会话详情 ↔ agentic 决策轨迹关联（ADR-056，spec §6.1/§6.3 N22-N24）', () => {
+  /**
+   * 契约（ADR-056 决策 A，软锚）：
+   * - session.context['agent_run_id'] 非空 → 弹层追加决策轨迹区块，懒加载
+   *   GET /api/v1/agent/runs/{id}（api/runs.ts getRun）：
+   *   session-detail-trace-<index> 轻量行（步骤序号 + 工具名 + 结果摘要）
+   *   + session-detail-trace-link「查看执行详情」跳 /writing。
+   * - 无该键 = 不渲染区块、不发 run 请求（存量会话降级，维持 #1028 形态）。
+   * - run 加载失败 → session-detail-trace-error 占位，其余部分不崩溃。
+   */
+  const RUN_ID = '9f1c7d20-1a2b-4c3d-8e4f-5a6b7c8d9e0f';
+
+  function makeRunDto(): AgentRunDto {
+    return {
+      id: RUN_ID,
+      project_id: 'p1',
+      chapter_id: null,
+      mode: 'agentic',
+      status: 'completed',
+      steps: [
+        {
+          index: 0,
+          message_content: '我先看大纲',
+          reasoning: '需要先读大纲确认走向',
+          tokens: 12,
+          tool_calls: [
+            {
+              step_index: 0,
+              tool_name: 'read_outline',
+              arguments: {},
+              result: '大纲已读取',
+              is_error: false,
+            },
+          ],
+        },
+        {
+          index: 1,
+          message_content: '写草稿',
+          tool_calls: [
+            {
+              step_index: 1,
+              tool_name: 'save_draft',
+              arguments: {},
+              result: '草稿已保存',
+              is_error: false,
+            },
+          ],
+          tokens: 20,
+        },
+      ],
+      final_content: '正文',
+      draft_id: null,
+      model: 'glm-4',
+      token_usage_total: 32,
+      terminated_by: '',
+      created_at: '2026-08-10T08:10:00Z',
+      updated_at: '2026-08-10T08:20:00Z',
+    };
+  }
+
+  it('N22：context.agent_run_id 非空 → 轨迹区块逐步骤渲染 + 跳转入口', async () => {
+    fetchSessionsMock.mockResolvedValue({
+      items: [
+        makeSession({
+          id: 'ex-anchored-p1',
+          project_id: 'p1',
+          title: '带锚执行',
+          status: 'completed',
+          context: { agent_run_id: RUN_ID },
+        }),
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+    fetchSessionLogsMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 200 });
+    getRunMock.mockResolvedValue(makeRunDto());
+
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findByTestId('session-title-ex-anchored-p1');
+    await user.click(screen.getByTestId('session-title-ex-anchored-p1'));
+
+    await screen.findByTestId('session-detail-dialog');
+    // 懒加载既有 run 端点（runId = context 锚）
+    await waitFor(() => {
+      expect(getRunMock).toHaveBeenCalledWith(RUN_ID);
+    });
+    // 逐步骤轻量行：步骤序号 + 工具名 + 结果摘要
+    const trace0 = await screen.findByTestId('session-detail-trace-0');
+    expect(trace0).toHaveTextContent('read_outline');
+    expect(trace0).toHaveTextContent('大纲已读取');
+    const trace1 = await screen.findByTestId('session-detail-trace-1');
+    expect(trace1).toHaveTextContent('save_draft');
+    expect(trace1).toHaveTextContent('草稿已保存');
+    // 跳转执行详情入口
+    expect(screen.getByTestId('session-detail-trace-link')).toBeInTheDocument();
+  });
+
+  it('N23：存量会话（context 无 agent_run_id）→ 不渲染轨迹区块、不发 run 请求（不回归 #1028）', async () => {
+    fetchSessionLogsMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 200 });
+
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findByTestId('session-title-ex-active-p1');
+    await user.click(screen.getByTestId('session-title-ex-active-p1'));
+
+    await screen.findByTestId('session-detail-dialog');
+    // 元信息 + 日志仍在（#1028 形态）
+    expect(await screen.findByTestId('session-detail-meta-status')).toHaveTextContent('active');
+    // 轨迹区块零渲染 + run 端点零请求 + 无错误提示
+    expect(screen.queryByTestId('session-detail-trace-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-detail-trace-link')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-detail-trace-error')).not.toBeInTheDocument();
+    expect(getRunMock).not.toHaveBeenCalled();
+  });
+
+  it('N24：agent_run_id 存在但 getRun 失败 → trace-error 占位，弹层其余部分不崩溃', async () => {
+    fetchSessionsMock.mockResolvedValue({
+      items: [
+        makeSession({
+          id: 'ex-anchored-p1',
+          project_id: 'p1',
+          title: '带锚执行',
+          status: 'completed',
+          context: { agent_run_id: RUN_ID },
+        }),
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+    fetchSessionLogsMock.mockResolvedValue({
+      items: [
+        {
+          id: 'log-1',
+          session_id: 'ex-anchored-p1',
+          seq: 1,
+          level: 'info',
+          message: '开始执行',
+          payload: {},
+          created_at: '2026-08-10T08:10:00Z',
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 200,
+    });
+    getRunMock.mockRejectedValueOnce(new Error('run gone'));
+
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findByTestId('session-title-ex-anchored-p1');
+    await user.click(screen.getByTestId('session-title-ex-anchored-p1'));
+
+    await screen.findByTestId('session-detail-dialog');
+    expect(await screen.findByTestId('session-detail-trace-error')).toBeInTheDocument();
+    // 其余部分不受影响
+    expect(await screen.findByTestId('session-detail-log-1')).toHaveTextContent('开始执行');
+    expect(screen.queryByTestId('session-detail-error')).not.toBeInTheDocument();
   });
 });
 
