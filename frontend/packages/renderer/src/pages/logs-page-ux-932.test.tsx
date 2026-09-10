@@ -212,7 +212,8 @@ describe('日志页 — #932 行点击详情（S2）', () => {
     await user.click(row);
 
     const detail = screen.getByTestId('log-detail');
-    expect(within(detail).getByTestId('log-detail-timestamp')).toHaveTextContent('2026-09-04T01:02:03.456+08:00');
+    // #1000：detail timestamp 转本地时区（ADR-055 显示本地）；+08:00 基准下原偏移串换算回同一瞬间
+    expect(within(detail).getByTestId('log-detail-timestamp')).toHaveTextContent('2026-09-04 01:02:03');
     expect(within(detail).getByTestId('log-detail-message-key')).toHaveTextContent('log.call.api');
     // message 为插值结果（非空即可）
     expect(within(detail).getByTestId('log-detail-message').textContent).toBeTruthy();
@@ -536,9 +537,10 @@ describe('日志页 — #932 调用链视图（S4）', () => {
 
     const nodes = await screen.findAllByTestId('log-chain-node');
     expect(nodes).toHaveLength(3);
-    expect(nodes[0]).toHaveTextContent('00:01:00');
-    expect(nodes[1]).toHaveTextContent('00:02:00');
-    expect(nodes[2]).toHaveTextContent('00:03:00');
+    // #1000：链节点简式时钟转本地时区（ADR-055）；00:0N:00Z + 08:00 基准 = 08:0N:00
+    expect(nodes[0]).toHaveTextContent('08:01:00');
+    expect(nodes[1]).toHaveTextContent('08:02:00');
+    expect(nodes[2]).toHaveTextContent('08:03:00');
     expect(within(nodes[0]).getByTestId('log-chain-node-duration')).toHaveTextContent('1.3s');
     expect(within(nodes[1]).getByTestId('log-chain-node-duration')).toHaveTextContent('2.6s');
     expect(within(nodes[2]).getByTestId('log-chain-node-duration')).toHaveTextContent('3.9s');

@@ -1,4 +1,7 @@
 # F13: 伏笔管理 (foreshadowing_service) — 功能规格
+
+> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at/resolved_at（get 详情 + 列表「回收于 <本地日期>」标签））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
+>
 > **端**: backend
 
 > **Spec 版本**: 1.1 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019

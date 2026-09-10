@@ -67,6 +67,8 @@ from inkflow.domain.models.session import (
     SessionView,
 )
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TS = datetime(2026, 8, 1, 10, 0, 0)
 
@@ -464,6 +466,10 @@ class TestSessionGet:
         assert result.exit_code == 0
         assert "会话: 第三章续写 (task/active)" in result.output
         assert "日志: 5 条" in result.output
+        # #1000（ADR-055）：开始时间显示本地时区（TS=naive datetime → model_dump(mode='json')
+        # 播种 naive ISO 串 = UTC 存储口径），原始 ISO 不再直出
+        assert local_display("2026-08-01T10:00:00") in result.output
+        assert "2026-08-01T10:00:00" not in result.output
 
 
 class TestSessionUpdate:

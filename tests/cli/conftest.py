@@ -4,6 +4,7 @@
 """
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,6 +13,19 @@ from typer.testing import CliRunner
 import inkflow.core.database as db
 
 runner = CliRunner()
+
+
+def local_display(iso: str) -> str:
+    """ISO → 系统本地时区 'YYYY-MM-DD HH:mm:ss'（#1000 / ADR-055 期望值独立换算）.
+
+    测试侧平行实现：naive 串 = UTC 存储口径（SQLite DateTime 剥 tzinfo，生产
+    API 常态）→ 先补 UTC 再 astimezone()。**不 import 被测 format_local**，
+    避免自引用弱断言；结果与 runner 系统时区无关地恒等于「显示本地」契约值。
+    """
+    parsed = datetime.fromisoformat(iso)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 @pytest.fixture

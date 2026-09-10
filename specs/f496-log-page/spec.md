@@ -59,7 +59,7 @@ items 按 timestamp 降序；字段见 F57 spec §2.2（level/caller_type/caller
 | `log-search-btn` | 查询按钮 | 提交 q/correlation/from/to（page 归 0）并查询 |
 | `log-reset-btn` | 重置按钮 | 全部筛选回默认（tab all/level INFO/项目全部/输入清空）并重查 |
 | `log-list` | 日志列表容器 | — |
-| `log-row` | 单条记录行 | 含：`log-level-badge`（level 文本）、timestamp（本地化 `toLocaleString()`）、caller_type、caller_name、**渲染后 message**、duration_ms（有则显）、error_code（有则显）、correlation_id（有则显，可截断展示） |
+| `log-row` | 单条记录行 | 含：`log-level-badge`（level 文本）、timestamp（**系统本地时区** `'YYYY-MM-DD HH:mm:ss'`，`lib/log-format.formatTimestamp` 本地访问器手拼——勿用 `toLocaleString()`，12/24 小时制与 locale 差异致契约不可测；ADR-055 / #1000）、caller_type、caller_name、**渲染后 message**、duration_ms（有则显）、error_code（有则显）、correlation_id（有则显，可截断展示） |
 | `log-empty` | 空态（total=0） | 文案 `logs.empty` |
 | `log-loading` | 加载态 | 请求进行中 |
 | `log-error` | 错误态 | 含失败信息（errorMessage） |

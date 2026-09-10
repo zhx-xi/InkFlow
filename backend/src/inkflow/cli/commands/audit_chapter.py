@@ -27,6 +27,7 @@ import uuid
 
 import typer
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -170,9 +171,9 @@ def _print_human_report(report: dict) -> None:
 
 
 def _print_human_confirm(data: dict) -> None:
-    """人类可读确认结果（spec §4）：已接受/已拒绝 + confirmed_at 原样透传."""
+    """人类可读确认结果（spec §4）：已接受/已拒绝 + 确认时间显示本地时区."""
     label = "已接受" if data.get("status") == "accepted" else "已拒绝"
-    typer.echo(f"✅ {label} (confirmed_at: {data.get('confirmed_at', '')})")
+    typer.echo(f"✅ {label} (confirmed_at: {format_local(data.get('confirmed_at'))})")
 
 
 def _print_human_history(data: dict) -> None:
@@ -184,10 +185,10 @@ def _print_human_history(data: dict) -> None:
     for log in logs:
         line = (
             f"  {log.get('chapter_title', '')} [{log.get('status', '')}] "
-            f"{log.get('severity_summary', '')} {log.get('created_at', '')}"
+            f"{log.get('severity_summary', '')} {format_local(log.get('created_at'))}"
         )
         if log.get("confirmed_at"):
-            line += f" 确认于 {log['confirmed_at']}"
+            line += f" 确认于 {format_local(log['confirmed_at'])}"
         typer.echo(line)
 
 

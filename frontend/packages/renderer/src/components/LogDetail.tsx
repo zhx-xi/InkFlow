@@ -2,7 +2,7 @@
  * #932 日志详情面板（行展开 / 调用链节点共用；GREEN 拆分组件，900 行护栏）。
  *
  * 契约要点（logs-page-ux-932.test.tsx S2-S4）：
- * - log-detail-timestamp = 原始 ISO 串直出（含时区偏移，勿格式化）；
+ * - log-detail-timestamp = formatTimestamp 本地时区格式化（ADR-055 / #1000；原始 ISO 值走 API 或 --json）；
  * - params 用 JSON.stringify(params, null, 2) 进 <pre>（非 k=v 摘要）；
  * - duration 复用 #930 formatDuration；stack 仅 ERROR 展示；
  * - log-copy-trace-btn / log-copy-correlation-btn → navigator.clipboard.writeText
@@ -16,7 +16,7 @@ import { Copy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { LogRecordDto } from '../api/logs';
 import { useI18n } from '../i18n/useI18n';
-import { formatDuration } from '../lib/log-format';
+import { formatDuration, formatTimestamp } from '../lib/log-format';
 import { useToastStore } from '../stores/toast';
 
 interface LogDetailProps {
@@ -67,7 +67,7 @@ export function LogDetail({ record, message, onChainOnly, onChainView }: LogDeta
       <div className="grid grid-cols-1 gap-x-5 gap-y-2.5 md:grid-cols-[150px_minmax(0,1fr)]">
         <Field label={t('logs.detail.timestamp')}>
           <span data-testid="log-detail-timestamp" className="break-all font-mono text-[12px] text-ink">
-            {record.timestamp}
+            {formatTimestamp(record.timestamp)}
           </span>
         </Field>
         <Field label={t('logs.detail.messageKey')}>
