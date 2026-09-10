@@ -21,9 +21,14 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apiFetch, ApiError, KernelOfflineError, type ApiConfig } from '../client';
+import {
+  MAX_LAUNCH_ATTEMPTS,
+  READY_TIMEOUT_MS,
+  launchWithRetry,
+  probeFreePort,
+} from '../../test/kernel-harness';
 
 const TEST_TOKEN = 'test-integration-token-abc123';
-const READY_TIMEOUT_MS = 60_000;
 const READY_PREFIX = 'INKFLOW_READY ';
 
 interface ReadyPayload {
@@ -80,15 +85,21 @@ function killKernel(): void {
   child = null;
 }
 
-/** 启动真实内核，等待 INKFLOW_READY 交付行并解析 {port, token} */
-function startKernel(): Promise<ReadyPayload> {
+/** 单次尝试：spawn 真实内核（显式用端口预检结果，不再用 --port 0 盲选），等待 READY 行 */
+function spawnKernelOnce(port: number): Promise<ReadyPayload> {
+  // 幂等清理上一次残留内核（child === null 时直接 return），防残留占用预检端口
+  killKernel();
   const python = resolvePython();
-  child = spawn(python, ['-m', 'inkflow', 'serve', '--port', '0', '--token', TEST_TOKEN], {
-    cwd: join(repoRoot, 'backend'),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-    env: { ...process.env, PYTHONUNBUFFERED: '1' },
-  });
+  child = spawn(
+    python,
+    ['-m', 'inkflow', 'serve', '--port', String(port), '--token', TEST_TOKEN],
+    {
+      cwd: join(repoRoot, 'backend'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+    },
+  );
 
   const stdout = child.stdout;
   const stderr = child.stderr;
@@ -133,6 +144,19 @@ function startKernel(): Promise<ReadyPayload> {
   });
 }
 
+/** 启动真实内核：端口预检 + 失败重启（#1068），返回 INKFLOW_READY 交付的 {port, token} */
+async function startKernel(): Promise<ReadyPayload> {
+  const { ready } = await launchWithRetry({
+    attempts: MAX_LAUNCH_ATTEMPTS,
+    spawnOnce: spawnKernelOnce,
+    probe: probeFreePort,
+    onAttemptFailed: (a) => {
+      console.warn(`内核第 ${a.attempt} 次启动失败：${a.error?.message ?? '未知错误'}`);
+    },
+  });
+  return ready;
+}
+
 /** 临时替换 window.INKFLOW_API（getApiConfig 每次实时读取），用后恢复 */
 async function withApiConfig(config: ApiConfig, fn: () => Promise<unknown>): Promise<unknown> {
   const original = window.INKFLOW_API;
@@ -150,7 +174,7 @@ beforeAll(async () => {
   const ready = await startKernel();
   baseURL = `http://127.0.0.1:${ready.port}`;
   window.INKFLOW_API = { baseURL, token: ready.token };
-}, READY_TIMEOUT_MS + 15_000);
+}, READY_TIMEOUT_MS * MAX_LAUNCH_ATTEMPTS + 15_000);
 
 afterAll(() => {
   killKernel();
