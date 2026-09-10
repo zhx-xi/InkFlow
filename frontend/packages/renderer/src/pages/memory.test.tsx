@@ -490,6 +490,11 @@ describe('记忆页 — 挂载加载与语义总结展示', () => {
 
     expect(screen.getByTestId('memory-summary-content')).toHaveTextContent(summaryContent);
     expect(screen.getByTestId('memory-summary-meta')).toHaveTextContent('deepseek-v4-flash');
+    // #1069（ADR-055）：summary.updated_at 本地显示（'2026-08-10T08:00:00Z' → +08:00 16:00:00）
+    expect(screen.getByTestId('memory-summary-meta')).toHaveTextContent('2026-08-10 16:00:00');
+    expect(screen.getByTestId('memory-summary-meta').textContent).not.toContain(
+      '2026-08-10T08:00:00Z',
+    );
   });
 
   it('用户级总结存在 → memory-summary-user 渲染', async () => {

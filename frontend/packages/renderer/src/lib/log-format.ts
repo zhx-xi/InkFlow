@@ -20,19 +20,33 @@ export function interpolateTemplate(template: string, params?: Record<string, un
 /**
  * timestamp 展示：ISO → 系统本地时区 'YYYY-MM-DD HH:mm:ss'（ADR-055 / #1000）；解析失败原样直出。
  *
- * 前提（审查 #1063 MINOR-5）：消费面 `/api/v1/logs` 的 timestamp 恒带 `Z` 后缀
- * （JSONL 存储 + pydantic model_dump(mode="json")，round-trip 实证）→ `new Date()`
- * 按 UTC 解析后转本地正确。JS 规范下**无偏移** date-time 串按本地解释——若将来
- * 喂入 naive UTC 串（实体端点的 SQLite 常态）会原值显示，接入前需先补 'Z'。
+ * 存储/传输层（DB/API/MCP/`--json`）一律 UTC，显示层统一换算系统本地时区。
+ * naive date-time 串 = UTC 存储口径（ADR-055 后续范围收口 #1069）：实体端点经
+ * SQLite `DateTime` 剥 tzinfo 后返回 naive 串，函数内先归一补 'Z' 再换算——与 CLI
+ * `inkflow.cli._time.format_local` 的 naive 处理同款语义（naive→按 UTC 补 tzinfo→本地）。
  */
 export function formatTimestamp(iso: string): string {
-  const parsed = new Date(iso);
+  const parsed = new Date(normalizeNaiveUtc(iso));
   if (Number.isNaN(parsed.getTime())) return iso;
   const pad = (value: number) => String(value).padStart(2, '0');
   return (
     `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ` +
     `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(parsed.getSeconds())}`
   );
+}
+
+/**
+ * 判定「无时区偏移的 date-time 串」并补 'Z' 归一为 UTC（ADR-055 存储口径）。
+ *
+ * JS 规范不一致：无偏移 date-time 串 `new Date()` 按**本地**解释，纯 date `YYYY-MM-DD`
+ * 按 **UTC** 解释。故匹配到「date-time 且无偏移标记」时先补 'Z' 再解析（空格分隔
+ * `str(datetime)` 形态换 'T'；带毫秒等尾缀同样归一）。纯 date（无时间部分）不加 Z——
+ * JS 对其本就是 UTC 语义，加 Z 反而多余。
+ */
+function normalizeNaiveUtc(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(iso)) return iso;
+  if (/(?:[Zz]|[+-]\d{2}:?\d{2})$/.test(iso)) return iso;
+  return `${iso.replace(' ', 'T')}Z`;
 }
 
 /** 链节点简式时钟：本地 'HH:mm:ss'（#1000：继承 formatTimestamp；契约 '2026-09-04T00:01:00Z' → '08:01:00'）。 */

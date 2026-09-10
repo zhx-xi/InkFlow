@@ -32,6 +32,7 @@ import {
 } from '../components/SessionDetailDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
+import { formatTimestamp } from '../lib/log-format';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
@@ -644,7 +645,7 @@ export function SessionsPage() {
                       data-testid={`chat-conversation-updated-${item.conv.conversation_id}`}
                       className="mt-2 block text-[11px] text-ink-3"
                     >
-                      {item.conv.updated_at}
+                      {formatTimestamp(item.conv.updated_at)}
                     </span>
                   </>
                 )}

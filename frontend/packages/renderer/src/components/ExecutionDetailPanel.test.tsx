@@ -139,6 +139,12 @@ describe('ExecutionDetailPanel — 历史列表（#586）', () => {
     // 契约：渲染历史列表项（当前实现无列表 → 断言 FAIL）
     expect(await screen.findByTestId('exec-history-item-e1')).toBeInTheDocument();
     expect(screen.queryByTestId('exec-detail-empty')).not.toBeInTheDocument();
+    // #1069（ADR-055）：created_at 经 formatTimestamp 本地显示（TZ 钉 +08:00），
+    // 原始 ISO 串不再直出——RED：当前直出 '2026-08-22T10:00:00Z'
+    expect(screen.getByTestId('exec-history-item-e1')).toHaveTextContent('2026-08-22 18:00:00');
+    expect(screen.getByTestId('exec-history-item-e1').textContent).not.toContain(
+      '2026-08-22T10:00:00Z',
+    );
   });
 
   it('守护：无 executionId 且无 projectId → exec-detail-empty 空态，不发起请求', () => {
@@ -274,6 +280,11 @@ describe('ExecutionDetailPanel — 统一历史列表（#599 D12-A 双入口统�
     expect(await screen.findByTestId('exec-history-item-e1')).toBeInTheDocument();
     // agentic 历史项（新）
     expect(await screen.findByTestId('exec-history-run-r1')).toBeInTheDocument();
+    // #1069（ADR-055）：run 项 created_at 本地显示（'2026-08-23T10:00:00Z' → +08:00 18:00:00）
+    expect(screen.getByTestId('exec-history-run-r1')).toHaveTextContent('2026-08-23 18:00:00');
+    expect(screen.getByTestId('exec-history-run-r1').textContent).not.toContain(
+      '2026-08-23T10:00:00Z',
+    );
     expect(screen.queryByTestId('exec-detail-empty')).not.toBeInTheDocument();
   });
 

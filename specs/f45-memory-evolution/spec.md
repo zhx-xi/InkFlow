@@ -1,4 +1,5 @@
 # F45: 记忆系统 AI 总结演进（memory-evolution）功能规格
+> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
 > **端**: backend
 
 **Spec 版本**: 1.1（Q1=B/Q2=B/Q3=A 拍板固化）

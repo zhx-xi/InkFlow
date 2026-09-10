@@ -1,4 +1,5 @@
 # 统一 AI 执行工作流视图 —— 链式静态 + agentic 动态双时间线（#599）
+> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
 > **端**: frontend
 
 > **Spec（0.12.0，2026-08-23）**：将「续写/生成/全自动/对话」等 AI 动作**全部展示到同一个 AI 执行详情视图**，用**统一执行模型**渲染两种形态——

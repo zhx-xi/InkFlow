@@ -566,6 +566,11 @@ describe('会话页 — AI 对话卡（统一目录内，含归档/恢复/删除
     expect(cardB).toBeTruthy();
     expect(within(cardA as HTMLElement).getByText('3 条')).toBeInTheDocument();
     expect(within(cardB as HTMLElement).getByText('5 条')).toBeInTheDocument();
+    // #1069（ADR-055）：conv.updated_at 经 formatTimestamp 本地显示
+    // （'2026-08-22T10:00:00Z' → +08:00 → 18:00:00），原始 ISO 串不再直出
+    const updatedB = screen.getByTestId('chat-conversation-updated-conv-b');
+    expect(updatedB).toHaveTextContent('2026-08-22 18:00:00');
+    expect(updatedB.textContent).not.toContain('2026-08-22T10:00:00Z');
   });
 });
 
