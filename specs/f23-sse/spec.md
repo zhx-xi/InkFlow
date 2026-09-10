@@ -1,8 +1,8 @@
 # F23: SSE 流式输出 (sse_stream) — 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-02（v1.2 增量 2026-09-10）| **依据**: PRD v2.1 §6.3 P1-12, Constitution P1-P6, ADR-012/015/018/019(v2)/021、**ADR-053（数据面变更统一推送）**
-> **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C（统一端点 `POST /api/v1/writing/stream` + mode 判别联合 DTO）/ Q2=选项 A（流式直通 + done 帧报告，不自动重试）/ Q3=修改（CLI **默认**流式输出，消费 service 流式方法——非加 `--stream` 标志）。**v1.2（2026-09-10，issue #992 设计单）— 新增 §15「数据面变更统一推送」（ADR-053 实现规范：事件信封 `DataChangeEvent` / `EventBus` / `GET /api/v1/events/stream` 订阅端点 / 失效语义矩阵 / #973-#989 ad-hoc 重拉收编 / 排期拆解）；§1-§14 内容不变。**
+> **Spec 版本**: 1.3 | **日期**: 2026-08-02（v1.2 增量 2026-09-10 / v1.3 实测修订 2026-09-10）| **依据**: PRD v2.1 §6.3 P1-12, Constitution P1-P6, ADR-012/015/018/019(v2)/021、**ADR-053（数据面变更统一推送）**
+> **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C（统一端点 `POST /api/v1/writing/stream` + mode 判别联合 DTO）/ Q2=选项 A（流式直通 + done 帧报告，不自动重试）/ Q3=修改（CLI **默认**流式输出，消费 service 流式方法——非加 `--stream` 标志）。**v1.2（2026-09-10，issue #992 设计单）— 新增 §15「数据面变更统一推送」（ADR-053 实现规范：事件信封 `DataChangeEvent` / `EventBus` / `GET /api/v1/events/stream` 订阅端点 / 失效语义矩阵 / #973-#989 ad-hoc 重拉收编 / 排期拆解）；§1-§14 内容不变。** **v1.3（2026-09-10，A1/A2 实施期实测修订）— ① §15.5.1 全局域示例帧去掉 `"project_id":null`（与同节不变量 3「省略该键」自相矛盾，实测修正）；② §15.2.2 补队列容量 `MAX_QUEUE_SIZE=100` + `subscribe()` 返回标注收窄为 `AsyncGenerator` + `source` ContextVar 位置与接线约束；③ §15.3.3 补 domain→infra 局部 import 说明；④ §15.13 修正「A1 ∥ A2 可并行」为「可并行开发，**A1 必须先合并**」，并补**两道契约门禁的完整清单**（快照漂移 / 前端类型漂移 / 前端调用面）+ 推论「改契约的 PR 必须自带两个同步产物（快照 + `openapi.d.ts`）」；⑤ 排期表补 A1 交付面含快照刷新 **+ `openapi.d.ts` 重生**（#1091 首轮 CI 因漏重生 d.ts 而 `lint-frontend` 红，实测修正）。**
 > **所属阶段**: 0.3.0 里程碑（**提前**，原 0.5.0——GUI 写作流式渲染的依赖项，ADR-019 v2；估算 **3-4 人天**（Q1=C 联合 DTO +0.5、Q3 CLI 默认流式 +0.5-1；v1.0 的 2-3 已含基础））
 > **关联 Issues**: [#50](https://github.com/zhx-xi/InkFlow/issues/50)
 > **依赖**: F3 ✅（WritingService 三原语 + DTO）；F5 ✅（**LLMClientProtocol.chat_stream 已实现**——`AsyncGenerator[StreamEvent]` 逐 token，基础设施层 LangChain astream 就绪）；F1 ✅（项目校验）；F2 ✅（章节校验）；F19（GUI 消费方，**反向依赖**——F23 端点先行，GUI 侧待 F19 落地后消费）
@@ -718,7 +718,11 @@ def get_event_bus() -> EventBus: ...
 **设计要点**：
 - **`publish` 必须非阻塞且绝不抛异常**——事件是失效信号，不是事务保证（ADR-053 影响节）。发布方（service 写路径）不因无订阅者/订阅者异常而受影响。
 - **队列满时丢弃最旧事件**（不背压发布方）——GUI 失效信号可丢（下一次写入或窗口期重拉会收敛），写入正确性不可受影响。
+  - **队列容量**：模块常量 `MAX_QUEUE_SIZE = 100`（A1 实施期确定，2026-09-10；测试直接引用该常量，不引入可配置面）。
+- **`subscribe()` 返回标注 = `AsyncGenerator[DataChangeEvent, None]`**（非裸 `AsyncIterator`）——§15.4.2 要求生成器可 `aclose()`，`AsyncIterator` 标注下 mypy 报 `has no attribute "aclose"`。`AsyncGenerator` 是其子类型，契约语义不变（A1 实施期修正，2026-09-10）。
 - **单例作用域 = 进程内**：GUI 经 HTTP/SSE 连接内核进程订阅；CLI/agent 在同一进程内直接 publish（ADR-021 内核进程化）。
+- **`source` 解析链的 ContextVar 位置 = `domain/services/_data_change.py`**（`set_event_source` / `reset_event_source`）——因**读取方 `publish_change` 在 domain，而 domain 不能 import api**（AGENTS §4.2）。HTTP 中间件（批次 A）须**从该模块导入**写入。
+  - ⚠️ **接线约束**：若批次 A 中间件未接线，该 contextvar 分支为**死代码**——A3 必须补一个「中间件写入 → service 读到 source」的集成断言。
 
 #### 15.2.3 作用域分类（**实测关键约束**，决定 `project_id` 是否可空）
 
@@ -806,6 +810,8 @@ async def publish_change(
 3. **`delete` 类在删除成功后发布**（此时实体已不在，GUI 收到 event 后 refetch 列表自然移除该项）
 4. **不发布高频噪声写**——见 §15.6.4 过滤规则
 
+> **依赖方向说明（A1 实施期确定，2026-09-10）**：`publish_change` 需取总线（实现于 `infrastructure/events/`），但本函数在 `domain/services/`——采用**函数内局部 import**（`from inkflow.infrastructure.events import get_event_bus`），**模块顶层保持 domain 零 infra/框架依赖**（AGENTS §4.2；镜像 `agent_service` 等存量形态）。是否改由 domain port 抽象留待 A3/评审裁定（当前 YAGNI）。
+
 #### 15.3.4 首批覆盖域（按 issue 指定 + 失效矩阵反推）
 
 **批次 A（首批，8 个域，覆盖三次爆点 + 同构高危面）**：
@@ -860,7 +866,7 @@ GET /api/v1/events/stream
 → 200 text/event-stream
 
 data: {"domain":"map","op":"create","resource_id":"7","entity_id":"7","project_id":"3f2b...","source":"cli","traceparent":"00-4bf9...-a1c2...-01","occurred_at":"2026-09-10T12:00:01Z"}
-data: {"domain":"agent_template","op":"update","resource_id":"2","entity_id":"2","project_id":null,"source":"gui","occurred_at":"2026-09-10T12:00:03Z"}
+data: {"domain":"agent_template","op":"update","resource_id":"2","entity_id":"2","source":"gui","occurred_at":"2026-09-10T12:00:03Z"}
 ```
 
 **帧编码（`_encode_change_frame`）**：
@@ -1250,8 +1256,8 @@ frontend/packages/renderer/src/
 | 批次 | 范围 | 规模 | 依赖 | 可并行 |
 |------|------|------|------|--------|
 | **批 0（本设计单）** | spec §15 + ADR-053 v1.1 | 文档 only，**1 PR** | — | — |
-| **批 A1：后端基建** | 信封 dataclass + EventBus + `publish_change` + `GET /events/stream` + 帧编码 + 单测 | **1 PR**（≈ 后端 6-8 文件新增 + 3 测试） | 批 0 | 与 A2 前端可并行（契约已冻结于本章） |
-| **批 A2：前端消费基建** | `api/event-stream.ts` + 订阅 hook + debounce + `affectsCurrent` + 前端单测 | **1 PR**（≈ 前端 2 新增 + 2 测试） | 批 0（契约冻结） | 与 A1 并行 |
+| **批 A1：后端基建** | 信封 dataclass + EventBus + `publish_change` + `GET /events/stream` + 帧编码 + 单测 + **刷新 `ci_cd/openapi_snapshot.json` + 重生 `api/schema/openapi.d.ts`** | **1 PR**（≈ 后端 6-8 文件新增 + 3 测试） | 批 0 | 与 A2 **可并行开发，但 A1 必须先合并**（见下方「🔴 契约门禁硬依赖」） |
+| **批 A2：前端消费基建** | `api/event-stream.ts` + 订阅 hook + debounce + `affectsCurrent` + 前端单测 | **1 PR**（≈ 前端 2 新增 + 2 测试） | A1 已合并 + 本批 rebase | 与 A1 并行**开发**；**合并须待 A1 先入** |
 | **批 A3：批次 A 域接入** | 7 域 service 发布 + source 中间件 + 页面订阅注册 | **1-2 PR**（7 域 × 数个写方法 + 页面接入） | A1 + A2 | 分域可并行（建议 map/template 先，因对应爆点） |
 | **批 A4：E2E + #973 补丁收编** | E2E 跨界面可见性场景 + 补丁注释标注/删除评估 | **1 PR** | A3 | 串行（依赖 A3） |
 | **批 B：批次 B 域** | 15 域补齐 | **2-3 PR**（按域分组） | A3（复用基建） | 组间可并行 |
@@ -1260,7 +1266,24 @@ frontend/packages/renderer/src/
 
 **里程碑归属**：**挂 0.14.0**（与 issue #992 一致的 milestone 18）——批 0 + A1 + A2 为本迭代目标；A3/A4 + 批 B 视迭代余量顺延（**不写完成时间**，仅挂 milestone，遵循用户偏好）。
 
-**并行度建议**：A1 ∥ A2（契约已冻结）→ A3（A1+A2 完成后）→ A4 → 批 B。**峰值并行 2**（低）。
+**并行度建议**：A1 ∥ A2（**可并行开发**）→ **A1 先 merge**（含快照 + d.ts 两个同步产物）→ A2 rebase（无需自己重生 d.ts）→ A3（A1+A2 完成后）→ A4 → 批 B。**峰值并行 2**（低）。
+
+> **🔴 契约门禁硬依赖（A1/A2 实施期实测，#1091 CI 实证 2026-09-10）**：仓库对「后端契约 ↔ 前端消费面」有**两道互相独立**的门禁，均要求**改契约的那个 PR 自己带上全部同步产物**：
+>
+> | 门禁 | 位置 | 检查 | 产物 |
+> |------|------|------|------|
+> | **M1 快照漂移** | `backend/tests/unit/test_openapi_contract.py` | 后端 schema ↔ `ci_cd/openapi_snapshot.json` | `uv run python ../ci_cd/export_openapi.py`（cwd=backend） |
+> | **前端类型漂移** | CI `lint-frontend` job | `pnpm gen:api` 后 `git diff --exit-code -- api/schema/openapi.d.ts` | `pnpm gen:api`（cwd=`frontend/packages/renderer`） |
+> | **前端调用面契约** | `src/api/__contract__/contract.test.ts` | 前端 `apiFetch` 调用面 ⊆ 快照路径 | 端点须**先存在于快照** |
+>
+> **推论（两条，缺一即 CI 红）**：
+> 1. **A1（后端基建）必须自带两个同步产物**：刷新 `ci_cd/openapi_snapshot.json` **且** 重生 `frontend/packages/renderer/src/api/schema/openapi.d.ts`。
+>    - ⚠️ **易漏点**：`openapi.d.ts` 在 `frontend/` 下，写后端的人**天然想不到**要重生它；漏了 → `lint-frontend` 红（#1091 首轮 CI 实证）。
+> 2. **A2（前端消费基建）必须先有 A1 合并**：A2 的 `api/event-stream.ts` 调用 `GET /api/v1/events/stream`，`contract.test.ts` 要求该路径**已在快照中**（A1 未合并时快照没有 → 红）。
+>
+> **禁止**为让某一批先绿而手改快照 / 手改生成的 d.ts / 删改契约测试——三者都是生成物或门禁本体，绕过等同伪造契约。
+>
+> **「A1 ∥ A2 可并行」的准确含义**：仅**开发**可并行；**合并必须 A1 先**，A2 随后 rebase（rebase 后 A1 的快照与 d.ts 已在 main，A2 无需自己重生 d.ts）。
 
 ### 15.14 关键决策记录（本章）
 

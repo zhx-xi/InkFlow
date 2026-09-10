@@ -2,6 +2,7 @@
 
 from inkflow.api.routers.audit import router as audit_router
 from inkflow.api.routers.context import router as context_router
+from inkflow.api.routers.events import router as events_router
 from inkflow.api.routers.extractions import router as extractions_router
 from inkflow.api.routers.foreshadowings import router as foreshadowings_router
 from inkflow.api.routers.sessions import router as sessions_router
@@ -10,6 +11,7 @@ from inkflow.api.routers.timeline import router as timeline_router
 __all__ = [
     "audit_router",
     "context_router",
+    "events_router",
     "extractions_router",
     "foreshadowings_router",
     "sessions_router",

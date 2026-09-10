@@ -9522,6 +9522,54 @@
         ]
       }
     },
+    "/api/v1/events/stream": {
+      "get": {
+        "description": "订阅内核数据面变更事件（长驻 SSE，spec §15.4.1）。\n\n查询参数 `project_id`：只接收该项目的项目作用域事件 + 全部全局域事件；\n缺省 = 接收全部。",
+        "operationId": "stream_events_api_v1_events_stream_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Events",
+        "tags": [
+          "事件"
+        ]
+      }
+    },
     "/api/v1/extract": {
       "post": {
         "description": "统一提取（spec §3.2）— 6 种类型分发 + 增量判定 + 可选 RAG 索引。\n\n请求体即 ExtractionRequest（DTO 自带校验: text/chapter_ids 互斥、超限、\n非法 UUID/type → Pydantic 422）；业务校验（类型不匹配、章节不存在/跨项目、\n风格输入约束）由服务层抛错误子类 → 422。",
