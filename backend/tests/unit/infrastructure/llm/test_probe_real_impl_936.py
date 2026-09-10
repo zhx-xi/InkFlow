@@ -477,10 +477,12 @@ class TestHttpClientPutCoverage:
             reused=True,
         )
         real_client = httpx.AsyncClient
+        # 传入 MockTransport 的同时透传其余构造 kwargs（token/timeout 等）
         with patch(
             "inkflow.infrastructure.http.client.httpx.AsyncClient",
             side_effect=lambda **kw: real_client(
-                transport=httpx.MockTransport(_handler), **{k: v for k, v in kw.items() if k != "transport"}
+                transport=httpx.MockTransport(_handler),
+                **{k: v for k, v in kw.items() if k != "transport"},
             ),
         ):
             async with InkFlowHTTPClient(handle) as client:
