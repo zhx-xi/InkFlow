@@ -43,6 +43,7 @@ class ChapterORM(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
     word_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     order_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    writing_requirements: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_history: Mapped[list] = mapped_column(
         LenientJSON(fallback=[]), nullable=False, default=list
     )

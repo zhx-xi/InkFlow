@@ -412,6 +412,8 @@ class Chapter(BaseModel):
     status: ChapterStatus = ChapterStatus.DRAFT
     word_count: int = 0
     order_index: float = 0.0
+    writing_requirements: str | None = None
+    """章级写作要求（#1017）：None=继承项目 config.writing_style；非空=本章独立覆盖。"""
     status_history: list[StatusHistoryEntry] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -446,6 +448,7 @@ class ChapterUpdate(BaseModel):
     content: str | None = None
     status: ChapterStatus | None = None
     order_index: float | None = None
+    writing_requirements: str | None = None
 
     @field_validator("title")
     @classmethod

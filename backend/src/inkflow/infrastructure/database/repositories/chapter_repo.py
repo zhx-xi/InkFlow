@@ -48,6 +48,7 @@ def _chapter_orm_to_domain(orm: ChapterORM) -> Chapter:
         status=ChapterStatus(orm.status),
         word_count=orm.word_count,
         order_index=orm.order_index,
+        writing_requirements=orm.writing_requirements,
         status_history=[StatusHistoryEntry(**e) for e in (orm.status_history or [])],
         created_at=orm.created_at,
         updated_at=orm.updated_at,
@@ -156,6 +157,7 @@ class SQLiteChapterRepository:
             status=chapter.status.value,
             word_count=wc,
             order_index=chapter.order_index,
+            writing_requirements=chapter.writing_requirements,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -220,6 +222,7 @@ class SQLiteChapterRepository:
                 status=chapter.status.value,
                 word_count=wc,
                 order_index=chapter.order_index,
+                writing_requirements=chapter.writing_requirements,
                 volume_id=(chapter.volume_id.int if chapter.volume_id else None),
                 status_history=history,
                 updated_at=_utcnow(),

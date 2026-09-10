@@ -339,3 +339,44 @@ class TestCharacterGroupMembersMigration:
             ensure_character_group_members_migration(conn)
             assert "group_id" not in _columns(conn, "characters")
         engine.dispose()
+
+
+class TestChaptersWritingRequirementsColumn:
+    """#1017 ensure_chapters_writing_requirements_column：无表 no-op / 旧库补列 / 新库幂等。"""
+
+    def test_missing_table_noop(self, tmp_path) -> None:
+        from inkflow.core.database import ensure_chapters_writing_requirements_column
+
+        _missing_table_noop(tmp_path, ensure_chapters_writing_requirements_column, "w1.db")
+
+    def test_old_schema_adds_column(self, tmp_path) -> None:
+        from inkflow.core.database import ensure_chapters_writing_requirements_column
+
+        _old_schema_adds_column(
+            tmp_path,
+            ensure_chapters_writing_requirements_column,
+            "w2.db",
+            "chapters",
+            "CREATE TABLE chapters (id INTEGER PRIMARY KEY AUTOINCREMENT)",
+            "writing_requirements",
+        )
+
+    def test_existing_rows_keep_null_inherit(self, tmp_path) -> None:
+        """存量行补列后为 NULL = 继承项目级（零行为变化，spec f2-chapter §2.3）。"""
+        from inkflow.core.database import ensure_chapters_writing_requirements_column
+
+        db = tmp_path / "w3.db"
+        engine = create_engine(f"sqlite:///{db}")
+        with engine.begin() as conn:
+            conn.execute(
+                text("CREATE TABLE chapters (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)")
+            )
+            conn.execute(text("INSERT INTO chapters (title) VALUES ('旧章')"))
+        with engine.connect() as conn:
+            ensure_chapters_writing_requirements_column(conn)
+            row = conn.execute(
+                text("SELECT writing_requirements FROM chapters WHERE title = '旧章'")
+            ).fetchone()
+            assert row is not None
+            assert row[0] is None
+        engine.dispose()

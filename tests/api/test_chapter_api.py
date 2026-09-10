@@ -82,6 +82,49 @@ async def test_chapter_lifecycle(db_session, sample_project, override_get_db):
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
+async def test_patch_chapter_writing_requirements_api(db_session, sample_project, override_get_db):
+    """#1017：PATCH 章级写作要求 → 回读；只传该字段不影响 content/word_count；null 清除覆盖."""
+    from inkflow.api.app import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            f"/api/v1/projects/{sample_project.id}/chapters",
+            json={"title": "写作要求章", "content": "你好abc"},
+        )
+        assert resp.status_code == 201
+        created = resp.json()
+        chapter_id = created["id"]
+        # 新建缺省 = null（继承项目级）
+        assert created["writing_requirements"] is None
+
+        resp = await client.patch(
+            f"/api/v1/chapters/{chapter_id}",
+            json={"writing_requirements": "本章偏武侠，动作描写见长"},
+        )
+        assert resp.status_code == 200
+        patched = resp.json()
+        assert patched["writing_requirements"] == "本章偏武侠，动作描写见长"
+        # 只传该字段 → 正文/字数不动
+        assert patched["content"] == "你好abc"
+        assert patched["word_count"] == created["word_count"]
+
+        # 列表/详情回读带上该字段
+        resp = await client.get(f"/api/v1/chapters/{chapter_id}")
+        assert resp.status_code == 200
+        assert resp.json()["writing_requirements"] == "本章偏武侠，动作描写见长"
+
+        # 显式 null → 清除覆盖（回继承）
+        resp = await client.patch(
+            f"/api/v1/chapters/{chapter_id}",
+            json={"writing_requirements": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["writing_requirements"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.chapter
 async def test_move_chapter_api(db_session, sample_project, override_get_db):
     """跨卷移动 API."""
     from inkflow.api.app import app
