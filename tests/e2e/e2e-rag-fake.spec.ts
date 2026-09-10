@@ -224,7 +224,8 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
     const name = `RAG-FAKE-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
-    const created = await apiJson(kernel, 'POST', '/api/v1/provider-configs', {
+    // #936 C：key 在本步之后才 POST → 探测门禁必拒；显式 force=true 跳过
+    const created = await apiJson(kernel, 'POST', '/api/v1/provider-configs?force=true', {
       name: 'e2e-rag-fake',
       base_url: `http://127.0.0.1:${fake.port}/v1`,
       models: [{ id: 'e2e-embed-test', type: 'embedding' }],

@@ -73,14 +73,17 @@ export async function ensureModelConfigured(kernel: KernelInfoLike): Promise<unk
     const models = row.models ?? [];
     const hasChat = models.some((m) => m.type === 'chat');
     if (!hasChat) {
-      // PATCH models 为整体替换语义（F3 契约）→ 携带既有条目 + 新 chat 条目
-      await apiJson(kernel, 'PATCH', `/api/v1/provider-configs/${row.id}`, {
+      // PATCH models 为整体替换语义（F3 契约）→ 携带既有条目 + 新 chat 条目。
+      // #936 C：此时尚未存 key（key 在第 3 步才 POST）→ 探测门禁必 422；
+      // 显式 force=true 跳过（E2E 桩环境无真实凭据，门禁逃生门语义）。
+      await apiJson(kernel, 'PATCH', `/api/v1/provider-configs/${row.id}?force=true`, {
         models: [...models, { id: CHAT_MODEL_ID, type: 'chat', roles: [] }],
       });
     }
   } else {
     // 兜底：无内置行（seed 未跑）→ 显式创建 provider + chat 模型
-    await apiJson(kernel, 'POST', '/api/v1/provider-configs', {
+    // #936 C：同上，未存 key → force=true 跳过探测门禁
+    await apiJson(kernel, 'POST', '/api/v1/provider-configs?force=true', {
       name: PROVIDER_NAME,
       base_url: 'https://api.deepseek.com/v1',
       models: [{ id: CHAT_MODEL_ID, type: 'chat', roles: [] }],

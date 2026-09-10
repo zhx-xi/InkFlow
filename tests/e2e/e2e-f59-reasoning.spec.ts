@@ -301,7 +301,9 @@ async function preseedKernel(
     const items = (listing.data as { items: Array<{ id: number; name: string }> }).items ?? [];
     const row = items.find((p) => p.name === PROVIDER_NAME);
     expect(row, `内置 provider「${PROVIDER_NAME}」应存在`).toBeTruthy();
-    const patched = await apiJson(k, 'PATCH', `/api/v1/provider-configs/${(row as { id: number }).id}`, {
+    // #936 C：探测门禁会对新增/改动条目发真实探测——桩环境不可靠（base_url 指向
+    // 临时 fake serve），显式 force=true 跳过，保持预置语义「只落数据不验证连通」。
+    const patched = await apiJson(k, 'PATCH', `/api/v1/provider-configs/${(row as { id: number }).id}?force=true`, {
       base_url: `http://127.0.0.1:${fakePort}/v1`,
       models: [{ id: MODEL_ID, type: 'chat', supports_reasoning: supportsReasoning }],
     });
