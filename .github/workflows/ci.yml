@@ -500,8 +500,10 @@ jobs:
 
   # ── Frontend integration: renderer API client ↔ 真实内核往返（spec §4.7 集成层）──
   integration-frontend:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    # #936：needs 收窄为 [changes]（本 job steps 自包含：自装 backend/frontend 依赖 +
+    # 自建内核 + 真跑集成）；原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如
+    # unit-frontend 5s 超时）→ 本 job 被 needs 语义静默 skip → 前端集成验证消失。
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -614,8 +616,10 @@ jobs:
         run: pnpm --filter inkflow-electron test:e2e e2e-isolation --workers=2
 
   e2e-frontend-projects:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    # #936：needs 收窄为 [changes]（steps 自包含：自装依赖 + 自 build + 真跑 E2E）；
+    # 原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如 unit-frontend 5s 超时）
+    # → 本 job 被 needs 语义静默 skip → 页面级 E2E 验证消失（#936 实测）。
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -672,8 +676,10 @@ jobs:
         run: pnpm --filter inkflow-electron test:e2e e2e-projects
 
   e2e-frontend-writing:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    # #936：needs 收窄为 [changes]（steps 自包含：自装依赖 + 自 build + 真跑 E2E）；
+    # 原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如 unit-frontend 5s 超时）
+    # → 本 job 被 needs 语义静默 skip → 页面级 E2E 验证消失（#936 实测）。
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -733,8 +739,10 @@ jobs:
         run: pnpm --filter inkflow-electron test:e2e e2e-writing e2e-audit e2e-writer-chat e2e-f59-reasoning --retries=1
 
   e2e-frontend-library:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    # #936：needs 收窄为 [changes]（steps 自包含：自装依赖 + 自 build + 真跑 E2E）；
+    # 原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如 unit-frontend 5s 超时）
+    # → 本 job 被 needs 语义静默 skip → 页面级 E2E 验证消失（#936 实测）。
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -791,8 +799,10 @@ jobs:
         run: pnpm --filter inkflow-electron test:e2e e2e-library
 
   e2e-frontend-models:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    # #936：needs 收窄为 [changes]（steps 自包含：自装依赖 + 自 build + 真跑 E2E）；
+    # 原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如 unit-frontend 5s 超时）
+    # → 本 job 被 needs 语义静默 skip → 页面级 E2E 验证消失（#936 实测）。
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -849,10 +859,11 @@ jobs:
         run: pnpm --filter inkflow-electron test:e2e e2e-models
 
   e2e-frontend-settings:
-    # 第二批：按需触发（frontend/ci/contract 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
+    # #936：needs 收窄为 [changes]（理由同其它页面级 e2e job）；
+    # 按需触发（frontend/ci/contract 变更）。
     # #993：contract = 被本 job 的 e2e spec 硬编码快照锁定的契约源（registry.py）——
     # 纯后端契约源变更也须跑本 job，否则写侧扩容的断裂静默入 main（#985 教训）。
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
@@ -912,8 +923,10 @@ jobs:
 
   # #496（contract-496 §7）：日志页 E2E——镜像 e2e-frontend-models 整段（needs/if/PYTHONUTF8/build/test 命令）
   e2e-frontend-logs:
-    # 第二批：按需触发（frontend/ci 变更）；第一批 failure 时默认 needs 语义自动 skip（止损）
-    needs: [changes, lint-backend, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend, lint-frontend, unit-frontend]
+    # #936：needs 收窄为 [changes]（steps 自包含：自装依赖 + 自 build + 真跑 E2E）；
+    # 原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如 unit-frontend 5s 超时）
+    # → 本 job 被 needs 语义静默 skip → 页面级 E2E 验证消失（#936 实测）。
+    needs: [changes]
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
