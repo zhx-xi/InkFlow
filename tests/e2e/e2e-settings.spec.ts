@@ -423,7 +423,8 @@ test('设置页：默认模型下拉选 deepseek/deepseek-v4-flash → 直调内
       deduped.length !== deepseek.models.length ||
       !deepseek.models.some((m: { id: string }) => m.id === 'deepseek-v4-flash')
     ) {
-      await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}`, {
+      // #936 C：PATCH 补 chat 模型触发保存前探测门禁（预置阶段无凭据）→ force=true 跳过
+      await fetchKernel(kernel, `/api/v1/provider-configs/${deepseek.id}?force=true`, {
         method: 'PATCH',
         body: JSON.stringify({
           models: [...deduped, { id: 'deepseek-v4-flash', type: 'chat', roles: [] }],

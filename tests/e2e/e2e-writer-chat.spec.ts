@@ -129,10 +129,16 @@ async function presetChatModel(kernel: KernelInfo): Promise<void> {
   const models = provider!.models.some((m) => m.id === 'gpt-4o' && m.type === 'chat')
     ? provider!.models
     : [...(provider!.models ?? []), { id: 'gpt-4o', type: 'chat' }];
-  const patchRes = await kernelFetch(kernel, `/api/v1/provider-configs/${provider!.id}`, {
-    method: 'PATCH',
-    body: { models },
-  });
+  // #936 C：PATCH 补 chat 模型会触发保存前探测门禁；本预置阶段无真实凭据
+  // （或 key 尚未就绪）→ 显式 force=true 跳过门禁（预置语义 = 只落数据）
+  const patchRes = await kernelFetch(
+    kernel,
+    `/api/v1/provider-configs/${provider!.id}?force=true`,
+    {
+      method: 'PATCH',
+      body: { models },
+    }
+  );
   expect(patchRes.ok, 'provider-configs PATCH（补 chat 模型）应成功').toBe(true);
 }
 

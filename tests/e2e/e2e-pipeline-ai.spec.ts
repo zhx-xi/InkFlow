@@ -191,10 +191,16 @@ async function setupLlmForProject(kernel: KernelInfo, projectId: string): Promis
   const models = existing.some((m) => m.id === modelId && m.type === 'chat')
     ? existing
     : [...existing, { id: modelId, type: 'chat' }];
-  const modelRes = await kernelFetch(kernel, `/api/v1/provider-configs/${provider!.id}`, {
-    method: 'PATCH',
-    body: { models },
-  });
+  // #936 C：PATCH 补 chat 模型会触发保存前探测门禁（预置阶段 key 尚未就绪）
+  // → 显式 force=true 跳过（预置语义 = 只落数据，不验证连通）
+  const modelRes = await kernelFetch(
+    kernel,
+    `/api/v1/provider-configs/${provider!.id}?force=true`,
+    {
+      method: 'PATCH',
+      body: { models },
+    }
+  );
   expect(modelRes.ok, `${cfg.provider} provider-configs PATCH（补 chat 模型）应成功`).toBe(true);
 
   // 3. 项目 config：model + 四角色 agent_* → 配置模型（config 整体替换 → 先 GET 合并）
