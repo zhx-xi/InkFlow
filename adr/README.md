@@ -44,7 +44,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-024](architecture/ADR-024.md) | 云架构拓扑 — 双前缀单体 + owner_id 隔离 | ✅ 已接受 | 2026-08-02 |
 | [ADR-025](architecture/ADR-025.md) | 依赖锁定策略 — uv + uv.lock + pnpm-lock.yaml | ✅ 已接受 | 2026-08-02 |
 | [ADR-029](architecture/ADR-029.md) | F25 daemon 移除 — 伪需求判定 + 意图已覆盖 | ✅ 已接受 | 2026-08-07 |
-| [ADR-053](architecture/ADR-053.md) | 数据面变更统一推送 — 领域事件源 + SSE 广播 + GUI 订阅失效 | ✅ 已接受 | 2026-09-07 |
+| [ADR-053](architecture/ADR-053.md) | 数据面变更统一推送 — 领域事件源 + SSE 广播 + GUI 订阅失效（v1.1：`project_id` 可空 + `resource_id` 规范名） | ✅ 已接受 | 2026-09-07 |
 | [ADR-055](architecture/ADR-055.md) | 时间存储与显示口径 — 存储/传输一律 UTC，面向用户显示一律本地时区 | ✅ 已接受 | 2026-09-10 |
 | [ADR-056](architecture/ADR-056.md) | 会话 ↔ agentic 执行轨迹关联 — sessions.context 软锚（agent_run_id） | ✅ 已接受 | 2026-09-10 |
 
