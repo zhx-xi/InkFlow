@@ -25,6 +25,7 @@ from inkflow.api.routers import (
     chat_messages,
     chat_stream,
     context,
+    events,
     export,
     extractions,
     foreshadowings,
@@ -291,6 +292,7 @@ app.include_router(timeline.router)
 app.include_router(foreshadowings.router)
 app.include_router(knowledge_graph.router)
 app.include_router(extractions.router)
+app.include_router(events.router)
 app.include_router(sessions.router)
 app.include_router(chat_messages.router)
 app.include_router(settings.router)
