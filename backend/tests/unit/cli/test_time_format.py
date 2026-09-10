@@ -34,7 +34,18 @@ class TestFormatLocalTzInjection:
     """已知时区 + 已知 ISO 的确定断言（tz 注入，与 runner 系统时区解耦）。"""
 
     def test_naive_utc_input_converts_to_injected_tz(self) -> None:
-        """naive = UTC 存储口径 → +8 注入必须加 8 小时（直转陷阱守护）。"""
+        """naive = UTC 存储口径 → +8 注入必须加 8 小时（直转陷阱守护）。
+
+        ⚠️ UTC runner 显式 skip（审查 #1063 MAJOR）：buggy 直转与正确实现的输出差
+        = 系统偏移 S，与注入 tz 无关——S=0（CI windows-latest）时两者恒等，本守护
+        数学上不可判定，静默 PASS = 假绿。改为显式 skip 使空转可见；若 CI 将来钉
+        非 UTC TZ（进程启动前预置生效，ADR-055 实证 2），本用例自动恢复执行。
+        """
+        if datetime.now().astimezone().utcoffset() == timedelta(0):
+            pytest.skip(
+                "naive 陷阱守护在 UTC runner 不可判定（S=0 ⇒ buggy≡correct）；"
+                "需系统时区非 UTC（本机 +8 时真实执行）"
+            )
         assert format_local("2026-01-01T00:00:00", tz=TZ8) == "2026-01-01 08:00:00"
 
     def test_aware_z_input_converts(self) -> None:

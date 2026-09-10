@@ -10,8 +10,6 @@
  *   Z 后缀 UTC 输入按本地偏移换算（+08:00 基准 = +8h，跨日进位）；
  *   带偏移输入换算到本地基准；解析失败原样直出。
  * - formatClock：formatTimestamp 的时间部分（本地 'HH:mm:ss'，#932 链节点简式）。
- *
- * RED 预期：现实现为 UTC toISOString 口径（log-format.ts:23）→ 本地 +8 断言全 FAIL。
  */
 import { describe, expect, it } from 'vitest';
 import { formatClock, formatTimestamp } from './log-format';

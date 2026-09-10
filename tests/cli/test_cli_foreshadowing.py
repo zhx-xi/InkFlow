@@ -279,6 +279,7 @@ class TestForeshadowingList:
         # #1000（ADR-055）：「回收于 <日期>」= 本地时区日期（naive UTC 20:00 → +8 跨日）；
         # 期望值独立换算，不 import 被测实现
         assert f"[林晚的身世] (回收于 {local_display('2026-08-10T20:00:00')[:10]})" in result.output
+        assert "2026-08-10T20:00:00" not in result.output  # 原始 ISO 不再直出（审查 #1063 NIT-6）
 
     def test_list_params_passthrough(self, cli_runner, fake_http_client):
         """list 状态过滤/搜索/排序/降序参数透传."""

@@ -17,7 +17,14 @@ export function interpolateTemplate(template: string, params?: Record<string, un
   );
 }
 
-/** timestamp 展示：ISO → 系统本地时区 'YYYY-MM-DD HH:mm:ss'（ADR-055 / #1000）；解析失败原样直出。 */
+/**
+ * timestamp 展示：ISO → 系统本地时区 'YYYY-MM-DD HH:mm:ss'（ADR-055 / #1000）；解析失败原样直出。
+ *
+ * 前提（审查 #1063 MINOR-5）：消费面 `/api/v1/logs` 的 timestamp 恒带 `Z` 后缀
+ * （JSONL 存储 + pydantic model_dump(mode="json")，round-trip 实证）→ `new Date()`
+ * 按 UTC 解析后转本地正确。JS 规范下**无偏移** date-time 串按本地解释——若将来
+ * 喂入 naive UTC 串（实体端点的 SQLite 常态）会原值显示，接入前需先补 'Z'。
+ */
 export function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
