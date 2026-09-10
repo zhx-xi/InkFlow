@@ -27,6 +27,7 @@ from pathlib import Path
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.extraction import (
@@ -105,7 +106,7 @@ def _status_line(run: dict) -> str:
         tail = f"新增 {run['created_count']} 更新 {run['updated_count']}"
         if run["indexed"]:
             tail += ", 已索引"
-        run_at = str(run["run_at"])[:16].replace("T", " ")
+        run_at = format_local(str(run["run_at"]))[:16]
         return f"[{run['type']}] {run['source_key']} — ✅ success ({run_at}, {tail})"
     if run["status"] == ExtractionStatus.SKIPPED.value:
         return f"[{run['type']}] {run['source_key']} — ⏭ skipped (内容未变更)"

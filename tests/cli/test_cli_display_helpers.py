@@ -27,6 +27,8 @@ from inkflow.cli.commands import style as style_mod
 from inkflow.cli.commands import timeline as timeline_mod
 from inkflow.cli.commands import vector as vector_mod
 
+from .conftest import local_display
+
 
 class TestVectorDisplay:
     """vector._retrieved_label / _reindex_summary 展示分支。"""
@@ -137,6 +139,11 @@ class TestExtractDisplay:
         assert "success" in label
         assert "新增 1 更新 0" in label
         assert "已索引" in label
+        # #1069（ADR-055）：run_at naive UTC 串 → 本地时区显示（分钟粒度保留），
+        # 原始 UTC 直出形态不再出现。期望值测试侧独立换算（local_display），非自引用。
+        expected = local_display("2026-08-02T10:00:00")[:16]
+        assert f"({expected}, " in label
+        assert "2026-08-02 10:00" not in label or expected == "2026-08-02 10:00"
 
     def test_status_line_success_not_indexed(self):
         """indexed=False → 无「已索引」后缀。"""

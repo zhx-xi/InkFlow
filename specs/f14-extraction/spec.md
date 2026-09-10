@@ -1,4 +1,5 @@
 # F14: 统一提取服务 (extraction_service) — 功能规格
+> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块时间字段（run_at 等）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 > **端**: backend
 
 > **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019

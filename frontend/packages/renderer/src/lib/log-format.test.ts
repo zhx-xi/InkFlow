@@ -38,6 +38,19 @@ describe('formatTimestamp — #1000 本地时区显示', () => {
   it('解析失败原样直出（#496 既有契约保留）', () => {
     expect(formatTimestamp('not-a-date')).toBe('not-a-date');
   });
+
+  it('#1069 naive date-time 串 = UTC 存储口径：归一后换算（禁按本地误释）', () => {
+    // 实体端点经 SQLite DateTime 剥 tzinfo → naive 串（值=UTC，ADR-055）。
+    // JS new Date('...T08:00:00') 无偏移按本地解释（TZ=+8 → 08:00 本地）——BUG；
+    // 正确 = 先补 Z（UTC）再转本地 = 16:00:00。
+    expect(formatTimestamp('2026-08-10T08:00:00')).toBe('2026-08-10 16:00:00');
+    // 与等价 Z 输入同瞬间（naive 归一后两形态结果必须一致）
+    expect(formatTimestamp('2026-09-04T01:00:00')).toBe(formatTimestamp('2026-09-04T01:00:00Z'));
+  });
+
+  it('#1069 空格分隔 naive 串（str(datetime) 形态）同样归一', () => {
+    expect(formatTimestamp('2026-08-10 08:00:00')).toBe('2026-08-10 16:00:00');
+  });
 });
 
 describe('formatClock — #1000 本地时区简式时钟', () => {

@@ -14,6 +14,7 @@ import { apiFetch, errorMessage } from '../api/client';
 import { getRun, listRuns, type AgentRunDto } from '../api/runs';
 import { type PipelineExecutionListItem, type PipelineExecutionStatus } from '../api/pipeline';
 import { useI18n } from '../i18n/useI18n';
+import { formatTimestamp } from '../lib/log-format';
 
 export interface ExecutionDetailPanelProps {
   executionId?: string | null;
@@ -386,7 +387,7 @@ export function ExecutionDetailPanel({
                       <span className="text-ink-3">{item.status}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-ink-2">
-                      <span>{item.created_at}</span>
+                      <span>{formatTimestamp(item.created_at)}</span>
                       <span>{item.total_duration_ms} ms</span>
                     </div>
                   </div>
@@ -411,7 +412,7 @@ export function ExecutionDetailPanel({
                       <span className="text-ink-3">{item.status}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-ink-2">
-                      <span>{item.created_at}</span>
+                      <span>{formatTimestamp(item.created_at)}</span>
                       <span>{item.token_usage_total} tokens</span>
                     </div>
                   </div>

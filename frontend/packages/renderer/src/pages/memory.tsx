@@ -27,6 +27,7 @@ import {
 import { errorMessage } from '../api/client';
 import { useProjectStore } from '../stores/project';
 import { useI18n } from '../i18n/useI18n';
+import { formatTimestamp } from '../lib/log-format';
 import { useToastStore } from '../stores/toast';
 import {
   Select,
@@ -79,7 +80,7 @@ function SummaryCard({ summary }: { summary: MemorySummaryDto }) {
         </button>
       )}
       <p data-testid="memory-summary-meta" className="mt-2 text-[12px] text-ink-3">
-        {summary.model} · {summary.updated_at}
+        {summary.model} · {formatTimestamp(summary.updated_at)}
       </p>
     </div>
   );

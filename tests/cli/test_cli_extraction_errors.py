@@ -40,6 +40,8 @@ from typer.testing import CliRunner
 from inkflow.cli.commands.extract import app
 from inkflow.cli.context import CliContext
 
+from .conftest import local_display
+
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 CH1 = uuid.UUID("7a4f2c91-0000-4000-8000-000000000001")
 
@@ -375,8 +377,10 @@ class TestExtractStatusEdgeBranches:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
+        # #1069（ADR-055）：run_at 本地时区显示（期望值测试侧独立换算，非自引用）
+        expected_at = local_display("2026-08-02T10:00:00")[:16]
         assert (
-            f"  [character] {CH1} — ✅ success (2026-08-02 10:00, 新增 2 更新 1)"
+            f"  [character] {CH1} — ✅ success ({expected_at}, 新增 2 更新 1)"
             in (result.output)
         )
         assert "已索引" not in result.output

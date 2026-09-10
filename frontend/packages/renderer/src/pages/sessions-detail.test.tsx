@@ -181,6 +181,8 @@ beforeEach(() => {
         title: '第二章草稿润色',
         status: 'completed',
         is_deleted: true,
+        // #1069 NIT-9：completed_at 显示点专项（'2026-08-10T09:30:00Z' → +08 17:30:00）
+        completed_at: '2026-08-10T09:30:00Z',
       }),
     ],
     total: 2,
@@ -347,9 +349,14 @@ describe('#1015 执行会话卡详情弹层（N12/N13，数据源 = sessions 详
     expect(fetchSessionLogsMock.mock.calls[0][0]).toBe('ex-active-p1');
     // 元信息：状态原值
     expect(await screen.findByTestId('session-detail-meta-status')).toHaveTextContent('active');
+    // #1069（ADR-055）：started_at 本地显示（'2026-08-10T08:00:00Z' → +08:00 16:00:00），原始串不直出
+    expect(screen.getByText('2026-08-10 16:00:00')).toBeInTheDocument();
+    expect(screen.queryByText('2026-08-10T08:00:00Z')).not.toBeInTheDocument();
     // 日志逐条（seq 锚点 + message 文本）
     expect(await screen.findByTestId('session-detail-log-1')).toHaveTextContent('开始生成第三章');
-    expect(await screen.findByTestId('session-detail-log-2')).toHaveTextContent('草稿已保存');
+    expect(screen.getByTestId('session-detail-log-1')).toHaveTextContent('2026-08-10 16:01:00');
+    expect(screen.getByTestId('session-detail-log-2')).toHaveTextContent('草稿已保存');
+    expect(screen.getByTestId('session-detail-log-2')).toHaveTextContent('2026-08-10 16:05:00');
     // 活动态无恢复入口
     expect(screen.queryByTestId('session-detail-restore')).not.toBeInTheDocument();
   });
@@ -364,6 +371,13 @@ describe('#1015 执行会话卡详情弹层（N12/N13，数据源 = sessions 详
     expect(dialog).toBeInTheDocument();
     // 归档元信息 + 日志仍可看（后端 list_logs 不因归档过滤，履历保留契约）
     expect(await screen.findByTestId('session-detail-meta-status')).toHaveTextContent('completed');
+    // #1069 NIT-9：completed_at 经 formatTimestamp 本地显示，原始 ISO 串不直出
+    expect(screen.getByTestId('session-detail-meta-status').parentElement).toHaveTextContent(
+      '2026-08-10 17:30:00',
+    );
+    expect(screen.getByTestId('session-detail-meta-status').parentElement?.textContent).not.toContain(
+      '2026-08-10T09:30:00Z',
+    );
     expect(await screen.findByTestId('session-detail-log-1')).toBeInTheDocument();
     await user.click(await screen.findByTestId('session-detail-restore'));
     await waitFor(() => {

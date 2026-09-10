@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { fetchSessionLogs, type SessionLogDto, type SessionViewDto } from '../api/sessions';
 import { getPlannerSession, type PlannerSessionDto } from '../api/books';
 import { useI18n } from '../i18n/useI18n';
+import { formatTimestamp } from '../lib/log-format';
 
 /** 弹层打开目标：ex=执行会话卡（含归档）/ pl=访谈会话卡 */
 export type SessionDetailTarget =
@@ -130,14 +131,14 @@ export function SessionDetailDialog({
             <div className="space-y-1 rounded-md border border-line bg-surface-2 px-3 py-2">
               <div className="text-ink">
                 <span data-testid="session-detail-meta-status">{session.status}</span>
-                {session.completed_at ? ` · ${session.completed_at}` : ''}
+                {session.completed_at ? ` · ${formatTimestamp(session.completed_at)}` : ''}
               </div>
-              <div className="text-[12px] text-ink-2">{session.started_at}</div>
+              <div className="text-[12px] text-ink-2">{formatTimestamp(session.started_at)}</div>
             </div>
             <div className="mt-3 space-y-1">
               {data.logs.map((log) => (
                 <div key={log.seq} data-testid={`session-detail-log-${log.seq}`} className="text-ink-2">
-                  [{log.level}] {log.message} · {log.created_at}
+                  [{log.level}] {log.message} · {formatTimestamp(log.created_at)}
                 </div>
               ))}
             </div>
