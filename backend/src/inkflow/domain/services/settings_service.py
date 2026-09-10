@@ -18,6 +18,11 @@ from inkflow.domain.models.settings import (
     SettingsKey,
 )
 from inkflow.domain.ports.settings_repository import SettingsRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
+
+#: settings 是单例资源（app_settings 为键值表，无单一主键）→ 事件 resource_id 用固定标识
+#: （#1088 批 A3；全局域 project_id=None，spec §15.2.3）
+SETTINGS_RESOURCE_ID = "global"
 
 
 class SettingsService:
@@ -42,6 +47,8 @@ class SettingsService:
             payload[key.value] = json.dumps(value)
         if payload:
             await self._repository.set_many(payload)
+            # #1088 批 A3：写成功后发布 settings 变更事件（未变更/空 payload 不发，§15.6.4）
+            await publish_change("settings", "update", SETTINGS_RESOURCE_ID, None)
         # D-1 方案 A 同步桥（#987 镜像）：GUI PATCH 思考档位 → 回灌 config 单例，
         # 装配层读取点（config.llm_reasoning_effort）立即生效。
         if "default_reasoning_effort" in non_none_updates:

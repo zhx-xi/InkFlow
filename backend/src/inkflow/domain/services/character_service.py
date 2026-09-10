@@ -53,6 +53,7 @@ from inkflow.domain.ports.character_errors import (
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
+from inkflow.domain.services._data_change import publish_change
 from inkflow.domain.services.model_resolution import resolve_model
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,10 @@ class CharacterService:
             updated_at=now,
         )
         logger.info("创建角色: project=%s name=%s", project_id, name)
-        return await self._repo.add(character)
+        created = await self._repo.add(character)
+        # #1088 批 A3：A 类（首参带 project_id）→ 直接取形参
+        await publish_change("character", "create", created.id, project_id)
+        return created
 
     async def get_character(self, character_id: int | uuid.UUID) -> Character | None:
         """按主键获取角色；不存在返回 None（router 转 404）."""
@@ -230,7 +234,11 @@ class CharacterService:
                 raise CharacterRoleRankError(str(exc)) from exc
         merged = existing.model_copy(update=merge_updates)
         logger.info("更新角色: character_id=%s", character_id)
-        return await self._repo.update(merged)
+        updated = await self._repo.update(merged)
+        if updated is not None:
+            # #1088 批 A3：B 类 → project_id 取已加载实体（零额外查询，§15.3.2）
+            await publish_change("character", "update", updated.id, existing.project_id)
+        return updated
 
     async def delete_character(self, character_id: int | uuid.UUID) -> bool:
         """真删角色（v1.1，spec §7: 角色不存在 → False，router 转 404）.
@@ -248,6 +256,15 @@ class CharacterService:
         deleted = await self._repo.hard_delete(cid)
         if deleted and self._map_cleanup is not None:
             await self._map_cleanup(cid)
+        if deleted:
+            # #1088 批 A3：薄透传方法（hard_delete 未加载实体）→ 发 None + warning
+            # （§15.3.2 已知例外；GUI 侧退化为全项目刷新）
+            logger.warning(
+                "character 删除事件缺 project_id"
+                "（delete_character 未加载实体，spec §15.3.2）: id=%s",
+                character_id,
+            )
+            await publish_change("character", "delete", character_id, None)
         return deleted
 
     # ── CharacterRelation ──────────────────────────────────────────
@@ -317,7 +334,10 @@ class CharacterService:
             updated_at=now,
         )
         logger.info("创建关系: from=%s to=%s type=%s", from_char.name, to_char.name, relation_type)
-        return await self._repo.add_relation(relation)
+        created = await self._repo.add_relation(relation)
+        # #1088 批 A3：project_id 从已加载的起点角色推出
+        await publish_change("character_relation", "create", created.id, from_char.project_id)
+        return created
 
     async def update_relation(
         self,
@@ -363,7 +383,10 @@ class CharacterService:
             }
         )
         logger.info("更新关系: relation_id=%s", relation_id)
-        return await self._repo.update_relation(merged)
+        updated = await self._repo.update_relation(merged)
+        if updated is not None:
+            await publish_change("character_relation", "update", updated.id, relation.project_id)
+        return updated
 
     async def delete_relation(
         self, character_id: int | uuid.UUID, relation_id: int | uuid.UUID
@@ -386,7 +409,11 @@ class CharacterService:
         ):
             return False
         logger.info("真删关系: relation_id=%s", relation_id)
-        return await self._repo.hard_delete_relation(rid)
+        deleted = await self._repo.hard_delete_relation(rid)
+        if deleted:
+            # #1088 批 A3：Relation 实体在删除前已加载 → project_id 可解析
+            await publish_change("character_relation", "delete", relation.id, relation.project_id)
+        return deleted
 
     # ── CharacterGroup ─────────────────────────────────────────────
 
@@ -425,7 +452,10 @@ class CharacterService:
             updated_at=now,
         )
         logger.info("创建分组: project=%s name=%s", project_id, name)
-        return await self._repo.add_group(group)
+        created = await self._repo.add_group(group)
+        # #1088 批 A3：A 类（首参带 project_id）→ 直接取形参
+        await publish_change("character_group", "create", created.id, project_id)
+        return created
 
     async def get_group(self, group_id: int | uuid.UUID) -> CharacterGroup | None:
         """按主键获取分组；不存在返回 None（router 转 404）."""
@@ -471,7 +501,10 @@ class CharacterService:
             updates["sort_order"] = sort_order
         merged = group.model_copy(update=updates)
         logger.info("更新分组: group_id=%s", group_id)
-        return await self._repo.update_group(merged)
+        updated = await self._repo.update_group(merged)
+        if updated is not None:
+            await publish_change("character_group", "update", updated.id, group.project_id)
+        return updated
 
     async def delete_group(self, group_id: int | uuid.UUID) -> bool:
         """真删分组（v1.1，spec §6.2/§7: 成员角色 group_id 置 NULL，角色本身保留）.
@@ -484,7 +517,16 @@ class CharacterService:
         """
         gid = _to_int_id(group_id)
         logger.info("真删分组: group_id=%s（成员 group_id 置 NULL）", group_id)
-        return await self._repo.hard_delete_group(gid)
+        deleted = await self._repo.hard_delete_group(gid)
+        if deleted:
+            # #1088 批 A3：薄透传方法（hard_delete_group 未加载实体）→ 发 None + warning
+            logger.warning(
+                "character_group 删除事件缺 project_id"
+                "（delete_group 未加载实体，spec §15.3.2）: id=%s",
+                group_id,
+            )
+            await publish_change("character_group", "delete", group_id, None)
+        return deleted
 
     # ── AI 提取入口（spec §5.1 步骤 ①）────────────────────────────
 
@@ -517,8 +559,5 @@ class CharacterService:
         )
         return await self._extractor.extract(
             request,
-            default_model=resolve_model(
-                None, project.config.model, self._llm_default_model
-            )
-            or "",
+            default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
         )

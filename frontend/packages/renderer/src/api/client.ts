@@ -184,6 +184,9 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
   const correlationId = getCorrelationId();
   if (correlationId) headers.set('X-Correlation-Id', correlationId);
   headers.set('traceparent', makeTraceparent());
+  // #1088 批 A3（spec §15.2.4）：GUI 发起的写请求统一标记发起方 → 后端变更事件 source=gui
+  // （前端据此跳过 self-originated 事件的失效重拉，§15.5.4 E1）
+  headers.set('X-Inkflow-Source', 'gui');
   if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }

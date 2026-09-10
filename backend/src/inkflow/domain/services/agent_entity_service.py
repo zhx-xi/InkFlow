@@ -44,6 +44,7 @@ from inkflow.domain.ports.agent_errors import (
     ToolReferenceError,
 )
 from inkflow.domain.ports.agent_repository import AgentRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS, grants_from_tool_ids
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
@@ -285,7 +286,10 @@ class AgentEntityService:
             updated_at=now,
         )
         logger.info("创建 Agent: name=%s", data.name)
-        return await self._agent_repo.add(entity)
+        created = await self._agent_repo.add(entity)
+        # #1088 批 A3：全局域（Agent 无 project_id）→ project_id=None（spec §15.2.3）
+        await publish_change("agent", "create", created.id, None)
+        return created
 
     async def get(self, agent_id: int) -> Agent:
         """按主键获取 Agent；不存在 → AgentNotFoundError（404）."""
@@ -334,6 +338,7 @@ class AgentEntityService:
         result = await self._agent_repo.update(merged)  # type: ignore[call-arg, arg-type]  # 测试 docstring 契约：update 以实体单参调用（G2 repo 签名待父侧对齐）
         if result is None:
             raise AgentNotFoundError()
+        await publish_change("agent", "update", result.id, None)
         return result
 
     async def delete(self, agent_id: int) -> None:
@@ -346,6 +351,7 @@ class AgentEntityService:
         if not await self._agent_repo.delete(agent_id):
             raise AgentNotFoundError()
         logger.info("删除 Agent: agent_id=%s", agent_id)
+        await publish_change("agent", "delete", agent_id, None)
 
     async def duplicate(self, agent_id: int, *, name: str | None = None) -> Agent:
         """复制 Agent（镜像 agent_template_service.duplicate，#485）.

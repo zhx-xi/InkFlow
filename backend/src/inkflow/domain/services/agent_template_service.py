@@ -36,6 +36,7 @@ from inkflow.domain.ports.agent_template_errors import (
 )
 from inkflow.domain.ports.agent_template_repository import AgentTemplateRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,10 @@ class AgentTemplateService:
             updated_at=now,
         )
         logger.info("创建模板: name=%s", data.name)
-        return await self._template_repo.add(entity)
+        created = await self._template_repo.add(entity)
+        # #1088 批 A3：全局域（AgentTemplate 无 project_id）→ project_id=None（spec §15.2.3）
+        await publish_change("agent_template", "create", created.id, None)
+        return created
 
     async def get(self, template_id: int) -> AgentTemplate:
         """按主键获取模板；不存在 → AgentTemplateNotFoundError（404）."""
@@ -115,7 +119,10 @@ class AgentTemplateService:
         merged = existing.model_copy(update=updates)
         merged.updated_at = _utcnow()
         logger.info("更新模板: template_id=%s", template_id)
-        return await self._template_repo.update(merged)
+        updated = await self._template_repo.update(merged)
+        if updated is not None:
+            await publish_change("agent_template", "update", updated.id, None)
+        return updated
 
     async def set_default(self, template_id: int) -> AgentTemplate:
         """将模板设为默认（单例由 repo 保证）；目标不存在 → NotFound（404）."""
@@ -125,6 +132,8 @@ class AgentTemplateService:
         result = await self._template_repo.set_default(template_id)
         if result is None:
             raise AgentTemplateNotFoundError()
+        # #1088 批 A3：语义化操作统一 op="update"（spec §15.6.4）
+        await publish_change("agent_template", "update", result.id, None)
         return result
 
     async def duplicate(self, template_id: int, *, name: str | None = None) -> AgentTemplate:
@@ -173,3 +182,4 @@ class AgentTemplateService:
         if not await self._template_repo.delete(template_id):
             raise AgentTemplateNotFoundError()
         logger.info("删除模板: template_id=%s", template_id)
+        await publish_change("agent_template", "delete", template_id, None)

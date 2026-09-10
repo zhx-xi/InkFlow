@@ -35,6 +35,7 @@ from inkflow.domain.ports.provider_config_errors import (
     ProviderConfigServiceError,
 )
 from inkflow.domain.ports.provider_config_repository import ProviderConfigRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 
 logger = logging.getLogger(__name__)
 
@@ -199,9 +200,7 @@ class ProviderConfigService:
                 affected.append(model)
         return affected
 
-    async def create(
-        self, data: ProviderConfigCreate, *, force: bool = False
-    ) -> ProviderConfig:
+    async def create(self, data: ProviderConfigCreate, *, force: bool = False) -> ProviderConfig:
         """创建 Provider（同名冲突 → 422；时间戳由服务层填充）.
 
         #936 C：落库前对全部条目过探测门禁（失败零落库，含 #735 D2 自动设默认）。
@@ -232,6 +231,9 @@ class ProviderConfigService:
                 self._config.llm_default_model = model_id
                 save_config_json(self._config.data_dir, {"llm_default_model": model_id})
                 logger.info("自动设置全局默认模型: %s", model_id)
+        # #1088 批 A3：全局域（ProviderConfig 无 project_id）→ project_id=None（spec §15.2.3）
+        # ⚠️ 用 created（repo.add 落库后带回自增 id），非 pc（落库前 id=None）
+        await publish_change("provider_config", "create", created.id, None)
         return created
 
     async def get(self, provider_config_id: int) -> ProviderConfig:
@@ -298,6 +300,8 @@ class ProviderConfigService:
                     updated_target = updated
         if updated_target is None:
             updated_target = target_pc
+        # #1088 批 A3：语义化操作统一 op="update"（spec §15.6.4）
+        await publish_change("provider_config", "update", updated_target.id, None)
         return updated_target
 
     async def update(
@@ -331,13 +335,16 @@ class ProviderConfigService:
         if affected:
             await self._gate_models(merged.name, affected, force=force, base_url=merged.base_url)
         logger.info("更新 Provider: provider_config_id=%s", provider_config_id)
-        updated: ProviderConfig = await self._repo.update(merged)
+        updated = await self._repo.update(merged)
+        if updated is not None:
+            await publish_change("provider_config", "update", updated.id, None)
         return updated
 
     async def delete(self, provider_config_id: int) -> None:
         """删除 Provider；不存在 → ProviderConfigNotFoundError（404）."""
         if not await self._repo.delete(provider_config_id):
             raise ProviderConfigNotFoundError()
+        await publish_change("provider_config", "delete", provider_config_id, None)
 
     async def seed_builtin_providers(self) -> int:
         """幂等插入内置 4 provider（幂等由 repo 保证，返回插入数）."""

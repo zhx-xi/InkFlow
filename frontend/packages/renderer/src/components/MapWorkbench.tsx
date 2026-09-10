@@ -73,6 +73,11 @@ export interface MapWorkbenchProps {
   onMapsChanged?: (maps: WorldMapDTO[]) => void;
   /** 当前选中地图 id */
   activeMapId: string | null;
+  /**
+   * F23 §15.6.2（#1088 批 A3）：数据面变更重拉键——map_pin 事件到达时父级 bump，
+   * 触发当前地图 pin 列表重拉（外部加 pin 立即可见）。
+   */
+  reloadKey?: number;
   onSelectMap: (mapId: string) => void;
   /** 面包屑层级 1/2 回跳（退出工作台） */
   onExitWorkbench: () => void;
@@ -123,6 +128,7 @@ export function MapWorkbench({
   maps,
   onMapsChanged,
   activeMapId,
+  reloadKey,
   onSelectMap,
   onExitWorkbench,
   onClearMap,
@@ -193,7 +199,7 @@ export function MapWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [activeMapId]);
+  }, [activeMapId, reloadKey]);
 
   // #979：选中 pin 行滚动定位（测试环境已桩 no-op；实现从简）
   useEffect(() => {

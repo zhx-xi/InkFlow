@@ -734,3 +734,75 @@ class TestBuiltinAgentPromptContract:
         """每个内置 system_prompt 含输出规范说明（含「输出」）。"""
         for spec in BUILTIN_AGENT_SPECS:
             assert "输出" in spec["system_prompt"], f"{spec['name']} system_prompt 缺「输出」"
+
+
+class TestDataChangeEvents:
+    """#1088 批 A3：Agent 写路径发布事件（全局域 → project_id=None，spec §15.2.3）。"""
+
+    async def test_create_publishes_global_create(self, service, mock_agent_repo, recorded_events):
+        """create 成功 → agent/create，project_id=None。"""
+        mock_agent_repo.add = AsyncMock(return_value=_agent(9, "我的润色师"))
+
+        await service.create(AgentCreate(name="我的润色师"))
+
+        assert len(recorded_events) == 1
+        event = recorded_events[0]
+        assert (event.domain, event.op) == ("agent", "create")
+        assert event.resource_id == "9"
+        assert event.project_id is None
+
+    async def test_create_conflict_publishes_nothing(
+        self, service, mock_agent_repo, recorded_events
+    ):
+        """反例：同名冲突（写失败）→ 不发布。"""
+        mock_agent_repo.get_by_name.return_value = _agent(1, "我的润色师")
+
+        with pytest.raises(AgentNameConflictError):
+            await service.create(AgentCreate(name="我的润色师"))
+
+        assert recorded_events == []
+
+    async def test_update_publishes_global_update(self, service, mock_agent_repo, recorded_events):
+        """update 成功 → agent/update，project_id=None。"""
+        mock_agent_repo.get.return_value = _agent(7, "旧名")
+
+        await service.update(7, AgentUpdate(name="新名"))
+
+        assert len(recorded_events) == 1
+        assert (recorded_events[0].domain, recorded_events[0].op) == ("agent", "update")
+        assert recorded_events[0].resource_id == "7"
+        assert recorded_events[0].project_id is None
+
+    async def test_update_missing_publishes_nothing(
+        self, service, mock_agent_repo, recorded_events
+    ):
+        """反例：Agent 不存在（抛 404 前无写入）→ 不发布。"""
+        mock_agent_repo.get.return_value = None
+
+        with pytest.raises(AgentNotFoundError):
+            await service.update(999, AgentUpdate(name="新名"))
+
+        assert recorded_events == []
+
+    async def test_delete_publishes_global_delete(self, service, mock_agent_repo, recorded_events):
+        """delete 成功 → agent/delete，project_id=None。"""
+        mock_agent_repo.get.return_value = _agent(1, "自定义")
+
+        await service.delete(1)
+
+        assert len(recorded_events) == 1
+        event = recorded_events[0]
+        assert (event.domain, event.op) == ("agent", "delete")
+        assert event.resource_id == "1"
+        assert event.project_id is None
+
+    async def test_delete_builtin_publishes_nothing(
+        self, service, mock_agent_repo, recorded_events
+    ):
+        """反例：内置 Agent 只读（写失败）→ 不发布。"""
+        mock_agent_repo.get.return_value = _agent(1, "内置写手", builtin=True)
+
+        with pytest.raises(AgentBuiltinError):
+            await service.delete(1)
+
+        assert recorded_events == []
