@@ -32,6 +32,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { ensureModelConfigured } from './e2e-model-ready';
 import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
@@ -87,6 +88,8 @@ async function launchIso(
   });
   const window = await app.firstWindow();
   const kernel = await waitKernelInfo(app);
+  // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
+  await ensureModelConfigured(kernel);
   return { app, window, kernel };
 }
 

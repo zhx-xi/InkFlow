@@ -8,6 +8,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
+import { ensureModelConfigured } from './e2e-model-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -117,6 +118,11 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
     expect(kernel.pid).toBeGreaterThan(0);
     expect(kernel.port).toBeGreaterThan(0);
     expect(kernel.token).toBeTruthy();
+
+    // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」后 reload，
+    // 让首启引导门控放行（否则 app-nav 不渲染，logo 断言误红）
+    await ensureModelConfigured(kernel);
+    await window.reload();
 
     expect(await healthCheck(kernel)).toBe(200);
 
