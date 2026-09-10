@@ -38,6 +38,14 @@ on:
   # 手动触发 e2e-ai-backend（ADR-026 Q1=B 兜底）：任意分支/任意时间运行真实 AI 测试
   workflow_dispatch:
 
+# ── #1064：后端 pytest job 统一钉非 UTC 系统时区（TZ=XXX-5 ⇒ 本地偏移 +05:00）──
+# 目的：naive→UTC 归一守卫（backend/tests/unit/cli/test_time_format.py）在 CI 上真实可判。
+# 数学事实：buggy（naive 当本地直转）与 correct（naive 先补 UTC）的输出差 = 系统偏移 S，
+# 与注入 tz 无关——S=0（Windows runner 默认 UTC）时两者恒等，任何断言写法都不可判定
+# （静默空转 = 假绿）。Windows 仅在**进程启动前**读 TZ（POSIX 串，符号为西正；进程中途
+# setenv 无效、无 time.tzset）——已探针实证。全后端套件在 +05:00 下本地实证全绿
+# （6509 unit + 272 cli + 852 integration/api）。
+
 jobs:
   # ── 变更检测元 job：分层触发决策（dorny/paths-filter）──
   # core   = 核心功能代码 + 依赖配置
@@ -181,6 +189,8 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      TZ: "XXX-5"
 
     steps:
       - uses: actions/checkout@v7
@@ -231,6 +241,8 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      TZ: "XXX-5"
 
     steps:
       - uses: actions/checkout@v7
@@ -278,6 +290,8 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      TZ: "XXX-5"
 
     steps:
       - uses: actions/checkout@v7
@@ -323,6 +337,8 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      TZ: "XXX-5"
 
     steps:
       - uses: actions/checkout@v7
@@ -1026,6 +1042,8 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      TZ: "XXX-5"
     steps:
       - uses: actions/checkout@v7
         with:
