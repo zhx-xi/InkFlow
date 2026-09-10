@@ -2,13 +2,18 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
+import { normalizeNaiveUtc } from '../lib/log-format';
 import type { ChapterProgress, Project } from '../stores/project';
 
 type T = (key: string, params?: Record<string, string | number>) => string;
 
-/** 相对时间：刚刚 / n 分钟前 / n 小时前 / n 天前 / n 周前（随语言格式化） */
+/**
+ * 相对时间：刚刚 / n 分钟前 / n 小时前 / n 天前 / n 周前（随语言格式化）。
+ * #1070 审查第 6 处（ADR-055）：updated_at 为实体端点的 naive UTC 串 → 先经
+ * normalizeNaiveUtc 归一再取瞬间，否则 new Date(naive) 按本地解释、多算本地偏移。
+ */
 function relativeTime(iso: string, t: T): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = Date.now() - new Date(normalizeNaiveUtc(iso)).getTime();
   if (diff < 60_000) return t('pj.time.justNow');
   const minutes = Math.floor(diff / 60_000);
   if (minutes < 60) return t('pj.time.minutes', { n: minutes });

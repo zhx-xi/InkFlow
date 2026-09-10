@@ -42,8 +42,11 @@ export function formatTimestamp(iso: string): string {
  * 按 **UTC** 解释。故匹配到「date-time 且无偏移标记」时先补 'Z' 再解析（空格分隔
  * `str(datetime)` 形态换 'T'；带毫秒等尾缀同样归一）。纯 date（无时间部分）不加 Z——
  * JS 对其本就是 UTC 语义，加 Z 反而多余。
+ *
+ * 导出供需要「瞬间」而非显示串的消费方共享同一归一口径（如 ProjectCard 相对时间，
+ * #1070 审查第 6 处）；纯显示消费方直接用 formatTimestamp。
  */
-function normalizeNaiveUtc(iso: string): string {
+export function normalizeNaiveUtc(iso: string): string {
   if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(iso)) return iso;
   if (/(?:[Zz]|[+-]\d{2}:?\d{2})$/.test(iso)) return iso;
   return `${iso.replace(' ', 'T')}Z`;

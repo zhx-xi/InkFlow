@@ -275,6 +275,43 @@ describe('项目页 — 空列表引导化空态（#98 §5.2.6）', () => {
 });
 
 /**
+ * #1069（ADR-055 / 审查 #1070 第 6 处）：ProjectCard 相对时间的 naive UTC 归一。
+ *
+ * 实体端点 updated_at 为 naive UTC 串（SQLite 剥 tzinfo）。relativeTime 若直接
+ * `new Date(naive)` 按本地（setup.ts 钉 +08:00）解释 → 瞬间多算 8h → 档位错位。
+ * 动态构造（1 小时前 UTC 墙钟值去 Z 得 naive）避免 fake timers 卡 RTL waitFor；
+ * 档位边界 ±ms 抖动不影响 1 vs 9 的区分。
+ */
+describe('项目页 — 卡片相对时间 naive UTC 归一（#1069）', () => {
+  it('naive date-time = UTC 口径：1 小时前 → 「1 小时前」（非本地误释的「9 小时前」）', async () => {
+    const oneHourAgoUtcWall = new Date(Date.now() - 3_600_000).toISOString().replace('Z', '');
+    apiFetchMock.mockResolvedValue({
+      items: [makeProject({ updated_at: oneHourAgoUtcWall })],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+    renderProjectsPage();
+    const card = (await screen.findAllByTestId('project-card'))[0];
+    expect(within(card).getByText('1 小时前')).toBeInTheDocument();
+    expect(within(card).queryByText('9 小时前')).not.toBeInTheDocument();
+  });
+
+  it('透明性：等价 Z 后缀输入同档位（带 Z 数据源不受归一影响）', async () => {
+    const isoZ = new Date(Date.now() - 3_600_000).toISOString();
+    apiFetchMock.mockResolvedValue({
+      items: [makeProject({ updated_at: isoZ })],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+    renderProjectsPage();
+    const card = (await screen.findAllByTestId('project-card'))[0];
+    expect(within(card).getByText('1 小时前')).toBeInTheDocument();
+  });
+});
+
+/**
  * #232 点击项目卡片跳转写作页（2026-08-10 增量契约，Issue #232）
  *
  * ⚠️ 契约：GREEN 实现必须匹配（RED 阶段本 describe 全部 FAIL——卡片无 onClick）：
