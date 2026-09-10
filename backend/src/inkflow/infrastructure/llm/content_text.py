@@ -36,4 +36,5 @@ def content_text(content: object) -> str:
             elif isinstance(item, dict) and item.get("type") == "text":
                 parts.append(_text_block_text(item))
         return "".join(parts)
+    # Intentionally silent: unexpected shapes normalize to "" without logging (#1039 decision 3b).
     return ""

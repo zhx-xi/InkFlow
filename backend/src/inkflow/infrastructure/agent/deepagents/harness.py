@@ -25,7 +25,10 @@ from inkflow.infrastructure.llm.capability_probe import (
     apply_reasoning_effort,
     to_chat_model_kwargs,
 )
-from inkflow.infrastructure.llm.provider_config import litellm_model_name
+from inkflow.infrastructure.llm.provider_config import (
+    litellm_model_name,
+    resolve_reasoning_manual,
+)
 
 # deepagents 0.7.5 的 create_deep_agent 返回 CompiledStateGraph；任务契约将该返回值
 # 类型记作 Agent，此处以 TypeAlias 对齐（--follow-imports=skip 下解析为 Any，语义仍清晰）
@@ -129,13 +132,23 @@ def build_deep_agent(
         chat_kwargs["api_key"] = api_key
     if base_url:
         chat_kwargs["api_base"] = base_url
-    chat_kwargs = to_chat_model_kwargs(
-        apply_reasoning_effort(
-            chat_kwargs,
-            model_full=mapped_model,
-            effort=reasoning_effort,
-        )
+    # #1039：档位可行动时才查注册表手动覆盖（None/"default" 不查——构造点在每条链上）
+    manual = (
+        resolve_reasoning_manual(model)
+        if reasoning_effort not in (None, "default")
+        else None
     )
+    decision = apply_reasoning_effort(
+        chat_kwargs,
+        model_full=mapped_model,
+        effort=reasoning_effort,
+        manual=manual,
+    )
+    if manual is True and "reasoning_effort" in decision:
+        # Q1=A：litellm 对表 False 模型本地门禁直抛 UnsupportedParamsError → manual
+        # 注入必须同带旁路（仅随显式覆盖出现，自动路径零变化）
+        decision["allowed_openai_params"] = ["reasoning_effort"]
+    chat_kwargs = to_chat_model_kwargs(decision)
     chat = ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM pydantic 构造参数
     if profile_key is None:
         ensure_profile(mapped_model)

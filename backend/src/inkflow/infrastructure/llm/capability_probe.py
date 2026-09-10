@@ -130,13 +130,21 @@ def to_chat_model_kwargs(kwargs: dict[str, object]) -> dict[str, object]:
     ChatLiteLLM（langchain-litellm 0.7.1）pydantic 字段面无 reasoning_effort、
     未配 extra → 顶层 kwargs 被静默丢弃；参数进 litellm 的唯一通道是 model_kwargs
     （litellm.py:475 **self.model_kwargs）。无决策键时原样返回副本。
+
+    #1039 Q1=A：allowed_openai_params 同法搬进 model_kwargs——manual 覆盖注入
+    时旁路 litellm SDK 本地门禁（表 False 模型直抛 UnsupportedParamsError）；
+    该键仅由构造点在 manual is True 注入成功时塞入，自动路径不含。
     """
     out = dict(kwargs)
     effort = out.pop("reasoning_effort", None)
-    if effort is None:
+    allowed = out.pop("allowed_openai_params", None)
+    if effort is None and allowed is None:
         return out
     existing = out.get("model_kwargs")
     model_kwargs: dict[str, object] = dict(existing) if isinstance(existing, dict) else {}
-    model_kwargs["reasoning_effort"] = effort
+    if effort is not None:
+        model_kwargs["reasoning_effort"] = effort
+    if allowed is not None:
+        model_kwargs["allowed_openai_params"] = allowed
     out["model_kwargs"] = model_kwargs
     return out

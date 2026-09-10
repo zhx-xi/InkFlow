@@ -148,6 +148,40 @@ def _await_registry_entry(provider: str) -> ProviderConfig | None:
     return result[0]
 
 
+def resolve_reasoning_manual(model: str) -> bool | None:
+    """#1039：解析注册表 models[].supports_reasoning 手动覆盖（进注入链）。
+
+    F59 注册表手动覆盖三态：None=自动探测 / True/False=用户强制。本函数供两个
+    LLM 构造点（harness.build_deep_agent / langchain_client._get_chat_model）
+    统一取数，使「显示层可见」的覆盖真正进入注入链。
+
+    入参 = 注册表模型全名（provider 前缀 = 注册表名，非 litellm 校准名——
+    zhipu/glm-4.5 查 zhipu 行；校准名 zai/glm-4.5 查表必 miss）。
+
+    Returns:
+        命中条目的 supports_reasoning（True/False/None 原样）；无条目/未命中/
+        裸名（parse ValueError）/查询异常一律 None（= 跟随自动探测）。
+        探针语义同 get_provider_config：查询失败绝不冒泡。
+    """
+    try:
+        provider, name = parse_model_string(model)
+    except ValueError:
+        return None
+    try:
+        registry = _await_registry_entry(provider)
+    except Exception:
+        return None
+    if registry is None:
+        return None
+    models = getattr(registry, "models", None)
+    if not models:
+        return None
+    for entry in models:
+        if getattr(entry, "id", None) == name:
+            return getattr(entry, "supports_reasoning", None)
+    return None
+
+
 def _builtin_default_model(provider: str) -> str:
     """内置路由默认（chat 型才可为 chat 消费）→ LiteLLM 格式 provider/model；无 → ""。"""
     entry = config.model_routing.get(provider)

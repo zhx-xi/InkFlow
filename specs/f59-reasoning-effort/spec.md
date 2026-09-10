@@ -1,11 +1,12 @@
 # F59 思考模式（Reasoning Effort）+ LLM 出口统一 LiteLLM
 
-> **Spec 版本**: v1.5
+> **Spec 版本**: v1.6
 > **Spec 变更**: v1.1（2026-09-06）：待澄清 Q1/Q2/Q3 拍板并融入原节（Q1=A 软降级+WARNING 确认 §5.5/§3.3；Q2=B 前端 localStorage per-project §3.4/§12 D8；Q3=设定页控件文案直写「Agent思考强度设定」§3.4/§12 D9）；§12 D5 去「待澄清」挂账。
 > **Spec 变更**: v1.2（2026-09-06）：评审修订——① 能力面端点纠正为 `GET /api/v1/provider-configs`（§3.1/§5.4/§8.2 宿主文件补 provider_configs.py）；② 项目配置路由纠正为 `PATCH /projects/{project_id}`（§3.1）；③ 设置更新纠正为 PATCH（§3.1/§3.4）；④ legacy `/stream` 不新增字段（前端仅消费 agent 轨、legacy 帧编码无 reasoning 帧，§3.1/§10 登记）；⑤ zhipu→zai 前缀口径实证保留（§5.1）；⑥ 能力探测装配机制表述回正（§5.4）；⑦ 后端 i18n 文件列入 MODIFY（§8.2）；⑧ AGENTS.md §2 技术栈行纳入同步面（§8.2/M6）。
 > **Spec 变更**: v1.3（2026-09-09，M4 实现批）：① `GET /provider-configs` models[] 手动覆盖项额外回显 `supports_reasoning_manual`（§3.1/§3.4，GUI「手动」角标数据源；探测项不带该键，向后兼容）；② 管线角色装配（`PipelineContext.reasoning_effort`）+ F27 agentic writer + book writer_factory 注入档位（§2.3 运行时流转落地）。
 > **Spec 变更**: v1.4（2026-09-09，#1044/#1054 实现批实证回填）：① §5.2 注入通道精确化为 `model_kwargs={"reasoning_effort": ...}`（顶层构造 kwargs 被 langchain-litellm 0.7.1 pydantic 静默丢弃，echo-server 实证）；② §5.2/§5.4 决策点新增**翻译器门禁**（探测判支持但 `get_supported_openai_params()` 不含思考参数 → 软降级剥离 + WARNING `reason=translator_unsupported`，杜绝 SDK 本地 `UnsupportedParamsError` 断流）；③ §5.5 降级表补 `translator_unsupported` 行与「探测/手动不支持 + none → 剥离不告警」行（N-1 前提被证伪）。
 > **Spec 变更**: v1.5（2026-09-10，#1047 收口批）：§9.1 ③ / §13 M5 dashscope 实证项收口——workspace 无 `qwen-plan` 别名（实际 `qwen3.8-max`，#966 端点接受 reasoning_effort 已实证）；端点专项形态实测按用户拍板取消（暂无 dashscope provider 支持计划），降级为离线 SDK 验证（LiteLLM 包调用不报错 + 档位决策不抛异常）；结论沉淀 ADR-051「实证清单修订记录」R1-R3。
+> **Spec 变更**: v1.6（2026-09-10，#1039 收口批实证回填）：① §2.3「构造函数不自行读配置」细化例外——档位值仍由调用方注入，但**能力手动覆盖**（注册表 `models[].supports_reasoning`）经 `resolve_reasoning_manual` 在两个构造点（`harness.build_deep_agent` / `langchain_client._get_chat_model`）查表消费，使 §5.4 覆盖真正进入注入链；② §5.2 补 manual=True 注入时同带 `model_kwargs["allowed_openai_params"]=["reasoning_effort"]` 旁路 litellm SDK 本地门禁（echo-server 实证，仅随显式覆盖出现）。
 > **日期**: 2026-09-06
 > **依据**: 用户需求（chat 页每轮可选思考档位 + 写作链/全自动设定页配置）+ 三轮实证调查（/models 探测、provider 专项包、LiteLLM SDK 源码核验）
 > **模块类型**: 跨端（backend LLM 基建 + API + GUI），含既有模块（F5 LLM Provider / F23 SSE / F32 设置 / F47 chat 执行细节）增量——无新业务实体
@@ -100,8 +101,13 @@ ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "
 
 - `LangChainLLMClient.chat/chat_stream`、`ChatAgentService`、`harness.build_deep_agent`、
   supervisor/langgraph pipeline 各角色装配——均新增可选 `reasoning_effort` 参数，
-  由调用方（router/service/deps）在装配 ChatLiteLLM 前解析好传入；构造函数不自行读配置
-  （保持可测试性，与现有 model/temperature 注入形态一致）。
+  由调用方（router/service/deps）在装配 ChatLiteLLM 前解析好传入；构造函数不自行读**档位**配置
+  （保持可测试性，与现有 model/temperature 注入形态一致）。**例外（#1039 v1.6）**：两个
+  ChatLiteLLM 构造点（harness / langchain_client._get_chat_model）在档位可行动（≠ default/None）时
+  经 `provider_config.resolve_reasoning_manual`（注册表全名为键，校准映射前查询）读注册表
+  `models[].supports_reasoning` 手动覆盖并传 `apply_reasoning_effort(manual=...)`——能力覆盖
+  属「模型属性」而非用户档位偏好，下沉构造点统一消费（两链无路径分叉）；查表失败/未命中
+  一律 None=跟随自动探测，探针永不抛。
 - `LLMClientProtocol`（domain/ports/llm_client.py）：`chat()/chat_stream()` kwargs 已
   `**kwargs` 透传，无签名破坏；仅补 `reasoning_effort` 的显式说明。
 
@@ -198,6 +204,12 @@ OpenAI 兼容第三方）litellm 走 `openai/` 前缀 + `api_base`。
 - **注入前经翻译器门禁**：`litellm.get_supported_openai_params()` 不含
   `reasoning_effort`/`thinking` → 软降级剥离 + WARNING（`reason=translator_unsupported`），
   杜绝「探测判支持但 SDK 本地 `UnsupportedParamsError`」断流（#1044 D4；§5.5 表）。
+- **manual=True 旁路（#1039，Q1=A 拍板）**：注册表手动覆盖为 True 时注入 `reasoning_effort`
+  同带 `model_kwargs["allowed_openai_params"] = ["reasoning_effort"]`——litellm 1.99 对表 False
+  模型在 `check_valid_params` 本地直抛 `UnsupportedParamsError`（请求不发=断流，echo-server
+  实证），无旁路则 manual=True 覆盖等于虚设；旁路参数经 litellm 校验后剥除、不泄漏进 wire
+  body。旁路**仅随 manual=True 注入出现**——自动探测路径（manual=None）kwargs 形态零变化；
+  manual=True 亦跳过翻译器门禁（用户显式语义，§5.4 探测面 ≠ 传输面的显式出口）。
 - **不发**档位为 `default`（解析链终点为 `default` 时 kwargs 完全不加该键，等价现状）。
 - `none`：litellm 对支持方翻译为关闭（deepseek transformation：`reasoning_effort="none"` → `thinking.type="disabled"`，实证源码 40-59 行）。
 - 多轮思考回传（DeepSeek「reasoning_content 必须原样传回」约束）：**由 litellm

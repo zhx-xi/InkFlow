@@ -25,6 +25,7 @@ from inkflow.infrastructure.llm.provider_config import (
     get_provider_config,
     litellm_model_name,
     parse_model_string,
+    resolve_reasoning_manual,
 )
 from inkflow.logging import instrument, log_structured
 
@@ -259,13 +260,23 @@ class LangChainLLMClient:
             chat_kwargs["api_base"] = base_url
         if max_tokens is not None:
             chat_kwargs["max_tokens"] = max_tokens
-        chat_kwargs = to_chat_model_kwargs(
-            apply_reasoning_effort(
-                chat_kwargs,
-                model_full=full_model,
-                effort=reasoning_effort,
-            )
+        # #1039：档位可行动时才查注册表手动覆盖（None/"default" 不查——构造点在每条链上）
+        manual = (
+            resolve_reasoning_manual(model)
+            if reasoning_effort not in (None, "default")
+            else None
         )
+        decision = apply_reasoning_effort(
+            chat_kwargs,
+            model_full=full_model,
+            effort=reasoning_effort,
+            manual=manual,
+        )
+        if manual is True and "reasoning_effort" in decision:
+            # Q1=A：manual 覆盖注入必同带旁路（litellm 表 False 本地门禁直抛
+            # UnsupportedParamsError；旁路不泄漏进 wire body，probe 实证）
+            decision["allowed_openai_params"] = ["reasoning_effort"]
+        chat_kwargs = to_chat_model_kwargs(decision)
 
         return ChatLiteLLM(**chat_kwargs)  # type: ignore[arg-type]  # chat_kwargs 为动态 dict[str, object]，无法静态匹配 ChatLiteLLM 构造参数
 
