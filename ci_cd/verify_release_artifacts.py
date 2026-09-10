@@ -28,6 +28,7 @@ GUI 验证为纯结构检查，不启动应用。
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -170,11 +171,117 @@ def _cli_zip_version_row(zip_path: Path, tag: str) -> tuple[bool, str]:
 
 
 def _mcp_zip_version_row(zip_path: Path, tag: str) -> tuple[bool, str]:
-    """CLI zip 解到临时目录后执行 inkflow-mcp/inkflow-mcp.exe --version 并比对 tag。
+    """[已废弃 #1078] 保留仅为兼容历史调用点；MCP 入口无 --version 接口，请用 mcp_stdio_row。
 
-    #1072 方案 C：MCP exe 独立 onedir 产物（spec 第二个 Analysis），其 excludes 曾同样
-    含 litellm → 内核修好而 MCP 仍崩会漏网。以与内核同一版本门禁保护。
+    ``inkflow-mcp.exe --version`` 不是产品接口：MCP 入口是纯 stdio JSON-RPC 服务器
+    （``mcp/__main__.py`` 仅 ``run()``；``server.py`` ``anyio.run(main)`` → ``stdio_server()``），
+    无 CLI 参数解析 → 传 ``--version`` 被忽略，进程进入 stdio 等待、stdin 即关 → exit 0 且
+    stdout 为空 → 版本断言恒 FAIL（v0.14.0-rc2 发布阻断，run 34472329168）。
     """
+    del zip_path, tag
+    return (
+        False,
+        "deprecated: MCP entry has no --version interface; use mcp_stdio_row()",
+    )
+
+
+#: #1036 契约：MCP 工具面 15→18（与 backend/src/inkflow/mcp/tools/__init__.py
+#: MCP_TOOL_REGISTRY 同源）。
+MCP_EXPECTED_TOOLS = 18
+
+
+def mcp_stdio_row(
+    mcp_exe: Path, expected: int | None = None, launcher: list[str] | None = None
+) -> tuple[bool, str]:
+    """MCP 产物健康检查：stdio 握手 initialize → tools/list，断言工具面完整。
+
+    #1078：以 MCP **协议契约**（而非它不具备的 ``--version`` CLI 接口）做门禁，
+    可同时捕获「exe 起不来」「协议破」「工具面缺失」三类退化。
+
+    :param mcp_exe: MCP onedir 可执行文件路径（或 launcher 缺省时的直跑目标）
+    :param expected: 期望工具数，缺省 ``MCP_EXPECTED_TOOLS``
+    :param launcher: 显式启动命令（测试注入 python 桩用）；缺省 ``[exe]``
+    :return: ``(是否通过, 说明)``；任何异常路径均返回 ``(False, 说明)`` 不抛出
+    """
+    want = MCP_EXPECTED_TOOLS if expected is None else expected
+    target = Path(mcp_exe)
+    if launcher is None and not target.is_file():
+        return False, f"MCP exe not found: {target}"
+
+    frames = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "verify-release-artifacts", "version": "1.0"},
+            },
+        },
+        {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    ]
+    cmd = [str(target)] if launcher is None else list(launcher)
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(target.parent) if launcher is None else None,
+        )
+        assert proc.stdin is not None and proc.stdout is not None
+        # 逐帧写入；initialize 响应与 tools/list 响应各占一行（协议：帧独占 stdout）
+        for frame in frames:
+            proc.stdin.write(json.dumps(frame) + "\n")
+            proc.stdin.flush()
+
+        init_raw = proc.stdout.readline()
+        if not init_raw.strip():
+            return False, "no initialize response (stdio handshake failed)"
+        init = json.loads(init_raw)
+        if "result" not in init:
+            return False, f"initialize error: {init.get('error')}"
+
+        list_raw = proc.stdout.readline()
+        if not list_raw.strip():
+            return False, "no tools/list response"
+        listed = json.loads(list_raw)
+        tools = listed.get("result", {}).get("tools", [])
+        names = [t.get("name") for t in tools if isinstance(t, dict)]
+        if len(names) < want:
+            return False, f"tools/list returned {len(names)} (< {want}): {names[:6]}"
+        return (
+            True,
+            f"stdio handshake OK, tools={len(names)} names={sorted(names)[:3]}...",
+        )
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as exc:
+        return False, f"stdio handshake failed: {type(exc).__name__}: {exc}"
+    finally:
+        if proc is not None:
+            try:
+                if proc.stdin is not None:
+                    proc.stdin.close()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def _mcp_zip_stdio_row(zip_path: Path) -> tuple[bool, str]:
+    """CLI zip 解到临时目录 → 对 inkflow-mcp/inkflow-mcp.exe 做 stdio 握手（#1078）。"""
     rel = mcp_exe_rel_path()
     try:
         with tempfile.TemporaryDirectory(prefix="verify-release-mcp-") as tmp_dir:
@@ -183,7 +290,7 @@ def _mcp_zip_version_row(zip_path: Path, tag: str) -> tuple[bool, str]:
             exe = Path(tmp_dir) / Path(rel)
             if not exe.is_file():
                 return False, f"{rel} missing inside zip"
-            return _exe_version_row(exe, tag)
+            return mcp_stdio_row(exe)
     except (OSError, zipfile.BadZipFile) as exc:
         return False, f"zip extraction failed: {exc}"
 
@@ -257,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         label_dist = "CLI zip single inkflow-*.dist-info"
         label_version = "CLI zip version == tag (inkflow.exe --version)"
-        label_mcp_version = "CLI zip MCP version == tag (inkflow-mcp.exe --version)"
+        label_mcp_version = "CLI zip MCP stdio handshake (tools/list)"
         try:
             with zipfile.ZipFile(args.cli_zip) as zf:
                 namelist = zf.namelist()
@@ -278,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 ok, detail = _cli_zip_version_row(args.cli_zip, args.tag)
                 rows.append((label_version, ok, detail))
-                ok_mcp, detail_mcp = _mcp_zip_version_row(args.cli_zip, args.tag)
+                ok_mcp, detail_mcp = _mcp_zip_stdio_row(args.cli_zip)
                 rows.append((label_mcp_version, ok_mcp, detail_mcp))
 
     if args.kernel_dir is not None:
