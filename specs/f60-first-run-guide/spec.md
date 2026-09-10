@@ -381,9 +381,17 @@ frontend/packages/renderer/src/
 - `config show` 就绪 → `model_ready=true`, `model_ready_hint=null`
 - 未就绪 → `model_ready=false` + 提示行出现
 
-### 9.5 E2E 锚（可选，不阻塞本 PR）
+### 9.5 E2E 适配（#934 实测需求）
 
-N1-N4 的 GUI 全链路（真实内核 + 清数据目录）——若耗时超预算，登记 gap issue。
+**问题**：E2E 均以 `mkdtempSync` 隔离数据目录启动内核 = **全新安装态**。F60 门控下 App 渲染 `SetupGuide` 覆盖主 UI，导致所有测「其它功能」的 spec 找不到 `app-nav`/页面元素而误红（CI 首轮 `e2e-frontend-*` 4 个 job 全红，非产品缺陷）。
+
+**处置**：新增共享 helper `tests/e2e/e2e-model-ready.ts::ensureModelConfigured(kernel)` —— 经内核 API 幂等预置「含 chat 模型的 provider + key」（复用内置 seed 的 `deepseek` 行），使 `GET /settings/model-readiness` 返回 `ready=true`，等价「用户已完成首启引导」的安装态。已在 22 个 spec 的 launch helper 中于 `waitKernelInfo` 之后调用。
+
+**技术债声明（后续优化方向）**：当前是「每个 spec 的 launch helper 各调一次」，属 N 处样板。更优形态是 **Playwright `test.extend` 自定义 fixture**（或 global setup）集中包装 `electron.launch`，让 seed 成为 fixture 的组成部分而非 22 处调用点。本次未做：改动面涉及所有 spec 的 fixture 签名，风险大于收益；登记为后续重构候选。
+
+**不 seed 的 spec**（不依赖主 UI 内容，仅断言内核/托盘生命周期）：`e2e-debug-triad` · `e2e-tray` · `e2e-packaged`。
+
+N1-N4 的 GUI 全链路（真实内核 + 清数据目录 + 真实完成引导交互）仍未覆盖，登记为 gap issue。
 
 ---
 
