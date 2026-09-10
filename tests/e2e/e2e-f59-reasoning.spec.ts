@@ -38,6 +38,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { ensureModelConfigured } from './e2e-model-ready';
 import {
   createIsolatedEnv,
   ensureProcessExited,
@@ -157,6 +158,8 @@ async function launchIsolated(
   return withAppClosedOnFailure(app, async () => {
     const window = await app.firstWindow();
     const kernel = await waitKernelInfo(app);
+    // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
+    await ensureModelConfigured(kernel);
     return { app, window, kernel };
   });
 }

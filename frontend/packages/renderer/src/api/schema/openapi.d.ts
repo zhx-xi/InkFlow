@@ -2917,6 +2917,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/model-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Model Readiness
+         * @description 首启模型就绪判据（F60 #934 §3.1）——只读派生，零落库。
+         *
+         *     判据 = 存在「有 key 且含 chat 模型」的 provider（spec §2.1）。派生而非
+         *     落库标志位：用户删空 provider / 清 key 后引导可自愈重现，升级用户天然
+         *     ready → 零打扰（#770 轻量契约先例）。
+         *
+         *     异常：DB/内部异常 → 500 通用文案（ADR-012 风格，不泄漏内部细节）。
+         */
+        get: operations["get_model_readiness_api_v1_settings_model_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills": {
         parameters: {
             query?: never;
@@ -4606,6 +4632,30 @@ export interface components {
             base_url: string;
             /** Provider */
             provider?: string | null;
+        };
+        /**
+         * ModelReadiness
+         * @description 首启模型就绪判据（GET /api/v1/settings/model-readiness 响应体）。
+         *
+         *     Attributes:
+         *         ready: 是否可进入写作主流程（唯一门控判据，spec §2.1）。
+         *         has_chat_model: 是否存在「有 key 且有 chat 模型」的 provider。
+         *         has_embedding_model: 是否存在「有 key 且有 embedding 模型」的 provider
+         *             （GUI 步骤 3 / 语义检索置灰判据，spec §5.4 N2）。
+         *         reason: 未就绪原因（供 GUI 定位引导起始步骤 + 诊断）。
+         */
+        ModelReadiness: {
+            /** Has Chat Model */
+            has_chat_model: boolean;
+            /** Has Embedding Model */
+            has_embedding_model: boolean;
+            /** Ready */
+            ready: boolean;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "ready" | "no_provider" | "no_chat_model" | "no_key";
         };
         /**
          * NormalizeTitlesRequest
@@ -12333,6 +12383,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_model_readiness_api_v1_settings_model_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelReadiness"];
                 };
             };
         };

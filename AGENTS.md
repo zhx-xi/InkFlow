@@ -33,7 +33,7 @@
 | **工作流** | SDD + TDD：先写 spec → 再写测试（RED）→ 写代码（GREEN）→ 重构 |
 | **仓库** | `https://github.com/zhx-xi/InkFlow` |
 
-> 版本里程碑（0.1.0 → 2.0.0，ADR-019 v12）、Phase 1-3 功能全表、模块类型谱系（F9-F58 各变体样板导航）→ **见 `FEATURES.md` + `ARCHITECTURE.md §4`**。F17 空置；F18-F24 版本归属以 ADR-019 v12 为准。
+> 版本里程碑（0.1.0 → 2.0.0，ADR-019 v12）、Phase 1-3 功能全表、模块类型谱系（F9-F60 各变体样板导航）→ **见 `FEATURES.md` + `ARCHITECTURE.md §4`**。F17 空置；F18-F24 版本归属以 ADR-019 v12 为准。
 
 ---
 
@@ -151,6 +151,7 @@ class ProjectRepositoryProtocol(Protocol):
 | 传输增强型（SSE） | `specs/f23-sse/spec.md` |
 | 设置域横切型 | `specs/f32-settings/spec.md` |
 | 配置驱动编排型 | `specs/f42-agent-chain/spec.md` |
+| 首启门控型 | `specs/f60-first-run-guide/spec.md` |
 
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - **spec 是开发的唯一真相来源**。如果发现 spec 与实现矛盾，先更新 spec，再改代码

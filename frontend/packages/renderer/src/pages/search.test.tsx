@@ -40,6 +40,7 @@ import { fetchSearch } from '../api/search';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore, type Project } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useModelReadinessStore, type ModelReadiness } from '../stores/modelReadiness';
 
 vi.mock('../api/search', () => ({ fetchSearch: vi.fn() }));
 
@@ -118,6 +119,8 @@ beforeEach(() => {
   localStorage.clear();
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
+  // F60 #934：既有用例不受首启置灰影响——默认按「有 embedding」复位（N2 用例自行覆盖）
+  useModelReadinessStore.setState({ readiness: null, loading: false });
   fetchSearchMock.mockReset();
 });
 
@@ -332,5 +335,47 @@ describe('检索页 — 未选项目不发请求（spec N2）', () => {
     await user.type(screen.getByRole('textbox', { name: /检索/ }), '青云');
     await user.click(screen.getByRole('button', { name: '检索' }));
     expect(fetchSearchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── F60 #934 N2：无 embedding 模型 → 语义检索置灰（首启引导步骤 3 跳过后的可见后果）──
+
+const READINESS_WITH_EMBEDDING: ModelReadiness = {
+  ready: true,
+  has_chat_model: true,
+  has_embedding_model: true,
+  reason: 'ready',
+};
+
+const READINESS_WITHOUT_EMBEDDING: ModelReadiness = {
+  ready: true,
+  has_chat_model: true,
+  has_embedding_model: false,
+  reason: 'ready',
+};
+
+describe('检索页 — 语义检索置灰（#934 N2）', () => {
+  it('无 embedding 模型 → 显示置灰提示 + 语义项 disabled + 模式默认回落「关键词」', async () => {
+    const user = userEvent.setup();
+    seedProjects();
+    useModelReadinessStore.setState({
+      readiness: READINESS_WITHOUT_EMBEDDING,
+      loading: false,
+    });
+    renderSearchPage();
+    expect(screen.getByTestId('search-semantic-disabled')).toBeInTheDocument();
+    await user.click(screen.getByTestId('search-mode-select'));
+    const option = await screen.findByTestId('search-mode-semantic-option');
+    expect(option).toHaveAttribute('data-disabled');
+  });
+
+  it('有 embedding 模型 → 不显示置灰提示（语义可选）', async () => {
+    seedProjects();
+    useModelReadinessStore.setState({
+      readiness: READINESS_WITH_EMBEDDING,
+      loading: false,
+    });
+    renderSearchPage();
+    expect(screen.queryByTestId('search-semantic-disabled')).not.toBeInTheDocument();
   });
 });

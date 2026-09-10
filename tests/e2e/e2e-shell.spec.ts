@@ -8,6 +8,7 @@ import {
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
+import { ensureModelConfigured } from './e2e-model-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -83,6 +84,14 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
     const window = await app.firstWindow();
     await expect(window).toHaveTitle(/InkFlow/);
 
+    // 窗口加载完成 ≠ 内核就绪：INKFLOW_READY 需 python + uvicorn 启动时间，轮询等待注入。
+    // F60 #934：隔离数据目录 = 全新安装态 → 必须先预置「已配置模型」并 reload，
+    // 让首启引导门控放行，否则下方 app-nav logo 轮询会 60s 超时（门控下不渲染主 UI）。
+    const kernel = await waitKernelInfo(app);
+    await ensureModelConfigured(kernel);
+    await window.reload();
+    await expect(window).toHaveTitle(/InkFlow/);
+
     // 品牌 logo 真实加载断言（#98 修复回归：CSP default-src 'self' 阻止 data: 内联 svg →
     // 破图（naturalWidth=0）。这是**真实 Chromium 渲染**验证——jsdom 单元测试无法覆盖。
     // #106 用户反馈：品牌 logo 已从顶栏移入侧边栏 AppNav 品牌区（d372c13）——契约位置同步。
@@ -112,8 +121,7 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
     expect(logo!.src, 'CSP \'self\' 下 logo 必须为独立文件路径（data: 内联会被阻止）').not.toContain('data:');
     expect(logo!.src).toMatch(/inkflow-icon-plain/);
 
-    // 窗口加载完成 ≠ 内核就绪：INKFLOW_READY 需 python + uvicorn 启动时间，轮询等待注入
-    const kernel = await waitKernelInfo(app);
+    // 内核就绪与模型预置已在上方完成（F60 #934 门控前置）
     expect(kernel.pid).toBeGreaterThan(0);
     expect(kernel.port).toBeGreaterThan(0);
     expect(kernel.token).toBeTruthy();
@@ -234,7 +242,10 @@ test('窗口控制：最小化按钮 → isMinimized 轮询 true → restore 恢
   const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
   try {
     const window = await app.firstWindow();
-    await waitKernelInfo(app);
+    // F60 #934：预置「已配置模型」+ reload，让首启引导门控放行后再操作顶栏窗口按钮
+    await ensureModelConfigured(await waitKernelInfo(app));
+    await window.reload();
+    await window.waitForSelector('[data-testid="header-wc-min"]');
 
     await window.getByTestId('header-wc-min').click();
     await expect
@@ -269,7 +280,10 @@ test('窗口控制：最大化 ↔ 还原（aria-label Maximize↔Restore 跟随
   const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
   try {
     const window = await app.firstWindow();
-    await waitKernelInfo(app);
+    // F60 #934：预置「已配置模型」+ reload，让首启引导门控放行后再操作顶栏窗口按钮
+    await ensureModelConfigured(await waitKernelInfo(app));
+    await window.reload();
+    await window.waitForSelector('[data-testid="header-wc-max"]');
 
     const maxBtn = window.getByTestId('header-wc-max');
     await expect(maxBtn).toHaveAttribute('aria-label', 'Maximize');
@@ -310,7 +324,11 @@ test('窗口控制：关闭按钮（tray 语义）→ 窗口隐藏 + 内核存�
   const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
   try {
     const window = await app.firstWindow();
+    // F60 #934：顶栏窗口按钮需门控放行后才渲染 → 预置「已配置模型」+ reload
     const kernel = await waitKernelInfo(app);
+    await ensureModelConfigured(kernel);
+    await window.reload();
+    await window.waitForSelector('[data-testid="header-wc-close"]');
     const pid = kernel.pid;
 
     // 防 DB 残留 close_behavior='quit'（F32 M6 用例）破坏 tray 语义：显式复位

@@ -6,9 +6,11 @@ import { useI18n } from './i18n/useI18n';
 import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
 import { useKernelStore } from './stores/kernel';
+import { useModelReadinessStore } from './stores/modelReadiness';
 import type { Lang, ThemeName } from './theme';
 import { AppNav } from './components/AppNav';
 import { BootGate } from './components/BootGate';
+import { SetupGuide } from './components/SetupGuide';
 import { WindowControls } from './components/WindowControls';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { ToastHost } from './components/ui/toast';
@@ -47,6 +49,10 @@ function AppLayout() {
   const setLang = useThemeStore((s) => s.setLang);
   const status = useKernelStore((s) => s.status);
   const booted = useKernelStore((s) => s.booted);
+  // F60 #934：首启模型就绪判据（readiness=null 视为未就绪——引导不可绕过；
+  // 查询失败时 readiness 也是 null，用户可经「重试」重新查询，spec §7 边界 #6）
+  const readiness = useModelReadinessStore((s) => s.readiness);
+  const loadReadiness = useModelReadinessStore((s) => s.load);
 
   // #384 轮询生命周期归 store 管：挂载启动 / 卸载停止
   useEffect(() => {
@@ -59,9 +65,25 @@ function AppLayout() {
     void useThemeStore.getState().initFromBackend();
   }, []);
 
+  // F60 #934：内核就绪后查询模型就绪判据（gate 数据源；仅 booted 后查，避免内核未起时空查）
+  useEffect(() => {
+    if (booted) void loadReadiness();
+  }, [booted, loadReadiness]);
+
   // 门控：启动期（!booted）渲染封面，不渲染主 UI
   if (!booted) {
     return <BootGate />;
+  }
+
+  // F60 #934（N1/N3/N4）：未就绪 → 全屏配置引导（不可绕过）；就绪 → 正常主 UI。
+  // 升级用户 / 引导完成后判据即 true → 零打扰（无「已完成首启」标志位，spec §3.2）。
+  if (readiness === null || !readiness.ready) {
+    return (
+      <>
+        <SetupGuide />
+        <ToastHost />
+      </>
+    );
   }
 
   const kernelReady = status === 'ready';

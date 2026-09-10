@@ -32,6 +32,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { ensureModelConfigured } from './e2e-model-ready';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const FRONTEND_DIR = path.join(REPO_ROOT, 'frontend');
@@ -89,6 +90,8 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
   const window = await app.firstWindow();
   const kernel = await waitKernelInfo(app);
+  // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
+  await ensureModelConfigured(kernel);
   return { app, window, kernel };
 }
 

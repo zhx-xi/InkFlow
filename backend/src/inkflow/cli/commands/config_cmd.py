@@ -23,8 +23,9 @@ app = typer.Typer(name="config", help="系统配置管理", no_args_is_help=True
 @app.command("show")
 @instrument(caller_type="cli")
 def show_config(ctx: typer.Context) -> None:
-    """展示当前配置."""
+    """展示当前配置（含首启模型就绪状态行，#934 §4）。"""
     cli_ctx: CliContext = ctx.obj
+    model_ready, model_ready_hint = _model_readiness()
     result = {
         "default_model": config.llm_default_model,
         "default_temperature": config.llm_temperature,
@@ -33,8 +34,29 @@ def show_config(ctx: typer.Context) -> None:
         "server_host": config.server_host,
         "server_port": config.server_port,
         "data_dir": str(config.data_dir),
+        # F60 #934 R6：首启引导状态（未就绪时提示行给出可操作入口）
+        "model_ready": model_ready,
+        "model_ready_hint": model_ready_hint,
     }
     print_result(cli_ctx, result)
+    # 人类模式：未就绪 → 追加提示行（零 kernel 依赖，纯本地状态可见性）
+    if not cli_ctx.json_output and model_ready_hint:
+        typer.echo(f"⚠ {model_ready_hint}")
+
+
+def _model_readiness() -> tuple[bool, str | None]:
+    """CLI 本地就绪判据（#934 §4）——全局默认 chat 模型非空即就绪。
+
+    零 kernel 依赖（`config show` 豁免契约：绝不触发内核拉起）；GUI 是主
+    路径，CLI 只承载状态可见性（同 HTTP 端点语义的最小本地信号）。
+    """
+    if config.llm_default_model:
+        return True, None
+    return (
+        False,
+        "模型未配置：请启动 GUI（inkflow serve --open）完成首启引导，或执行 "
+        "inkflow llm provider create + inkflow config set default.model provider/model",
+    )
 
 
 @app.command("set")
