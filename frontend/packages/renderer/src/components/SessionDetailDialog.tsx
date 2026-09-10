@@ -7,6 +7,7 @@
  * - 归档执行会话（is_deleted=true）底部提供恢复入口；内容始终只读。
  */
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchSessionLogs, type SessionLogDto, type SessionViewDto } from '../api/sessions';
 import { getPlannerSession, type PlannerSessionDto } from '../api/books';
 import { getRun, type AgentRunDto, type AgentStepDto } from '../api/runs';
@@ -61,6 +62,7 @@ export function SessionDetailDialog({
   onRestoreSession,
 }: SessionDetailDialogProps) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [data, setData] = useState<DetailData | null>(null);
@@ -206,12 +208,17 @@ export function SessionDetailDialog({
                     <div className="mt-2 space-y-1">
                       {(trace?.steps ?? []).map((step) => renderTraceStep(step))}
                     </div>
-                    <div
+                    <button
+                      type="button"
                       data-testid="session-detail-trace-link"
-                      className="mt-2 text-[12px] text-accent"
+                      className="mt-2 text-[12px] text-accent transition-colors hover:text-accent-hover"
+                      onClick={() => {
+                        const chapterId = trace?.chapter_id;
+                        navigate(chapterId ? `/writing?chapter_id=${chapterId}` : '/writing');
+                      }}
                     >
                       {t('sessions.detail.traceLink')}
-                    </div>
+                    </button>
                   </>
                 )}
               </div>
