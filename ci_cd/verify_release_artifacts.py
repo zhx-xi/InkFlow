@@ -53,16 +53,24 @@ def matches_tag(actual_stdout: str, tag: str) -> bool:
     return any(normalize_version(token) == expected for token in actual_stdout.split())
 
 
+def mcp_exe_rel_path() -> str:
+    """CLI zip 内 MCP exe 相对路径（#1072 方案 C：结构标签与版本断言同源，防漂移）。"""
+    return "inkflow-mcp/inkflow-mcp.exe"
+
+
 def check_cli_zip_structure(namelist: list[str]) -> list[str]:
     """CLI zip 结构缺失清单：inkflow/inkflow.exe、inkflow/_internal/、MCP exe、skills/。"""
     entries = set(namelist)
     missing: list[str] = []
     if "inkflow/inkflow.exe" not in entries:
         missing.append("inkflow/inkflow.exe")
-    if not any(e == "inkflow/_internal/" or e.startswith("inkflow/_internal/") for e in entries):
+    if not any(
+        e == "inkflow/_internal/" or e.startswith("inkflow/_internal/") for e in entries
+    ):
         missing.append("inkflow/_internal/")
-    if "inkflow-mcp/inkflow-mcp.exe" not in entries:
-        missing.append("inkflow-mcp/inkflow-mcp.exe")
+    mcp_rel = mcp_exe_rel_path()
+    if mcp_rel not in entries:
+        missing.append(mcp_rel)
     if not any(e.startswith("skills/") and e != "skills/" for e in entries):
         missing.append("skills/")
     return missing
@@ -161,6 +169,25 @@ def _cli_zip_version_row(zip_path: Path, tag: str) -> tuple[bool, str]:
         return False, f"zip extraction failed: {exc}"
 
 
+def _mcp_zip_version_row(zip_path: Path, tag: str) -> tuple[bool, str]:
+    """CLI zip 解到临时目录后执行 inkflow-mcp/inkflow-mcp.exe --version 并比对 tag。
+
+    #1072 方案 C：MCP exe 独立 onedir 产物（spec 第二个 Analysis），其 excludes 曾同样
+    含 litellm → 内核修好而 MCP 仍崩会漏网。以与内核同一版本门禁保护。
+    """
+    rel = mcp_exe_rel_path()
+    try:
+        with tempfile.TemporaryDirectory(prefix="verify-release-mcp-") as tmp_dir:
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp_dir)
+            exe = Path(tmp_dir) / Path(rel)
+            if not exe.is_file():
+                return False, f"{rel} missing inside zip"
+            return _exe_version_row(exe, tag)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return False, f"zip extraction failed: {exc}"
+
+
 def _report(rows: list[tuple[str, bool, str]]) -> int:
     """逐项打印 [PASS]/[FAIL] 表并返回退出码（0 = 全部通过，1 = 存在 FAIL）。"""
     failed = 0
@@ -225,9 +252,12 @@ def main(argv: list[str] | None = None) -> int:
     rows: list[tuple[str, bool, str]] = []
 
     if args.cli_zip is not None:
-        label_structure = "CLI zip structure (inkflow/inkflow.exe, _internal, inkflow-mcp, skills)"
+        label_structure = (
+            "CLI zip structure (inkflow/inkflow.exe, _internal, inkflow-mcp, skills)"
+        )
         label_dist = "CLI zip single inkflow-*.dist-info"
         label_version = "CLI zip version == tag (inkflow.exe --version)"
+        label_mcp_version = "CLI zip MCP version == tag (inkflow-mcp.exe --version)"
         try:
             with zipfile.ZipFile(args.cli_zip) as zf:
                 namelist = zf.namelist()
@@ -235,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             rows.append((label_structure, False, f"cannot open {args.cli_zip}: {exc}"))
             rows.append((label_dist, False, "zip unreadable"))
             rows.append((label_version, False, "zip unreadable"))
+            rows.append((label_mcp_version, False, "zip unreadable"))
         else:
             missing = check_cli_zip_structure(namelist)
             detail = "complete" if not missing else "missing: " + ", ".join(missing)
@@ -243,9 +274,12 @@ def main(argv: list[str] | None = None) -> int:
             rows.append((label_dist, count == 1, f"count = {count}"))
             if args.skip_launch:
                 rows.append((label_version, False, "--skip-launch: unverified"))
+                rows.append((label_mcp_version, False, "--skip-launch: unverified"))
             else:
                 ok, detail = _cli_zip_version_row(args.cli_zip, args.tag)
                 rows.append((label_version, ok, detail))
+                ok_mcp, detail_mcp = _mcp_zip_version_row(args.cli_zip, args.tag)
+                rows.append((label_mcp_version, ok_mcp, detail_mcp))
 
     if args.kernel_dir is not None:
         label_structure = "Kernel dir structure (inkflow.exe, _internal)"
