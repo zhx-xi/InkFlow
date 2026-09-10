@@ -19,12 +19,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { apiFetch } from '../client';
 import { streamChat, type ChatStreamBody } from '../chat';
+import {
+  MAX_LAUNCH_ATTEMPTS,
+  READY_TIMEOUT_MS,
+  launchWithRetry,
+  probeFreePort,
+} from '../../test/kernel-harness';
 
 // node env 下无 window：用 globalThis 充当（streamChat/apiFetch 读 window.INKFLOW_API）
 (globalThis as unknown as { window: unknown }).window = globalThis;
 
 const TEST_TOKEN = 'f1-integration-token';
-const READY_TIMEOUT_MS = 60_000;
 
 // 本文件（src/api/__integration__/）→ 仓库根
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..', '..');
@@ -74,8 +79,13 @@ async function startFakeLlm(): Promise<string> {
   });
 }
 
-/** 启动真内核（INKFLOW_LLM_BASE_URL=fake + fake 默认模型），解析 INKFLOW_READY {port,token} */
-async function startKernel(fakeBase: string): Promise<void> {
+/** 单次尝试：spawn 真内核（显式用端口预检结果，不再用 --port 0 盲选），解析 READY */
+async function spawnKernelOnce(port: number, fakeBase: string): Promise<void> {
+  // 幂等清理上一次残留内核，防残留进程占用预检端口
+  if (kernelChild) {
+    killPs(kernelChild);
+    kernelChild = null;
+  }
   const py = resolvePython();
   const env = {
     ...process.env,
@@ -85,17 +95,21 @@ async function startKernel(fakeBase: string): Promise<void> {
     INKFLOW_LLM_DEFAULT_MODEL: 'fake/correct',
     INKFLOW_DATA_DIR: join(repoRoot, '.tmp', `f1-${Date.now()}`),
   };
-  kernelChild = spawn(py, ['-m', 'inkflow', 'serve', '--port', '0', '--token', TEST_TOKEN], {
-    cwd: join(repoRoot, 'backend'),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-    env,
-  });
+  kernelChild = spawn(
+    py,
+    ['-m', 'inkflow', 'serve', '--port', String(port), '--token', TEST_TOKEN],
+    {
+      cwd: join(repoRoot, 'backend'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env,
+    },
+  );
   const stdout = kernelChild.stdout;
   if (!stdout) throw new Error('kernel stdout 不可用');
   const lines = createInterface({ input: stdout });
   return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('等待 INKFLOW_READY 超时')), READY_TIMEOUT_MS + 15_000);
+    const timer = setTimeout(() => reject(new Error('等待 INKFLOW_READY 超时')), READY_TIMEOUT_MS);
     lines.on('line', (line) => {
       const idx = line.indexOf('INKFLOW_READY ');
       if (idx === -1) return;
@@ -112,6 +126,18 @@ async function startKernel(fakeBase: string): Promise<void> {
   });
 }
 
+/** 启动真内核：端口预检 + 失败重启（#1068；INKFLOW_LLM_BASE_URL=fake + fake 默认模型） */
+async function startKernel(fakeBase: string): Promise<void> {
+  await launchWithRetry({
+    attempts: MAX_LAUNCH_ATTEMPTS,
+    spawnOnce: (port) => spawnKernelOnce(port, fakeBase),
+    probe: probeFreePort,
+    onAttemptFailed: (a) => {
+      console.warn(`内核第 ${a.attempt} 次启动失败：${a.error?.message ?? '未知错误'}`);
+    },
+  });
+}
+
 beforeAll(async () => {
   const fakeBase = await startFakeLlm();
   await startKernel(fakeBase);
@@ -119,7 +145,7 @@ beforeAll(async () => {
   // 建项目（streamChat 需要 project_id）
   const created = (await apiFetch('/api/v1/projects', { method: 'POST', body: { name: 'F1-SSE', language: 'zh', target_words: 1000 } })) as { id: string };
   projectId = created.id;
-}, READY_TIMEOUT_MS + 20_000);
+}, READY_TIMEOUT_MS * MAX_LAUNCH_ATTEMPTS + 20_000);
 
 afterAll(() => {
   killPs(kernelChild);
