@@ -25,6 +25,7 @@ import { useProjectStore } from './stores/project';
 import { useChapterStore } from './stores/chapter';
 import { useThemeStore } from './stores/theme';
 import { useKernelStore } from './stores/kernel';
+import { useModelReadinessStore } from './stores/modelReadiness';
 
 vi.mock('./api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api/client')>();
@@ -60,6 +61,17 @@ describe('AppLayout 启动门控（#384）', () => {
   });
 
   it('ready → 主 UI 渲染（app-nav）+ 封面消失（/health 成功）', async () => {
+    // F60 #934：内核就绪后还需模型就绪才渲染主 UI——本用例测内核门控放行，
+    // 故预设模型就绪（首启引导门控另测 SetupGuide.test.tsx / App.setup-gate.test.tsx）
+    useModelReadinessStore.setState({
+      readiness: {
+        ready: true,
+        has_chat_model: true,
+        has_embedding_model: true,
+        reason: 'ready',
+      },
+      loading: false,
+    });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/health') return { ok: true };
       if (path === '/api/v1/projects') {

@@ -2750,6 +2750,41 @@
         "title": "ModelDiscoveryRequest",
         "type": "object"
       },
+      "ModelReadiness": {
+        "description": "首启模型就绪判据（GET /api/v1/settings/model-readiness 响应体）。\n\nAttributes:\n    ready: 是否可进入写作主流程（唯一门控判据，spec §2.1）。\n    has_chat_model: 是否存在「有 key 且有 chat 模型」的 provider。\n    has_embedding_model: 是否存在「有 key 且有 embedding 模型」的 provider\n        （GUI 步骤 3 / 语义检索置灰判据，spec §5.4 N2）。\n    reason: 未就绪原因（供 GUI 定位引导起始步骤 + 诊断）。",
+        "properties": {
+          "has_chat_model": {
+            "title": "Has Chat Model",
+            "type": "boolean"
+          },
+          "has_embedding_model": {
+            "title": "Has Embedding Model",
+            "type": "boolean"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "ready",
+              "no_provider",
+              "no_chat_model",
+              "no_key"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "has_chat_model",
+          "has_embedding_model",
+          "reason"
+        ],
+        "title": "ModelReadiness",
+        "type": "object"
+      },
       "NormalizeTitlesRequest": {
         "description": "#999 批量归一化请求体：format 必填，仅 arabic/chinese.",
         "properties": {
@@ -15296,6 +15331,28 @@
           }
         },
         "summary": "Test Llm Connection",
+        "tags": [
+          "Settings"
+        ]
+      }
+    },
+    "/api/v1/settings/model-readiness": {
+      "get": {
+        "description": "首启模型就绪判据（F60 #934 §3.1）——只读派生，零落库。\n\n判据 = 存在「有 key 且含 chat 模型」的 provider（spec §2.1）。派生而非\n落库标志位：用户删空 provider / 清 key 后引导可自愈重现，升级用户天然\nready → 零打扰（#770 轻量契约先例）。\n\n异常：DB/内部异常 → 500 通用文案（ADR-012 风格，不泄漏内部细节）。",
+        "operationId": "get_model_readiness_api_v1_settings_model_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelReadiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Model Readiness",
         "tags": [
           "Settings"
         ]

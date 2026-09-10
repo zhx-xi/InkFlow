@@ -25,8 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_provider_config_service, get_settings_service
 from inkflow.core.config import config, get_instance_env_path, save_instance_env
+from inkflow.domain.models.model_readiness import ModelReadiness
 from inkflow.domain.models.settings import AppSettings, AppSettingsUpdate
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
+from inkflow.domain.services.model_readiness import compute_model_readiness
 from inkflow.domain.services.settings_service import SettingsService
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
 from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
@@ -204,6 +206,24 @@ async def test_llm_connection(
         "model": model,
         "message": "连接成功",
     }
+
+
+@router.get("/model-readiness", response_model=ModelReadiness)
+@instrument(caller_type="api")
+async def get_model_readiness(db: AsyncSession = Depends(get_db)) -> ModelReadiness:
+    """首启模型就绪判据（F60 #934 §3.1）——只读派生，零落库。
+
+    判据 = 存在「有 key 且含 chat 模型」的 provider（spec §2.1）。派生而非
+    落库标志位：用户删空 provider / 清 key 后引导可自愈重现，升级用户天然
+    ready → 零打扰（#770 轻量契约先例）。
+
+    异常：DB/内部异常 → 500 通用文案（ADR-012 风格，不泄漏内部细节）。
+    """
+    try:
+        return await compute_model_readiness(db)
+    except Exception as exc:
+        logger.exception("就绪状态查询失败")
+        raise HTTPException(status_code=500, detail="就绪状态查询失败，请稍后重试") from exc
 
 
 @router.get("", response_model=AppSettings)

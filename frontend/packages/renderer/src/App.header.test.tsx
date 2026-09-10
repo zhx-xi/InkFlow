@@ -38,6 +38,7 @@ import { apiFetch } from './api/client';
 import { useProjectStore } from './stores/project';
 import { useThemeStore } from './stores/theme';
 import { useKernelStore } from './stores/kernel';
+import { useModelReadinessStore } from './stores/modelReadiness';
 
 vi.mock('./api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api/client')>();
@@ -55,8 +56,23 @@ beforeEach(() => {
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   // #384 门控适配：预设 ready+booted（跳过 booting 封面，顶栏/主题/语言用例关注非门控）
   useKernelStore.setState({ status: 'ready', booted: true, healthFailures: 0 });
-  // 空列表即可——顶栏断言与项目列表内容无关
-  apiFetchMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+  // F60 #934：预设模型就绪（跳过首启引导门控）——本文件关注顶栏职责
+  useModelReadinessStore.setState({
+    readiness: {
+      ready: true,
+      has_chat_model: true,
+      has_embedding_model: true,
+      reason: 'ready',
+    },
+    loading: false,
+  });
+  // F60 #934：App 挂载后查询模型就绪判据——返回 ready（提前于兜底 mockResolvedValue）
+  apiFetchMock.mockImplementation(async (path: string) => {
+    if (path === '/api/v1/settings/model-readiness') {
+      return { ready: true, has_chat_model: true, has_embedding_model: true, reason: 'ready' };
+    }
+    return { items: [], total: 0, offset: 0, limit: 50 };
+  });
 });
 
 afterEach(() => {
@@ -157,6 +173,10 @@ describe('App 顶栏 — 主题/语言 Radix Select 契约升级（#106 §8.2⑤
     // /health 失败保持 failed；其余请求成功（projects 正常渲染）
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/health') throw new Error('kernel unreachable');
+      // F60 #934：模型就绪判据须返回 ready，否则落入兜底信封触发首启引导门控
+      if (path === '/api/v1/settings/model-readiness') {
+        return { ready: true, has_chat_model: true, has_embedding_model: true, reason: 'ready' };
+      }
       return { items: [], total: 0, offset: 0, limit: 50 };
     });
     render(<App />);

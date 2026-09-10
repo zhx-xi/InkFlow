@@ -32,6 +32,7 @@ import { useProjectStore } from './stores/project';
 import { useChapterStore } from './stores/chapter';
 import { useThemeStore } from './stores/theme';
 import { useKernelStore } from './stores/kernel';
+import { useModelReadinessStore } from './stores/modelReadiness';
 
 vi.mock('./api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api/client')>();
@@ -50,8 +51,22 @@ beforeEach(() => {
   useChapterStore.setState({ volumes: [], chapters: [], currentChapterId: null, content: '', loading: false, error: null });
   // #384 门控适配：预设 ready+booted（跳过 booting 封面，本文件测导航/品牌不测门控）
   useKernelStore.setState({ status: 'ready', booted: true });
+  // F60 #934：预设模型就绪（跳过首启引导门控）——本文件关注 App 骨架/导航
+  useModelReadinessStore.setState({
+    readiness: {
+      ready: true,
+      has_chat_model: true,
+      has_embedding_model: true,
+      reason: 'ready',
+    },
+    loading: false,
+  });
   // 种子项目 p1：写作页挂载回退首个项目渲染 editor（冒烟确定性，与 App.routing.test.tsx 同源）
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+    // F60 #934：App 挂载后查询模型就绪判据——返回 ready，避免落入兜底信封触发引导门控
+    if (path === '/api/v1/settings/model-readiness') {
+      return { ready: true, has_chat_model: true, has_embedding_model: true, reason: 'ready' };
+    }
     if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
       return {
         items: [{

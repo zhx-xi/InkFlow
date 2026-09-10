@@ -10,6 +10,7 @@ import {
 } from '../api/index';
 import { errorMessage } from '../api/client';
 import { useChapterStore } from '../stores/chapter';
+import { canUseSemanticSearch, useModelReadinessStore } from '../stores/modelReadiness';
 import { useProjectStore } from '../stores/project';
 import { useI18n } from '../i18n/useI18n';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -52,7 +53,20 @@ export function SearchPage() {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
 
   const [q, setQ] = useState('');
+  // F60 #934 N2：无 embedding 模型 → 语义检索置灰。
+  // 判据三态：readiness=null（未查询/查询失败）→ 不置灰（保持既有默认 semantic，
+  // 服务端为主路径守卫）；已查询且 has_embedding_model=false → 置灰并回落 keyword。
+  const readiness = useModelReadinessStore((s) => s.readiness);
+  const semanticBlocked = readiness !== null && !canUseSemanticSearch(readiness);
   const [mode, setMode] = useState<SearchMode>('semantic');
+
+  // 判据异步到达且明确「无 embedding」→ 回落 keyword（用户未手动改过时）
+  const modeTouchedRef = useRef(false);
+  useEffect(() => {
+    if (modeTouchedRef.current) return;
+    if (semanticBlocked) setMode('keyword');
+  }, [semanticBlocked]);
+
   const [projectId, setProjectId] = useState<string | null>(currentProjectId);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchResponseDto | null>(null);
@@ -211,7 +225,13 @@ export function SearchPage() {
           <form className="mt-6 flex flex-wrap items-end gap-4" onSubmit={handleSearch}>
             <div className="flex flex-col gap-1.5">
               <label className="text-[12px] text-ink-3">{t('search.mode.label')}</label>
-              <Select value={mode} onValueChange={(v) => setMode(v as SearchMode)}>
+              <Select
+                value={mode}
+                onValueChange={(v) => {
+                  modeTouchedRef.current = true;
+                  setMode(v as SearchMode);
+                }}
+              >
                 <SelectTrigger
                   data-testid="search-mode-select"
                   aria-label={t('search.mode.label')}
@@ -220,10 +240,23 @@ export function SearchPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="semantic">{t('search.mode.semantic')}</SelectItem>
+                  <SelectItem
+                    value="semantic"
+                    data-testid="search-mode-semantic-option"
+                    disabled={semanticBlocked}
+                    data-disabled={semanticBlocked ? '' : undefined}
+                  >
+                    {t('search.mode.semantic')}
+                  </SelectItem>
                   <SelectItem value="keyword">{t('search.mode.keyword')}</SelectItem>
                 </SelectContent>
               </Select>
+              {/* F60 #934 N2：无 embedding 模型 → 语义检索不可用（置灰 + 可操作提示） */}
+              {semanticBlocked && (
+                <p data-testid="search-semantic-disabled" className="text-[12px] text-ink-3">
+                  {t('setup.semanticDisabled')}
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
