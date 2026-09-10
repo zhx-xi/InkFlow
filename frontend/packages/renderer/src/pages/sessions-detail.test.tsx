@@ -508,11 +508,46 @@ describe('#1029 执行会话详情 ↔ agentic 决策轨迹关联（ADR-056，sp
     // 跳转执行详情入口
     const traceLink = screen.getByTestId('session-detail-trace-link');
     expect(traceLink).toBeInTheDocument();
-    // N22 契约：「点击跳转入口 → 写作页执行视图」
+    // N22 契约：点击跳转入口 → 导航写作页。⚠️ 断言必须含 chapter_id 才能证伪
+    // 「落编辑器/无参」分支（run.chapter_id 为 null 时实现走裸 /writing，两分支都含
+    // /writing → 仅断言 /writing 是恒真，见评审 finding #2）。
     expect(traceLink.tagName).toBe('BUTTON');
     await user.click(traceLink);
     await waitFor(() => {
       expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing');
+    });
+    // 裸 chapter_id 的 run（makeRunDto chapter_id=null）→ 不拼查询参数（无 chapter_id key）
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing');
+    expect(screen.getByTestId('location-probe').textContent).not.toContain('chapter_id');
+  });
+
+  it('N22 分支：run.chapter_id 非空 → 跳转 URL 携带 chapter_id（证伪恒真断言）', async () => {
+    fetchSessionsMock.mockResolvedValue({
+      items: [
+        makeSession({
+          id: 'ex-anchored-p1',
+          project_id: 'p1',
+          title: '带锚执行',
+          status: 'completed',
+          context: { agent_run_id: RUN_ID },
+        }),
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    });
+    fetchSessionLogsMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 200 });
+    getRunMock.mockResolvedValue({ ...makeRunDto(), chapter_id: 'ch-42' });
+
+    const user = userEvent.setup();
+    renderSessionsPage();
+    await screen.findByTestId('session-title-ex-anchored-p1');
+    await user.click(screen.getByTestId('session-title-ex-anchored-p1'));
+    await screen.findByTestId('session-detail-dialog');
+    await user.click(await screen.findByTestId('session-detail-trace-link'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing?chapter_id=ch-42');
     });
   });
 

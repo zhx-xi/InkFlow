@@ -147,7 +147,7 @@
 - 弹层结构（模态，镜像 session-delete-dialog 的 fixed 遮罩 + z-50 形态）：
   - `session-detail-dialog`（role=dialog aria-modal）、`session-detail-title`（卡标题）、`session-detail-close`（关闭）。
   - 访谈（variant=pl）：懒加载 `GET /api/v1/agent/books/planner/{id}`（api/books.ts getPlannerSession 既有）→ 问答轮次列表 `session-detail-qa-<q.id>`（asked_questions × answers 逐对，未答显示占位）+ 确认项列表 `session-detail-confirmed-<key>`（key: value (source)）+ 写作计划行 `session-detail-writing-plan`（writing_plan_id 非空 → 「已生成写作计划」徽标 + plan id 文本；GUI 无独立 plan 查看页、后端无 GET writing-plans 端点，v1 不做导航）。
-  - 执行（variant=ex）：session 元信息（状态/类型/项目/起止时间/result 摘要）+ 履历日志时间线，懒加载 `GET /api/v1/sessions/{id}/logs`（api/sessions.ts 新增 fetchSessionLogs）→ `session-detail-log-<seq>` 逐条（level + message + created_at）。归档会话（is_deleted=true）日志仍可见（后端 list_logs 不因归档过滤，履历保留契约）。**（#1029 增补）决策轨迹区块**：session.context 含 `agent_run_id` 键时追加，懒加载 `getRun(agent_run_id)`（`GET /api/v1/agent/runs/{id}`，ADR-056）→ `session-detail-trace-<index>` 轻量行（步骤序号 + 工具名 + 结果摘要，多工具以逗号连接）+ `session-detail-trace-link`「查看执行详情」跳 `/writing` 执行视图；无该键 = 不渲染区块（存量会话降级，不报错）；run 不存在/加载失败 → `session-detail-trace-error` 占位文案（不崩溃）。
+  - 执行（variant=ex）：session 元信息（状态/类型/项目/起止时间/result 摘要）+ 履历日志时间线，懒加载 `GET /api/v1/sessions/{id}/logs`（api/sessions.ts 新增 fetchSessionLogs）→ `session-detail-log-<seq>` 逐条（level + message + created_at）。归档会话（is_deleted=true）日志仍可见（后端 list_logs 不因归档过滤，履历保留契约）。**（#1029 增补）决策轨迹区块**：session.context 含 `agent_run_id` 键时追加，懒加载 `getRun(agent_run_id)`（`GET /api/v1/agent/runs/{id}`，ADR-056）→ `session-detail-trace-<index>` 轻量行（步骤序号 + 工具名 + 结果原文）+ `session-detail-trace-link`「查看执行详情」跳 `/writing`（run 的 chapter_id 非空时附 `?chapter_id=`；⚠️ 写作页当前不消费 chapter_id、默认落编辑器视图，故 v1 = 「跳转写作页，用户自行切换执行视图」，**直达 run 执行视图的深链列为后续增量**）；无该键 = 不渲染区块（存量会话降级，不报错）；run 不存在/加载失败 → `session-detail-trace-error` 占位文案（不崩溃）。
   - 数据加载中 `session-detail-loading`；加载失败 err 文案（不崩溃，可关闭）。
   - 归档态（is_deleted=true）：弹层底部渲染恢复按钮 `session-detail-restore`（复用 handleRestore / handleRestoreConversation 语义：成功本地置 is_deleted=false + ok toast，失败 err toast）；内容始终只读。
 - 访谈卡状态不限（drafting/completed/declined 均可点开）；执行卡活动/归档均可点开。
@@ -168,7 +168,7 @@
 - N14：点击归档 AI 对话卡标题 → `/writing?conversation_id=<id>` 页 ChatPanel 渲染 `chat-archived-banner` + `chat-archived-restore`；消息历史请求带 include_deleted=true 且渲染归档消息；无 `chat-input`/`chat-send`（只读）。
 - N15：活动 AI 对话行为不回归——消息请求不带 include_deleted 参数、输入/发送区正常渲染（护栏）。
 - N16：弹层/横幅加载失败显示 err 文案不崩溃（mock reject）。
-- N22（#1029）：执行会话 `context.agent_run_id` 非空 → 弹层渲染决策轨迹区块（`session-detail-trace-*` 逐步骤 + `session-detail-trace-link`），数据源 = `GET /agent/runs/{id}` 懒加载；点击跳转入口 → 写作页执行视图。
+- N22（#1029）：执行会话 `context.agent_run_id` 非空 → 弹层渲染决策轨迹区块（`session-detail-trace-*` 逐步骤 + `session-detail-trace-link`），数据源 = `GET /agent/runs/{id}` 懒加载；点击跳转入口 → 导航到写作页（`/writing`，run 的 chapter_id 非空时 URL 含 `chapter_id`；⚠️ v1 不承诺直达执行视图，见 §6.1/ADR-056 D3）。
 - N23（#1029）：**存量会话不回归**——`context` 无 `agent_run_id` 键 → 不渲染轨迹区块、不发起 run 请求、无错误提示，弹层维持 #1028 形态（元信息 + 履历日志）。
 - N24（#1029）：`agent_run_id` 存在但 `getRun` 失败（404/网络）→ `session-detail-trace-error` 占位文案，弹层其余部分（元信息/日志）不受影响、不崩溃。
 
@@ -179,7 +179,7 @@
 | v1 裁定（#1015） | issue 建议执行会话详情消费 `GET /agent/runs/{id}`（F27 轨迹）——源码实证 F24 sessions 与 F27 agent_runs 两表无关联（sessions.id=int PK→UUID(int=id)；agent_runs.id=uuid4 字符串；无外键/无映射字段，#379 同族），以其为详情源必 404。裁定：v1 执行会话详情 = 既有 sessions 详情 + logs 端点（元信息+履历），agentic 轨迹贯通另立 issue。 | 2026-09-09 首版（#1015 / PR #1028） |
 | 关联建模（#1029） | **A（选定）= `sessions.context` 软锚**：执行发起方创建会话时把 run 锚写进 `sessions.context` JSON 的 `agent_run_id` 键（`sessions.context` 已是 `LenientJSON(fallback={})` 快照列 `models/session.py:90`，且已在 API 暴露 `SessionDto.context` `api/sessions.ts:18`）→ **零 schema 迁移、零 API 契约变更**。前端弹层检测到该键 → 追加「决策轨迹」区块，懒加载既有 `GET /api/v1/agent/runs/{id}`（`api/runs.ts:49` `getRun`）。软关联与 F24 §5.4b `session_logs.payload` 观测契约同族（JSON 快照承载跨域锚点）。 | 2026-09-10 #1029（ADR-056） |
 | 发起点范围（#1029） | **只覆盖同时落 `sessions` 行与 `agent_runs` 行的执行**。当前三条编排路径（agentic 写作 `agentic_writer_service`、chat 流 `chat_stream`、F4 管线）**均不写 `sessions` 行** → 自动写锚无落点，v1 锚点写入端 = 调用方经 `POST /sessions` 的 `context` 字段自带（CLI `--context-json` / API body）；未来编排路径落 sessions 时复用同一键名契约（前端零改）。F4 管线不涉（独立 `agent_executions` 表，写作页执行视图已覆盖）。 | 2026-09-10 #1029（ADR-056） |
-| 弹层呈现（#1029） | **轻量列表 + 直跳**：弹层宽度受限（`max-w-lg`），**不复用** `ExecutionDetailPanel`（419 行完整渲染栈 + 轮询恢复逻辑，嵌入会挤压并带入 projectId 模式副作用）→ 弹层内渲染轻量轨迹列表（步骤序号 + 工具名 + 结果摘要，testid `session-detail-trace-*`）+ 「查看执行详情」入口跳写作页执行视图（复用 #599 单一渲染栈，含步骤折叠 + 思考块 #740）。 | 2026-09-10 #1029（ADR-056） |
+| 弹层呈现（#1029） | **轻量列表 + 跳转写作页**：弹层宽度受限（`max-w-lg`），**不复用** `ExecutionDetailPanel`（419 行完整渲染栈 + 轮询恢复逻辑，嵌入会挤压并带入 projectId 模式副作用）→ 弹层内渲染轻量轨迹列表（步骤序号 + 工具名 + 结果原文，testid `session-detail-trace-*`）+ `session-detail-trace-link` 跳 `/writing`（chapter_id 非空时附参）。⚠️ **核实边界**：写作页不消费 `chapter_id`（`writing.tsx:62` 仅读 `conversation_id`）、默认落编辑器视图、执行视图取 F4 `executionId` 而非 agentic `runId` → v1 语义 = 「跳转写作页（用户自行切换执行视图）」，**非**「直达该 run 执行视图」；深链列为后续增量。 | 2026-09-10 #1029（ADR-056，审查修正） |
 | 决策记录 | 完整备选方案（B `agent_runs.session_id` 列 / C project_id+时间窗模糊匹配 / D 新建关联表）与拒绝理由 → ADR-056 `adr/architecture/ADR-056.md`。 | 2026-09-10 #1029 |
 
 ## 7. #1016 i18n 同名键冲突（会话分组标题）与重复键护栏
