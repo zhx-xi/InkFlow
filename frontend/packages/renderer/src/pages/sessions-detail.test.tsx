@@ -578,6 +578,40 @@ describe('#1029 执行会话详情 ↔ agentic 决策轨迹关联（ADR-056，sp
     expect(await screen.findByTestId('session-detail-log-1')).toHaveTextContent('开始执行');
     expect(screen.queryByTestId('session-detail-error')).not.toBeInTheDocument();
   });
+
+  it('N23 边界：context 为退化形态（null / 非对象 / 空串锚）→ 不崩溃、不渲染轨迹区块', async () => {
+    fetchSessionsMock.mockResolvedValue({
+      items: [
+        // LenientJSON 容错路径可能给出 null / 标量（非 object）；空串锚不算锚
+        makeSession({ id: 'ex-null-ctx', title: 'null 上下文', context: null as unknown as Record<string, unknown> }),
+        makeSession({ id: 'ex-scalar-ctx', title: '标量上下文', context: 42 as unknown as Record<string, unknown> }),
+        makeSession({ id: 'ex-empty-anchor', title: '空串锚', context: { agent_run_id: '' } }),
+        makeSession({ id: 'ex-nonstr-anchor', title: '非串锚', context: { agent_run_id: 123 } }),
+      ],
+      total: 4,
+      offset: 0,
+      limit: 50,
+    });
+    fetchSessionLogsMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 200 });
+
+    const user = userEvent.setup();
+    renderSessionsPage();
+
+    for (const id of ['ex-null-ctx', 'ex-scalar-ctx', 'ex-empty-anchor', 'ex-nonstr-anchor']) {
+      await screen.findByTestId(`session-title-${id}`);
+      await user.click(screen.getByTestId(`session-title-${id}`));
+      await screen.findByTestId('session-detail-dialog');
+      // 均不得渲染轨迹区块，也不得因读取 context 崩溃
+      expect(screen.queryByTestId('session-detail-trace-0')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-detail-trace-link')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('session-detail-trace-error')).not.toBeInTheDocument();
+      await user.click(screen.getByTestId('session-detail-close'));
+      await waitFor(() => {
+        expect(screen.queryByTestId('session-detail-dialog')).not.toBeInTheDocument();
+      });
+    }
+    expect(getRunMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('#1015 守护：AI 对话卡导航行为不回归（#770）', () => {
