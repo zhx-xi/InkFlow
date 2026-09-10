@@ -506,7 +506,14 @@ describe('#1029 执行会话详情 ↔ agentic 决策轨迹关联（ADR-056，sp
     expect(trace1).toHaveTextContent('save_draft');
     expect(trace1).toHaveTextContent('草稿已保存');
     // 跳转执行详情入口
-    expect(screen.getByTestId('session-detail-trace-link')).toBeInTheDocument();
+    const traceLink = screen.getByTestId('session-detail-trace-link');
+    expect(traceLink).toBeInTheDocument();
+    // N22 契约：「点击跳转入口 → 写作页执行视图」
+    expect(traceLink.tagName).toBe('BUTTON');
+    await user.click(traceLink);
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/writing');
+    });
   });
 
   it('N23：存量会话（context 无 agent_run_id）→ 不渲染轨迹区块、不发 run 请求（不回归 #1028）', async () => {
