@@ -231,7 +231,10 @@ export function LibraryPage() {
   }, [loadProjects]);
 
   // F43 P2：挂载/项目切换时拉取地图列表（世界观点亮徽标的数据源；失败置空 + err toast）
-  // #973：依赖补入 reloadKey/workbenchActive —— 进工作台重拉（外部建图立即可见）+ 保存后遗漏面补齐
+  // #973（#1089 批 A4 收编）：依赖 [currentProjectId, reloadKey, workbenchActive] 重拉，定位为
+  // **推送缺位时的降级重拉**——主路径已是 SSE 推送（A3 已接 `map` 域，spec §15.6.2/§15.7.1），
+  // 外部建图到达事件后 bump reloadKey 即触发本 effect 全量重拉；「进/退工作台重拉」降级为兜底
+  // （断连 / 事件丢失时仍能靠进/退工作台收敛，§15.7.2 安全偏向）。删除条件见 spec §15.7.3。
   useEffect(() => {
     if (!currentProjectId) {
       setMaps([]);

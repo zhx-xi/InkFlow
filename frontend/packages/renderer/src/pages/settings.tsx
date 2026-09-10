@@ -516,7 +516,10 @@ function TemplatesPanel() {
 
   const handleUpdate = async (input: AgentTemplateInput) => {
     if (!editing) return;
-    // #989：判风险前重拉最新模板，避免用 mount 旧快照（used_by 可能已过期）
+    // #989（#1089 批 A4 收编）：判风险前重拉最新模板，避免用 mount 旧快照（used_by 可能已过期）。
+    // **长期保留的最后防线**（spec §15.7.2 / D15-4 硬约束）：后果是数据丢失（静默断链删被引用
+    // 模板），不能把唯一保障押在尽力而为的推送流上（断连/队列丢弃/内核重启期间事件可能不到）；
+    // 推送只让新鲜度更早生效，不是替代。删除条件见 spec §15.7.1。
     await loadTemplates();
     const fresh =
       useTemplatesStore.getState().templates.find((item) => item.id === editing.id) ??
@@ -652,7 +655,8 @@ function TemplatesPanel() {
                   aria-label={`${t('tpl.delete')} ${tpl.name}`}
                   className="rounded border border-line px-2.5 py-1 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={async () => {
-                    // #989：删除确认前重拉最新模板，used_by 以 fresh 为准
+                    // #989（#1089 批 A4 收编）：删除确认前重拉最新模板，used_by 以 fresh 为准。
+                    // **长期保留的最后防线**（spec §15.7.2 / D15-4）：数据丢失类校验的双保险不可拆。
                     await loadTemplates();
                     const fresh = useTemplatesStore
                       .getState()
