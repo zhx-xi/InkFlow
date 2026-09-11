@@ -42,15 +42,18 @@ FULLWIDTH = "\u3000"
 # （「不要 markdown 标题行」），禁词会误伤正确实现。
 FORBIDDEN_MARKERS = ("Markdown 格式", "章节标题使用", "```", "# 标记")
 
-WRITER_AGENT_YAML = (
-    Path(__file__).resolve().parents[4]
-    / "src"
-    / "inkflow"
-    / "i18n"
-    / "prompts"
-    / "zh"
-    / "writer_agent.yaml"
+WRITER_AGENT_YAML_DIR = (
+    Path(__file__).resolve().parents[4] / "src" / "inkflow" / "i18n" / "prompts"
 )
+
+# 两个 locale 都必须收敛：#1109 首轮只改了 zh，en 镜像漏改（同源同病）
+WRITER_AGENT_LOCALES = ("zh", "en")
+
+# 各 locale 的 markdown 正向指示短语（en 用 "Markdown format"）
+LOCALE_FORBIDDEN = {
+    "zh": ("Markdown 格式", "章节标题使用"),
+    "en": ("Markdown format", "Markdown 格式"),
+}
 
 
 # ── fixtures（镜像 test_writing_service.py，避免跨模块导入 fixture 的脆弱性）──
@@ -196,15 +199,25 @@ class TestContinuePromptInheritsPlainText:
 
 
 class TestWriterAgentPromptPlainText:
-    """C4: agentic 轨道 writer_agent.yaml 独立 prompt 同源同病。"""
+    """C4: agentic 轨道 writer_agent.yaml 各 locale 独立 prompt 同源同病。"""
 
-    def test_writer_agent_prompt_forbids_markdown(self) -> None:
-        assert WRITER_AGENT_YAML.exists(), f"未找到 writer_agent.yaml: {WRITER_AGENT_YAML}"
-        text = WRITER_AGENT_YAML.read_text(encoding="utf-8")
+    @pytest.mark.parametrize("locale", WRITER_AGENT_LOCALES)
+    def test_writer_agent_prompt_forbids_markdown(self, locale: str) -> None:
+        yaml_path = WRITER_AGENT_YAML_DIR / locale / "writer_agent.yaml"
+        assert yaml_path.exists(), f"未找到 writer_agent.yaml: {yaml_path}"
+        text = yaml_path.read_text(encoding="utf-8")
 
-        assert "Markdown 格式" not in text, (
-            "writer_agent.yaml 仍指示 markdown 标题行:\n"
-            + "\n".join(f"  {ln}" for ln in text.splitlines() if "Markdown" in ln)
-        )
+        for marker in LOCALE_FORBIDDEN[locale]:
+            assert marker not in text, (
+                f"[{locale}] writer_agent.yaml 仍指示 markdown 标题行（命中 {marker!r}）:\n"
+                + "\n".join(
+                    f"  {ln}"
+                    for ln in text.splitlines()
+                    if marker.split()[0] in ln
+                )
+            )
         assert "```" not in text
-        assert "纯文本" in text, f"writer_agent.yaml 未要求纯文本:\n{text}"
+        if locale == "zh":
+            assert "纯文本" in text, f"[zh] 未要求纯文本:\n{text}"
+        else:
+            assert "plain text" in text, f"[en] 未要求 plain text:\n{text}"

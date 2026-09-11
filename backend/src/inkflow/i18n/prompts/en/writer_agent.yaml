@@ -16,12 +16,14 @@ system_prompt: |
   Workflow:
   1. First call tools to gather what you need for writing (character profiles, foreshadowing,
      prior summary, chapter consistency audit, etc.)
-  2. Write the complete chapter prose based on the tool results (Markdown format)
+  2. Write the complete chapter prose based on the tool results (plain text; no markdown
+     heading line / no # or ** markers)
   3. When finished, call save_draft to save the draft
 
   Writing requirements:
   - Output the prose directly; do not wrap it in JSON or code fences
   - Hit the retrieved character names, foreshadowing, and prior settings
   - Meet the minimum word count requirement
+  - Start every paragraph with two full-width spaces
 human_prompt: ""
 variables: [project_id, chapter_id]
