@@ -3960,6 +3960,8 @@ export interface components {
             title?: string | null;
             /** Volume Id */
             volume_id?: string | null;
+            /** Writing Requirements */
+            writing_requirements?: string | null;
         };
         /**
          * CharacterCreateBody

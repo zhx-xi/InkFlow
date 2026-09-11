@@ -430,3 +430,141 @@ describe('ContextPanel — 空写作要求优雅占位（#759）', () => {
     expect(assembleMock).toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// #1017 写作要求三层 + 入口常驻（spec f6-context/gui-panel.md §3.1/§3.3/§5.1.1）
+// ─────────────────────────────────────────────────────────────────────
+
+/** #1017 props（章级栏回调 + 项目级要求） */
+const OPTS_1017 = {
+  ...OPTS,
+  projectWritingStyle: '项目级风格',
+  onWritingRequirementsChange: vi.fn(),
+};
+
+describe('ContextPanel — #1017 入口常驻（写作要求为空不没收选择钮）', () => {
+  it('writingRequirements 为空 → 仍渲染三组「＋ 选择注入」入口', async () => {
+    render(<ContextPanel {...OPTS_1017} writingRequirements="" />);
+    expect(screen.getByTestId('context-pick-character_setting')).toBeInTheDocument();
+    expect(screen.getByTestId('context-pick-world_setting')).toBeInTheDocument();
+    expect(screen.getByTestId('context-pick-foreshadowing')).toBeInTheDocument();
+    // 占位文案保留（#759）
+    expect(screen.getByTestId('context-error')).toHaveTextContent('未填写写作要求');
+  });
+
+  it('写作要求为空时点选择钮 → 弹层仍可打开且选项来自 list API（不依赖 assemble）', async () => {
+    vi.mocked(listProjectCharacters).mockResolvedValue({
+      items: [
+        { id: 'c-a', name: '林晚' },
+        { id: 'c-b', name: '顾沉' },
+      ],
+      total: 2,
+      offset: 0,
+      limit: 50,
+    });
+    render(<ContextPanel {...OPTS_1017} writingRequirements="" />);
+    fireEvent.click(screen.getByTestId('context-pick-character_setting'));
+    await screen.findByTestId('context-picker');
+    expect(screen.getAllByTestId(/context-picker-opt-/)).toHaveLength(2);
+    expect(assembleMock).not.toHaveBeenCalled();
+  });
+
+  it('assemble 失败 → context-error 渲染的同时三组入口仍在', async () => {
+    assembleMock.mockRejectedValue(new Error('boom'));
+    render(<ContextPanel {...OPTS_1017} />);
+    await screen.findByTestId('context-error');
+    expect(screen.getByTestId('context-pick-character_setting')).toBeInTheDocument();
+    expect(screen.getByTestId('context-pick-world_setting')).toBeInTheDocument();
+    expect(screen.getByTestId('context-pick-foreshadowing')).toBeInTheDocument();
+  });
+});
+
+describe('ContextPanel — #1017 章级写作要求栏', () => {
+  it('渲染 context-writing-requirements，初始值 + placeholder 继承自项目级', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(
+      <ContextPanel
+        {...OPTS_1017}
+        writingRequirements="项目级风格"
+        chapterWritingRequirements={null}
+      />,
+    );
+    const box = screen.getByTestId('context-writing-requirements');
+    expect(box).toHaveValue('');
+    expect(box).toHaveAttribute('placeholder', expect.stringContaining('项目级风格'));
+  });
+
+  it('章级覆盖非空 → 栏内回显该值（非继承）', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(
+      <ContextPanel
+        {...OPTS_1017}
+        writingRequirements="本章偏悬疑"
+        chapterWritingRequirements="本章偏悬疑"
+      />,
+    );
+    expect(screen.getByTestId('context-writing-requirements')).toHaveValue('本章偏悬疑');
+  });
+
+  it('输入新值 + blur → onWritingRequirementsChange 收到新值', async () => {
+    const onChange = vi.fn();
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(
+      <ContextPanel
+        {...OPTS_1017}
+        onWritingRequirementsChange={onChange}
+        chapterWritingRequirements={null}
+      />,
+    );
+    const box = screen.getByTestId('context-writing-requirements');
+    fireEvent.change(box, { target: { value: '本章偏武侠' } });
+    fireEvent.blur(box);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('本章偏武侠'));
+  });
+
+  it('输入值 == 项目级（trim 后）→ 收敛为 null（回继承）', async () => {
+    const onChange = vi.fn();
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(
+      <ContextPanel
+        {...OPTS_1017}
+        onWritingRequirementsChange={onChange}
+        chapterWritingRequirements={null}
+      />,
+    );
+    const box = screen.getByTestId('context-writing-requirements');
+    fireEvent.change(box, { target: { value: '项目级风格' } });
+    fireEvent.blur(box);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(null));
+  });
+
+  it('点「恢复继承」→ onWritingRequirementsChange(null) 并清空输入框', async () => {
+    const onChange = vi.fn();
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(
+      <ContextPanel
+        {...OPTS_1017}
+        onWritingRequirementsChange={onChange}
+        chapterWritingRequirements="本章偏悬疑"
+        writingRequirements="本章偏悬疑"
+      />,
+    );
+    fireEvent.click(screen.getByTestId('context-writing-requirements-inherit'));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(null));
+    expect(screen.getByTestId('context-writing-requirements')).toHaveValue('');
+  });
+
+  it('合成值传给 assemble：writingRequirements=章级覆盖 → body.writing_requirements 为该值', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(
+      <ContextPanel
+        {...OPTS_1017}
+        writingRequirements="本章偏悬疑"
+        chapterWritingRequirements="本章偏悬疑"
+      />,
+    );
+    await waitFor(() => expect(assembleMock).toHaveBeenCalled());
+    const req = assembleMock.mock.calls[0][0] as AssembleRequest;
+    expect(req.writing_requirements).toBe('本章偏悬疑');
+  });
+});

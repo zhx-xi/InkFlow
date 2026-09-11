@@ -55,6 +55,7 @@ class ChapterStatus(StrEnum):
 | status | ChapterStatus | NOT NULL, DEFAULT DRAFT | 写作状态 |
 | word_count | int | NOT NULL, DEFAULT 0 | 自动统计字数 |
 | order_index | float | NOT NULL, DEFAULT 0.0 | 卷内排序权重 |
+| writing_requirements | str? | NULLABLE | **章级写作要求**（#1017）；NULL=继承项目 `config.writing_style`，非空=本章独立覆盖 |
 | status_history | list[StatusHistoryEntry] | NOT NULL, DEFAULT [] | 状态变更记录 |
 | created_at | datetime | NOT NULL, AUTO | 创建时间（UTC） |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间（UTC） |
@@ -65,6 +66,13 @@ class ChapterStatus(StrEnum):
 - 每次 status 变更时自动追加 `StatusHistoryEntry` 到 `status_history`
 - 按 `order_index` 升序排列（卷内排序）
 - 支持按 `volume_id` 筛选、按 `status` 筛选、分页
+- **#1017 章级写作要求继承语义**：`writing_requirements` 为**可选覆盖**字段（三态语义）——
+  `None`（缺省/不传）= 继承项目级 `config.writing_style`；`""`（显式清空）= 覆盖为空串；
+  非空串 = 本章独立写作要求。项目级由 `PATCH /api/v1/projects/{id}` 的 `config.writing_style` 承担
+  （见 `specs/f1-project/spec.md`），本章字段只做「个别章偏离」的覆盖面。
+  写作页组装（F6 context assemble / F3 pipeline variables）取
+  `chapter.writing_requirements ?? project.config.writing_style`（见 `specs/f6-context/gui-panel.md` §3.3）。
+  存量库走 `ensure_chapters_writing_requirements_column` 幂等补列（NULL = 继承，零行为变化）。
 - **#999 标题双编号归一化**：`ChapterCreate/ChapterUpdate.validate_title` 落库前经
   `normalize_chapter_title(title, fmt=None)`（domain/models/chapter.py 纯函数）做**双前缀去重 +
   分隔归一**（`第1章 第一章 风雨` → `第1章 风雨`，保留第一个前缀，序号形态不改）；无序号纯名
@@ -100,7 +108,7 @@ class ChapterStatus(StrEnum):
 | POST | `/api/v1/projects/{project_id}/chapters` | 创建章节 | `{title, volume_id?, content?, order_index?}` | 201 + Chapter |
 | GET | `/api/v1/projects/{project_id}/chapters` | 列出章节 | Query: `?volume_id=&status=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | GET | `/api/v1/chapters/{chapter_id}` | 章节详情 | — | 200 + Chapter |
-| PATCH | `/api/v1/chapters/{chapter_id}` | 更新章节 | `{title?, volume_id?, content?, status?, order_index?}` | 200 + Chapter |
+| PATCH | `/api/v1/chapters/{chapter_id}` | 更新章节 | `{title?, volume_id?, content?, status?, order_index?, writing_requirements?}`（**#1017**：`writing_requirements` 缺省=不动 / `null`=清除覆盖回继承 / 字符串=设章级覆盖） | 200 + Chapter |
 | DELETE | `/api/v1/chapters/{chapter_id}` | 硬删除 | — | 204 |
 | POST | `/api/v1/chapters/{chapter_id}/move?target_volume_id=` | 跨卷移动 | — | 200 + Chapter |
 | POST | `/api/v1/projects/{project_id}/chapters/normalize-titles` | **#999** 全书标题批量归一 | `{format: "arabic"\|"chinese"}` | 200 + `{format, chapters_replaced, outlines_replaced}` |
@@ -136,7 +144,7 @@ inkflow volume delete  --id <uuid> [--force]
 inkflow chapter create  --project-id <uuid> --title <str> [--volume-id <uuid>] [--content <str>] [--json]
 inkflow chapter list    --project-id <uuid> [--volume-id <uuid>] [--status <str>] [--json]
 inkflow chapter get     --id <uuid> [--json]
-inkflow chapter update  --id <uuid> [--title <str>] [--content <str>] [--status <str>] [--json]
+inkflow chapter update  --id <uuid> [--title <str>] [--content <str>] [--status <str>] [--writing-requirements <str>] [--json]
 inkflow chapter move    --id <uuid> [--to-volume <uuid>] [--json]
 inkflow chapter delete  --id <uuid> [--force]
 ```
@@ -210,6 +218,9 @@ def count_words(content: str) -> int:
 | 更新不存在的章节 | 404: "章节不存在" |
 | order_index 不传 | 自动取当前最大值 + 1.0 |
 | 空内容字数 | word_count = 0 |
+| **#1017** PATCH 只传 `writing_requirements`（不传 content） | 正文/字数不变，仅章级写作要求落库；响应回读该字段 |
+| **#1017** PATCH `writing_requirements: null` | 清除章级覆盖 → 组装回退项目级 `config.writing_style`（不报错） |
+| **#1017** PATCH `writing_requirements: ""` | 覆盖为空串（≠ 清除）；组装取空串 → 前端走「未填写写作要求」占位 |
 | 章节正文首次非空白落盘（create 带正文 / update 空→非空白） | 触发章级大纲自动关联（#1001 弱依赖 A：同项目「大纲名 == 章节标题」唯一命中才回填 `outlines.chapter_id`；同名多条/无命中 → 不动，手动兜底；关联异常不影响落盘）——契约详见 `specs/f11-outline/spec.md` §16 |
 
 ---
@@ -222,7 +233,7 @@ def count_words(content: str) -> int:
 backend/src/inkflow/
 ├── domain/
 │   ├── models/
-│   │   ├── chapter.py          ← CREATE: Volume, Chapter, ChapterStatus, DTOs
+│   │   ├── chapter.py          ← CREATE: Volume, Chapter, ChapterStatus, DTOs（**#1017**：Chapter/ChapterUpdate 增 writing_requirements）
 │   │   └── __init__.py         ← MODIFY: 导出新模型
 │   ├── ports/
 │   │   └── chapter_repository.py ← CREATE: ChapterRepositoryProtocol
@@ -232,7 +243,7 @@ backend/src/inkflow/
 │       └── __init__.py         ← MODIFY
 ├── infrastructure/database/
 │   ├── models/
-│   │   ├── chapter.py          ← CREATE: VolumeORM, ChapterORM
+│   │   ├── chapter.py          ← CREATE: VolumeORM, ChapterORM（**#1017**：ChapterORM 增 writing_requirements 可空列）
 │   │   └── __init__.py         ← MODIFY
 │   └── repositories/
 │       ├── chapter_repo.py     ← CREATE: SQLiteChapterRepository
@@ -286,12 +297,16 @@ backend/tests/
 - `test_create_chapter_auto_order_index` — 不传 order 自动计算
 - `test_update_chapter_recomputes_word_count` — 改 content 重新计数
 - `test_move_chapter_to_none` — 移出卷 (volume_id=None)
+- `test_update_chapter_writing_requirements_set` — **#1017**：PATCH 设章级覆盖 → 回读非空
+- `test_update_chapter_writing_requirements_clear` — **#1017**：缺省不传 → 字段不动；显式 `null` → 清回继承
+- `test_create_chapter_writing_requirements_defaults_none` — **#1017**：新建章节缺省 = NULL（继承项目）
 
 ### 9.5 API 集成测试
 - `test_create_and_list_volumes` — HTTP 创建→列表
 - `test_chapter_lifecycle` — 创建→更新状态→删除完整流程
 - `test_move_chapter_api` — HTTP 跨卷移动
 - `test_list_chapters_with_status_filter` — query 参数筛选
+- `test_patch_chapter_writing_requirements_api` — **#1017**：PATCH 章级写作要求 → 回读；只传该字段不影响 content/word_count
 
 ---
 
@@ -339,7 +354,7 @@ F2 被依赖:
 | POST /projects/{id}/chapters | 项目存在 | 校验 title → 建 Chapter | 201 + Chapter | 422（title 空/>500） | title 必填；volume_id 可 NULL（未分类） |
 | GET /projects/{id}/chapters | 项目存在 | 列表+过滤 | 200 + {items,total,offset,limit} | — | volume_id/status 过滤；分页 |
 | GET /chapters/{id} | 章节存在 | 查询 | 200 + Chapter | 404「章节不存在」 | — |
-| PATCH /chapters/{id} | 章节存在 | 部分更新（含 status） | 200 + Chapter | 404；422 | status 变更触发状态追踪（§6） |
+| PATCH /chapters/{id} | 章节存在 | 部分更新（含 status / **writing_requirements**） | 200 + Chapter | 404；422 | status 变更触发状态追踪（§6）；**#1017** writing_requirements 缺省=不动 / null=清除覆盖 |
 | DELETE /chapters/{id} | 章节存在 | 硬删除 | 204 | 404 | — |
 | POST /chapters/{id}/move?target_volume_id= | 章节存在 | 跨卷移动 | 200 + Chapter | 404 | 目标卷须存在 |
 
@@ -356,3 +371,5 @@ F2 被依赖:
 - A2：删卷后章节 volume_id 置 NULL（孤儿），返回 204
 - A3：/chapters/{id}/move 到不存在卷 → 404
 - A4：空 content 字数 → word_count = 0
+- A5（**#1017**）：新建章节 `writing_requirements` 缺省为 NULL（= 继承项目 `config.writing_style`）
+- A6（**#1017**）：PATCH `{writing_requirements: "本章偏悬疑"}` → 200 回读该值；再 PATCH `{writing_requirements: null}` → 回读 null（清除覆盖）

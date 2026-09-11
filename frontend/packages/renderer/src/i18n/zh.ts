@@ -860,8 +860,7 @@ export const zh = {
   'memory.cat.user.style_word': '用词',
   'memory.cat.user.structure': '结构',
   'memory.cat.user.other': '其他',
-  // F59-M3 (#964)：chat 页思考级别选择器（本批只用 reasoning.chat.* + reasoning.level.*；
-  // M4 #965 用 agent.thinking.* 分键，避免撞车）
+  // F59-M3 (#964)：chat 页思考级别选择器（只用 reasoning.chat.* + reasoning.level.*；M4 #965 用 agent.thinking.* 分键）
   'reasoning.chat.label': '思考级别',
   'reasoning.chat.disabledTooltip': '当前模型不支持思考',
   'reasoning.level.none': '关闭思考',

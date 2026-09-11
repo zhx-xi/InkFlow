@@ -95,3 +95,53 @@ class TestChapterService:
         )
         assert total == 1
         assert items[0].status == ChapterStatus.FINAL
+
+    # ── #1017：章级写作要求（继承 / 覆盖 / 清除） ──────────────────────
+
+    @pytest.mark.asyncio
+    @pytest.mark.chapter
+    async def test_create_chapter_writing_requirements_defaults_none(
+        self, db_session, sample_project
+    ):
+        """#1017：新建章节缺省 → writing_requirements 为 None（= 继承项目级）."""
+        svc = ChapterService(db_session)
+        ch = await svc.create_chapter(sample_project.id, "继承章", content="x")
+        assert ch.writing_requirements is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.chapter
+    async def test_update_chapter_writing_requirements_set(self, db_session, sample_project):
+        """#1017：PATCH 设章级覆盖 → 落库并回读；不影响正文/字数."""
+        svc = ChapterService(db_session)
+        ch = await svc.create_chapter(sample_project.id, "覆盖章", content="你好abc")
+        before_wc = ch.word_count
+
+        updated = await svc.update_chapter(
+            ch.id, ChapterUpdate(writing_requirements="本章偏悬疑，收紧节奏")
+        )
+        assert updated is not None
+        assert updated.writing_requirements == "本章偏悬疑，收紧节奏"
+        assert updated.word_count == before_wc
+        assert updated.content == "你好abc"
+
+        reread = await svc.get_chapter(ch.id)
+        assert reread is not None
+        assert reread.writing_requirements == "本章偏悬疑，收紧节奏"
+
+    @pytest.mark.asyncio
+    @pytest.mark.chapter
+    async def test_update_chapter_writing_requirements_clear(self, db_session, sample_project):
+        """#1017：缺省不传 → 字段不动；显式 null → 清回继承."""
+        svc = ChapterService(db_session)
+        ch = await svc.create_chapter(sample_project.id, "清除章", content="x")
+        await svc.update_chapter(ch.id, ChapterUpdate(writing_requirements="先设覆盖"))
+
+        # 缺省不传（exclude_unset 语义）→ 覆盖保留
+        untouched = await svc.update_chapter(ch.id, ChapterUpdate(status=ChapterStatus.WRITING))
+        assert untouched is not None
+        assert untouched.writing_requirements == "先设覆盖"
+
+        # 显式 null → 清除覆盖（回继承）
+        cleared = await svc.update_chapter(ch.id, ChapterUpdate(writing_requirements=None))
+        assert cleared is not None
+        assert cleared.writing_requirements is None

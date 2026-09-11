@@ -17,6 +17,12 @@ from sqlalchemy.types import TypeEngine
 
 from inkflow.core.config import config
 
+# #1017 章级写作要求列迁移已抽至 core/migrations_chapter.py（本文件达 900 行护栏上限，
+# 按 check_file_length.py「超限文件优先拆分」规则独立）；re-export 保持既有 import 路径可用。
+from inkflow.core.migrations_chapter import ensure_chapters_writing_requirements_column
+
+__all__ = ["ensure_chapters_writing_requirements_column"]
+
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
 
 
@@ -29,10 +35,10 @@ class Base(DeclarativeBase):
 class LenientJSON(JSON):
     """容错 JSON 列类型（#261）：DB 空串/空白串/损坏 JSON 回退默认值，不再抛 ValueError。
 
-    SQLAlchemy SQLite JSON 类型的 result_processor 对非 None 原始值无条件 json.loads，
-    历史数据把 extra/config 等 JSON 列写成空串 ''（如旧版本落库/手工改库）时，任何 ORM
-    读取都会 ValueError("Expecting value: line 1 column 1")。本类型在解析前先做空串检查，
-    解析失败按列 fallback（dict 列 {} / list 列 []）容错，与既有 `orm.extra or {}` 防护互补。
+    SQLAlchemy SQLite JSON 的 result_processor 对非 None 原始值无条件 json.loads，历史
+    数据把 extra/config 等列写成空串 ''（旧版本落库/手工改库）时任何 ORM 读取都
+    ValueError("Expecting value: line 1 column 1")。本类型解析前先做空串检查，解析失败
+    按列 fallback（dict 列 {} / list 列 []），与既有 `orm.extra or {}` 防护互补。
     """
 
     def __init__(self, *args: Any, fallback: Any = None, **kwargs: Any) -> None:
@@ -317,8 +323,7 @@ def ensure_world_parent_id_column(conn: Connection) -> None:
 
     表不存在（全新环境）→ no-op，等 create_all 建新表（自动含列+新索引）；
     旧全局唯一索引 uq_world_settings_active_name 与新同级唯一语义冲突，必须删除重建。
-    v1.1（#211）is_deleted 列移除后（全新 schema）→ 全唯一索引已由 create_all
-    建好，仅补列（如有缺失）并跳过 partial unique 替换。
+    v1.1（#211）is_deleted 移除后（全新 schema）→ 全唯一索引已由 create_all 建好，仅补列。
     """
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
@@ -420,8 +425,8 @@ def ensure_project_watermark_column(conn: Connection) -> None:
     """#617 Q1=A：为存量库 projects 表补 active_watermark 列（幂等，配合 conn.run_sync 调用）.
 
     镜像 ensure_characters_brief_column 幂等模式：先查 PRAGMA table_info 确认列缺失
-    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等
-    create_all 建新表（ORM 已含 active_watermark 列）。首迁水位 0 初始化（Q1=A 拍板）.
+    才执行 ALTER TABLE ADD COLUMN；表不存在（全新环境）→ no-op 不抛错，等 create_all
+    建新表（ORM 已含该列）。首迁水位 0 初始化（Q1=A 拍板）.
     """
     cols = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
     names = {row[1] for row in cols}
@@ -556,11 +561,11 @@ def ensure_world_root_unique_index(conn: Connection) -> None:
     多个 parent_id IS NULL 顶层行（旧 category 多行语义），直接 CREATE UNIQUE INDEX
     会撞 UNIQUE 约束（IntegrityError）使启动崩溃。每项目按 id 升序保留首行（最小 id）
     为根，其余行 parent_id 挂首根——零行删除，数据保全（specs/f35-world-tree §2.1
-    rule 6，#834/#849）。降级完成后建索引，重跑无存量多根 → no-op 幂等。
+    rule 6）。降级完成后建索引，重跑无存量多根 → no-op 幂等。
 
-    调用点必须在 ensure_world_drop_is_deleted 之后：软删行（is_deleted=1）已物理清除、
-    is_deleted 列已 DROP，SELECT ... WHERE parent_id IS NULL 只命中活行；若在清理前
-    执行，软删根行仍计入根集，且降级可能把行挂到待删根下（#869 S3d）。
+    调用点必须在 ensure_world_drop_is_deleted 之后：软删行已物理清除、is_deleted 列
+    已 DROP，SELECT ... WHERE parent_id IS NULL 只命中活行；若在清理前执行，软删根行
+    仍计入根集，且降级可能把行挂到待删根下（#869 S3d）。
     """
     cols = conn.execute(text("PRAGMA table_info(world_settings)")).fetchall()
     names = {row[1] for row in cols}
@@ -606,11 +611,9 @@ def _migrate_drop_is_deleted(
     步骤（load-bearing 顺序，SQLite DROP COLUMN 不能删除被索引/partial WHERE
     引用的列）：
     ① DELETE 存量软删记录（is_deleted=1 物理清除）；
-    ② DROP 依赖 is_deleted 的索引（partial unique + is_deleted 单列索引，
-       按 sqlite_master 枚举）；
+    ② DROP 依赖 is_deleted 的索引（partial unique + is_deleted 单列索引，按 sqlite_master 枚举）；
     ③ CREATE 全唯一索引（无 WHERE 条件，仅 unique_indexes 提供的表）；
     ④ ALTER TABLE <table> DROP COLUMN is_deleted。
-
     表不存在或列已不存在（全新环境/已迁移）→ no-op。
 
     Args:
@@ -724,12 +727,9 @@ def _rebuild_characters_without_group_id(conn: Connection) -> None:
     SQLite DROP COLUMN 拒绝删除被 FK 引用的列（旧 schema characters.group_id
     有 ``FOREIGN KEY ... ON DELETE SET NULL``），且 FK 不存于 sqlite_master
     索引记录，仅枚举索引无法解阻。本函数走官方重建表路径：
-    ① 从 sqlite_master.sql 取原 CREATE TABLE DDL，剔除 group_id 列定义与
-       引用 group_id 的 FK 等约束段；
-    ② 建临时表 ``_characters_new``（无 group_id），按其余全部列
-       INSERT ... SELECT 拷贝数据；
-    ③ DROP 旧表 → RENAME 为 characters → 重建原非 group_id 索引
-       （含 uq_characters_active_name 等既有结构）。
+    ① 从 sqlite_master.sql 取原 CREATE TABLE DDL，剔除 group_id 列定义与引用它的 FK；
+    ② 建临时表 ``_characters_new``（无 group_id），按其余全部列 INSERT ... SELECT 拷贝；
+    ③ DROP 旧表 → RENAME 为 characters → 重建原非 group_id 索引。
 
     SQLite 的 ``PRAGMA foreign_keys`` 只能在无挂起事务时切换；生产路径由
     ``run_character_group_members_migration`` 在独立 AUTOCOMMIT 连接上先 FK=OFF

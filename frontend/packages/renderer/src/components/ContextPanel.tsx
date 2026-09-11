@@ -1,5 +1,5 @@
 /** 上下文面板（spec §4.2.1 + f6-context/gui-panel.md #594）：静态占位 → 接 assemble API 渲染真实条目 + 三级大纲 + 角色/伏笔勾选 override */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listProjectCharacters } from '../api/character';
 import {
   assembleContext,
@@ -18,6 +18,12 @@ export interface ContextPanelProps {
   chapterId: string | null;
   model: string | null;
   writingRequirements: string;
+  /** #1017：项目级要求（「继承」判定 + placeholder 提示）；缺省视为空（既有 #594/#704/#743/#759 渲染点不传仍可编译） */
+  projectWritingStyle?: string;
+  /** #1017：章级覆盖原文（null/缺省 = 继承；用于栏内回显） */
+  chapterWritingRequirements?: string | null;
+  /** #1017：章级栏失焦保存（null = 清除覆盖回继承） */
+  onWritingRequirementsChange?: (value: string | null) => void;
 }
 
 /** source 分组渲染顺序（7 来源；preference 为后端保留来源） */
@@ -72,7 +78,44 @@ const PICKER_SOURCES: ReadonlySet<ContextSourceType> = new Set([
   'foreshadowing',
 ]);
 
-export function ContextPanel({ projectId, chapterId, model, writingRequirements }: ContextPanelProps) {
+/** #1017：分组头 + 「＋ 选择注入」按钮（正常分支内嵌 / 空态·错误态精简复用的同一渲染块） */
+function GroupHeader({
+  title,
+  source,
+  onPick,
+}: {
+  title: string;
+  source: ContextSourceType;
+  onPick: (source: ContextSourceType) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="min-w-0 truncate text-[13px] font-medium">{title}</span>
+      {PICKER_SOURCES.has(source) && (
+        <button
+          type="button"
+          data-testid={`context-pick-${source}`}
+          aria-label={t('write.context.injectSelect')}
+          className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          onClick={() => onPick(source)}
+        >
+          {t('write.context.injectSelect')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function ContextPanel({
+  projectId,
+  chapterId,
+  model,
+  writingRequirements,
+  projectWritingStyle = '',
+  chapterWritingRequirements,
+  onWritingRequirementsChange,
+}: ContextPanelProps) {
   const { t } = useI18n();
   const [data, setData] = useState<ContextAssemblyResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -86,6 +129,18 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
   const [pickerSelection, setPickerSelection] = useState<string[]>([]);
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerError, setPickerError] = useState<string | null>(null);
+  // #1017：章级写作要求本地草稿（初始值 = 章级覆盖原文，null=继承 → 空）
+  const [requirementsDraft, setRequirementsDraft] = useState(() => chapterWritingRequirements ?? '');
+  /** 上次同步的章级覆盖值（用于切章时重播草稿，避免用户输入中被回写打断） */
+  const syncedRequirementsRef = useRef(chapterWritingRequirements ?? '');
+
+  // #1017：切章（章级覆盖 prop 变化）→ 重播草稿；同值回写不打断当前输入
+  useEffect(() => {
+    const next = chapterWritingRequirements ?? '';
+    if (syncedRequirementsRef.current === next) return;
+    syncedRequirementsRef.current = next;
+    setRequirementsDraft(next);
+  }, [chapterWritingRequirements]);
 
   /** 调 assemble：override 由当前勾选集构建（全注入 = 空数组） */
   const runAssemble = useCallback(
@@ -267,6 +322,24 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
     return pickerOptions.filter((opt) => opt.label.toLowerCase().includes(query));
   }, [pickerOptions, pickerSearch]);
 
+  /** #1017：章级写作要求 blur 提交 —— 未变更不发；trim 后等于项目级（且非空）→ 收敛继承(null) */
+  const commitRequirements = () => {
+    const committed = chapterWritingRequirements ?? '';
+    if (requirementsDraft === committed) return;
+    const trimmed = requirementsDraft.trim();
+    if (trimmed !== '' && trimmed === projectWritingStyle.trim()) {
+      onWritingRequirementsChange?.(null);
+    } else {
+      onWritingRequirementsChange?.(requirementsDraft);
+    }
+  };
+
+  /** #1017：「恢复继承」一键清除覆盖（传 null + 清空输入框） */
+  const inheritRequirements = () => {
+    setRequirementsDraft('');
+    onWritingRequirementsChange?.(null);
+  };
+
   return (
     <aside
       data-testid="context-panel"
@@ -275,10 +348,47 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold">{t('write.context.title')}</span>
       </div>
+      {/* #1017：章级写作要求栏（项目级 ∥ 章级 三层；blur 提交，null=继承） */}
+      <div className="flex items-start gap-2 border-b border-line px-3 py-2">
+        <textarea
+          data-testid="context-writing-requirements"
+          aria-label={t('write.context.chapterHint')}
+          title={t('write.context.chapterHint')}
+          placeholder={
+            projectWritingStyle.trim() ? projectWritingStyle : t('write.context.requiredInherit')
+          }
+          value={requirementsDraft}
+          disabled={!chapterId}
+          rows={2}
+          onChange={(e) => setRequirementsDraft(e.target.value)}
+          onBlur={commitRequirements}
+          className="min-h-0 flex-1 resize-none rounded border border-line bg-surface px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-60"
+        />
+        <button
+          type="button"
+          data-testid="context-writing-requirements-inherit"
+          className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          onClick={inheritRequirements}
+        >
+          {t('write.context.requiredInheritBtn')}
+        </button>
+      </div>
       <div
         data-testid="context-panel-content"
         className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3"
       >
+        {/* #1017 入口常驻（D5）：空态/错误态仍无条件渲染三组「＋ 选择注入」入口（不依赖 assemble）；
+            正常分支复用同一 GroupHeader 内嵌于 context-block-<source>，避免重复渲染两组按钮 */}
+        {(error !== null || data === null) && projectId
+          ? [...PICKER_SOURCES].map((source) => (
+              <GroupHeader
+                key={source}
+                source={source}
+                title={t(SOURCE_TITLE_KEYS[source] ?? source)}
+                onPick={(s) => void openPicker(s)}
+              />
+            ))
+          : null}
         {error !== null ? (
           <div
             data-testid="context-error"
@@ -309,20 +419,7 @@ export function ContextPanel({ projectId, chapterId, model, writingRequirements 
                   data-testid={`context-block-${source}`}
                   className="rounded-md border border-line bg-surface p-3"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-[13px] font-medium">{title}</span>
-                    {PICKER_SOURCES.has(source) && (
-                      <button
-                        type="button"
-                        data-testid={`context-pick-${source}`}
-                        aria-label={t('write.context.injectSelect')}
-                        className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        onClick={() => void openPicker(source)}
-                      >
-                        {t('write.context.injectSelect')}
-                      </button>
-                    )}
-                  </div>
+                  <GroupHeader title={title} source={source} onPick={(s) => void openPicker(s)} />
                   {blocks.length === 0 ? (
                     <div className="mt-2 text-[12px] leading-relaxed text-ink-3">
                       {t('common.empty')}

@@ -749,8 +749,11 @@ describe('写作页 — #724 项目无 model 回退全局默认（上下文注�
     });
 
     renderWritingPage();
-
-    // #724：项目 config={}（无 model），但全局默认存在 → 上下文注入应回退它并渲染角色
+    // #1017 D7 删除 `?? '上下文预览'` 魔法 fallback → 空写作要求不再 assemble（#759 占位）。
+    // 本用例验 model 回退，补种子写作要求使 assemble 路径可达。
+    const p1 = useProjectStore.getState().projects[0];
+    useProjectStore.setState({ projects: [{ ...p1, config: { writing_style: '小说创作' } }] });
+    // #724：项目 config 无 model，但全局默认存在 → 上下文注入应回退它并渲染角色
     const charItem = await screen.findByTestId('context-character-0');
     expect(charItem).toHaveTextContent('林晚');
     expect(capturedAssemble.model).toBe('openai/gpt-4o');

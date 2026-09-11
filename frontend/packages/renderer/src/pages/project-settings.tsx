@@ -28,6 +28,9 @@ export function ProjectSettingsPage() {
   // 字数输入：本地受控草稿 + dirty 标记（blur 才 setConfig + persist；镜像 GeneralPanel valueRef/dirty 语义）
   const [wordsDraft, setWordsDraft] = useState(() => String(project?.config.default_words ?? 800000));
   const wordsDirtyRef = useRef(false);
+  // #1017：项目级写作要求草稿（blur persist config.writing_style；镜像 wordsDraft/dirty 语义）
+  const [styleDraft, setStyleDraft] = useState(() => String(project?.config.writing_style ?? ''));
+  const styleDirtyRef = useRef(false);
   // #F49 记忆衰减：config.extra 载体（开关即时 persist；半衰期草稿 blur 校验后保存，镜像 wordsDraft/dirty 语义）
   const memoryDecayEnabled = config.extra?.memory_decay_enabled === true;
   const [decayDraft, setDecayDraft] = useState(() =>
@@ -60,6 +63,8 @@ export function ProjectSettingsPage() {
     const p = state.projects.find((x) => x.id === state.currentProjectId);
     setWordsDraft(String(p?.config.default_words ?? 800000));
     wordsDirtyRef.current = false;
+    setStyleDraft(String(p?.config.writing_style ?? ''));
+    styleDirtyRef.current = false;
     setDecayDraft(String(p?.config.extra?.memory_decay_half_life ?? 30));
     decayDirtyRef.current = false;
     setDecayError(false);
@@ -272,6 +277,34 @@ export function ProjectSettingsPage() {
                 setTagsInput('');
               }}
             />
+          </div>
+        </section>
+
+        {/* #1017：项目级「写作要求」——全书默认写作风格/要求，blur 保存 config.writing_style */}
+        <section
+          data-testid="ps-writing-style-section"
+          className="rounded-lg border border-line bg-surface p-6 shadow-card"
+        >
+          <div className="flex flex-col gap-1.5 text-[12px] text-ink-2">
+            <span>{t('write.context.projectRequired')}</span>
+            <textarea
+              data-testid="ps-writing-style"
+              aria-label={t('write.context.projectRequired')}
+              rows={3}
+              className="w-full resize-none rounded-md border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+              value={styleDraft}
+              onChange={(e) => {
+                setStyleDraft(e.target.value);
+                styleDirtyRef.current = true;
+              }}
+              onBlur={() => {
+                if (!styleDirtyRef.current) return;
+                styleDirtyRef.current = false;
+                setConfig({ writing_style: styleDraft });
+                persist();
+              }}
+            />
+            <span className="text-[11px] text-ink-3">{t('write.context.projectRequiredHint')}</span>
           </div>
         </section>
 

@@ -297,6 +297,63 @@ describe('chapter store — #723 章节删除与重命名（GREEN 必须提供�
 });
 
 /**
+ * #1017 章级写作要求（spec f2-chapter §2.3/§3.2 + f6-context/gui-panel.md §3.1）：
+ * ChapterMeta 增可空 writing_requirements；store 增 patchWritingRequirements(chapterId, value) —
+ * 传 string = 设覆盖 / 传 null = 清除覆盖回继承；成功后列表回写。
+ */
+describe('chapter store — #1017 章级写作要求', () => {
+  it('patchWritingRequirements：设覆盖 → PATCH body { writing_requirements } 且列表回写', async () => {
+    const updated: ChapterMeta = {
+      id: 'c1', title: '第1章 初见', volume_id: 'v1', order_index: 0, word_count: 2347,
+      writing_requirements: '本章偏悬疑',
+    };
+    apiFetchMock.mockResolvedValue(updated);
+    useChapterStore.setState({ chapters });
+    await act(async () => {
+      await useChapterStore.getState().patchWritingRequirements('c1', '本章偏悬疑');
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/chapters/c1', {
+      method: 'PATCH',
+      body: { writing_requirements: '本章偏悬疑' },
+    });
+    expect(
+      useChapterStore.getState().chapters.find((c) => c.id === 'c1')?.writing_requirements,
+    ).toBe('本章偏悬疑');
+  });
+
+  it('patchWritingRequirements(null)：清除覆盖 → PATCH body { writing_requirements: null }', async () => {
+    const updated: ChapterMeta = {
+      id: 'c1', title: '第1章 初见', volume_id: 'v1', order_index: 0, word_count: 2347,
+      writing_requirements: null,
+    };
+    apiFetchMock.mockResolvedValue(updated);
+    useChapterStore.setState({ chapters });
+    await act(async () => {
+      await useChapterStore.getState().patchWritingRequirements('c1', null);
+    });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/chapters/c1', {
+      method: 'PATCH',
+      body: { writing_requirements: null },
+    });
+    expect(
+      useChapterStore.getState().chapters.find((c) => c.id === 'c1')?.writing_requirements,
+    ).toBeNull();
+  });
+
+  it('selectChapter 回读带上 writing_requirements（章详情透传）', async () => {
+    apiFetchMock.mockResolvedValue({
+      id: 'c1', title: '第1章 初见', volume_id: 'v1', order_index: 0, word_count: 2347,
+      project_id: 'p1', content: '正文', writing_requirements: '章级覆盖',
+    });
+    await act(async () => {
+      await useChapterStore.getState().selectChapter('c1');
+    });
+    expect(useChapterStore.getState().chapters.find((c) => c.id === 'c1')?.writing_requirements)
+      .toBe('章级覆盖');
+  });
+});
+
+/**
  * #976 草稿常显：store 新增 pendingDrafts + loadPendingDrafts / confirmDraft / rejectDraft（RED 契约）。
  * 契约：GET /api/v1/agent/drafts?project_id=<pid>&status=draft → 映射 DraftTreeNode（id=`draft-${id}`）；
  * loadChapterTree 末尾级联 await loadPendingDrafts；confirm/reject 成功后 loadChapterTree 重拉。
