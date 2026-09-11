@@ -55,9 +55,13 @@ class TestIndentScanEdgeBranches:
         assert chapter_content_needs_normalize(content, "第1章 雪夜怪梦") is False
 
     def test_leading_blank_lines_then_clean_paragraphs(self) -> None:
-        """开头空行 + 后续全规范 → 扫描收敛到 False（覆盖 chapter.py:206 与 204→199 回边）。"""
+        """开头/结尾空行 + 后续全规范 → 判脏（#1111：首尾空行会被归一剥除）。"""
+        # #1111 语义修订：本形态下 normalize_chapter_content 会以 .strip("\n") 剥除
+        # 首尾空行 —— 内容确被改写，故守卫必须判脏，方可满足
+        # need(x) == (N(x) != x)。原断言 is False 与下方「N 返回去首尾空行版」
+        # 的断言自相矛盾，属 #1111 暴露的既有用例缺陷。
         content = f"\n\n{FULLWIDTH * 2}师父停了三天。\n\n{FULLWIDTH * 2}李慕白醒了。\n"
-        assert chapter_content_needs_normalize(content, "第1章 雪夜怪梦") is False
+        assert chapter_content_needs_normalize(content, "第1章 雪夜怪梦") is True
         # 幂等：规范内容重复归一逐字节不变
         assert normalize_chapter_content(content, "第1章 雪夜怪梦") == (
             f"{FULLWIDTH * 2}师父停了三天。\n\n{FULLWIDTH * 2}李慕白醒了。"
