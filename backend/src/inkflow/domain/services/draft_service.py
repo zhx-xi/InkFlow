@@ -52,6 +52,9 @@ class DraftService:
         audit_service: AuditLogService（写操作审计，可空）.
         memory_service: MemoryService（可选注入——F28 diff 事件捕获入口；
             关闭时 memory_service 内部零行为，测试可注入 mock）.
+        outline_bindder: #976 D4 自动建章后回填 outlines.chapter_id 的回调（可空）.
+        volume_ensurer: #1097 卷 ensure 回调——(project_id, chapter_outline_id) ->
+            卷 UUID | None（弱依赖，永不抛错）.
     """
 
     def __init__(
@@ -63,6 +66,8 @@ class DraftService:
         memory_service: object | None = None,
         chapter_creator: object | None = None,
         outline_bindder: Callable[[str, str], Awaitable[None]] | None = None,
+        volume_ensurer: Callable[[uuid.UUID, uuid.UUID], Awaitable[uuid.UUID | None]]
+        | None = None,
     ) -> None:
         self._repo = draft_repo
         self._chapter_service = chapter_service
@@ -70,6 +75,7 @@ class DraftService:
         self._memory_service = memory_service
         self._chapter_creator = chapter_creator
         self._outline_bindder = outline_bindder
+        self._volume_ensurer = volume_ensurer
         self.last_learned: bool = False  # F28: 本次 update 是否触发新偏好落库
 
     async def create(
@@ -189,6 +195,10 @@ class DraftService:
             raise DraftStateError(message)
         target = draft.chapter_id or chapter_id
         new_chapter_id: uuid.UUID | None = None
+        # D4 生效来源：#988 显式参数优先，否则回填草稿创建时记录值（自取闭环）
+        effective_source: uuid.UUID | None = (
+            source_outline_id if source_outline_id is not None else draft.source_outline_id
+        )
         if target is None:
             # D4：无目标时若注入了 chapter_creator → 自动建章（草稿卷绑定透传）
             if self._chapter_creator is None:
@@ -197,6 +207,16 @@ class DraftService:
                 chapter_title = title
             else:
                 chapter_title = (draft.summary or draft.content).strip()[:30] or "草稿章节"
+            # #1097 卷解析：草稿既有绑定优先；否则沿来源 outline 上溯卷父 ensure 卷
+            resolved_volume_id = draft.volume_id
+            if (
+                resolved_volume_id is None
+                and self._volume_ensurer is not None
+                and effective_source is not None
+            ):
+                resolved_volume_id = await self._volume_ensurer(
+                    draft.project_id, effective_source
+                )
             create_method = cast(
                 Callable[..., Awaitable[object]],
                 getattr(self._chapter_creator, "create_chapter", None)
@@ -205,7 +225,7 @@ class DraftService:
             created = await create_method(
                 draft.project_id,
                 chapter_title,
-                volume_id=draft.volume_id,
+                volume_id=resolved_volume_id,
                 content="",
             )
             created_id = getattr(created, "id", None)
@@ -232,10 +252,6 @@ class DraftService:
         )
         if confirmed is None:
             raise DraftNotFoundError("草稿不存在")  # 竞态防御：确认前被删除
-        # D4 生效来源：#988 显式参数优先，否则回填草稿创建时记录值（自取闭环）
-        effective_source: uuid.UUID | None = (
-            source_outline_id if source_outline_id is not None else draft.source_outline_id
-        )
         if (
             self._outline_bindder is not None
             and effective_source is not None

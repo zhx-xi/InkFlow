@@ -22,7 +22,11 @@ from inkflow.api.deps_chat_agent import (
     _make_draft_volume_lookup,  # noqa: F401  # deps_agentic_writer 经 deps_module 调用期解析，保持命名空间
     get_chat_agent_service,
 )
-from inkflow.api.deps_draft import make_outline_autolinker, make_outline_bindder
+from inkflow.api.deps_draft import (
+    make_outline_autolinker,
+    make_outline_bindder,
+    make_volume_ensurer,
+)
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
@@ -232,6 +236,7 @@ def get_draft_service(
         chapter_service=chapter_svc,
         chapter_creator=chapter_svc.create_chapter,
         outline_bindder=make_outline_bindder(db),
+        volume_ensurer=make_volume_ensurer(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
     )
