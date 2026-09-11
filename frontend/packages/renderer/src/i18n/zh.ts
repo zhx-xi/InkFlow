@@ -514,12 +514,6 @@ export const zh = {
   'write.context.injectSelect': '＋ 选择注入',
   'write.context.pickerSearch': '搜索已有设定…',
   'write.context.pickerAppend': '追加注入',
-  // #1017：写作要求三层（章级栏 + 项目级输入）
-  'write.context.chapterHint': '章级写作要求',
-  'write.context.requiredInherit': '继承项目写作要求',
-  'write.context.requiredInheritBtn': '恢复继承',
-  'write.context.projectRequired': '写作要求',
-  'write.context.projectRequiredHint': '全书默认写作风格/要求；个别章节可在写作页单独覆盖',
   'write.stream.generating': '生成中',
   'write.stream.stop': '停止',
   'write.stream.done': '已生成 {words} 字 · 模型 {model} · 格式校验{valid}',

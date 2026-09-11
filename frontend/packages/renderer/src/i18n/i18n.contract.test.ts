@@ -24,6 +24,7 @@ import { logEn, logZh } from './log';
 // #496（contract-496 §4.2）：logs-ux 域（日志页 UI 文案）并入 combo —— RED 期该模块不存在，
 // 本文件收集期 module-not-found（预期【R】），GREEN 新建 logs-ux.ts（导出 logsUxZh/logsUxEn）即愈
 import { logsUxEn, logsUxZh } from './logs-ux';
+import { writingReqEn, writingReqZh } from './writing-req';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
@@ -50,6 +51,8 @@ const comboZh: Dict = {
   ...bookZh,
   // #496 §4.2：logs-ux 域（GREEN 建文件即愈）
   ...logsUxZh,
+  // #1017：写作要求三层域
+  ...writingReqZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -65,6 +68,8 @@ const comboEn: Dict = {
   ...bookEn,
   // #496 §4.2：logs-ux 域（GREEN 建文件即愈）
   ...logsUxEn,
+  // #1017：写作要求三层域
+  ...writingReqEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {

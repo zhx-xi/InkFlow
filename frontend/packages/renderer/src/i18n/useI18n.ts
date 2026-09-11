@@ -12,12 +12,13 @@ import { writingUxEn, writingUxZh } from './writing-ux';
 import { agentScopeUxEn, agentScopeUxZh } from './agent-scope-ux';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { logsUxEn, logsUxZh } from './logs-ux';
+import { writingReqEn, writingReqZh } from './writing-req';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh, ...writingReqZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn, ...writingReqEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */
