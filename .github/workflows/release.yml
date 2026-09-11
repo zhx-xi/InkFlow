@@ -105,7 +105,9 @@ jobs:
             $providers = Invoke-RestMethod -Uri "$base/provider-configs" -Headers $h -TimeoutSec 30
             $zhipu = $providers.items | Where-Object { $_.name -eq 'zhipu' }
             if (-not $zhipu) { throw 'zhipu provider seed missing' }
-            $null = Invoke-RestMethod -Uri "$base/provider-configs/$($zhipu.id)" -Method PATCH -Headers $h -Body '{"models":[{"id":"embedding-3","type":"embedding","roles":[]}]}' -TimeoutSec 30
+            # force=true 跳过 #936/#1085 保存前探测门禁——冒烟只验 RAG 模块完整性，
+            # CI runner 无 zhipu key，门禁会以「缺少 API Key」400 硬失败（#1123）。
+            $null = Invoke-RestMethod -Uri "$base/provider-configs/$($zhipu.id)?force=true" -Method PATCH -Headers $h -Body '{"models":[{"id":"embedding-3","type":"embedding","roles":[]}]}' -TimeoutSec 30
             try {
               $null = Invoke-RestMethod -Uri "$base/projects/$($newProj.id)/vector/reindex" -Method POST -Headers $h -TimeoutSec 120
               Write-Host 'reindex OK（模块完整性通过）'
