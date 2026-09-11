@@ -663,3 +663,24 @@ describe('ProjectTree — #1094 章节行布局契约（字数贴右 + 操作钮
     expect(screen.getByTestId('chapter-edit-input')).toBeInTheDocument();
   });
 });
+describe('ProjectTree — #1094 卷容器 group 泄漏补修（第4机制，RED-2）', () => {
+  // 悬停卷内任意行 → 该卷全部章节行操作钮同时显现：tree-volume 容器也挂 group，
+  // Tailwind group-hover 匹配任意祖先。修法 = group 下移到 vol-row 行自身。
+  it('【R-布局2】tree-volume 容器 className 不含独立 group（不再充当 group-hover 作用域）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    renderTree();
+    const vol = screen.getAllByTestId('tree-volume')[0];
+    expect(vol.className).not.toMatch(/(^|\s)group(\s|$)/);
+  });
+
+  it('【R-布局2】vol-row 行自身含 group：卷编辑/删除钮仍由卷行 hover 点亮（#648 契约不破）', () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    renderTree();
+    const volRow = screen.getAllByTestId('tree-volume')[0].querySelector('.vol-row') as HTMLElement | null;
+    expect(volRow).toBeTruthy();
+    expect(volRow!.className).toMatch(/(^|\s)group(\s|$)/);
+    expect(within(screen.getAllByTestId('tree-volume')[0]).getByTestId('vol-edit')).toBeInTheDocument();
+  });
+});
