@@ -447,10 +447,15 @@ def get_foreshadowing_service(
 def get_session_service(
     db: AsyncSession,
 ) -> SessionService:
-    """获取 SessionService 实例（会话仓储 + F1 项目校验，双实体 CRUD + 状态机 + 履历日志）."""
+    """获取 SessionService 实例（会话仓储 + F1 项目校验，双实体 CRUD + 状态机 + 履历日志）.
+
+    #1098: 注入 memory_service——终态会话结论落 memory 事件（stats 计数 +
+    summarize 锚点，覆盖仅 agentic 会话的项目）.
+    """
     return SessionService(
         repository=SQLiteSessionRepository(db),
         project_repo=SQLiteProjectRepository(db),
+        memory_service=get_memory_service(db),
     )
 
 

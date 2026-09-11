@@ -2,6 +2,7 @@
 > **端**: backend
 
 **Spec 版本**: 1.0（初稿待评审）
+**Spec 变更**: v1.0→v1.0.1（2026-09-11，#1098 缺陷修复）：新增 §5.7.1「agentic 会话事件源」——`MemoryEventType.SESSION_COMPLETED` 事件类型 + `SessionService.complete/fail` 捕获点 + `stats.agentic.chapters` 口径扩展（`+session_completed`）+ 锚点纳入会话文本。复用既有 memory_events 表与列，不新增 ORM 列。
 **日期**: 2026-08-11
 **依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 2 + adr/memory-skills/ADR-037.md/adr/memory-skills/ADR-038.md + F27 spec v1.0（specs/f27-writer-agent/spec.md，事件源契约）+ 用户拍板（2026-08-03 判据 E 纳入核心路径）
 **所属阶段**: 0.7.0（Agent 化升级第三批），估算 6-10 人天
@@ -346,10 +347,28 @@ class PreferenceSource:
 
 ### 5.7 修改率统计（验收判据①对照机制）
 
-- **数据源**：memory_events（draft_edited.diff_chars + draft_confirmed/draft_rejected 计数）+ drafts 表（status 分布）。
+- **数据源**：memory_events（draft_edited.diff_chars + draft_confirmed/draft_rejected 计数 + **session_completed 计数**，见下「agentic 会话事件源」）+ drafts 表（status 分布）。
 - **指标**：修改率 = 非直接确认章节数 / agentic 章节总数；平均修改 diff = Σ|diff_chars| / 编辑事件数；重新生成率 = rejected 数 / 章节总数。
 - **对照**：`inkflow memory stats` 输出与 `design/agent-baseline-2026-08-10.md` 基线的对比字段（baseline_ref 引用）；**基线数据现实**：F27 基线表 N=5/模式为「待填」（随使用积累，F27 spec §14 Q3 拍板）——F28 验收语义 = stats 命令输出可用 + 对照机制就绪 + 后续数据积累后数值可比；若基线仍无数据，stats 输出标注「基线 N/A」。
 - **口径**：只统计 agentic 模式（deterministic 无草稿流，基线报告同口径）。
+
+### 5.7.1 agentic 会话事件源（#1098 扩展，2026-09-11）
+
+**缺陷背景（#1098）**：§5.1 的事件捕获只覆盖「用户编辑/确认/拒绝写作草稿」一条路径（`DraftService.update/confirm/reject`）——memory_events 的**唯一写入方**是 draft 域。因此**只有 agentic/planner/执行会话、没有写作草稿编辑的项目**，`memory_events` 恒 0 行 → `stats.agentic.chapters=0` 且 `summarize` 锚点为空 → 记忆页「提取记忆」恒返回「暂无可提取的记忆内容」（即使项目里已有大量会话产出）。本扩展把**会话结论**纳入同一事件源，使「提取记忆」覆盖用户 chat 会话之外的 session 详情页各类会话。
+
+| 动作 | 事件 | 捕获点 | before/after |
+|------|------|--------|--------------|
+| 会话完成（session completed） | `session_completed` | `SessionService.complete`（MODIFY：追加事件记录） | before=None / after=会话结论文本（title + result 摘要） |
+| 会话失败（session failed） | `session_completed` | `SessionService.fail`（MODIFY：追加事件记录，error 非空才落） | before=None / after=会话标题 + 失败原因 |
+
+- **事件类型扩展**：`MemoryEventType` 新增 `SESSION_COMPLETED = "session_completed"`（复用既有 memory_events 表与列，**不新增 ORM 列**——`draft_id` 承载 session id 字符串、`chapter_id` 可空、`before_content=None`、`after_content` 承载可提取文本）。
+- **捕获条件**：`memory_learning=true` 且会话归属项目非 None（全局会话无项目锚点 → 不落事件，零行为）。
+- **会话范围**：`session_type ∈ {writing, task}` 的**全部**会话（task 覆盖 agentic/planner/执行会话；writing 覆盖写作会话），避免按类型分叉（机制扩展要求全路径统一）。
+- **只读消费**：与既有事件一致，一次写入、只读消费，无更新/删除端点（YAGNI）。
+- **统计口径扩展**：`stats.agentic.chapters` = `draft_confirmed + draft_rejected + session_completed` 计数——即「agentic 章节总数口径」由「草稿决策数」扩展为「草稿决策数 + 会话产出数」。
+- **锚点扩展**：`session_completed` 事件的 `after_content` 参与可提取锚点集（供 M2 语义总结），使「仅有 agentic 会话、零写作编辑」的项目 `summarize` 锚点非空。
+- **零行为延续**：`memory_learning=false` → 会话完成/失败**不落事件**（§5.5 零行为保证全路径不变）。
+- **用户 chat 路径不回归**：chat 会话（conversations 表）不在本扩展范围——chat 详细链路的记忆提取仍走既有路径，本扩展只新增 session 域事件源，不修改 draft 域任何既有语义。
 
 ---
 

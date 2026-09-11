@@ -13,6 +13,8 @@
 
 > **Spec 变更**: v1.0→v1.1（2026-08-17 用户拍板固化）：Q1=B（用户级偏好**惰性重算**——删除钩子零成本，查询/collect 时重算 + user-list 幽灵项目过滤，§5.1/§7/§13 联动）· Q2=B（注入前**惰性总结 + 后台异步刷新**——先用旧总结注入不等待 LLM，M2 硬依赖 F44 阶段4 后台任务基建，后台就位前降级同步总结过渡，§5.4/§11 联动）· Q3=A（用户级偏好注入过**显式设定冲突过滤**，§5.6 已覆盖，仅标 ✅）
 
+> **Spec 变更**: v1.1→v1.2（2026-09-11，#1098 缺陷修复）：**锚点数据源覆盖 agentic 会话**——原锚点唯一来源为 F28 draft 域 difflib 提取（用户编辑草稿），导致「仅有 agentic/planner/执行会话、零写作编辑」的项目锚点恒空 → `summarize` 恒 `summarized=false` → 记忆页「提取记忆」恒提示「暂无可提取的记忆内容」。扩展后 `session_completed` 事件（会话完成/失败）的文本参与项目级锚点集（§5.7.1 新增）；用户级锚点/防幻觉 B/幂等/GUI 反馈口径均不变。落地细节见 `specs/f28-memory-learning/spec.md` §5.7.1。
+
 > **模块类型声明**: 本模块为「**偏好学习闭环型（AI 语义总结演进）**」变体——F28（第 12 变体）的演进升级，补齐两段式架构的 LLM 后半截。与 F28 纯函数 difflib 不同：F45 新增**用户级偏好层**（user_preferences 全局表 + 归属分层 + 跨项目聚合）+ **语义风格提取**（difflib 锚点 → LLM 抽象偏好，替代字面片段注入）。编号依据：按「最新无冲突基线」接续——F46=第 19 变体为当前最新无冲突基线，本模块声明**第 20 变体**（冲突以 ADR-019 v5+ 为准；F44 编排器为并行轨独立声明）。
 
 ---
@@ -394,6 +396,20 @@ PreferenceSource.collect(project_id, chapter_id):
 - **审计**（复用 F34 audit_logs）：用户级偏好落库（`user_preference_learned`）、用户级偏好删除（`user_preference_removed`）、语义总结生成（`semantic_summary_generated`）、总结失败（`semantic_summary_failed`，degraded=True）——actor="memory"，异常静默旁路（F28 语义延续）。
 - **透明提示**：CLI 追加「🧠 风格指令」输出（§4.2）；`--json` 信封 data 追加 `"semantic_summaries": {...}` 字段（GUI 后续接入预留）。
 
+### 5.7.1 锚点数据源覆盖 agentic 会话（#1098 扩展，2026-09-11）
+
+**缺陷背景（#1098）**：§5.3 的锚点输入定义为「已落库偏好」（项目级 `project_preferences` + 用户级 `user_preferences`），而偏好的**唯一来源**是 F28 draft 域的 difflib 提取（用户编辑草稿）。因此**只有 agentic/planner/执行会话、没有写作草稿编辑的项目**，锚点恒为空 → `summarize` 直接返回「无总结语义」（`summarized=false`）→ 记忆页「提取记忆」恒提示「暂无可提取的记忆内容」，即使项目已有大量会话产出。
+
+**扩展（落在 F28 §5.7.1「agentic 会话事件源」之上）**：
+
+1. **锚点来源扩展**：`session_completed` 事件（会话完成/失败时由 `SessionService` 落库）的 `after_content`（会话标题 + 结论/失败摘要）参与项目级锚点集——使「仅有会话、零写作编辑」的项目 `summarize` 锚点非空。
+2. **口径不变**：用户级锚点仍只来自 `user_preferences`（跨项目 N≥2 + 项目数≥2 保守规则，§5.1 不变）——会话事件**不升用户级**（单项目证据不足以跨项目泛化，保持保守规则）。
+3. **防幻觉 B 不变**：会话派生的锚点同样走 `anchor_refs ⊆ 锚点 value 集` 校验（§5.3.1），LLM 编造证据之外偏好仍被丢弃。
+4. **幂等不变**：`anchor_hash` 仍为排序锚点键 SHA-256（§5.4）——会话锚点加入后哈希自然变化 → 触发重新总结（既有语义，无需新机制）。
+5. **GUI 反馈不变**：`summarized=true` → ok toast「记忆提取完成」；`false` → warn toast「暂无可提取的记忆内容」（F19 交互规格 §2 零改动）；空项目仍给可读提示。
+
+> 详细事件捕获/统计口径（`chapters = confirmed + rejected + session_completed`）见 `specs/f28-memory-learning/spec.md` §5.7.1（唯一真相，本 spec 不重复定义）。
+
 ---
 
 ## 6. 组织规则
@@ -472,6 +488,16 @@ PreferenceSource.collect(project_id, chapter_id):
 | MODIFY | `backend/tests/unit/test_preference_source.py` | M2 注入优先级 + 字面兜底 + 归属 title |
 | MODIFY | `tests/api/test_memory_api.py` | summaries/summarize 端点契约 |
 | MODIFY | `tests/cli/test_cli_memory.py` | summarize 子命令契约 |
+
+### #1098 扩展（agentic 会话锚点覆盖，2026-09-11）
+
+| 动作 | 文件 | 说明 |
+|------|------|------|
+| MODIFY | `backend/src/inkflow/domain/models/memory_event.py` | `MemoryEventType` 新增 `SESSION_COMPLETED`（复用既有列，不新增 ORM 列） |
+| MODIFY | `backend/src/inkflow/domain/services/session_service.py` | `complete`/`fail` 追加会话事件落库（可选注入 memory_service，零行为兼容） |
+| MODIFY | `backend/src/inkflow/domain/services/memory_service.py` | `stats` 口径扩展（+session_completed）+ `summarize` 锚点纳入会话事件文本 |
+| MODIFY | `backend/src/inkflow/api/deps.py` | `get_session_service` 注入 memory_service（会话事件接线） |
+| CREATE | `backend/tests/unit/domain/services/test_memory_session_coverage_1098.py` | agentic 会话 → stats/summarize 覆盖契约（RED） |
 
 > ⚠️ **装配契约预埋（F28 回马枪教训 #245）**：`app.py` 的 `include_router(memory.router)` 已存在（F28 合入），M1/M2 新增端点**必须**在既有 memory router 内追加（非新 router 文件），避免重蹈「router 存在但未装配」的覆辙；API 测试 RED 期 lazy import 合理，但 docstring 必须注明「GREEN 后移除手动安装、改走真实装配」。
 
