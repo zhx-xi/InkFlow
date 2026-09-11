@@ -48,8 +48,10 @@ ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
 _EXEMPT_PATHS = ("/docs", "/redoc", "/openapi.json")
 
 #: #1093 地图底图 GET 精确豁免（浏览器 ``<img src>`` 无法带自定义头）；
-#: 用精确正则而非前缀匹配，防豁免面外溢（见 tests/api/test_map_image_token_exempt.py）
-_EXEMPT_IMAGE_RE = re.compile(r"^/api/v1/maps/[^/]+/image$")
+#: 用精确正则而非前缀匹配，防豁免面外溢（见 tests/api/test_map_image_token_exempt.py）。
+#: ``\Z`` 而非 ``$``：``$`` 也匹配「串尾单个换行之前」，会让
+#: ``/api/v1/maps/1/image%0A``（解码后带尾随 ``\n``）误命中 → 未授权放行。
+_EXEMPT_IMAGE_RE = re.compile(r"^/api/v1/maps/[^/]+/image\Z")
 
 
 class TokenAuthMiddleware:

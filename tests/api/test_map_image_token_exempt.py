@@ -165,10 +165,46 @@ class TestExemptionSurfaceNoOverflow:
         - ``/api/v1/maps/image``：id 段缺失
         """
         resp = client.get(path)
+        assert (
+            resp.status_code == 401
+        ), f"{path} 是近似路径，不应命中豁免正则，实际 {resp.status_code}"
+
+    @pytest.mark.parametrize(
+        "suffix,label",
+        [
+            ("%0A", "尾随换行"),
+            ("%0D", "尾随回车"),
+            ("%20", "尾随空格"),
+            ("%09", "尾随制表符"),
+            ("%00", "尾随 NUL"),
+        ],
+    )
+    def test_trailing_whitespace_encoding_still_401(
+        self, client, set_token_env, suffix, label
+    ):
+        """尾随控制字符/空白编码不得被豁免（正则锚点必须严格到串尾）。
+
+        回归守护：Python ``re`` 的 ``$`` **也匹配「串尾单个换行之前」**——
+        若豁免正则用 ``$`` 收尾，``/api/v1/maps/{id}/image%0A``（uvicorn 解码后
+        带尾随 ``\\n``）会误命中 → **未授权请求被放行**（实测 404 而非 401，
+        即已越过鉴权层）。故锚点必须用 ``\\Z``。本参数化用例在每个变体上
+        断言 401，用 ``$`` 时会红。
+        """
+        resp = client.get(f"/api/v1/maps/{MAP_ID}/image{suffix}")
         assert resp.status_code == 401, (
-            f"{path} 是近似路径，不应命中豁免正则 ^/api/v1/maps/[^/]+/image$，"
+            f"尾随{label}（{suffix}）不得被豁免——豁免正则锚点须为 \\Z 而非 $，"
             f"实际 {resp.status_code}"
         )
+
+    def test_trailing_slash_still_401(self, client, set_token_env):
+        """尾随斜杠 ``/image/`` 不得被豁免（``[^/]+`` 后须紧跟 ``image`` 结尾）。"""
+        resp = client.get(f"/api/v1/maps/{MAP_ID}/image/")
+        assert resp.status_code == 401
+
+    def test_double_slash_still_401(self, client, set_token_env):
+        """双斜杠 ``/maps//image`` 不得被豁免（id 段不能为空）。"""
+        resp = client.get("/api/v1/maps//image")
+        assert resp.status_code == 401
 
     def test_put_map_image_write_not_exempt(self, client, set_token_env):
         """PUT 同 URL（上传替换图片）为写操作 → 不豁免（显式反例）。

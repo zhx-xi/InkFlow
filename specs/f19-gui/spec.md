@@ -97,13 +97,17 @@ INKFLOW_READY {"port": 38291, "token": "aB3x...", "pid": 4821, "version": "0.3.0
 - 请求头：`X-InkFlow-Token: <token>`
 - 校验范围：**所有 `/api/*` 请求**（含 SSE 流式端点——F23 端点为 POST/fetch，可带自定义头，不受 EventSource GET 限制）
 - 校验范围（Q2 已评审修订）：**所有端点均需 token**，含 `/health`——豁免仅 `/docs` `/redoc` `/openapi.json`（静态文档，无数据面）
-- 豁免增补（**#1093**）：`GET /api/v1/maps/{id}/image` 精确豁免（正则 `^/api/v1/maps/[^/]+/image$`，**仅 GET**）。
+- 豁免增补（**#1093**）：`GET /api/v1/maps/{id}/image` 精确豁免（正则 `^/api/v1/maps/[^/]+/image\Z`，**仅 GET**）。
   理由：该端点由浏览器原生 `<img src>` 消费，而 `<img src>` **无法附加自定义请求头** → 裸请求必被 401 挡下 → 地图「图片」tab 底图破图
-  （MapCanvas.tsx 的 `imageSrc`）。该端点仅返回项目内已上传的静态图片；持有合法 token 的客户端已可枚举 map id，故不新增信息暴露面。
+  （MapCanvas.tsx 的 `imageSrc`）。该端点仅返回项目内已上传的静态图片。
   **写路径 `PUT /api/v1/maps/{id}/image`（上传/替换）不豁免**，仍受 token 保护。
-  与 Q2 的关系：Q2 否决 `/health` 豁免的理由是「豁免收益仅剩运维 curl 探测」——本例外收益是 GUI 功能可达性（无替代路径），
-  且豁免面为精确单端点 + 单方法，非前缀（近似路径 `/images`、`/image/extra`、`/maps` 均不豁免；
-  反例守护见 `tests/api/test_map_image_token_exempt.py::TestExemptionSurfaceNoOverflow`）。
+  **已知代价（不掩饰）**：本豁免确实新开一条未鉴权读通道——未持 token 者可读**已知 map id** 的图片，
+  并借「200 有图 / 404 不存在」构成 **map id 存在性 oracle**。判定为本机威胁模型下可接受（同机进程本就
+  可读 data-dir 内文件；服务仅监听 127.0.0.1；CORS 白名单阻断跨源读取响应正文），但这是**态势变化**，
+  与「不新增暴露面」的说法不同——Q2 否决 `/health` 豁免正是为封堵探测通道。
+  **边界纪律**：锚点用 `\Z` 而非 `$`（`$` 亦匹配串尾单换行前，会让 `.../image%0A` 绕过鉴权——实测过）；
+  id 段非空（`//image` 不豁免）；近似路径 `/images`、`/image/extra`、`/image/`、大小写变体均不豁免；
+  反例守护见 `tests/api/test_map_image_token_exempt.py::TestExemptionSurfaceNoOverflow`。
 - 壳轮询 token 零成本：端口与 token 同在 `INKFLOW_READY` 行，壳解析该行是必经步骤，token 为免费副产品
 - 云端远程模式（2.0.0，ADR-024）：换 `Authorization: Bearer <JWT>`，同一 API client 抽象——本章只实现本地 token
 
