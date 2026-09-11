@@ -114,7 +114,7 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
         // 契约断言 getByTestId('tree-chapter') 唯一且为当前章（data-current 标记）
         data-testid={isCurrent ? 'tree-chapter' : undefined}
         data-current={isCurrent ? 'true' : undefined}
-        className={`group flex w-full items-center gap-2 rounded px-2 py-1.5 ${isCurrent ? 'bg-accent-weak' : ''}`}
+        className={`group relative flex w-full items-center gap-2 rounded px-2 py-1.5 ${isCurrent ? 'bg-accent-weak' : ''}`}
       >
         {isEditing ? (
           <input
@@ -148,12 +148,18 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
             <span className="truncate">{ch.title}</span>
           </button>
         )}
-        {/* #980-2a D11：字数 ml-auto 置右（非 shrink-0），hover 操作钮出现时 -mr-14 让位 */}
-        <span className="ml-auto text-[11px] text-ink-3 transition-all group-hover:-mr-14">
+        {/* #1094 方案 A：字数 ml-auto 贴列表右缘（非 shrink-0，保留 #980-2a 契约）；
+            hover 操作钮绝对定位浮上来时显式淡出字数，避免与钮视觉重叠（废弃 -mr-14 让位机制） */}
+        <span className="ml-auto text-[11px] text-ink-3 transition-all group-hover:opacity-0">
           {ch.word_count.toLocaleString()}
         </span>
         {!isEditing && (
-          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
+          // #1094 方案 A：操作钮 absolute 撤出 flex 流（不再占行尾宽度挤走字数），right-2 对齐行 px-2 内衬（与字数右缘同线）；
+          // bg-surface 实底保证 hover 过渡期间与残余字数不互相穿透
+          <div
+            data-testid={`chapter-actions-${ch.id}`}
+            className="absolute right-2 flex items-center gap-0.5 rounded bg-surface opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100"
+          >
             <button
               type="button"
               data-testid={`chapter-edit-${ch.id}`}
