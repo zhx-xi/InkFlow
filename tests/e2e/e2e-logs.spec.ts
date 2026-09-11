@@ -46,8 +46,8 @@ async function readKernelInfo(
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 60s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -98,7 +98,7 @@ async function kernelFetch(kernel: KernelInfo, path: string, init?: RequestInit)
   return res.json();
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 360_000 });
 
 // ────────────────────────────────────────────────────────────────
 // 1. 日志页路由直达：logs-page 渲染 + 分类 tab 4 个 + 默认级别 INFO

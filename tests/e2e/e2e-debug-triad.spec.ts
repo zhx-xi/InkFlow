@@ -64,8 +64,8 @@ async function readKernelInfo(
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 60s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -129,7 +129,7 @@ async function healthStatus(port: number, token: string): Promise<number> {
 }
 
 // Electron 启动 + 内核冷启动较慢（每用例独立 launch + 独立数据目录），放宽整文件超时
-test.describe.configure({ timeout: 180_000 });
+test.describe.configure({ timeout: 360_000 });
 
 test('A 三层联动开：INKFLOW_DEBUG=1 → debug token + /docs 200 + DevTools 自动开（§2.7 用例 1）', async () => {
   const iso = makeIsolation();

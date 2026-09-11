@@ -53,7 +53,7 @@ async function readKernelInfo(
 }
 
 /** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 30s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -97,7 +97,7 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
   await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 360_000 });
 
 // ────────────────────────────────────────────────────────────────
 // 1. 项目页：新建对话框 → 创建项目 → 项目卡片出现（含书名）

@@ -53,7 +53,7 @@ async function readKernelInfo(
   }
 }
 
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -108,7 +108,7 @@ async function findProjectId(kernel: KernelInfo, name: string): Promise<string> 
   return project!.id;
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 360_000 });
 
 /** 预置：创建项目 + 一章（带正文），返回 pid + cid */
 async function seedChapter(

@@ -44,7 +44,7 @@ async function readKernelInfo(
  * 等待内核就绪（spec §3.2.1/3.2.3）：内核拉起需 python + uvicorn 启动时间，
  * INKFLOW_READY 到达前 __kernelInfo 尚未注入。轮询至多 20s（健康检查 2s 间隔 × 余量）。
  */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -76,7 +76,7 @@ function isAlive(pid: number): boolean {
 }
 
 // Electron 启动 + 内核拉起较慢，放宽整文件超时（崩溃拉起用例含 40s 轮询）
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 360_000 });
 
 test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /health 200 + M5 安全基线', async () => {
   const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });

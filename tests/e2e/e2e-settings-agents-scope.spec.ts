@@ -82,8 +82,8 @@ async function readKernelInfo(
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 60s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -195,7 +195,7 @@ async function expectCell(dialog: Locator, cellTestid: string, checked: boolean)
   }
 }
 
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 360_000 });
 
 // ────────────────────────────────────────────────────────────────
 // #957 F58 GUI scope 勾选矩阵 E2E：创建带 scope 的 Agent / 编辑回显 + 增量授权 / 内置详情矩阵回显

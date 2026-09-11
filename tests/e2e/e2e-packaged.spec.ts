@@ -63,8 +63,8 @@ function parseKernelState(raw: string): KernelState {
  */
 const KERNEL_STATE_FILE = path.join(process.env.APPDATA ?? '', 'InkFlow', 'kernel.json');
 
-/** 轮询真实 %APPDATA%/InkFlow/kernel.json（打包冷启动 chromadb 可 >60s，90s 上限） */
-async function waitForKernelFile(timeoutMs = 90_000): Promise<KernelState> {
+/** 轮询真实 %APPDATA%/InkFlow/kernel.json（打包冷启动 chromadb 可 >60s，240s 上限） */
+async function waitForKernelFile(timeoutMs = 240_000): Promise<KernelState> {
   const file = KERNEL_STATE_FILE;
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
@@ -146,7 +146,7 @@ async function isDevToolsOpened(app: ElectronApplication): Promise<boolean> {
 }
 
 // 真实 exe 启动 + 内核冷启动慢（每用例独立 launch + 独立数据目录），放宽整文件超时
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 360_000 });
 
 let currentApp: ElectronApplication | undefined;
 let currentIsolation: string | undefined;
