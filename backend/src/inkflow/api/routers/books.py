@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db
-from inkflow.api.deps_draft import make_outline_bindder
+from inkflow.api.deps_draft import make_outline_bindder, make_volume_ensurer
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits
 from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
@@ -304,6 +304,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         chapter_service=chapter_svc,
         chapter_creator=chapter_svc.create_chapter,
         outline_bindder=make_outline_bindder(db),
+        volume_ensurer=make_volume_ensurer(db),
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
         memory_service=get_memory_service(db),
     )

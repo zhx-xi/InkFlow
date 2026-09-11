@@ -1,7 +1,7 @@
 # F2: 章节管理 (chapter_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F2, Constitution P1-P6
+> **Spec 版本**: 1.1（#1097 自动建卷 + 章节归卷：卷名复用幂等 + 无卷父保持未分类，2026-09-11；v1.0 2026-07-31）
 > **所属阶段**: Phase 1 — 核心引擎
 > **关联 Issues**: [#2](https://github.com/zhx-xi/InkFlow/issues/2)
 > **依赖**: F1 (project_service) 已完成 ✅
@@ -42,6 +42,7 @@ class ChapterStatus(StrEnum):
 - 每项目卷数量不限
 - 按 `order_index` 升序排列
 - 删除卷时，其下章节的 `volume_id` 置为 NULL（变为"未分类"）
+- **自动建卷归卷（#1097）**：Agent 确认流自动建章时（F27 D4，`DraftService.confirm` 无目标章分支），若草稿无 `volume_id`，则沿来源大纲章节点 `parent_id` 上溯 `level=volume` 的卷大纲，**按卷名 ensure** `volumes` 行（同项目同名复用 → 幂等；多章同卷共用一行）并作为新章 `volume_id`；无卷父（无 parent / parent 非 volume / 跨项目 / 行不存在）→ 保持 NULL（不臆造卷）。卷名与大纲卷节点名一致，`order_index` 走 `get_next_volume_order` 既有语义
 
 ### 2.3 Chapter（章节）
 
@@ -341,7 +342,7 @@ F2 被依赖:
 
 | 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| POST /projects/{id}/volumes | 项目存在 | 校验 title → 建 Volume | 201 + Volume | 422（title 空/>200） | title 必填；order_index 可省略 |
+| POST /projects/{id}/volumes | 项目存在 | 校验 title → 建 Volume | 201 + Volume | 422（title 空/>200） | title 必填；order_index 可省略；**#1097** 自动归卷路径同表复用本行语义（按卷名 ensure，同名命中即复用不新建） |
 | GET /projects/{id}/volumes | 项目存在 | 列出 | 200 + {items} | — | — |
 | GET /volumes/{id} | 卷存在 | 查询 | 200 + Volume | 404「卷不存在」 | — |
 | PATCH /volumes/{id} | 卷存在 | 部分更新 | 200 + Volume | 404；422（title 非法） | 字段不传=不改 |
@@ -373,3 +374,15 @@ F2 被依赖:
 - A4：空 content 字数 → word_count = 0
 - A5（**#1017**）：新建章节 `writing_requirements` 缺省为 NULL（= 继承项目 `config.writing_style`）
 - A6（**#1017**）：PATCH `{writing_requirements: "本章偏悬疑"}` → 200 回读该值；再 PATCH `{writing_requirements: null}` → 回读 null（清除覆盖）
+- A7（**#1097**）：Agent 确认流对「有卷父」章节点自动建章后 `GET /projects/{id}/volumes` 返回该卷（卷名 = 卷大纲名），章节 `volume_id` 指向该卷
+- A8（**#1097**）：多章同卷 → `volumes` 仅 1 行（同名复用）；重复 confirm 不重复建卷（幂等）
+- A9（**#1097**）：无卷父（章节点无 parent / parent 非 volume / 跨项目）→ 建章 `volume_id` 为 NULL（不臆造卷）
+
+---
+
+## 13. 修改履历
+
+| 版本 | 日期 | 变更 | 关联 |
+|------|------|------|------|
+| 1.1 | 2026-09-11 | 卷业务规则增「自动建卷归卷」：confirm 自动建章沿大纲卷父按名 ensure 卷（幂等复用）；无卷父保持 NULL；§2.2/§12.4 同步（A7-A9） | [#1097](https://github.com/zhx-xi/InkFlow/issues/1097) |
+| 1.0 | 2026-07-31 | 首版（PR #9） | [#2](https://github.com/zhx-xi/InkFlow/issues/2) |
