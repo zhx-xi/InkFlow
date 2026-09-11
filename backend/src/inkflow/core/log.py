@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import logging
 import sys
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,7 +33,7 @@ class InterceptHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         """把一条 stdlib LogRecord 以对应级别转发到 loguru。"""
         # #1011: 级别名映射——logging 标准级别与 loguru 内建级别同名
-        #（WARNING/ERROR/...）；未知级别回退 levelno（loguru 接受数字级别）。
+        # （WARNING/ERROR/...）；未知级别回退 levelno（loguru 接受数字级别）。
         level: str | int
         level_name = logging.getLevelName(record.levelno)
         try:
@@ -81,7 +82,7 @@ def _structured_sink(message: Message) -> None:
         rec = StructuredLogRecord(
             level=_norm_sink_level(record["level"].name),
             logger=record["name"] or "inkflow",  # record["name"] 类型为 str | None；运行时恒非空
-            timestamp=record["time"],
+            timestamp=record["time"].astimezone(UTC),
             **record["extra"],
         )
         StructuredLogStore(config.data_dir / "logs" / "structured").append(rec)
