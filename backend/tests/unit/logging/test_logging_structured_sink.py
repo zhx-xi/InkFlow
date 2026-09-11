@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,72 @@ class TestStructuredSink:
         assert rec["correlation_id"] == "c1"
         assert rec["timestamp"], "sink 重建 timestamp 应为非空 JSON ISO 串"
         assert rec["logger"], "sink 应落 logger=record[name] 非空"
+
+    def test_sink_timestamp_is_utc_not_local(self, monkeypatch, tmp_path):
+        """【R】#1099：log_structured 落盘 timestamp 必须 UTC（不得为 loguru 本地时间）。
+
+        ADR-055：存储/传输 UTC，GUI/CLI 显示本地。缺陷路径 = core/log.py 用
+        record["time"]（loguru sink 自行格式化 → 本地时区）覆盖 StructuredLogRecord
+        的 UTC 默认值；本断言对该覆盖行为敏感（本地=UTC 的 CI 时区下须用反例覆盖，
+        见 test_sink_timestamp_utc_under_nonzero_offset）。
+        """
+        _patch_log_paths(monkeypatch, tmp_path, debug=False, log_level="INFO")
+        log_module.setup_logging()
+
+        log_structured(
+            level="INFO",
+            caller_type="api",
+            caller_name="utc.probe",
+            event="e",
+            message_key="log.event.x",
+            params={},
+            correlation_id="c-utc",
+        )
+
+        rec = _find_record(_stored_records(tmp_path), "utc.probe")
+        assert rec is not None, "utc.probe 记录未落入 store"
+        parsed = datetime.fromisoformat(rec["timestamp"])
+        assert parsed.utcoffset() == timedelta(0), (
+            f"落盘 timestamp 应为 UTC（偏移 0），实际 {rec['timestamp']}"
+        )
+        assert abs((datetime.now(UTC) - parsed).total_seconds()) < 60, (
+            f"落盘 timestamp 偏离当前时刻过远：{rec['timestamp']}"
+        )
+
+    def test_sink_timestamp_utc_under_nonzero_local_offset(self, monkeypatch, tmp_path):
+        """【R】反例：宿主本地时区偏移非 0 时，落盘仍必须 UTC（#1099 验收「TZ 反例」）。
+
+        本机（Windows）无 time.tzset + 无 tzdata/IANA 库 → 不能用 TZ=XXX-5 造成真偏移
+        （环境实测：tzset MISSING / ZoneInfo('Asia/Shanghai') NotFound）。故改为劫持
+        loguru 生产 record["time"] 的入口 `loguru._logger.aware_now`（_logger.py:1998），
+        令其返回固定 -05:00 偏移的 datetime —— 等价于宿主运行在 TZ=XXX-5，且与机器真实
+        时区解耦，CI 上恒有效。此时正确实现（UTC 落盘）通过；用 record["time"] 的缺陷
+        实现必 FAIL。
+        """
+        _patch_log_paths(monkeypatch, tmp_path, debug=False, log_level="INFO")
+
+        from loguru import _logger as loguru_logger_module
+
+        sentinel_tz = timezone(timedelta(hours=-5))  # TZ=XXX-5 的等价语义
+        monkeypatch.setattr(loguru_logger_module, "aware_now", lambda: datetime.now(sentinel_tz))
+
+        log_module.setup_logging()
+        log_structured(
+            level="INFO",
+            caller_type="api",
+            caller_name="tz.probe",
+            event="e",
+            message_key="log.event.x",
+            params={},
+            correlation_id="c-tz",
+        )
+
+        rec = _find_record(_stored_records(tmp_path), "tz.probe")
+        assert rec is not None, "tz.probe 记录未落入 store"
+        parsed = datetime.fromisoformat(rec["timestamp"])
+        assert parsed.utcoffset() == timedelta(0), (
+            f"宿主本地偏移为 -05:00 时落盘 timestamp 仍应为 UTC，实际 {rec['timestamp']}"
+        )
 
     def test_warning_level_normalized_to_warn(self, monkeypatch, tmp_path):
         """【R】loguru WARNING → 存储 'WARN'（_norm_sink_level 归一，与 store 查询口径对齐）。"""
