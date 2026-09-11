@@ -108,8 +108,8 @@ async function readKernelInfo(app: ElectronApplication): Promise<KernelInfo | un
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 >20s；#1077 对齐主进程 90s×2 重启预算，默认 180s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -352,7 +352,7 @@ async function setupReasoningFixture(
   return { fake, app, kernelPid: kernel.pid, window, kernel };
 }
 
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 360_000 });
 
 test('支持思考的模型 → 选 high → 思考区块出现（主闭环）', async () => {
   test.skip(

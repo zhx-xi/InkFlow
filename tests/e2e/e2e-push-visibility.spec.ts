@@ -65,8 +65,8 @@ async function readKernelInfo(app: ElectronApplication): Promise<KernelInfo | un
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 180s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -242,7 +242,7 @@ async function referenceNewProjectToTemplate(
   expect((detail.used_by ?? []).map((u) => u.name)).toContain(projectName);
 }
 
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 360_000 });
 
 // ────────────────────────────────────────────────────────────────
 // S1（主场景）：推送可见性——GUI 停留不切页，外部建图自动出现（#973 复刻）

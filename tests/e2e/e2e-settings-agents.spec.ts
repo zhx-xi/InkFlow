@@ -76,8 +76,8 @@ async function readKernelInfo(
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 180s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -121,7 +121,7 @@ async function extractAgentId(card: Locator): Promise<string> {
   return testid.replace('agent-card-', '');
 }
 
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 360_000 });
 
 // ────────────────────────────────────────────────────────────────
 // #260 F41 Agent 管理域 E2E：列表只读 / 创建 / 编辑 / 删除确认

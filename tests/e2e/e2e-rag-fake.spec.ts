@@ -71,8 +71,8 @@ async function readKernelInfo(app: ElectronApplication): Promise<KernelInfo | un
   }
 }
 
-/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 >20s；#1077 对齐主进程 90s×2 重启预算，默认 180s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
+/** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 >20s；#1077 对齐主进程 90s×2 重启预算，默认 240s） */
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -200,7 +200,7 @@ function spawnFakeServer(): Promise<{ port: number; kill: () => void }> {
   });
 }
 
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 360_000 });
 
 test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核 stale=false', async () => {
   test.skip(

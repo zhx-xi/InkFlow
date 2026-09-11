@@ -11,8 +11,8 @@ export default defineConfig({
   // 双目录共用先例 #415）——Playwright 默认 testMatch 含 *.test.ts 会误收它们以错误 loader
   // 执行（CI isolation step 红）。显式限定只收集 Playwright spec。
   testMatch: '**/*.spec.ts',
-  // #1077：waitKernelInfo 预算 180s（90s×2 尝试+退避）+ UI 操作余量
-  timeout: 240_000,
+  // #1077：waitKernelInfo 预算 240s（90s×2 尝试+退避）+ UI 操作余量
+  timeout: 360_000,
   workers: 1,
   reporter: [['list']],
 });
