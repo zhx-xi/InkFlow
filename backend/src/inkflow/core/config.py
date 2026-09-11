@@ -6,6 +6,7 @@
 
 import json as _json
 import os
+import secrets
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -78,6 +79,37 @@ def _default_data_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(os.environ.get("APPDATA", Path.home())) / "InkFlow"
     return Path("./data")
+
+
+SECRET_KEY_FILENAME = ".secret_key"
+
+
+def load_or_create_secret_key(data_dir: Path) -> str:
+    """读取 <data_dir>/keys/.secret_key；缺失则生成并落盘（权限 0600）。
+
+    已存在且非空 → 返回原值，绝不重新生成或重写（重新生成会使已加密的
+    ``keys/*.json`` 全部解不开）。空内容 → 返回 "" 且不覆盖；IO 失败 →
+    返回 ""，不抛异常（调用方退化为明文降级）。
+
+    Returns:
+        64 hex chars 密钥串（32 字节，兼容 ``bytes.fromhex``）；失败时 ""。
+    """
+    keys_dir = data_dir / "keys"
+    key_file = keys_dir / SECRET_KEY_FILENAME
+    try:
+        if key_file.exists():
+            return key_file.read_text(encoding="utf-8").strip()
+        keys_dir.mkdir(parents=True, exist_ok=True)
+        generated = secrets.token_hex(32)
+        if sys.platform == "win32":
+            key_file.write_text(generated, encoding="utf-8")
+        else:
+            fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(generated)
+    except OSError:
+        return ""
+    return generated
 
 
 def load_config_json(data_dir: Path) -> dict:
@@ -373,6 +405,8 @@ class InkFlowConfig(BaseSettings):
                 cfg = load_config_json(self.data_dir)
                 if "debug" in cfg:
                     self.debug = bool(cfg["debug"])
+        if "secret_key" not in self.model_fields_set:
+            self.secret_key = load_or_create_secret_key(self.data_dir)
         return self
 
 
