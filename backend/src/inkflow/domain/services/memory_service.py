@@ -25,6 +25,7 @@ from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.models.user_preference import UserPreference
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services import preference_learner
+from inkflow.domain.services.memory_session_mixin import MemorySessionMixin
 from inkflow.domain.services.memory_supersede_mixin import MemorySupersedeMixin
 from inkflow.domain.services.preference_learner import (
     PreferenceCandidate,
@@ -60,7 +61,7 @@ class PreferenceNotFoundError(Exception):
         super().__init__(message)
 
 
-class MemoryService(MemorySupersedeMixin):
+class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
     """记忆编排服务（spec §5）— 事件捕获/偏好 CRUD/统计查询.
 
     Args:
@@ -660,55 +661,6 @@ class MemoryService(MemorySupersedeMixin):
             active_watermark_at_last_access=active_watermark_now,
         )
 
-    async def stats(self, project_id: uuid.UUID) -> dict:
-        """修改率统计（spec §5.7 口径，测试锁定数学）.
-
-        - chapters = confirmed + rejected 事件数（agentic 章节总数口径）;
-        - direct_confirms = confirmed 数; modify_rate = (chapters - confirmed)
-          / chapters（chapters=0 → 0.0）;
-        - avg_diff_chars = Σ|diff_chars| / edited 数（无 edited → 0）;
-        - regenerate_rate = rejected / chapters（无章节 → 0.0）;
-        - learned_preferences = 库中偏好总数; baseline_ref 引用 F27 基线文档.
-
-        Args:
-            project_id: 所属项目 UUID.
-
-        Returns:
-            统计字典（project_id / agentic / learned_preferences / baseline_ref）.
-        """
-        events, _total = await self._event_repo.list_by_project(  # type: ignore[attr-defined]  # 鸭子类型：event_repo 按契约返回 (list, total) 元组
-            project_id
-        )
-        edited = [e for e in events if e.event_type == MemoryEventType.DRAFT_EDITED]
-        confirmed = [e for e in events if e.event_type == MemoryEventType.DRAFT_CONFIRMED]
-        rejected = [e for e in events if e.event_type == MemoryEventType.DRAFT_REJECTED]
-        chapters = len(confirmed) + len(rejected)
-        modify_rate = (chapters - len(confirmed)) / chapters if chapters else 0.0
-        avg_diff_chars = int(sum(abs(e.diff_chars) for e in edited) / len(edited)) if edited else 0
-        regenerate_rate = len(rejected) / chapters if chapters else 0.0
-        learned_preferences = await self._preference_repo.count_by_project(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 count_by_project
-            project_id
-        )
-        result = {
-            "project_id": str(project_id),
-            "agentic": {
-                "chapters": chapters,
-                "direct_confirms": len(confirmed),
-                "avg_diff_chars": avg_diff_chars,
-                "modify_rate": modify_rate,
-                "regenerate_rate": regenerate_rate,
-            },
-            "learned_preferences": learned_preferences,
-            "baseline_ref": "design/agent-baseline-2026-08-10.md",
-        }
-        if self._user_preference_repo is not None:
-            user_items, _user_total = await self._user_preference_repo.list_all()  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 list_all
-            project_set: set[str] = set()
-            for up in user_items:
-                project_set.update(up.source_projects)
-            result["user_preferences"] = {"count": len(user_items), "projects": len(project_set)}
-        return result
-
     async def get_summaries(self, project_id: uuid.UUID) -> dict:
         """查询已落库的语义总结（项目级 + 用户级，spec §3.2/§5.4）.
 
@@ -750,7 +702,8 @@ class MemoryService(MemorySupersedeMixin):
         memory_learning=false 或 summary_repo/summarizer 未注入 → 空结构;
         每层（项目级先、用户级后）: 锚点哈希相同且非 force → 复用；否则
         summarizer.summarize → dropped 审计 failed / summary 非 None → upsert +
-        审计 generated（degraded=True, actor="memory"）; 用户级锚点 = 全局
+        审计 generated（degraded=True, actor="memory"）; 项目级锚点 = 偏好锚点 +
+        session_completed 事件锚点（#1098，spec §5.7.1）; 用户级锚点 = 全局
         user_preferences（project_id=None，与调用项目无关，spec §5.3）.
 
         Returns: {"project_id", "summarized", "project"|None, "user"|None}.
@@ -789,6 +742,10 @@ class MemoryService(MemorySupersedeMixin):
         anchors, _total = await self._preference_repo.list_by_project(  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约返回 (list, total) 元组
             project_id
         )
+        # #1098 锚点扩展（spec §5.7.1）: 既有偏好锚点保留（顺序/语义不变）+
+        # 追加会话结论锚点（session_completed.after_content），使「仅有会话、
+        # 零写作编辑」的项目锚点非空
+        anchors = [*anchors, *await self._session_anchors(project_id)]
         cur_hash = self._learner.anchor_hash(anchors)  # type: ignore[attr-defined]  # 鸭子类型：learner 按契约提供 anchor_hash
         existing: SemanticSummary | None = await self._summary_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 get
             scope=SummaryScope.PROJECT, project_id=project_id

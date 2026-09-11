@@ -4,9 +4,11 @@ MemoryEvent 是偏好学习闭环的事件源（spec §2.2，Q2 独立表）:
 - 只从用户主动行为产生（编辑草稿/拒绝草稿/确认草稿）;
 - draft_edited 携带 before/after 全文，供 difflib 规则化提取（spec §5.2）;
 - draft_rejected/draft_confirmed 不参与提取，只贡献修改率统计（spec §5.7）;
+- session_completed 承载会话结论文本（#1098，spec §5.7.1）——无 before/after
+  对，不参与 difflib 提取，只贡献章节统计与可提取锚点;
 - diff_chars = len(after) - len(before) 由仓储层计算（只读统计用，可负）.
 
-依据: specs/f28-memory-learning/spec.md §2.2/§5.1/§5.2。
+依据: specs/f28-memory-learning/spec.md §2.2/§5.1/§5.2/§5.7.1。
 领域层保持纯净：仅依赖 Pydantic v2 与标准库，不感知 ORM / 框架。
 """
 
@@ -26,11 +28,14 @@ class MemoryEventType(StrEnum):
         DRAFT_EDITED: 用户确认前手动编辑草稿（before/after 均有值）.
         DRAFT_REJECTED: 用户拒绝草稿（重新生成信号，after 为空）.
         DRAFT_CONFIRMED: 用户直接确认草稿（未编辑，0 修改信号）.
+        SESSION_COMPLETED: 会话完成/失败产出——agentic/planner/执行会话结论
+            （after_content 承载结论文本，参与章节统计与锚点提取；#1098）.
     """
 
     DRAFT_EDITED = "draft_edited"
     DRAFT_REJECTED = "draft_rejected"
     DRAFT_CONFIRMED = "draft_confirmed"
+    SESSION_COMPLETED = "session_completed"
 
 
 class MemoryEvent(BaseModel):

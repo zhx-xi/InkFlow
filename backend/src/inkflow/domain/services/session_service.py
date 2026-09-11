@@ -21,13 +21,17 @@
 - repository: SessionRepositoryProtocol
 - project_repo: ProjectRepositoryProtocol（F1，项目存在性校验用；未注入
   且创建带 project_id → SessionServiceError 配置错误，防静默降级）
+- memory_service: MemoryService（#1098 可选注入——终态会话结论捕获入口；
+  未注入 = 零行为，落库失败经异常旁路不影响状态迁移）
 
-依据: specs/f24-session/spec.md §5/§7/§9。
+依据: specs/f24-session/spec.md §5/§7/§9 + specs/f28-memory-learning/spec.md §5.7.1。
 """
 
 from __future__ import annotations
 
 import builtins
+import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -53,10 +57,34 @@ from inkflow.domain.ports.session_errors import (
 )
 from inkflow.domain.ports.session_repository import SessionRepositoryProtocol
 
+logger = logging.getLogger(__name__)
+
 
 def _utcnow() -> datetime:
     """返回当前 UTC 时间（时区感知）."""
     return datetime.now(UTC)
+
+
+def _result_text(result: dict[str, Any]) -> str:
+    """会话 result → 可提取结论文本（#1098，spec §5.7.1）.
+
+    优先取 summary/content 字符串字段（会话结论的常见承载键）；无合适字段
+    且 result 非空 → json.dumps 兜底（简单、确定、不丢信息）；空 dict → ""
+    （memory 侧用会话标题兜底，after_content 非空由事件层保证）.
+
+    Args:
+        result: 会话完成 DTO 的 result 载荷.
+
+    Returns:
+        结论文本（可能为空串）.
+    """
+    for key in ("summary", "content"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if result:
+        return json.dumps(result, ensure_ascii=False)
+    return ""
 
 
 def _to_int_id(value: int | uuid.UUID) -> int:
@@ -73,15 +101,19 @@ class SessionService:
         repository: 会话仓储端口.
         project_repo: 项目仓储（F1），创建带 project_id 时校验项目存在；
             默认 None 时携带 project_id 的创建入口报错（防止静默降级）.
+        memory_service: 记忆服务（#1098 可选注入）——终态会话结论落 memory
+            事件（stats 计数 + summarize 锚点）；未注入 = 零行为.
     """
 
     def __init__(
         self,
         repository: SessionRepositoryProtocol,
         project_repo: ProjectRepositoryProtocol | None = None,
+        memory_service: object | None = None,
     ) -> None:
         self._repo = repository
         self._project_repo = project_repo
+        self._memory_service = memory_service
 
     # ── Session ─────────────────────────────────────────
 
@@ -242,8 +274,11 @@ class SessionService:
         )
 
     async def complete(self, session_id: uuid.UUID, data: SessionComplete) -> Session:
-        """完成会话（active|paused→completed；写 completed_at=now + result）."""
-        return await self._transition(
+        """完成会话（active|paused→completed；写 completed_at=now + result）.
+
+        #1098: 状态迁移成功后追加「会话完成」记忆事件（可选注入 + 异常旁路）.
+        """
+        session = await self._transition(
             session_id,
             "complete",
             (SessionStatus.ACTIVE, SessionStatus.PAUSED),
@@ -253,10 +288,15 @@ class SessionService:
                 "result": data.result,
             },
         )
+        await self._record_session_event(session, outcome=_result_text(data.result))
+        return session
 
     async def fail(self, session_id: uuid.UUID, data: SessionFail) -> Session:
-        """失败会话（active|paused→failed；写 completed_at=now + error）."""
-        return await self._transition(
+        """失败会话（active|paused→failed；写 completed_at=now + error）.
+
+        #1098: 同 complete，失败原因作为结论文本落记忆事件.
+        """
+        session = await self._transition(
             session_id,
             "fail",
             (SessionStatus.ACTIVE, SessionStatus.PAUSED),
@@ -266,6 +306,35 @@ class SessionService:
                 "error": data.error,
             },
         )
+        await self._record_session_event(session, outcome=data.error)
+        return session
+
+    async def _record_session_event(self, session: Session, outcome: str) -> None:
+        """会话终态 → memory 事件（#1098，spec §5.7.1 捕获点）.
+
+        零行为: memory_service 未注入（测试/其他装配）或全局会话
+        （project_id=None，无项目锚点）→ 直接返回；memory_learning 开关由
+        MemoryService.record_session_completed 内部判定。
+        异常旁路: 事件落库失败（如 DB 故障）不得让会话状态迁移失败
+        （镜像 F28「事件落库失败 → 编辑动作仍成功」语义）。
+
+        Args:
+            session: 迁移后的会话实体（completed/failed）.
+            outcome: 结论文本（completed = result 摘要；failed = 失败原因）.
+        """
+        project_id = session.project_id
+        if self._memory_service is None or project_id is None:
+            return
+        try:
+            await self._memory_service.record_session_completed(  # type: ignore[attr-defined]  # 鸭子类型：memory_service 按 F28 契约提供 record_session_completed
+                session_id=session.id,
+                project_id=project_id,
+                title=session.title,
+                outcome=outcome,
+                session_type=session.session_type.value,
+            )
+        except Exception:  # 事件落库失败不得阻断状态迁移（F28 旁路语义）
+            logger.warning("会话记忆事件落库失败（已忽略，不影响状态迁移）", exc_info=True)
 
     # ── 删除 / 恢复 ────────────────────────────────────
 

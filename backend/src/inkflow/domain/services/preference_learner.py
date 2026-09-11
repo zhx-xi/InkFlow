@@ -287,19 +287,59 @@ def aggregate_user_candidates(events: list[MemoryEvent]) -> list[UserPreferenceC
     ]
 
 
+@dataclass
+class SessionAnchor:
+    """会话锚点（#1098，spec §5.7.1）——session_completed 事件结论文本作为锚点.
+
+    与偏好锚点（ProjectPreference/UserPreference）的区别: 无 category/pattern，
+    只有结论文本；消费方按契约只读 `.value`（SemanticSummarizer 的
+    anchor_values 与 anchor_hash 均以 .value 为键）。
+
+    Attributes:
+        value: 会话结论文本（= 事件 after_content）.
+    """
+
+    value: str
+
+
 def anchor_hash(anchors: list) -> str:
     """锚点集合确定性指纹（spec §5.4）——SHA-256(排序锚点键列表)。
 
     锚点键 = f"{category.value}:{value}"；排序后以换行连接再哈希；
+    无 category 的锚点（会话锚点 SessionAnchor，#1098）用固定占位前缀
+    "session" —— 既有偏好锚点键不变，故「只有既有锚点集」的哈希零漂移；
     空列表 → sha256("").hexdigest()（空锚点也有确定性指纹）。
 
     Args:
-        anchors: 偏好列表（ProjectPreference/UserPreference，均有 category/value）。
+        anchors: 锚点列表（ProjectPreference/UserPreference 有 category/value；
+            SessionAnchor 只有 value）。
 
     Returns:
         SHA-256 十六进制摘要（64 字符）。
     """
     import hashlib
 
-    keys = sorted(f"{a.category.value}:{a.value}" for a in anchors)
+    keys = sorted(_anchor_key(a) for a in anchors)
     return hashlib.sha256("\n".join(keys).encode("utf-8")).hexdigest()
+
+
+_SESSION_ANCHOR_PREFIX = "session"
+"""会话锚点哈希占位前缀（#1098：SessionAnchor 无 category）。"""
+
+
+def _anchor_key(anchor: object) -> str:
+    """锚点 → 哈希键 f"{category}:{value}"（spec §5.4）。
+
+    偏好锚点（ProjectPreference/UserPreference）用 category.value；
+    会话锚点（SessionAnchor，#1098）无分类 → 固定占位前缀 "session"。
+    既有偏好锚点键保持原样，故既有锚点集哈希值零语义漂移（回归护栏）。
+
+    Args:
+        anchor: 偏好锚点或会话锚点（均有 value）.
+
+    Returns:
+        排序用哈希键字符串。
+    """
+    category = getattr(anchor, "category", None)
+    prefix = category.value if category is not None else _SESSION_ANCHOR_PREFIX
+    return f"{prefix}:{getattr(anchor, 'value', '')}"
