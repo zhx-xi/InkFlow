@@ -291,7 +291,7 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
           <div
             key={v.id}
             data-testid="tree-volume"
-            className={`group mb-2 ${dragOverVolumeId === v.id ? 'rounded bg-surface-3 ring-1 ring-accent' : ''}`}
+            className={`mb-2 ${dragOverVolumeId === v.id ? 'rounded bg-surface-3 ring-1 ring-accent' : ''}`}
             onDragOver={(e) => {
               e.preventDefault();
               setDragOverVolumeId(v.id);
@@ -304,7 +304,8 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
               setDragOverVolumeId(null);
             }}
           >
-            <div className="vol-row flex items-center gap-1 px-2 py-1">
+            {/* #1094 第4机制：group 挂卷行自身（而非 tree-volume 容器）——容器挂 group 时 Tailwind group-hover 匹配任意祖先 → 卷内一行悬停点亮全卷钮 */}
+            <div className="vol-row group flex items-center gap-1 px-2 py-1">
               {editingVolumeId === v.id ? (
                 <input
                   autoFocus
