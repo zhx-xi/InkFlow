@@ -188,8 +188,8 @@ class WritingService:
                 f"大纲：{outline}\n"
                 + (f"上下文：{context}\n" if context else "")
                 + f"最少字数：{min_words}\n"
-                + "请直接输出正文内容（Markdown 格式，章节标题使用 # 标记），"
-                "不要输出 JSON 或代码块标记。"
+                + "请直接输出正文内容（纯文本，不要 markdown 标题行 / 不要 #、** 等标记，"
+                "不要输出 JSON 或代码块标记，每个自然段以两个全角空格开头）。"
             ),
         )
         return [system_msg, user_msg]
