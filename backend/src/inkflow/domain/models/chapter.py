@@ -177,7 +177,14 @@ def _strip_title_line_decoration(line: str) -> str:
 
 
 def _is_duplicate_title_line(line: str, title: str) -> bool:
-    """首行（去除 markdown 装饰后）与 title 归一后是否等价（#1095 决策点 4=A）."""
+    """首行（去除 markdown 装饰后）与 title 归一后是否等价（#1095 决策点 4=A）.
+
+    #1095 回归：判重仅对**顶格**行生效。以空白（含 U+3000 全角）开头的行是
+    正文段落而非待剥离的标题行 —— 归一产物首段恒为 ``　　<title>``，若仍参与
+    判重，二次归一会静默删除该段（数据丢失，守卫亦失去不动点性）。
+    """
+    if _LEADING_WHITESPACE_RE.match(line):
+        return False
     candidate = _strip_title_line_decoration(line)
     if not candidate:
         return False
@@ -267,7 +274,8 @@ def normalize_chapter_content(content: str, title: str) -> str:
     ② 复用 ``_strip_markdown`` 正则剥离正文 markdown 前缀并回写（代码块内容会
        随剥离删除，属契约可接受行为）。
     ③ 每个非空段落前置 U+3000 两枚；已有全角缩进幂等跳过，半角/混合缩进归一为
-       全角不叠加。
+       全角不叠加。单行正文无段落结构 → 无缩进时逐字节保留（与
+       :func:`_has_noncanonical_indent` 判定一致，保证守卫不动点）。
     ④ 幂等：``normalize(normalize(x)) == normalize(x)``；空串/纯空白 → ``""``。
 
     Args:
@@ -279,6 +287,17 @@ def normalize_chapter_content(content: str, title: str) -> str:
     """
     if not content or not content.strip():
         return ""
+
+    # #1095 回归：单行正文无段落结构 → 与守卫 _has_noncanonical_indent 同口径，
+    # 干净单行逐字节原样返回（保证 I3 守卫一致）；带 markdown 装饰 / 与 title
+    # 等价的单行仍走下方归一路径。
+    if (
+        "\n" not in content
+        and not _LEADING_WHITESPACE_RE.match(content)
+        and _strip_markdown_text(content) == content
+        and not _is_duplicate_title_line(content, title)
+    ):
+        return content
 
     lines = content.split("\n")
     if lines and _is_duplicate_title_line(lines[0], title):
