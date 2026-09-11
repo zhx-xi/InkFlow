@@ -8,6 +8,11 @@
 - specs/f19-gui/spec.md §2.1.3（token 传递）：请求头 ``X-InkFlow-Token``。
 - 2026-08-03 评审 Q2 = 选项 B：/health 不豁免（与数据面端点同规则，
   堵 DNS rebinding 探测通道；壳解析 INKFLOW_READY 行拿 token 零成本）。
+- #1093（地图底图 token 豁免）：GET /api/v1/maps/{id}/image 精确豁免 token
+  校验——浏览器原生 ``<img src>`` 无法附加自定义请求头，裸请求会被 401 挡下
+  导致底图破图；该端点仅返回项目内已上传的静态图片，且持有合法 token 的
+  客户端已可枚举 map id，故不新增信息暴露面。PUT 同 URL（上传/替换，写操作）
+  **不豁免**。
 
 设计决策
 --------
@@ -29,6 +34,7 @@
 
 import hmac
 import os
+import re
 
 from fastapi.responses import JSONResponse
 
@@ -41,6 +47,12 @@ ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
 #: 静态文档豁免路径（spec §2.3.1，Q2 选项 B：仅此三路径，/health 不豁免）
 _EXEMPT_PATHS = ("/docs", "/redoc", "/openapi.json")
 
+#: #1093 地图底图 GET 精确豁免（浏览器 ``<img src>`` 无法带自定义头）；
+#: 用精确正则而非前缀匹配，防豁免面外溢（见 tests/api/test_map_image_token_exempt.py）。
+#: ``\Z`` 而非 ``$``：``$`` 也匹配「串尾单个换行之前」，会让
+#: ``/api/v1/maps/1/image%0A``（解码后带尾随 ``\n``）误命中 → 未授权放行。
+_EXEMPT_IMAGE_RE = re.compile(r"^/api/v1/maps/[^/]+/image\Z")
+
 
 class TokenAuthMiddleware:
     """纯 ASGI token 鉴权中间件。
@@ -50,6 +62,8 @@ class TokenAuthMiddleware:
     - env ``INKFLOW_SERVER_TOKEN`` 未设置 → 直通（无 token 模式，
       既有测试零破坏）。
     - 路径豁免：/docs /redoc /openapi.json（前缀匹配）→ 放行。
+    - GET /api/v1/maps/{id}/image 精确豁免（#1093，``<img src>`` 无法带
+      自定义头）；PUT 同路径（写）仍受 token 保护。
     - OPTIONS 预检 → 放行（浏览器 preflight 不携带自定义头）。
     - 其余请求：``X-InkFlow-Token`` 匹配 env token → 放行；
       缺失/不匹配 → 401 ``{"detail": "Unauthorized"}``（无内部细节、
@@ -75,6 +89,12 @@ class TokenAuthMiddleware:
         # 静态文档豁免：/docs /redoc /openapi.json（前缀匹配）。
         path = scope.get("path", "")
         if any(path == p or path.startswith(p + "/") for p in _EXEMPT_PATHS):
+            await self.app(scope, receive, send)
+            return
+
+        # #1093 地图底图豁免：GET /api/v1/maps/{id}/image 精确匹配
+        # （浏览器 <img src> 无法带自定义头）；PUT 同路径为写操作不豁免。
+        if scope.get("method") == "GET" and _EXEMPT_IMAGE_RE.match(path):
             await self.app(scope, receive, send)
             return
 
