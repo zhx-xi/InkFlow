@@ -63,8 +63,8 @@ function parseKernelState(raw: string): KernelState {
  */
 const KERNEL_STATE_FILE = path.join(process.env.APPDATA ?? '', 'InkFlow', 'kernel.json');
 
-/** 轮询真实 %APPDATA%/InkFlow/kernel.json（打包冷启动 chromadb 可 >60s，90s 上限） */
-async function waitForKernelFile(timeoutMs = 90_000): Promise<KernelState> {
+/** 轮询真实 %APPDATA%/InkFlow/kernel.json（打包冷启动 chromadb 可 >60s，180s 上限） */
+async function waitForKernelFile(timeoutMs = 180_000): Promise<KernelState> {
   const file = KERNEL_STATE_FILE;
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;

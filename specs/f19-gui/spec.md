@@ -263,7 +263,7 @@ const kernel = spawn(kernelCommand(), ['serve', '--port', '0'], {
 | 内核命令定位 | dev = `backend\.venv\Scripts\python.exe -m inkflow serve`（backend venv，记忆：InkFlow 运行/测试必须用 backend\.venv）；打包后 = `resources/kernel/inkflow.exe`（0.4.0）；`app.isPackaged` 分支 + env 覆盖（`INKFLOW_KERNEL_CMD`，测试注入用） |
 | 参数 | `serve --port 0`（动态端口，契约 §2.2）；不传 `--port-file`（stdout 通道即可，§2.1 双通道之一） |
 | stdio | stdout 管道（行缓冲解析 INKFLOW_READY）；stderr 管道（日志转发，供排障） |
-| 超时 | spawn 后 15s 内未收到 INKFLOW_READY → 判启动失败 → 走崩溃拉起流程（§3.2.3） |
+| 超时 | spawn 后 90s 内未收到 INKFLOW_READY → 判启动失败 → 走崩溃拉起流程（§3.2.3）（#1077 对齐 #1068 冷启动实测） |
 
 **3.2.2 stdout 行缓冲解析**
 

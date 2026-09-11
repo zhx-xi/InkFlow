@@ -71,7 +71,7 @@ async function readKernelInfo(
   }
 }
 
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -157,7 +157,7 @@ tags: research
   };
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 240_000 });
 
 // ────────────────────────────────────────────────────────────────
 // #259 Skill 管理域 E2E：上传→绑定→引用视图→删除确认（M7）

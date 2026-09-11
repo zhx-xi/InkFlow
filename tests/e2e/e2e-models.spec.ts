@@ -53,7 +53,7 @@ async function readKernelInfo(
 }
 
 /** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 30s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -76,7 +76,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   return { app, window, kernel };
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 240_000 });
 
 // ────────────────────────────────────────────────────────────────
 // 9. 模型管理（#481 合并入设置页模型分类）：设置 → 模型分类 → 完整模型管理渲染

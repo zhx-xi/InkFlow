@@ -60,7 +60,7 @@ async function readKernelInfo(app: ElectronApplication): Promise<KernelInfo | un
   }
 }
 
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -177,7 +177,7 @@ function interceptChatStream(window: Page, finalOutput: string): void {
   });
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 240_000 });
 
 test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → 编辑器 value 更新', async () => {
   const { app, window, kernel } = await launchApp();

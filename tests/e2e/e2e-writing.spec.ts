@@ -53,7 +53,7 @@ async function readKernelInfo(
 }
 
 /** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 30s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -123,7 +123,7 @@ async function gotoNav(window: Page, name: string): Promise<void> {
   await window.getByRole('link', { name }).click();
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 240_000 });
 
 // ────────────────────────────────────────────────────────────────
 // 3. 写作页：卷/章树渲染 + 点章节 → 编辑器显示正文

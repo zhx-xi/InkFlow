@@ -60,7 +60,7 @@ async function readKernelInfo(
 }
 
 /** 等待内核就绪（轮询 __kernelInfo 注入；CI 冷启动 chromadb+内核 >20s，默认 30s） */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -116,7 +116,7 @@ async function createProjectViaUi(window: Page, name: string): Promise<void> {
   await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
 }
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 240_000 });
 
 // ────────────────────────────────────────────────────────────────
 // 5. 设置页：Agent 分类渲染（迁移自 Agent 页；agents 路由已删，spec §7.10 Q1=A）

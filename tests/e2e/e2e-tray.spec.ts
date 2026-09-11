@@ -74,7 +74,7 @@ async function readKernelInfo(
  * 等待内核就绪（spec §3.2.1/3.2.3）：内核拉起需 python + uvicorn 启动时间，
  * INKFLOW_READY 到达前 __kernelInfo 尚未注入。轮询至多 60s（CI 冷启动窗口，inkflow-e2e-testing）。
  */
-async function waitKernelInfo(app: ElectronApplication, timeoutMs = 60_000): Promise<KernelInfo> {
+async function waitKernelInfo(app: ElectronApplication, timeoutMs = 180_000): Promise<KernelInfo> {
   const deadline = Date.now() + timeoutMs;
   let info: KernelInfo | undefined;
   while (Date.now() < deadline) {
@@ -213,7 +213,7 @@ async function waitForCloseBehavior(
 }
 
 // Electron 启动 + 内核拉起较慢，放宽整文件超时（M5 另设 300s：ensure_kernel 冷启动 + 复用等待）
-test.describe.configure({ timeout: 180_000 });
+test.describe.configure({ timeout: 240_000 });
 
 test('托盘 M1（spec §13 M1）：关闭 → 窗口隐藏 + 内核存活 + 托盘已创建', async () => {
   const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });

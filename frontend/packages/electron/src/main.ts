@@ -46,8 +46,8 @@ const RENDERER_DIST = app.isPackaged
   ? path.join(__dirname, '..', 'renderer-dist')            // app.asar/out/../renderer-dist
   : path.resolve(__dirname, '..', '..', 'renderer', 'dist'); // dev: packages/renderer/dist
 
-/** spawn 后未收到 INKFLOW_READY 的启动超时（§3.2.2） */
-const READY_TIMEOUT_MS = 15_000;
+/** spawn 后未收到 INKFLOW_READY 的启动超时（§3.2.2；#1077：15s→90s 对齐 #1068，CI 冷启动 import 树实测 ~60s） */
+const READY_TIMEOUT_MS = 90_000;
 /** 健康检查轮询间隔（§3.2.3） */
 const HEALTH_INTERVAL_MS = 2_000;
 /** 单次 /health 请求超时（AbortSignal.timeout，§3.2.3） */
@@ -482,9 +482,9 @@ function spawnKernel(): void {
     }
   });
 
-  // 启动看门狗：15s 未收到 INKFLOW_READY → 判启动失败（§3.2.2）
+  // 启动看门狗：90s 未收到 INKFLOW_READY → 判启动失败（§3.2.2，#1077）
   startupWatchdog = setTimeout(() => {
-    console.error('[kernel] startup timeout: INKFLOW_READY not received within 15s');
+    console.error('[kernel] startup timeout: INKFLOW_READY not received within 90s');
     if (kernelProcess === child && !stopping) {
       onKernelFailure();
     }
