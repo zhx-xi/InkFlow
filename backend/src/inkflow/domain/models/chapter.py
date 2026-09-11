@@ -176,15 +176,8 @@ def _strip_title_line_decoration(line: str) -> str:
     return text.strip()
 
 
-def _is_duplicate_title_line(line: str, title: str) -> bool:
-    """首行（去除 markdown 装饰后）与 title 归一后是否等价（#1095 决策点 4=A）.
-
-    #1095 回归：判重仅对**顶格**行生效。以空白（含 U+3000 全角）开头的行是
-    正文段落而非待剥离的标题行 —— 归一产物首段恒为 ``　　<title>``，若仍参与
-    判重，二次归一会静默删除该段（数据丢失，守卫亦失去不动点性）。
-    """
-    if _LEADING_WHITESPACE_RE.match(line):
-        return False
+def _is_title_equivalent(line: str, title: str) -> bool:
+    """行（剥离 markdown 装饰后）与 title 归一后是否等价（#1095 决策点 4=A 判据）."""
     candidate = _strip_title_line_decoration(line)
     if not candidate:
         return False
@@ -194,23 +187,54 @@ def _is_duplicate_title_line(line: str, title: str) -> bool:
     return normalize_chapter_title(candidate) == normalized_title
 
 
-def _has_noncanonical_indent(body: str) -> bool:
-    """正文是否含「段首缩进非规范」的非空行（缺缩进/半角/混合/多余全角）.
+def _is_duplicate_title_line(line: str, title: str) -> bool:
+    """首行（去除 markdown 装饰后）与 title 归一后是否等价（#1095 决策点 4=A）.
 
-    单行正文（不含换行）视作无段落结构的短文本，不纳入缩进归一：既有契约钉死
-    单行 content 逐字节原样往返（#1001 自动关联 / 章节部分更新用例），
-    issue #1095 实测的脏数据均为多行段落形态（第1章 58 个非空行）。
+    #1095 回归：判重仅对**顶格**行生效。以空白（含 U+3000 全角）开头的行是
+    正文段落而非待剥离的标题行 —— 归一产物首段恒为 ``　　<title>``，若仍参与
+    判重，二次归一会静默删除该段（数据丢失，守卫亦失去不动点性）。
     """
-    if "\n" not in body:
+    if _LEADING_WHITESPACE_RE.match(line):
         return False
-    for line in body.split("\n"):
-        if not line.strip():
-            continue
-        match = _LEADING_WHITESPACE_RE.match(line)
-        leading = match.group(0) if match else ""
-        if leading != _FULLWIDTH_INDENT:
-            return True
-    return False
+    return _is_title_equivalent(line, title)
+
+
+def _is_single_line_body(body: str) -> bool:
+    """#1111 统一闸口：正文是否为「单行」（无换行 ⇒ 无段落结构）."""
+    return "\n" not in body
+
+
+def _is_single_line_exempt(content: str, title: str) -> bool:
+    """#1111 统一闸口：单行正文是否整体豁免归一（守卫与纯函数唯一判定处）.
+
+    单行正文无段落结构 → 既不追加段落缩进、也不做行级改写，逐字节原样返回
+    （既有契约：#1001 自动关联 / 章节部分更新用例的短正文原样往返）。仅两类
+    「标题/装饰轴」形态例外（仍走归一路径）：
+    - 命中 markdown 装饰 → 文本会被 ``_strip_markdown`` 改写；
+    - 与 title 等价（含**带缩进**的 title 回声行：#1112 铁律下它属正文段落，
+      不删除，但按段落缩进归一）。
+    """
+    if not _is_single_line_body(content):
+        return False
+    if _strip_markdown_text(content) != content:
+        return False
+    return not _is_title_equivalent(content, title)
+
+
+def _has_noncanonical_indent(body: str, title: str) -> bool:
+    """正文是否需要「段首缩进 + 首尾空白」归一（守卫侧唯一真相面，#1095/#1111）.
+
+    #1111：单行正文由 :func:`_is_single_line_exempt` 统一豁免 —— 与
+    :func:`normalize_chapter_content` 共用同一闸口，杜绝「守卫判干净、纯函数却
+    被缩进」的口径分裂，使 ``need(x) == (N(x) != x)``（验收第 1 条）成立。
+
+    #1111：多行判据直接对齐归一路径 :func:`_indent_paragraphs` 的改写面 —— 首尾
+    换行/空行（被 ``.strip("\\n")`` 剥除）、含空白字符的空行（被清空）、缩进非
+    ``\\u3000\\u3000`` 的非空行都会改写正文，故一律判脏（F2/F3 首尾空行/换行）。
+    """
+    if _is_single_line_exempt(body, title):
+        return False
+    return _indent_paragraphs(body) != body
 
 
 def _indent_paragraphs(body: str) -> str:
@@ -241,6 +265,10 @@ def chapter_content_needs_normalize(
     「段首缩进非规范」含缺缩进与半角/混合/多余全角（多行正文）；单行正文
     无段落结构，原样保留。
 
+    #1111：本守卫与 :func:`normalize_chapter_content` 共用同一「单行豁免」闸口
+    (:func:`_is_single_line_exempt`)，并把首尾空行/换行计入脏数据 —— 归一必然
+    改写的形态一律判脏，使 ``need(x) == (N(x) != x)``（验收第 1 条）恒成立。
+
     Args:
         include_indent: 是否把「段首缩进非规范」计为脏数据。落库路径
             （create/update 章节正文）为 True —— #1095 子现象 3「0/58 非空
@@ -261,7 +289,7 @@ def chapter_content_needs_normalize(
         return True
     if not include_indent:
         return False
-    return _has_noncanonical_indent(content)
+    return _has_noncanonical_indent(content, title)
 
 
 def normalize_chapter_content(content: str, title: str) -> str:
@@ -274,8 +302,9 @@ def normalize_chapter_content(content: str, title: str) -> str:
     ② 复用 ``_strip_markdown`` 正则剥离正文 markdown 前缀并回写（代码块内容会
        随剥离删除，属契约可接受行为）。
     ③ 每个非空段落前置 U+3000 两枚；已有全角缩进幂等跳过，半角/混合缩进归一为
-       全角不叠加。单行正文无段落结构 → 无缩进时逐字节保留（与
-       :func:`_has_noncanonical_indent` 判定一致，保证守卫不动点）。
+       全角不叠加。单行正文无段落结构 → 由 :func:`_is_single_line_exempt`
+       统一豁免，逐字节保留（守卫同口径，保证 need(x) == (N(x) != x)）。
+       首尾空行/换行随段落重组剥除（#1111 F2/F3：守卫据此判脏，口径一致）。
     ④ 幂等：``normalize(normalize(x)) == normalize(x)``；空串/纯空白 → ``""``。
 
     Args:
@@ -288,15 +317,10 @@ def normalize_chapter_content(content: str, title: str) -> str:
     if not content or not content.strip():
         return ""
 
-    # #1095 回归：单行正文无段落结构 → 与守卫 _has_noncanonical_indent 同口径，
-    # 干净单行逐字节原样返回（保证 I3 守卫一致）；带 markdown 装饰 / 与 title
-    # 等价的单行仍走下方归一路径。
-    if (
-        "\n" not in content
-        and not _LEADING_WHITESPACE_RE.match(content)
-        and _strip_markdown_text(content) == content
-        and not _is_duplicate_title_line(content, title)
-    ):
+    # #1111：单行正文无段落结构 → 与守卫共用 _is_single_line_exempt 唯一闸口，
+    # 干净单行（含前导/尾随空白）逐字节原样返回，保证 need(x) == (N(x) != x)；
+    # 带 markdown 装饰 / 与 title 等价（含带缩进的 title 回声行）仍走下方归一路径。
+    if _is_single_line_exempt(content, title):
         return content
 
     lines = content.split("\n")

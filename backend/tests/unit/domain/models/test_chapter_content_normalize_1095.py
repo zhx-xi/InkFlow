@@ -28,7 +28,10 @@
 
 from __future__ import annotations
 
-from inkflow.domain.models.chapter import normalize_chapter_content
+from inkflow.domain.models.chapter import (
+    chapter_content_needs_normalize,
+    normalize_chapter_content,
+)
 
 FULLWIDTH = "\u3000"
 
@@ -126,10 +129,24 @@ class TestP3CjkIndent:
 
     def test_halfwidth_indent_normalized_to_fullwidth(self) -> None:
         """半角缩进 → 归一为全角，不叠加成混合缩进。"""
-        content = "  师父停了三天。"
+        # #1111：缩进归属**段落级**规则 —— 单行正文无段落结构，由统一闸口
+        # 逐字节豁免（见 normalize_chapter_content docstring ③）。本用例原以
+        # 单行输入编码段落级规则，粒度错配；改用多行输入，断言与规则语义不变。
+        content = "  师父停了三天。\n\n  李慕白醒了。"
         out = normalize_chapter_content(content, TITLE)
-        assert out.startswith(FULLWIDTH * 2)
+        assert all(para.startswith(FULLWIDTH * 2) for para in out.split("\n\n"))
         assert not out.startswith(" ")
+
+    def test_single_line_halfwidth_indent_exempt_not_indented(self) -> None:
+        """#1111：单行正文（含半角前导空白）→ 守卫判干净且纯函数逐字节原样。
+
+        与上一条同属「前导空白」轴的两侧：#1111 前本形态守卫判干净（单行闸口）
+        但纯函数仍加缩进 —— 口径分裂。此处把两侧都钉死，使
+        ``need(x) == (N(x) != x)`` 在本轴上不可回退。
+        """
+        content = "  师父停了三天。"
+        assert chapter_content_needs_normalize(content, TITLE) is False
+        assert normalize_chapter_content(content, TITLE) == content
 
 
 class TestP4Idempotency:
