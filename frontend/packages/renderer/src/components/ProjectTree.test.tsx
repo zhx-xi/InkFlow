@@ -617,3 +617,49 @@ describe('ProjectTree — #999 章节标题双编号归一化（RED-3 契约）'
     expect(mocks.chapterState.normalizeChapterTitles).not.toHaveBeenCalled();
   });
 });
+describe('ProjectTree — #1094 章节行布局契约（字数贴右 + 操作钮撤出 flex 流，RED）', () => {
+  // 根因（issue #1094，#980-2a 修复未达成目标）：三处机制错配——
+  // ①字数 ml-auto 被同行 flex-1 章名限制只贴剩余空间右缘；②group-hover:-mr-14 只左移未隐藏，与钮重叠；
+  // ③操作钮 opacity-0 + shrink-0 只藏视觉不撤布局，隐形钮恒占行尾宽把字数挤离右缘。
+  // 方案 A：行容器 relative + 操作钮 absolute right-* 撤出 flex 流（data-testid=chapter-actions-{id}）
+  //        + 字数保留 ml-auto 且 group-hover:opacity-0 显式隐藏（去掉 -mr-14 让位机制）。
+  // jsdom 测不出布局 → 本块为结构契约（类名子串断言）；两态视觉验收 = 真实浏览器 rect 测量 + 截图。
+  const setupCurrent = () => {
+    mocks.chapterState.volumes = volumes;
+    mocks.chapterState.chapters = chapters;
+    mocks.chapterState.currentChapterId = 'c1';
+    renderTree();
+    return screen.getByTestId('tree-chapter') as HTMLElement;
+  };
+
+  it('【R-布局】行容器含 relative：为绝对定位操作钮建立定位上下文', () => {
+    const row = setupCurrent();
+    expect(row.className).toContain('relative');
+  });
+
+  it('【R-布局】字数 span：保留 ml-auto + hover 显式隐藏（group-hover:opacity-0）+ 去掉 -mr-14 让位 + 无 shrink-0', () => {
+    const row = setupCurrent();
+    const span = row.querySelector('.ml-auto') as HTMLElement | null;
+    expect(span).toBeTruthy();
+    expect(span!.className).not.toContain('-mr-14');
+    expect(span!.className).toContain('group-hover:opacity-0');
+    expect(span!.className).not.toContain('shrink-0');
+  });
+
+  it('【R-布局】操作钮容器（chapter-actions-c1）：absolute right-* 且无 shrink-0，保留 group-hover/focus-within 显现', () => {
+    const row = setupCurrent();
+    const actions = screen.getByTestId('chapter-actions-c1') as HTMLElement;
+    expect(actions.parentElement).toBe(row);
+    expect(actions.className).toMatch(/\babsolute\b/);
+    expect(actions.className).toMatch(/\bright-/);
+    expect(actions.className).not.toContain('shrink-0');
+    expect(actions.className).toContain('group-hover:opacity-100');
+    expect(actions.className).toContain('focus-within:opacity-100');
+  });
+
+  it('【R-回归护栏】布局重构后操作钮仍可点（编辑 → 行内输入框，#723 契约不破）', () => {
+    setupCurrent();
+    fireEvent.click(screen.getByTestId('chapter-edit-c1'));
+    expect(screen.getByTestId('chapter-edit-input')).toBeInTheDocument();
+  });
+});
