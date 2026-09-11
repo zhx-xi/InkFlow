@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.7（#927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.8（#1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -9,6 +9,8 @@
 **依赖**: ✅ F39 Agent 实体 + 能力白名单（0.9.0 #258）· ✅ F27 writer-agent（已交付）· ✅ F42 管线 write_auto/write_continue（已交付）· ✅ F29 Supervisor（已交付）· ✅ F6 context（已交付）· ✅ outline 三级结构（F43 P3+P4 已交付）· ⏳ `langgraph-checkpoint-sqlite`（阶段 4 新增依赖，Spike ⑤ 实证缺）
 **参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 **状态**: ✅ 已实现（PR #441/#443/#445/#446/#447/#448/#453/#454 + #505/#504 访谈 LLM v1.2，2026-08-19）
+
+> **Spec 变更**（v1.7 → v1.8，2026-09-11，#1097 用户拍板缺陷修复）：书级运行写完全书后 `GET /volumes` 为 0、章节全部未归卷（数据面实证 10 章 0 卷），而大纲树完整。根因 = confirm 的 D4 自动建章分支（#976/#994）只透传 `draft.volume_id`，book 轨该值恒 None（卷 outline 节点的 `outlines.volume_id` 列未写）。修订：`DraftService` 增可选注入 `volume_ensurer`，confirm 建章前沿生效来源 outline 上溯 `level=volume` 卷父按名 **ensure** `volumes` 行并透传 `create_chapter(volume_id=…)`；无卷父保持 None；同项目同名卷幂等复用。正文修订位置：§5.2（章级幂等节新增「自动建卷 + 章节归卷」段）+ 本节版本行。**不含** #980（卷分组布局 spec）与 #1094（树布局）范围——本修订仅数据面。
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-19，#475 D1 拍板）：访谈从「确定性分批提问」（ROUND1/ROUND2 硬编码状态机）升级为**真 LLM 动态提问**。① 通用必答问题（题材/篇幅/主题）与针对性问题（按小说大纲/类型/设定动态生成）并存（§5.1）；② 每次回答后 LLM 提取「已确定项」（confirmed_items）落会话，下轮只问「未确定项」（§5.1/§2.2）；③ 冲突/不合理回答 → 回问用户重新确认（conflicts 记录，§5.1/§2.2/§7）；④ 必答项齐备后进入末尾总体确认（confirming=true，列出全部确定项，§5.1/§3.2）；⑤ 确定项全量落 PlannerSession（供 #486 会话/记忆 UI + 提取记忆/设定库 + 用户审计，§2.2/§11）。**拆 2 PR 边界（用户拍板，Q4 已确认 ✅）**：PR-1 后端提问引擎（PlannerService 问题生成换 LLM 调用 + 确定项提取/冲突检测，§5.1 后端契约）；PR-2 前端对话式 UI（BookPlannerPanel 固定表单 → 对话式消息流，§5.1 前端契约）。正文修订位置：§1.3/§2.2/§3.2/§4/§5.1/§6/§7/§8/§9/§10/§11/§12/§13 + 待澄清 Q4。既有确定性问题常量保留为 **LLM 失败降级兜底**（§7 场景 15），向后兼容。
 
@@ -404,6 +406,8 @@ BookPlannerPanel 固定表单 → 对话式消息流（ChatPanel #379 先例）�
 
 **锚点传递（#996）**：委托兜底路径 `draft_service.create(source_outline_id=chapter["outline_id"], …)` 与 agent 自调 save_draft 路径**必须同锚点**（同族路径统一拍板先例）——writer_factory 增 `expected_source_outline_id`/`expected_volume_outline_id` 形参，`book_pipeline._delegate_chapter`、`book_service._delegate_chapter`、`book_agentic_pipeline._delegate_write` 三委托点装配时传入（`books.py _writer_factory` → `build_agentic_writer` 透传）。目标：book run 终态 `drafts.source_outline_id` 非空 → confirm 自动建章后 D4 回填 `outlines.chapter_id` 生效（#994 链路对 book 轨打通）。
 
+**自动建卷 + 章节归卷（#1097）**：confirm 的 D4 自动建章分支（#976/#994）只透传 `draft.volume_id`——book 轨该值恒 None（卷 outline 节点的 `outlines.volume_id` 列未写），导致书级运行写完全书后 `GET /volumes` 为 0、章节全部 `volume_id=None`（数据面实证：10 章 0 卷 10 未分组，而大纲树完整）。修订：`DraftService` 增可选注入 `volume_ensurer`（`(project_id, chapter_outline_id) -> 卷 UUID | None`，弱依赖永不抛错）；confirm 建章前按「**草稿既有 `volume_id` 优先** → 否则沿生效来源 outline（显式参数 > 草稿 `source_outline_id`，#988 口径）上溯 `parent_id` 至 `level=volume` 卷大纲 → 取其 `name` 按 (project_id, title) **ensure** `volumes` 行 → 否则 None」解析卷并透传 `create_chapter(volume_id=…)`。装配点 = `api/deps_draft.make_volume_ensurer`（db 会话闭包工厂，镜像 `make_outline_bindder`），通用轨（`deps.get_draft_service`）与 book 轨（`books._build_book_service`）双注入。**幂等**：同项目同名卷复用（多章同卷一行；重复 confirm 不重复建卷）。**无卷父**（章节点无 parent / parent 非 volume / 跨项目 / 行不存在）→ 保持 `volume_id=None`（不臆造卷）。
+
 **GUI 交互设计**（Q1=C 拍板，v1.1）：
 - **章级进度状态 UI**：`WritingPlan.progress` 渲染（pending/in_progress/done/failed/skipped 状态徽标 + 章进度条/进度树），`GET /runs/{run_id}` 轮询驱动（镜像 `ChatPanel` 1s 轮询模式）；观察流密度=仪表（每章状态 + 计数器）
 - **安全阀 409 文案展示**：「该章已有内容，拒绝重跑」错误 toast/内联提示（防用户重复点击启动）
@@ -624,6 +628,9 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | `cli/commands/__init__.py` | 注册 `book` 命令组 | 1 |
 | `api/routers/__init__.py` 或 app 装配 | 注册 books router | 1 |
 | `FEATURES.md` / `AGENTS.md`（如适用） | 功能清单登记（issue 完成时同步） | 4 |
+| `domain/services/draft_service.py` | `DraftService` 增可选注入 `volume_ensurer`；confirm D4 建章前沿来源 outline 上溯卷父 ensure 卷并透传 `create_chapter(volume_id=…)`（v1.8 #1097，§5.2） | v1.8 |
+| `api/deps_draft.py` | 新增 `make_volume_ensurer(db)` 工厂（镜像 `make_outline_bindder`）（v1.8 #1097） | v1.8 |
+| `api/deps.py` · `api/routers/books.py` | DraftService 装配注入 `volume_ensurer`（通用轨 + book 轨双注入）（v1.8 #1097） | v1.8 |
 
 > Q2=C 注（v1.1）：多维上限默认载体 = **ProjectConfig.extra 项目级扩展字典**（F1 既有字段，四层已透传）——**零 MODIFY**，无需 F32 settings 扩展键（§11 F32 行已改「不 MODIFY」；读取优先级见 §2.4）。
 
