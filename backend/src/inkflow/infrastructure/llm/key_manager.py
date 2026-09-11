@@ -1,7 +1,9 @@
 """API Key 本地加密存储 — AES-256-GCM 加密。
 
-开发模式（secret_key=""）：明文存储 + WARNING 日志。
-生产模式：GCM 认证加密，nonce 随机生成。
+开发模式（secret_key=""）：明文存储 + 单次 INFO 提示（每进程至多 1 条，#1096）。
+生产模式：GCM 认证加密，nonce 随机生成。生产密钥由
+``core.config.load_or_create_secret_key`` 于首启自动生成并落盘
+（``<data_dir>/keys/.secret_key``），亦可用 INKFLOW_SECRET_KEY 显式覆盖。
 """
 
 from __future__ import annotations
@@ -13,6 +15,20 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from loguru import logger
+
+_SECRET_KEY_WARNED = False
+
+
+def _warn_empty_secret_key_once() -> None:
+    """空 secret_key 降级提示，每进程至多 1 条（#1096）。
+
+    check-and-set 先置位再打日志，使并发构造下仅有一个成功输出。
+    """
+    global _SECRET_KEY_WARNED
+    if _SECRET_KEY_WARNED:
+        return
+    _SECRET_KEY_WARNED = True
+    logger.info("INKFLOW_SECRET_KEY is empty — API keys will be stored in plaintext (dev mode)")
 
 
 class APIKeyManager:
@@ -28,9 +44,7 @@ class APIKeyManager:
         self._storage_dir = Path(storage_dir)
         self._storage_dir.mkdir(parents=True, exist_ok=True)
         if not secret_key:
-            logger.warning(
-                "INKFLOW_SECRET_KEY is empty — API keys will be stored in plaintext (dev mode)"
-            )
+            _warn_empty_secret_key_once()
 
     # ── Public API ──
 

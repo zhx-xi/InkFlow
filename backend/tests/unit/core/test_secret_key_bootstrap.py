@@ -158,9 +158,9 @@ class TestConfigWiring:
         cfg = config_mod.InkFlowConfig(data_dir=fresh_data_dir)
 
         assert cfg.secret_key == explicit
-        assert not (fresh_data_dir / "keys" / ".secret_key").exists(), (
-            "显式 INKFLOW_SECRET_KEY 时不应触碰文件系统（D6）"
-        )
+        assert not (
+            fresh_data_dir / "keys" / ".secret_key"
+        ).exists(), "显式 INKFLOW_SECRET_KEY 时不应触碰文件系统（D6）"
 
     def test_explicit_env_does_not_call_bootstrap(self, fresh_data_dir, monkeypatch):
         """E11【守护，RED 期 PASS 刻意】：显式 env → 自举函数零调用。

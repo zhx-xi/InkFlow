@@ -132,6 +132,8 @@ class TestAPIKeyManager:
         mgr = APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
         with pytest.raises(FileNotFoundError):
             mgr.load("ghost")
+
+
 # ── #1096 追加段：空 secret_key 告警去重 ────────────────────────────────
 #
 # 契约来源：specs/f61-secret-bootstrap/spec.md §3.1 / §4.1（E6-E8）。
