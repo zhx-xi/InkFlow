@@ -159,6 +159,139 @@ def normalize_chapter_title(title: str, fmt: str | None = "arabic") -> str:
     return f"{prefix} {rest}" if separator else f"{prefix}{rest}"
 
 
+# #1095 正文格式归一样板：全角缩进常量 + markdown 装饰剥离正则
+_FULLWIDTH_INDENT = "\u3000\u3000"
+_LEADING_HASH_RE = re.compile(r"^#{1,6}\s*")
+_LEADING_EMPHASIS_RE = re.compile(r"^[*_]{1,3}\s*")
+_TRAILING_EMPHASIS_RE = re.compile(r"\s*[*_]{1,3}$")
+_LEADING_WHITESPACE_RE = re.compile(r"^[ \t\u3000]+")
+
+
+def _strip_title_line_decoration(line: str) -> str:
+    """剥掉首行标题的 markdown 装饰前缀/后缀（# ~ ###### / ** / * / _）."""
+    text = line.strip()
+    text = _LEADING_HASH_RE.sub("", text)
+    text = _LEADING_EMPHASIS_RE.sub("", text)
+    text = _TRAILING_EMPHASIS_RE.sub("", text)
+    return text.strip()
+
+
+def _is_duplicate_title_line(line: str, title: str) -> bool:
+    """首行（去除 markdown 装饰后）与 title 归一后是否等价（#1095 决策点 4=A）."""
+    candidate = _strip_title_line_decoration(line)
+    if not candidate:
+        return False
+    normalized_title = normalize_chapter_title(title)
+    if not normalized_title:
+        return False
+    return normalize_chapter_title(candidate) == normalized_title
+
+
+def _has_noncanonical_indent(body: str) -> bool:
+    """正文是否含「段首缩进非规范」的非空行（缺缩进/半角/混合/多余全角）.
+
+    单行正文（不含换行）视作无段落结构的短文本，不纳入缩进归一：既有契约钉死
+    单行 content 逐字节原样往返（#1001 自动关联 / 章节部分更新用例），
+    issue #1095 实测的脏数据均为多行段落形态（第1章 58 个非空行）。
+    """
+    if "\n" not in body:
+        return False
+    for line in body.split("\n"):
+        if not line.strip():
+            continue
+        match = _LEADING_WHITESPACE_RE.match(line)
+        leading = match.group(0) if match else ""
+        if leading != _FULLWIDTH_INDENT:
+            return True
+    return False
+
+
+def _indent_paragraphs(body: str) -> str:
+    """每个非空段落前置全角双空格；已有缩进先剥离再统一补全角（不叠加）."""
+    lines: list[str] = []
+    for line in body.split("\n"):
+        if not line.strip():
+            lines.append("")
+            continue
+        lines.append(_FULLWIDTH_INDENT + _LEADING_WHITESPACE_RE.sub("", line))
+    return "\n".join(lines).strip("\n")
+
+
+def _strip_markdown_text(text: str) -> str:
+    """复用 services 层 ``_strip_markdown`` 正则能力（局部 import 规避循环依赖）."""
+    # 局部 import：models 层若在包初始化期反向拉起 domain.services 会触发循环 import，
+    # 故延迟到调用期；仅借用其正则能力，不建立持久依赖。
+    from inkflow.domain.services._word_count import _strip_markdown
+
+    return _strip_markdown(text)
+
+
+def chapter_content_needs_normalize(
+    content: str, title: str, *, include_indent: bool = True
+) -> bool:
+    """正文是否含 #1095 三类脏数据（重复标题行 / markdown / 段首缩进非规范）.
+
+    「段首缩进非规范」含缺缩进与半角/混合/多余全角（多行正文）；单行正文
+    无段落结构，原样保留。
+
+    Args:
+        include_indent: 是否把「段首缩进非规范」计为脏数据。落库路径
+            （create/update 章节正文）为 True —— #1095 子现象 3「0/58 非空
+            行有全角缩进」的修复面；导出路径为 False —— 导出对「无重复标题、
+            无 markdown」的存量正文保持逐字节原样（既有契约）。
+
+    落库与导出路径借此保留「干净正文原样落库」的既有语义（DRAFT 直落正文等
+    场景不得被改写），仅对脏数据调用 :func:`normalize_chapter_content`。
+    """
+    if not content:
+        return False
+    if not content.strip():
+        return True  # 纯空白 → 归一为空串
+    lines = content.split("\n")
+    if lines and _is_duplicate_title_line(lines[0], title):
+        return True
+    if _strip_markdown_text(content) != content:
+        return True
+    if not include_indent:
+        return False
+    return _has_noncanonical_indent(content)
+
+
+def normalize_chapter_content(content: str, title: str) -> str:
+    """章节正文格式归一（#1095）— 首行标题剥离 → markdown 剥离 → 段首全角缩进.
+
+    行为（四步顺序固定）:
+    ① 首行去除 markdown 装饰后与 title 等价（复用 normalize_chapter_title 容忍
+       序号形态差异，如「第一章」对齐「第1章」）→ 删除该行及其后紧邻空行；
+       **只处理首行**，正文中间与 title 同名的句子保留。
+    ② 复用 ``_strip_markdown`` 正则剥离正文 markdown 前缀并回写（代码块内容会
+       随剥离删除，属契约可接受行为）。
+    ③ 每个非空段落前置 U+3000 两枚；已有全角缩进幂等跳过，半角/混合缩进归一为
+       全角不叠加。
+    ④ 幂等：``normalize(normalize(x)) == normalize(x)``；空串/纯空白 → ``""``。
+
+    Args:
+        content: 章节正文（可能含重复标题行 / markdown / 无缩进）。
+        title: 章节标题（落库合并后的最终 title），用作首行重复判定基准。
+
+    Returns:
+        归一后的正文（空串/纯空白 → ``""``）。
+    """
+    if not content or not content.strip():
+        return ""
+
+    lines = content.split("\n")
+    if lines and _is_duplicate_title_line(lines[0], title):
+        rest = lines[1:]
+        start = 0
+        while start < len(rest) and not rest[start].strip():
+            start += 1
+        lines = rest[start:]
+
+    normalized = _indent_paragraphs(_strip_markdown_text("\n".join(lines)))
+    return normalized if normalized.strip() else ""
+
+
 class ChapterStatus(StrEnum):
     """章节写作状态：草稿 → 写作中 → 审阅中 → 定稿."""
 
