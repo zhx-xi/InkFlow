@@ -7,7 +7,7 @@
  * - **项目域过滤**：affectsCurrent —— project_id 缺省（全局域）总是生效；项目域仅当前项目（§15.6.3）
  * - **防抖 300ms**：同一 project_id + domain 在窗口内合并为一次失效（吸收 burst）
  * - **生命周期对齐**：kernelStatus === 'ready' 且 await ensureApiReady() 后才发起订阅（§15.4.3）
- * - **重连兜底**：底层客户端指数退避重连；重连成功视为「可能错过事件」→ 订阅者收到
+ * - **订阅就绪兜底**：每次连接成功（含首次，#1102）视为「可能错过事件」→ 订阅者收到
  *   event = null（兜底全量 refetch，§15.5.4）
  */
 
@@ -34,7 +34,7 @@ export function affectsCurrent(ev: DataChangeFrame, currentProjectId: string | n
   return ev.project_id === currentProjectId;
 }
 
-/** 页面失效回调：event = null 表示重连后的兜底全量 refetch（忽略 domain/project 过滤） */
+/** 页面失效回调：event = null 表示订阅就绪后（含首次，#1102）的兜底全量 refetch（忽略 domain/project 过滤） */
 export type DataChangeInvalidate = (event: DataChangeFrame | null) => void;
 
 interface Subscriber {
@@ -67,7 +67,7 @@ function deliver(frame: DataChangeFrame): void {
   }
 }
 
-/** 重连成功 → 各订阅者兜底全量 refetch（§15.5.4：收敛断线期间的陈旧） */
+/** 订阅就绪（含首次连接，#1102）→ 各订阅者兜底全量 refetch（§15.5.4：收敛断线/挂载窗口期的陈旧） */
 function handleReconnect(): void {
   for (const subscriber of [...subscribers]) subscriber.onInvalidate(null);
 }
