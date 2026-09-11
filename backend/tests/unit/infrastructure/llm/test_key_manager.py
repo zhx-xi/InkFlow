@@ -132,3 +132,85 @@ class TestAPIKeyManager:
         mgr = APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
         with pytest.raises(FileNotFoundError):
             mgr.load("ghost")
+
+
+# ── #1096 追加段：空 secret_key 告警去重 ────────────────────────────────
+#
+# 契约来源：specs/f61-secret-bootstrap/spec.md §3.1 / §4.1（E6-E8）。
+#
+# 设计假设（父侧定稿，GREEN 逐条遵守）：
+#   1. 告警去重是**模块级**的：`key_manager` 内模块级 flag，
+#      跨实例生效 → 连续构造 16 个空 key 实例，告警恰 1 条。
+#   2. 告警级别 WARNING → **INFO**（方案 A 下「已自动生成」属正常路径）。
+#   3. check-and-set 原子：flag 先置位再打日志。
+#
+# 捕获机制：loguru 临时 sink（级别 INFO，捕获 message 字符串），
+# 用例结束移除 handler（禁 logger.remove() 无参——会连坐其他 handler）。
+#
+# RED 预期形态（两阶段）：
+#   - 纯 RED：现状 `__init__` 每次构造都 `logger.warning` → 16 个实例
+#     = 16 条告警 → E6 断言失败（干净 AssertionError，非 ERROR）。
+#   - E7/E8 在 RED 期即 FAILED（E7 因 16 条 WARNING 里含该文本；
+#     E8 因级别仍为 WARNING）——非守护用例。
+#   - GREEN 后 E6/E7/E8 全 PASS。
+
+
+@pytest.fixture
+def warning_sink():
+    """捕获 loguru 告警的临时 sink（返回消息列表）。"""
+    from loguru import logger
+
+    messages: list[str] = []
+    handler_id = logger.add(
+        lambda msg: messages.append(msg),
+        level="INFO",
+        format="{level}|{message}",
+    )
+    try:
+        yield messages
+    finally:
+        logger.remove(handler_id)
+
+
+class TestEmptySecretKeyWarningDedup:
+    """#1096 E6-E8：空 secret_key 告警每进程 ≤1 条。"""
+
+    def test_empty_secret_key_warns_exactly_once_per_process(self, temp_keys_dir, warning_sink):
+        """E6【核心验收】：连续 16 个空 key 实例 → 告警恰 1 条（非 16）。"""
+        from inkflow.infrastructure.llm import key_manager as km_mod
+
+        # 复位模块级去重 flag（跨用例隔离）；RED 期属性不存在 → 静默创建
+        if hasattr(km_mod, "_SECRET_KEY_WARNED"):
+            km_mod._SECRET_KEY_WARNED = False
+
+        for _ in range(16):
+            APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
+
+        hits = [m for m in warning_sink if "INKFLOW_SECRET_KEY" in m]
+        assert len(hits) == 1, f"告警应恰 1 条（每进程去重），实际 {len(hits)} 条"
+
+    def test_non_empty_secret_key_produces_no_warning(self, temp_keys_dir, warning_sink):
+        """E7【反例】：非空 key 构造 16 次 → 零告警（不误报）。"""
+        from inkflow.infrastructure.llm import key_manager as km_mod
+
+        if hasattr(km_mod, "_SECRET_KEY_WARNED"):
+            km_mod._SECRET_KEY_WARNED = False
+
+        for _ in range(16):
+            APIKeyManager(secret_key="a" * 64, storage_dir=temp_keys_dir)
+
+        hits = [m for m in warning_sink if "INKFLOW_SECRET_KEY" in m]
+        assert hits == [], f"非空 secret_key 不应产生告警，实际 {len(hits)} 条"
+
+    def test_empty_secret_key_warning_level_is_info(self, temp_keys_dir, warning_sink):
+        """E8：告警级别降为 INFO（非 WARNING）。"""
+        from inkflow.infrastructure.llm import key_manager as km_mod
+
+        if hasattr(km_mod, "_SECRET_KEY_WARNED"):
+            km_mod._SECRET_KEY_WARNED = False
+
+        APIKeyManager(secret_key="", storage_dir=temp_keys_dir)
+
+        hits = [m for m in warning_sink if "INKFLOW_SECRET_KEY" in m]
+        assert hits, "未捕获到告警消息"
+        assert hits[0].startswith("INFO|"), f"级别应为 INFO，实际: {hits[0][:20]!r}"
