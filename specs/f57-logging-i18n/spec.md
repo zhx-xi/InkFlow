@@ -56,7 +56,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 ```
 - `caller_type` 枚举：`api`(路由端点)、`agent`(编排)、`llm`(LLM 调用)、`tool`(工具调用)、`cli`(CLI 命令)、`mcp`(MCP 工具)、`frontend`(前端页面操作)。
 - **字段必填**：`timestamp/level/logger/caller_type/caller_name/event/message_key/params/correlation_id`（`stack` 仅 ERROR 必填）；**可选**：`trace_id/span_id/parent_span_id/project_id/entity_id/duration_ms/error_code`。`params` 含脱敏后参数摘要（不泄 key）。
-- **时间口径（ADR-055 / #1000）**：`timestamp` **存储与 API 响应一律 UTC ISO 原始值**（`datetime.now(UTC)`，SQLite `DateTime` 列剥 tzinfo → 序列化为 naive UTC 串）；**显示层转系统本地时区**——GUI 日志页经 `lib/log-format.formatTimestamp`/`formatClock`（本地访问器手拼 `'YYYY-MM-DD HH:mm:ss'`，列表/调用链节点/详情面板三处一致），不做 UTC/本地切换开关、不加时区标注。原始 ISO 值仍可从 API / `--json` 取得。
+- **时间口径（ADR-055 / #1000）**：`timestamp` **存储与 API 响应一律 UTC ISO 原始值**（`datetime.now(UTC)`，SQLite `DateTime` 列剥 tzinfo → 序列化为 naive UTC 串）；**显示层转系统本地时区**——GUI 日志页经 `lib/log-format.formatTimestamp`/`formatClock`（本地访问器手拼 `'YYYY-MM-DD HH:mm:ss'`，列表/调用链节点/详情面板三处一致），不做 UTC/本地切换开关、不加时区标注。原始 ISO 值仍可从 API / `--json` 取得。（**收敛点（#1099 补记）**：三条落盘路径必须同口径——① `POST /api/v1/logs` 经 `StructuredLogRecord.timestamp` 默认值（UTC）；② 进程内 `log_structured()` 经 loguru 结构化 sink（`core/log.py:_structured_sink` 用 `record["time"].astimezone(UTC)` 归一，**禁用裸 `record["time"]`**——loguru 自行按宿主本地时区格式化，会绕过模型默认值）；③ CLI/MCP 转发器不传 `timestamp`，由内核走路径①。）
 - `message_key` = i18n msgid（语言中立）；日志页用 `t(message_key, params)` 渲染 → **实时切换**。
 - `trace_id`/`span_id`/`parent_span_id`：OpenTelemetry/W3C 语义——入口面（GUI/CLI/MCP）生成根 trace；W3C `traceparent` 请求头格式 `00-<trace-id 32hex>-<span-id 16hex>-<flags 2hex>`，中间件解析/兜底生成（缺失或非法 → 新根）；每条日志携带三字段（OTel 父子链，2.0 cloud 前置）。
 - `correlation_id`：保留为操作级 uuid 兜底（一次操作/对话/pipeline 贯穿前后端，前端生成 uuid → 请求头 `X-Correlation-Id` → 后端沿用）。
