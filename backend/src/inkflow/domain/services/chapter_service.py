@@ -12,6 +12,8 @@ from inkflow.domain.models.chapter import (
     ChapterUpdate,
     Volume,
     VolumeUpdate,
+    chapter_content_needs_normalize,
+    normalize_chapter_content,
     normalize_chapter_title,
 )
 from inkflow.domain.models.outline import Outline
@@ -152,6 +154,9 @@ class ChapterService:
         vid = _to_uuid(volume_id) if volume_id is not None else None
         if order_index is None:
             order_index = await self._repo.get_next_chapter_order(pid.int, vid.int if vid else None)
+        # #1095：落库前归一（重复标题 / markdown / 段首缩进）；干净正文原样落库。
+        if chapter_content_needs_normalize(content, title):
+            content = normalize_chapter_content(content, title)
         ch = Chapter(
             id=uuid.uuid4(),
             project_id=pid,
@@ -206,13 +211,17 @@ class ChapterService:
             return None
         update_data = dto.model_dump(exclude_unset=True)
         updated = existing.model_copy(update=update_data)
+        # #1095：落库前按「合并后的最终 title」归一正文（单一真相面 = service 层，
+        # Repository 层不得重复归一，避免双层归一双重缩进）。
+        if chapter_content_needs_normalize(updated.content, updated.title):
+            updated = updated.model_copy(
+                update={"content": normalize_chapter_content(updated.content, updated.title)}
+            )
         saved = await self._repo.update_chapter(updated)
         await self._auto_link_outline(saved, existing)
         return saved
 
-    async def _auto_link_outline(
-        self, saved: Chapter, before: Chapter | None = None
-    ) -> None:
+    async def _auto_link_outline(self, saved: Chapter, before: Chapter | None = None) -> None:
         """#1001：正文首次非空白落盘 → 触发章级大纲自动关联（弱依赖）.
 
         触发条件：落库后正文非空白，且落库前无正文（``before=None`` 视为创建）。

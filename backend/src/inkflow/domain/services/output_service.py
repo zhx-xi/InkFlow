@@ -29,7 +29,12 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from inkflow.domain.models.chapter import Chapter, Volume
+from inkflow.domain.models.chapter import (
+    Chapter,
+    Volume,
+    chapter_content_needs_normalize,
+    normalize_chapter_content,
+)
 from inkflow.domain.models.character import Character
 from inkflow.domain.models.foreshadowing import Foreshadowing
 from inkflow.domain.models.outline import Outline
@@ -71,6 +76,19 @@ def _to_int_id(value: int | uuid.UUID) -> int:
     if isinstance(value, uuid.UUID):
         return value.int
     return value
+
+
+def _normalize_export_content(chapter: Chapter) -> str:
+    """#1095 导出侧兜底：脏正文（重复标题 / markdown #）归一.
+
+    存量脏数据的唯一兜底面（不新增批量归一端点）；干净正文原样返回，
+    避免改写已符合格式的正文。导出只兜底「结构性脏数据」（include_indent=False）
+    —— 无重复标题、无 markdown 的存量正文逐字节原样导出（既有契约
+    test_output_service_export.test_full_pipeline_produces_txt）。
+    """
+    if chapter_content_needs_normalize(chapter.content, chapter.title, include_indent=False):
+        return normalize_chapter_content(chapter.content, chapter.title)
+    return chapter.content
 
 
 class ExportService:
@@ -232,7 +250,7 @@ class ExportService:
         return [
             BookChapter(
                 title=chapter.title,
-                content=chapter.content,
+                content=_normalize_export_content(chapter),
                 order_index=chapter.order_index,
                 word_count=chapter.word_count,
             )
