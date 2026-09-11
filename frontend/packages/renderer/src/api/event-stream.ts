@@ -73,13 +73,14 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
  * 订阅内核数据面变更事件；返回 abort 函数（生命周期持有者调用）。
  *
  * 注：spec §15.5.4 给出的签名是 `(onEvent, onError?)`；第三个可选参数用于承载
- * 「重连成功」信号（spec 要求重连后做兜底全量 refetch，但未规定信号通道）——
+ * 「订阅就绪」信号（spec 要求订阅就绪（含首次连接）后做兜底全量 refetch，但未规定信号通道）——
  * 不传时行为与 §15.5.4 文档签名一致。
  *
  * @param onEvent 每收到一个合法变更帧回调一次
  * @param onError 断连 / HTTP 错误 / 流异常结束的消息（重连前触发，非致命）
- * @param onReconnect 重连成功回调（第 2 次及以后的连接尝试成功；首次即成功不触发）
- *   → 调用方做兜底全量 refetch（§15.5.4）
+ * @param onReconnect 订阅就绪回调（每次连接成功恰好一次，含首次，#1102）
+ *   → 调用方做兜底全量 refetch（§15.5.4）。首次连接也触发：消除「页面 mount 首拉 →
+ *   订阅生效」之间外部写入的永久丢失窗口；连接失败（fetch 异常 / HTTP 非 2xx）不触发。
  */
 export async function subscribeDataChanges(
   onEvent: (ev: DataChangeFrame) => void,
@@ -89,8 +90,6 @@ export async function subscribeDataChanges(
   const { baseURL, token } = getApiConfig();
   const controller = new AbortController();
   let backoffMs = RECONNECT_INITIAL_MS;
-  /** 连接尝试次数：首次即成功不算「重连」；此后任一成功 = 可能错过事件 → 兜底 refetch */
-  let attempts = 0;
 
   /** 读一条连接直到结束；帧按 `data:` 行 + `\n\n` 空行切分（同 §6.3 传输形态） */
   const readStream = async (body: ReadableStream<Uint8Array>): Promise<void> => {
@@ -121,8 +120,6 @@ export async function subscribeDataChanges(
 
   const run = async (): Promise<void> => {
     while (!controller.signal.aborted) {
-      const isReconnect = attempts > 0;
-      attempts += 1;
       let connected = false;
       try {
         const res = await fetch(`${baseURL}/api/v1/events/stream`, {
@@ -133,7 +130,8 @@ export async function subscribeDataChanges(
           onError?.(`HTTP ${res.status}`);
         } else {
           connected = true;
-          if (isReconnect) onReconnect?.();
+          // 订阅就绪（含首次连接，#1102）：每次成功建立连接恰好触发一次兜底全量 refetch
+          onReconnect?.();
           await readStream(res.body);
           if (!controller.signal.aborted) onError?.('Stream ended unexpectedly');
         }

@@ -11,7 +11,7 @@
  * export function subscribeDataChanges(
  *   onEvent: (ev: DataChangeFrame) => void,
  *   onError?: (message: string) => void,
- *   onReconnect?: () => void,        // 重连成功（非首次连接）→ 调用方兜底全量 refetch
+ *   onReconnect?: () => void,        // 订阅就绪：每次连接成功（含首次，#1102）→ 调用方兜底全量 refetch
  * ): Promise<() => void>;
  *
  * 覆盖点（对应 src/api/event-stream.ts）：
@@ -20,7 +20,9 @@
  * - 与写作帧解码器隔离：写作帧（无 domain/op）不被当事件帧；事件帧无 done 字段不被误判
  * - 非法帧（JSON 解析失败 / 非事件帧）→ 跳过该帧 + 不断开订阅（§15.5.3 E6）
  * - 断连 → 指数退避重连（1s → 2s → 4s → 上限 30s，§15.5.4）
- * - 重连成功 → onReconnect（兜底全量 refetch 信号）；首次连接成功不触发
+ * - 每次连接成功（含首次，#1102）→ onReconnect 恰好一次 = 订阅就绪信号（兜底全量 refetch）
+ *   ⚠️ 首次连接也触发：消除「mount 首拉 → 订阅生效」间外部写入的永久丢失窗口（#1102）
+ * - 连接失败（fetch 异常 / HTTP 非 2xx）→ 不触发 onReconnect（尚未就绪）
  * - abort → 静默停止（不报错、不再重连）
  *
  * mock 方式：全局 fetch 返回可控 body reader（手动 push/end/fail 驱动；退避用 fake timers，
@@ -411,7 +413,7 @@ describe('subscribeDataChanges — 断连重连与指数退避（§15.5.4）', (
     abort();
   });
 
-  it('首次连接成功 → 不触发 onReconnect（未错过事件）', async () => {
+  it('首次连接成功 → onReconnect 恰好一次（订阅就绪兜底 refetch，消除 #1102 丢失窗口）', async () => {
     const calls: FetchCall[] = [];
     stubStreamFetch(calls);
     const onReconnect = vi.fn();
@@ -420,7 +422,38 @@ describe('subscribeDataChanges — 断连重连与指数退避（§15.5.4）', (
     await vi.advanceTimersByTimeAsync(0);
 
     expect(calls).toHaveLength(1);
-    expect(onReconnect).not.toHaveBeenCalled();
+    expect(onReconnect).toHaveBeenCalledTimes(1); // #1102：首次 = 订阅就绪 → 也触发兜底
+    abort();
+  });
+
+  it('HTTP 非 2xx（连接未建立）→ 不触发 onReconnect，仅 onError', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503, body: null } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    const onError = vi.fn();
+    const onReconnect = vi.fn();
+
+    const abort = await subscribeDataChanges(vi.fn(), onError, onReconnect);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onError).toHaveBeenCalledWith('HTTP 503');
+    expect(onReconnect).not.toHaveBeenCalled(); // 反例：仅 fetch resolve 不算就绪
+    abort();
+  });
+
+  it('首次连接触发一次后，断连重连成功触发第二次（每连接成功恰好一次，不重复）', async () => {
+    const calls: FetchCall[] = [];
+    stubStreamFetch(calls);
+    const onReconnect = vi.fn();
+
+    const abort = await subscribeDataChanges(vi.fn(), vi.fn(), onReconnect);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    calls[0].api.end(); // 流异常结束 → 重连
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(calls).toHaveLength(2);
+    expect(onReconnect).toHaveBeenCalledTimes(2); // 第二次连接成功 → 第二次兜底
     abort();
   });
 
