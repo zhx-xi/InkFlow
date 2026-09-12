@@ -159,8 +159,8 @@ class Settings(...):
 
 | 约束 | 说明 |
 |------|------|
-| 冻结环境 | PyInstaller 产物内含 Python 运行时（python312.dll + `_internal/`），用户机器无 pip/site-packages 概念——「下载 chromadb」没有安装目标 |
-| 二进制 ABI | chromadb 非纯 Python：`chromadb_rust_bindings.pyd`（60.5 MB，Rust HNSW 引擎）+ `onnxruntime`（38.6 MB，C 扩展）+ `tokenizers`（7.3 MB）必须与打包时 Python ABI（3.11/win-amd64）精确匹配；动态下载的 wheel 无法保证 |
+| 冻结环境 | PyInstaller 产物内含 Python 运行时（python313.dll + `_internal/`），用户机器无 pip/site-packages 概念——「下载 chromadb」没有安装目标 |
+| 二进制 ABI | chromadb 非纯 Python：`chromadb_rust_bindings.pyd`（60.5 MB，Rust HNSW 引擎）+ `onnxruntime`（38.6 MB，C 扩展）+ `tokenizers`（7.3 MB）必须与打包时 Python ABI（3.13/win-amd64）精确匹配；动态下载的 wheel 无法保证 |
 | 依赖树 | chromadb 依赖 pydantic/kubernetes/opentelemetry 等数十包，按需安装 = 重新实现 pip 解析器 |
 | 产品承诺 | DoD「全新机器（无 Python/Node）安装即用」被破坏 |
 
@@ -481,7 +481,7 @@ jobs:
     # setup-uv cache（enable-cache + prune-cache: false，ci.yml 同款）
     steps:
       - checkout
-      - setup-python 3.11 + setup-uv（cache）
+      - setup-python 3.13 + setup-uv（cache）
       - uv sync --frozen --extra packaging   # ⚠️ 只装 packaging extra（pyinstaller），不装 dev
       - 版本注入：tag 派生 0.4.0 → pyproject version
       - pyinstaller backend/pyinstaller/inkflow.spec

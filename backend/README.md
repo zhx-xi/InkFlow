@@ -24,7 +24,7 @@ backend/
 ## 开发环境
 
 ```powershell
-# 前提：Python 3.11+ + uv
+# 前提：Python 3.13+ + uv
 cd backend
 uv sync --extra dev        # 安装开发依赖（dev 组在 [project.optional-dependencies]）
 uv run inkflow --help      # 查看 CLI（uv run 自动使用 backend/.venv）

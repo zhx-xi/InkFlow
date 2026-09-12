@@ -5,7 +5,7 @@ description = "AI 辅助小说创作工具 — CLI + Web UI + MCP Agent 集成"
 authors = [
     {name = "zhx-xi"},
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     # Web & CLI
     "fastapi>=0.110",
@@ -114,6 +114,9 @@ exclude_lines = [
 ]
 
 [tool.ruff]
+# #1130: target-version 保持 py311（本 issue 根因是 mypy python_version，与此正交）。
+# py313 会启用 32 个 UP 现代化告警（26×UP043 + 5×UP047 + 1×UP040，含 tests/ 6 处），
+# CI lint job 硬失败 → 该现代化另开 issue 处理，勿在本 PR 混入。
 target-version = "py311"
 line-length = 100
 
@@ -125,7 +128,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RET", "TRY", "RUF"]
 ignore = ["B008", "TRY003", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = false
 warn_unused_configs = true
 ignore_missing_imports = true
@@ -147,7 +150,7 @@ packages = ["src/inkflow"]
 [tool.pyright]
 include = ["src", "tests"]
 extraPaths = ["src"]
-pythonVersion = "3.11"
+pythonVersion = "3.13"
 typeCheckingMode = "basic"
 venvPath = "."
 venv = ".venv"
