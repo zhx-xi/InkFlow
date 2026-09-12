@@ -17,6 +17,9 @@ v1.2 #475：装配 llm_client 后升级为真 LLM 动态提问引擎——
 仅依赖 domain/models 与注入的 repo/可调用对象（鸭子类型），
 domain/ 零框架 import 门禁天然满足（ADR-002/015）.
 
+#1133：必答项判定/回填组（缺失判定 + 补问判据 + 唯一写入点 `_merge_confirmed_items`）
+迁出至 PlannerMustAnswerMixin（monster file 门禁，>900 行）——类继承后方法契约不变.
+
 依据: specs/f44-book-orchestrator/spec.md 搂2.2/搂5.1/搂13.5（v1.2）.
 """
 
@@ -38,6 +41,12 @@ from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services._outline_generator import _extract_json_fragment
 from inkflow.domain.services._planner_limits import extract_limits_from_interview
 from inkflow.domain.services.model_resolution import resolve_model
+
+# `_MUST_ANSWER_KEYS` 再导出：既有测试/调用方按 planner_service._MUST_ANSWER_KEYS 取值（#1133）
+from inkflow.domain.services.planner_must_answer_mixin import (  # noqa: F401  # 模块命名空间再导出
+    _MUST_ANSWER_KEYS,
+    PlannerMustAnswerMixin,
+)
 
 
 def _utcnow() -> datetime:
@@ -86,22 +95,6 @@ ROUND2_QUESTIONS: list[dict[str, str]] = [
 _AUTHORIZE_MARKERS = ("配角自定", "自定")
 """授权触发标记：任一回答包含这些字串即记录授权原文."""
 
-_MUST_ANSWER_KEYS = ("题材", "篇幅", "主题")
-"""通用必答项 key（服务端强约束，搂6 R11 ②）：LLM 输出必须覆盖未确认必答项."""
-
-_KEY_NORMALIZE = {
-    "genre": "题材",
-    "length": "篇幅",
-    "theme": "主题",
-    "ending": "结局",
-    "protagonist_name": "主角",
-    "protagonist": "主角",
-    "worldview": "世界观",
-    "sect": "门派",
-    "supporting_character": "配角",
-}
-"""英文 key → 中文必答项（#517 兜底：LLM 输出自由，合并前收敛；未知英文 key 原样保留）."""
-
 _LLM_TEMPLATE_NAME = "planner_interview"
 """LLM 动态提问模板名（infrastructure/llm/templates/planner_interview.yaml）."""
 
@@ -146,7 +139,7 @@ def _short_protagonist_name(value: str) -> str:
     return segment[:20] if len(segment) > 50 else segment
 
 
-class PlannerService:
+class PlannerService(PlannerMustAnswerMixin):
     """访谈式 Planner 服务（v1.2 #475 支持 LLM 动态提问）.
 
     Args:
@@ -566,6 +559,7 @@ class PlannerService:
         self._merge_confirmed_items(session, self._last_llm_confirmed_items)
         session.round += 1
         self._apply_conflicts(session, answers, self._last_llm_conflicts)
+        self._record_answered_must_keys(session)
 
         confirmed_keys = {str(item.get("key", "")) for item in session.confirmed_items}
         filtered = [
@@ -651,20 +645,23 @@ class PlannerService:
                 return None
 
             questions, confirmed_items, conflicts = parsed
-            if answers is None:
-                missing = self._missing_must_answer_keys(session, questions, confirmed_items)
-                if missing:
-                    if attempt < _LLM_RETRIES:
-                        messages = messages + self._retry_messages(
-                            content, f"缺失必答项 {', '.join(missing)}，请补充提问。"
-                        )
-                        continue
-                    for key in missing:
-                        template_q = next(
-                            (q for q in ROUND1_QUESTIONS if key in q.get("text", "")), None
-                        )
-                        if template_q is not None:
-                            questions.append(dict(template_q))
+            # 必答项强约束（§6 R11 ①）：start 与 respond 同路径，缺失且本轮问题未覆盖
+            # → 重试 1 次补问（防 LLM 漏问）；重试用尽仍缺 → 服务端补 ROUND1 模板题（#1128 D2）。
+            unasked = self._unasked_must_answer_keys(
+                session, questions, confirmed_items, shown_only=answers is not None
+            )
+            if unasked:
+                if attempt < _LLM_RETRIES:
+                    messages = messages + self._retry_messages(
+                        content, f"缺失必答项 {', '.join(unasked)}，请补充提问。"
+                    )
+                    continue
+                for key in unasked:
+                    template_q = next(
+                        (q for q in ROUND1_QUESTIONS if key in q.get("text", "")), None
+                    )
+                    if template_q is not None:
+                        questions.append(dict(template_q))
             self._last_llm_confirmed_items = confirmed_items
             self._last_llm_conflicts = conflicts
             return questions
@@ -780,42 +777,6 @@ class PlannerService:
         return questions, confirmed_items, conflicts
 
     @staticmethod
-    def _missing_must_answer_keys(
-        session: PlannerSession,
-        questions: builtins.list[dict],
-        confirmed_items: builtins.list[dict],
-    ) -> builtins.list[str]:
-        """计算缺失必答项：未确认且本轮问题文本未覆盖的通用必答项 key."""
-        confirmed_keys = {str(item.get("key", "")) for item in confirmed_items}
-        confirmed_keys.update(str(item.get("key", "")) for item in session.confirmed_items)
-        return [
-            key
-            for key in _MUST_ANSWER_KEYS
-            if key not in confirmed_keys
-            and not any(key in str(q.get("text", "")) for q in questions)
-        ]
-
-    @staticmethod
-    def _merge_confirmed_items(session: PlannerSession, incoming: builtins.list[dict]) -> None:
-        """按 key 合并 confirmed_items：新 key 追加、已存在 key 覆盖 value/source."""
-        for item in incoming:
-            raw_key = item.get("key")
-            key = (
-                _KEY_NORMALIZE.get(raw_key, raw_key) if isinstance(raw_key, str) else raw_key
-            )  # #517 英文→中文兜底
-            existing = next(
-                (candidate for candidate in session.confirmed_items if candidate.get("key") == key),
-                None,
-            )
-            if existing is None:
-                merged = dict(item)
-                merged["key"] = key
-                session.confirmed_items.append(merged)
-            else:
-                existing["value"] = item.get("value")
-                existing["source"] = item.get("source", existing.get("source"))
-
-    @staticmethod
     def _apply_conflicts(
         session: PlannerSession,
         answers: dict[str, str],
@@ -843,17 +804,6 @@ class PlannerService:
                     "resolution": resolution,
                 }
             )
-
-    @staticmethod
-    def _must_answers_ready(session: PlannerSession) -> bool:
-        """必答项齐备判定：confirmed_items keys 覆盖 题材/篇幅/主题."""
-        keys = {str(item.get("key", "")) for item in session.confirmed_items}
-        return all(key in keys for key in _MUST_ANSWER_KEYS)
-
-    @staticmethod
-    def _has_pending_conflict(session: PlannerSession) -> bool:
-        """是否存在 pending 冲突（存在即必答项未齐备，不得进入末尾总体确认）."""
-        return any(c.get("resolution") == "pending" for c in session.conflicts)
 
     async def _respond_deterministic(self, session: PlannerSession) -> PlannerRespondResult:
         """LLM 失败/未装配的确定性降级路径：复用既有 ROUND1→ROUND2→complete 推进逻辑."""
