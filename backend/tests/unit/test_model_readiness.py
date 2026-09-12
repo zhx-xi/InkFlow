@@ -414,7 +414,8 @@ async def test_read_project_models_degrades_on_db_error() -> None:
         async def scalars(self, *_args, **_kwargs):
             raise RuntimeError("db boom")
 
-    assert await read_project_models(_Boom()) == []  # type: ignore[arg-type]
+    # _Boom 是 duck-type 替身：只需 .scalars 抛错即可触发降级分支
+    assert await read_project_models(_Boom()) == []  # type: ignore[arg-type]  # duck-type 替身，非真 AsyncSession
 
 
 @pytest.mark.asyncio
