@@ -105,9 +105,9 @@ def mock_repo() -> MagicMock:
 
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — extract 入口校验项目存在性。"""
+    """Mock ProjectRepositoryProtocol — get 默认 = 项目存在（#1138 create_setting 校验）."""
     repo = MagicMock(spec=ProjectRepositoryProtocol)
-    repo.get = AsyncMock(return_value=None)
+    repo.get = AsyncMock(return_value=Project(id=PID, name="p", created_at=TS, updated_at=TS))
     return repo
 
 

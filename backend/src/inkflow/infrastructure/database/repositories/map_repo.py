@@ -139,7 +139,7 @@ class SQLiteMapRepository:
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
         """
-        if map_id < -2**63 or map_id >= 2**63:
+        if map_id < -(2**63) or map_id >= 2**63:
             return None
         stmt = select(MapORM).where(MapORM.id == map_id)
         result = await self._session.execute(stmt)
@@ -237,7 +237,13 @@ class SQLiteMapRepository:
     # ── pins CRUD ──
 
     async def list_pins(self, map_id: int) -> builtins.list[MapPin]:
-        """列出地图全部 pin（created_at ASC）."""
+        """列出地图全部 pin（created_at ASC）.
+
+        超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法
+        的 128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）.
+        """
+        if map_id < -(2**63) or map_id >= 2**63:
+            return []
         stmt = (
             select(MapPinORM).where(MapPinORM.map_id == map_id).order_by(MapPinORM.created_at.asc())
         )
@@ -254,7 +260,7 @@ class SQLiteMapRepository:
 
     async def get_pin(self, pin_id: int) -> MapPin | None:
         """按主键查询 pin（不存在返回 None）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if pin_id < -2**63 or pin_id >= 2**63:
+        if pin_id < -(2**63) or pin_id >= 2**63:
             return None
         stmt = select(MapPinORM).where(MapPinORM.id == pin_id)
         result = await self._session.execute(stmt)
@@ -295,7 +301,12 @@ class SQLiteMapRepository:
         JOIN world_settings w（w.id=p.location_id，v1.1 真删语义无 is_deleted 过滤）
         JOIN maps m2（m2.root_location_id=p.location_id）；
         DISTINCT；ORDER BY created_at ASC。
+
+        超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法
+        的 128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）.
         """
+        if map_id < -(2**63) or map_id >= 2**63:
+            return []
         stmt = (
             select(MapORM)
             .join(

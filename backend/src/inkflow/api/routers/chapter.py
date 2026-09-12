@@ -22,6 +22,7 @@ from inkflow.domain.models.chapter import (
     VolumeCreate,
     VolumeUpdate,
 )
+from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.services.chapter_service import (
     ChapterService,
     VolumeMoveError,
@@ -70,7 +71,11 @@ def _svc(db: AsyncSession) -> ChapterService:
 async def create_volume(project_id: str, data: VolumeCreate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
-    vol = await svc.create_volume(pid, data.title, data.order_index)
+    # #1138: 项目不存在 → 404「项目不存在」（service 落库前校验，防孤儿行）
+    try:
+        vol = await svc.create_volume(pid, data.title, data.order_index)
+    except ProjectNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
     return vol.model_dump(mode="json")
 
 

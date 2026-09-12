@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.core.config import config
+from inkflow.domain.models.project import Project
 from inkflow.domain.models.world import (
     WorldCategory,
     WorldExtractionResult,
@@ -39,6 +40,7 @@ from inkflow.domain.ports.world_errors import (
     WorldChildrenActionRequiredError,
     WorldCycleError,
     WorldNameConflictError,
+    WorldNotFoundError,
     WorldParentNotFoundError,
     WorldReparentTargetError,
     WorldRootConflictError,
@@ -98,6 +100,27 @@ class WorldService:
 
     # ── WorldSetting ─────────────────────────────────────────────
 
+    async def _ensure_project(self, project_id: uuid.UUID) -> Project | None:
+        """校验项目存在（#1138: create_* 落库前防孤儿行，spec §3.4）.
+
+        Args:
+            project_id: 所属项目 UUID（router 解析路径参数后传入）.
+
+        Returns:
+            项目实体（extract 入口需读 config.model）；project_repo 未注入
+            （仅 Mock 装配场景）→ None——生产装配（deps.get_world_service）
+            恒注入 SQLiteProjectRepository。
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（router 层转 404「项目不存在」）.
+        """
+        if self._project_repo is None:
+            return None
+        project = await self._project_repo.get(_to_int_id(project_id))
+        if project is None:
+            raise ProjectNotFoundError()
+        return project
+
     async def create_setting(
         self,
         project_id: uuid.UUID,
@@ -126,7 +149,10 @@ class WorldService:
         Raises:
             WorldParentNotFoundError: 父地点不存在/不在同一项目.
             WorldNameConflictError: 同级（含顶层）已存在同名活动条目.
+            ProjectNotFoundError: 项目不存在（#1138 防孤儿行，router 转 404）.
         """
+        # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
+        await self._ensure_project(project_id)
         pid_int = _to_int_id(project_id)
         parent_int = _to_int_id(parent_id) if parent_id is not None else None
         # #834 前置校验：根世界单例 + 先建根
@@ -144,9 +170,10 @@ class WorldService:
             if parent is None or _to_int_id(parent.project_id) != pid_int:
                 raise WorldParentNotFoundError()
         # #834 分类前置：带 category 条目须先创建该分类
-        if category_stripped and await self._repo.get_category_by_name(
-            project_id, category_stripped
-        ) is None:
+        if (
+            category_stripped
+            and await self._repo.get_category_by_name(project_id, category_stripped) is None
+        ):
             raise WorldCategoryMissingError(category_stripped)
         # F10 兼容：顶层创建沿用项目级同名预检（既有测试契约）；同级校验见下
         if parent_int is None:
@@ -425,7 +452,10 @@ class WorldService:
 
         Raises:
             WorldCategoryNameConflictError: 项目内已存在同名分类.
+            ProjectNotFoundError: 项目不存在（#1138 防孤儿行，router 转 404）.
         """
+        # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
+        await self._ensure_project(project_id)
         existing = await self._repo.get_category_by_name(project_id, name)
         if existing is not None:
             raise WorldCategoryNameConflictError()
@@ -498,12 +528,24 @@ class WorldService:
         return chain
 
     async def list_descendants(self, setting_id: int | uuid.UUID) -> list[WorldSetting] | None:
-        """子树（含自身，层序：父先子后）——直接透传 repo（测试契约）.
+        """子树（含自身，层序：父先子后）——透传 repo，空结果再判父条目存在性.
+
+        #1139: 空结果才需判定父条目存在性——条目不存在 → WorldNotFoundError
+        （router 转 404「世界观条目不存在」）；条目存在但无子树 → 空列表
+        （含自身语义下即 200，空列表 ≠ 父不存在）。非空结果直接透传（父必然
+        存在），常见路径零额外查询；128 位 int 过滤由 repo 溢出守卫转空结果。
 
         Returns:
-            子树列表；层序/含自身由 repo 保证（不存在 id → 空列表）。
+            子树列表；层序/含自身由 repo 保证。
+
+        Raises:
+            WorldNotFoundError: 条目不存在（router 转 404）.
         """
-        return await self._repo.list_descendants(_to_int_id(setting_id))
+        sid = _to_int_id(setting_id)
+        subtree = await self._repo.list_descendants(sid)
+        if not subtree and await self._repo.get(sid) is None:
+            raise WorldNotFoundError()
+        return subtree
 
     async def _assert_no_cycle(self, pid_int: int, new_parent_id: int | None) -> None:
         """校验 new_parent_id 不是 self 或其子孙（spec §5.2，O(depth)）."""
@@ -534,11 +576,9 @@ class WorldService:
         """
         if self._extractor is None:
             raise WorldServiceError("世界观提取器未配置")
-        if self._project_repo is None:
+        project = await self._ensure_project(request.project_id)
+        if project is None:  # project_repo 未注入（配置错误，防静默降级）
             raise WorldServiceError("项目仓储未配置，无法校验项目存在性")
-        project = await self._project_repo.get(_to_int_id(request.project_id))
-        if project is None:
-            raise ProjectNotFoundError()
         logger.info(
             "世界观提取: project=%s model=%s",
             request.project_id,
@@ -546,8 +586,5 @@ class WorldService:
         )
         return await self._extractor.extract(
             request,
-            default_model=resolve_model(
-                None, project.config.model, self._llm_default_model
-            )
-            or "",
+            default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
         )
