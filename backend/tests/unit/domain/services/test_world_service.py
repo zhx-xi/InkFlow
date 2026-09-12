@@ -103,20 +103,11 @@ def mock_repo() -> MagicMock:
     return repo
 
 
-def _project(*, project_id: uuid.UUID = PID) -> Project:
-    """构造测试用项目实体（create_* 项目存在性校验 mock 返回）."""
-    return Project(id=project_id, name="测试项目", created_at=TS, updated_at=TS)
-
-
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — 项目存在性校验（get 默认 = 项目存在）.
-
-    #1138 起 create_setting 落库前校验项目存在，故默认返回真实 Project；
-    「项目不存在」用例自行覆盖为 AsyncMock(return_value=None)。
-    """
+    """Mock ProjectRepositoryProtocol — get 默认 = 项目存在（#1138 create_setting 校验）."""
     repo = MagicMock(spec=ProjectRepositoryProtocol)
-    repo.get = AsyncMock(return_value=_project())
+    repo.get = AsyncMock(return_value=Project(id=PID, name="p", created_at=TS, updated_at=TS))
     return repo
 
 
