@@ -2552,6 +2552,9 @@ export interface paths {
         /**
          * List Provider Configs
          * @description 注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models.
+         *
+         *     #1129：信封额外携带 ``chat_model_source``（chat 模型候选四源），供 GUI 下拉与
+         *     就绪判据同源消费。取数失败 → 该键降级为空结构，绝不打崩列表（主路径优先）。
          */
         get: operations["list_provider_configs_api_v1_provider_configs_get"];
         put?: never;

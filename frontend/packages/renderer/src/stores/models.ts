@@ -34,6 +34,29 @@ export interface ProviderListResponse {
   total: number;
   offset?: number;
   limit?: number;
+  /** #1129：chat 模型候选四源（随信封同回，供下拉与就绪判据同源）。旧后端/降级时缺失 */
+  chat_model_source?: ChatModelOptionsResponse;
+}
+
+/**
+ * #1129：chat 模型候选的第二数据源。
+ *
+ * 注册表 `models[]` 之外的真实可用模型（项目级 / provider 默认 / 全局默认），
+ * 由 `GET /api/v1/provider-configs` 信封的 `chat_model_source` 键携带。
+ * 用于让 `selectChatModelOptions` 与后端就绪判据同源。
+ */
+export interface ChatModelOptionSource {
+  /** 项目级 config.model 中可解析为 chat 的候选 */
+  project_models?: string[];
+  /** 全局默认（config.llm_default_model） */
+  default_model?: string;
+}
+
+/** #1129 候选四源结构（字段与后端契约一致） */
+export interface ChatModelOptionsResponse extends ChatModelOptionSource {
+  options: Array<{ provider: string; model: string; source: string; has_key: boolean }>;
+  chat_models: string[];
+  available_model: string;
 }
 
 /** 角色绑定草稿：写作主模型 + 四角色 + RAG embedding（六槽位） */
@@ -67,6 +90,8 @@ interface ModelsState {
   error: string | null;
   selectedModelId: string | null;
   roleBinding: RoleBindingDraft;
+  /** #1129：注册表之外的 chat 候选（项目级 / 全局默认），由 loadProviders 一并拉取 */
+  chatModelSource: ChatModelOptionSource;
 
   loadProviders: () => Promise<void>;
   addProvider: (input: AddProviderInput) => Promise<ProviderConfig>;
@@ -94,6 +119,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
   error: null,
   selectedModelId: null,
   roleBinding: { ...EMPTY_ROLE_BINDING },
+  chatModelSource: {},
 
   loadProviders: async () => {
     set({ loading: true, error: null });
@@ -102,7 +128,14 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       // 裸数组兼容分支为死代码，已删除）
       const data = await apiFetch<ProviderListResponse>('/api/v1/provider-configs');
       const providers = data.items;
-      set({ providers, loading: false, error: null });
+      // #1129：候选四源随信封同回（chat_model_source）——单次请求即得，
+      // 不再额外打端点；缺键（旧后端/降级）→ {}，行为退回纯注册表
+      set({
+        providers,
+        chatModelSource: data.chat_model_source ?? {},
+        loading: false,
+        error: null,
+      });
     } catch (err) {
       // 失败不清空已加载列表
       set({ error: errorMessage(err), loading: false });
@@ -202,17 +235,32 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     set((s) => ({ roleBinding: { ...s.roleBinding, [role]: modelId } })),
 }));
 
-/** F42 #268：chat 模型扁平化选项（provider/model 格式，Q3）——供 AgentChainCard 与 AgentPanel 共用 */
+/** F42 #268：chat 模型扁平化选项（provider/model 格式，Q3）——供 AgentChainCard 与 AgentPanel 共用。
+ *
+ * #1129：注册表 `models[type=='chat']` 不是唯一数据源——正常路径（`llm set-key` 只写 key、
+ * #735 D2 自动设默认只写 config.json）从不回写 models[]，只认注册表会让首启引导页下拉全空
+ * （用户死路）。故并入后端同源端点的候选（项目级 / provider 默认 / 全局默认）。
+ * `extra` 缺省 → 行为与 #1129 之前完全一致（纯注册表）。
+ */
 export function selectChatModelOptions(
   providers: ProviderConfig[],
+  extra?: ChatModelOptionSource,
 ): Array<{ value: string; label: string }> {
   const options: Array<{ value: string; label: string }> = [];
+  const seen = new Set<string>();
+  const push = (value: string) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    options.push({ value, label: value });
+  };
   for (const p of providers) {
     for (const m of p.models) {
-      if (m.type === 'chat') {
-        options.push({ value: `${p.name}/${m.id}`, label: `${p.name}/${m.id}` });
-      }
+      if (m.type === 'chat') push(`${p.name}/${m.id}`);
     }
+  }
+  for (const raw of [...(extra?.project_models ?? []), extra?.default_model ?? '']) {
+    const model = (raw ?? '').trim();
+    if (model.includes('/')) push(model);
   }
   return options;
 }

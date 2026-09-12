@@ -89,6 +89,36 @@ def is_model_ready(providers: list[ProviderConfig], saved_provider_names: set[st
     """
 ```
 
+> **#1129 修订（阻断级修复，2026-09-12）**：上面的单源判据只查 `models[]`，与写作链
+> 真实可用性（`resolve_model(None, project.config.model, config.llm_default_model)`，
+> `api/_llm_resolver.py:37`）脱节。正常路径（`llm set-key` 只写 key；`#735 D2` 自动设默认
+> 只写内存单例 + config.json，**从不回写 models[]**，`provider_config_service.py:226-233`）
+> 会拿不到 chat 条目 → 判据恒 false → GUI 引导页锁死且无出路。
+> **判据收敛为多源 OR（任一命中即可用）**，与写作链同真相：
+
+```python
+def is_chat_model_resolvable(
+    model: str | None,
+    providers: list[ProviderConfig],
+    saved_provider_names: set[str],
+    *,
+    builtin_providers: dict[str, str | None] | None = None,
+) -> bool:
+    """#1129：唯一「可解析 chat 模型」谓词 —— readiness 与下拉/写作链共用。
+
+    (1) model 非空白且形如 provider/model（按首个 "/" 切分）
+    (2) 该 provider 有可用凭据（saved_provider_names ∪ builtin_providers）
+    (3) 注册表**确知**该模型 type=="embedding" → False（#929 R1 不得回归）；
+        注册表未登记 = 未知 = 放行（镜像 _llm_resolver 误伤防御）
+    """
+
+# compute_readiness(providers, saved, *, project_models, global_default, builtin_providers)
+#   数据源（任一可解析即 ready=True）：
+#     src1 注册表 chat 条目（#934 既有语义）
+#     src2 project_models（各项目 config.model）
+#     src3 global_default（config.llm_default_model）
+```
+
 **判据的边界语义**（显式声明，防静默歧义）：
 
 | 场景 | ready | 论证 |
@@ -97,7 +127,11 @@ def is_model_ready(providers: list[ProviderConfig], saved_provider_names: set[st
 | 有 provider 含 chat 模型但无 key | False | 缺凭据 = 主路径必炸（#821 空 key 守卫语义） |
 | 有 provider 有 key 但只配了 embedding 模型 | **False** | **#929 精确缺陷形态**——embedding 模型不能当 chat 消费（`ProviderDefault.type` 注释 `provider_config.py:65`） |
 | 有 provider 有 key + chat 模型 | True | 可解析（连通性由引导内 llm/test 显式验证，不在判据内做网络探测——判据须无 I/O、可缓存、可单测） |
-| 全局默认模型为空但注册表有可用 chat 模型 | **True** | #735 D2 自动设默认已在 `provider_config_service.create` 保证「首个含 chat 的 provider 新增且全局默认为空 → 自动设为该模型」（`provider_config_service.py:78-85`），故注册表可用 = 可解析 |
+| 全局默认模型为空但注册表有可用 chat 模型 | **True** | #735 D2 自动设默认已在 `provider_config_service.create` 保证「首个含 chat 的 provider 新增且全局默认为空 → 自动设为该模型」（`provider_config_service.py:226-233`），故注册表可用 = 可解析 |
+| **仅 provider.default_model / 全局默认可解析 + 有 key（models[] 空）** | **True**（#1129） | 写作链真实可跑（`resolve_llm_credentials` 只依赖模型名 + key），判据必须同真相 |
+| **仅 project.config.model 可解析 + 有 key（models[] 空）** | **True**（#1129） | 项目级模型是写作链最高优先级（#735 project > global） |
+| **project/global 模型名指向注册表确知 embedding** | **False**（#1129 反例） | 不得从 readiness 侧重开 #929 的 embedding 误装配通道 |
+| **有可用模型名但该 provider 无任何 key 来源** | **False**（#1129 反例） | 「可解析」= 模型名可解析 **且** 凭据可用 |
 
 > **判据不含网络探测**的设计理由：readiness 是高频查询（GUI 启动 + 门控），探测是低频显式动作（引导步骤内 + ProviderDialog 手动）。混在一起会让启动依赖外网可达性 → 离线用户被误挡在引导里。**连通性验证发生在引导流程内**（步骤 2 完成判据之一，§5.3）。
 

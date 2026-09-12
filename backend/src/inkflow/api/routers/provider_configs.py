@@ -36,6 +36,11 @@ from inkflow.domain.ports.provider_config_errors import (
     ProviderConfigNotFoundError,
     ProviderConfigServiceError,
 )
+from inkflow.domain.services.model_readiness import (
+    is_chat_model_resolvable,
+    read_builtin_providers,
+    read_project_models,
+)
 from inkflow.domain.services.provider_config_service import ProviderConfigService
 from inkflow.infrastructure.llm import capability_probe
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
@@ -153,13 +158,35 @@ def _to_response(pc: ProviderConfig, key_manager: APIKeyManager) -> dict:
 async def list_provider_configs(
     db: AsyncSession = Depends(get_db),
 ):
-    """注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models."""
+    """注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models.
+
+    #1129：信封额外携带 ``chat_model_source``（chat 模型候选四源），供 GUI 下拉与
+    就绪判据同源消费。取数失败 → 该键降级为空结构，绝不打崩列表（主路径优先）。
+    """
     svc = _get_svc(db)
     items = await _run_service(svc.list())
     key_manager = _get_key_manager()
+    empty_source = {
+        "options": [],
+        "chat_models": [],
+        "project_models": [],
+        "default_model": "",
+        "available_model": "",
+    }
+    try:
+        chat_model_source = _build_chat_model_options(
+            items,
+            set(key_manager.list_providers()),
+            config.llm_default_model or "",
+            await read_project_models(db),
+        )
+    except Exception:
+        logger.warning("chat 模型候选构建失败：候选源读取异常，降级为空")
+        chat_model_source = empty_source
     return {
         "items": [_to_response(pc, key_manager) for pc in items],
         "total": len(items),
+        "chat_model_source": chat_model_source,
     }
 
 
@@ -215,6 +242,82 @@ async def discover_models(data: ModelDiscoveryRequest) -> dict:
         return {"ok": True, "models": models}
     logger.warning("模型发现失败：上游响应未识别 data/models 格式 base_url=%s", data.base_url)
     return {"ok": False, "message": "上游响应中未找到模型列表（期望 data[].id 或 models[].name）"}
+
+
+def _build_chat_model_options(
+    providers: list[ProviderConfig],
+    saved_names: set[str],
+    default_model: str,
+    project_model_values: list[str],
+) -> dict:
+    """chat 模型候选（#1129）——并入 ``GET /provider-configs`` 信封，供下拉与就绪判据同源。
+
+    候选构建顺序（按 value 去重）：
+
+    1. 各 provider 的 ``models[type == "chat"]`` → ``name/id``（``registry``）；
+    2. 各 provider 的 ``default_model``（非空白且可解析）→ ``provider_default``；
+    3. ``config.llm_default_model``（可解析）→ ``global_default``；
+    4. 各项目 ``config.model``（可解析）→ ``project``。
+
+    可解析性一律经 ``is_chat_model_resolvable``（单一真相：注册表确知 embedding 阻断 +
+    凭据判定），不在此重写第二套逻辑。``available_model`` = 首个可解析候选。
+
+    纯函数（零 I/O）：调用方负责取数并自行降级，故此处不吞异常、不返回空兜底。
+    """
+    builtin = read_builtin_providers()
+    candidates: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+
+    def _add(value: str | None, source: str) -> None:
+        """按 value 去重追加候选（provider 段取首个 ``/`` 之前）。"""
+        model = (value or "").strip()
+        if not model or model in seen:
+            return
+        seen.add(model)
+        candidates.append((model, model.split("/", 1)[0] if "/" in model else "", source))
+
+    def _resolvable(model: str) -> bool:
+        """经唯一可解析谓词判定（含 builtin 凭据源）。"""
+        return is_chat_model_resolvable(model, providers, saved_names, builtin_providers=builtin)
+
+    for provider in providers:
+        for model in provider.models:
+            if model.type == "chat":
+                _add(f"{provider.name}/{model.id}", "registry")
+    for provider in providers:
+        provider_default = (provider.default_model or "").strip()
+        if provider_default and _resolvable(provider_default):
+            _add(provider_default, "provider_default")
+    if _resolvable(default_model):
+        _add(default_model, "global_default")
+
+    resolvable_projects: list[str] = []
+    for raw in project_model_values:
+        project_model = raw.strip()
+        if not project_model or project_model in resolvable_projects:
+            continue
+        if _resolvable(project_model):
+            resolvable_projects.append(project_model)
+            _add(project_model, "project")
+
+    available_model = next(
+        (model for model, _provider, _source in candidates if _resolvable(model)), ""
+    )
+    return {
+        "options": [
+            {
+                "provider": provider,
+                "model": model,
+                "source": source,
+                "has_key": provider in saved_names or bool(builtin.get(provider)),
+            }
+            for model, provider, source in candidates
+        ],
+        "chat_models": [model for model, _provider, _source in candidates],
+        "project_models": resolvable_projects,
+        "default_model": default_model,
+        "available_model": available_model,
+    }
 
 
 @router.get("/{provider_config_id}")
