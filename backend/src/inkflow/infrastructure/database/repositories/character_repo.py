@@ -170,7 +170,9 @@ class SQLiteCharacterRepository:
         return _char_orm_to_domain(orm, list(character.group_ids))
 
     async def get(self, character_id: int) -> Character | None:
-        """按主键查询角色."""
+        """按主键查询角色。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if character_id < -2**63 or character_id >= 2**63:
+            return None
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -369,7 +371,9 @@ class SQLiteCharacterRepository:
         return _group_orm_to_domain(orm)
 
     async def get_group(self, group_id: int) -> CharacterGroup | None:
-        """按主键查询分组."""
+        """按主键查询分组。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if group_id < -2**63 or group_id >= 2**63:
+            return None
         stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -436,7 +440,9 @@ class SQLiteCharacterRepository:
         return _relation_orm_to_domain(orm)
 
     async def get_relation(self, relation_id: int) -> CharacterRelation | None:
-        """按主键查询关系."""
+        """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if relation_id < -2**63 or relation_id >= 2**63:
+            return None
         stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == relation_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

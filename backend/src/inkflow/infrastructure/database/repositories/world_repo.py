@@ -110,7 +110,9 @@ class SQLiteWorldRepository:
         return _orm_to_domain(orm)
 
     async def get(self, setting_id: int) -> WorldSetting | None:
-        """按主键查询条目."""
+        """按主键查询条目。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if setting_id < -2**63 or setting_id >= 2**63:
+            return None
         stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

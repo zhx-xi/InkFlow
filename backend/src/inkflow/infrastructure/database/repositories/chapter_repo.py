@@ -75,6 +75,9 @@ class SQLiteChapterRepository:
         return _volume_orm_to_domain(orm)
 
     async def get_volume(self, volume_id: int) -> Volume | None:
+        """按主键查询卷。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if volume_id < -2**63 or volume_id >= 2**63:
+            return None
         stmt = select(VolumeORM).where(VolumeORM.id == volume_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -165,6 +168,9 @@ class SQLiteChapterRepository:
         return _chapter_orm_to_domain(orm)
 
     async def get_chapter(self, chapter_id: int) -> Chapter | None:
+        """按主键查询章节。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if chapter_id < -2**63 or chapter_id >= 2**63:
+            return None
         stmt = select(ChapterORM).where(ChapterORM.id == chapter_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
