@@ -797,3 +797,25 @@ class TestOutlineListLevel1002:
         by_name, total = await repo.list(project.id, sort_by="name", sort_desc=False)
         assert total == 3
         assert [o.name for o in by_name] == ["alpha", "bravo", "charlie"]
+
+
+# #1106: repo 层 int64 守卫 —— 超范围主键 → None（走守卫 return None 真分支）
+
+
+@pytest.mark.integration
+class TestInt64RangeGuard1106:
+    """#1106: 超 int64 范围的主键 → None（SQLite INTEGER 64 位溢出防御）。"""
+
+    async def test_get_returns_none_for_out_of_range_id(self, db_session):
+        """outline_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteOutlineRepository(db_session)
+
+        assert await repo.get(2**63) is None  # 上界外
+        assert await repo.get(-(2**63) - 1) is None  # 下界外
+
+    async def test_get_arc_returns_none_for_out_of_range_id(self, db_session):
+        """outline_repo.get_arc 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteOutlineRepository(db_session)
+
+        assert await repo.get_arc(2**63) is None  # 上界外
+        assert await repo.get_arc(-(2**63) - 1) is None  # 下界外

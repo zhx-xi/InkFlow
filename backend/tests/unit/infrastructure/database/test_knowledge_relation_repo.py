@@ -694,3 +694,18 @@ class TestKnowledgeRelationRepository:
             )
             assert row.scalar_one_or_none() is None, "#515: delete 未 commit，新 session 仍可见"
         await engine.dispose()
+
+
+# #1106: repo 层 int64 守卫 —— 超范围主键 → None（走守卫 return None 真分支）
+
+
+@pytest.mark.integration
+class TestInt64RangeGuard1106:
+    """#1106: 超 int64 范围的主键 → None（SQLite INTEGER 64 位溢出防御）。"""
+
+    async def test_get_returns_none_for_out_of_range_id(self, db_session):
+        """knowledge_relation_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteKnowledgeRelationRepository(db_session)
+
+        assert await repo.get(2**63) is None  # 上界外
+        assert await repo.get(-(2**63) - 1) is None  # 下界外

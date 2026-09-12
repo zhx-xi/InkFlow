@@ -334,3 +334,25 @@ class TestP5DeleteChapterCleansReferences:
         # ⑥ drafts.chapter_id → NULL
         draft_row = await db_session_off_fk.execute(select(DraftORM))
         assert draft_row.scalars().all()[0].chapter_id is None
+
+
+# #1106: repo 层 int64 守卫 —— 超范围主键 → None（走守卫 return None 真分支）
+
+
+@pytest.mark.integration
+class TestInt64RangeGuard1106:
+    """#1106: 超 int64 范围的主键 → None（SQLite INTEGER 64 位溢出防御）。"""
+
+    async def test_get_chapter_returns_none_for_out_of_range_id(self, db_session):
+        """chapter_repo.get_chapter 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteChapterRepository(db_session)
+
+        assert await repo.get_chapter(2**63) is None  # 上界外
+        assert await repo.get_chapter(-(2**63) - 1) is None  # 下界外
+
+    async def test_get_volume_returns_none_for_out_of_range_id(self, db_session):
+        """chapter_repo.get_volume 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteChapterRepository(db_session)
+
+        assert await repo.get_volume(2**63) is None  # 上界外
+        assert await repo.get_volume(-(2**63) - 1) is None  # 下界外
