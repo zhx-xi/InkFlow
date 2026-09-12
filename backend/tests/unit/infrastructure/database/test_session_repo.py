@@ -535,3 +535,25 @@ class TestListIncludeDeleted:
         assert total2 == 2
         assert len(items2) == 1
         assert items2[0].title == "写作一"
+
+
+# #1106: repo 层 int64 守卫 —— 超范围主键 → None（走守卫 return None 真分支）
+
+
+@pytest.mark.integration
+class TestInt64RangeGuard1106:
+    """#1106: 超 int64 范围的主键 → None（SQLite INTEGER 64 位溢出防御）。"""
+
+    async def test_get_returns_none_for_out_of_range_id(self, db_session):
+        """session_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteSessionRepository(db_session)
+
+        assert await repo.get(2**63) is None  # 上界外
+        assert await repo.get(-(2**63) - 1) is None  # 下界外
+
+    async def test_list_include_deleted_returns_none_for_out_of_range_id(self, db_session):
+        """session_repo.list_include_deleted 超 int64 范围 → None（不抛 OverflowError）。"""
+        repo = SQLiteSessionRepository(db_session)
+
+        assert await repo.list_include_deleted(2**63) is None  # 上界外
+        assert await repo.list_include_deleted(-(2**63) - 1) is None  # 下界外

@@ -135,7 +135,12 @@ class SQLiteMapRepository:
         return _orm_to_domain(orm)
 
     async def get(self, map_id: int) -> WorldMap | None:
-        """按主键查询地图（无软删过滤——真删语义）."""
+        """按主键查询地图（无软删过滤——真删语义）.
+
+        超 int64 范围视为不存在（SQLite 整数溢出防御）.
+        """
+        if map_id < -2**63 or map_id >= 2**63:
+            return None
         stmt = select(MapORM).where(MapORM.id == map_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -248,7 +253,9 @@ class SQLiteMapRepository:
         return _pin_orm_to_domain(orm)
 
     async def get_pin(self, pin_id: int) -> MapPin | None:
-        """按主键查询 pin（不存在返回 None）."""
+        """按主键查询 pin（不存在返回 None）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if pin_id < -2**63 or pin_id >= 2**63:
+            return None
         stmt = select(MapPinORM).where(MapPinORM.id == pin_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

@@ -162,7 +162,9 @@ class SQLiteSessionRepository:
         return _orm_to_domain(orm)
 
     async def get(self, session_id: int) -> Session | None:
-        """按主键查询会话（不含已归档）."""
+        """按主键查询会话（不含已归档）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if session_id < -2**63 or session_id >= 2**63:
+            return None
         stmt = select(SessionORM).where(
             SessionORM.id == session_id,
             ~SessionORM.is_deleted,
@@ -223,7 +225,12 @@ class SQLiteSessionRepository:
         return [_orm_to_domain(o) for o in orms], total
 
     async def list_include_deleted(self, session_id: int) -> Session | None:
-        """按主键查询会话（含已归档；详情可追档，归档也可读）."""
+        """按主键查询会话（含已归档；详情可追档，归档也可读）.
+
+        超 int64 范围视为不存在（SQLite 整数溢出防御）.
+        """
+        if session_id < -2**63 or session_id >= 2**63:
+            return None
         stmt = select(SessionORM).where(SessionORM.id == session_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

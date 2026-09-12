@@ -108,7 +108,9 @@ class SQLiteForeshadowingRepository:
         return _orm_to_domain(orm)
 
     async def get(self, foreshadowing_id: int) -> Foreshadowing | None:
-        """按主键查询伏笔."""
+        """按主键查询伏笔。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
+        if foreshadowing_id < -2**63 or foreshadowing_id >= 2**63:
+            return None
         stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == foreshadowing_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
