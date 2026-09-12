@@ -399,3 +399,59 @@ class TestEntryPointRunners:
         monkeypatch.setattr(server_mod, "run", mock_run)
         runpy.run_module("inkflow.mcp.__main__", run_name="__main__")
         mock_run.assert_called_once()
+
+
+class TestCallToolResultBranchBackfill:
+    """Batch 3 coverage: correlation reuse and structured error branches."""
+
+    @pytest.mark.asyncio
+    async def test_preset_correlation_avoids_temporary_token(self):
+        """A pre-set request correlation skips creating/resetting a temporary token."""
+        from inkflow.logging import (
+            reset_request_correlation_id,
+            set_request_correlation_id,
+        )
+        from inkflow.mcp.server import call_tool_result
+
+        tool = SimpleNamespace(
+            spec=SimpleNamespace(name="ok"),
+            func=AsyncMock(return_value=json.dumps({"ok": True})),
+        )
+        token = set_request_correlation_id("preset-correlation")
+        try:
+            result = await call_tool_result([tool], "ok", {})
+        finally:
+            reset_request_correlation_id(token)
+
+        assert result.is_error is False
+        assert json.loads(result.content[0].text)["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_error_with_non_dict_payload_is_still_error(self):
+        """A failed tool envelope with a non-dict error remains a tool error."""
+        from inkflow.mcp.server import call_tool_result
+
+        tool = SimpleNamespace(
+            spec=SimpleNamespace(name="bad"),
+            func=AsyncMock(return_value=json.dumps({"ok": False, "error": "plain text"})),
+        )
+
+        result = await call_tool_result([tool], "bad", {})
+
+        assert result.is_error is True
+        assert json.loads(result.content[0].text)["error"] == "plain text"
+
+    @pytest.mark.asyncio
+    async def test_error_code_non_string_is_ignored(self):
+        """A failed tool envelope with a non-string code is accepted without code."""
+        from inkflow.mcp.server import call_tool_result
+
+        tool = SimpleNamespace(
+            spec=SimpleNamespace(name="bad-code"),
+            func=AsyncMock(return_value=json.dumps({"ok": False, "error": {"code": 123}})),
+        )
+
+        result = await call_tool_result([tool], "bad-code", {})
+
+        assert result.is_error is True
+        assert json.loads(result.content[0].text)["error"]["code"] == 123
