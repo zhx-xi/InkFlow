@@ -566,6 +566,7 @@ class PlannerService:
         self._merge_confirmed_items(session, self._last_llm_confirmed_items)
         session.round += 1
         self._apply_conflicts(session, answers, self._last_llm_conflicts)
+        self._record_answered_must_keys(session)
 
         confirmed_keys = {str(item.get("key", "")) for item in session.confirmed_items}
         filtered = [
@@ -651,20 +652,23 @@ class PlannerService:
                 return None
 
             questions, confirmed_items, conflicts = parsed
-            if answers is None:
-                missing = self._missing_must_answer_keys(session, questions, confirmed_items)
-                if missing:
-                    if attempt < _LLM_RETRIES:
-                        messages = messages + self._retry_messages(
-                            content, f"缺失必答项 {', '.join(missing)}，请补充提问。"
-                        )
-                        continue
-                    for key in missing:
-                        template_q = next(
-                            (q for q in ROUND1_QUESTIONS if key in q.get("text", "")), None
-                        )
-                        if template_q is not None:
-                            questions.append(dict(template_q))
+            # 必答项强约束（§6 R11 ①）：start 与 respond 同路径，缺失且本轮问题未覆盖
+            # → 重试 1 次补问（防 LLM 漏问）；重试用尽仍缺 → 服务端补 ROUND1 模板题（#1128 D2）。
+            unasked = self._unasked_must_answer_keys(
+                session, questions, confirmed_items, shown_only=answers is not None
+            )
+            if unasked:
+                if attempt < _LLM_RETRIES:
+                    messages = messages + self._retry_messages(
+                        content, f"缺失必答项 {', '.join(unasked)}，请补充提问。"
+                    )
+                    continue
+                for key in unasked:
+                    template_q = next(
+                        (q for q in ROUND1_QUESTIONS if key in q.get("text", "")), None
+                    )
+                    if template_q is not None:
+                        questions.append(dict(template_q))
             self._last_llm_confirmed_items = confirmed_items
             self._last_llm_conflicts = conflicts
             return questions
@@ -785,15 +789,36 @@ class PlannerService:
         questions: builtins.list[dict],
         confirmed_items: builtins.list[dict],
     ) -> builtins.list[str]:
-        """计算缺失必答项：未确认且本轮问题文本未覆盖的通用必答项 key."""
+        """计算缺失必答项：confirmed_items 未覆盖的通用必答项 key.
+
+        与 `_must_answers_ready` 同源（精确互补）——判定只依据 confirmed_items，
+        问题文本（questions）不参与：LLM 的 questions（问什么）与 confirmed_items
+        （已知什么）是两个独立输出通道，问到了不等于已知（#1128 D1）。
+        """
         confirmed_keys = {str(item.get("key", "")) for item in confirmed_items}
         confirmed_keys.update(str(item.get("key", "")) for item in session.confirmed_items)
-        return [
-            key
-            for key in _MUST_ANSWER_KEYS
-            if key not in confirmed_keys
-            and not any(key in str(q.get("text", "")) for q in questions)
-        ]
+        return [key for key in _MUST_ANSWER_KEYS if key not in confirmed_keys]
+
+    @staticmethod
+    def _unasked_must_answer_keys(
+        session: PlannerSession,
+        questions: builtins.list[dict],
+        confirmed_items: builtins.list[dict],
+        *,
+        shown_only: bool = False,
+    ) -> builtins.list[str]:
+        """缺失必答项中本轮问题未覆盖的 key（重试/补问判据，派生自缺失同源判定）.
+
+        shown_only=True（respond 路径）：只补问「已向用户展示过」的必答项——本轮
+        LLM 已给出问题集时，服务端仅对问过却仍未落库的必答项补问，不擅自插入
+        用户从未见过的新主题（#1128：冻结契约要求 respond 尊重 LLM 本轮问题集）。
+        """
+        asked = [str(q.get("text", "")) for q in questions]
+        missing = PlannerService._missing_must_answer_keys(session, questions, confirmed_items)
+        if shown_only:
+            shown = [str(q.get("text", "")) for q in session.asked_questions]
+            missing = [key for key in missing if any(key in text for text in shown)]
+        return [key for key in missing if not any(key in text for text in asked)]
 
     @staticmethod
     def _merge_confirmed_items(session: PlannerSession, incoming: builtins.list[dict]) -> None:
@@ -814,6 +839,43 @@ class PlannerService:
             else:
                 existing["value"] = item.get("value")
                 existing["source"] = item.get("source", existing.get("source"))
+
+    @staticmethod
+    def _leading_must_answer_key(question: dict) -> str | None:
+        """问题归属的必答项 key：首个 `：`/`:` 前引导段**唯一**命中的 key，否则 None.
+
+        问题文本遵循「key：…」引导式（ROUND1 模板与 LLM 动态提问一致），故只用
+        首个分隔符前的引导段判定归属，不做全文子串匹配；引导段同时含多个必答项
+        （如「题材与主题：…」）时归属不明确 → 返回 None，保证一问至多映射一键、
+        不把整段回答同时写进多个 key（#1128 对抗探针：静默数据污染）。
+        """
+        text = str(question.get("text", ""))
+        separators = [pos for pos in (text.find("："), text.find(":")) if pos >= 0]
+        leading = text[: min(separators)] if separators else text
+        matched = [key for key in _MUST_ANSWER_KEYS if key in leading]
+        return matched[0] if len(matched) == 1 else None
+
+    @staticmethod
+    def _record_answered_must_keys(session: PlannerSession) -> None:
+        """缺失必答项但用户已回答对应问题 → 确定性落库，不依赖 LLM 提取（#1128 D3）.
+
+        按「引导段唯一命中必答 key」（`_leading_must_answer_key`）定位已展示问题，
+        取其回答原文经 `_merge_confirmed_items` 写入 confirmed_items（source=user，
+        可审计、区别于 llm_inferred）；多个候选问题优先当前轮（后展示者）；
+        归属不明确则不写该 key——留缺失由正常补问流程兜底，不臆造 value。
+        """
+        for key in PlannerService._missing_must_answer_keys(session, [], []):
+            for question in reversed(session.asked_questions):
+                if PlannerService._leading_must_answer_key(question) != key:
+                    continue
+                qid = question.get("id")
+                answer = session.answers.get(qid, "") if isinstance(qid, str) else ""
+                if not answer.strip():
+                    continue
+                PlannerService._merge_confirmed_items(
+                    session, [{"key": key, "value": answer, "source": "user"}]
+                )
+                break
 
     @staticmethod
     def _apply_conflicts(
