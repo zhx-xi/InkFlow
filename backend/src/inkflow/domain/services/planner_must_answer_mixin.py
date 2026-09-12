@@ -105,18 +105,31 @@ class PlannerMustAnswerMixin:
 
     @staticmethod
     def _leading_must_answer_key(question: dict) -> str | None:
-        """问题归属的必答项 key：首个 `：`/`:` 前引导段**唯一**命中的 key，否则 None.
+        """问题归属的必答项 key：引导段**以该 key 起头**且唯一命中，否则 None.
 
-        问题文本遵循「key：…」引导式（ROUND1 模板与 LLM 动态提问一致），故只用
-        首个分隔符前的引导段判定归属，不做全文子串匹配；引导段同时含多个必答项
-        （如「题材与主题：…」）时归属不明确 → 返回 None，保证一问至多映射一键、
-        不把整段回答同时写进多个 key（#1128 对抗探针：静默数据污染）。
+        问题文本遵循「key：…」引导式（ROUND1 模板与 LLM 动态提问一致），故判定
+        依据 = 首个 `：`/`:` 前引导段的**起始前缀**，不做全文子串匹配。三点理由：
+
+        1. 引导段同时含多个必答项（「题材与主题：…」）→ 归属不明确 → None，
+           保证一问至多映射一键（#1128 对抗探针：静默数据污染）；
+        2. 问题仅在句中**提到**某 key（如 targeted「您提到主题倾向复仇，主角的
+           动机是什么？」）→ 该键并非本题主旨 → None，否则回答会被误写成该 key
+           的值（#1128 审查实证：答「因为父亲被杀」被写成 主题）；
+        3. 无分隔符且不以 key 起头 → None，交正常补问流程兜底，不臆造归属。
+
+        ponytail: 前缀匹配依赖「key：」书写习惯；LLM 若改用「请谈主题」类无分隔
+        符措辞则不落库（回退到补问），宁可漏写不可写错。
         """
-        text = str(question.get("text", ""))
-        separators = [pos for pos in (text.find("："), text.find(":")) if pos >= 0]
-        leading = text[: min(separators)] if separators else text
-        matched = [key for key in _MUST_ANSWER_KEYS if key in leading]
+        leading = PlannerMustAnswerMixin._leading_segment(question)
+        matched = [key for key in _MUST_ANSWER_KEYS if leading.startswith(key)]
         return matched[0] if len(matched) == 1 else None
+
+    @staticmethod
+    def _leading_segment(question: dict) -> str:
+        """问题文本的首个 `：`/`:` 之前引导段（无分隔符则整段），strip 后返回."""
+        text = str(question.get("text", "")).strip()
+        separators = [pos for pos in (text.find("："), text.find(":")) if pos >= 0]
+        return (text[: min(separators)] if separators else text).strip()
 
     @staticmethod
     def _record_answered_must_keys(session: PlannerSession) -> None:

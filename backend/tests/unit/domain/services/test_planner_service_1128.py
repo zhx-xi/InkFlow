@@ -299,6 +299,37 @@ async def test_respond_missing_key_triggers_retry_with_hint() -> None:
 
 
 @pytest.mark.asyncio
+async def test_backfill_ignores_question_merely_mentioning_key() -> None:
+    """C3 反例：问题仅**提到**必答 key（非本题主旨）→ 不得把该回答写成该 key。
+
+    审查实证缺陷（误绑 / false positive）：targeted 问题「您提到主题倾向复仇，
+    主角的动机是什么？」只是句中提到「主题」，其回答「因为父亲被杀」却被写成
+    主题 的值 —— 静默数据污染，且会流入 extract_limits_from_interview /
+    _complete。归属判定必须基于引导段**起始前缀**，而非全文子串。
+    """
+    session = _session(
+        round=2,
+        asked_questions=[
+            {
+                "id": "q7",
+                "text": "您提到主题倾向复仇，主角的动机是什么？",
+                "template": "___",
+                "kind": "targeted",
+            }
+        ],
+        answers={"q7": "因为父亲被杀"},
+    )
+    repo = _make_repo(session)
+    svc = _make_service(repo, llm_client=_ScriptedLLM([_llm_json([], [], [])]))
+
+    await svc.respond(session.id, {"q7": "因为父亲被杀"})
+
+    themes = [i for i in session.confirmed_items if str(i.get("key", "")) == "主题"]
+    assert not themes, f"仅提到 key 的问题不得绑定该 key（误绑）：{themes}"
+    assert session.confirmed_items == [], f"本用例不应写入任何确定项：{session.confirmed_items}"
+
+
+@pytest.mark.asyncio
 async def test_backfill_one_question_maps_to_one_key_only() -> None:
     """C3 反例：同一问题文本含多个必答 key → 不得把同一答案写进多个 key。
 
