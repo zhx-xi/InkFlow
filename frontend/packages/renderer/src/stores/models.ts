@@ -34,13 +34,16 @@ export interface ProviderListResponse {
   total: number;
   offset?: number;
   limit?: number;
+  /** #1129：chat 模型候选四源（随信封同回，供下拉与就绪判据同源）。旧后端/降级时缺失 */
+  chat_model_source?: ChatModelOptionsResponse;
 }
 
 /**
- * #1129：chat 模型候选的第二数据源（GET /api/v1/provider-configs/chat-model-options）。
+ * #1129：chat 模型候选的第二数据源。
  *
- * 注册表 `models[]` 之外的真实可用模型（项目级 / 全局默认），用于让
- * `selectChatModelOptions` 与后端就绪判据同源。
+ * 注册表 `models[]` 之外的真实可用模型（项目级 / provider 默认 / 全局默认），
+ * 由 `GET /api/v1/provider-configs` 信封的 `chat_model_source` 键携带。
+ * 用于让 `selectChatModelOptions` 与后端就绪判据同源。
  */
 export interface ChatModelOptionSource {
   /** 项目级 config.model 中可解析为 chat 的候选 */
@@ -49,7 +52,7 @@ export interface ChatModelOptionSource {
   default_model?: string;
 }
 
-/** #1129 下拉同源端点响应（字段与后端契约一致） */
+/** #1129 候选四源结构（字段与后端契约一致） */
 export interface ChatModelOptionsResponse extends ChatModelOptionSource {
   options: Array<{ provider: string; model: string; source: string; has_key: boolean }>;
   chat_models: string[];
@@ -125,9 +128,14 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       // 裸数组兼容分支为死代码，已删除）
       const data = await apiFetch<ProviderListResponse>('/api/v1/provider-configs');
       const providers = data.items;
-      // #1129：并行拉同源候选（项目级 / 全局默认）；失败不影响注册表加载
-      const source = await fetchChatModelSource();
-      set({ providers, chatModelSource: source, loading: false, error: null });
+      // #1129：候选四源随信封同回（chat_model_source）——单次请求即得，
+      // 不再额外打端点；缺键（旧后端/降级）→ {}，行为退回纯注册表
+      set({
+        providers,
+        chatModelSource: data.chat_model_source ?? {},
+        loading: false,
+        error: null,
+      });
     } catch (err) {
       // 失败不清空已加载列表
       set({ error: errorMessage(err), loading: false });
@@ -226,23 +234,6 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
   setRoleBinding: (role, modelId) =>
     set((s) => ({ roleBinding: { ...s.roleBinding, [role]: modelId } })),
 }));
-
-/**
- * #1129：拉取注册表之外的 chat 候选（项目级 / 全局默认）。
- *
- * 端点内部已降级（永不 5xx），此处再兜一层：任何异常 → `{}`，
- * 绝不让下拉数据源拖垮 `loadProviders`（注册表加载是主路径）。
- */
-async function fetchChatModelSource(): Promise<ChatModelOptionSource> {
-  try {
-    const data = await apiFetch<ChatModelOptionsResponse>(
-      '/api/v1/provider-configs/chat-model-options',
-    );
-    return { project_models: data.project_models, default_model: data.default_model };
-  } catch {
-    return {};
-  }
-}
 
 /** F42 #268：chat 模型扁平化选项（provider/model 格式，Q3）——供 AgentChainCard 与 AgentPanel 共用。
  *

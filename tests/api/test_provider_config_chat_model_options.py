@@ -1,6 +1,7 @@
-"""#1129 chat 模型候选端点 API 契约测试（GET /api/v1/provider-configs/chat-model-options）。
+"""#1129 chat 模型候选 API 契约测试（GET /api/v1/provider-configs 信封 chat_model_source）。
 
-被测端点：`GET /api/v1/provider-configs/chat-model-options`（挂既有 provider_configs
+被测载体：`GET /api/v1/provider-configs` 列表信封的 `chat_model_source` 键（#1129
+折叠：候选构建并回列表端点，原专用端点已删除；挂既有 provider_configs
 router，prefix=/api/v1/provider-configs）。
 
 ════════════════════════════════════════════════════════════════════
@@ -12,16 +13,16 @@ GUI 首启引导页被锁死且 chat 模型下拉为空 → 用户无法经该�
 而正常路径（`llm set-key` 只写 key；#735 D2 自动设默认只写内存单例 +
 config.json，从不回写 models[]）拿不到 chat 条目。
 
-本端点 = 下拉的**唯一数据源**，与就绪判据同源（`is_chat_model_resolvable`）。
+`chat_model_source` 键 = 下拉的**唯一数据源**，与就绪判据同源（`is_chat_model_resolvable`）。
 
 ════════════════════════════════════════════════════════════════════
 设计假设（GREEN 实现必须满足的契约，逐条对应下方测试）
 ════════════════════════════════════════════════════════════════════
 
-1. 【端点】`GET /api/v1/provider-configs/chat-model-options`。字面子路径必须
-   【先于】`GET /{provider_config_id}` 声明，否则被通配吞掉（401/404 而非 200）。
+1. 【载体】`GET /api/v1/provider-configs` 列表信封的 `chat_model_source` 键
+   （原专用端点 `…/chat-model-options` 已随 #1129 折叠删除）。
 
-2. 【响应契约】200 + 精确 5 键：
+2. 【响应契约】列表 200；`chat_model_source` 精确 5 键：
    `{options: list[dict], chat_models: list[str], project_models: list[str],
      default_model: str, available_model: str}`。
    - options 元素：`{provider: str, model: str, source: str, has_key: bool}`，
@@ -35,7 +36,8 @@ config.json，从不回写 models[]）拿不到 chat 条目。
 4. 【同源判定】可解析性一律经 `is_chat_model_resolvable`（唯一真相）：
    注册表**确知** embedding 的模型不得入选；无凭据的不得入选。
 
-5. 【降级】任何内部失败 → 200 + 空结构（键恒 5 个），绝不让下拉 500。
+5. 【降级】候选源内部失败 → 列表仍 200，`chat_model_source` 降级为空结构（键恒 5 个），
+   绝不让下拉 500。
 
 6. 【测试注入】DB：override_get_db → 本文件 db_session（真内存 SQLite，
    可插 ProviderORM / ProjectORM 行）；key：patch 本模块
@@ -61,13 +63,18 @@ import inkflow.api.routers.provider_configs  # noqa: F401  # 模块存在性契�
 from inkflow.api.app import app
 from inkflow.core.database import Base
 
-ENDPOINT = "/api/v1/provider-configs/chat-model-options"
+ENDPOINT = "/api/v1/provider-configs"
 
 ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
 
 PATCH_KEY_MANAGER = "inkflow.api.routers.provider_configs._get_key_manager"
 
 CONFIG_SINGLETON = "inkflow.core.config.config"
+
+
+def _source(resp: Any) -> dict:
+    """#1129：候选数据现挂在列表信封的 chat_model_source 键下。"""
+    return resp.json()["chat_model_source"]
 
 
 # ── Fixtures ──
@@ -186,7 +193,7 @@ class TestChatModelOptions1129:
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
-        assert set(resp.json().keys()) == {
+        assert set(_source(resp).keys()) == {
             "options",
             "chat_models",
             "project_models",
@@ -201,7 +208,7 @@ class TestChatModelOptions1129:
         """空注册表 → 200 + 空结构（下拉永不 500，降级而非报错）。"""
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["options"] == []
         assert body["chat_models"] == []
         assert body["available_model"] == ""
@@ -218,7 +225,7 @@ class TestChatModelOptions1129:
         with patch_keys({"deepseek"}):
             resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
-        body = resp.json()
+        body = _source(resp)
         assert body["available_model"] == "deepseek/deepseek-v4-flash"
         assert "deepseek/deepseek-v4-flash" in body["chat_models"]
         assert "deepseek/deepseek-v4-flash" in body["project_models"]
@@ -239,7 +246,7 @@ class TestChatModelOptions1129:
         )
         with patch_keys({"deepseek"}):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["available_model"] == "deepseek/deepseek-v4-flash"
         assert body["options"][0]["source"] == "provider_default"
 
@@ -253,7 +260,7 @@ class TestChatModelOptions1129:
         )
         with patch_keys({"deepseek"}):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["chat_models"][0] == "deepseek/deepseek-chat"
         assert body["options"][0]["source"] == "registry"
 
@@ -266,7 +273,7 @@ class TestChatModelOptions1129:
         _isolate_global_default.llm_default_model = "deepseek/deepseek-v4-flash"
         with patch_keys({"deepseek"}):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["default_model"] == "deepseek/deepseek-v4-flash"
         assert body["available_model"] == "deepseek/deepseek-v4-flash"
 
@@ -284,7 +291,7 @@ class TestChatModelOptions1129:
         )
         with patch_keys({"zhipu"}):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["available_model"] == ""
         assert body["chat_models"] == []
         assert body["options"] == []
@@ -297,7 +304,7 @@ class TestChatModelOptions1129:
         await _seed_provider(db_session, "deepseek", default_model="deepseek/dm")
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["options"] == []
         assert body["available_model"] == ""
 
@@ -341,7 +348,7 @@ class TestChatModelOptions1129:
         with patch_keys({"deepseek", "openai"}):
             resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
-        body = resp.json()
+        body = _source(resp)
         assert body["chat_models"] == [
             "deepseek/deepseek-chat",
             "deepseek/deepseek-v4-flash",
@@ -370,7 +377,7 @@ class TestChatModelOptions1129:
         await _seed_provider(db_session, "deepseek", default_model="deepseek/dm")
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["chat_models"] == []
         assert body["available_model"] == ""
 
@@ -382,7 +389,7 @@ class TestChatModelOptions1129:
         await _seed_provider(db_session, "deepseek", default_model="   ")
         with patch_keys({"deepseek"}):
             resp = await client.get(ENDPOINT)
-        assert resp.json()["chat_models"] == []
+        assert _source(resp)["chat_models"] == []
 
     @pytest.mark.asyncio
     async def test_project_model_unresolvable_skipped(
@@ -392,7 +399,7 @@ class TestChatModelOptions1129:
         await _seed_project_model(db_session, "deepseek/dm")
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["project_models"] == []
         assert body["chat_models"] == []
 
@@ -404,13 +411,13 @@ class TestChatModelOptions1129:
         with (
             patch_keys(set()),
             patch(
-                "inkflow.api.routers.provider_configs._get_svc",
+                "inkflow.api.routers.provider_configs.read_project_models",
                 side_effect=RuntimeError("boom"),
             ),
         ):
             resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
-        body = resp.json()
+        body = _source(resp)
         assert set(body.keys()) == {
             "options",
             "chat_models",
@@ -419,6 +426,13 @@ class TestChatModelOptions1129:
             "available_model",
         }
         assert body["options"] == []
+        assert body == {
+            "options": [],
+            "chat_models": [],
+            "project_models": [],
+            "default_model": "",
+            "available_model": "",
+        }
 
 
 class TestChatModelOptionsEdgeBranches1129:
@@ -435,7 +449,7 @@ class TestChatModelOptionsEdgeBranches1129:
         await _seed_project_model(db_session, "   ")  # 空白
         with patch_keys({"deepseek"}):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["project_models"] == ["deepseek/dm-a"]
         assert body["chat_models"].count("deepseek/dm-a") == 1
 
@@ -451,7 +465,7 @@ class TestChatModelOptionsEdgeBranches1129:
         )
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert "deepseek/deepseek-chat" in body["chat_models"]
         assert body["available_model"] == ""
         option = next(o for o in body["options"] if o["model"] == "deepseek/deepseek-chat")
@@ -465,7 +479,7 @@ class TestChatModelOptionsEdgeBranches1129:
         await _seed_provider(db_session, "ollama", model_types=["chat"], model_ids=["qwen2.5"])
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
-        body = resp.json()
+        body = _source(resp)
         assert body["available_model"] == "ollama/qwen2.5"
         option = next(o for o in body["options"] if o["model"] == "ollama/qwen2.5")
         assert option["has_key"] is True  # builtin.get("ollama") 为真
@@ -487,7 +501,7 @@ class TestChatModelOptionsEdgeBranches1129:
         ):
             resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
-        body = resp.json()
+        body = _source(resp)
         # 整体 try 兜底 → 降级空结构（键恒 5 个，绝不让下拉 500）
         assert set(body.keys()) == {
             "options",
@@ -514,7 +528,7 @@ class TestChatModelOptionsEdgeBranches1129:
         ):
             resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
-        body = resp.json()
+        body = _source(resp)
         assert set(body.keys()) == {
             "options",
             "chat_models",

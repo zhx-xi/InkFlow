@@ -14122,7 +14122,7 @@
     },
     "/api/v1/provider-configs": {
       "get": {
-        "description": "注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models.",
+        "description": "注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models.\n\n#1129：信封额外携带 ``chat_model_source``（chat 模型候选四源），供 GUI 下拉与\n就绪判据同源消费。取数失败 → 该键降级为空结构，绝不打崩列表（主路径优先）。",
         "operationId": "list_provider_configs_api_v1_provider_configs_get",
         "responses": {
           "200": {
@@ -14185,30 +14185,6 @@
           }
         },
         "summary": "Create Provider Config",
-        "tags": [
-          "ProviderConfigs"
-        ]
-      }
-    },
-    "/api/v1/provider-configs/chat-model-options": {
-      "get": {
-        "description": "chat 模型候选列表（#1129）——与首启判据同源，故下拉永不再空。\n\n候选构建顺序（按 value 去重）：\n\n1. 注册表各 provider 的 ``models[type == \"chat\"]`` → ``name/id``（``registry``）；\n2. 注册表各 provider 的 ``default_model``（非空白且可解析）→ ``provider_default``；\n3. ``config.llm_default_model``（可解析）→ ``global_default``；\n4. 各项目 ``config.model``（可解析）→ ``project``。\n\n可解析性一律经 ``is_chat_model_resolvable``（单一真相：注册表确知 embedding 阻断 +\n凭据判定），不在此重写第二套逻辑。``available_model`` = 首个可解析候选。\n\n任何内部失败（DB / 凭据读取异常）→ 200 + 空结构（键恒 5 个），绝不让下拉 500。",
-        "operationId": "chat_model_options_api_v1_provider_configs_chat_model_options_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Chat Model Options Api V1 Provider Configs Chat Model Options Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Chat Model Options",
         "tags": [
           "ProviderConfigs"
         ]

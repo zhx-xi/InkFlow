@@ -155,6 +155,41 @@ describe('models store — provider 列表加载', () => {
     expect(s.error).toBeNull();
   });
 
+  /**
+   * #1129：候选四源随列表信封同回（chat_model_source）→ 落到 chatModelSource；
+   * 缺键（旧后端/降级）→ {}，行为退回纯注册表。
+   */
+  it('#1129：信封含 chat_model_source → chatModelSource 填充', async () => {
+    apiFetchMock.mockResolvedValue({
+      items: PROVIDERS,
+      total: 2,
+      chat_model_source: {
+        options: [],
+        chat_models: ['deepseek/deepseek-v4-flash'],
+        project_models: ['deepseek/deepseek-v4-flash'],
+        default_model: 'deepseek/deepseek-v4-flash',
+        available_model: 'deepseek/deepseek-v4-flash',
+      },
+    });
+    await act(async () => {
+      await useModelsStore.getState().loadProviders();
+    });
+    const s = useModelsStore.getState();
+    expect(s.chatModelSource.project_models).toEqual(['deepseek/deepseek-v4-flash']);
+    expect(s.chatModelSource.default_model).toBe('deepseek/deepseek-v4-flash');
+    // 单次请求即得（不再额外打候选端点）
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/provider-configs');
+  });
+
+  it('#1129：信封缺 chat_model_source → chatModelSource 退化为 {}', async () => {
+    apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2 });
+    await act(async () => {
+      await useModelsStore.getState().loadProviders();
+    });
+    expect(useModelsStore.getState().chatModelSource).toEqual({});
+  });
+
   it('loadProviders 失败：error 设置 + 原列表保留', async () => {
     // F10 评审修正：mock 统一 {items,total} 信封（后端真实返回形状；裸数组兼容分支为死代码）
     apiFetchMock.mockResolvedValue({ items: PROVIDERS, total: 2, offset: 0, limit: 50 });

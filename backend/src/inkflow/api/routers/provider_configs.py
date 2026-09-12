@@ -158,13 +158,35 @@ def _to_response(pc: ProviderConfig, key_manager: APIKeyManager) -> dict:
 async def list_provider_configs(
     db: AsyncSession = Depends(get_db),
 ):
-    """注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models."""
+    """注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models.
+
+    #1129：信封额外携带 ``chat_model_source``（chat 模型候选四源），供 GUI 下拉与
+    就绪判据同源消费。取数失败 → 该键降级为空结构，绝不打崩列表（主路径优先）。
+    """
     svc = _get_svc(db)
     items = await _run_service(svc.list())
     key_manager = _get_key_manager()
+    empty_source = {
+        "options": [],
+        "chat_models": [],
+        "project_models": [],
+        "default_model": "",
+        "available_model": "",
+    }
+    try:
+        chat_model_source = _build_chat_model_options(
+            items,
+            set(key_manager.list_providers()),
+            config.llm_default_model or "",
+            await read_project_models(db),
+        )
+    except Exception:
+        logger.warning("chat 模型候选构建失败：候选源读取异常，降级为空")
+        chat_model_source = empty_source
     return {
         "items": [_to_response(pc, key_manager) for pc in items],
         "total": len(items),
+        "chat_model_source": chat_model_source,
     }
 
 
@@ -222,40 +244,27 @@ async def discover_models(data: ModelDiscoveryRequest) -> dict:
     return {"ok": False, "message": "上游响应中未找到模型列表（期望 data[].id 或 models[].name）"}
 
 
-@router.get("/chat-model-options")
-@instrument(caller_type="api")
-async def chat_model_options(db: AsyncSession = Depends(get_db)) -> dict:
-    """chat 模型候选列表（#1129）——与首启判据同源，故下拉永不再空。
+def _build_chat_model_options(
+    providers: list[ProviderConfig],
+    saved_names: set[str],
+    default_model: str,
+    project_model_values: list[str],
+) -> dict:
+    """chat 模型候选（#1129）——并入 ``GET /provider-configs`` 信封，供下拉与就绪判据同源。
 
     候选构建顺序（按 value 去重）：
 
-    1. 注册表各 provider 的 ``models[type == "chat"]`` → ``name/id``（``registry``）；
-    2. 注册表各 provider 的 ``default_model``（非空白且可解析）→ ``provider_default``；
+    1. 各 provider 的 ``models[type == "chat"]`` → ``name/id``（``registry``）；
+    2. 各 provider 的 ``default_model``（非空白且可解析）→ ``provider_default``；
     3. ``config.llm_default_model``（可解析）→ ``global_default``；
     4. 各项目 ``config.model``（可解析）→ ``project``。
 
     可解析性一律经 ``is_chat_model_resolvable``（单一真相：注册表确知 embedding 阻断 +
     凭据判定），不在此重写第二套逻辑。``available_model`` = 首个可解析候选。
 
-    任何内部失败（DB / 凭据读取异常）→ 200 + 空结构（键恒 5 个），绝不让下拉 500。
+    纯函数（零 I/O）：调用方负责取数并自行降级，故此处不吞异常、不返回空兜底。
     """
-    empty: dict = {
-        "options": [],
-        "chat_models": [],
-        "project_models": [],
-        "default_model": "",
-        "available_model": "",
-    }
-    try:
-        providers = await _get_svc(db).list()
-        saved_names = set(_get_key_manager().list_providers())
-        builtin = read_builtin_providers()
-        default_model = config.llm_default_model or ""
-        project_model_values = await read_project_models(db)
-    except Exception:
-        logger.warning("chat 模型候选构建失败：注册表/凭据读取异常")
-        return empty
-
+    builtin = read_builtin_providers()
     candidates: list[tuple[str, str, str]] = []
     seen: set[str] = set()
 
@@ -269,9 +278,7 @@ async def chat_model_options(db: AsyncSession = Depends(get_db)) -> dict:
 
     def _resolvable(model: str) -> bool:
         """经唯一可解析谓词判定（含 builtin 凭据源）。"""
-        return is_chat_model_resolvable(
-            model, providers, saved_names, builtin_providers=builtin
-        )
+        return is_chat_model_resolvable(model, providers, saved_names, builtin_providers=builtin)
 
     for provider in providers:
         for model in provider.models:

@@ -2552,6 +2552,9 @@ export interface paths {
         /**
          * List Provider Configs
          * @description 注册表列表（spec §8.3）— {items, total} 信封，每项含 key_saved + models.
+         *
+         *     #1129：信封额外携带 ``chat_model_source``（chat 模型候选四源），供 GUI 下拉与
+         *     就绪判据同源消费。取数失败 → 该键降级为空结构，绝不打崩列表（主路径优先）。
          */
         get: operations["list_provider_configs_api_v1_provider_configs_get"];
         put?: never;
@@ -2562,38 +2565,6 @@ export interface paths {
          *     #936 C：查询参数 `force=true` 跳过保存前模型探测门禁（透传 service，keyword）。
          */
         post: operations["create_provider_config_api_v1_provider_configs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/provider-configs/chat-model-options": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Chat Model Options
-         * @description chat 模型候选列表（#1129）——与首启判据同源，故下拉永不再空。
-         *
-         *     候选构建顺序（按 value 去重）：
-         *
-         *     1. 注册表各 provider 的 ``models[type == "chat"]`` → ``name/id``（``registry``）；
-         *     2. 注册表各 provider 的 ``default_model``（非空白且可解析）→ ``provider_default``；
-         *     3. ``config.llm_default_model``（可解析）→ ``global_default``；
-         *     4. 各项目 ``config.model``（可解析）→ ``project``。
-         *
-         *     可解析性一律经 ``is_chat_model_resolvable``（单一真相：注册表确知 embedding 阻断 +
-         *     凭据判定），不在此重写第二套逻辑。``available_model`` = 首个可解析候选。
-         *
-         *     任何内部失败（DB / 凭据读取异常）→ 200 + 空结构（键恒 5 个），绝不让下拉 500。
-         */
-        get: operations["chat_model_options_api_v1_provider_configs_chat_model_options_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11699,28 +11670,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    chat_model_options_api_v1_provider_configs_chat_model_options_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
         };
