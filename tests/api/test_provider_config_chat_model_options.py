@@ -319,6 +319,88 @@ class TestChatModelOptions1129:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_all_four_sources_in_one_response_1129(
+        self,
+        client,
+        override_get_db,
+        patch_keys,
+        db_session,
+        _isolate_global_default,
+    ) -> None:
+        """四源同响应：注册表 chat 条目 ｜ provider.default_model ｜ 全局默认 ｜ 项目级。
+
+        覆盖候选构建全路径（顺序 = 注册表 → provider_default → global_default → project，
+        按 value 去重）。
+        """
+        await _seed_provider(
+            db_session,
+            "deepseek",
+            model_types=["chat"],
+            model_ids=["deepseek-chat"],
+            default_model="deepseek/deepseek-v4-flash",
+        )
+        await _seed_provider(db_session, "openai", default_model="openai/gpt-4o")
+        await _seed_project_model(db_session, "deepseek/project-model")
+        _isolate_global_default.llm_default_model = "deepseek/global-model"
+        with patch_keys({"deepseek", "openai"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["chat_models"] == [
+            "deepseek/deepseek-chat",
+            "deepseek/deepseek-v4-flash",
+            "openai/gpt-4o",
+            "deepseek/global-model",
+            "deepseek/project-model",
+        ]
+        assert body["default_model"] == "deepseek/global-model"
+        assert body["project_models"] == ["deepseek/project-model"]
+        # available_model = 首个可解析候选
+        assert body["available_model"] == "deepseek/deepseek-chat"
+        sources = [o["source"] for o in body["options"]]
+        assert sources == [
+            "registry",
+            "provider_default",
+            "provider_default",
+            "global_default",
+            "project",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_provider_default_unresolvable_skipped(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """provider.default_model 存在但不可解析（无 key）→ 不进候选（_resolvable 为假分支）。"""
+        await _seed_provider(db_session, "deepseek", default_model="deepseek/dm")
+        with patch_keys(set()):
+            resp = await client.get(ENDPOINT)
+        body = resp.json()
+        assert body["chat_models"] == []
+        assert body["available_model"] == ""
+
+    @pytest.mark.asyncio
+    async def test_provider_with_blank_default_model_skipped(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """provider.default_model 空白 → 跳过（provider_default 假值分支）。"""
+        await _seed_provider(db_session, "deepseek", default_model="   ")
+        with patch_keys({"deepseek"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.json()["chat_models"] == []
+
+    @pytest.mark.asyncio
+    async def test_project_model_unresolvable_skipped(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """项目级模型不可解析（无 key）→ 不进候选，project_models 为空。"""
+        await _seed_project_model(db_session, "deepseek/dm")
+        with patch_keys(set()):
+            resp = await client.get(ENDPOINT)
+        body = resp.json()
+        assert body["project_models"] == []
+        assert body["chat_models"] == []
+
+    @pytest.mark.asyncio
     async def test_registry_failure_degrades_not_500(
         self, client, override_get_db, patch_keys
     ) -> None:
@@ -341,3 +423,110 @@ class TestChatModelOptions1129:
             "available_model",
         }
         assert body["options"] == []
+
+
+class TestChatModelOptionsEdgeBranches1129:
+    """覆盖候选构建的边界分支（降级/去重/无 key 候选）。"""
+
+    @pytest.mark.asyncio
+    async def test_blank_and_duplicate_project_models_skipped(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """项目级模型：空白值跳过、重复值只入一次（去重分支）。"""
+        await _seed_provider(db_session, "deepseek")
+        await _seed_project_model(db_session, "deepseek/dm-a")
+        await _seed_project_model(db_session, "deepseek/dm-a")  # 重复
+        await _seed_project_model(db_session, "   ")  # 空白
+        with patch_keys({"deepseek"}):
+            resp = await client.get(ENDPOINT)
+        body = resp.json()
+        assert body["project_models"] == ["deepseek/dm-a"]
+        assert body["chat_models"].count("deepseek/dm-a") == 1
+
+    @pytest.mark.asyncio
+    async def test_registry_chat_without_key_still_listed_but_unavailable(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """注册表 chat 条目无 key → 仍在 options（展示用）但 available_model 为空
+        （可解析性由凭据把关，展示与可用性分离）。
+        """
+        await _seed_provider(
+            db_session, "deepseek", model_types=["chat"], model_ids=["deepseek-chat"]
+        )
+        with patch_keys(set()):
+            resp = await client.get(ENDPOINT)
+        body = resp.json()
+        assert "deepseek/deepseek-chat" in body["chat_models"]
+        assert body["available_model"] == ""
+        option = next(
+            o for o in body["options"] if o["model"] == "deepseek/deepseek-chat"
+        )
+        assert option["has_key"] is False
+
+    @pytest.mark.asyncio
+    async def test_builtin_provider_candidate_has_key_true_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """内置 provider（ollama 占位）候选：has_key 反映 builtin 源为真。"""
+        await _seed_provider(
+            db_session, "ollama", model_types=["chat"], model_ids=["qwen2.5"]
+        )
+        with patch_keys(set()):
+            resp = await client.get(ENDPOINT)
+        body = resp.json()
+        assert body["available_model"] == "ollama/qwen2.5"
+        option = next(o for o in body["options"] if o["model"] == "ollama/qwen2.5")
+        assert option["has_key"] is True  # builtin.get("ollama") 为真
+
+    @pytest.mark.asyncio
+    async def test_project_model_reading_failure_degrades(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """项目级读取异常 → 该源退化为空，注册表候选仍正常返回（单源失败不阻断）。"""
+        await _seed_provider(
+            db_session, "deepseek", model_types=["chat"], model_ids=["deepseek-chat"]
+        )
+        with (
+            patch_keys({"deepseek"}),
+            patch(
+                "inkflow.api.routers.provider_configs.read_project_models",
+                side_effect=RuntimeError("project read boom"),
+            ),
+        ):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        # 整体 try 兜底 → 降级空结构（键恒 5 个，绝不让下拉 500）
+        assert set(body.keys()) == {
+            "options",
+            "chat_models",
+            "project_models",
+            "default_model",
+            "available_model",
+        }
+
+    @pytest.mark.asyncio
+    async def test_builtin_providers_reading_failure_degrades(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """内置 provider 表读取异常 → 该源退化为 {}（单源失败不阻断）。"""
+        await _seed_provider(
+            db_session, "deepseek", model_types=["chat"], model_ids=["deepseek-chat"]
+        )
+        with (
+            patch_keys({"deepseek"}),
+            patch(
+                "inkflow.api.routers.provider_configs.read_builtin_providers",
+                side_effect=RuntimeError("builtin boom"),
+            ),
+        ):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body.keys()) == {
+            "options",
+            "chat_models",
+            "project_models",
+            "default_model",
+            "available_model",
+        }

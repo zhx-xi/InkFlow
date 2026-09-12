@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from inkflow.domain.models.provider_config import ProviderConfig, ProviderModel
 from inkflow.domain.services.model_readiness import compute_readiness
 
@@ -343,3 +345,108 @@ def test_is_chat_model_resolvable_shared_predicate() -> None:
     )
     assert not is_chat_model_resolvable("", providers, {"zhipu"}, builtin_providers={})
     assert not is_chat_model_resolvable(None, providers, {"zhipu"}, builtin_providers={})
+
+
+def test_is_chat_model_resolvable_rejects_malformed_forms() -> None:
+    """谓词边界：无斜杠 / 空 provider 段 / 空模型段 → 一律 False（不误判为可用）。"""
+    from inkflow.domain.services.model_readiness import is_chat_model_resolvable
+
+    providers = [_pc("deepseek", [_chat("dm")])]
+    saved = {"deepseek"}
+    assert not is_chat_model_resolvable("no-slash", providers, saved, builtin_providers={})
+    assert not is_chat_model_resolvable("/dm", providers, saved, builtin_providers={})
+    assert not is_chat_model_resolvable("deepseek/", providers, saved, builtin_providers={})
+    assert not is_chat_model_resolvable(
+        "deepseek/   ", providers, saved, builtin_providers={}
+    )
+
+
+def test_registry_model_type_skips_other_providers() -> None:
+    """注册表查 type：遍历跳过非目标 provider；目标 provider 无该条目 → None（放行）。"""
+    from inkflow.domain.services.model_readiness import is_chat_model_resolvable
+
+    providers = [
+        _pc("openai", [_embedding("text-embedding-3-small")]),
+        _pc("deepseek", [_chat("dm")]),
+    ]
+    saved = {"openai", "deepseek"}
+    # 目标 provider 在列表后段（必须先 skip 掉 openai 才命中 deepseek）
+    assert is_chat_model_resolvable("deepseek/dm", providers, saved, builtin_providers={})
+    # 目标 provider 无该条目 → None ≠ "embedding" → 放行
+    assert is_chat_model_resolvable(
+        "deepseek/unknown", providers, saved, builtin_providers={}
+    )
+
+
+# ── 装配 helper 的降级分支（单源失败绝不阻断主路径） ──
+
+
+def test_read_builtin_providers_returns_mapping() -> None:
+    """read_builtin_providers 正常返回 dict（含 ollama 占位）。"""
+    from inkflow.domain.services.model_readiness import read_builtin_providers
+
+    builtin = read_builtin_providers()
+    assert isinstance(builtin, dict)
+    assert builtin.get("ollama")
+
+
+def test_read_builtin_providers_degrades_on_import_error() -> None:
+    """内置 provider 表导入失败 → {}（不冒泡。镜像 _llm_resolver 误伤防御）。"""
+    import sys
+
+    from inkflow.domain.services.model_readiness import read_builtin_providers
+
+    module = "inkflow.infrastructure.llm.provider_config"
+    saved_module = sys.modules.get(module)
+    sys.modules[module] = None  # type: ignore[assignment]  # 触发 ImportError
+    try:
+        assert read_builtin_providers() == {}
+    finally:
+        if saved_module is not None:
+            sys.modules[module] = saved_module
+        else:
+            sys.modules.pop(module, None)
+
+
+def test_read_global_default_returns_string() -> None:
+    """_read_global_default 正常返回字符串（空配置 → ""）。"""
+    from inkflow.domain.services.model_readiness import _read_global_default
+
+    assert isinstance(_read_global_default(), str)
+
+
+@pytest.mark.asyncio
+async def test_read_project_models_degrades_on_db_error() -> None:
+    """项目表读取失败 → []（端点 helper 绝不冒泡；镜像 read_builtin_providers）。"""
+    from inkflow.domain.services.model_readiness import read_project_models
+
+    class _Boom:
+        async def scalars(self, *_args, **_kwargs):
+            raise RuntimeError("db boom")
+
+    assert await read_project_models(_Boom()) == []  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_read_project_models_extracts_only_valid_model_values() -> None:
+    """项目模型抽取：非 dict / 无 model 键 / 非字符串 / 空白 → 跳过；合法值保留。"""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from inkflow.domain.services.model_readiness import read_project_models
+    from inkflow.infrastructure.database.models.project import ProjectORM
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(ProjectORM.metadata.create_all) if hasattr(
+            ProjectORM, "metadata"
+        ) else None
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        session.add(ProjectORM(name="valid", config={"model": "deepseek/dm"}))
+        session.add(ProjectORM(name="blank", config={"model": "   "}))
+        session.add(ProjectORM(name="no-model", config={}))
+        session.add(ProjectORM(name="not-str", config={"model": 123}))
+        await session.commit()
+        models = await read_project_models(session)
+    await engine.dispose()
+    assert models == ["deepseek/dm"]
