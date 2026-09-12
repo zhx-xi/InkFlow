@@ -601,12 +601,16 @@ class OutlineService:
             outline_id: 大纲主键（支持 int 或 UUID）.
 
         Returns:
-            该大纲的情节点列表；大纲不存在返回空列表.
+            该大纲的情节点列表（大纲存在但无情节点 → 空列表）.
+
+        Raises:
+            OutlineNotFoundError: 大纲不存在（#1139：空列表 ≠ 父不存在，
+                router 转 404「大纲不存在」）.
         """
         oid = _to_int_id(outline_id)
         outline = await self._repo.get(oid)
         if outline is None:
-            return []
+            raise OutlineNotFoundError()
         return await self._repo.list_points(oid)
 
     # ── StoryArc ───────────────────────────────────────────────

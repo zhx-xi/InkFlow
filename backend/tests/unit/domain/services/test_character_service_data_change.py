@@ -22,6 +22,7 @@ from inkflow.domain.models.character import (
     CharacterRelation,
     CharacterUpdate,
 )
+from inkflow.domain.models.project import Project
 from inkflow.domain.ports.character_errors import CharacterNameConflictError
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
@@ -117,11 +118,19 @@ def mock_repo() -> MagicMock:
     return repo
 
 
+def _project(*, project_id: uuid.UUID = PID) -> Project:
+    """构造测试用项目实体（create_* 项目存在性校验 mock 返回）."""
+    return Project(id=project_id, name="测试项目", created_at=TS, updated_at=TS)
+
+
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — extract 入口校验项目存在性。"""
+    """Mock ProjectRepositoryProtocol — 项目存在性校验（get 默认 = 项目存在）.
+
+    #1138 起 create_group 落库前校验项目存在，故默认返回真实 Project。
+    """
     repo = MagicMock(spec=ProjectRepositoryProtocol)
-    repo.get = AsyncMock(return_value=None)
+    repo.get = AsyncMock(return_value=_project())
     return repo
 
 
