@@ -6,7 +6,7 @@
 ## 1. 前置条件
 
 - Windows 10/11 x64（0.4.0 仅 Windows 三产物）
-- Python 3.11+（经 uv 管理，ADR-025 依赖锁定）
+- Python 3.13+（经 uv 管理，ADR-025 依赖锁定；版本口径 ADR-058）
 - Node.js ≥ 20 + pnpm（前端依赖，ADR-025）
 
 ## 2. 内核打包（PyInstaller onedir）

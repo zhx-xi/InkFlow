@@ -55,7 +55,7 @@ Presentation → Domain ← Infrastructure
 
 | 约束 | 内容 |
 |------|------|
-| **语言** | Python 3.11+ |
+| **语言** | Python 3.13+ |
 | **Web 框架** | FastAPI (async) |
 | **CLI 框架** | Typer |
 | **ORM** | SQLAlchemy 2.0 async |
