@@ -58,7 +58,7 @@
 
 ## 🚀 快速开始
 
-前置：**Python 3.11+**，推荐 [uv](https://docs.astral.sh/uv/)。
+前置：**Python 3.13+**，推荐 [uv](https://docs.astral.sh/uv/)。
 
 ```bash
 # 1. 克隆
@@ -130,7 +130,7 @@ uv run inkflow serve
 
 ## 🛠️ 技术栈
 
-Python 3.11 · FastAPI（REST）· Typer（CLI）· SQLAlchemy 2 async + SQLite（未来 PostgreSQL）· LangChain / LangGraph + Deep Agents harness（deepagents 0.7.5，agentic 编排，0.7.0 起）+ 自研 LangGraph StateGraph Supervisor 动态路由（F29，0.8.0 起）· Chroma + BGE（RAG）· React 19 + Vite 6 + shadcn/ui + Zustand + Tailwind 4（前端，0.3.0 起）· Electron 34（桌面壳，0.3.0 起）
+Python 3.13 · FastAPI（REST）· Typer（CLI）· SQLAlchemy 2 async + SQLite（未来 PostgreSQL）· LangChain / LangGraph + Deep Agents harness（deepagents 0.7.5，agentic 编排，0.7.0 起）+ 自研 LangGraph StateGraph Supervisor 动态路由（F29，0.8.0 起）· Chroma + BGE（RAG）· React 19 + Vite 6 + shadcn/ui + Zustand + Tailwind 4（前端，0.3.0 起）· Electron 34（桌面壳，0.3.0 起）
 
 架构：**模块化单体 + Clean Architecture**（domain / infrastructure / api / cli 分层，依赖方向单向），决策全部记录于 [`adr/`](adr/README.md)。
 

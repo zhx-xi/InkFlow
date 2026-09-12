@@ -580,7 +580,7 @@ class SearchRepositoryProtocol(Protocol):
 | F2/F9/F10/F11/F12/F13 | 硬依赖 | 6 类索引数据源（只读） |
 | F16 jieba | 硬依赖 | 中文分词（0.42.1 已锁定，零新增） |
 | F14 RAG | 条件依赖（mode=semantic 时） | VectorStoreProtocol + chromadb + BGE（复用，零新增） |
-| SQLite FTS5 | 硬依赖 | 倒排索引（实测 3.50.4 已启用；CI 3.11 验证） |
+| SQLite FTS5 | 硬依赖 | 倒排索引（实测 3.50.4 已启用；CI 3.13 验证） |
 | F19 #77 | 硬依赖 | token 中间件（API 端点受保护） |
 | F7 CLI | 硬依赖 | `--json` 信封/退出码约定 |
 | #208 F34 章节审计 | **非阻塞关联** | 增强触发点（审计确认 → 增量），落地后接入；F22 不等待 |
