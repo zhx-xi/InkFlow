@@ -152,9 +152,7 @@ async def _seed_provider(
 
     types = model_types or []
     ids = model_ids or [f"m{i}" for i in range(len(types))]
-    entries = [
-        {"id": mid, "type": t, "roles": []} for mid, t in zip(ids, types, strict=False)
-    ]
+    entries = [{"id": mid, "type": t, "roles": []} for mid, t in zip(ids, types, strict=False)]
     db_session.add(
         ProviderConfigORM(
             name=name,
@@ -224,9 +222,7 @@ class TestChatModelOptions1129:
         assert body["available_model"] == "deepseek/deepseek-v4-flash"
         assert "deepseek/deepseek-v4-flash" in body["chat_models"]
         assert "deepseek/deepseek-v4-flash" in body["project_models"]
-        option = next(
-            o for o in body["options"] if o["model"] == "deepseek/deepseek-v4-flash"
-        )
+        option = next(o for o in body["options"] if o["model"] == "deepseek/deepseek-v4-flash")
         assert option["source"] == "project"
         assert option["provider"] == "deepseek"
         assert option["has_key"] is True
@@ -458,9 +454,7 @@ class TestChatModelOptionsEdgeBranches1129:
         body = resp.json()
         assert "deepseek/deepseek-chat" in body["chat_models"]
         assert body["available_model"] == ""
-        option = next(
-            o for o in body["options"] if o["model"] == "deepseek/deepseek-chat"
-        )
+        option = next(o for o in body["options"] if o["model"] == "deepseek/deepseek-chat")
         assert option["has_key"] is False
 
     @pytest.mark.asyncio
@@ -468,9 +462,7 @@ class TestChatModelOptionsEdgeBranches1129:
         self, client, override_get_db, patch_keys, db_session
     ) -> None:
         """内置 provider（ollama 占位）候选：has_key 反映 builtin 源为真。"""
-        await _seed_provider(
-            db_session, "ollama", model_types=["chat"], model_ids=["qwen2.5"]
-        )
+        await _seed_provider(db_session, "ollama", model_types=["chat"], model_ids=["qwen2.5"])
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)
         body = resp.json()

@@ -304,9 +304,7 @@ def test_resolvable_model_without_key_not_ready_1129() -> None:
     「可解析」= 模型名可解析 **且** 凭据可用（与 resolve_llm_credentials 同真相）。
     """
     providers = [_pc("deepseek", [], default_model="deepseek/deepseek-v4-flash")]
-    result = compute_readiness(
-        providers, set(), project_models=["deepseek/deepseek-v4-flash"]
-    )
+    result = compute_readiness(providers, set(), project_models=["deepseek/deepseek-v4-flash"])
     assert result.ready is False
     assert result.reason == "no_key"
 
@@ -334,15 +332,11 @@ def test_is_chat_model_resolvable_shared_predicate() -> None:
     from inkflow.domain.services.model_readiness import is_chat_model_resolvable
 
     providers = [_pc("zhipu", [_embedding("embedding-3")])]
-    assert is_chat_model_resolvable(
-        "zhipu/glm-4.5", providers, {"zhipu"}, builtin_providers={}
-    )
+    assert is_chat_model_resolvable("zhipu/glm-4.5", providers, {"zhipu"}, builtin_providers={})
     assert not is_chat_model_resolvable(
         "zhipu/embedding-3", providers, {"zhipu"}, builtin_providers={}
     )
-    assert not is_chat_model_resolvable(
-        "zhipu/glm-4.5", providers, set(), builtin_providers={}
-    )
+    assert not is_chat_model_resolvable("zhipu/glm-4.5", providers, set(), builtin_providers={})
     assert not is_chat_model_resolvable("", providers, {"zhipu"}, builtin_providers={})
     assert not is_chat_model_resolvable(None, providers, {"zhipu"}, builtin_providers={})
 
@@ -356,9 +350,7 @@ def test_is_chat_model_resolvable_rejects_malformed_forms() -> None:
     assert not is_chat_model_resolvable("no-slash", providers, saved, builtin_providers={})
     assert not is_chat_model_resolvable("/dm", providers, saved, builtin_providers={})
     assert not is_chat_model_resolvable("deepseek/", providers, saved, builtin_providers={})
-    assert not is_chat_model_resolvable(
-        "deepseek/   ", providers, saved, builtin_providers={}
-    )
+    assert not is_chat_model_resolvable("deepseek/   ", providers, saved, builtin_providers={})
 
 
 def test_registry_model_type_skips_other_providers() -> None:
@@ -373,9 +365,7 @@ def test_registry_model_type_skips_other_providers() -> None:
     # 目标 provider 在列表后段（必须先 skip 掉 openai 才命中 deepseek）
     assert is_chat_model_resolvable("deepseek/dm", providers, saved, builtin_providers={})
     # 目标 provider 无该条目 → None ≠ "embedding" → 放行
-    assert is_chat_model_resolvable(
-        "deepseek/unknown", providers, saved, builtin_providers={}
-    )
+    assert is_chat_model_resolvable("deepseek/unknown", providers, saved, builtin_providers={})
 
 
 # ── 装配 helper 的降级分支（单源失败绝不阻断主路径） ──
