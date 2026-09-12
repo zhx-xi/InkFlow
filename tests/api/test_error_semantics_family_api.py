@@ -45,8 +45,15 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 
 from inkflow.api.app import app
+from inkflow.infrastructure.database.models.chapter import VolumeORM
+from inkflow.infrastructure.database.models.character import CharacterGroupORM
+from inkflow.infrastructure.database.models.world import (
+    WorldCategoryORM,
+    WorldSettingORM,
+)
 
 pytestmark = pytest.mark.asyncio  # F27 实测必写（asyncio_mode=auto 双保险）
 
@@ -256,15 +263,6 @@ class TestCreateRequiresExistingProject:
         self, client, db_session, override_get_db, template, body, table
     ):
         """不存在的 project_id（随机 uuid4）→ 404「项目不存在」且目标表 0 行。"""
-        from sqlalchemy import func, select
-
-        from inkflow.infrastructure.database.models.character import CharacterGroupORM
-        from inkflow.infrastructure.database.models.chapter import VolumeORM
-        from inkflow.infrastructure.database.models.world import (
-            WorldCategoryORM,
-            WorldSettingORM,
-        )
-
         orm_map = {
             "world_settings": WorldSettingORM,
             "world_categories": WorldCategoryORM,
