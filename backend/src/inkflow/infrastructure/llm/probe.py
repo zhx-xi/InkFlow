@@ -4,11 +4,15 @@ domain 定义 `LLMProbeProtocol`，本模块提供实现（ADR-015 依赖倒置�
 `LangChainLLMClient` 的 chat 语义 + `LiteLLMEmbeddings` 的 embedding 语义；
 不 import api 层 `settings.py` 的私有函数（跨层），在本模块写等价实现。
 两类探测失败均抛出异常（由 service 转 422）。
+探测请求钉固定小预算（PROBE_REQUEST_TIMEOUT_S）——连通探测不得继承 provider 120s 业务超时（#1117）。
 """
 
 from __future__ import annotations
 
 import asyncio
+
+# 连通探测请求超时预算（秒）：最小连通性探针，不继承 provider 120s 业务超时（#1117）。
+PROBE_REQUEST_TIMEOUT_S = 15
 
 
 class InfrastructureLLMProbe:
@@ -31,9 +35,14 @@ class InfrastructureLLMProbe:
                 default_model=model_ref,
                 api_key=api_key,
                 openai_api_base=base_url,
+                request_timeout=PROBE_REQUEST_TIMEOUT_S,
             )
         else:
-            client = LangChainLLMClient(default_model=model_ref, api_key=api_key)
+            client = LangChainLLMClient(
+                default_model=model_ref,
+                api_key=api_key,
+                request_timeout=PROBE_REQUEST_TIMEOUT_S,
+            )
         probe = client.chat([ChatMessage(role="user", content="ping")])
         # LLMClientProtocol.chat 为 async 协程；防御探测桩返回非 awaitable 的边界
         if asyncio.iscoroutine(probe):
@@ -54,6 +63,7 @@ class InfrastructureLLMProbe:
             model=f"openai/{model.split('/', 1)[-1]}",
             api_key=api_key,
             api_base=base_url or None,
+            request_timeout=PROBE_REQUEST_TIMEOUT_S,
         )
         vector: list[float] = await asyncio.to_thread(embeddings.embed_query, "0")
         return len(vector)

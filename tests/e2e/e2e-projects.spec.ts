@@ -21,6 +21,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -73,6 +74,8 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   const kernel = await waitKernelInfo(app);
   // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」以通过首启引导门控
   await ensureModelConfigured(kernel);
+  // 冷启动就绪握手（#1125）：内核就绪 + 模型预置 ≠ 渲染层已出 boot gate。
+  await awaitAppReady(window, expect);
   return { app, window, kernel };
 }
 
@@ -86,6 +89,7 @@ async function gotoNav(window: Page, name: string): Promise<void> {
  * 契约：创建成功 → navigate('/writing')，等待写作页 project-tree 出现。
  */
 async function createProjectViaUi(window: Page, name: string): Promise<void> {
+  await expect(window.getByTestId('new-project-btn')).toBeVisible({ timeout: 30_000 });
   await window.getByTestId('new-project-btn').click();
   const dlg = window.getByRole('dialog');
   // getByLabel 通过关联 label / aria-label 查找（dialog 内唯一）

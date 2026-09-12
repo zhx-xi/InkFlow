@@ -44,6 +44,7 @@ class LangChainLLMClient:
         max_retries: int | None = None,
         api_key: str | None = None,
         openai_api_base: str | None = None,
+        request_timeout: int | None = None,
     ) -> None:
         self._default_model = default_model or config.llm_default_model
         self._temperature = temperature if temperature is not None else config.llm_temperature
@@ -51,6 +52,8 @@ class LangChainLLMClient:
         self._api_key = api_key
         # 可选自定义端点覆盖（连通探测 openai_api_base，优先于 provider 注册表 base_url）
         self._openai_api_base = openai_api_base
+        # 可选请求超时覆盖（连通探测固定小预算；None = 沿用 provider_cfg.timeout）
+        self.request_timeout = request_timeout
 
     # ── Public API ──
 
@@ -240,6 +243,8 @@ class LangChainLLMClient:
 
         reasoning_effort: F59 可选思考档位——经 apply_reasoning_effort 注入
         ChatLiteLLM kwargs（default/None 不发送；超能力软降级见 §5.5）。
+
+        request_timeout: 客户端级覆盖（连通探测钉小预算；None 时沿用 provider_cfg.timeout）。
         """
         model = model_name or provider_cfg.default_model
         if model and "/" not in model:
@@ -252,7 +257,9 @@ class LangChainLLMClient:
             "model": full_model,
             "temperature": temp,
             "max_retries": provider_cfg.max_retries,
-            "request_timeout": float(provider_cfg.timeout),
+            "request_timeout": float(
+                self.request_timeout if self.request_timeout is not None else provider_cfg.timeout
+            ),
         }
         if provider_cfg.api_key:
             chat_kwargs["api_key"] = provider_cfg.api_key
@@ -262,9 +269,7 @@ class LangChainLLMClient:
             chat_kwargs["max_tokens"] = max_tokens
         # #1039：档位可行动时才查注册表手动覆盖（None/"default" 不查——构造点在每条链上）
         manual = (
-            resolve_reasoning_manual(model)
-            if reasoning_effort not in (None, "default")
-            else None
+            resolve_reasoning_manual(model) if reasoning_effort not in (None, "default") else None
         )
         decision = apply_reasoning_effort(
             chat_kwargs,
