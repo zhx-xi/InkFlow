@@ -1,4 +1,4 @@
-"""F60 首启模型就绪判据 API 契约测试（RED — #934 §3.1/§9.2）。
+"""F60 首启模型就绪判据 API 契约测试（#934 §3.1/§9.2 + #1129 多源收敛）。
 
 被测端点：`GET /api/v1/settings/model-readiness`（挂既有 settings router）。
 
@@ -31,6 +31,22 @@
 
 6. 【500 契约】DB/内部异常 → 500 + `{"detail": "就绪状态查询失败，请稍后重试"}`
    （ADR-012 通用文案，不泄漏内部细节）。
+
+════════════════════════════════════════════════════════════════════
+#1129 追加契约（阻断级：判据与真实可用性脱节）
+════════════════════════════════════════════════════════════════════
+
+7. 【第二数据源】就绪判据不得只查注册表 `models[]`。写作链真实可用性由
+   `resolve_model(None, project.config.model, config.llm_default_model)` 判定
+   （api/_llm_resolver.py:37），故端点须并入同源数据：
+     (a) 项目级 `projects.config.model`（json）/ 全局默认（`config.llm_default_model`）
+     (b) provider 的 `default_model` 字段（#735 D2 自动设默认只写这里 + config.json，
+         **从不回写 models[]** ← issue 根因，provider_config_service.py:226-233）
+   provider 的 key 可用性不得只看 `models[]`——`provider_configs` 行的存在性
+   即表明用户已配好该 provider（set-key 路径只写 key，不建 models[]）。
+
+8. 【反例守护】只有 embedding 且无任何 project/global 默认 → 仍
+   `ready=False, reason='no_chat_model'`（#929 形态不得回归）。
 
 RED 阶段预期：端点未注册 → 全部用例 FAIL/ERROR。
 ════════════════════════════════════════════════════════════════════
@@ -147,23 +163,42 @@ async def _seed_provider(
     models: list[ProviderConfig],
     *,
     model_types: list[str] | None = None,
+    default_model: str | None = None,
+    model_ids: list[str] | None = None,
 ) -> None:
     """插入一个 provider 行（models JSON = [{id,type,roles}] 形态）。
 
     直接走 ORM 表以便端点经同一 session 读到（设计假设 #4）。
+    `default_model` / `model_ids` 供 #1129 第二数据源契约使用。
     """
     from inkflow.infrastructure.database.models.provider_config import ProviderConfigORM
 
     types = model_types or []
-    entries = [{"id": f"m{i}", "type": t, "roles": []} for i, t in enumerate(types)]
+    ids = model_ids or [f"m{i}" for i in range(len(types))]
+    entries = [
+        {"id": mid, "type": t, "roles": []} for mid, t in zip(ids, types, strict=False)
+    ]
     row = ProviderConfigORM(
         name=name,
         base_url="",
-        default_model=None,
+        default_model=default_model,
         models=entries,
         max_retries=3,
         timeout=120,
     )
+    db_session.add(row)
+    await db_session.commit()
+
+
+async def _seed_project_model(db_session: AsyncSession, model: str) -> None:
+    """插入一个项目行，config.model = 指定模型（#1129 项目级数据源）。
+
+    项目级模型是写作链最高优先级（#735：project > global），故端点必须读它。
+    id 交给 DB 自增/默认（UUID 列由 ORM 侧处理，镜像既有测试的 `ProjectORM(name=...)` 用法）。
+    """
+    from inkflow.infrastructure.database.models.project import ProjectORM
+
+    row = ProjectORM(name="p-1129", config={"model": model})
     db_session.add(row)
     await db_session.commit()
 
@@ -302,3 +337,149 @@ class TestModelReadinessErrors:
         assert resp.status_code == 500
         assert resp.json()["detail"] == "就绪状态查询失败，请稍后重试"
         assert "boom-internal-detail" not in resp.text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# #1129：多源判据（端点级）—— 判据与真实可用性脱节（阻断级）
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestModelReadinessMultiSource1129:
+    """#1129 阻断形态：provider_configs 行有 default_model、models[] 为空
+    （= `llm set-key` 只写 key 的正常路径）→ 必须 ready=True。
+
+    旧判据在此恒 false → GUI 引导页锁死。这些用例是 issue 的回归锚，
+    断言强度 = 端点对**第二数据源**的真实消费（非只改纯函数签名）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_provider_default_model_with_key_is_ready_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """场景 1（端点级）：注册表行 default_model 已设 + key 已存 + models[] 空 → ready。
+
+        #735 D2 自动设默认、`llm set-key` 只写 key——都不写 models[]，这是正常路径。
+        """
+        await _seed_provider(
+            db_session,
+            "deepseek",
+            [],
+            default_model="deepseek/deepseek-v4-flash",
+        )
+        with patch_keys({"deepseek"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ready"] is True
+        assert body["has_chat_model"] is True
+        assert body["reason"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_project_config_model_with_key_is_ready_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """场景 1b（端点级）：项目级 config.model 可解析 + provider 行存在 + key 已存 → ready。
+
+        项目级模型是写作链最高优先级（#735 project > global），判据必须读它。
+        """
+        await _seed_provider(db_session, "deepseek", [], default_model=None)
+        await _seed_project_model(db_session, "deepseek/deepseek-v4-flash")
+        with patch_keys({"deepseek"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        assert resp.json()["ready"] is True
+
+    @pytest.mark.asyncio
+    async def test_global_default_model_is_ready_1129(
+        self, client, override_get_db, patch_keys, db_session, monkeypatch
+    ) -> None:
+        """场景 2（端点级）：仅全局默认（config.llm_default_model）→ ready。
+
+        patch config 模块单例的 llm_default_model（`config set default.model`
+        与 #735 D2 自动设默认的落点）。
+        """
+        from inkflow.core.config import config as _cfg
+
+        await _seed_provider(db_session, "deepseek", [], default_model=None)
+        monkeypatch.setattr(_cfg, "llm_default_model", "deepseek/deepseek-v4-flash")
+        with patch_keys({"deepseek"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        assert resp.json()["ready"] is True
+
+    @pytest.mark.asyncio
+    async def test_registry_chat_entry_still_ready_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """场景 3（端点级）：注册表 models[type=chat] + key → ready（#934 语义不回归）。"""
+        await _seed_provider(
+            db_session,
+            "deepseek",
+            [],
+            model_types=["chat"],
+            model_ids=["deepseek-v4-flash"],
+        )
+        with patch_keys({"deepseek"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        assert resp.json()["ready"] is True
+
+    @pytest.mark.asyncio
+    async def test_only_embedding_still_not_ready_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """场景 4（反例守护，端点级）：只有 embedding 条目 + key、无默认模型 → 仍阻断。
+
+        #929 形态不得因多源收敛而回归放行。
+        """
+        await _seed_provider(
+            db_session,
+            "zhipu",
+            [],
+            model_types=["embedding"],
+            model_ids=["embedding-3"],
+        )
+        with patch_keys({"zhipu"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ready"] is False
+        assert body["reason"] == "no_chat_model"
+        assert body["has_embedding_model"] is True
+
+    @pytest.mark.asyncio
+    async def test_embedding_model_as_project_model_not_ready_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """场景 5（端点级）：project.config.model 指向注册表确知 embedding 模型 → 不就绪。
+
+        防止 readiness 从 embedding 误装配通道（#929 R1）重新放行。
+        """
+        await _seed_provider(
+            db_session,
+            "zhipu",
+            [],
+            model_types=["embedding"],
+            model_ids=["embedding-3"],
+        )
+        await _seed_project_model(db_session, "zhipu/embedding-3")
+        with patch_keys({"zhipu"}):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ready"] is False
+        assert body["has_chat_model"] is False
+
+    @pytest.mark.asyncio
+    async def test_resolvable_model_without_key_not_ready_1129(
+        self, client, override_get_db, patch_keys, db_session
+    ) -> None:
+        """反例守护（端点级）：有 project 模型名但 provider 无 key → no_key。"""
+        await _seed_provider(db_session, "deepseek", [], default_model=None)
+        await _seed_project_model(db_session, "deepseek/deepseek-v4-flash")
+        with patch_keys(set()):
+            resp = await client.get(ENDPOINT)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ready"] is False
+        assert body["reason"] == "no_key"

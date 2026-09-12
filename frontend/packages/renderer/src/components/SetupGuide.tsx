@@ -33,6 +33,7 @@ type Step = 1 | 2 | 3;
 export function SetupGuide() {
   const { t } = useI18n();
   const providers = useModelsStore((s) => s.providers);
+  const chatModelSource = useModelsStore((s) => s.chatModelSource);
   const loadProviders = useModelsStore((s) => s.loadProviders);
   const addModel = useModelsStore((s) => s.addModel);
   const loadReadiness = useModelReadinessStore((s) => s.load);
@@ -49,7 +50,8 @@ export function SetupGuide() {
     void loadProviders();
   }, [loadProviders]);
 
-  const chatOptions = selectChatModelOptions(providers);
+  // #1129：并入同源候选（项目级 / 全局默认）——只认注册表时此下拉为空 → 用户死路
+  const chatOptions = selectChatModelOptions(providers, chatModelSource);
 
   /** 步骤 1 → 2：至少一个 provider 已注册（key 由 ProviderDialog 内联存储） */
   const hasProvider = providers.length > 0;

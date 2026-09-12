@@ -533,4 +533,60 @@ describe('models store — chat 模型扁平化 selector（F42 #268）', () => {
       'zhipu/glm-4.5',
     ]);
   });
+
+  /**
+   * #1129（阻断级）：注册表 chat 条目为空时，下拉必须能从第二数据源取到候选
+   * （项目级 config.model / 全局默认），否则首启引导页下拉全空 → 用户死路。
+   */
+  it('#1129：models[] 空但 extra 有项目级模型 → 下拉非空（阻断场景）', () => {
+    const providers: ProviderConfig[] = [
+      {
+        id: 1, name: 'deepseek', base_url: 'https://api.deepseek.com/v1', default_model: '',
+        models: [],
+        key_saved: true, max_retries: 3, timeout: 60,
+        created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+      },
+    ];
+    // 旧实现（只认 models[]）→ []
+    expect(selectChatModelOptions(providers)).toEqual([]);
+    expect(
+      selectChatModelOptions(providers, {
+        project_models: ['deepseek/deepseek-v4-flash'],
+      }).map((o) => o.value),
+    ).toEqual(['deepseek/deepseek-v4-flash']);
+  });
+
+  it('#1129：extra.default_model 入候选', () => {
+    expect(
+      selectChatModelOptions([], { default_model: 'deepseek/deepseek-v4-flash' }).map(
+        (o) => o.value,
+      ),
+    ).toEqual(['deepseek/deepseek-v4-flash']);
+  });
+
+  it('#1129：注册表条目优先 + 与 extra 去重', () => {
+    const providers: ProviderConfig[] = [
+      {
+        id: 1, name: 'deepseek', base_url: '', default_model: '',
+        models: [{ id: 'deepseek-chat', type: 'chat', roles: [] }],
+        key_saved: true, max_retries: 3, timeout: 60,
+        created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
+      },
+    ];
+    expect(
+      selectChatModelOptions(providers, {
+        project_models: ['deepseek/deepseek-chat', 'deepseek/other'],
+        default_model: 'deepseek/deepseek-chat',
+      }).map((o) => o.value),
+    ).toEqual(['deepseek/deepseek-chat', 'deepseek/other']);
+  });
+
+  it('#1129：extra 空白/无斜杠值被忽略（非法模型名不入下拉）', () => {
+    expect(
+      selectChatModelOptions([], {
+        project_models: ['', '   ', 'no-slash'],
+        default_model: '  ',
+      }),
+    ).toEqual([]);
+  });
 });
