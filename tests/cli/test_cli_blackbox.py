@@ -54,12 +54,15 @@ def _skip_ci() -> bool:
 @pytest.fixture(scope="module")
 def kernel_env(tmp_path_factory):
     """module-scope：真实内核 + 隔离 INKFLOW_DATA_DIR；teardown taskkill。"""
+    state_file = tmp_path_factory.mktemp("kernel") / "kernel.json"
     child_data_dir = tmp_path_factory.mktemp("cli-blackbox")
     prev = os.environ.get("INKFLOW_DATA_DIR")
     os.environ["INKFLOW_DATA_DIR"] = str(child_data_dir)
     handle = None
     try:
-        handle = asyncio.run(ensure_kernel(timeout=_KERNEL_TIMEOUT))
+        handle = asyncio.run(
+            ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT)
+        )
         yield SimpleNamespace(data_dir=child_data_dir)
     finally:
         if handle is not None:
@@ -87,7 +90,9 @@ def _json_result(proc: subprocess.CompletedProcess[str]) -> dict:
     return json.loads(proc.stdout)
 
 
-@pytest.mark.skipif(_skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本地黑盒验证")
+@pytest.mark.skipif(
+    _skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本地黑盒验证"
+)
 class TestCliBlackbox:
     """CLI 黑盒契约（C1-C4），真实子进程 + 真实内核。"""
 
