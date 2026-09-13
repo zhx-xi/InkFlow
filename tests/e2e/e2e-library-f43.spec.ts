@@ -411,8 +411,10 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
     await openWorldTabPlain(window);
     // #389：chips = 分类实体（无「地图」——地图归地图工作台）
+    // 分类 chips 由独立于 library-list 的数据请求渲染，CI 负载下默认 5s 不够
+    // （run 34746876962：A4 首跑红 / rerun 绿），对齐本文件既有 15s 预算。
     for (const cat of ['势力', '组织', '门派']) {
-      await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible();
+      await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible({ timeout: 15_000 });
     }
     await expect(window.getByTestId('world-cat-filter-地图')).toHaveCount(0);
     await expect(window.getByTestId('world-cat-filter-全部')).toHaveCount(0);
