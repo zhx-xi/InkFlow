@@ -21,6 +21,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -73,6 +74,10 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   const kernel = await waitKernelInfo(app);
   // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
   await ensureModelConfigured(kernel);
+  // #1125/#1130：上面两步都是主进程/后端层信号，**不等于渲染层已出 boot gate**；
+  // 首个用例冷启动时 AppLayout 仍在 BootGate，主 UI（含 new-project-btn）未挂载 →
+  // 裸 click 撞 30s 隐式等待超时（run 34744875255 首跑红 / rerun 绿）。收口等待 app-nav。
+  await awaitAppReady(window, expect);
   return { app, window, kernel };
 }
 
