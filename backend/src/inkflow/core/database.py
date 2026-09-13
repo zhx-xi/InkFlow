@@ -17,14 +17,15 @@ from sqlalchemy.types import TypeEngine
 
 from inkflow.core.config import config
 
-# #1017 章级写作要求列迁移已抽至 core/migrations_chapter.py（本文件达 900 行护栏上限，
-# 按 check_file_length.py「超限文件优先拆分」规则独立）；re-export 保持既有 import 路径可用。
+# 列迁移已抽至 core/migrations_{chapter,project}.py（900 行护栏）。
 from inkflow.core.migrations_chapter import ensure_chapters_writing_requirements_column
+from inkflow.core.migrations_project import ensure_projects_drop_legacy_genre_column
 
-__all__ = ["ensure_chapters_writing_requirements_column"]
-
+__all__ = [
+    "ensure_chapters_writing_requirements_column",
+    "ensure_projects_drop_legacy_genre_column",
+]
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
-
 
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
