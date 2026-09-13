@@ -183,3 +183,168 @@ class TestSettingUpdateToolAudit:
         )
         assert result["ok"] is True
         assert result["character_id"] == "char-1"
+
+
+class TestSettingUpdateToolOptionalFieldPassThrough:
+    """#1137 覆盖补齐：项目绑定规范化 + 可选字段透传 + 实体缺失信封。"""
+
+    @pytest.mark.asyncio
+    async def test_update_character_forwards_all_optional_fields(self) -> None:
+        """update_character 部分更新：personality/background/goals/group_ids 透传（spec §2.1）。"""
+        deps = _make_deps()
+        deps.character_service.update_character = AsyncMock(
+            return_value=SimpleNamespace(id="char-1", name="林晚")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+        character_id = uuid.uuid4()
+        group_id = uuid.uuid4()
+
+        result = json.loads(
+            await tools["update_character"].func(
+                character_id=character_id,
+                name="林晚",
+                personality="冷静",
+                background="孤儿",
+                goals="寻亲",
+                group_ids=[group_id],
+            )
+        )
+
+        assert result == {"ok": True, "character_id": "char-1", "name": "林晚"}
+        call = deps.character_service.update_character.await_args
+        assert call.args[0] == character_id
+        assert call.args[1].personality == "冷静"
+        assert call.args[1].background == "孤儿"
+        assert call.args[1].goals == "寻亲"
+        assert call.args[1].group_ids == [group_id]
+
+    @pytest.mark.asyncio
+    async def test_update_world_setting_forwards_all_optional_fields(self) -> None:
+        """update_world_setting 部分更新：category/content/parent_id 透传（spec §2.2）。"""
+        deps = _make_deps()
+        deps.world_service.update_setting = AsyncMock(
+            return_value=SimpleNamespace(id="set-1", name="魔法体系")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+        setting_id = uuid.uuid4()
+        parent_id = uuid.uuid4()
+
+        result = json.loads(
+            await tools["update_world_setting"].func(
+                setting_id=setting_id,
+                name="魔法体系",
+                category="力量",
+                content="七阶",
+                parent_id=parent_id,
+            )
+        )
+
+        assert result == {"ok": True, "setting_id": "set-1", "name": "魔法体系"}
+        call = deps.world_service.update_setting.await_args
+        assert call.args[0] == setting_id
+        assert call.args[1].category == "力量"
+        assert call.args[1].content == "七阶"
+        assert call.args[1].parent_id == parent_id
+
+    @pytest.mark.asyncio
+    async def test_update_character_missing_entity_returns_failure_envelope(self) -> None:
+        """service 返回 None（实体不存在）→ 失败信封，不抛异常。"""
+        deps = _make_deps()
+        deps.character_service.update_character = AsyncMock(return_value=None)
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+
+        result = json.loads(
+            await tools["update_character"].func(character_id="char-1", name="林晚")
+        )
+
+        assert result["ok"] is False
+        assert "角色不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_character_skips_name_when_not_provided(self) -> None:
+        """未传 name 的部分更新：name 不进入 DTO（spec §2.1 未传字段保持不变）。"""
+        deps = _make_deps()
+        deps.character_service.update_character = AsyncMock(
+            return_value=SimpleNamespace(id="char-1", name="林晚")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+
+        result = json.loads(
+            await tools["update_character"].func(character_id="char-1", personality="冷静")
+        )
+
+        assert result == {"ok": True, "character_id": "char-1", "name": "林晚"}
+        update = deps.character_service.update_character.await_args.args[1]
+        assert update.personality == "冷静"
+        assert "name" not in update.model_fields_set
+
+    @pytest.mark.asyncio
+    async def test_update_world_setting_skips_name_when_not_provided(self) -> None:
+        """未传 name 的部分更新：name 不进入 DTO（spec §2.2 未传字段保持不变）。"""
+        deps = _make_deps()
+        deps.world_service.update_setting = AsyncMock(
+            return_value=SimpleNamespace(id="set-1", name="魔法体系")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+
+        result = json.loads(
+            await tools["update_world_setting"].func(setting_id="set-1", content="七阶")
+        )
+
+        assert result == {"ok": True, "setting_id": "set-1", "name": "魔法体系"}
+        update = deps.world_service.update_setting.await_args.args[1]
+        assert update.content == "七阶"
+        assert "name" not in update.model_fields_set
+
+    @pytest.mark.asyncio
+    async def test_update_world_setting_missing_entity_returns_failure_envelope(self) -> None:
+        """service 返回 None（条目不存在）→ 失败信封，不抛异常。"""
+        deps = _make_deps()
+        deps.world_service.update_setting = AsyncMock(return_value=None)
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+
+        result = json.loads(
+            await tools["update_world_setting"].func(setting_id="set-1", name="魔法体系")
+        )
+
+        assert result["ok"] is False
+        assert "设定条目不存在" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_character_without_binding_audits_none_project(self) -> None:
+        """装配期未绑定 + caller 未传 project_id → 绑定值为 None（工具不编造项目 id）。"""
+        deps = _make_deps()
+        deps.expected_project_id = None
+        deps.character_service.update_character = AsyncMock(
+            return_value=SimpleNamespace(id="char-1", name="林晚")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+
+        result = json.loads(
+            await tools["update_character"].func(character_id="char-1", name="林晚")
+        )
+
+        assert result["ok"] is True
+        assert deps.audit_service.record.await_args.kwargs["project_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_character_coerces_str_binding_to_uuid(self) -> None:
+        """未绑定装配期 → 回退 caller 传入 project_id 字符串并规范化为 uuid.UUID。"""
+        deps = _make_deps()
+        deps.expected_project_id = None
+        deps.character_service.update_character = AsyncMock(
+            return_value=SimpleNamespace(id="char-1", name="林晚")
+        )
+        tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
+        project_id = uuid.uuid4()
+
+        result = json.loads(
+            await tools["update_character"].func(
+                project_id=str(project_id), character_id="char-1", name="林晚"
+            )
+        )
+
+        assert result["ok"] is True
+        bound = deps.audit_service.record.await_args.kwargs["project_id"]
+        assert bound == project_id
+        assert isinstance(bound, uuid.UUID)
