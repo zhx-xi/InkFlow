@@ -21,7 +21,6 @@ import {
   type Page,
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
-import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -74,10 +73,6 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   const kernel = await waitKernelInfo(app);
   // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
   await ensureModelConfigured(kernel);
-  // #1125/#1130：上面两步都是主进程/后端层信号，**不等于渲染层已出 boot gate**；
-  // 首个用例冷启动时 AppLayout 仍在 BootGate，主 UI（含 new-project-btn）未挂载 →
-  // 裸 click 撞 30s 隐式等待超时（run 34744875255 首跑红 / rerun 绿）。收口等待 app-nav。
-  await awaitAppReady(window, expect);
   return { app, window, kernel };
 }
 
@@ -411,10 +406,8 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
     await openWorldTabPlain(window);
     // #389：chips = 分类实体（无「地图」——地图归地图工作台）
-    // 分类 chips 由独立于 library-list 的数据请求渲染，CI 负载下默认 5s 不够
-    // （run 34746876962：A4 首跑红 / rerun 绿），对齐本文件既有 15s 预算。
     for (const cat of ['势力', '组织', '门派']) {
-      await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible({ timeout: 15_000 });
+      await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible();
     }
     await expect(window.getByTestId('world-cat-filter-地图')).toHaveCount(0);
     await expect(window.getByTestId('world-cat-filter-全部')).toHaveCount(0);
