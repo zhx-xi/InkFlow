@@ -75,6 +75,8 @@ export interface ResolveKernelCommandOptions {
   isPackaged: boolean;
   /** 打包版内核绝对路径（#187 任意 cwd 启动修复）；缺省回落相对路径兼容旧调用/测试 */
   packagedKernelPath?: string;
+  /** dev 内核 python 绝对路径（#1153 worktree ENOENT 修复）；缺省回落相对路径兼容旧调用/测试 */
+  devKernelPath?: string;
   env?: Record<string, string | undefined>;
 }
 
@@ -102,7 +104,9 @@ export function resolveKernelCommand(opts: ResolveKernelCommandOptions): KernelC
     };
   }
   return {
-    command: 'backend\\.venv\\Scripts\\python.exe',
+    command:
+      opts.devKernelPath ??
+      'backend\\.venv\\Scripts\\python.exe',
     args: ['-m', 'inkflow', 'serve', '--port', '0'],
   };
 }
@@ -238,4 +242,139 @@ export function formatKernelMenuLabel(info: { port: number; pid: number } | null
     return '内核状态: 未运行';
   }
   return `内核状态: 运行中 (${info.port} 端口 · ${info.pid} PID)`;
+}
+
+/** 单个存活内核实例（F30 1.2 §2.4.2 注册表条目；托盘展示用，不含 token） */
+export interface KernelInstance {
+  kind: 'dev' | 'rc' | 'release';
+  port: number;
+  pid: number;
+  version: string;
+  started_at: string;
+  data_dir: string;
+}
+
+const INSTANCE_KINDS = ['dev', 'rc', 'release'] as const;
+
+function isKernelInstance(value: unknown): value is KernelInstance {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const r = value as Record<string, unknown>;
+  return (
+    typeof r.kind === 'string' &&
+    (INSTANCE_KINDS as readonly string[]).includes(r.kind) &&
+    typeof r.port === 'number' &&
+    typeof r.pid === 'number' &&
+    typeof r.version === 'string' &&
+    typeof r.started_at === 'string' &&
+    typeof r.data_dir === 'string'
+  );
+}
+
+/**
+ * 读实例注册表（#1153 / ADR-059 ④，spec f31 §2.4）。
+ *
+ * - 目录不存在 → []（不抛错）
+ * - 只收 *.json；JSON 非法 / 字段缺失 / kind 非三值 → 跳过
+ * - pid 已死的条目**不返回**，并顺带删除其文件（惰性 GC，无守护进程）
+ * - 不返回 token（最小暴露面）
+ * - 顺序稳定：started_at 升序，同刻按 pid
+ */
+export function readInstanceRegistry(dir: string): KernelInstance[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+
+  const alive: KernelInstance[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) {
+      continue;
+    }
+    const filePath = path.join(dir, name);
+    const st = readRegistryEntry(filePath);
+    if (st === null) {
+      // 损坏/不合法 = 垃圾，清理（无法判定归属）
+      removeQuietly(filePath);
+      continue;
+    }
+    if (!isProcessAlive(st.pid)) {
+      // 惰性 GC：僵尸条目（内核被 taskkill /F 时不会走自己的 finally）
+      removeQuietly(filePath);
+      continue;
+    }
+    alive.push(st);
+  }
+
+  alive.sort((a, b) =>
+    a.started_at === b.started_at ? a.pid - b.pid : a.started_at < b.started_at ? -1 : 1
+  );
+  return alive;
+}
+
+function readRegistryEntry(filePath: string): KernelInstance | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isKernelInstance(parsed)) {
+    return null;
+  }
+  // 显式挑字段，绝不透传原对象：注册表文件含 token，
+  // 而 KernelInstance 契约不含 token（最小暴露面，spec f31 §2.4）。
+  return {
+    kind: parsed.kind,
+    port: parsed.port,
+    pid: parsed.pid,
+    version: parsed.version,
+    started_at: parsed.started_at,
+    data_dir: parsed.data_dir,
+  };
+}
+
+function removeQuietly(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // 已被并发读方清理 / 权限问题：容忍，下轮再试
+  }
+}
+
+/**
+ * 托盘菜单实例区 label（#1153 / ADR-059 ④，spec f31 §5.6.1）。
+ *
+ * 0/1 实例保持既有单行形态（零回归，对齐 formatKernelMenuLabel）；
+ * ≥2 实例渲染「内核实例 (N)」+ 每实例一行（用户诉求：防止不知情多开）。
+ */
+export function formatInstanceMenuLabel(instances: KernelInstance[]): string[] {
+  if (instances.length === 0) {
+    return ['内核状态: 未运行'];
+  }
+  if (instances.length === 1) {
+    const only = instances[0];
+    return [`内核状态: 运行中 (${only.port} 端口 · ${only.pid} PID)`];
+  }
+  const kindLabel: Record<KernelInstance['kind'], string> = {
+    dev: 'dev',
+    rc: 'rc',
+    release: '正式',
+  };
+  return [
+    `内核实例 (${instances.length})`,
+    ...instances.map(
+      (i) =>
+        `● ${kindLabel[i.kind]} :${i.port}  pid ${i.pid}  ${i.data_dir}`
+    ),
+  ];
 }

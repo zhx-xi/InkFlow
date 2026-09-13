@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from inkflow.infrastructure.kernel import state
+from inkflow.infrastructure.kernel import registry, state
+from inkflow.infrastructure.kernel.instance_kind import resolve_instance_kind
 from inkflow.infrastructure.kernel.kernel_errors import KernelStartupError
 
 
@@ -105,6 +106,31 @@ def _release_mutex(handle: object | None) -> None:
 
         ctypes.windll.kernel32.ReleaseMutex(handle)
         ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def _acquire_lifetime_mutex(kind: str) -> object | None:
+    """获取**存活期**互斥（spec §5.6 / ADR-059 ②）：具名互斥体 ``InkFlowKernel<Kind>``。
+
+    与 ``_acquire_mutex``（拉起动作互斥，finally 释放）不同：本互斥表达
+    「同 kind 只允许一个内核**存活**」，故**永不释放**——随调用方进程退出由
+    OS 自动回收（rc/release 各一个独立互斥名，跨 kind 互不阻塞）。
+
+    成功 → 句柄；已被占用（Windows 错误码 183）→ None；非 Windows 平台返回
+    哨兵对象（无互斥语义，测试全 mock）。
+    """
+    if sys.platform != "win32":
+        return object()
+    import ctypes
+
+    handle: object | None = ctypes.windll.kernel32.CreateMutexW(
+        None, False, f"InkFlowKernel{kind.capitalize()}"
+    )
+    if not handle:
+        return None
+    if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return None
+    return handle
 
 
 def _spawn_kernel(cmd: list[str], log_file: Path) -> subprocess.Popen:
@@ -296,11 +322,14 @@ async def ensure_kernel(
     health_timeout: float = 2.0,
     state_file: Path | None = None,
     version_check: bool = True,
+    instance_kind: str | None = None,
 ) -> KernelHandle:
     """确保内核运行并返回访问句柄（spec §5.1 状态机）。
 
     复用 → KernelHandle(reused=True)；互斥拉起 → KernelHandle(reused=False)。
     失败 → KernelStartupError（消息含 %TEMP%\\inkflow-kernel.log 指引）。
+    instance_kind=None → resolve_instance_kind() 自判（spec §2.4.1）；非 dev
+    须先取得同 kind 存活期互斥（spec §5.6），被占则抛 KernelStartupError。
     """
     # 1. timeout 三态（Q1 拍板）：显式参数 > env INKFLOW_KERNEL_TIMEOUT
     #    （float 解析失败回退）> 默认 30.0
@@ -323,7 +352,24 @@ async def ensure_kernel(
 
     client_version = inkflow.__version__
 
-    # 4. 复用判定（spec §5.1 分支 1）
+    # 4. 实例类型准入（spec §5.6 / ADR-059 ②，**复用判定之前**）：
+    #    rc/release → 机器级存活期互斥（限额 1，跨 kind 互不阻塞）；dev → 多开放行
+    kind = instance_kind or resolve_instance_kind()
+    if kind != "dev":
+        lifetime_handle = _acquire_lifetime_mutex(kind)
+        if lifetime_handle is None:
+            existing = registry.find_by_kind(registry.registry_dir(state_file), kind)
+            detail = (
+                f"pid={existing[0].pid} port={existing[0].port} data_dir={existing[0].data_dir}"
+                if existing
+                else "注册表未记录存活实例（可能刚退出，请稍后重试）"
+            )
+            raise KernelStartupError(
+                f"{kind} 内核实例已存在（存活期互斥 InkFlowKernel{kind.capitalize()} "
+                f"已被占用）：{detail}；请先退出既有实例再拉起"
+            )
+
+    # 5. 复用判定（spec §5.1 分支 1）
     st = state.read_kernel_state(state_file)
     if st is not None:
         alive = state.is_process_alive(st.pid)
@@ -345,7 +391,7 @@ async def ensure_kernel(
         state.mark_stale(state_file)
         _log_kernel_event(f"stale 清理 {state_file.name}（pid 死/health 失败/版本不匹配）")
 
-    # 5. 互斥（spec §5.1 分支 2/3）
+    # 6. 互斥（spec §5.1 分支 2/3）
     mutex_handle = _acquire_mutex("InkFlowKernelBootstrap")
     if mutex_handle is None:
         # 183：其他实例在拉起 → 轮询等待复用（#1142：并区分持有者是否已死）
@@ -368,7 +414,7 @@ async def ensure_kernel(
         # 前持有者已退出且未产出状态：接管互斥，继续走第 6 步自行拉起
         _log_kernel_event("前持有者已退出，接管互斥自行拉起内核")
 
-    # 6. 拉起（互斥在手；秒退重试 ≤2 次，总尝试 ≤3；finally 释放互斥）
+    # 7. 拉起（互斥在手；秒退重试 ≤2 次，总尝试 ≤3；finally 释放互斥）
     try:
         attempts = 0
         while True:
@@ -388,6 +434,19 @@ async def ensure_kernel(
                     "started_at": st.started_at.isoformat(),
                 }
                 state.write_kernel_state(state_file, write_payload)
+                # 全量注册表（spec §2.4.2 / ADR-059 ③）：拉起成功才写，复用不写
+                registry.write_instance(
+                    {
+                        "kind": kind,
+                        "port": st.port,
+                        "token": st.token,
+                        "pid": st.pid,
+                        "version": st.version,
+                        "started_at": st.started_at.isoformat(),
+                        "data_dir": str(state_file.parent),
+                    },
+                    registry.registry_dir(state_file),
+                )
                 _log_kernel_event(f"内核就绪 pid={st.pid} port={st.port}")
                 return KernelHandle(
                     port=st.port,

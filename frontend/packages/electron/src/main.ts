@@ -23,7 +23,6 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
-  formatKernelMenuLabel,
   MAX_CONSECUTIVE_FAILURES,
   nextBackoffDelayMs,
   parseReadyLine,
@@ -32,6 +31,7 @@ import {
   writeKernelStateFile,
   type KernelInfo,
 } from './kernel';
+import { buildTrayMenuTemplate } from './tray-menu';
 import { createMainLogger, setMainLogEndpoint } from './logger';
 
 /** 仓库根：out/ 位于 frontend/packages/electron/out，向上 4 级 */
@@ -191,11 +191,9 @@ function updateTrayInfoHook(): void {
 }
 
 /**
- * kernel.json 状态文件路径（spec f31 §5.4；S3f-T3 G4：dev 感知 INKFLOW_DATA_DIR，与 Python
- * config.data_dir 对齐 = per-test E2E 隔离；无 env 时旧行为零破坏）。
- * - 打包：%APPDATA%\InkFlow\kernel.json（与 Python frozen 侧 config.data_dir 一致）
- * - dev：INKFLOW_DATA_DIR 非空 → <data_dir>/kernel.json；否则 backend/data/kernel.json（CLI/内核 dev data_dir=./data 对齐，GUI 复用必须读同一文件——F30 相对路径坑）
- * 测试 mock 无 app.getPath → 返回 null（跳过双向闭环，确定性回落 spawnKernel）。
+ * kernel.json 状态文件路径（spec f31 §5.4）。打包 = %APPDATA%/InkFlow/kernel.json；
+ * dev = INKFLOW_DATA_DIR（E2E 隔离）或 REPO_ROOT/backend/data（F30 相对路径口径）。
+ * 测试 mock 无 app.getPath → null（跳过双向闭环，确定性回落 spawnKernel）。
  */
 function resolveKernelStatePath(): string | null {
   try {
@@ -255,6 +253,8 @@ function resolveKernelCommandForSpawn(): { command: string; args: string[] } {
       app.isPackaged && process.resourcesPath
         ? path.join(process.resourcesPath, 'kernel', 'inkflow.exe')
         : undefined,
+    // #1153：dev 绝对路径（#187 同款；REPO_ROOT 上溯 → worktree 覆盖成立）
+    devKernelPath: app.isPackaged ? undefined : path.join(REPO_ROOT, 'backend', '.venv', 'Scripts', 'python.exe'),
   });
   if (app.isPackaged || path.isAbsolute(resolved.command)) {
     return resolved;
@@ -717,18 +717,18 @@ function quitFromTray(): void {
   void shutdown();
 }
 
-/** 重建托盘菜单（#188 F2）：内核 ready / 失败清理时调用，label 跟随当前 kernelInfo 刷新 */
+/** 重建托盘菜单（#188 F2 / #1153）：模板构建（含多实例列表）在 tray-menu.ts */
 function rebuildTrayMenu(): void {
   if (!tray) {
     return;
   }
-  const template: MenuItemConstructorOptions[] = [
-    { label: '打开主窗口', click: showWindow },
-    { label: formatKernelMenuLabel(kernelInfo), enabled: false },
-    { type: 'separator' },
-    { label: '退出', click: quitFromTray },
-  ];
-  tray.setContextMenu(Menu.buildFromTemplate(template));
+  const template = buildTrayMenuTemplate({
+    kernelStatePath,
+    kernelInfo,
+    onOpen: showWindow,
+    onQuit: quitFromTray,
+  });
+  tray.setContextMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]));
 }
 
 /** Tray 创建 + 菜单（spec f31 §5.6）：dev/生产都创建；创建失败降级（不阻断窗口/内核） */

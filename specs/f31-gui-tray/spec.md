@@ -1,17 +1,23 @@
 # F31: GUI 托盘常驻 + 关闭行为设置（gui_tray）— 功能规格
 > **端**: frontend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-07 | **依据**: ADR-030（本地内核服务化 ③）、ADR-021（内核进程化交付契约）、F30 spec（内核冷启动基建）、Constitution P1-P6
+> **Spec 版本**: 1.1 | **日期**: 2026-08-07（1.1 修订 2026-09-14） | **依据**: ADR-030（本地内核服务化 ③）、ADR-059（实例类型化并发约束 ④）、ADR-021（内核进程化交付契约）、F30 spec（内核冷启动基建）、Constitution P1-P6
 >
-> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 2 个模块，估算 2-3 人天）
+> **Spec 变更**（1.0 → 1.1，#1153 / ADR-059）:
+> - §2.4 **新增**：实例注册表消费契约（托盘全量可见的数据源）
+> - §5.6 **修订**：菜单「内核状态」单项 → **「内核实例 (N)」列表**（多实例全量可见）；单实例时保持既有单行形态零回归
+> - §9 **新增**测试面：注册表聚合渲染（0/1/N 实例）+ dev 内核命令绝对路径解析
+> - §13 **新增**验收 M7/M8
 >
-> **关联 Issues**: #167（本模块）；#166（F30 内核冷启动，✅ 已合入 PR #171）；#168（CLI 产物，独立）；#169（CLI 恒 HTTP，独立）；#152（设置持久化，口径归口）
+> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 2 个模块，估算 2-3 人天）；1.1 修订挂 0.14.0
+>
+> **关联 Issues**: #167（本模块）；#166（F30 内核冷启动，✅ 已合入 PR #171）；#168（CLI 产物，独立）；#169（CLI 恒 HTTP，独立）；#152（设置持久化，口径归口）；**#1153（1.1 修订来源）**；#1156（E2E 隔离根因，另单跟踪，不在本模块范围）
 >
 > **依赖**: ✅ F30（kernel.json 契约 + ensure_kernel 语义，PR #171 41013fb）· ✅ F19 #78（Electron 壳：spawn/健康检查/崩溃拉起/回收）· ✅ F19 #106（自绘窗口按钮 IPC：window:close 通道）· ⏳ #152（设置持久化——**归口依赖，本模块用临时内存态，合入后切换**）
 >
-> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（③ GUI 托盘常驻：关闭→托盘、托盘退出=真退出、单实例、复用内核）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（③ GUI 托盘常驻：关闭→托盘、托盘退出=真退出、单实例、复用内核）· [ADR-059](../../adr/kernel/ADR-059.md)（④ 托盘全量可见 + ⑤ dev 内核命令绝对路径）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
-> **状态**: ✅ 已实现（PR #172，#167 2026-08-08）
+> **状态**: ✅ 已实现（PR #172，#167 2026-08-08）；1.1 修订实施中（#1153）
 
 ---
 
@@ -63,6 +69,34 @@ F31 为 InkFlow 桌面 GUI（Electron 壳）增加**托盘常驻能力**（ADR-0
 | `started_at` | str | 记录展示（内核状态菜单） |
 
 **读取规则**（与 F30 一致）：文件不存在 / JSON 解析失败 → 视为无内核；pid 不存在 → stale（重命名备份 `kernel.json.stale-<ts>`）→ 视为无内核；pid 存活 + /health 200 → 复用。
+
+### 2.4 实例注册表消费契约（1.1 新增，#1153/ADR-059 ④）
+
+**数据源**：F30 §2.4.2 实例注册表 `<data_dir>/running/*.json`（七字段 `{kind, port, token, pid, version, started_at, data_dir}`）
+
+**GUI 侧只读消费**（托盘全量可见 §5.6.1 的数据源）：
+
+```typescript
+/** 单个存活内核实例（F30 §2.4.2 注册表条目） */
+export interface KernelInstance {
+  kind: 'dev' | 'rc' | 'release';
+  port: number;
+  pid: number;
+  version: string;
+  data_dir: string;
+}
+
+export function readInstanceRegistry(dir: string): KernelInstance[];  // 读目录 + pid 存活过滤 + 僵尸清理
+export function formatInstanceMenuLabel(instances: KernelInstance[]): string[];  // 菜单 label 列表
+```
+
+| 项 | 值 |
+|----|-----|
+| 目录解析 | `main.ts resolveKernelStatePath()` 同款基准的 `running/` 子目录（打包 = `%APPDATA%\InkFlow\running`；dev = `INKFLOW_DATA_DIR/running` 或 `REPO_ROOT/backend/data/running`） |
+| 过滤 | 条目 JSON 合法 + `kind` ∈ 三值 + `pid` 存活（`isProcessAlive`）；不合法条目跳过 |
+| 僵尸清理 | pid 已死的条目在读取时 `unlink`（惰性 GC，与 F30 §2.4.2 读取方清理职责一致） |
+| 目录不存在 | 返回 `[]`（不抛错） |
+| token 不外传 | `readInstanceRegistry` **不返回 token**（托盘只展示不需要鉴权；最小暴露面） |
 
 ### 2.2 关闭行为设置（内存态）
 
@@ -234,15 +268,44 @@ app.whenReady 内：
 |----|-----|
 | 图标 | `frontend/packages/electron/inkflow-icon-256.png`（#98 品牌资产已入库，nativeImage.createFromPath） |
 | 创建时机 | `app.whenReady` 内（与窗口创建并行）；`app.isPackaged` 与否都创建（dev 也可见托盘，E2E 可断言） |
-| 菜单项 | 「打开主窗口」（default）· 「内核状态」子菜单（端口 / PID / 版本 / 健康，只读 disabled）· 分隔 · 「退出」 |
+| 菜单项 | 「打开主窗口」（default）· **内核实例区（见下方 §5.6.1）** · 分隔 · 「退出」 |
 | 内核状态刷新 | 复用既有 2s 健康检查：健康状态变化时 `tray.setContextMenu(重建菜单)`（防抖：仅状态翻转时重建，避免每 2s 重建） |
 | 点击托盘图标 | Windows 惯例：单击/双击 → 打开主窗口（`tray.on('click', showWindow)`） |
 | 退出流程 | 「退出」→ `shutdown()`（stopKernel 完整回收 + app.exit(0)）；先 `tray.destroy()` 防托盘残留 |
-| 健康状态展示 | 菜单项 label：`内核状态: 运行中 (port 端口 · pid PID)` / `内核状态: 未运行`——跟随健康检查实时更新 |
+| 内核状态展示 | **单实例**（既有形态，零回归）：`内核状态: 运行中 (port 端口 · pid PID)` / `内核状态: 未运行`；**多实例**：实例列表（§5.6.1） |
+
+#### 5.6.1 全量内核实例可见（1.1 新增，#1153/ADR-059 ④）
+
+**用户诉求原文**：「系统托盘也需要同时显示出来，防止我不知情的情况下启动太多的内核。」
+
+**渲染规则**（数据源 = F30 §2.4.2 实例注册表）：
+
+| 存活实例数 | 菜单形态 |
+|-----------|---------|
+| 0 | 单项 `内核状态: 未运行`（既有形态） |
+| 1 | 单项 `内核状态: 运行中 (port 端口 · pid PID)`（**既有形态，零回归**） |
+| ≥2 | 分组 `内核实例 (N)` + 每实例一行 `● <kind> :<port>  pid <pid>  <data_dir>`（disabled 只读，供用户辨识） |
+
+- **"存活" 判据**：注册表条目存在 **且** pid 存活（复用既有 `isProcessAlive`）；pid 已死的条目在读取时被清理（F30 §2.4.2 惰性 GC）
+- **kind 缩写显示**：`dev` / `rc` / `正式`（release 面向用户显示中文，避免英文 jargon）
+- **数据目录显示**：过长时中间省略（保留盘符 + 尾部目录名），避免菜单超宽
+- **实现载体**：`kernel.ts` 新增纯函数 `readInstanceRegistry(dir): KernelInstance[]`（可 vitest node 测）+ `formatInstanceMenuLabel(instances): string[]`；`main.ts` 的 `rebuildTrayMenu()` 消费该结果
+- **刷新时机**：内核 ready / 失败清理（既有 `rebuildTrayMenu` 调用点）+ 2s 健康检查状态翻转时——与既有防抖策略一致
 
 **托盘与窗口生命周期**：
 - 托盘持有期 = 应用生命周期（`tray` 模块级变量，`app.quit` 时自动销毁；显式 destroy 防 Windows 托盘残留图标）
 - `window-all-closed` 在托盘模式下**不退出**（§5.2）——Electron 默认行为是窗口全关即退出，需显式 `event.preventDefault()`（在 window-all-closed handler 内，tray 模式）
+
+#### 5.6.2 dev 内核命令绝对路径（1.1 新增，#1153/ADR-059 ⑤）
+
+**问题**：`kernel.ts:105` dev 分支命令为相对路径 `backend\\.venv\\Scripts\\python.exe`（相对 `process.cwd()`）→ **worktree 中启动 dev GUI 必 ENOENT**（#187 只修了打包版）。
+
+**修复**（对齐 #187 打包版先例 `packagedKernelPath`）：
+
+- `resolveKernelCommand` 新增 `devKernelPath?: string` 选项（**绝对路径优先**；缺省回落相对路径，兼容既有调用/测试）
+- `main.ts resolveKernelCommandForSpawn()`（:246-270）为 dev 分支传入 `path.join(REPO_ROOT, 'backend', '.venv', 'Scripts', 'python.exe')`
+- **worktree 覆盖天然成立**：`REPO_ROOT` 由 `__dirname` 上溯 4 级计算（`main.ts:38`）→ 指向**当前 worktree 根**；worktree 内启动 dev GUI 解析到 worktree 自己的 venv，主仓不受影响
+- `existsSync` 双基准循环（`[REPO_ROOT, process.cwd()]`，:262-267）保留作为兜底
 
 ---
 
@@ -400,6 +463,9 @@ Playwright `app.evaluate` 断言托盘状态；托盘菜单项点击经 `app.eva
 | M6 | 关闭行为设置内存态 + 默认 'tray' | 单元 | `settings:get-close-behavior` 默认 'tray'；set 后生效 |
 | M7 | 首次托盘提示（toast + 不再提示勾选） | 单元 + 手动 | `inkflow:tray-hint` 事件发送断言（单元）；手动验证 toast 文案与勾选（手动） |
 | M8 | GUI spawn 内核后写 kernel.json（五字段齐全） | 单元 | `writeKernelStateFile` 原子写 + 字段校验；E2E 冒烟后可读 %APPDATA%\InkFlow\kernel.json |
+| M9 | **（1.1 新增）托盘全量实例可见（#1153）** | 单元 + 手动 | `readInstanceRegistry` 0/1/N 实例三态 + 僵尸清理 + 非法条目跳过（单元）；多实例时菜单渲染「内核实例 (N)」列表（手动，截图） |
+| M10 | **（1.1 新增）dev 内核命令绝对路径（worktree 可启动）** | 单元 + E2E | `resolveKernelCommand` 传 `devKernelPath` → command 为该绝对路径（单元）；worktree 内启动 dev GUI 不再 ENOENT（E2E `__kernelInfo` 能注入） |
+| M11 | **（1.1 新增）单实例托盘形态零回归** | 单元 | 存活实例 ≤1 时菜单 label 与既有 `formatKernelMenuLabel` 输出完全一致（既有 18 用例全绿） |
 
 > 覆盖门禁：前端 vitest thresholds（electron 包新代码计入后上调基线）；全仓 CI 全绿（lint-frontend / unit-frontend / integration-frontend / e2e-frontend-shell+全部页面 job）后才 merge。
 
