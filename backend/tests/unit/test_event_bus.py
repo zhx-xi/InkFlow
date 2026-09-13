@@ -45,7 +45,7 @@ async def _wait_for(predicate: Callable[[], bool], *, timeout: float = 2.0) -> N
 
 async def _start_subscription(
     bus: EventBus,
-) -> tuple[AsyncGenerator[DataChangeEvent, None], asyncio.Task[DataChangeEvent]]:
+) -> tuple[AsyncGenerator[DataChangeEvent], asyncio.Task[DataChangeEvent]]:
     """订阅总线并等待注册完成 → (生成器, 待取首事件的 __anext__ 任务)。"""
     agen = bus.subscribe()
     pending = asyncio.create_task(agen.__anext__())

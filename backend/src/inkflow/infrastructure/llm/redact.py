@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import TypeVar
 
 from inkflow.core.config import config
 from inkflow.domain.models.agent_run import AgentStep, AgentToolCall
@@ -13,7 +12,6 @@ _SK_PATTERN = re.compile(r"[Ss][Kk]-[A-Za-z0-9_-]{12,}")
 _BEARER_PATTERN = re.compile(r"(Bearer\s+)[A-Za-z0-9_-]+")
 _LONG_RUN_PATTERN = re.compile(r"[A-Za-z0-9_-]{24,}")
 _UNICODE_ESCAPE_PATTERN = re.compile(r"\\u[0-9a-fA-F]{4}")
-_ScrubT = TypeVar("_ScrubT", str, dict, list)
 
 
 def redact_secrets(prompt: str, known_keys: list[str] | None = None) -> str:
@@ -52,7 +50,7 @@ def _redact_text(value: str) -> str:
     return _BEARER_PATTERN.sub(r"\1****", result)
 
 
-def _scrub_value(value: _ScrubT) -> _ScrubT:
+def _scrub_value[ScrubT: (str, dict, list)](value: ScrubT) -> ScrubT:
     """递归脱敏 str/dict/list；其他类型原样保留。"""
     if isinstance(value, str):
         return _redact_text(value)

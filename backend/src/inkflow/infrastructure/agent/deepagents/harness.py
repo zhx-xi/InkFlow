@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, TypeAlias, cast
+from typing import Any, cast
 
 from deepagents import create_deep_agent
 from langchain_core.tools import StructuredTool
@@ -31,8 +31,8 @@ from inkflow.infrastructure.llm.provider_config import (
 )
 
 # deepagents 0.7.5 的 create_deep_agent 返回 CompiledStateGraph；任务契约将该返回值
-# 类型记作 Agent，此处以 TypeAlias 对齐（--follow-imports=skip 下解析为 Any，语义仍清晰）
-Agent: TypeAlias = CompiledStateGraph
+# 类型记作 Agent，此处以 type 别名对齐（--follow-imports=skip 下解析为 Any，语义仍清晰）
+type Agent = CompiledStateGraph
 
 
 def _litellm_model_name(model: str, base_url: str) -> str:

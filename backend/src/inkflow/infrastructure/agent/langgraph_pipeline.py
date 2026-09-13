@@ -233,7 +233,7 @@ class LangGraphAgentPipeline:
         stages: Sequence[PipelineStage],
         context: PipelineContext,
         conditional_edges: Sequence[tuple[str, str]] | None = None,
-    ) -> AsyncGenerator[PipelineStreamEvent, None]:
+    ) -> AsyncGenerator[PipelineStreamEvent]:
         """#681：astream_events v2 流式执行管线 → 帧序列（token delta + 阶段切换帧）。
 
         - 装配与 execute 相同（_compile + _build_initial_state）

@@ -153,7 +153,7 @@ class LangChainLLMClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
         **kwargs: object,
-    ) -> AsyncGenerator[StreamEvent, None]:
+    ) -> AsyncGenerator[StreamEvent]:
         """流式聊天 — 逐 token 返回 StreamEvent。"""
         if not messages:
             raise ValueError("messages cannot be empty")

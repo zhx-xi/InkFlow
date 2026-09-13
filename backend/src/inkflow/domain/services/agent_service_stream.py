@@ -48,7 +48,7 @@ class AgentServiceStreamMixin:
 
     async def stream_pipeline(
         self, request: PipelineExecuteRequest
-    ) -> AsyncGenerator[PipelineStreamEvent, None]:
+    ) -> AsyncGenerator[PipelineStreamEvent]:
         """#642-1：管线 SSE 流式执行（static → pipeline.stream 帧流；supervisor 降级轮询）。"""
         stages, context, pipeline_impl, conditional_edges, _ = await self._build_pipeline_context(
             request

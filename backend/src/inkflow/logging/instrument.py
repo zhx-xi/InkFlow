@@ -11,12 +11,9 @@ import inspect
 import time
 import traceback
 from collections.abc import Callable
-from typing import Any, ParamSpec, TypeVar, overload
+from typing import Any, overload
 
 from inkflow.logging.schema import CallerType, log_structured
-
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
 
 #: 大文本字段键名集合：此类字段的值不进入失败日志的 params 摘要（防刷屏/泄全文）。
 #: 含 description（大纲/角色等长文本描述，RED 契约锁定排除），子串命中。
@@ -71,14 +68,14 @@ def _scalar_summary(
                 field_value = getattr(value, field_name, None)
                 if isinstance(field_value, str):
                     summary[field_name] = _trunc(field_value)
-                elif isinstance(field_value, (int, float, bool)):
+                elif isinstance(field_value, int | float | bool):
                     summary[field_name] = field_value
             continue
         if isinstance(value, str):
             if _is_big_text_key(key):
                 continue
             summary[key] = _trunc(value)
-        elif isinstance(value, (int, float, bool)):
+        elif isinstance(value, int | float | bool):
             summary[key] = value
     return summary
 
@@ -193,15 +190,15 @@ def _log_stream_broken(
 
 
 @overload
-def instrument(fn: Callable[_P, _R]) -> Callable[_P, _R]: ...
+def instrument[**P, R](fn: Callable[P, R]) -> Callable[P, R]: ...
 
 
 @overload
-def instrument(
+def instrument[**P, R](
     *,
     caller_type: CallerType = "api",
     event: str | None = None,
-) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]: ...
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
 
 
 def instrument(

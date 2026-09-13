@@ -69,7 +69,7 @@ def _affects_project(ev: DataChangeEvent, project_id: str | None) -> bool:
     return ev.project_id == project_id
 
 
-async def _event_frames(project_id: str | None) -> AsyncGenerator[str, None]:
+async def _event_frames(project_id: str | None) -> AsyncGenerator[str]:
     """订阅进程内总线 → SSE 帧流（长驻，spec §15.5.1 不变量 2：无终止帧）。
 
     生成器被 `aclose`（客户端断连 / 内核停止）时在 `finally` 中注销订阅者；

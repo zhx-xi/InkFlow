@@ -249,7 +249,7 @@ class InkFlowHTTPClient:
 
     async def stream_sse(
         self, path, *, json=None, timeout: float | None = None
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[dict]:
         """POST + SSE 流式消费：`data: {json}` 帧逐行解析并 yield 原样 dict。
 
         timeout = per-request 超时（#926：LLM 长任务流式需 300s 覆盖）；缺省取

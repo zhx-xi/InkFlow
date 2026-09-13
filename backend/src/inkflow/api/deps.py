@@ -166,7 +166,7 @@ __all__ = [
 ]
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """获取数据库 session（FastAPI 依赖）."""
     async for session in get_session():
         yield session
