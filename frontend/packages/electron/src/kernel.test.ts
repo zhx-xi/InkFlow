@@ -143,6 +143,44 @@ describe('resolveKernelCommand（内核命令定位三分支，spec §3.2.1）',
       args: ['-m', 'inkflow', 'serve', '--port', '0'],
     });
   });
+  /**
+   * ⚠️ #1153 现场缺陷（2026-09-14）：dev 分支相对路径 `backend\.venv\Scripts\python.exe`
+   * 相对 process.cwd() 解析 → **worktree 中启动 dev GUI 必 ENOENT**（#187 只修了打包版）：
+   *   kernel_spawn_error { error: 'Error: spawn backend\.venv\Scripts\python.exe ENOENT' }
+   * RED 契约：devKernelPath 提供时命令必须用绝对路径（对齐 #187 packagedKernelPath 先例）。
+   */
+  it('分支③a：isPackaged=false + devKernelPath → 使用绝对路径（#1153 worktree 可启动）', () => {
+    const devKernelPath =
+      'D:/develop/projects/InkFlow-ft/feat-x/backend/.venv/Scripts/python.exe';
+    expect(resolveKernelCommand({ isPackaged: false, devKernelPath })).toEqual({
+      command: devKernelPath,
+      args: ['-m', 'inkflow', 'serve', '--port', '0'],
+    });
+  });
+
+  it('分支③a 缺省回落：无 devKernelPath → 保持相对路径（既有调用/测试零回归）', () => {
+    const resolved = resolveKernelCommand({ isPackaged: false, devKernelPath: undefined });
+    expect(resolved.command).toBe('backend\\.venv\\Scripts\\python.exe');
+  });
+
+  it('分支①优先级：env.INKFLOW_KERNEL_CMD 覆盖优先于 devKernelPath', () => {
+    expect(
+      resolveKernelCommand({
+        isPackaged: false,
+        devKernelPath: 'D:/x/backend/.venv/Scripts/python.exe',
+        env: { INKFLOW_KERNEL_CMD: 'C:\\tools\\python.exe' },
+      }).command
+    ).toBe('C:\\tools\\python.exe');
+  });
+
+  it('分支②b：isPackaged=true 时 devKernelPath 不生效（打包分支优先）', () => {
+    expect(
+      resolveKernelCommand({
+        isPackaged: true,
+        devKernelPath: 'D:/x/backend/.venv/Scripts/python.exe',
+      }).command
+    ).toBe('resources/kernel/inkflow.exe');
+  });
 });
 
 describe('MAX_CONSECUTIVE_FAILURES（连续失败阈值，spec §3.2.4 / §3.7 M6）', () => {

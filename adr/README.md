@@ -109,7 +109,8 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | 编号 | 标题 | 状态 | 日期 |
 |------|------|------|------|
 | [ADR-021](kernel/ADR-021.md) | 本地内核进程化 — 独立进程 + REST + SSE | ✅ 已接受 | 2026-08-02 |
-| [ADR-030](kernel/ADR-030.md) | 本地内核服务化 — 冷启动协议 + 生命周期 | ✅ 已接受 | 2026-08-07 |
+| [ADR-030](kernel/ADR-030.md) | 本地内核服务化 — 冷启动协议 + 生命周期 | ✅ 已接受（② 被 ADR-059 修订） | 2026-08-07 |
+| [ADR-059](kernel/ADR-059.md) | 实例类型化内核并发约束 — 存活期互斥 + 全量注册表 + 托盘可见 | ✅ 已接受 | 2026-09-14 |
 
 ### API（api）
 
@@ -176,7 +177,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **RAG**: LangChain Chroma + BGE 本地 Embedding（ADR-013 [llm/](llm/ADR-013.md)）
 - **Prompt**: ChatPromptTemplate + YAML（ADR-014 [llm/](llm/ADR-014.md)）
 - **日志**: loguru 结构化（ADR-016 [service/](service/ADR-016.md)）
-- **内核**: 独立进程 + REST + SSE（ADR-021），冷启动协议 + 常驻 + 多客户端（ADR-030 [kernel/](kernel/ADR-030.md)）
+- **内核**: 独立进程 + REST + SSE（ADR-021），冷启动协议 + 常驻 + 多客户端（ADR-030 [kernel/](kernel/ADR-030.md)；其 ② 互斥语义被 ADR-059 修订）；**实例类型化并发约束**——rc/正式存活期互斥（同机各限 1 个）、dev 允许多开、`%APPDATA%\InkFlow\running\` 全量注册表 + 托盘可见全部存活实例（ADR-059 [kernel/](kernel/ADR-059.md)）
 - **API**: FastAPI 装配 + REST/SSE + 本地 token 鉴权 + 错误契约（ADR-045 [api/](api/ADR-045.md)）
 - **CLI**: Typer + 恒经 HTTP + F7 契约 + 独立产物（ADR-046 [cli/](cli/ADR-046.md)）
 - **MCP**: 官方 SDK + stdio + 薄客户端经 HTTP（ADR-023 [mcp/](mcp/ADR-023.md)）

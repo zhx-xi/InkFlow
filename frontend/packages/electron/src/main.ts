@@ -23,10 +23,12 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
+  formatInstanceMenuLabel,
   formatKernelMenuLabel,
   MAX_CONSECUTIVE_FAILURES,
   nextBackoffDelayMs,
   parseReadyLine,
+  readInstanceRegistry,
   resolveKernelCommand,
   tryReuseKernel,
   writeKernelStateFile,
@@ -210,6 +212,16 @@ function resolveKernelStatePath(): string | null {
   }
 }
 
+/**
+ * 实例注册表目录（#1153 / ADR-059 ④，spec f31 §2.4）：与 resolveKernelStatePath 同款基准
+ * 的 running/ 子目录——打包 = %APPDATA%/InkFlow/running；dev = INKFLOW_DATA_DIR/running
+ * 或 REPO_ROOT/backend/data/running。测试 mock 无 getPath → null（托盘回落单实例形态）。
+ */
+function resolveRegistryDir(): string | null {
+  const statePath = resolveKernelStatePath();
+  return statePath === null ? null : path.join(path.dirname(statePath), 'running');
+}
+
 /** INKFLOW_READY 后向 renderer 注入 {baseURL, token}（spec §3.4，preload 幂等重暴露） */
 function sendReadyToRenderer(): void {
   if (!kernelInfo) {
@@ -255,6 +267,19 @@ function resolveKernelCommandForSpawn(): { command: string; args: string[] } {
       app.isPackaged && process.resourcesPath
         ? path.join(process.resourcesPath, 'kernel', 'inkflow.exe')
         : undefined,
+    // #1153：dev 分支同款绝对路径处理——worktree 中启动 dev GUI 时相对路径
+    // `backend\.venv\Scripts\python.exe` 相对 process.cwd() 解析必 ENOENT
+    // （#187 仅修了打包版）。REPO_ROOT 由 __dirname 上溯计算 → 天然指向当前
+    // worktree 根，故 worktree 覆盖自动成立，主仓不受影响。
+    devKernelPath: app.isPackaged
+      ? undefined
+      : path.join(
+          REPO_ROOT,
+          'backend',
+          '.venv',
+          'Scripts',
+          'python.exe'
+        ),
   });
   if (app.isPackaged || path.isAbsolute(resolved.command)) {
     return resolved;
@@ -717,14 +742,42 @@ function quitFromTray(): void {
   void shutdown();
 }
 
+/**
+ * 读全部存活内核实例（#1153 / ADR-059 ④）：注册表目录不可用（测试 mock 无
+ * getPath / 目录不存在）→ []，托盘回落单实例形态；读失败不阻断菜单重建。
+ */
+function readRegistryInstances() {
+  const dir = resolveRegistryDir();
+  if (dir === null) {
+    return [];
+  }
+  try {
+    return readInstanceRegistry(dir);
+  } catch {
+    return [];
+  }
+}
+
 /** 重建托盘菜单（#188 F2）：内核 ready / 失败清理时调用，label 跟随当前 kernelInfo 刷新 */
 function rebuildTrayMenu(): void {
   if (!tray) {
     return;
   }
+  const instances = readRegistryInstances();
+  // #1153 / ADR-059 ④：≥2 实例 → 全量列表（用户诉求：防止不知情多开）；
+  // 0/1 实例保持既有单行形态（零回归，formatKernelMenuLabel 语义不变）。
+  const kernelItems: MenuItemConstructorOptions[] =
+    instances.length >= 2
+      ? formatInstanceMenuLabel(instances).map((label, idx) => ({
+          label,
+          enabled: false,
+          // 分组标题行与实例行同款禁用只读；仅展示，不提供逐项操作
+          id: idx === 0 ? 'kernel-instances-header' : `kernel-instance-${idx - 1}`,
+        }))
+      : [{ label: formatKernelMenuLabel(kernelInfo), enabled: false }];
   const template: MenuItemConstructorOptions[] = [
     { label: '打开主窗口', click: showWindow },
-    { label: formatKernelMenuLabel(kernelInfo), enabled: false },
+    ...kernelItems,
     { type: 'separator' },
     { label: '退出', click: quitFromTray },
   ];

@@ -1,19 +1,25 @@
 # F30: 内核冷启动基建（kernel_bootstrap）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-07 | **依据**: ADR-030（本地内核服务化 ②）、ADR-021（内核进程化交付契约）、Constitution P1-P6
+> **Spec 版本**: 1.2 | **日期**: 2026-08-07（1.2 修订 2026-09-14） | **依据**: ADR-030（本地内核服务化 ②）、ADR-059（实例类型化并发约束）、ADR-021（内核进程化交付契约）、Constitution P1-P6
 >
 > **Spec 变更**（1.0 → 1.1）: Q1-Q3 全部拍板（2026-08-07 用户选 A/A/A）——Q1 冷启动超时默认 30s + env `INKFLOW_KERNEL_TIMEOUT` 覆盖；Q2 版本校验 major 相同即复用；Q3 保留 `inkflow kernel status` 调试命令（dev 标注）
 >
-> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 1 个模块，估算 3-4 人天）
+> **Spec 变更**（1.1 → 1.2，#1153 / ADR-059）:
+> - §2.4 **新增**：实例类型（kind）契约 + 全量实例注册表
+> - §5.6 **新增**：按实例类型的并发准入（rc/正式存活期互斥；dev 允许多开）
+> - §6.1 **修订**：「多内核并存：禁止」→ **按 kind 分层**（rc/正式各限 1 个、dev 不限）
+> - §10 **修订**：「多内核并存/负载均衡 ❌ 永不」→ dev 多开为**明确支持**语义（rc/正式仍禁）
 >
-> **关联 Issues**: #166（本模块）；#167（GUI 托盘，**依赖本模块**）；#168（CLI 产物，**依赖本模块**）；#169（CLI 恒 HTTP，**依赖本模块**）；#49（F20 MCP，**依赖本模块**）
+> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 1 个模块，估算 3-4 人天）；1.2 修订挂 0.14.0
+>
+> **关联 Issues**: #166（本模块）；#167（GUI 托盘，**依赖本模块**）；#168（CLI 产物，**依赖本模块**）；#169（CLI 恒 HTTP，**依赖本模块**）；#49（F20 MCP，**依赖本模块**）；**#1153（1.2 修订来源）**
 >
 > **依赖**: ✅ F19（serve 命令 + INKFLOW_READY 交付契约 + `--port-file` 原子写入）· ✅ F1（config.data_dir = %APPDATA%\InkFlow）· ⏳ 无
 >
-> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-059](../../adr/kernel/ADR-059.md)（实例类型化并发约束——**修订 ADR-030 ②**）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
-> **状态**: ✅ 已实现（PR #171，#166 2026-08-08）
+> **状态**: ✅ 已实现（PR #171，#166 2026-08-08）；1.2 修订实施中（#1153）
 
 ---
 
@@ -84,6 +90,54 @@ class KernelHandle:
     started_at: datetime
     reused: bool  # True=复用已有内核；False=本进程拉起
 ```
+
+### 2.4 实例类型（kind）与全量注册表（#1153 / ADR-059）
+
+> 1.2 新增。解决「多实例互相覆盖 kernel.json + 用户不知情堆叠进程」——ADR-059 ①③。
+
+#### 2.4.1 实例类型判定
+
+`INKFLOW_INSTANCE_KIND` 环境变量显式指定；缺省按下列优先级推断（纯函数 `resolve_instance_kind()`）：
+
+| 优先级 | 条件 | 结果 |
+|--------|------|------|
+| 1 | env `INKFLOW_INSTANCE_KIND` ∈ {`dev`,`rc`,`release`} | 该值 |
+| 2 | `sys.frozen == True` | `release` |
+| 3 | `packaging.version.Version(__version__).is_prerelease` | `rc` |
+| 4 | 其他 | `dev` |
+
+- **传递路径**：GUI 壳按 `app.isPackaged` 判定后经 spawn `env` 显式传 `INKFLOW_INSTANCE_KIND`；CLI/MCP/skills 由 `ensure_kernel()` 自判
+- **禁止**按 `cwd` / 路径形状猜测 kind（worktree、主仓、任意 cwd 都可能跑同一份 dev 代码）
+- 非法值（如 `INKFLOW_INSTANCE_KIND=prod`）→ 回落推断（不抛错，宽松语义）
+
+#### 2.4.2 全量实例注册表
+
+**位置**：`<config.data_dir>/running/`（打包 = `%APPDATA%\InkFlow\running\`）
+
+**文件命名**：`<kind>-<pid>.json`（pid 保证唯一，kind 便于人眼排查）
+
+**字段**（七字段 = kernel.json 五字段 + `kind` + `data_dir`）：
+
+| 字段 | 类型 | 必填 | 含义 |
+|------|------|------|------|
+| `kind` | str | 是 | `dev` \| `rc` \| `release` |
+| `port` | int | 是 | 内核监听端口（127.0.0.1） |
+| `token` | str | 是 | 鉴权 token |
+| `pid` | int | 是 | 内核进程 PID |
+| `version` | str | 是 | 内核版本 |
+| `started_at` | str | 是 | ISO8601 启动时间（UTC） |
+| `data_dir` | str | 是 | 该实例使用的数据目录绝对路径（多实例区分的关键） |
+
+**写入时机**：客户端 `ensure_kernel()` 拉起成功后写入（当前权威路径）；内核进程退出时删除自己的注册文件
+
+**清理规则（惰性 GC，无守护进程）**：
+
+- 内核进程自身退出 → `serve.py` finally 删除自己的注册文件
+- 被 `taskkill /F` 强杀（不走 finally）→ 留僵尸文件，由**读取方**顺带清理：读注册表时对每个条目做 pid 存活探测，死则删
+
+**向后兼容**：`kernel.json` 五字段契约**不变**，仍是「默认实例」的发现锚点。注册表是**增量**——既有 CLI/MCP/skills 读 kernel.json 的路径零改动。
+
+> **为什么不用 kernel.json 加字段**：① 单文件无法承载「多实例」语义，加字段只是把覆盖问题挪个位置；② 五字段契约被 Python/TS/skills 文档/测试共 74+ 处引用，扩容代价大且无收益。
 
 ### 2.3 决策论证表
 
@@ -201,6 +255,46 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 - 显式退出控制面：GUI 托盘「退出」（#167）/ 未来 `daemon stop` 语义——本模块不实现
 - 不做空闲超时回收（ADR-030 否决项）
 
+### 5.6 按实例类型的并发准入（#1153 / ADR-059 ②）
+
+> 1.2 新增。**修订 ADR-030 ②的互斥语义**：原「CreateMutexW 防双 spawn」只覆盖**拉起动作**，`finally` 即释放，不阻止多内核存活。
+
+| kind | 并发策略 | 机制 | 互斥名 |
+|------|----------|------|--------|
+| `rc` | **机器级存活期互斥**（同机限 1） | 具名互斥体，**持锁至进程退出**（不释放，由 OS 随进程回收） | `InkFlowKernelRc` |
+| `release` | **机器级存活期互斥**（同机限 1） | 同上 | `InkFlowKernelRelease` |
+| `dev` | **允许多开** | 不获取存活期互斥；仅保留既有拉起动作互斥 | `InkFlowKernelBootstrap`（既有） |
+
+**语义对照（本 1.2 修订的实质）**：
+
+```
+修订前（bootstrap.py:81 + :411-412）
+  _acquire_mutex("InkFlowKernelBootstrap")   ← 「只允许一个拉起动作」
+  finally: _release_mutex(mutex_handle)      ← 拉起完成即释放
+  ⇒ 想表达「只允许一个内核存活」，实际只表达「防双 spawn」
+
+1.2（rc/release 路径）
+  _acquire_lifetime_mutex("InkFlowKernel<Kind>")  ← 「只允许一个内核存活」
+  （不释放；随进程退出由 OS 自动回收）
+  ⇒ 语义与意图一致
+```
+
+**准入顺序**（`ensure_kernel()` 内，复用判定之前）：
+
+```
+1. kind = resolve_instance_kind()
+2. if kind != 'dev':
+       handle = _acquire_lifetime_mutex(kind)
+       if handle is None:                      # 同 kind 内核已存活
+           既有 = 注册表查同 kind 存活实例
+           抛 KernelStartupError（消息含既有实例 port / pid / data_dir）
+3. （dev 或已拿到存活期互斥）→ 既有复用判定 → 拉起动作互斥 → spawn
+```
+
+- **dev 路径完全不变**（不引入任何新准入分支）—— 保证既有测试与 worktree 多开零回归
+- `rc`/`release` 的互斥在 `ensure_kernel` 内部持有并**不释放**，随调用方进程退出由 OS 回收
+- **失败消息**（可感知，不静默）：`KernelStartupError` 含既有实例的 `kind` / `port` / `pid` / `data_dir`，指引用户处理既有实例；GUI 侧转为错误对话框（ADR-059 ②）
+
 ---
 
 ## 6. 组织规则
@@ -209,7 +303,10 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 
 - 路径：`config.data_dir / "kernel.json"`（打包 = `%APPDATA%\InkFlow\kernel.json`；dev = 默认 data_dir）
 - 生命周期：内核启动 → 写；内核退出 → **不主动删**（stale 判定由读取方处理——崩溃场景无清理方，读取方判定更可靠）
-- 多内核并存：**禁止**（单实例语义，互斥锁 + 状态文件唯一路径保证）
+- **多内核并存：按 kind 分层（1.2 修订，#1153/ADR-059）**
+  - `dev` → **允许多开**（各自 data_dir 下独立 kernel.json；注册表记录全部）
+  - `rc` / `release` → **同 kind 限 1 个**（机器级存活期互斥 §5.6）；跨 kind 互不阻塞（rc 与 release 可各 1 个）
+  - 注册表（§2.4.2）承载「有哪些实例」的可见性，kernel.json 仍只承载「默认实例」发现
 
 ### 6.2 日志
 
@@ -293,6 +390,9 @@ CLI 测试: kernel status（信封/退出码/未运行语义）              ~4 
 5. **竞态**：并发调 ensure_kernel（asyncio.gather 2 个）→ 只 spawn 一次
 6. **失败路径**：spawn 后立即退出（mock returncode）→ 重试 ≤2 → KernelStartupError
 7. **版本**：kernel.json version 1.2.0 vs 客户端 2.0.0 → 拒绝复用
+8. **kind 判定**（1.2 新增）：env 显式值优先 / frozen→release / 预发布版本→rc / 其余→dev；非法值回落推断
+9. **存活期互斥**（1.2 新增）：kind=rc 且互斥被占 → 抛 KernelStartupError（消息含既有实例 port/pid/data_dir），不放 Popen；kind=dev → 不获取存活期互斥、两实例均正常拉起（多开）
+10. **注册表**（1.2 新增）：拉起成功后写入 `<kind>-<pid>.json`（七字段）；读注册表时 pid 已死的条目被清理（惰性 GC）；跨 kind 条目并存互不干扰
 
 ### 覆盖率目标
 
@@ -311,7 +411,8 @@ CLI 测试: kernel status（信封/退出码/未运行语义）              ~4 
 | 内核空闲回收/自动退出 | ADR-030 D2=A：常驻到显式退出 | 永不（除非用户反转拍板） |
 | 开机自启 | 用户环境配置差异；发布包统一处理 | 发布包/1.0.0 |
 | kernel.json 加密 | %APPDATA% 用户私有 ACL 已够（本地威胁模型） | 永不 |
-| 多内核并存/负载均衡 | 单实例语义（互斥锁） | 永不 |
+| ~~多内核并存/负载均衡~~ | **1.2 修订（#1153/ADR-059）**：dev 多开为明确支持语义（§5.6/§6.1）；rc/正式仍限 1 个。负载均衡仍不做（本地单机无此需求） | dev 多开 ✅ 已实现；负载均衡 永不 |
+| 守护进程监督内核生命周期 | ADR-029 已判定 daemon 为伪需求；注册表清理走惰性 GC（§2.4.2） | 永不 |
 
 ---
 
@@ -360,6 +461,9 @@ F30 被依赖:
 | M5 | 手工验证：无内核 → ensure_kernel 拉起 → kernel.json 写入 → 二次调用复用（pid 不变） | 手工验证（`python -c "import asyncio; from inkflow.infrastructure.kernel import ensure_kernel; ..."` 两次调用比对 pid） |
 | M6 | 手工验证：kill 内核 → 残留 kernel.json 被判定 stale → 重新拉起 | 手工验证（Start-Process 内核 → Stop-Process → ensure_kernel → 新 pid） |
 | M7 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过 |
+| M8 | **（1.2 新增）实例类型判定 + 触发路径** | `pytest tests/unit/infrastructure/kernel/test_kernel_instance_kind.py -v` 全绿（env 显式 / frozen / 预发布 / 缺省 / 非法值五路径） |
+| M9 | **（1.2 新增）rc 存活期互斥 + dev 多开** | `pytest tests/unit/infrastructure/kernel/test_kernel_concurrency_kind.py -v` 全绿（rc 第二个被拒且消息含既有实例信息；dev 两实例均放行） |
+| M10 | **（1.2 新增）注册表读写 + 惰性 GC** | `pytest tests/unit/infrastructure/kernel/test_kernel_registry.py -v` 全绿（写入七字段 / pid 死条目被清理 / 跨 kind 并存） |
 
 > Issue #166 验收标准映射：kernel.json 写入正确 = M1/M5；复用不 spawn = M2/M5；双客户端只一个内核 = M2（互斥用例）；崩溃残留 stale 清理 = M1/M6。
 
