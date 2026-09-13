@@ -2414,11 +2414,18 @@
         "type": "object"
       },
       "LLMTestRequest": {
-        "description": "POST /llm/test 请求体 — provider/api_key 必填非空；model/base_url 可选。\n\n#106 F2：model 缺省时回退链 = 注册表 default_model → config.llm_default_model\n（前端 ProviderDialog 只发 {provider, base_url, api_key}）；model 提供但空白仍\n拒绝（提供即校验）；base_url 非空时透传 LLM 客户端 openai_api_base（自定义\n端点探测），空/缺失不传。",
+        "description": "POST /llm/test 请求体 — provider 必填非空；model/base_url/api_key 可选。\n\n#106 F2：model 缺省时回退链 = 注册表 default_model → config.llm_default_model\n（前端 ProviderDialog 只发 {provider, base_url, api_key}）；model 提供但空白仍\n拒绝（提供即校验）；base_url 非空时透传 LLM 客户端 openai_api_base（自定义\n端点探测），空/缺失不传。\n\n#1152 缺陷 3：api_key 缺省/JSON null → 端点回退已存 keychain（对齐\nprovider_configs.py ``/models`` 同族范式），前端无需回传明文 key；显式空串\n仍是客户端 bug（首启引导曾硬编码 ``api_key: ''`` → 恒 422 死路），继续 422、\n不静默吞成 keychain 回退。",
         "properties": {
           "api_key": {
-            "title": "Api Key",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
           },
           "base_url": {
             "anyOf": [
@@ -2448,8 +2455,7 @@
           }
         },
         "required": [
-          "provider",
-          "api_key"
+          "provider"
         ],
         "title": "LLMTestRequest",
         "type": "object"
@@ -15375,7 +15381,7 @@
     },
     "/api/v1/settings/llm/test": {
       "post": {
-        "description": "LLM 连通探测 — 业务语义成功/失败 → 200 + {ok: ...}（spec §4.2.3 testStatus 消费语义）。\n\n失败（LLMRequestError/网络等）→ 200 + ok:false 通用文案，内部异常细节不泄漏。",
+        "description": "LLM 连通探测 — 业务语义成功/失败 → 200 + {ok: ...}（spec §4.2.3 testStatus 消费语义）。\n\n失败（LLMRequestError/网络等）→ 200 + ok:false 通用文案，内部异常细节不泄漏。\n\n#1152 缺陷 3：api_key 缺省/JSON null → 回退已存 keychain（get_key）；回退仍\n为空 → 200 + ok:false 可读文案（不是 422——422 的 pydantic detail 数组前端\n拿不到可读 message，首启引导步骤 2 会死路）。",
         "operationId": "test_llm_connection_api_v1_settings_llm_test_post",
         "requestBody": {
           "content": {

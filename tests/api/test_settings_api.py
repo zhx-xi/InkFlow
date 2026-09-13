@@ -437,7 +437,6 @@ class TestLLMTestProbe:
         "body",
         [
             {"model": TEST_MODEL, "api_key": TEST_API_KEY},  # provider 缺失
-            {"provider": TEST_PROVIDER, "model": TEST_MODEL},  # api_key 缺失
             {"provider": "   ", "model": TEST_MODEL, "api_key": TEST_API_KEY},
             {"provider": TEST_PROVIDER, "model": "   ", "api_key": TEST_API_KEY},
             {"provider": TEST_PROVIDER, "model": TEST_MODEL, "api_key": "   "},
@@ -449,7 +448,6 @@ class TestLLMTestProbe:
         ],
         ids=[
             "provider_missing",
-            "api_key_missing",
             "provider_blank",
             "model_blank",
             "api_key_blank",
@@ -457,13 +455,19 @@ class TestLLMTestProbe:
         ],
     )
     def test_validation_422(self, client, body):
-        """provider/api_key 缺失或空白、model 空白 → 422（设计假设 #8）。
+        """provider 缺失/空白、model 空白、api_key 显式空白 → 422（设计假设 #8）。
 
         【#106 F2 行为变更】model 缺失【不再】422（model 可选，缺省回退
         注册表 default_model → config.llm_default_model）——原
         model_missing 用例已从本表移除，改由
         test_probe_without_model_falls_back 契约 200；model 提供但空白
         仍 422（提供即校验：缺省回退仅对【未提供】生效）。
+
+        【#1152 缺陷 3 行为变更】api_key 缺失【不再】422（api_key 可选，
+        缺省回退 keychain）——原 api_key_missing 用例已从本表移除，改由
+        test_llm_test_keychain_fallback_1152.py 契约 keychain 回退；
+        api_key 显式空白（"   "）仍 422（提供即校验：缺省回退仅对
+        【未提供】生效）。
         """
         resp = client.post(ENDPOINT_TEST, json=body)
         assert resp.status_code == 422
@@ -642,7 +646,8 @@ DEFAULT_SETTINGS = {
     "font": "sans",
     "close_behavior": "tray",
     "tray_hint_dismissed": False,
-    "default_words": 800000, "default_reasoning_effort": "default",
+    "default_words": 800000,
+    "default_reasoning_effort": "default",
     "agent_max_steps": 12,
     "agent_token_budget": 32000,
     "agent_max_total_tool_calls": 20,

@@ -71,18 +71,23 @@ class LLMKeyStoreRequest(BaseModel):
 
 
 class LLMTestRequest(BaseModel):
-    """POST /llm/test 请求体 — provider/api_key 必填非空；model/base_url 可选。
+    """POST /llm/test 请求体 — provider 必填非空；model/base_url/api_key 可选。
 
     #106 F2：model 缺省时回退链 = 注册表 default_model → config.llm_default_model
     （前端 ProviderDialog 只发 {provider, base_url, api_key}）；model 提供但空白仍
     拒绝（提供即校验）；base_url 非空时透传 LLM 客户端 openai_api_base（自定义
     端点探测），空/缺失不传。
+
+    #1152 缺陷 3：api_key 缺省/JSON null → 端点回退已存 keychain（对齐
+    provider_configs.py ``/models`` 同族范式），前端无需回传明文 key；显式空串
+    仍是客户端 bug（首启引导曾硬编码 ``api_key: ''`` → 恒 422 死路），继续 422、
+    不静默吞成 keychain 回退。
     """
 
     provider: str
     model: str | None = None
     base_url: str | None = None
-    api_key: str
+    api_key: str | None = None
 
     @field_validator("provider")
     @classmethod
@@ -101,8 +106,9 @@ class LLMTestRequest(BaseModel):
 
     @field_validator("api_key")
     @classmethod
-    def validate_api_key(cls, v: str) -> str:
-        return _validate_not_blank(v, "api_key")
+    def validate_api_key(cls, v: str | None) -> str | None:
+        # #1152：None 放行（缺省/null → 走 keychain 回退）；显式空串仍拒绝
+        return None if v is None else _validate_not_blank(v, "api_key")
 
 
 class DataDirUpdate(BaseModel):
@@ -183,13 +189,25 @@ async def test_llm_connection(
     """LLM 连通探测 — 业务语义成功/失败 → 200 + {ok: ...}（spec §4.2.3 testStatus 消费语义）。
 
     失败（LLMRequestError/网络等）→ 200 + ok:false 通用文案，内部异常细节不泄漏。
+
+    #1152 缺陷 3：api_key 缺省/JSON null → 回退已存 keychain（get_key）；回退仍
+    为空 → 200 + ok:false 可读文案（不是 422——422 的 pydantic detail 数组前端
+    拿不到可读 message，首启引导步骤 2 会死路）。
     """
     model = data.model or await _resolve_probe_model(data.provider, db)
+    api_key = data.api_key
+    if api_key is None:
+        api_key = _get_key_manager().get_key(data.provider)
+    if not api_key:
+        return {
+            "ok": False,
+            "message": "未找到该 Provider 的 API Key，请先在步骤 1 保存",
+        }
     try:
         if data.base_url:
-            client = _get_llm_client(data.provider, model, data.api_key, base_url=data.base_url)
+            client = _get_llm_client(data.provider, model, api_key, base_url=data.base_url)
         else:
-            client = _get_llm_client(data.provider, model, data.api_key)
+            client = _get_llm_client(data.provider, model, api_key)
         probe = client.chat([ChatMessage(role="user", content="ping")])
         # LLMClientProtocol.chat 为 async 协程；防御探测桩返回非 awaitable 的边界
         if asyncio.iscoroutine(probe):
