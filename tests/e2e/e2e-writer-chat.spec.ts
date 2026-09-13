@@ -155,6 +155,30 @@ async function gotoNav(window: Page, name: string): Promise<void> {
   await window.getByRole('link', { name }).click();
 }
 
+/**
+ * #1155：等待 ChatPanel 的「挂载期历史加载」落地。
+ *
+ * ChatPanel 在「点章节」时才挂载（writing.tsx 分支切换），挂载即跑
+ * `GET /api/v1/chat/conversations`（可能再建会话）→ `GET /api/v1/chat/messages`，
+ * 落地后**无条件** `setMessages(history)`（ChatPanel.tsx:229）+ 归零 userSeqRef/aiSeqRef（:226-227）。
+ *
+ * 若该次落地晚于「发送」，会用陈旧快照覆盖刚发出的消息，产生两种 CI flaky 形态：
+ * - 空快照 → messages.length=0 → chat-messages 容器卸载 → 删除按钮 detach（click 吃满 30s 超时）
+ * - 带 id 的服务端副本 → `chat-msg-user-0` 复活（testid 是 seq 基，仍命中），
+ *   而删除按钮 testid 从 `chat-msg-delete-user-0` 变为 `chat-msg-delete-<uuid>`
+ *   → `toHaveCount(0)` 轮询恒为 1（CI 实测 14 次）
+ *
+ * 该次 setMessages 在挂载生命周期内只发生一次 → 等它落地后发送，两个形态同时消失。
+ * ⚠️ 必须在**点章节之前**调用（waiter 先注册，再触发挂载）。
+ */
+async function waitChatHistorySettled(window: Page): Promise<void> {
+  const settled = window.waitForResponse(
+    (r) => r.request().method() === 'GET' && r.url().includes('/api/v1/chat/messages'),
+    { timeout: 15_000 }
+  );
+  return settled.then(() => undefined);
+}
+
 /** 拦截 chat 流式端点：POST /api/v1/chat/agent/stream → SSE 帧（确定性，零真实 LLM）.
  * #541：ChatPanel 已从 executePipeline+轮询 改为 streamChat SSE 消费；
  * 帧协议 = data: {json}\n\n（帧带 type 键：delta 帧 {type:'delta',delta,done:false} × N → {type:'done',done:true} 终帧）。
@@ -357,8 +381,12 @@ test('流式新消息渲染删除按钮：发送 → chat-msg-delete-user-0 存�
     await gotoNav(window, '写作');
     await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
     await expect(window.getByTestId('tree-volume')).toBeVisible({ timeout: 15_000 });
+    // #1155：点章节会挂载 ChatPanel → 先注册历史加载 waiter，再触发挂载
+    const historySettled = waitChatHistorySettled(window);
     await window.getByRole('button', { name: /第1章 初见/ }).click();
     await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
+    // #1155：等挂载期历史加载落地再发送（否则该次 setMessages 会覆盖刚发出的消息）
+    await historySettled;
 
     // 树就绪后再注册流式拦截（对话类回复，无 content 标记）
     interceptChatStream(window, '这是一段纯对话回复。');
