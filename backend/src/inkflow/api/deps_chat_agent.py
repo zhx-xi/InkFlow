@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from inkflow.infrastructure.agent.chat_agent_service import ChatAgentService
 
 
-async def _get_db() -> AsyncGenerator[AsyncSession, None]:
+async def _get_db() -> AsyncGenerator[AsyncSession]:
     """deps.get_db 惰性代理（规避 deps ↔ 本模块模块级循环 import）。"""
     from inkflow.api.deps import get_db
 

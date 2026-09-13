@@ -16,7 +16,7 @@ import contextlib
 import json
 import uuid
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -26,8 +26,6 @@ from inkflow.domain.models.world import WorldUpdate
 from inkflow.infrastructure.agent.tools import _tool_db_lock as _tool_db_lock_mod
 from inkflow.infrastructure.agent.tools.reader_tools import Tool
 from inkflow.logging import instrument
-
-T = TypeVar("T")
 
 
 def _coerce_uuid(value: object) -> uuid.UUID:
@@ -51,7 +49,7 @@ def _coerce_id(value: object) -> object:
         return value
 
 
-def _require_found(value: T, message: str) -> T:
+def _require_found[T](value: T, message: str) -> T:
     """更新类 service 返回 None（实体不存在）→ 抛 ValueError 走 _fail 信封."""
     if value is None:
         raise ValueError(message)

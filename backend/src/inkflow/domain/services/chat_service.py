@@ -38,7 +38,7 @@ class ChatService:
 
     async def stream(
         self, prompt: str, chapter_context: str | None = None
-    ) -> AsyncGenerator[ChatStreamEvent, None]:
+    ) -> AsyncGenerator[ChatStreamEvent]:
         """LLM 流 → ChatStreamEvent delta 序列，结束后 done=True。
 
         - messages[0] = system（system_prompt.replace("{prompt}", prompt)——

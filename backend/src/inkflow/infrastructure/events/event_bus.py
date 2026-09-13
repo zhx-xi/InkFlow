@@ -50,14 +50,14 @@ class EventBus:
         """初始化空订阅者集合（订阅者随 subscribe() 生成器生命周期增删）。"""
         self._subscribers: set[asyncio.Queue[DataChangeEvent]] = set()
 
-    def subscribe(self) -> AsyncGenerator[DataChangeEvent, None]:
+    def subscribe(self) -> AsyncGenerator[DataChangeEvent]:
         """注册订阅者，返回事件异步生成器；生成器被 aclose 时自动注销。
 
         注意：注册发生在**首次迭代**时（异步生成器体惰性执行）——订阅方需先
         开始消费（`async for` / `__anext__`），`subscriber_count` 才计入本订阅者。
         """
 
-        async def _iterate() -> AsyncGenerator[DataChangeEvent, None]:
+        async def _iterate() -> AsyncGenerator[DataChangeEvent]:
             queue: asyncio.Queue[DataChangeEvent] = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
             self._subscribers.add(queue)
             try:

@@ -25,7 +25,7 @@ CONTENT = "启程一章的正文（HTTP 装配契约）。"
 
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
     """本地镜像 ASGI 客户端：get_db 覆盖为测试 db_session（同库访问）。"""
 
     async def _override_get_db():

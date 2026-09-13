@@ -142,7 +142,7 @@ def _http_client(session: AsyncSession) -> AsyncClient:
     app = FastAPI()
     app.include_router(router)
 
-    async def _override_db() -> AsyncGenerator[AsyncSession, None]:
+    async def _override_db() -> AsyncGenerator[AsyncSession]:
         yield session
 
     app.dependency_overrides[get_db] = _override_db

@@ -16,7 +16,6 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -151,10 +150,7 @@ def _fail(exc: Exception) -> str:
     return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
 
-T = TypeVar("T")
-
-
-def _require_found(value: T, message: str) -> T:
+def _require_found[T](value: T, message: str) -> T:
     """service 返回 None（实体不存在）→ 抛 ValueError 走 _fail 信封."""
     if value is None:
         raise ValueError(message)

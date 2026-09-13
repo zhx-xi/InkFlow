@@ -194,8 +194,8 @@ def _encode_sse(ev: WritingStreamEvent) -> str:
 
 async def _event_generator(
     request: Request,
-    events: AsyncGenerator[WritingStreamEvent, None],
-) -> AsyncGenerator[str, None]:
+    events: AsyncGenerator[WritingStreamEvent],
+) -> AsyncGenerator[str]:
     """包装 service 流 → SSE 帧字符串；客户端断开立即停止（spec §5.3）."""
     try:
         async for ev in events:
@@ -230,7 +230,7 @@ async def stream_write(
         # 流开始前校验异常（项目/章节不存在等）→ HTTP 状态码（spec §3.2）
         raise _map_service_error(exc) from exc
 
-    async def _prefetched_stream() -> AsyncGenerator[str, None]:
+    async def _prefetched_stream() -> AsyncGenerator[str]:
         try:
             # 首事件已被探针消费——先补发其编码帧，再消费余下事件
             yield _encode_sse(first)

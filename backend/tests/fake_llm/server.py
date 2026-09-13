@@ -87,7 +87,7 @@ def create_app(dim: int = 8) -> FastAPI:
             )
 
         # 流式：SSE delta 帧 + data: [DONE]
-        async def _sse_stream() -> AsyncGenerator[str, None]:
+        async def _sse_stream() -> AsyncGenerator[str]:
             content = fixture.content or "ok"
             reasoning = fixture.reasoning_content or ""
             # #964：reasoning_content delta 帧按 2 字符切块，先于 content delta 发出

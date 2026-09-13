@@ -98,7 +98,7 @@ class ChatAgentService:
         project_id: str | None = None,
         chapter_context: str | None = None,
         cancel_event: asyncio.Event | None = None,
-    ) -> AsyncGenerator[ChatStreamEvent, None]:
+    ) -> AsyncGenerator[ChatStreamEvent]:
         """astream_events v2 事件流 → ChatStreamEvent 帧序列 + #615 steps 收集。
 
         #680: project_id 非空且注入 project_context_getter 时，先渲染项目上下文段
@@ -214,7 +214,7 @@ class ChatAgentService:
                         if interrupts:
                             first = (
                                 interrupts[0]
-                                if isinstance(interrupts, (list, tuple))
+                                if isinstance(interrupts, list | tuple)
                                 else interrupts
                             )
                             value = getattr(first, "value", None) or (
