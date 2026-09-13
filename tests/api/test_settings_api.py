@@ -462,12 +462,7 @@ class TestLLMTestProbe:
         model_missing 用例已从本表移除，改由
         test_probe_without_model_falls_back 契约 200；model 提供但空白
         仍 422（提供即校验：缺省回退仅对【未提供】生效）。
-
-        【#1152 缺陷 3 行为变更】api_key 缺失【不再】422（api_key 可选，
-        缺省回退 keychain）——原 api_key_missing 用例已从本表移除，改由
-        test_llm_test_keychain_fallback_1152.py 契约 keychain 回退；
-        api_key 显式空白（"   "）仍 422（提供即校验：缺省回退仅对
-        【未提供】生效）。
+        【#1152】api_key 同款（可选 + keychain 回退）；显式空白仍 422。
         """
         resp = client.post(ENDPOINT_TEST, json=body)
         assert resp.status_code == 422
