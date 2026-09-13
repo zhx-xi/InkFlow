@@ -41,7 +41,7 @@
 
 | 层面 | 技术 | 备注 |
 |------|------|------|
-| 语言 | Python **3.11+** | 必须 `from __future__ import annotations` |
+| 语言 | Python **3.13+** | 必须 `from __future__ import annotations`（口径见 ADR-058） |
 | Web 框架 | FastAPI + uvicorn[standard] | async 优先 |
 | CLI | Typer + Rich | `inkflow` 命令入口 |
 | ORM | SQLAlchemy 2.0 (async) + aiosqlite | SQLite 本地（schema 由 create_all + 轻量幂等迁移管理，Alembic 未启用） |

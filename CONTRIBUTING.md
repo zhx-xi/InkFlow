@@ -5,7 +5,7 @@
 ## 快速开始
 
 1. **阅读**：`AGENTS.md`（项目总约定 + AI 行为准则）、`ARCHITECTURE.md`（架构导航）、`FEATURES.md`（功能清单）
-2. **环境**：Python 3.11+，`backend/` 使用 uv 管理依赖（`uv sync --frozen`）
+2. **环境**：Python 3.13+，`backend/` 使用 uv 管理依赖（`uv sync --frozen`）
 3. **开发流程**：每个功能先写 spec（`specs/f<X>-<name>/spec.md`）→ 测试先行（RED）→ 实现（GREEN）→ PR
 
 ## 分支与 PR 约定
