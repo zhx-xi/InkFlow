@@ -233,13 +233,11 @@ class MapService:
         project_repo = self._project_repo
         if project_repo is not None and await project_repo.get(pid_int) is None:
             raise ProjectNotFoundError()
-        root_int = _to_int_id(root_location_id) if root_location_id is not None else None
-        # #1162: 过滤值超 int64 → 不可能命中任何行 → 空结果（父项目存在，非 404）
-        if root_int is not None and (root_int < -(2**63) or root_int >= 2**63):
-            return [], 0
         return await self._repo.list(
             project_id=pid_int,
-            root_location_id=root_int,
+            root_location_id=(
+                _to_int_id(root_location_id) if root_location_id is not None else None
+            ),
             top_level_only=top_level_only,
             offset=offset,
             limit=limit,

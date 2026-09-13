@@ -231,13 +231,9 @@ class ChapterService:
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         if await self._project_repo.get(pid) is None:
             raise ProjectNotFoundError()
-        vid = _to_int(volume_id) if volume_id is not None else None
-        # #1162: 过滤值超 int64 → 不可能命中任何行 → 空结果（父项目存在，非 404）
-        if vid is not None and (vid < -(2**63) or vid >= 2**63):
-            return [], 0
         return await self._repo.list_chapters(
             pid,
-            vid,
+            _to_int(volume_id) if volume_id is not None else None,
             status,
             offset,
             limit,

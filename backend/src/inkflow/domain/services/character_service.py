@@ -212,14 +212,10 @@ class CharacterService:
         project_repo = self._project_repo
         if project_repo is not None and await project_repo.get(pid_int) is None:
             raise ProjectNotFoundError()
-        gid_int = _to_int_id(group_id) if group_id is not None else None
-        # #1162: 过滤值超 int64 → 不可能命中任何行 → 空结果（父项目存在，非 404）
-        if gid_int is not None and (gid_int < -(2**63) or gid_int >= 2**63):
-            return [], 0
         return await self._repo.list(
             project_id=pid_int,
             search=search,
-            group_id=gid_int,
+            group_id=_to_int_id(group_id) if group_id is not None else None,
             sort_by=sort_by,
             sort_desc=sort_desc,
             offset=offset,

@@ -238,10 +238,6 @@ class WorldService:
         project_repo = self._project_repo
         if project_repo is not None and await project_repo.get(pid_int) is None:
             raise ProjectNotFoundError()
-        parent_int = _to_int_id(parent_id) if parent_id is not None else None
-        # #1162: 过滤值超 int64 → 不可能命中任何行 → 空结果（父项目存在，非 404）
-        if parent_int is not None and (parent_int < -(2**63) or parent_int >= 2**63):
-            return [], 0
         return await self._repo.list(
             project_id=pid_int,
             search=search,
@@ -250,7 +246,7 @@ class WorldService:
             sort_desc=sort_desc,
             offset=offset,
             limit=limit,
-            parent_id=parent_int,
+            parent_id=_to_int_id(parent_id) if parent_id is not None else None,
             top_level_only=top_level_only,
         )
 
