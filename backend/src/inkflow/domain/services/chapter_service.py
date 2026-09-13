@@ -18,6 +18,7 @@ from inkflow.domain.models.chapter import (
 )
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.project import Project
+from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
@@ -83,7 +84,15 @@ class ChapterService:
         title: str,
         order_index: float | None = None,
     ) -> Volume:
+        """创建卷（#1138: 落库前校验项目存在，防孤儿行）.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（router 转 404「项目不存在」）.
+        """
         pid = _to_uuid(project_id)
+        # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
+        if await self._project_repo.get(pid.int) is None:
+            raise ProjectNotFoundError()
         if order_index is None:
             order_index = await self._repo.get_next_volume_order(pid.int)
         vol = Volume(

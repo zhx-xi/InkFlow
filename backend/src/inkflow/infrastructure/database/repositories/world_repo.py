@@ -111,7 +111,7 @@ class SQLiteWorldRepository:
 
     async def get(self, setting_id: int) -> WorldSetting | None:
         """按主键查询条目。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if setting_id < -2**63 or setting_id >= 2**63:
+        if setting_id < -(2**63) or setting_id >= 2**63:
             return None
         stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
         result = await self._session.execute(stmt)
@@ -163,7 +163,12 @@ class SQLiteWorldRepository:
 
         Returns:
             (当前页条目列表, 符合条件的总记录数).
+
+        超 int64 范围的项目 id 视为不存在（SQLite 整数溢出防御，#1139：过滤
+        条件型方法的 128 位 int 绑定会抛 OverflowError → 500）.
         """
+        if project_id < -(2**63) or project_id >= 2**63:
+            return [], 0
         base = select(WorldSettingORM).where(WorldSettingORM.project_id == project_id)
 
         # 搜索: name icontains
@@ -306,7 +311,12 @@ class SQLiteWorldRepository:
 
         两段式：CTE 取层序 id 集合（depth 升序 + created_at ASC），再按 id 批量查 ORM
         行（类型处理完整），Python 侧按 CTE 顺序重排，确保层序稳定。
+
+        超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法的
+        128 位 int 绑定会抛 OverflowError → 500）；不存在 id → 空列表。
         """
+        if setting_id < -(2**63) or setting_id >= 2**63:
+            return []
         sql = text(
             """
             WITH RECURSIVE descendants(id, depth, created_at) AS (

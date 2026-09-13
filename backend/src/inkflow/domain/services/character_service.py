@@ -38,6 +38,7 @@ from inkflow.domain.models.character import (
     CharacterUpdate,
     _validate_role_rank,
 )
+from inkflow.domain.models.project import Project
 from inkflow.domain.ports.character_errors import (
     CharacterNameConflictError,
     CharacterNotFoundError,
@@ -104,6 +105,27 @@ class CharacterService:
         )
 
     # ── Character ──────────────────────────────────────────────────
+
+    async def _ensure_project(self, project_id: uuid.UUID) -> Project | None:
+        """校验项目存在（#1138: create_* 落库前防孤儿行，spec §3.4）.
+
+        Args:
+            project_id: 所属项目 UUID（router 解析路径参数后传入）.
+
+        Returns:
+            项目实体（extract 入口需读 config.model）；project_repo 未注入
+            （仅 Mock 装配场景）→ None——生产装配（deps.get_character_service）
+            恒注入 SQLiteProjectRepository。
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（router 层转 404「项目不存在」）.
+        """
+        if self._project_repo is None:
+            return None
+        project = await self._project_repo.get(_to_int_id(project_id))
+        if project is None:
+            raise ProjectNotFoundError()
+        return project
 
     async def create_character(
         self,
@@ -276,12 +298,16 @@ class CharacterService:
             character_id: 角色主键（支持 int 或 UUID）.
 
         Returns:
-            该角色作为起点或终点的全部关系；角色不存在返回空列表.
+            该角色作为起点或终点的全部关系（角色存在但无关系 → 空列表）.
+
+        Raises:
+            CharacterNotFoundError: 角色不存在（#1139：空列表 ≠ 父不存在，
+                router 转 404「角色不存在」）.
         """
         cid = _to_int_id(character_id)
         character = await self._repo.get(cid)
         if character is None:
-            return []
+            raise CharacterNotFoundError()
         return await self._repo.list_relations(_to_int_id(character.project_id), cid)
 
     async def create_relation(
@@ -437,7 +463,10 @@ class CharacterService:
 
         Raises:
             GroupNameConflictError: 项目内已存在同名活动分组.
+            ProjectNotFoundError: 项目不存在（#1138 防孤儿行，router 转 404）.
         """
+        # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
+        await self._ensure_project(project_id)
         pid_int = _to_int_id(project_id)
         if any(g.name == name for g in await self._repo.list_groups(pid_int)):
             raise GroupNameConflictError()
@@ -547,11 +576,9 @@ class CharacterService:
         """
         if self._extractor is None:
             raise CharacterServiceError("角色提取器未配置")
-        if self._project_repo is None:
+        project = await self._ensure_project(request.project_id)
+        if project is None:  # project_repo 未注入（配置错误，防静默降级）
             raise CharacterServiceError("项目仓储未配置，无法校验项目存在性")
-        project = await self._project_repo.get(_to_int_id(request.project_id))
-        if project is None:
-            raise ProjectNotFoundError()
         logger.info(
             "角色提取: project=%s model=%s",
             request.project_id,

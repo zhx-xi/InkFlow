@@ -135,11 +135,20 @@ def mock_repo() -> MagicMock:
     return repo
 
 
+def _project(*, project_id: uuid.UUID = PID) -> Project:
+    """构造测试用项目实体（create_* 项目存在性校验 mock 返回）."""
+    return Project(id=project_id, name="测试项目", created_at=TS, updated_at=TS)
+
+
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — extract 入口校验项目存在性。"""
+    """Mock ProjectRepositoryProtocol — 项目存在性校验（get 默认 = 项目存在）.
+
+    #1138 起 create_group 落库前校验项目存在，故默认返回真实 Project；
+    「项目不存在」用例自行覆盖为 AsyncMock(return_value=None)。
+    """
     repo = MagicMock(spec=ProjectRepositoryProtocol)
-    repo.get = AsyncMock(return_value=None)
+    repo.get = AsyncMock(return_value=_project())
     return repo
 
 
@@ -438,9 +447,11 @@ class TestRelationCrud:
         assert result == [rel]
         mock_repo.list_relations.assert_awaited_once_with(PID.int, from_char.id.int)
 
-        # 角色不存在 → 空列表（无悬空查询）
+        # #1139: 角色不存在 → 抛 CharacterNotFoundError（router 转 404），
+        # 不得返回空列表（空列表 = 「角色存在但无关系」，语义不同）
         mock_repo.get = AsyncMock(return_value=None)
-        assert await service.list_relations(uuid.uuid4()) == []
+        with pytest.raises(CharacterNotFoundError):
+            await service.list_relations(uuid.uuid4())
         assert mock_repo.list_relations.await_count == 1
 
     async def test_update_relation_merges_fields(self, service, mock_repo) -> None:

@@ -137,11 +137,20 @@ def mock_repo() -> MagicMock:
     return repo
 
 
+def _project(*, project_id: uuid.UUID = PID) -> Project:
+    """构造测试用项目实体（create_* 项目存在性校验 mock 返回）."""
+    return Project(id=project_id, name="测试项目", created_at=TS, updated_at=TS)
+
+
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — generate 入口校验项目存在性。"""
+    """Mock ProjectRepositoryProtocol — 项目存在性校验（get 默认 = 项目存在）.
+
+    #1139 起 list_points 空结果时校验大纲存在，故默认返回真实 Project；
+    「项目不存在」用例自行覆盖为 AsyncMock(return_value=None)。
+    """
     repo = MagicMock(spec=ProjectRepositoryProtocol)
-    repo.get = AsyncMock(return_value=None)
+    repo.get = AsyncMock(return_value=_project())
     return repo
 
 
@@ -171,7 +180,7 @@ class TestOutlineCrud:
     """大纲 CRUD — 创建/查询/更新/真删（v1.1 默认硬删）。"""
 
     async def test_create_outline_success_persists(self, service, mock_repo) -> None:
-        """创建大纲 → repo.add 收到完整实体（UUID 项目归属；#835 起默认须为合法树根）. """
+        """创建大纲 → repo.add 收到完整实体（UUID 项目归属；#835 起默认须为合法树根）."""
         created = await service.create_outline(
             project_id=PID,
             name="第一卷大纲",
@@ -409,7 +418,7 @@ class TestPlotPointCrud:
         assert await service.delete_point(uuid.uuid4()) is False
 
     async def test_list_points(self, service, mock_repo) -> None:
-        """情节点列表透传大纲 id；大纲不存在 → 空列表（无悬空查询）。"""
+        """情节点列表透传大纲 id；大纲不存在 → OutlineNotFoundError（#1139，无悬空查询）。"""
         outline = _outline(name="第一卷大纲")
         point = _point("主角登场", outline=outline)
         mock_repo.get = AsyncMock(return_value=outline)
@@ -419,8 +428,11 @@ class TestPlotPointCrud:
         assert result == [point]
         mock_repo.list_points.assert_awaited_once_with(outline.id.int)
 
+        # #1139: 大纲不存在 → 抛 OutlineNotFoundError（router 转 404），
+        # 不得返回空列表（空列表 = 「大纲存在但无情节点」，语义不同）
         mock_repo.get = AsyncMock(return_value=None)
-        assert await service.list_points(uuid.uuid4()) == []
+        with pytest.raises(OutlineNotFoundError):
+            await service.list_points(uuid.uuid4())
         assert mock_repo.list_points.await_count == 1
 
 
@@ -806,9 +818,7 @@ class TestCreateOutlineConfigNormalization:
         """project config=chinese → level=chapter 的 name 落库前归一为 '第三章 风'。"""
         parent = self._volume_parent()
         mock_project_repo.get = AsyncMock(return_value=chinese_project)
-        mock_repo.get = AsyncMock(
-            side_effect=lambda oid: parent if oid == parent.id.int else None
-        )
+        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id.int else None)
         mock_repo.get_by_name = AsyncMock(return_value=None)
         mock_repo.add = AsyncMock(side_effect=lambda o: o)
 
@@ -825,9 +835,7 @@ class TestCreateOutlineConfigNormalization:
         """level=volume → 不按 project config 归一（名称原样落库）。"""
         parent = self._overall_parent()
         mock_project_repo.get = AsyncMock(return_value=chinese_project)
-        mock_repo.get = AsyncMock(
-            side_effect=lambda oid: parent if oid == parent.id.int else None
-        )
+        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id.int else None)
         mock_repo.get_by_name = AsyncMock(return_value=None)
         mock_repo.add = AsyncMock(side_effect=lambda o: o)
 
@@ -842,9 +850,7 @@ class TestCreateOutlineConfigNormalization:
         """project_repo=None → 向后兼容：不炸、名称原样落库（保持现行为）。"""
         svc = OutlineService(repository=mock_repo, generator=None, project_repo=None)
         parent = self._overall_parent()
-        mock_repo.get = AsyncMock(
-            side_effect=lambda oid: parent if oid == parent.id.int else None
-        )
+        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id.int else None)
         mock_repo.get_by_name = AsyncMock(return_value=None)
         mock_repo.add = AsyncMock(side_effect=lambda o: o)
 

@@ -379,13 +379,18 @@ class MapService:
             reparent_to: 目标父地图 UUID；子图 pin 改挂后删除自身.
 
         Returns:
-            是否删除成功（无子场景地图不存在返回 False；router 转 404）.
+            是否删除成功（地图不存在返回 False；router 转 404）.
 
         Raises:
             MapChildrenActionRequiredError: 有子且未指定动作（422）.
             MapReparentTargetError: 目标不存在/跨项目/是自身子孙（422）.
         """
         sid = _to_int_id(map_id)
+        # #1139: 过滤（children）与级联 SQL 绑定前先短路不存在的地图——128 位 int
+        # 会在 SQL 绑定处抛 OverflowError → 500；真删矩阵各分支均以「地图存在」
+        # 为前提，不存在 → False（router 转 404「地图不存在」）
+        if await self._repo.get(sid) is None:
+            return False
         direct_children = await self._repo.children(sid)
         if cascade:
             return await self._delete_cascade(sid, direct_children)
@@ -403,8 +408,18 @@ class MapService:
         return True
 
     async def children(self, map_id: int | uuid.UUID) -> list[WorldMap]:
-        """查询本图 pin 关联地点的子地图（drill-down；地点软删过滤由 repo 保证）."""
-        return await self._repo.children(_to_int_id(map_id))
+        """查询本图 pin 关联地点的子地图（drill-down；地点软删过滤由 repo 保证）.
+
+        #1139: 空结果才需判定父地图存在性——地图不存在 → MapNotFoundError
+        （router 转 404「地图不存在」）；地图存在但无子图 → 空列表（200，
+        空列表 ≠ 父不存在，spec §3.1）。非空结果直接透传（父必然存在），
+        常见路径零额外查询；128 位 int 过滤由 repo 溢出守卫转空结果。
+        """
+        mid = _to_int_id(map_id)
+        items = await self._repo.children(mid)
+        if not items and await self._repo.get(mid) is None:
+            raise MapNotFoundError()
+        return items
 
     # ── 删除辅助（D6 分支）────────────────────────────────────────
 
@@ -579,8 +594,13 @@ class MapService:
     async def list_pins(
         self, map_id: int | uuid.UUID, location_id: int | uuid.UUID | None = None
     ) -> list[MapPin]:
-        """透传 repo.list_pins；location_id 提供时内存过滤（本地量级；repo 契约单参）."""
-        pins = await self._repo.list_pins(_to_int_id(map_id))
+        """透传 repo.list_pins；location_id 提供时内存过滤（本地量级；repo 契约单参）.
+
+        #1139: 空结果才需判定父地图存在性——地图不存在 → MapNotFoundError
+        （router 转 404「地图不存在」）；地图存在但无 pin → 空列表（200）。
+        """
+        mid = _to_int_id(map_id)
+        pins = await self._repo.list_pins(mid)
         if location_id is not None:
             loc_int = _to_int_id(location_id)
             pins = [
@@ -588,6 +608,8 @@ class MapService:
                 for p in pins
                 if p.location_id is not None and _to_int_id(p.location_id) == loc_int
             ]
+        if not pins and await self._repo.get(mid) is None:
+            raise MapNotFoundError()
         return pins
 
     async def update_pin(self, pin_id: int | uuid.UUID, update: MapPinUpdate) -> MapPin | None:

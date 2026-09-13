@@ -253,11 +253,14 @@ async def delete_map(
     svc = _get_svc(db)
     if reparent_to is not None:
         ruuid = _parse_id(reparent_to, detail="reparent 目标地图不存在/不在同一项目/是自身子孙地图")
-        await _run_service(svc.delete_map(sid, reparent_to=ruuid))
+        ok = await _run_service(svc.delete_map(sid, reparent_to=ruuid))
     elif cascade:
-        await _run_service(svc.delete_map(sid, cascade=True))
+        ok = await _run_service(svc.delete_map(sid, cascade=True))
     else:
-        await _run_service(svc.delete_map(sid))
+        ok = await _run_service(svc.delete_map(sid))
+    # #1139: 地图不存在（含 128 位 int 溢出）→ 404，不得静默 204
+    if not ok:
+        raise HTTPException(status_code=404, detail="地图不存在")
 
 
 # ── pin CRUD ────────────────────────────────────────────────
