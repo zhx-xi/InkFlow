@@ -87,7 +87,9 @@ bootstrap.py 模块级装配缝（测试 patch 点，全部**同步**函数—�
         # 200 → True；超时/异常/非 200 → False
     def _poll_state_file(path: Path, timeout: float) -> KernelState | None
         # 轮询 kernel.json（内部 ~0.2s 间隔）直至出现合法状态；超时 → None。
-        # 调用形态：(path, timeout)（timeout 为剩余等待秒数，首轮 ≈ 生效超时）
+        # 调用形态：(path, timeout=timeout[, abort_probe=...])（timeout 为剩余等待秒数，
+        # 首轮 ≈ 生效超时）；abort_probe（#1142）每轮间隙回调，返回 True 即放弃等待
+        # ——183 分支据此探测「互斥已可接管」/「持有者已死」，调用方据回调状态区分。
     def _log_kernel_event(msg: str) -> None
         # 追加写 %TEMP%/inkflow-kernel.log（带时间戳；启动/复用/stale/失败）
 
@@ -516,6 +518,63 @@ async def test_ensure_kernel_mutex_183_timeout_raises(tmp_path, kernel_mocks):
     assert m.spawn.call_count == 0
     assert m.poll.call_count >= 1
     m.log.assert_called()
+
+
+async def test_ensure_kernel_mutex_183_takes_over_when_holder_exits(tmp_path, kernel_mocks):
+    """183 且重探拿到互斥（前持有者已退出、无产出）→ 接管自行拉起（#1142 缺陷 B）。
+
+    修复前：无条件空等 kernel.json 至 timeout。修复后：轮询间隙重探拿到互斥即证明
+    前持有者已释放/退出 → 复检状态仍缺失 → 落到第 6 步 spawn（不再空等）。
+    """
+    m = kernel_mocks
+    sf = tmp_path / "kernel.json"
+    m.mutex.side_effect = [None, None, m.handle]  # 5:183 → 重探:仍被持有 → 重探:可接管
+    m.read.return_value = None
+
+    def _poll(path, timeout, *, abort_probe=None):
+        if abort_probe is None:  # 第 6 步自行拉起后的就绪轮询
+            return _state()
+        assert abort_probe() is False  # 首次重探：互斥仍被持有 → 继续等
+        assert abort_probe() is True  # 前持有者已退出 → 拿到互斥 → 放弃等待
+        return None
+
+    m.poll.side_effect = _poll
+
+    h = await ensure_kernel(state_file=sf, spawn_cmd=SPAWN_CMD)
+
+    assert m.mutex.call_count == 3
+    m.spawn.assert_called_once()
+    m.release.assert_called_once_with(m.handle)
+    assert h.reused is False
+
+
+async def test_ensure_kernel_mutex_183_takeover_rechecks_reuse_first(tmp_path, kernel_mocks):
+    """183 且接管前他人刚好落盘 → 复检复用，不得再 spawn（#1142 + spec §5.3）。
+
+    spec §5.3「双客户端同时冷调用恰一个 spawned」：抢到互斥后必须重做一次复用判定，
+    否则会出现两侧都 spawn（双内核端口冲突）。
+    """
+    m = kernel_mocks
+    sf = tmp_path / "kernel.json"
+    st = _state()
+    m.mutex.side_effect = [None, None, m.handle]  # 5:183 → 重探:仍被持有 → 重探:可接管
+    m.read.side_effect = [None, st]  # 第 4 步首读无状态；接管后复检读到状态
+
+    def _poll(path, timeout, *, abort_probe=None):
+        assert abort_probe is not None
+        assert abort_probe() is False
+        assert abort_probe() is True
+        # 无返回值 → None：调用方据「已拿到互斥」判定接管，复检读到状态 → 复用
+
+    m.poll.side_effect = _poll
+
+    h = await ensure_kernel(state_file=sf)
+
+    m.spawn.assert_not_called()
+    m.write.assert_not_called()
+    m.release.assert_called_once_with(m.handle)
+    assert h.reused is True
+    assert h.port == st.port and h.token == st.token
 
 
 # ── 超时 / 秒退重试 ────────────────────────────────────────────────────────

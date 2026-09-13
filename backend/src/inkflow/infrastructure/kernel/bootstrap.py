@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -135,23 +136,38 @@ def _probe_health(port: int, token: str, timeout: float) -> bool:
         return False
 
 
-def _poll_state_file(path: Path, timeout: float) -> state.KernelState | None:
+def _read_state_now(path: Path) -> state.KernelState | None:
+    """立即读一次状态文件（严格读 + 宽松兜底），不轮询（#1142）。"""
+    return state.read_kernel_state(path) or _read_lenient(path)
+
+
+def _poll_state_file(
+    path: Path,
+    timeout: float,
+    *,
+    abort_probe: Callable[[], bool] | None = None,
+) -> state.KernelState | None:
     """轮询 kernel.json（~0.2s 间隔）直至出现合法状态；超时 → None。
 
     容忍 F19 serve --port-file 四字段交付（缺 started_at 时补当前 UTC
     时间，spec §5.2 双保险；QA 2026-08-07：五字段严格读会使真实冷启动
     轮询永远超时）。
+
+    abort_probe（#1142）：每轮间隙回调一次，返回 True 表示调用方放弃等待
+    （如 183 分支探测到互斥已可接管 / 持有者已死）→ 立即返回 None。
+    ``timeout`` 仍是本次调用的等待秒数，调用方据回调自身状态区分
+    「等待超时」与「持有者已退出」。
     """
     import time
 
     deadline = time.monotonic() + timeout
     while True:
-        st = state.read_kernel_state(path)
-        if st is None:
-            st = _read_lenient(path)
+        st = _read_state_now(path)
         if st is not None:
             return st
         if time.monotonic() >= deadline:
+            return None
+        if abort_probe is not None and abort_probe():
             return None
         time.sleep(0.2)
 
@@ -211,6 +227,65 @@ def _log_kernel_event(msg: str) -> None:
         pass
 
 
+def _default_state_file() -> Path:
+    """默认状态文件路径：调用时解析 env，非 import 快照（#1142 缺陷 A）。
+
+    优先级等效于新建 ``InkFlowConfig``：进程 env ``INKFLOW_DATA_DIR`` >
+    config 单例 ``data_dir``（后者已含 instance.env / 默认目录口径）。
+    ``inkflow.core.config.config`` 是 import 时定型的模块级单例，import 之后
+    改 env 对它无效——需要隔离的调用方（测试 fixture / 同机多会话）必须让
+    默认值在这里重新读一次 env 才生效。
+    """
+    env_data_dir = os.environ.get("INKFLOW_DATA_DIR")
+    if env_data_dir:
+        return Path(env_data_dir) / "kernel.json"
+    from inkflow.core.config import config
+
+    return config.data_dir / "kernel.json"
+
+
+def _await_mutex_holder(
+    state_file: Path, timeout: float
+) -> tuple[state.KernelState | None, object | None]:
+    """183 分支（互斥被占）等待他人拉起；持有者释放时接管（#1142 缺陷 B）。
+
+    轮询 kernel.json 等待复用（spec §5.1 分支 2），轮询间隙重试互斥：
+    - **拿到互斥** → 前持有者确已释放/退出 → 复检一次状态（可能刚好落盘）：
+      就绪则复用，否则把互斥交回调用方自行拉起（复用判定不可省，防两侧都 spawn）；
+    - 始终拿不到 → 继续等 state_file 至 timeout（spec §5.3：对方仍在拉起，
+      即使超过其正常冷启动耗时也不得误判为「已死」——等待超时是安全失败模式）。
+
+    修复点：旧实现在此无条件等满 timeout，不与互斥状态联动——持有者拉起失败
+    （内核秒退、未写 kernel.json）时另一侧空等满 timeout 却拿不到互斥，白白浪费
+    时间。现在一旦互斥可接管就立即行动。
+
+    ⚠️ **不得**用时间窗口推断「持有者已死」：互斥名是**机器级**（非按 data_dir
+    隔离），且真实冷启动约 4.7s——持锁 >1.5s 完全正常。按计时判定会把正常拉起
+    误判为死亡（#1142 实测：引入 1.5s grace 后 test_kernel_concurrency 与
+    test_mcp_book_surface_933 共 3 例回归）。唯一可靠信号 = **真的拿到互斥**。
+    """
+    takeover_handle: object | None = None
+
+    def _probe() -> bool:
+        nonlocal takeover_handle
+        handle = _acquire_mutex("InkFlowKernelBootstrap")
+        if handle is not None:
+            takeover_handle = handle
+            return True
+        return False
+
+    st = _poll_state_file(state_file, timeout=timeout, abort_probe=_probe)
+    if st is not None:
+        return st, None
+    if takeover_handle is not None:
+        st = _read_state_now(state_file)
+        if st is not None:
+            _release_mutex(takeover_handle)
+            return st, None
+        return None, takeover_handle
+    return None, None
+
+
 # ── ensure_kernel（spec §3.2）────────────────────────────────────────
 
 
@@ -239,11 +314,9 @@ async def ensure_kernel(
         else:
             timeout = 30.0
 
-    # 2. 状态文件路径（函数体内读取 config 单例，非 import 快照）
+    # 2. 状态文件路径（调用时解析 env，非 import 快照；#1142 缺陷 A）
     if state_file is None:
-        from inkflow.core.config import config
-
-        state_file = config.data_dir / "kernel.json"
+        state_file = _default_state_file()
 
     # 3. 客户端版本（函数体内属性访问，禁止模块级绑定——测试 patch inkflow.__version__）
     import inkflow
@@ -275,22 +348,25 @@ async def ensure_kernel(
     # 5. 互斥（spec §5.1 分支 2/3）
     mutex_handle = _acquire_mutex("InkFlowKernelBootstrap")
     if mutex_handle is None:
-        # 183：其他实例在拉起 → 轮询等待复用
+        # 183：其他实例在拉起 → 轮询等待复用（#1142：并区分持有者是否已死）
         _log_kernel_event("检测到其他实例拉起中，轮询等待")
-        st = _poll_state_file(state_file, timeout)
-        if st is None:
+        st, mutex_handle = _await_mutex_holder(state_file, timeout)
+        if st is not None:
+            _log_kernel_event(f"复用其他实例内核 pid={st.pid} port={st.port}")
+            return KernelHandle(
+                port=st.port,
+                token=st.token,
+                pid=st.pid,
+                version=st.version,
+                started_at=st.started_at,
+                reused=True,
+            )
+        if mutex_handle is None:
             raise KernelStartupError(
                 f"等待其他进程拉起内核超时（{timeout:.1f}s）；日志见 %TEMP%\\inkflow-kernel.log"
             )
-        _log_kernel_event(f"复用其他实例内核 pid={st.pid} port={st.port}")
-        return KernelHandle(
-            port=st.port,
-            token=st.token,
-            pid=st.pid,
-            version=st.version,
-            started_at=st.started_at,
-            reused=True,
-        )
+        # 前持有者已退出且未产出状态：接管互斥，继续走第 6 步自行拉起
+        _log_kernel_event("前持有者已退出，接管互斥自行拉起内核")
 
     # 6. 拉起（互斥在手；秒退重试 ≤2 次，总尝试 ≤3；finally 释放互斥）
     try:
