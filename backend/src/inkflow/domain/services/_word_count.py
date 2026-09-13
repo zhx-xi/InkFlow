@@ -9,19 +9,32 @@ _EN_WORD_RE = re.compile(r"[a-zA-Z]+")
 
 
 def _strip_markdown(text: str) -> str:
-    """去除常见 Markdown 语法，只保留可读文字."""
-    text = re.sub(r"```[^`]*```", "", text, flags=re.DOTALL)
-    text = re.sub(r"`[^`]+`", "", text)
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.DOTALL)
-    text = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"\1", text)
-    text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", text)
-    text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    text = re.sub(r"^-{3,}|_{3,}|\*{3,}", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^[\s]*[-*+]\s+", "", text, flags=re.MULTILINE)
-    return re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
+    """去除常见 Markdown 语法，只保留可读文字.
+
+    改为迭代到不动点：缩进流程会把行首装饰字符推离行首，需反复剥离.
+    """
+
+    def _strip_once(text: str) -> str:
+        text = re.sub(r"```[^`]*```", "", text, flags=re.DOTALL)
+        text = re.sub(r"`[^`]+`", "", text)
+        text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.DOTALL)
+        text = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"\1", text)
+        text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", text)
+        text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+        text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
+        text = re.sub(r"^-{3,}|_{3,}|\*{3,}", "", text, flags=re.MULTILINE)
+        text = re.sub(r"^[\s]*[-*+]\s+", "", text, flags=re.MULTILINE)
+        return re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
+
+    # 迭代上限仅作安全网；实测所有输入至多 2 轮收敛，达到上限则返回最后结果
+    for _ in range(64):
+        stripped = _strip_once(text)
+        if stripped == text:
+            break
+        text = stripped
+    return text
 
 
 def count_words(content: str) -> int:
