@@ -138,8 +138,14 @@ async def test_update_map_null_update_returns_none_without_event(
 async def test_delete_map_cascade_without_self_map_publishes_none_project(
     service, mock_repo, recorded_events
 ) -> None:
-    """cascade 删除时自身实体缺失 -> warning + 事件 project_id=None（426-438）。"""
-    mock_repo.get = AsyncMock(return_value=None)
+    """cascade 删除时自身实体竞态缺失 -> warning + 事件 project_id=None（448-453）。
+
+    #1139 后 delete_map 先经 get 短路过不存在的地图（392-393），故此处必须
+    让首次 get 命中（通过守卫）而 _delete_cascade 内的第二次 get 缺失，
+    以复现「级联期间自身实体消失」的真实竞态窗口。
+    """
+    existing = _map(map_id=uuid.UUID(int=9))
+    mock_repo.get = AsyncMock(side_effect=[existing, None])
     mock_repo.children = AsyncMock(return_value=[])
     orphan_id = uuid.UUID(int=9)
 
