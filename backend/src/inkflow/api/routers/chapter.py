@@ -139,13 +139,17 @@ async def delete_volume(
 async def create_chapter(project_id: str, data: ChapterCreate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
-    ch = await svc.create_chapter(
-        pid,
-        data.title,
-        data.volume_id,
-        data.content,
-        data.order_index,
-    )
+    # #1149: 项目不存在 → 404「项目不存在」（service 落库前校验，对齐 create_volume）
+    try:
+        ch = await svc.create_chapter(
+            pid,
+            data.title,
+            data.volume_id,
+            data.content,
+            data.order_index,
+        )
+    except ProjectNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
     return ch.model_dump(mode="json")
 
 

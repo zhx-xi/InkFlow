@@ -159,8 +159,17 @@ class ChapterService:
         content: str = "",
         order_index: float | None = None,
     ) -> Chapter:
+        """创建章节.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（router 转 404「项目不存在」，#1149）.
+        """
         pid = _to_uuid(project_id)
         vid = _to_uuid(volume_id) if volume_id is not None else None
+        # #1149: 落库前先校验项目存在（对齐 create_volume；防 pid.int 超 int64 绑 SQLite
+        # 抛 OverflowError → 500，并防孤儿行）
+        if await self._project_repo.get(pid.int) is None:
+            raise ProjectNotFoundError()
         if order_index is None:
             order_index = await self._repo.get_next_chapter_order(pid.int, vid.int if vid else None)
         # #1095：落库前归一（重复标题 / markdown / 段首缩进）；干净正文原样落库。
