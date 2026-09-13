@@ -83,6 +83,25 @@ async def sample_project(db_session) -> ProjectORM:
     return project
 
 
+@pytest_asyncio.fixture
+async def api_project(client, db_session, override_get_db) -> dict:
+    """经真实 API 落库的存活项目（含可解析 UUID 字符串）。
+
+    #1151: 反例守护必须用「真活着」的项目 — 本 fixture 走 POST /projects
+    真实装配，故 project_service 依赖的 project_repo / 事件发布链路与生产一致。
+    """
+    resp = await client.post(
+        "/api/v1/projects",
+        json={
+            "name": "filter-outline-probe",
+            "genre": "xuanhuan",
+            "tags": ["xuanhuan"],
+        },
+    )
+    assert resp.status_code == 201, resp.text[:200]
+    return resp.json()
+
+
 @pytest.fixture
 def sample_project_data2() -> ProjectCreate:
     """第二个项目数据，用于列表测试。"""

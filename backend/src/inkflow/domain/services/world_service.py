@@ -232,8 +232,14 @@ class WorldService:
         Returns:
             (当前页条目列表, 符合条件的总记录数).
         """
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404（world_repo.list 自带 128 位 int 守卫，
+        # 故本条无溢出缺口；§3.2 特例，repo 层不动）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
         return await self._repo.list(
-            project_id=_to_int_id(project_id),
+            project_id=pid_int,
             search=search,
             category=category,
             sort_by=sort_by,
@@ -253,7 +259,13 @@ class WorldService:
         Returns:
             (类别, 条目数) 列表，按计数降序、类别名升序.
         """
-        return await self._repo.list_categories(_to_int_id(project_id))
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到聚合 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
+        return await self._repo.list_categories(pid_int)
 
     async def has_root_setting(self, project_id: int | uuid.UUID) -> bool:
         """项目是否已有根世界观条目（parent_id IS NULL）。
@@ -464,6 +476,12 @@ class WorldService:
 
     async def list_world_categories(self, project_id: uuid.UUID) -> list[tuple[WorldCategory, int]]:
         """分类实体列表 + 每个分类名匹配的条目计数（spec §3.1/§6.1）."""
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
         return await self._repo.list_world_categories(project_id)
 
     async def rename_category(self, category_id: uuid.UUID, name: str) -> WorldCategory | None:

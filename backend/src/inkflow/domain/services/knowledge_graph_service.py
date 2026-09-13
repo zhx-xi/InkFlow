@@ -128,9 +128,7 @@ class KnowledgeGraphService:
         """
         if entity_type is EntityType.MAP_PIN:
             pin = (
-                await self._map_repo.get_pin(entity_id_int)
-                if self._map_repo is not None
-                else None
+                await self._map_repo.get_pin(entity_id_int) if self._map_repo is not None else None
             )
             wm = (
                 await self._map_repo.get(_to_int_id(pin.map_id))
@@ -226,21 +224,20 @@ class KnowledgeGraphService:
         except ValidationError as exc:
             raise KnowledgeRelationValidationError(str(exc)) from exc
         # ④ 实体存在 + 同项目（source 先于 target）
-        await self._validate_entity(
-            pid_int, dto.source_type, _to_int_id(dto.source_id), "source"
-        )
-        await self._validate_entity(
-            pid_int, dto.target_type, _to_int_id(dto.target_id), "target"
-        )
+        await self._validate_entity(pid_int, dto.source_type, _to_int_id(dto.source_id), "source")
+        await self._validate_entity(pid_int, dto.target_type, _to_int_id(dto.target_id), "target")
         # ⑤ 同键唯一
-        if await self._relation_repo.get_by_key(
-            pid_int,
-            dto.source_type.value,
-            _to_int_id(dto.source_id),
-            dto.target_type.value,
-            _to_int_id(dto.target_id),
-            dto.relation_type,
-        ) is not None:
+        if (
+            await self._relation_repo.get_by_key(
+                pid_int,
+                dto.source_type.value,
+                _to_int_id(dto.source_id),
+                dto.target_type.value,
+                _to_int_id(dto.target_id),
+                dto.relation_type,
+            )
+            is not None
+        ):
             raise KnowledgeRelationConflictError()
         # ⑥ 落库（source 恒 manual，§2.1 规则 5）
         now = _utcnow()
@@ -347,9 +344,8 @@ class KnowledgeGraphService:
                 description=merged.description,
             )
         # 自环检查：仅当两端字段被变更时重查
-        if (
-            dto.source_type is dto.target_type
-            and _to_int_id(dto.source_id) == _to_int_id(dto.target_id)
+        if dto.source_type is dto.target_type and _to_int_id(dto.source_id) == _to_int_id(
+            dto.target_id
         ):
             raise KnowledgeRelationSelfLoopError()
         pid_int = _to_int_id(existing.project_id)
@@ -402,8 +398,14 @@ class KnowledgeGraphService:
         Returns:
             (关系列表, 总数) 元组，created_at DESC 由 repo 保证.
         """
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
         return await self._relation_repo.filter(
-            _to_int_id(project_id),
+            pid_int,
             source_type=source_type,
             target_type=target_type,
             relation_type=relation_type,
@@ -429,20 +431,17 @@ class KnowledgeGraphService:
             KnowledgeGraphView（nodes + edges）.
         """
         pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到聚合各 repo
+        # 绑定抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
         nodes: list[GraphNode] = []
-        nodes.extend(
-            await self._collect_nodes(
-                pid_int, EntityType.CHARACTER, lambda e: e.name
-            )
-        )
+        nodes.extend(await self._collect_nodes(pid_int, EntityType.CHARACTER, lambda e: e.name))
         nodes.extend(await self._collect_nodes(pid_int, EntityType.WORLD, lambda e: e.name))
         nodes.extend(await self._collect_nodes(pid_int, EntityType.OUTLINE, lambda e: e.name))
-        nodes.extend(
-            await self._collect_nodes(pid_int, EntityType.TIMELINE, lambda e: e.title)
-        )
-        nodes.extend(
-            await self._collect_nodes(pid_int, EntityType.FORESHADOW, lambda e: e.title)
-        )
+        nodes.extend(await self._collect_nodes(pid_int, EntityType.TIMELINE, lambda e: e.title))
+        nodes.extend(await self._collect_nodes(pid_int, EntityType.FORESHADOW, lambda e: e.title))
         nodes.extend(await self._collect_map_pin_nodes(pid_int))
         nodes.sort(key=lambda n: (_NODE_TYPE_ORDER.index(n.type), n.name))
         node_ids = {n.id for n in nodes}
@@ -505,9 +504,7 @@ class KnowledgeGraphService:
         # 同键 (source,target,label) 去重，knowledge 优先（Q1=A 拍板）
         known_keys = {(e.source, e.target, e.label) for _, e in kr_edges}
         edges = [e for _, e in kr_edges]
-        edges.extend(
-            e for _, e in cr_edges if (e.source, e.target, e.label) not in known_keys
-        )
+        edges.extend(e for _, e in cr_edges if (e.source, e.target, e.label) not in known_keys)
         return KnowledgeGraphView(nodes=nodes, edges=edges)
 
     async def _collect_nodes(
@@ -567,9 +564,7 @@ class KnowledgeGraphService:
             删除行数.
         """
         type_str = entity_type.value if isinstance(entity_type, EntityType) else entity_type
-        deleted = await self._relation_repo.cleanup_for_entity(
-            type_str, _to_int_id(entity_id)
-        )
+        deleted = await self._relation_repo.cleanup_for_entity(type_str, _to_int_id(entity_id))
         logger.info(
             "图谱关系清理回调: entity_type=%s entity_id=%s deleted=%s",
             type_str,
@@ -604,14 +599,17 @@ class KnowledgeGraphService:
         now = _utcnow()
         created: list[KnowledgeRelation] = []
         for dto in relations:
-            if await self._relation_repo.get_by_key(
-                pid_int,
-                dto.source_type.value,
-                _to_int_id(dto.source_id),
-                dto.target_type.value,
-                _to_int_id(dto.target_id),
-                dto.relation_type,
-            ) is not None:
+            if (
+                await self._relation_repo.get_by_key(
+                    pid_int,
+                    dto.source_type.value,
+                    _to_int_id(dto.source_id),
+                    dto.target_type.value,
+                    _to_int_id(dto.target_id),
+                    dto.relation_type,
+                )
+                is not None
+            ):
                 logger.warning(
                     "图谱批量写入同键跳过: %s:%s --%s--> %s:%s",
                     dto.source_type.value,

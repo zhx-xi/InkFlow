@@ -206,8 +206,14 @@ class CharacterService:
         Returns:
             (当前页角色列表, 符合条件的总记录数).
         """
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
         return await self._repo.list(
-            project_id=_to_int_id(project_id),
+            project_id=pid_int,
             search=search,
             group_id=_to_int_id(group_id) if group_id is not None else None,
             sort_by=sort_by,
@@ -492,7 +498,13 @@ class CharacterService:
 
     async def list_groups(self, project_id: int | uuid.UUID) -> list[CharacterGroup]:
         """查询项目内全部分组（按 sort_order 升序）."""
-        return await self._repo.list_groups(_to_int_id(project_id))
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
+        return await self._repo.list_groups(pid_int)
 
     async def update_group(
         self,

@@ -700,10 +700,12 @@ class TestDeleteMap:
 class TestPassthroughQueries:
     """list_maps / get_map / children — 透传 repo（UUID→int）。"""
 
-    async def test_list_maps_forwards(self, service, mock_repo) -> None:
+    async def test_list_maps_forwards(self, service, mock_repo, mock_project_repo) -> None:
         """透传 repo.list（root_location_id 转 int；offset/limit/top_level_only 透传）."""
         m = _map(name="清河县城图")
         root = uuid.uuid4()
+        # #1151: list_maps 先判父项目存在——本用例覆盖为「项目存活」
+        mock_project_repo.get = AsyncMock(return_value=_project())
         mock_repo.list = AsyncMock(return_value=([m], 1))
         result = await service.list_maps(
             PID, root_location_id=root, top_level_only=True, offset=10, limit=20

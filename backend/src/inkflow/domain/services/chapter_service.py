@@ -107,7 +107,18 @@ class ChapterService:
         return await self._repo.get_volume(_to_int(volume_id))
 
     async def list_volumes(self, project_id: int | uuid.UUID) -> list[Volume]:
-        return await self._repo.list_volumes(_to_int(project_id))
+        """查询项目内全部卷（order_index ASC）.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（#1151：上层先判父资源存在，
+                router 转 404「项目不存在」）.
+        """
+        pid = _to_int(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        if await self._project_repo.get(pid) is None:
+            raise ProjectNotFoundError()
+        return await self._repo.list_volumes(pid)
 
     async def update_volume(self, volume_id: int | uuid.UUID, dto: VolumeUpdate) -> Volume | None:
         vid = _to_int(volume_id)
@@ -210,8 +221,18 @@ class ChapterService:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[Chapter], int]:
+        """分页查询项目内章节列表（spec §6.3）.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（#1151，router 转 404）.
+        """
+        pid = _to_int(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        if await self._project_repo.get(pid) is None:
+            raise ProjectNotFoundError()
         return await self._repo.list_chapters(
-            _to_int(project_id),
+            pid,
             _to_int(volume_id) if volume_id is not None else None,
             status,
             offset,

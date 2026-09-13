@@ -594,9 +594,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     text=source.text or "",
                     model=request.model,
                 ),
-                default_model=resolve_model(
-                    None, project.config.model, self._llm_default_model
-                )
+                default_model=resolve_model(None, project.config.model, self._llm_default_model)
                 or "",
             )
         elif request.type is ExtractionType.STYLE:
@@ -644,9 +642,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     text=source.text or "",
                     model=request.model,
                 ),
-                default_model=resolve_model(
-                    None, project.config.model, self._llm_default_model
-                )
+                default_model=resolve_model(None, project.config.model, self._llm_default_model)
                 or "",
             )
         return await self._timeline_service.check_consistency(
@@ -752,6 +748,10 @@ class ExtractionService(_ExtractionRAGMixin):
         Returns:
             (run 列表, 总数) 元组（按 run_at DESC，最新在前）.
         """
-        return await self._run_repo.list(
-            _to_int_id(project_id), type=type, offset=offset, limit=limit
-        )
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
+        return await self._run_repo.list(pid_int, type=type, offset=offset, limit=limit)

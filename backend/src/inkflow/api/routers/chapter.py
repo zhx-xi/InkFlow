@@ -84,7 +84,11 @@ async def create_volume(project_id: str, data: VolumeCreate, db: AsyncSession = 
 async def list_volumes(project_id: str, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
-    volumes = await svc.list_volumes(pid)
+    # #1151: 项目不存在 → 404「项目不存在」（service 抛 ProjectNotFoundError，同 create_volume）
+    try:
+        volumes = await svc.list_volumes(pid)
+    except ProjectNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
     return {"items": [v.model_dump(mode="json") for v in volumes]}
 
 
@@ -166,7 +170,11 @@ async def list_chapters(
     svc = _svc(db)
     pid = _parse_id(project_id, detail="项目不存在")
     vid = _parse_id(volume_id) if volume_id else None
-    items, total = await svc.list_chapters(pid, vid, status, offset, limit)
+    # #1151: 项目不存在 → 404「项目不存在」（service 抛 ProjectNotFoundError，同 create_chapter）
+    try:
+        items, total = await svc.list_chapters(pid, vid, status, offset, limit)
+    except ProjectNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
     return {
         "items": [c.model_dump(mode="json") for c in items],
         "total": total,
