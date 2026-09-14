@@ -2,12 +2,14 @@
  * Electron 壳 E2E 冒烟契约（#78；ADR-028 E1 拆分：壳契约专用 spec，CI 第一批恒跑 required）
  */
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   test,
   expect,
   _electron as electron,
   type ElectronApplication,
 } from '@playwright/test';
+import { createIsolatedEnv } from './e2e-isolation';
 import { ensureModelConfigured } from './e2e-model-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
@@ -57,6 +59,29 @@ async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Pr
   throw new Error(`__kernelInfo 未在 ${timeoutMs}ms 内注入（内核未就绪）`);
 }
 
+/**
+ * #1159 隔离数据目录的内核 pid：读 <dataDir>/kernel.json 的 pid（#1040：cleanup 先等内核退出再删目录）。
+ * 就绪钩子 __kernelInfo 注入先于 kernel.json 落盘（main.ts updateKernelInfoHook → writeKernelStateFile）
+ * → 短暂轮询；超时仍读不到返回 undefined（cleanupIsolatedEnv 内部过滤 undefined）。
+ */
+async function readKernelPid(dataDir: string, timeoutMs = 10_000): Promise<number | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(dataDir, 'kernel.json'), 'utf8')) as {
+        pid?: unknown;
+      };
+      if (typeof parsed.pid === 'number') {
+        return parsed.pid;
+      }
+    } catch {
+      // kernel.json 尚未落盘 / 半截写入 → 继续轮询
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return undefined;
+}
+
 /** GET /health 带 token（spec §3.7 M2：200 = 内核健康） */
 async function healthCheck(info: KernelInfo): Promise<number> {
   const res = await fetch(`http://127.0.0.1:${info.port}/health`, {
@@ -79,7 +104,14 @@ function isAlive(pid: number): boolean {
 test.describe.configure({ timeout: 360_000 });
 
 test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /health 200 + M5 安全基线', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('shell-1');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const window = await app.firstWindow();
     await expect(window).toHaveTitle(/InkFlow/);
@@ -88,6 +120,7 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
     // F60 #934：隔离数据目录 = 全新安装态 → 必须先预置「已配置模型」并 reload，
     // 让首启引导门控放行，否则下方 app-nav logo 轮询会 60s 超时（门控下不渲染主 UI）。
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
     await ensureModelConfigured(kernel);
     await window.reload();
     await expect(window).toHaveTitle(/InkFlow/);
@@ -187,14 +220,23 @@ test('启动闭环：窗口出现（title 含 InkFlow）+ 内核进程存在 + /
     expect(badRes.status).toBe(401);
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('崩溃拉起：强杀内核 pid → 壳自动重拉（≤40s 覆盖退避上限）→ 新 pid 健康 200', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('shell-2');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const first = await waitKernelInfo(app);
     const oldPid = first.pid;
+    kernelPid = await readKernelPid(iso.dataDir);
 
     // 强杀内核子进程（Windows：SIGTERM → TerminateProcess 语义；若已自行退出则忽略）
     try {
@@ -218,20 +260,34 @@ test('崩溃拉起：强杀内核 pid → 壳自动重拉（≤40s 覆盖退避�
     expect(revived, '崩溃后壳应在退避上限内拉起新内核').toBeDefined();
     expect(revived!.pid).not.toBe(oldPid);
     expect(await healthCheck(revived!)).toBe(200);
+    // 拉起后的当前内核 = 新 pid（cleanup 等它退出再删目录）
+    kernelPid = revived!.pid;
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('退出回收：app.close() → 内核 pid 不再存活（无僵尸）', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('shell-3');
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   const kernel = await waitKernelInfo(app);
+  const kernelPid = await readKernelPid(iso.dataDir);
   const pid = kernel.pid;
 
-  await app.close();
+  try {
+    await app.close();
 
-  // spec §3.2.5 / §3.7 M4：关闭后内核必须被回收（优雅 kill → 3s 超时 → taskkill 兜底）
-  expect(isAlive(pid), `内核 pid=${pid} 应已退出`).toBe(false);
+    // spec §3.2.5 / §3.7 M4：关闭后内核必须被回收（优雅 kill → 3s 超时 → taskkill 兜底）
+    expect(isAlive(pid), `内核 pid=${pid} 应已退出`).toBe(false);
+  } finally {
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
+  }
 });
 
 // ────────────────────────────────────────────────────────────────
@@ -239,11 +295,19 @@ test('退出回收：app.close() → 内核 pid 不再存活（无僵尸）', as
 //    断言走主进程 BrowserWindow 状态（Playwright 无头启动异步延迟 → 轮询）
 // ────────────────────────────────────────────────────────────────
 test('窗口控制：最小化按钮 → isMinimized 轮询 true → restore 恢复', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('shell-4');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const window = await app.firstWindow();
     // F60 #934：预置「已配置模型」+ reload，让首启引导门控放行后再操作顶栏窗口按钮
     await ensureModelConfigured(await waitKernelInfo(app));
+    kernelPid = await readKernelPid(iso.dataDir);
     await window.reload();
     await window.waitForSelector('[data-testid="header-wc-min"]');
 
@@ -273,15 +337,24 @@ test('窗口控制：最小化按钮 → isMinimized 轮询 true → restore 恢
       .toBe(false);
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('窗口控制：最大化 ↔ 还原（aria-label Maximize↔Restore 跟随 IPC push）', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('shell-5');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const window = await app.firstWindow();
     // F60 #934：预置「已配置模型」+ reload，让首启引导门控放行后再操作顶栏窗口按钮
     await ensureModelConfigured(await waitKernelInfo(app));
+    kernelPid = await readKernelPid(iso.dataDir);
     await window.reload();
     await window.waitForSelector('[data-testid="header-wc-max"]');
 
@@ -317,15 +390,24 @@ test('窗口控制：最大化 ↔ 还原（aria-label Maximize↔Restore 跟随
     await expect(maxBtn).toHaveAttribute('aria-label', 'Maximize');
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('窗口控制：关闭按钮（tray 语义）→ 窗口隐藏 + 内核存活', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('shell-6');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const window = await app.firstWindow();
     // F60 #934：顶栏窗口按钮需门控放行后才渲染 → 预置「已配置模型」+ reload
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
     await ensureModelConfigured(kernel);
     await window.reload();
     await window.waitForSelector('[data-testid="header-wc-close"]');
@@ -360,5 +442,6 @@ test('窗口控制：关闭按钮（tray 语义）→ 窗口隐藏 + 内核存�
     expect(await healthCheck(kernel)).toBe(200);
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
