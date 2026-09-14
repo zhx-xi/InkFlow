@@ -362,6 +362,10 @@ class SQLiteMapRepository:
 
     async def list_maps_by_project(self, project_id: int) -> builtins.list[WorldMap]:
         """收集项目全部地图（项目硬删钩子 cleanup 用，全量不分页）."""
+        # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int）→ 空结果，防 128 位 int
+        # 绑定 SQLite INTEGER 抛 OverflowError → 500（规则扫描链 R3 走此查询）
+        if project_id < -(2**63) or project_id >= 2**63:
+            return []
         stmt = select(MapORM).where(MapORM.project_id == project_id)
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]

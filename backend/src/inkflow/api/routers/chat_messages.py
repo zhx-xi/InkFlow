@@ -12,9 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.api.deps import get_db
 from inkflow.domain.models.chat_message import ChatMessage, ChatMessageCreate
 from inkflow.domain.models.conversation import Conversation, ConversationCreate
+from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.services.chat_message_service import ChatMessageService
 from inkflow.infrastructure.database.repositories.chat_message_repo import (
     SQLiteChatMessageRepository,
+)
+from inkflow.infrastructure.database.repositories.project_repo import (
+    SQLiteProjectRepository,
 )
 from inkflow.logging import instrument
 
@@ -40,8 +44,11 @@ class ConversationPatchRequest(BaseModel):
 
 
 def get_chat_message_service(db: AsyncSession) -> ChatMessageService:
-    """装配 ChatMessageService（repo=SQLiteChatMessageRepository）。"""
-    return ChatMessageService(repo=SQLiteChatMessageRepository(db))
+    """装配 ChatMessageService（repo=SQLiteChatMessageRepository + project_repo，#1166）。"""
+    return ChatMessageService(
+        repo=SQLiteChatMessageRepository(db),
+        project_repo=SQLiteProjectRepository(db),
+    )
 
 
 def _message_to_json(message: ChatMessage | dict) -> dict:
@@ -136,10 +143,14 @@ async def create_conversation(
     svc = get_chat_message_service(db)
     # title 非空才传（#770）：保持无 title 时调用形态不变（既有契约
     # create_conversation(PROJECT_ID)），有 title 时透传
-    if data.title:
-        created = await svc.create_conversation(data.project_id, data.title)
-    else:
-        created = await svc.create_conversation(data.project_id)
+    # #1166: 项目不存在（含 128 位溢出）→ 404「项目不存在」且零落库
+    try:
+        if data.title:
+            created = await svc.create_conversation(data.project_id, data.title)
+        else:
+            created = await svc.create_conversation(data.project_id)
+    except ProjectNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
     return _conversation_to_json(created)
 
 

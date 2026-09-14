@@ -38,6 +38,15 @@ def _to_int(value: int | uuid.UUID) -> int:
     return value.int if isinstance(value, uuid.UUID) else int(value)
 
 
+def _out_of_int64(value: int) -> bool:
+    """主键/过滤值是否超出 SQLite 64 位 INTEGER 范围（随机 uuid4 的 .int）.
+
+    #1166 #1106 同款域级守卫：超范围必为不存在的行 → 短路返回「不存在」语义，
+    防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500。
+    """
+    return value < -(2**63) or value >= 2**63
+
+
 def _orm_to_domain(row: ChatMessageORM) -> ChatMessage:
     """ORM -> 领域实体（int->UUID 转换）。"""
     assert row.conversation_id is not None  # #744 迁移回填后所有消息均有 conversation_id
@@ -108,6 +117,9 @@ class SQLiteChatMessageRepository:
     async def rename_conversation(self, conversation_id: int | uuid.UUID, title: str) -> bool:
         """会话改名（#770）：更新 title 列；不存在 → False。"""
         cid = _to_int(conversation_id)
+        # #1166 域级补全：rename 绑 UPDATE 值，溢出同样须短路（不存在 → False → 404）
+        if _out_of_int64(cid):
+            return False
         stmt = sa_update(ConversationORM).where(ConversationORM.id == cid).values(title=title)
         result = await self._db.execute(stmt)
         await self._db.commit()
@@ -115,9 +127,12 @@ class SQLiteChatMessageRepository:
 
     async def get_active_conversation(self, project_id: uuid.UUID) -> Conversation | None:
         """取该项目最近一条未归档线程；无则 None."""
+        pid = _to_int(project_id)
+        if _out_of_int64(pid):
+            return None
         stmt = (
             select(ConversationORM)
-            .where(ConversationORM.project_id == project_id.int, ~ConversationORM.is_deleted)
+            .where(ConversationORM.project_id == pid, ~ConversationORM.is_deleted)
             .order_by(ConversationORM.id.desc())
             .limit(1)
         )
@@ -132,10 +147,10 @@ class SQLiteChatMessageRepository:
         include_deleted: bool = False,
     ) -> tuple[list[ChatMessage], int]:
         """线程消息列表（按时间升序，分页；不含已归档消息）。"""
-        cid = conversation_id.int
-        # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        cid = _to_int(conversation_id)
+        # #1162/#1166: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        if cid < -(2**63) or cid >= 2**63:
+        if _out_of_int64(cid):
             return [], 0
         conditions = [ChatMessageORM.conversation_id == cid]
         if not include_deleted:
@@ -159,7 +174,9 @@ class SQLiteChatMessageRepository:
         self, project_id: uuid.UUID, offset: int = 0, limit: int = 50
     ) -> tuple[list[ChatMessage], int]:
         """项目级消息列表（#748 agent 聊天历史兼容；跨线程全部非归档消息）。"""
-        pid = project_id.int if isinstance(project_id, uuid.UUID) else int(project_id)
+        pid = _to_int(project_id)
+        if _out_of_int64(pid):
+            return [], 0
         stmt = (
             select(ChatMessageORM)
             .where(ChatMessageORM.project_id == pid, ~ChatMessageORM.is_deleted)
@@ -248,6 +265,8 @@ class SQLiteChatMessageRepository:
 
     async def archive_message(self, message_id: int) -> bool:
         """归档消息（is_deleted=true）。返回 True 表示成功归档，False 表示未找到/已归档。"""
+        if _out_of_int64(message_id):
+            return False
         stmt = (
             sa_update(ChatMessageORM)
             .where(ChatMessageORM.id == message_id, ~ChatMessageORM.is_deleted)
@@ -259,6 +278,8 @@ class SQLiteChatMessageRepository:
 
     async def force_delete_message(self, message_id: int) -> bool:
         """物理删除消息。返回 True 表示删除成功，False 表示不存在。"""
+        if _out_of_int64(message_id):
+            return False
         stmt = select(ChatMessageORM).where(ChatMessageORM.id == message_id)
         result = await self._db.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -270,6 +291,8 @@ class SQLiteChatMessageRepository:
 
     async def restore_message(self, message_id: int) -> ChatMessage | None:
         """解除归档（is_deleted=false）。返回解除后的消息；不存在/未归档返回 None。"""
+        if _out_of_int64(message_id):
+            return None
         stmt = (
             sa_update(ChatMessageORM)
             .where(ChatMessageORM.id == message_id, ChatMessageORM.is_deleted)
@@ -294,6 +317,8 @@ class SQLiteChatMessageRepository:
     async def archive_conversation(self, conversation_id: int | uuid.UUID) -> bool:
         """线程级归档：conversation.is_deleted=True + 其消息 is_deleted=True。"""
         cid = _to_int(conversation_id)
+        if _out_of_int64(cid):
+            return False
         conv_stmt = (
             sa_update(ConversationORM)
             .where(ConversationORM.id == cid, ~ConversationORM.is_deleted)
@@ -314,6 +339,8 @@ class SQLiteChatMessageRepository:
     async def force_delete_conversation(self, conversation_id: int | uuid.UUID) -> bool:
         """线程级真删：删除该线程全部消息 + 会话行。返回是否命中。"""
         cid = _to_int(conversation_id)
+        if _out_of_int64(cid):
+            return False
         exists = (
             await self._db.execute(select(ConversationORM.id).where(ConversationORM.id == cid))
         ).scalar_one_or_none()
@@ -329,6 +356,8 @@ class SQLiteChatMessageRepository:
     async def restore_conversation(self, conversation_id: int | uuid.UUID) -> bool:
         """线程级恢复：conversation.is_deleted=False + 取消消息归档。"""
         cid = _to_int(conversation_id)
+        if _out_of_int64(cid):
+            return False
         conv_stmt = (
             sa_update(ConversationORM)
             .where(ConversationORM.id == cid, ConversationORM.is_deleted)
@@ -351,6 +380,8 @@ class SQLiteChatMessageRepository:
     ) -> dict | None:
         """更新线程删除授权（conversations 表）。不存在 → None。"""
         cid = _to_int(conversation_id)
+        if _out_of_int64(cid):
+            return None
         row = (
             await self._db.execute(select(ConversationORM).where(ConversationORM.id == cid))
         ).scalar_one_or_none()
