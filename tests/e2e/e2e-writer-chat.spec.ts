@@ -19,8 +19,8 @@
  * 1. 聊天框：输入 → 发送 → content 意图回复（标记包裹）→ 自动选中 → 插入选中正文 → 编辑器 value 更新
  * 2. 对话类回复（无标记）→ 不渲染选择/插入控件
  * 3. 视图切换：view-toggle → 详情页空态（exec-detail-empty）→ 切回 editor
- * 4. 流式新消息删除按钮（#581-1）：发送 → 新消息渲染删除按钮 chat-msg-delete-user-0
- *    → 点击删除 → 消息消失（当前流式新消息无 id 不渲染删除按钮 → RED）
+ * 4. 流式新消息落库回填 id（#1161）：发送 → 删除按钮切换 chat-msg-delete-<uuid>
+ *    → 点击删除 → 消息消失 + 服务端无孤儿 + 重挂载不复活
  *
  * 基建复用 e2e-writing.spec.ts 模式（launchApp/waitKernelInfo/createProjectViaUi/findProjectId）。
  */
@@ -156,28 +156,11 @@ async function gotoNav(window: Page, name: string): Promise<void> {
 }
 
 /**
- * #1155：等待 ChatPanel 的「挂载期历史加载」落地。
- *
- * ChatPanel 在「点章节」时才挂载（writing.tsx 分支切换），挂载即跑
- * `GET /api/v1/chat/conversations`（可能再建会话）→ `GET /api/v1/chat/messages`，
- * 落地后**无条件** `setMessages(history)`（ChatPanel.tsx:229）+ 归零 userSeqRef/aiSeqRef（:226-227）。
- *
- * 若该次落地晚于「发送」，会用陈旧快照覆盖刚发出的消息，产生两种 CI flaky 形态：
- * - 空快照 → messages.length=0 → chat-messages 容器卸载 → 删除按钮 detach（click 吃满 30s 超时）
- * - 带 id 的服务端副本 → `chat-msg-user-0` 复活（testid 是 seq 基，仍命中），
- *   而删除按钮 testid 从 `chat-msg-delete-user-0` 变为 `chat-msg-delete-<uuid>`
- *   → `toHaveCount(0)` 轮询恒为 1（CI 实测 14 次）
- *
- * 该次 setMessages 在挂载生命周期内只发生一次 → 等它落地后发送，两个形态同时消失。
- * ⚠️ 必须在**点章节之前**调用（waiter 先注册，再触发挂载）。
+ * #1161 契约（spec §18.2）：ChatPanel 挂载期历史加载不再覆盖本地新状态
+ * （C1/C2 陈旧快照守卫）→ 「等历史落地再发送」的 #1155 绕过删除；
+ * 用户消息落库回填 id 后删除真落服务端（C3），删除按钮 testid 由
+ * chat-msg-delete-user-<seq> 切换为 chat-msg-delete-<uuid>。
  */
-async function waitChatHistorySettled(window: Page): Promise<void> {
-  const settled = window.waitForResponse(
-    (r) => r.request().method() === 'GET' && r.url().includes('/api/v1/chat/messages'),
-    { timeout: 15_000 }
-  );
-  return settled.then(() => undefined);
-}
 
 /** 拦截 chat 流式端点：POST /api/v1/chat/agent/stream → SSE 帧（确定性，零真实 LLM）.
  * #541：ChatPanel 已从 executePipeline+轮询 改为 streamChat SSE 消费；
@@ -356,22 +339,22 @@ test('视图切换：view-toggle → 详情页空态 → 切回 editor', async (
   }
 });
 
-test('流式新消息渲染删除按钮：发送 → chat-msg-delete-user-0 存在 → 点击删除 → 消息消失（#581-1）', async () => {
+test('流式新消息落库回填 id → 删除真落服务端 → 重挂载不复活（#581-1 / #1161）', async () => {
   const { app, window, kernel } = await launchApp();
   try {
-    const name = `E2E-聊天-删除-${Date.now()}`;
+    const name = `E2E-删除-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
 
-    // 预置 1 卷 + 1 章（正文空）——项目树有章节可点（对齐用例 1 预置写法）
-    const volumes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起' } });
-    expect(volumes.status).toBe(201);
-    const volData = (await volumes.json()) as { id: string };
-    const chapters = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
+    // 预置 1 卷 + 1 章（正文空）
+    const volRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/volumes`, { method: 'POST', body: { title: '第一卷 风起' } });
+    expect(volRes.status).toBe(201);
+    const volData = (await volRes.json()) as { id: string };
+    const chRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/chapters`, {
       method: 'POST',
       body: { title: '第1章 初见', volume_id: volData.id, content: '' },
     });
-    expect(chapters.status).toBe(201);
+    expect(chRes.status).toBe(201);
 
     // #474 前置校验预置：注册 openai key + 补 chat 模型
     await presetChatModel(kernel);
@@ -381,29 +364,52 @@ test('流式新消息渲染删除按钮：发送 → chat-msg-delete-user-0 存�
     await gotoNav(window, '写作');
     await expect(window.getByTestId('project-tree')).toBeVisible({ timeout: 15_000 });
     await expect(window.getByTestId('tree-volume')).toBeVisible({ timeout: 15_000 });
-    // #1155：点章节会挂载 ChatPanel → 先注册历史加载 waiter，再触发挂载
-    const historySettled = waitChatHistorySettled(window);
+    // #1161：陈旧快照落地已被 C1/C2 守卫丢弃 → 无需等历史加载即可点章节并发送
     await window.getByRole('button', { name: /第1章 初见/ }).click();
     await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
-    // #1155：等挂载期历史加载落地再发送（否则该次 setMessages 会覆盖刚发出的消息）
-    await historySettled;
 
     // 树就绪后再注册流式拦截（对话类回复，无 content 标记）
     interceptChatStream(window, '这是一段纯对话回复。');
 
-    // 发送一条消息 → 流式新消息（无 id）渲染删除按钮（#581-1）
+    // 发送 → user 消息渲染且不被在途加载抹掉（C1 修复的 E2E 面）
     const chatInput = window.getByTestId('chat-input');
     await expect(chatInput).toBeVisible({ timeout: 15_000 });
     await chatInput.fill('帮我写一段打斗场景');
     await window.getByTestId('chat-send').click();
-
-    // RED：当前流式新消息无 id 不渲染删除按钮 → chat-msg-delete-user-0 永不出现 → FAIL
     await expect(window.getByTestId('chat-msg-user-0')).toBeVisible({ timeout: 15_000 });
-    await expect(window.getByTestId('chat-msg-delete-user-0')).toBeVisible({ timeout: 15_000 });
 
-    // 点击删除 → 该消息消失（删除按钮随之消失）
-    await window.getByTestId('chat-msg-delete-user-0').click();
+    // #1161 C3 契约：落库回填 id → 删除按钮 testid 切换为 chat-msg-delete-<uuid>
+    const uuidDelete = window.locator('[data-testid^="chat-msg-delete-"]');
+    await expect(async () => {
+      const first = await uuidDelete.first().getAttribute('data-testid');
+      expect(first).toMatch(/^chat-msg-delete-[0-9a-f-]{36}$/);
+    }).toPass({ timeout: 15_000 });
+    const delTestId = (await uuidDelete.first().getAttribute('data-testid'))!;
+
+    // 点击删除 → 该消息消失
+    await window.getByTestId(delTestId).click();
     await expect(window.getByTestId('chat-msg-user-0')).toHaveCount(0);
+
+    // 服务端真相断言：被删消息无孤儿副本（C3：删除真落服务端）
+    const convRes = await kernelFetch(kernel, '/api/v1/chat/conversations');
+    expect(convRes.ok).toBe(true);
+    const convs = (await convRes.json()) as { items: Array<{ conversation_id: string; project_id: string }> };
+    const conv = convs.items.find((c) => c.project_id === pid);
+    expect(conv, '章节会话应存在').toBeTruthy();
+    const after = await kernelFetch(kernel, `/api/v1/chat/messages?conversation_id=${conv!.conversation_id}`);
+    expect(after.ok).toBe(true);
+    const afterData = (await after.json()) as { items: Array<{ content: string }> };
+    expect(
+      afterData.items.filter((m) => m.content === '帮我写一段打斗场景'),
+      '被删消息不得留服务端孤儿',
+    ).toHaveLength(0);
+
+    // 重挂载不复活：切走再回 → 历史重新加载 → 消息仍不存在
+    await gotoNav(window, '项目');
+    await gotoNav(window, '写作');
+    await window.getByRole('button', { name: /第1章 初见/ }).click();
+    await expect(window.getByTestId('tree-chapter')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('chat-msg-user-0')).toHaveCount(0, { timeout: 15_000 });
   } finally {
     await app.close();
   }
