@@ -227,8 +227,14 @@ class MapService:
         Returns:
             (地图列表, 总数) 元组，按 created_at DESC 排序.
         """
+        pid_int = _to_int_id(project_id)
+        # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
+        # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
+        project_repo = self._project_repo
+        if project_repo is not None and await project_repo.get(pid_int) is None:
+            raise ProjectNotFoundError()
         return await self._repo.list(
-            project_id=_to_int_id(project_id),
+            project_id=pid_int,
             root_location_id=(
                 _to_int_id(root_location_id) if root_location_id is not None else None
             ),

@@ -169,6 +169,10 @@ class SQLiteWorldRepository:
         """
         if project_id < -(2**63) or project_id >= 2**63:
             return [], 0
+        # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
+        if parent_id is not None and (parent_id < -(2**63) or parent_id >= 2**63):
+            return [], 0
         base = select(WorldSettingORM).where(WorldSettingORM.project_id == project_id)
 
         # 搜索: name icontains

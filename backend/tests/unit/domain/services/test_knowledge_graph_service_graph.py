@@ -188,7 +188,8 @@ def mock_relation_repo() -> MagicMock:
 def mock_project_repo() -> MagicMock:
     """Mock ProjectRepositoryProtocol — create 入口校验项目存在性."""
     repo = MagicMock(spec=ProjectRepositoryProtocol)
-    repo.get = AsyncMock(return_value=None)
+    # #1151: graph 先判父项目存在——夹具默认「项目存活」，404 用例自行覆盖为 None
+    repo.get = AsyncMock(return_value=_project())
     return repo
 
 
@@ -273,6 +274,7 @@ def service(
         foreshadow_repo=mock_foreshadow_repo,
         map_repo=mock_map_repo,
     )
+
 
 class TestGraph:
     """graph 图谱聚合（spec §5.2/§5.6 + §7 边界 10/13/14）."""
@@ -484,6 +486,7 @@ class TestGraph:
             f"cr:{cr.id}",
         ]
 
+
 class TestCleanup:
     """cleanup_for_entity 级联清理回调（spec §5.3/§9 场景 7）."""
 
@@ -509,6 +512,7 @@ class TestCleanup:
         assert view.nodes == []
         assert view.edges == []
         mock_relation_repo.cleanup_for_entity.assert_awaited_once_with("character", 123)
+
 
 class TestBulkCreate:
     """bulk_create_relations 预留端口（spec §5.5/#479 面，§9 测试策略）."""
@@ -554,6 +558,8 @@ class TestBulkCreate:
 
         assert created == []
         mock_relation_repo.add.assert_not_awaited()
+
+
 def test_error_class_hierarchy():
     """错误类层次契约（§3.3）：422 类继承 KnowledgeGraphServiceError；404 类不继承."""
     assert issubclass(KnowledgeRelationConflictError, KnowledgeGraphServiceError)
