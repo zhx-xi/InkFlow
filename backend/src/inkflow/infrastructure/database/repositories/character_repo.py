@@ -171,7 +171,7 @@ class SQLiteCharacterRepository:
 
     async def get(self, character_id: int) -> Character | None:
         """按主键查询角色。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if character_id < -2**63 or character_id >= 2**63:
+        if character_id < -(2**63) or character_id >= 2**63:
             return None
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
@@ -209,6 +209,10 @@ class SQLiteCharacterRepository:
         Returns:
             (当前页角色列表, 符合条件的总记录数).
         """
+        # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
+        if group_id is not None and (group_id < -(2**63) or group_id >= 2**63):
+            return [], 0
         base = select(CharacterORM).where(CharacterORM.project_id == project_id)
 
         # 搜索: name icontains
@@ -372,7 +376,7 @@ class SQLiteCharacterRepository:
 
     async def get_group(self, group_id: int) -> CharacterGroup | None:
         """按主键查询分组。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if group_id < -2**63 or group_id >= 2**63:
+        if group_id < -(2**63) or group_id >= 2**63:
             return None
         stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
         result = await self._session.execute(stmt)
@@ -441,7 +445,7 @@ class SQLiteCharacterRepository:
 
     async def get_relation(self, relation_id: int) -> CharacterRelation | None:
         """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if relation_id < -2**63 or relation_id >= 2**63:
+        if relation_id < -(2**63) or relation_id >= 2**63:
             return None
         stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == relation_id)
         result = await self._session.execute(stmt)

@@ -76,7 +76,7 @@ class SQLiteChapterRepository:
 
     async def get_volume(self, volume_id: int) -> Volume | None:
         """按主键查询卷。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if volume_id < -2**63 or volume_id >= 2**63:
+        if volume_id < -(2**63) or volume_id >= 2**63:
             return None
         stmt = select(VolumeORM).where(VolumeORM.id == volume_id)
         result = await self._session.execute(stmt)
@@ -105,9 +105,7 @@ class SQLiteChapterRepository:
 
     async def delete_volume(self, volume_id: int) -> bool:
         await self._session.execute(
-            sa_update(OutlineORM)
-            .where(OutlineORM.volume_id == volume_id)
-            .values(volume_id=None)
+            sa_update(OutlineORM).where(OutlineORM.volume_id == volume_id).values(volume_id=None)
         )
         await self._session.execute(
             sa_update(ChapterORM)
@@ -169,7 +167,7 @@ class SQLiteChapterRepository:
 
     async def get_chapter(self, chapter_id: int) -> Chapter | None:
         """按主键查询章节。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if chapter_id < -2**63 or chapter_id >= 2**63:
+        if chapter_id < -(2**63) or chapter_id >= 2**63:
             return None
         stmt = select(ChapterORM).where(ChapterORM.id == chapter_id)
         result = await self._session.execute(stmt)
@@ -184,6 +182,10 @@ class SQLiteChapterRepository:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[Chapter], int]:
+        # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
+        if volume_id is not None and (volume_id < -(2**63) or volume_id >= 2**63):
+            return [], 0
         base = select(ChapterORM).where(ChapterORM.project_id == project_id)
         if volume_id is not None:
             base = base.where(ChapterORM.volume_id == volume_id)
