@@ -362,10 +362,22 @@ class ChapterService:
         chapter_id: int | uuid.UUID,
         target_volume_id: int | uuid.UUID | None,
     ) -> Chapter | None:
-        return await self._repo.move_chapter(
-            _to_int(chapter_id),
-            _to_int(target_volume_id) if target_volume_id is not None else None,
-        )
+        """移动章节到目标卷（对齐 delete_volume 的 move_to 先例）.
+
+        Raises:
+            VolumeMoveError: 目标卷不存在（溢出 int64 或查无此卷），router 转 422.
+        """
+        target = _to_int(target_volume_id) if target_volume_id is not None else None
+        if target is not None:
+            # #1162: 先校验目标卷存在再 UPDATE——溢出 int64 绑定 SQLite 会抛
+            # OverflowError（500）；范围内不存在的 target 若不校验会盲写孤儿
+            # volume_id。校验口径镜像同 service delete_volume 的 move_to 块.
+            if target > 2**63 - 1:
+                raise VolumeMoveError("目标卷不存在")
+            target_volume: Volume | None = await self._repo.get_volume(target)
+            if target_volume is None:
+                raise VolumeMoveError("目标卷不存在")
+        return await self._repo.move_chapter(_to_int(chapter_id), target)
 
     async def get_project_word_count(self, project_id: int) -> int:
         return await self._repo.get_project_word_count(project_id)
