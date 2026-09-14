@@ -6,6 +6,8 @@
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-29，#762-#765 增量）：将对话/写作会话提升为全局一等对象——左侧新增与「设定库」同级的独立**会话栏**（#762，取代 #752 会话入设定库栏 + 折叠/展开）；续写/生成按钮改为**创建新会话**而非页脚内联进度条（#763）；移除右栏「草稿审批」面板（审批/保存收敛到章节页顶部按钮，右栏只留上下文注入，D3，#764）；右栏折叠按钮移到左缘 +「折叠」提示（#765）。详见 §15。
 
+> **Spec 变更**（v1.2 → v1.3，2026-09-14，#1161 增量）：修复 ChatPanel 挂载期历史加载与发送/删除的三处竞态缺陷（#1155 排查确认，E2E 侧已由 #1160 测试时序绕过，本增量修产品侧根因）：① 加载落地不得覆盖加载期间产生的本地新状态；② `conversationIdRef` 本地优先（加载不得回写覆盖 handleSend 已建的会话）；③ 发送的用户消息落库后回填服务端 id，删除必须真落服务端——**含 testid 契约变更**（`chat-msg-delete-user-<seq>` → 落库后 `chat-msg-delete-<uuid>`）。详见 §18。
+
 ## 1. 概述
 
 写作页底部横栏从被动状态条改造为 **AI 聊天框**（可与 AI 对话，结果经用户确认落章），
@@ -595,3 +597,53 @@ sessions.chat.titleEmpty    // 未命名会话
 - **Q5**：点击会话 title 匹配章节 → 跳对应章节；匹配不到 → 跳全局 chat 页；`/sessions` 路由不删除。
 - **Q6（#825 UI 元素必须出现）**：左侧会话栏（SessionBar）渲染会话条目（`session-item-<id>` / title 文案出现，非「暂无数据」）；每条目仅一个清晰标题（无冗余底部小 title）；折叠按钮位于「会话」标题行最右；无会话 → `session-bar-empty` 空态；`projectId` 生效时仅显示该项目线程。
 - **Q7**：前端 vitest + tsc 全绿；后端 pytest + ruff + mypy 全绿；PR 合入（Closes #770）。
+
+## 18. 挂载期历史加载竞态修复 + 用户消息 id 回填（#1161，2026-09-14 增量）
+
+> 背景：#1155 排查确认 ChatPanel 挂载期历史加载（§14/§16 既有链路）与发送/删除存在三处竞态。
+> E2E 侧已由 #1160 用「等历史落地再发送」绕过（仅测试时序）；本增量修产品侧根因。
+> 不推翻既有契约：#547 持久化、#581 删除/归档、#744/#770 线程语义全部保持。
+
+### 18.1 缺陷与行为契约（根因 = ChatPanel.tsx 加载 effect :163-241）
+
+**C1（陈旧快照覆盖本地新状态）**：加载 effect 的落地段（`conversationIdRef.current = cid` /
+`userSeqRef/aiSeqRef 覆盖` / `setMessages(history)`）执行时，若**加载在途期间用户已发送**
+（`userSeqRef.current > 0` 或 `streamingRef.current`），该快照已陈旧 → **整体丢弃**（等价
+`cancelled`：不回写 ref、不覆盖消息、不归零 seq）。判据选择「本地已发送」而非「逐条合并」：
+挂载即发的窄窗口内丢弃快照，历史经下次重挂载正常加载（既有 effect 依赖即触发），避免
+seq 基冲突的合并复杂度（ponytail：合并/去重待真实需求出现再升级）。
+反例守护：无新消息时加载行为逐字不变（历史正确替换 + seq 计数对齐服务端）。
+
+**C2（conversationId 被慢加载覆盖）**：C1 守卫同时覆盖 `:203` 的 ref 回写——`handleSend`
+已另建会话（ref 指向新值）后，在途加载落地**不得**把 ref 改回其解析到的旧会话。实现口径：
+`:203` 写入前若本地已发送（同 C1 判据）则整个快照丢弃（含 ref 与消息）；本地未发送则按既有
+行为写入（含 `:204` setConversationId）。
+
+**C3（用户消息落库 id 回填 → 删除真落服务端）**：`handleSend` 的
+`void saveChatMessage(...)` 丢弃返回值（api 实际返回含 `id` 的 `ChatMessageDto`）→ 本地
+user 条目永远无 id → `handleDeleteMessage`（#581 契约「无 id 仅本地移除」）留下服务端副本，
+重挂载后「已删消息」复活。契约：`saveChatMessage` resolve 且返回 `saved.id` 非空 → 按 seq
+定位该 user 条目回填 `id`（后续编辑走既有 `deleteChatMessage(id)` 真删）。回填失败/返回无 id
+→ 维持无 id 形态（仅本地移除，#581 兜底分支保留）；在途竞态：回填须用函数式
+`setMessages(prev => ...)` 按 `kind==='user' && seq===该条seq` 匹配，不持快照数组。
+
+### 18.2 testid 契约变更（随 C3）
+
+- 删除按钮既有渲染逻辑不变：`chat-msg-delete-${id ?? (kind==='user' ? 'user-'+seq : 'ai-'+seq)}`。
+- **行为变化**：流式新发的 user 消息在 save 落库返回后，删除按钮 testid 由
+  `chat-msg-delete-user-<seq>` **切换为** `chat-msg-delete-<uuid>`（id 回填的自然结果）。
+- E2E（`tests/e2e/e2e-writer-chat.spec.ts`）同步升级：删除入口断言不再锁 `chat-msg-delete-user-0`
+  字面量，改为 `waitFor` 匹配 `chat-msg-delete-`（uuid 形态出现）或前缀选择器；「点击删除 →
+  消息消失 → 重挂载不复活」补服务端真相断言（重新加载后 `chat-msg-user-<seq>` 不再出现）。
+- `chat-msg-user-<seq>` / `chat-msg-ai-<seq>` 消息体 testid **不变**（seq 基）。
+
+### 18.3 验收（M 叠加 §14.8 N / §15.7 P / §17.8 Q）
+
+- **R1**：Vitest RED→GREEN——模拟 `fetchChatMessages` 延迟 resolve：发送 → 快照落地 →
+  用户消息仍在（不被抹掉）、seq ref 不被归零、conversationIdRef 不被回写。
+- **R2**：Vitest RED→GREEN——`saveChatMessage` resolve `{id:'m-9'}` → 该 user 条目删除按钮
+  testid 变 `chat-msg-delete-m-9`；点击 → `deleteChatMessage('m-9')` 被调用。
+- **R3**：反例——无新消息正常加载：历史逐条渲染 + id 透传（既有 conversation 测试零回归）。
+- **R4**：E2E 探针——`page.route` 延迟 `GET /chat/messages` 2500ms + 发送 → 消息不丢
+  （#1155 复现脚本反向断言）；e2e-writer-chat 删除用例按 §18.2 升级后全绿。
+- **R5**：前端 vitest + tsc + eslint 全绿；E2E writer-chat 轨道全绿；PR 合入（Closes #1161）。

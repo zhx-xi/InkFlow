@@ -162,6 +162,8 @@ export function ChatPanel({
   /** #547/#840/#1015：挂载 / projectId / conversationId 变化 → 加载历史（失败静默；URL 指定归档会话只读） */
   useEffect(() => {
     let cancelled = false;
+    const loadUserSeq = userSeqRef.current;
+    const loadStreaming = streamingRef.current;
     projectIdRef.current = projectId;
     setArchived(false);
     const load = async () => {
@@ -200,12 +202,17 @@ export function ChatPanel({
             cid = created.conversation_id;
           }
         }
+        if (cancelled || userSeqRef.current > loadUserSeq || (!loadStreaming && streamingRef.current)) {
+          return;
+        }
         conversationIdRef.current = cid;
         setConversationId(cid);
         const res = isArchived
           ? await fetchChatMessages(cid, 0, 50, { includeDeleted: true })
           : await fetchChatMessages(cid);
-        if (cancelled) return;
+        if (cancelled || userSeqRef.current > loadUserSeq || (!loadStreaming && streamingRef.current)) {
+          return;
+        }
         let userSeq = 0;
         let aiSeq = 0;
         const history: ChatEntry[] = res.items.map((msg: ChatMessageDto) =>
@@ -410,7 +417,8 @@ export function ChatPanel({
     } catch (err) { useToastStore.getState().pushToast('err', errorMessage(err)); return; }
     streamingRef.current = true;
     setStreaming(true);
-    setMessages((prev) => [...prev, { kind: 'user', seq: userSeqRef.current++, text: prompt }]);
+    const userSeq = userSeqRef.current++;
+    setMessages((prev) => [...prev, { kind: 'user', seq: userSeq, text: prompt }]);
     pendingScrollRef.current = true;
     // #547/#744：用户消息落库（fire-and-forget；线程缺失先新建）
     let cid = conversationIdRef.current;
@@ -435,7 +443,19 @@ export function ChatPanel({
         conversation_id: cid,
         role: 'user',
         content: prompt,
-      }).catch(() => {});
+      })
+        .then((saved) => {
+          const savedId = saved?.id;
+          if (!savedId) return;
+          setTimeout(() => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.kind === 'user' && m.seq === userSeq && !m.id ? { ...m, id: savedId } : m,
+              ),
+            );
+          }, 100);
+        })
+        .catch(() => {});
     }
     setInput('');
     const body: ChatStreamBody = {
