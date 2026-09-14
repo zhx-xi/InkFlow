@@ -225,7 +225,11 @@ async def move_chapter(
     svc = _svc(db)
     cid = _parse_id(chapter_id, detail="章节不存在")
     tvid = _parse_id(target_volume_id) if target_volume_id else None
-    ch = await svc.move_chapter(cid, tvid)
+    try:
+        ch = await svc.move_chapter(cid, tvid)
+    except VolumeMoveError as e:
+        # #1162: 目标卷不存在（溢出/查无此卷）→ 422（镜像同文件 delete_volume 映射）
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if ch is None:
         raise HTTPException(status_code=404, detail="章节不存在")
     return ch.model_dump(mode="json")

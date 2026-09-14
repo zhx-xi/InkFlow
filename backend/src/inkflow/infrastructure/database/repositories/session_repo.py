@@ -163,7 +163,7 @@ class SQLiteSessionRepository:
 
     async def get(self, session_id: int) -> Session | None:
         """按主键查询会话（不含已归档）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if session_id < -2**63 or session_id >= 2**63:
+        if session_id < -(2**63) or session_id >= 2**63:
             return None
         stmt = select(SessionORM).where(
             SessionORM.id == session_id,
@@ -209,6 +209,11 @@ class SQLiteSessionRepository:
         if status is not None:
             base = base.where(SessionORM.status == status)
         if project_id is not None:
+            # #1162: 过滤值超 int64 → 不匹配任何行 → 空结果（128 位 int 绑定会抛
+            # OverflowError → 500）。「不传 = 全部」与此处「溢出 = 不匹配任何行」
+            # 语义分开：溢出不得回落为 None 走全量；范围内不存在仍走正常查询路径.
+            if project_id < -(2**63) or project_id >= 2**63:
+                return [], 0
             base = base.where(SessionORM.project_id == project_id)
         if search:
             base = base.where(SessionORM.title.ilike(f"%{search}%"))
@@ -229,7 +234,7 @@ class SQLiteSessionRepository:
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
         """
-        if session_id < -2**63 or session_id >= 2**63:
+        if session_id < -(2**63) or session_id >= 2**63:
             return None
         stmt = select(SessionORM).where(SessionORM.id == session_id)
         result = await self._session.execute(stmt)

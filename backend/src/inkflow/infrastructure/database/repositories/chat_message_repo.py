@@ -80,9 +80,7 @@ class SQLiteChatMessageRepository:
         """
         conv_id = message.conversation_id.int
         existing = (
-            await self._db.execute(
-                select(ConversationORM.id).where(ConversationORM.id == conv_id)
-            )
+            await self._db.execute(select(ConversationORM.id).where(ConversationORM.id == conv_id))
         ).scalar_one_or_none()
         if existing is None:
             self._db.add(ConversationORM(id=conv_id, project_id=message.project_id.int))
@@ -110,11 +108,7 @@ class SQLiteChatMessageRepository:
     async def rename_conversation(self, conversation_id: int | uuid.UUID, title: str) -> bool:
         """会话改名（#770）：更新 title 列；不存在 → False。"""
         cid = _to_int(conversation_id)
-        stmt = (
-            sa_update(ConversationORM)
-            .where(ConversationORM.id == cid)
-            .values(title=title)
-        )
+        stmt = sa_update(ConversationORM).where(ConversationORM.id == cid).values(title=title)
         result = await self._db.execute(stmt)
         await self._db.commit()
         return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
@@ -139,6 +133,10 @@ class SQLiteChatMessageRepository:
     ) -> tuple[list[ChatMessage], int]:
         """线程消息列表（按时间升序，分页；不含已归档消息）。"""
         cid = conversation_id.int
+        # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
+        if cid < -(2**63) or cid >= 2**63:
+            return [], 0
         conditions = [ChatMessageORM.conversation_id == cid]
         if not include_deleted:
             conditions.append(~ChatMessageORM.is_deleted)
@@ -172,7 +170,9 @@ class SQLiteChatMessageRepository:
         rows = (await self._db.execute(stmt)).scalars().all()
         total = (
             await self._db.execute(
-                select(func.count()).select_from(ChatMessageORM).where(
+                select(func.count())
+                .select_from(ChatMessageORM)
+                .where(
                     ChatMessageORM.project_id == pid,
                     ~ChatMessageORM.is_deleted,
                 )
@@ -197,15 +197,19 @@ class SQLiteChatMessageRepository:
 
         conv_ids = [c.id for c in conv_rows]
         msg_rows = (
-            await self._db.execute(
-                select(ChatMessageORM)
-                .where(
-                    ChatMessageORM.conversation_id.in_(conv_ids),
-                    ~ChatMessageORM.is_deleted,
+            (
+                await self._db.execute(
+                    select(ChatMessageORM)
+                    .where(
+                        ChatMessageORM.conversation_id.in_(conv_ids),
+                        ~ChatMessageORM.is_deleted,
+                    )
+                    .order_by(ChatMessageORM.created_at.asc(), ChatMessageORM.id.asc())
                 )
-                .order_by(ChatMessageORM.created_at.asc(), ChatMessageORM.id.asc())
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         count_by_conv: dict[int, int] = {c.id: 0 for c in conv_rows}
         last_by_conv: dict[int, ChatMessageORM] = {}
         for r in msg_rows:
@@ -277,9 +281,7 @@ class SQLiteChatMessageRepository:
             return None
         await self._db.commit()
         row = (
-            await self._db.execute(
-                select(ChatMessageORM).where(ChatMessageORM.id == message_id)
-            )
+            await self._db.execute(select(ChatMessageORM).where(ChatMessageORM.id == message_id))
         ).scalar_one_or_none()
         return _orm_to_domain(row) if row else None
 
@@ -313,18 +315,14 @@ class SQLiteChatMessageRepository:
         """线程级真删：删除该线程全部消息 + 会话行。返回是否命中。"""
         cid = _to_int(conversation_id)
         exists = (
-            await self._db.execute(
-                select(ConversationORM.id).where(ConversationORM.id == cid)
-            )
+            await self._db.execute(select(ConversationORM.id).where(ConversationORM.id == cid))
         ).scalar_one_or_none()
         if exists is None:
             return False
         await self._db.execute(
             sa_delete(ChatMessageORM).where(ChatMessageORM.conversation_id == cid)
         )
-        await self._db.execute(
-            sa_delete(ConversationORM).where(ConversationORM.id == cid)
-        )
+        await self._db.execute(sa_delete(ConversationORM).where(ConversationORM.id == cid))
         await self._db.commit()
         return True
 
@@ -354,9 +352,7 @@ class SQLiteChatMessageRepository:
         """更新线程删除授权（conversations 表）。不存在 → None。"""
         cid = _to_int(conversation_id)
         row = (
-            await self._db.execute(
-                select(ConversationORM).where(ConversationORM.id == cid)
-            )
+            await self._db.execute(select(ConversationORM).where(ConversationORM.id == cid))
         ).scalar_one_or_none()
         if row is None:
             return None
