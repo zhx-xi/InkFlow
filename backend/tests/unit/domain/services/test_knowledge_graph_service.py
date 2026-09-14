@@ -771,12 +771,16 @@ class TestGetRelation:
 class TestListRelations:
     """list_relations 过滤 + 分页（§5.1/§5.6，created_at DESC 由 repo 保证）."""
 
-    async def test_delegates_filters_and_pagination(self, service, mock_relation_repo):
+    async def test_delegates_filters_and_pagination(
+        self, service, mock_relation_repo, mock_project_repo
+    ):
         """委托 repo.filter 传 int 项目键 + 全部过滤参数 + 分页."""
         src_char = _char("林尘")
         tgt_world = _world("清河县")
         rel = _kr(source_id=src_char.id, target_id=tgt_world.id, relation_type="属于")
         mock_relation_repo.filter = AsyncMock(return_value=([rel], 1))
+        # #1151: list_relations 先判父项目存在——本用例覆盖为「项目存活」
+        mock_project_repo.get = AsyncMock(return_value=_project())
 
         items, total = await service.list_relations(
             PID,

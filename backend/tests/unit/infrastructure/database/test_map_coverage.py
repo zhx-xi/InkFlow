@@ -165,8 +165,10 @@ def service(mock_repo, mock_asset_store, mock_world_repo, mock_project_repo) -> 
 class TestServiceCoverageGaps:
     """MapService 防御/边界分支补测."""
 
-    async def test_list_maps_int_project_id(self, service, mock_repo) -> None:
+    async def test_list_maps_int_project_id(self, service, mock_repo, mock_project_repo) -> None:
         """_to_int_id int 分支：int project_id 直接透传（L54）."""
+        # #1151: list_maps 先判父项目存在——本用例覆盖为「项目存活」
+        mock_project_repo.get = AsyncMock(return_value=MagicMock(id=PID))
         await service.list_maps(12345)
         mock_repo.list.assert_awaited_once_with(
             project_id=12345,

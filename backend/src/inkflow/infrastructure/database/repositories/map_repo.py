@@ -168,6 +168,12 @@ class SQLiteMapRepository:
         - top_level_only=True = 仅全局图（root_location_id IS NULL）
         - root_location_id 非 None = 精确过滤（忽略 top_level_only）
         """
+        # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
+        if root_location_id is not None and (
+            root_location_id < -(2**63) or root_location_id >= 2**63
+        ):
+            return [], 0
         base = select(MapORM).where(MapORM.project_id == project_id)
         if top_level_only:
             base = base.where(MapORM.root_location_id.is_(None))
