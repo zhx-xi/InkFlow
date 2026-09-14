@@ -8,6 +8,8 @@ from typing import Any
 
 from inkflow.domain.models.chat_message import ChatMessage, ChatMessageCreate
 from inkflow.domain.models.conversation import Conversation
+from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
+from inkflow.domain.ports.world_errors import ProjectNotFoundError
 
 
 def _utcnow() -> datetime:
@@ -40,10 +42,15 @@ class ChatMessageService:
             get_active_conversation / create_conversation / archive /
             force_delete / restore / archive_conversation / force_delete_conversation /
             restore_conversation。
+        project_repo: 项目仓储（F1）——create_conversation 落库前校验项目存在防孤儿行；
+            未注入（Mock 装配）→ 跳过校验。
     """
 
-    def __init__(self, *, repo: object) -> None:
+    def __init__(
+        self, *, repo: object, project_repo: ProjectRepositoryProtocol | None = None
+    ) -> None:
         self._repo = repo
+        self._project_repo = project_repo
 
     async def add_message(self, data: ChatMessageCreate) -> ChatMessage:
         """构造实体（id=uuid4 + created_at=now UTC）-> repo.add -> 返回落库实体。
@@ -74,7 +81,18 @@ class ChatMessageService:
         return await self._repo.create_conversation(project_id)  # type: ignore[attr-defined, no-any-return]  # 鸭子类型：repo 提供 create_conversation
 
     async def create_conversation(self, project_id: uuid.UUID, title: str = "") -> Conversation:
-        """直接创建新线程（#744 归档后开新线程：不复用旧 conversation；title 可选，#770）。"""
+        """直接创建新线程（#744 归档后开新线程：不复用旧 conversation；title 可选，#770）。
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（#1166 落库前校验，router 转 404，防孤儿行）.
+        """
+        # #1166: 先校验父项目存在——溢出（128 位 int）经 project_repo.get 自带
+        # int64 守卫恒 None → 404，不再走到 INSERT（500 同修）
+        if (
+            self._project_repo is not None
+            and await self._project_repo.get(_to_int_id(project_id)) is None
+        ):
+            raise ProjectNotFoundError()
         created: Conversation = await self._repo.create_conversation(project_id, title)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 create_conversation
         return created
 
@@ -101,17 +119,20 @@ class ChatMessageService:
         limit: int = 50,
         include_deleted: bool = False,
     ) -> tuple[list[ChatMessage], int]:
-        """线程消息列表（位置透传 repo.list_by_conversation）。"""
+        """线程消息列表（位置透传 repo.list_by_conversation）。
+
+        #1165 定档语义：conversation 不存在（含溢出）→ 200 + 空列表，
+        不引入 404（该 service 对父线程本就无存在性校验语义；溢出 500
+        由 repo 层 #1162/#1166 守卫短路解决）。
+        """
         if include_deleted:
             # #1015 条件转发：True 时显式透传 include_deleted=True
-            items, total = await self._repo.list_by_conversation(  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 list_by_conversation
+            return await self._repo.list_by_conversation(  # type: ignore[attr-defined,no-any-return]  # 鸭子类型：repo 提供 list_by_conversation
                 conversation_id, offset, limit, include_deleted=True
             )
-            return items, total
-        items, total = await self._repo.list_by_conversation(  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 list_by_conversation
+        return await self._repo.list_by_conversation(  # type: ignore[attr-defined,no-any-return]  # 鸭子类型：repo 提供 list_by_conversation
             conversation_id, offset, limit
         )
-        return items, total
 
     async def list_conversations(self, include_deleted: bool = False) -> list[dict[str, Any]]:
         """会话页聚合（repo 聚合结果原样透传；include_deleted 控制是否含已归档）。"""

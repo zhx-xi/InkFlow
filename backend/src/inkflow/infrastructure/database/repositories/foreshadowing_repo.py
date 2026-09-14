@@ -109,7 +109,7 @@ class SQLiteForeshadowingRepository:
 
     async def get(self, foreshadowing_id: int) -> Foreshadowing | None:
         """按主键查询伏笔。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if foreshadowing_id < -2**63 or foreshadowing_id >= 2**63:
+        if foreshadowing_id < -(2**63) or foreshadowing_id >= 2**63:
             return None
         stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == foreshadowing_id)
         result = await self._session.execute(stmt)
@@ -155,6 +155,10 @@ class SQLiteForeshadowingRepository:
         Returns:
             (伏笔列表, 总数) 元组.
         """
+        # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int / 不存在的项目）→ 空结果，
+        # 防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500
+        if project_id < -(2**63) or project_id >= 2**63:
+            return [], 0
         base = select(ForeshadowingORM).where(ForeshadowingORM.project_id == project_id)
 
         # 搜索: title icontains

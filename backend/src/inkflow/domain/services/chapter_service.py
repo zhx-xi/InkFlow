@@ -249,6 +249,11 @@ class ChapterService:
         if existing is None:
             return None
         update_data = dto.model_dump(exclude_unset=True)
+        # #1166: 改挂卷（volume_id 出现且非 None）必须先校验目标卷存在——
+        # 缺失（含 128 位溢出）→ VolumeMoveError（router 422），绝不盲写孤儿 volume_id；
+        # volume_id=None（出卷）保持放行（显式 NULL 合并语义不变）
+        if update_data.get("volume_id") is not None:
+            await self._ensure_target_volume(update_data["volume_id"])
         updated = existing.model_copy(update=update_data)
         # #1095：落库前按「合并后的最终 title」归一正文（单一真相面 = service 层，
         # Repository 层不得重复归一，避免双层归一双重缩进）。
@@ -362,22 +367,32 @@ class ChapterService:
         chapter_id: int | uuid.UUID,
         target_volume_id: int | uuid.UUID | None,
     ) -> Chapter | None:
-        """移动章节到目标卷（对齐 delete_volume 的 move_to 先例）.
+        """移动章节到目标卷（对齐 delete_volume 的 move_to 先例，#1162/#1166）.
 
         Raises:
-            VolumeMoveError: 目标卷不存在（溢出 int64 或查无此卷），router 转 422.
+            VolumeMoveError: 目标卷不存在（溢出 int64 或查无此卷）→ router 转 422，
+                且不落库（#1166 病症③：repo 层只能挡 500，盲写孤儿必须 service 挡）。
         """
-        target = _to_int(target_volume_id) if target_volume_id is not None else None
-        if target is not None:
-            # #1162: 先校验目标卷存在再 UPDATE——溢出 int64 绑定 SQLite 会抛
-            # OverflowError（500）；范围内不存在的 target 若不校验会盲写孤儿
-            # volume_id。校验口径镜像同 service delete_volume 的 move_to 块.
-            if target > 2**63 - 1:
-                raise VolumeMoveError("目标卷不存在")
-            target_volume: Volume | None = await self._repo.get_volume(target)
-            if target_volume is None:
-                raise VolumeMoveError("目标卷不存在")
-        return await self._repo.move_chapter(_to_int(chapter_id), target)
+        # #1166: 收敛到 _ensure_target_volume（与 update_chapter 改挂卷共用同一校验）
+        if target_volume_id is not None:
+            await self._ensure_target_volume(target_volume_id)
+        return await self._repo.move_chapter(
+            _to_int(chapter_id),
+            _to_int(target_volume_id) if target_volume_id is not None else None,
+        )
+
+    async def _ensure_target_volume(self, volume_id: int | uuid.UUID) -> None:
+        """改挂目标卷必须存在（#1166；同 delete_volume(move_to=) 口径）.
+
+        Raises:
+            VolumeMoveError: 目标卷不存在或超 int64 范围（router 转 422）.
+        """
+        target = _to_int(volume_id)
+        if target > 2**63 - 1:
+            raise VolumeMoveError("目标卷不存在")
+        target_vol: Volume | None = await self._repo.get_volume(target)
+        if target_vol is None:
+            raise VolumeMoveError("目标卷不存在")
 
     async def get_project_word_count(self, project_id: int) -> int:
         return await self._repo.get_project_word_count(project_id)

@@ -200,6 +200,10 @@ class SQLiteSessionRepository:
         Returns:
             (会话列表, 总数) 元组；列表按 created_at DESC 排序.
         """
+        # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int / 不存在的项目）→ 空结果，
+        # 防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500
+        if project_id is not None and (project_id < -(2**63) or project_id >= 2**63):
+            return [], 0
         base = select(SessionORM)
         if not include_deleted:
             base = base.where(~SessionORM.is_deleted)

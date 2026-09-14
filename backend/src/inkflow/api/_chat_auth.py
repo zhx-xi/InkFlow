@@ -28,10 +28,13 @@ class _ConversationService:
 
     async def get(self, conversation_id: uuid.UUID) -> Conversation | None:
         """按 id 读取会话领域实体；不存在返回 None（装配层按 manual 兜底）."""
+        # #1166: 128 位 int（随机 uuid4）超 SQLite INTEGER 范围 → 视为不存在，
+        # 防 .int 直绑 SQL 抛 OverflowError → 500（装配层 None → manual 兜底路径不变）
+        cid = conversation_id.int
+        if cid < -(2**63) or cid >= 2**63:
+            return None
         row = (
-            await self._db.execute(
-                select(ConversationORM).where(ConversationORM.id == conversation_id.int)
-            )
+            await self._db.execute(select(ConversationORM).where(ConversationORM.id == cid))
         ).scalar_one_or_none()
         if row is None:
             return None

@@ -199,7 +199,11 @@ async def get_chapter(chapter_id: str, db: AsyncSession = Depends(get_db)):
 async def update_chapter(chapter_id: str, data: ChapterUpdate, db: AsyncSession = Depends(get_db)):
     svc = _svc(db)
     cid = _parse_id(chapter_id, detail="章节不存在")
-    ch = await svc.update_chapter(cid, data)
+    # #1166: 改挂到不存在的卷（含 128 位溢出）→ 422「目标卷不存在」（同 delete_volume）
+    try:
+        ch = await svc.update_chapter(cid, data)
+    except VolumeMoveError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if ch is None:
         raise HTTPException(status_code=404, detail="章节不存在")
     return ch.model_dump(mode="json")
@@ -228,7 +232,7 @@ async def move_chapter(
     try:
         ch = await svc.move_chapter(cid, tvid)
     except VolumeMoveError as e:
-        # #1162: 目标卷不存在（溢出/查无此卷）→ 422（镜像同文件 delete_volume 映射）
+        # #1162/#1166: 目标卷不存在（溢出/查无此卷）→ 422（镜像同文件 delete_volume 映射）
         raise HTTPException(status_code=422, detail=str(e)) from e
     if ch is None:
         raise HTTPException(status_code=404, detail="章节不存在")
