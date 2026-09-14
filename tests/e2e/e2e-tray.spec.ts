@@ -15,7 +15,7 @@
  * → 重启 → 关闭窗口仍完整退出。重启用例独立 userData 临时目录（spec §9.1 隔离策略）。
  */
 import path from 'node:path';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import {
@@ -25,6 +25,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { createIsolatedEnv } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -85,6 +86,29 @@ async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Pr
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error(`__kernelInfo 未在 ${timeoutMs}ms 内注入（内核未就绪）`);
+}
+
+/**
+ * #1159 隔离数据目录的内核 pid：读 <dataDir>/kernel.json 的 pid（#1040：cleanup 先等内核退出再删目录）。
+ * 就绪钩子 __kernelInfo 注入先于 kernel.json 落盘（main.ts updateKernelInfoHook → writeKernelStateFile）
+ * → 短暂轮询；超时仍读不到返回 undefined（cleanupIsolatedEnv 内部过滤 undefined）。
+ */
+async function readKernelPid(dataDir: string, timeoutMs = 10_000): Promise<number | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(dataDir, 'kernel.json'), 'utf8')) as {
+        pid?: unknown;
+      };
+      if (typeof parsed.pid === 'number') {
+        return parsed.pid;
+      }
+    } catch {
+      // kernel.json 尚未落盘 / 半截写入 → 继续轮询
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return undefined;
 }
 
 /** GET /health 带 token（spec §3.7 M2：200 = 内核健康） */
@@ -216,11 +240,19 @@ async function waitForCloseBehavior(
 test.describe.configure({ timeout: 360_000 });
 
 test('托盘 M1（spec §13 M1）：关闭 → 窗口隐藏 + 内核存活 + 托盘已创建', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('tray-1');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const win = await app.firstWindow();
     await expect(win).toHaveTitle(/InkFlow/);
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
 
     // 前置契约：托盘已创建（M1「托盘图标出现」的钩子面）+ 默认关闭行为 'tray'（spec §2.2）
     const tray = await waitForTrayCreated(app);
@@ -241,15 +273,24 @@ test('托盘 M1（spec §13 M1）：关闭 → 窗口隐藏 + 内核存活 + 托
     expect(still?.pid).toBe(kernel.pid);
   } finally {
     await app.close().catch(() => {});
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('托盘 M2a（spec §13 M2 前半）：托盘「打开」→ 窗口恢复可见', async () => {
   // 独立 launch（项目惯例：每个用例独立 app，workers=1），先构造隐藏态再验证恢复
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('tray-2');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const win = await app.firstWindow();
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
 
     // 先关闭 → 隐藏（默认 tray 行为；自绘按钮真实路径，见 M1 注释）
     await win.evaluate(() => window.INKFLOW_API.windowControls.close());
@@ -264,14 +305,23 @@ test('托盘 M2a（spec §13 M2 前半）：托盘「打开」→ 窗口恢复�
     expect(after?.pid).toBe(kernel.pid);
   } finally {
     await app.close().catch(() => {});
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('托盘 M2b（spec §13 M2 后半）：托盘「退出」→ 内核回收 + 应用退出', async () => {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('tray-3');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   let appExited = false;
   try {
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
     await waitForTrayCreated(app);
 
     // 托盘「退出」→ shutdown()（spec §5.2：stopKernel 完整回收 → app.exit(0)）
@@ -285,17 +335,26 @@ test('托盘 M2b（spec §13 M2 后半）：托盘「退出」→ 内核回收 +
     if (!appExited) {
       await app.close().catch(() => {});
     }
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('托盘 M3（spec §13 M3）：设置「直接退出」→ 关闭 = 完整退出（内核回收）', async () => {
   // 注：当前 #78 行为（关闭 → 无条件 shutdown）恰为 quit 语义 → RED 阶段本用例可能已绿，
   // 属回归保护（F31 改造 window-all-closed 条件退出后必须保持 quit 模式仍完整退出）
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('tray-4');
+  let kernelPid: number | undefined;
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   let appExited = false;
   try {
     const win = await app.firstWindow();
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
     await waitForTrayCreated(app);
 
     // 设置页「关闭窗口时=直接退出」的 IPC 落点 = 主进程 setCloseBehavior（spec §2.3/§6.2）
@@ -314,16 +373,25 @@ test('托盘 M3（spec §13 M3）：设置「直接退出」→ 关闭 = 完整�
     if (!appExited) {
       await app.close().catch(() => {});
     }
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('托盘 M4（spec §13 M4）：单实例——二次启动 → 聚焦已有窗口（无第二窗口/内核）', async () => {
-  const appA = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  // #1159 数据目录隔离：A/B 两进程**共用同一隔离目录**（单实例锁按 userData 判重 → 必须同目录）
+  const iso = createIsolatedEnv('tray-5');
+  let kernelPid: number | undefined;
+  const appA = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   let appB: ElectronApplication | null = null;
   try {
     const winA = await appA.firstWindow();
     await expect(winA).toHaveTitle(/InkFlow/);
     const kernelA = await waitKernelInfo(appA);
+    kernelPid = await readKernelPid(iso.dataDir);
 
     // 先隐藏 A（默认 tray 行为）→ second-instance 的「聚焦恢复」才可观测（spec §5.5 #8；
     // 自绘按钮真实路径，见 M1 注释）
@@ -332,7 +400,11 @@ test('托盘 M4（spec §13 M4）：单实例——二次启动 → 聚焦已有
 
     // 第二次启动同 MAIN_JS：单实例锁获取失败（spec §5.5）→ 快速退出，不 spawn 不建窗
     try {
-      appB = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+      appB = await electron.launch({
+        args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+        cwd: FRONTEND_DIR,
+        env: iso.env as Record<string, string>,
+      });
     } catch (err) {
       // B 在 Playwright 连接建立前即退出（锁失败 → app.quit）——本身即「第二进程快速退出」证据，
       // 继续断言 A 侧状态（RED 阶段无锁实现 → B 正常启动 → 下方 waitForAppExit 超时失败）
@@ -355,6 +427,7 @@ test('托盘 M4（spec §13 M4）：单实例——二次启动 → 聚焦已有
       await appB.close().catch(() => {});
     }
     await appA.close().catch(() => {});
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
@@ -368,7 +441,12 @@ test('托盘 M5（spec §13 M5）：GUI 复用 CLI 预拉起内核（pid 不变�
   // ensure_kernel 冷启动（chromadb 初始化 + uvicorn + seed）可能 >60s → 本用例独立放宽
   test.setTimeout(300_000);
 
-  // 1. Python 侧 ensure_kernel 预拉起常驻内核（F30：写 %APPDATA%\\InkFlow\\kernel.json，spec §5.4）
+  // #1159 数据目录隔离：CLI 预拉起内核与 GUI **共用同一隔离 dataDir**（复用锚点 kernel.json 同源）
+  const iso = createIsolatedEnv('tray-6');
+  let kernelPid: number | undefined;
+
+  // 1. Python 侧 ensure_kernel 预拉起常驻内核（F30：写 %APPDATA%\\InkFlow\\kernel.json，spec §5.4；
+  //    #1159 起进程 env INKFLOW_DATA_DIR 优先 → 写隔离 dataDir，与下方 GUI 同源）
   const script =
     'import asyncio; from inkflow.infrastructure.kernel.bootstrap import ensure_kernel; ' +
     'h = asyncio.run(ensure_kernel()); print(h.pid)';
@@ -376,6 +454,7 @@ test('托盘 M5（spec §13 M5）：GUI 复用 CLI 预拉起内核（pid 不变�
     cwd: backendDir,
     encoding: 'utf8',
     timeout: 120_000,
+    env: iso.env as Record<string, string>,
   });
   expect(launched.status, `ensure_kernel 失败：${launched.stderr ?? ''}`).toBe(0);
   const pidLine = (launched.stdout ?? '')
@@ -392,9 +471,14 @@ test('托盘 M5（spec §13 M5）：GUI 复用 CLI 预拉起内核（pid 不变�
   expect(isAlive(prePid), `预拉起内核 pid=${prePid} 应存活`).toBe(true);
 
   // 2. GUI 启动 → 复用判定（spec §5.3：读 kernel.json → pid 存活 + /health 200 → 不 spawn）
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   try {
     const kernel = await waitKernelInfo(app);
+    kernelPid = await readKernelPid(iso.dataDir);
     expect(kernel.pid, 'GUI 必须复用 CLI 预拉起的内核（不 spawn 新内核）').toBe(prePid);
     expect(await healthCheck(kernel)).toBe(200);
   } finally {
@@ -406,6 +490,7 @@ test('托盘 M5（spec §13 M5）：GUI 复用 CLI 预拉起内核（pid 不变�
     } catch {
       // 已退出
     }
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
@@ -421,6 +506,8 @@ test.describe('F32 关闭行为持久化（#152）', () => {
     // 重启后 renderer initFromBackend GET → close_behavior != 'tray' → IPC 推送主进程（启动初始化⑤）。
     // __trayInfo.closeBehavior 变 quit = 「PATCH 已落库 + 主进程内存已对齐」的确定性闸门。
     const userDataDir = mkdtempSync(path.join(tmpdir(), 'inkflow-e2e-f32-tray-'));
+    // ⚠️ #1159 例外：本用例**不注入 INKFLOW_DATA_DIR**——隔离数据目录 = 全新安装态 → F60 首启门控
+    // 拦在主 UI 之外（无侧边栏导航，gotoNav('设置') 超时）；两程共用同一 userData 即重启持久化语义。
     let app1Exited = false;
     let app2Exited = false;
     try {

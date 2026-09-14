@@ -25,6 +25,7 @@
  * 基建复用 e2e-writing.spec.ts 模式（launchApp/waitKernelInfo/createProjectViaUi/findProjectId）。
  */
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   test,
   expect,
@@ -32,6 +33,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
+import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
 import { ensureModelConfigured } from './e2e-model-ready';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -71,6 +73,29 @@ async function waitKernelInfo(app: ElectronApplication, timeoutMs = 240_000): Pr
   throw new Error(`__kernelInfo 未在 ${timeoutMs}ms 内注入（内核未就绪）`);
 }
 
+/**
+ * #1159 隔离数据目录的内核 pid：读 <dataDir>/kernel.json 的 pid（#1040：cleanup 先等内核退出再删目录）。
+ * 就绪钩子 __kernelInfo 注入先于 kernel.json 落盘（main.ts updateKernelInfoHook → writeKernelStateFile）
+ * → 短暂轮询；超时仍读不到返回 undefined（cleanupIsolatedEnv 内部过滤 undefined）。
+ */
+async function readKernelPid(dataDir: string, timeoutMs = 10_000): Promise<number | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(dataDir, 'kernel.json'), 'utf8')) as {
+        pid?: unknown;
+      };
+      if (typeof parsed.pid === 'number') {
+        return parsed.pid;
+      }
+    } catch {
+      // kernel.json 尚未落盘 / 半截写入 → 继续轮询
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return undefined;
+}
+
 async function kernelFetch(
   info: KernelInfo,
   pathname: string,
@@ -86,13 +111,26 @@ async function kernelFetch(
   });
 }
 
-async function launchApp(): Promise<{ app: ElectronApplication; window: Page; kernel: KernelInfo }> {
-  const app = await electron.launch({ args: [MAIN_JS], cwd: FRONTEND_DIR });
+async function launchApp(): Promise<{
+  app: ElectronApplication;
+  window: Page;
+  kernel: KernelInfo;
+  iso: IsolatedEnv;
+  kernelPid: number | undefined;
+}> {
+  // #1159 数据目录隔离：独立 dataDir（内核数据）+ 独立 --user-data-dir（渲染层）→ 与他例零共享
+  const iso = createIsolatedEnv('writer-chat');
+  const app = await electron.launch({
+    args: [MAIN_JS, `--user-data-dir=${iso.userDataDir}`],
+    cwd: FRONTEND_DIR,
+    env: iso.env as Record<string, string>,
+  });
   const window = await app.firstWindow();
   const kernel = await waitKernelInfo(app);
   // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
   await ensureModelConfigured(kernel);
-  return { app, window, kernel };
+  // #1040：cleanup 需先等内核退出再删目录 → 从隔离 dataDir 的 kernel.json 取内核 pid
+  return { app, window, kernel, iso, kernelPid: await readKernelPid(iso.dataDir) };
 }
 
 async function createProjectViaUi(window: Page, name: string): Promise<void> {
@@ -187,7 +225,7 @@ function interceptChatStream(window: Page, finalOutput: string): void {
 test.describe.configure({ timeout: 360_000 });
 
 test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → 编辑器 value 更新', async () => {
-  const { app, window, kernel } = await launchApp();
+  const { app, window, kernel, iso, kernelPid } = await launchApp();
   try {
     const name = `E2E-聊天-${Date.now()}`;
     await createProjectViaUi(window, name);
@@ -245,11 +283,12 @@ test('聊天框：输入 → 发送 → assistant 消息 → 插入正文 → �
     await expect(window.getByTestId('chapter-editor')).toHaveValue('E2E 续写正文内容', { timeout: 15_000 });
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('对话类回复（无 content 标记）不渲染选择/插入控件', async () => {
-  const { app, window, kernel } = await launchApp();
+  const { app, window, kernel, iso, kernelPid } = await launchApp();
   try {
     const name = `E2E-聊天-对话-${Date.now()}`;
     await createProjectViaUi(window, name);
@@ -297,11 +336,12 @@ test('对话类回复（无 content 标记）不渲染选择/插入控件', asyn
     await expect(window.getByTestId('chat-insert-0')).toHaveCount(0);
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('视图切换：view-toggle → 详情页空态 → 切回 editor', async () => {
-  const { app, window, kernel } = await launchApp();
+  const { app, window, kernel, iso, kernelPid } = await launchApp();
   try {
     const name = `E2E-切换-${Date.now()}`;
     await createProjectViaUi(window, name);
@@ -336,11 +376,12 @@ test('视图切换：view-toggle → 详情页空态 → 切回 editor', async (
     await expect(window.getByTestId('chapter-editor')).toBeVisible({ timeout: 15_000 });
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
 
 test('流式新消息落库回填 id → 删除真落服务端 → 重挂载不复活（#581-1 / #1161）', async () => {
-  const { app, window, kernel } = await launchApp();
+  const { app, window, kernel, iso, kernelPid } = await launchApp();
   try {
     const name = `E2E-删除-${Date.now()}`;
     await createProjectViaUi(window, name);
@@ -412,5 +453,6 @@ test('流式新消息落库回填 id → 删除真落服务端 → 重挂载不�
     await expect(window.getByTestId('chat-msg-user-0')).toHaveCount(0, { timeout: 15_000 });
   } finally {
     await app.close();
+    await iso.cleanup({ pids: [kernelPid], timeoutMs: 10_000 });
   }
 });
