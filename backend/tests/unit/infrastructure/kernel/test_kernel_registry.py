@@ -7,7 +7,7 @@
 - ``read_instances(dir) -> list[InstanceEntry]``：读全部条目 + 过滤 pid 死条目
 - ``prune_dead(dir) -> int``：删除 pid 死条目，返回删除数（惰性 GC）
 - ``remove_instance(dir, kind=, pid=)``：内核退出时删自己的文件（幂等）
-- ``find_by_kind(dir, kind)``：按 kind 检索（rc/release 准入失败时提示既有实例）
+- ``find_by_kind(dir, kind)``：按 kind 检索（rc/prod 准入失败时提示既有实例）
 
 设计约束（ADR-059 ③）：
 - ``kernel.json`` 五字段契约不变——注册表是**增量**目录
@@ -239,7 +239,7 @@ def test_remove_instance_deletes_own_file(tmp_path):
 
 
 def test_cross_kind_entries_coexist(tmp_path):
-    """不同 kind 条目并存互不干扰（rc 与 release 可各 1 个，dev 不限）。
+    """不同 kind 条目并存互不干扰（rc 与 prod 可各 1 个，dev 按 data_dir）。
 
     注：文件名含 pid，故同一 pid 的同 kind 条目会互相覆盖（生产语义正确——
     pid 唯一标识一个进程）。此处用不同 pid 表达「同一 kind 多实例」。
@@ -247,12 +247,12 @@ def test_cross_kind_entries_coexist(tmp_path):
     registry.write_instance(_entry(pid=ALIVE_PID, kind="dev"), tmp_path)
     registry.write_instance(_entry(pid=ALIVE_PID + 1000, kind="dev"), tmp_path)
     registry.write_instance(_entry(pid=ALIVE_PID + 2000, kind="rc"), tmp_path)
-    registry.write_instance(_entry(pid=ALIVE_PID + 3000, kind="release"), tmp_path)
+    registry.write_instance(_entry(pid=ALIVE_PID + 3000, kind="prod"), tmp_path)
 
     got = registry.read_instances(tmp_path)
     assert len(got) == 4
     kinds = sorted(e.kind for e in got)
-    assert kinds == ["dev", "dev", "rc", "release"]
+    assert kinds == ["dev", "dev", "prod", "rc"]
 
 
 def test_same_pid_same_kind_overwrites(tmp_path):
@@ -266,11 +266,11 @@ def test_same_pid_same_kind_overwrites(tmp_path):
 
 
 def test_find_by_kind_returns_matching_entries(tmp_path):
-    """按 kind 检索（rc/release 准入失败时用于提示既有实例）。"""
+    """按 kind 检索（rc/prod 准入失败时用于提示既有实例）。"""
     registry.write_instance(_entry(kind="rc", port=60001), tmp_path)
     registry.write_instance(_entry(kind="dev"), tmp_path)
 
     found = registry.find_by_kind(tmp_path, "rc")
     assert [e.pid for e in found] == [ALIVE_PID]
     assert found[0].port == 60001
-    assert registry.find_by_kind(tmp_path, "release") == []
+    assert registry.find_by_kind(tmp_path, "prod") == []

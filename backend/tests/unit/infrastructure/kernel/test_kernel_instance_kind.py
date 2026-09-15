@@ -3,8 +3,9 @@
 被测：``inkflow.infrastructure.kernel.instance_kind.resolve_instance_kind()``
 
 判定优先级（spec §2.4.1）：
-  1. env ``INKFLOW_INSTANCE_KIND`` ∈ {dev, rc, release} → 该值
-  2. ``sys.frozen == True`` → release
+  1. env ``INKFLOW_INSTANCE_KIND`` ∈ {dev, rc, prod} → 该值
+     （``release`` 为 ``prod`` 的**输入别名**，归一后仍为 ``prod``）
+  2. ``sys.frozen == True`` → prod
   3. ``inkflow.__version__`` 为预发布（packaging Version.is_prerelease）→ rc
   4. 其他 → dev
 
@@ -27,8 +28,8 @@ from inkflow.infrastructure.kernel.instance_kind import (
 
 
 def test_valid_kinds_are_the_three_documented_values():
-    """合法 kind 集合 = {dev, rc, release}（spec §2.4.1 表）。"""
-    assert set(VALID_KINDS) == {"dev", "rc", "release"}
+    """合法 kind 集合 = {dev, rc, prod}（#1188 重命名；spec §2.4.1 表）。"""
+    assert set(VALID_KINDS) == {"dev", "rc", "prod"}
 
 
 def test_env_var_name_is_documented_contract_value():
@@ -36,14 +37,14 @@ def test_env_var_name_is_documented_contract_value():
     assert INSTANCE_KIND_ENV == "INKFLOW_INSTANCE_KIND"
 
 
-@pytest.mark.parametrize("kind", ["dev", "rc", "release"])
+@pytest.mark.parametrize("kind", ["dev", "rc", "prod"])
 def test_explicit_env_wins(kind, monkeypatch):
     """优先级 1：env 显式合法值 → 直接采用（覆盖任何推断来源）。"""
     monkeypatch.setenv(INSTANCE_KIND_ENV, kind)
     assert resolve_instance_kind() == kind
 
 
-@pytest.mark.parametrize("kind", ["dev", "rc", "release"])
+@pytest.mark.parametrize("kind", ["dev", "rc", "prod"])
 def test_explicit_env_wins_even_when_frozen(kind, monkeypatch):
     """优先级 1 高于 frozen 推断（显式 > 推断）。"""
     monkeypatch.setenv(INSTANCE_KIND_ENV, kind)
@@ -58,12 +59,12 @@ def test_env_value_is_trimmed_and_lowercased(monkeypatch):
     assert resolve_instance_kind() == "rc"
 
 
-def test_frozen_without_env_is_release(monkeypatch):
-    """优先级 2：sys.frozen=True → release（打包版内核 exe）。"""
+def test_frozen_without_env_is_prod(monkeypatch):
+    """优先级 2：sys.frozen=True → prod（打包版内核 exe；#1188 前名为 release）。"""
     monkeypatch.delenv(INSTANCE_KIND_ENV, raising=False)
     with patch("inkflow.infrastructure.kernel.instance_kind.sys") as fake_sys:
         fake_sys.frozen = True
-        assert resolve_instance_kind() == "release"
+        assert resolve_instance_kind() == "prod"
 
 
 def test_prerelease_version_is_rc(monkeypatch):
@@ -94,7 +95,7 @@ def test_stable_version_is_dev(monkeypatch):
         assert resolve_instance_kind() == "dev"
 
 
-@pytest.mark.parametrize("bad", ["prod", "production", "DEV?", "", "  "])
+@pytest.mark.parametrize("bad", ["production", "DEV?", "", "  "])
 def test_invalid_or_blank_env_falls_back_to_inference(bad, monkeypatch):
     """非法/空 env 值 → 回落推断（宽松语义，不抛错；spec §2.4.1）。"""
     monkeypatch.setenv(INSTANCE_KIND_ENV, bad)
@@ -129,3 +130,21 @@ def test_cwd_does_not_influence_judgement(monkeypatch, tmp_path):
     ):
         fake_sys.frozen = False
         assert resolve_instance_kind() == "dev"
+
+
+def test_release_is_input_alias_for_prod(monkeypatch):
+    """``release`` 是 ``prod`` 的输入别名（#1188 兼容旧 GUI spawn env / 旧脚本）。
+
+    归一化幂等：release → prod，prod → prod。
+    """
+    monkeypatch.setenv(INSTANCE_KIND_ENV, "release")
+    assert resolve_instance_kind() == "prod"
+
+    monkeypatch.setenv(INSTANCE_KIND_ENV, "prod")
+    assert resolve_instance_kind() == "prod"
+
+
+def test_release_alias_is_case_insensitive(monkeypatch):
+    """别名同样走 strip + lowercase（防 ' Release ' 被误判非法）。"""
+    monkeypatch.setenv(INSTANCE_KIND_ENV, "  Release  ")
+    assert resolve_instance_kind() == "prod"

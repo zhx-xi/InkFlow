@@ -247,6 +247,22 @@ def _build_book_service(db: AsyncSession) -> BookService:
         except Exception:
             return None
 
+    async def _context_builder(project_id: uuid.UUID, chapter: object) -> str:
+        """#1185：F6 ContextService → 章 brief 设定注入文本（角色/世界观/未回收伏笔）.
+
+        `get_context` 内部任何失败降级空串（等价 NullContextProvider 语义）；
+        chapter 兼容 Outline（T2 轨）与章 dict（T3/T4 轨）两形态。
+        """
+        chapter_id = (
+            chapter.get("chapter_id")
+            if isinstance(chapter, dict)
+            else getattr(chapter, "chapter_id", None)
+        )
+        text: str = await get_context_service(db).get_context(
+            project_id=project_id, chapter_id=chapter_id, mode="generate"
+        )
+        return text
+
     async def _volume_lookup(
         project_id: uuid.UUID, outline_or_chapter_id: uuid.UUID | None
     ) -> str | None:
@@ -280,6 +296,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         get_chapter_audit_service,
         get_chapter_service,
         get_character_service,
+        get_context_service,
         get_foreshadowing_service,
         get_memory_service,
         get_summary_service,
@@ -374,6 +391,8 @@ def _build_book_service(db: AsyncSession) -> BookService:
             writer_factory=_writer_factory,
             draft_service=draft_service,
             volume_lookup=_volume_lookup,
+            context_builder=_context_builder,
+            project_config_getter=_project_config_getter,
         )
 
     if _book_agentic_pipeline is None:
@@ -384,6 +403,8 @@ def _build_book_service(db: AsyncSession) -> BookService:
             writer_factory=_writer_factory,
             draft_service=draft_service,
             audit_callable=LangChainLLMClient().chat,
+            context_builder=_context_builder,
+            project_config_getter=_project_config_getter,
         )
 
     return BookService(
@@ -397,6 +418,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         draft_service=draft_service,
         agentic_pipeline=_book_agentic_pipeline,
         volume_lookup=_volume_lookup,
+        context_builder=_context_builder,
     )
 
 

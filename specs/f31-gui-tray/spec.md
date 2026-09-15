@@ -79,7 +79,7 @@ F31 为 InkFlow 桌面 GUI（Electron 壳）增加**托盘常驻能力**（ADR-0
 ```typescript
 /** 单个存活内核实例（F30 §2.4.2 注册表条目） */
 export interface KernelInstance {
-  kind: 'dev' | 'rc' | 'release';
+  kind: 'dev' | 'rc' | 'prod';
   port: number;
   pid: number;
   version: string;
@@ -287,7 +287,7 @@ app.whenReady 内：
 | ≥2 | 分组 `内核实例 (N)` + 每实例一行 `● <kind> :<port>  pid <pid>  <data_dir>`（disabled 只读，供用户辨识） |
 
 - **"存活" 判据**：注册表条目存在 **且** pid 存活（复用既有 `isProcessAlive`）；pid 已死的条目在读取时被清理（F30 §2.4.2 惰性 GC）
-- **kind 缩写显示**：`dev` / `rc` / `正式`（release 面向用户显示中文，避免英文 jargon）
+- **kind 缩写显示**：`dev` / `rc` / `正式`（`prod` 面向用户显示中文，避免英文 jargon）
 - **数据目录显示**：过长时中间省略（保留盘符 + 尾部目录名），避免菜单超宽
 - **实现载体**：`kernel.ts` 新增纯函数 `readInstanceRegistry(dir): KernelInstance[]`（可 vitest node 测）+ `formatInstanceMenuLabel(instances): string[]`；`main.ts` 的 `rebuildTrayMenu()` 消费该结果
 - **刷新时机**：内核 ready / 失败清理（既有 `rebuildTrayMenu` 调用点）+ 2s 健康检查状态翻转时——与既有防抖策略一致

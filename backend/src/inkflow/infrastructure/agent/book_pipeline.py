@@ -39,6 +39,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Send, interrupt
 
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+from inkflow.domain.services.chapter_brief import (
+    ContextBuilder,
+    ProjectConfigGetter,
+    build_chapter_brief,
+    resolve_brief_setting,
+)
 from inkflow.domain.services.usage_accounting import (
     _extract_saved_draft_id,
     chat_response_usage,
@@ -240,8 +246,9 @@ class BookVolumePipeline:
         retry_limit: int = 2,
         checkpointer: InMemorySaver | None = None,
         checkpoint_path: str | Path | None = None,
-        volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]]
-        | None = None,
+        volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]] | None = None,
+        context_builder: ContextBuilder | None = None,
+        project_config_getter: ProjectConfigGetter | None = None,
     ) -> None:
         """构造：llm_client 仅 UntrackedValue 通道传递（镜像 F29 bootstrap 节点），
         不参与执行决策；只在卷级失败 decision="supervisor" 补救时调用 chat。
@@ -253,6 +260,8 @@ class BookVolumePipeline:
         self._draft_service = draft_service
         self._retry_limit = retry_limit
         self._volume_lookup = volume_lookup
+        self._context_builder = context_builder
+        self._project_config_getter = project_config_getter
         if checkpointer is None and checkpoint_path is None:
             checkpointer = InMemorySaver()
         self._checkpointer = checkpointer
@@ -466,7 +475,13 @@ class BookVolumePipeline:
             raise ValueError("plan 未装配")
         if self._writer_factory is None:
             raise ValueError("writer_factory 未装配")
-        system_prompt = self._build_chapter_brief(plan, chapter)
+        cfg: object | None = (
+            await self._project_config_getter(plan.project_id)
+            if self._project_config_getter is not None
+            else None
+        )
+        brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
+        system_prompt = self._build_chapter_brief(plan, chapter, **brief_inputs)
         agent = await self._writer_factory(
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
@@ -510,9 +525,7 @@ class BookVolumePipeline:
             },
         )
 
-    async def _resolve_draft_volume(
-        self, plan: WritingPlan, chapter: dict
-    ) -> uuid.UUID | None:
+    async def _resolve_draft_volume(self, plan: WritingPlan, chapter: dict) -> uuid.UUID | None:
         """#976 D3/D5：委托落草稿卷解析（volume_lookup 未装配/无映射 → None）.
 
         查表键：章 dict 的 volume_outline_id（卷 outline 节点 id）优先，回退
@@ -525,26 +538,12 @@ class BookVolumePipeline:
         if volume_raw is None:
             return None
         try:
-            return (
-                volume_raw
-                if isinstance(volume_raw, uuid.UUID)
-                else uuid.UUID(str(volume_raw))
-            )
+            return volume_raw if isinstance(volume_raw, uuid.UUID) else uuid.UUID(str(volume_raw))
         except (TypeError, ValueError):
             return None
 
-    @staticmethod
-    def _build_chapter_brief(plan: WritingPlan, chapter: dict) -> str:
-        """构造章 brief：大纲切片 + 角色摘要 + 风格/偏好注入（镜像 BookService）。"""
-        character_summary = (
-            "主角自定" if not plan.character_ids else "见角色档案（plan.character_ids）"
-        )
-        return (
-            "你是一位小说章节写作者。请严格按大纲切片撰写本章正文。\n"
-            f"【章节大纲】{chapter['description']}\n"
-            f"【角色摘要】{character_summary}\n"
-            "【风格/偏好注入】遵循项目写作风格与用户偏好（偏好优先于通用文风）。"
-        )
+    # #1185：章 brief 三轨副本收敛——本轨直接复用 domain 单一实现（签名见 chapter_brief）
+    _build_chapter_brief = staticmethod(build_chapter_brief)
 
     @instrument(caller_type="agent")
     async def _delegate_supervisor(self, failed: list[str]) -> tuple[str, dict]:

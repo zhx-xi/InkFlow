@@ -40,6 +40,7 @@ from inkflow.domain.models.writing_plan import (
     validate_at_least_one_hard_limit,
 )
 from inkflow.domain.services.book_run_mixin import BookRunMixin
+from inkflow.domain.services.chapter_brief import build_chapter_brief, resolve_brief_setting
 from inkflow.domain.services.usage_accounting import (
     _extract_saved_draft_id,
     draft_fallback_needed,
@@ -58,7 +59,8 @@ class ChapterAlreadyWrittenError(Exception):
 def _outline_to_chapter_dict(
     o: Outline, *, volume_outline_id: uuid.UUID | None = None
 ) -> ChapterDict:
-    """Outline 章节点 → 卷级编排图章 dict（#976 D5：携带卷 outline 节点 id）."""
+    """Outline 章节点 → 卷级编排图章 dict（#976 D5 卷 outline id + #1182 F8 章级写作要求）."""
+    requirement = o.extra.get("writing_requirements")
     return {
         "outline_id": o.id,
         "chapter_id": o.chapter_id,
@@ -66,6 +68,7 @@ def _outline_to_chapter_dict(
         "description": o.description,
         "sort_order": o.sort_order,
         "volume_outline_id": volume_outline_id,
+        "writing_requirements": requirement if isinstance(requirement, str) else None,
     }
 
 
@@ -78,6 +81,7 @@ class ChapterDict(TypedDict):
     description: str
     sort_order: int
     volume_outline_id: uuid.UUID | None  # #976 D5：所属卷 outline 节点 id（None = 无卷轨）
+    writing_requirements: str | None  # #1182 F8：章级写作要求（None = 回退项目级）
 
 
 class VolumeGroup(TypedDict):
@@ -133,6 +137,7 @@ class BookService(BookRunMixin):
         outline_updater: Callable[[uuid.UUID, str], Awaitable[object | None]] | None = None,
         agentic_pipeline: object | None = None,  # 新增：book-level 自主编排引擎（鸭子类型）
         volume_lookup: Callable[..., Awaitable[str | None]] | None = None,
+        context_builder: Callable[[uuid.UUID, object], Awaitable[str]] | None = None,
     ) -> None:
         self._repo = repo
         self._writer_factory = writer_factory
@@ -146,6 +151,8 @@ class BookService(BookRunMixin):
         self._outline_updater = outline_updater
         self._agentic_pipeline = agentic_pipeline
         self._volume_lookup = volume_lookup
+        self._context_builder = context_builder
+        self._brief_configs: dict[uuid.UUID, object] = {}  # #1185：已解析项目配置复用
 
     async def write_book(
         self, plan_id: uuid.UUID, limits: BookLimits | None = None
@@ -714,6 +721,7 @@ class BookService(BookRunMixin):
         if self._project_config_getter is not None:
             config: object | None = await self._project_config_getter(plan.project_id)
             project_extra = getattr(config, "extra", None)
+            self._brief_configs[plan.project_id] = config
         merged = merge_book_limits(limits, project_extra)
         validate_at_least_one_hard_limit(merged)
         for _field in ("max_chapters", "max_agent_calls", "max_tokens", "max_sessions"):
@@ -818,7 +826,11 @@ class BookService(BookRunMixin):
         """
         if self._writer_factory is None:
             raise ValueError("writer_factory 未装配")
-        system_prompt = self._build_chapter_brief(plan, chapter)
+        cfg: object | None = self._brief_configs.get(plan.project_id)
+        if cfg is None and self._project_config_getter is not None:
+            cfg = await self._project_config_getter(plan.project_id)
+        brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
+        system_prompt = self._build_chapter_brief(plan, chapter, **brief_inputs)
         agent = await self._writer_factory(
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
@@ -856,24 +868,15 @@ class BookService(BookRunMixin):
                 chapter_id=chapter.chapter_id,
                 content=content,
                 summary="书级委托保存",
-                volume_id=volume_id, source_outline_id=chapter.id,
+                volume_id=volume_id,
+                source_outline_id=chapter.id,
             )
             return str(getattr(draft, "id", ""))
         # agent 已 save_draft：不兜底新建，执行 id 回退工具消息 draft_id（可 ""）
         return _extract_saved_draft_id(result)
 
-    @staticmethod
-    def _build_chapter_brief(plan: WritingPlan, chapter: Outline) -> str:
-        """构造章 brief（system_prompt）：大纲切片 + character 摘要 + 风格/偏好注入."""
-        character_summary = (
-            "主角自定" if not plan.character_ids else "见角色档案（plan.character_ids）"
-        )
-        return (
-            "你是一位小说章节写作者。请严格按大纲切片撰写本章正文。\n"
-            f"【章节大纲】{chapter.description}\n"
-            f"【角色摘要】{character_summary}\n"
-            "【风格/偏好注入】遵循项目写作风格与用户偏好（偏好优先于通用文风）。"
-        )
+    # #1185：章 brief 三轨副本收敛——本轨直接复用 domain 单一实现（签名见 chapter_brief）
+    _build_chapter_brief = staticmethod(build_chapter_brief)
 
 
 def _extract_final_content(result: dict[str, Any]) -> str:

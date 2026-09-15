@@ -5,18 +5,19 @@
 | kind      | 策略                          | 互斥名                     |
 |-----------|-------------------------------|----------------------------|
 | rc        | 机器级**存活期**互斥（限 1）   | InkFlowKernelRc            |
-| release   | 机器级**存活期**互斥（限 1）   | InkFlowKernelRelease       |
-| dev       | 允许多开（仅防双 spawn）       | InkFlowKernelBootstrap（既有）|
+| prod      | 机器级**存活期**互斥（限 1）   | InkFlowKernelProd          |
+| dev       | **同 data_dir 单内核**（#1188 收紧）| InkFlowKernelDev-<hash>  |
 
 「存活期」= 持锁到进程退出，**不在 ensure_kernel 返回前释放**
 （修订前缺陷：finally 释放 → 只防双 spawn，不阻止多内核存活）。
 
 RED 契约（实现须满足）：
-- 新装配缝 ``bootstrap._acquire_lifetime_mutex(kind) -> object | None``
-  （kind ∈ {rc, release}；成功 → 句柄，失败 → None）
+- 新装配缝 ``bootstrap._acquire_lifetime_mutex(kind, state_file) -> object | None``
+  （**三 kind 统一走**，差异仅在互斥名：rc/prod 全局、dev 按 data_dir；
+  成功 → 句柄，失败 → None；#1188 起新增 state_file 形参）
 - ``ensure_kernel`` 接受 ``instance_kind: str | None = None``（None → resolve_instance_kind()）
-- rc/release 准入失败 → 抛 KernelStartupError，消息含既有实例的 port/pid/data_dir
-- dev → **不调用** _acquire_lifetime_mutex（多开）
+- rc/prod 准入失败 → 抛 KernelStartupError，消息含既有实例的 port/pid/data_dir
+- dev → **同样调用** _acquire_lifetime_mutex（同 data_dir 单内核；不同 data_dir 互不阻塞）
 """
 
 from __future__ import annotations
@@ -73,7 +74,7 @@ def mocks():
         patch(
             "inkflow.infrastructure.kernel.bootstrap._poll_state_file",
             return_value=_state(),
-        ),
+        ) as poll,
         patch("inkflow.infrastructure.kernel.bootstrap._probe_health", return_value=True),
         patch("inkflow.infrastructure.kernel.bootstrap._log_kernel_event"),
         patch(
@@ -92,24 +93,32 @@ def mocks():
             lifetime=lifetime,
             write_instance=write_instance,
             find_kind=find_kind,
+            poll=poll,
         )
 
 
 # ── dev：允许多开 ──────────────────────────────────────────────────────────
 
 
-async def test_dev_does_not_acquire_lifetime_mutex(tmp_path, mocks):
-    """🔴 dev → 不获取存活期互斥（多个 dev 内核可同时存活）。"""
+async def test_dev_acquires_lifetime_mutex(tmp_path, mocks):
+    """🔴 dev → **获取**存活期互斥（#1188 收紧：同 data_dir 单内核）。
+
+    互斥名含 data_dir hash → 不同 data_dir 的 dev 互不阻塞（worktree 并行）。
+    """
     await ensure_kernel(
         state_file=tmp_path / "kernel.json",
         spawn_cmd=SPAWN_CMD,
         instance_kind="dev",
     )
-    mocks.lifetime.assert_not_called()
+    mocks.lifetime.assert_called_once()
+    assert mocks.lifetime.call_args.args[0] == "dev"
 
 
-async def test_two_dev_instances_both_spawn(tmp_path, mocks):
-    """🔴 两个 dev 实例均成功拉起（多开放行）——用户拍板核心行为。"""
+async def test_two_dev_instances_different_data_dir_both_spawn(tmp_path, mocks):
+    """🔴 不同 data_dir 的两个 dev 实例均成功拉起（worktree 并行不受阻）。
+
+    #1188 语义：dev 按 **data_dir** 互斥 ≠ 全局互斥 → 不同目录各自放行。
+    """
     h1 = await ensure_kernel(
         state_file=tmp_path / "a" / "kernel.json", spawn_cmd=SPAWN_CMD, instance_kind="dev"
     )
@@ -124,19 +133,19 @@ async def test_two_dev_instances_both_spawn(tmp_path, mocks):
 # ── rc / release：存活期互斥 ───────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("kind", ["rc", "release"])
-async def test_rc_release_acquire_lifetime_mutex(kind, tmp_path, mocks):
-    """rc/release → 获取存活期互斥（成功路径正常拉起）。"""
-    await ensure_kernel(
-        state_file=tmp_path / "kernel.json", spawn_cmd=SPAWN_CMD, instance_kind=kind
-    )
-    mocks.lifetime.assert_called_once_with(kind)
+@pytest.mark.parametrize("kind", ["rc", "prod"])
+async def test_rc_prod_acquire_lifetime_mutex(kind, tmp_path, mocks):
+    """rc/prod → 获取存活期互斥（成功路径正常拉起）。"""
+    state_file = tmp_path / "kernel.json"
+    await ensure_kernel(state_file=state_file, spawn_cmd=SPAWN_CMD, instance_kind=kind)
+    mocks.lifetime.assert_called_once_with(kind, state_file)
 
 
-@pytest.mark.parametrize("kind", ["rc", "release"])
+@pytest.mark.parametrize("kind", ["rc", "prod"])
 async def test_second_same_kind_instance_rejected(kind, tmp_path, mocks):
     """🔴 同 kind 第二个实例被拒（互斥已被占用）→ KernelStartupError。"""
     mocks.lifetime.return_value = None  # 互斥被占
+    mocks.poll.return_value = None  # kernel.json 未就绪（方案 A 判据）
     existing = SimpleNamespace(pid=4242, port=60001, data_dir="C:/existing", kind=kind)
     mocks.find_kind.return_value = [existing]
 
@@ -146,10 +155,11 @@ async def test_second_same_kind_instance_rejected(kind, tmp_path, mocks):
         )
 
 
-@pytest.mark.parametrize("kind", ["rc", "release"])
+@pytest.mark.parametrize("kind", ["rc", "prod"])
 async def test_rejection_message_names_existing_instance(kind, tmp_path, mocks):
     """拒绝消息须含既有实例的 port / pid / data_dir（可感知，不静默）。"""
     mocks.lifetime.return_value = None
+    mocks.poll.return_value = None  # kernel.json 未就绪（方案 A 判据）
     mocks.find_kind.return_value = [
         SimpleNamespace(pid=4242, port=60001, data_dir="C:/existing", kind=kind)
     ]
@@ -165,10 +175,15 @@ async def test_rejection_message_names_existing_instance(kind, tmp_path, mocks):
     assert "C:/existing" in msg
 
 
-@pytest.mark.parametrize("kind", ["rc", "release"])
+@pytest.mark.parametrize("kind", ["rc", "prod"])
 async def test_rejection_does_not_spawn(kind, tmp_path, mocks):
-    """被拒时绝不 spawn（不进拉起分支）。"""
-    mocks.lifetime.return_value = None
+    """被拒时绝不 spawn（不进拉起分支）。
+
+    方案 A 判据：准入信号 = kernel.json 是否就绪。此处显式令 `_poll_state_file`
+    返回 None（未就绪）→ 走拒绝分支；否则默认 fixture 的 poll 会返回状态而被判为复用。
+    """
+    mocks.lifetime.return_value = None  # 互斥被占
+    mocks.poll.return_value = None  # kernel.json 未就绪（方案 A 下 = 真实冲突）
     with (
         patch("inkflow.infrastructure.kernel.bootstrap._spawn_kernel") as spawn,
         pytest.raises(KernelStartupError),
@@ -179,15 +194,13 @@ async def test_rejection_does_not_spawn(kind, tmp_path, mocks):
     spawn.assert_not_called()
 
 
-async def test_rc_and_release_do_not_block_each_other(tmp_path, mocks):
-    """跨 kind 互不阻塞（rc 与 release 各允许 1 个）——互斥名按 kind 区分。"""
+async def test_rc_and_prod_do_not_block_each_other(tmp_path, mocks):
+    """跨 kind 互不阻塞（rc 与 prod 各允许 1 个）——互斥名按 kind 区分。"""
     await ensure_kernel(state_file=tmp_path / "r.json", spawn_cmd=SPAWN_CMD, instance_kind="rc")
-    await ensure_kernel(
-        state_file=tmp_path / "v.json", spawn_cmd=SPAWN_CMD, instance_kind="release"
-    )
+    await ensure_kernel(state_file=tmp_path / "v.json", spawn_cmd=SPAWN_CMD, instance_kind="prod")
 
     called = [c.args[0] for c in mocks.lifetime.call_args_list]
-    assert called == ["rc", "release"]
+    assert called == ["rc", "prod"]
 
 
 async def test_lifetime_mutex_not_released_before_return(tmp_path, mocks):
@@ -240,14 +253,16 @@ async def test_instance_kind_defaults_to_resolved_value(tmp_path, mocks, monkeyp
     """instance_kind=None → resolve_instance_kind() 的结果（dev 环境 → dev）。"""
     monkeypatch.setenv("INKFLOW_INSTANCE_KIND", "dev")
     await ensure_kernel(state_file=tmp_path / "kernel.json", spawn_cmd=SPAWN_CMD)
-    mocks.lifetime.assert_not_called()  # dev 分支
+    mocks.lifetime.assert_called_once()  # dev 也取互斥（#1188）
+    assert mocks.lifetime.call_args.args[0] == "dev"
 
 
 async def test_resolved_rc_kind_triggers_lifetime_mutex(tmp_path, mocks, monkeypatch):
     """instance_kind=None 但 env 解析为 rc → 走存活期互斥分支。"""
     monkeypatch.setenv("INKFLOW_INSTANCE_KIND", "rc")
-    await ensure_kernel(state_file=tmp_path / "kernel.json", spawn_cmd=SPAWN_CMD)
-    mocks.lifetime.assert_called_once_with("rc")
+    state_file = tmp_path / "kernel.json"
+    await ensure_kernel(state_file=state_file, spawn_cmd=SPAWN_CMD)
+    mocks.lifetime.assert_called_once_with("rc", state_file)
 
 
 # ── 注册表联动 ─────────────────────────────────────────────────────────────
@@ -280,3 +295,24 @@ async def test_reuse_does_not_register_duplicate(tmp_path, mocks):
         state_file=tmp_path / "kernel.json", spawn_cmd=SPAWN_CMD, instance_kind="dev"
     )
     mocks.write_instance.assert_not_called()
+
+
+# ── #1188 新语义核心：同 data_dir 的 dev 第二实例被拒 ─────────────────────
+
+
+async def test_second_dev_same_data_dir_rejected(tmp_path, mocks):
+    """🔴 dev 同 data_dir 第二个实例被拒（#1188 收紧的核心行为）。
+
+    互斥名 = InkFlowKernelDev-<data_dir hash> → 同目录只能有一个 dev 内核。
+    这正是 #1171「CLI 每调用一次多一个内核」的结构性堵口。
+    """
+    mocks.lifetime.return_value = None  # 同 data_dir 互斥已被占
+    mocks.poll.return_value = None  # kernel.json 未就绪（方案 A 判据）
+    mocks.find_kind.return_value = [
+        SimpleNamespace(pid=4242, port=60001, data_dir=str(tmp_path), kind="dev")
+    ]
+
+    with pytest.raises(KernelStartupError):
+        await ensure_kernel(
+            state_file=tmp_path / "kernel.json", spawn_cmd=SPAWN_CMD, instance_kind="dev"
+        )

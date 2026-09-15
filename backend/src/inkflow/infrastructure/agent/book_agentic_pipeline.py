@@ -39,6 +39,12 @@ from langgraph.types import Command, interrupt
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
 from inkflow.domain.ports.llm_client import ChatMessage
+from inkflow.domain.services.chapter_brief import (
+    ContextBuilder,
+    ProjectConfigGetter,
+    build_chapter_brief,
+    resolve_brief_setting,
+)
 from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
 from inkflow.logging import instrument
 
@@ -576,6 +582,8 @@ class BookAgenticPipeline:
         retry_limit: int = 2,
         checkpointer: InMemorySaver | None = None,
         checkpoint_path: str | Path | None = None,
+        context_builder: ContextBuilder | None = None,
+        project_config_getter: ProjectConfigGetter | None = None,
     ) -> None:
         """构造：llm_client 经 UntrackedValue 注入（不参与 checkpointer 序列化，R7）.
 
@@ -587,6 +595,8 @@ class BookAgenticPipeline:
         self._writer_factory = writer_factory
         self._draft_service = draft_service
         self._audit_callable = audit_callable
+        self._context_builder = context_builder
+        self._project_config_getter = project_config_getter
         self._retry_limit = retry_limit
         if checkpointer is None and checkpoint_path is None:
             checkpointer = InMemorySaver()
@@ -771,7 +781,15 @@ class BookAgenticPipeline:
             raise ValueError("writer_factory 未装配")
         if self._draft_service is None:
             raise ValueError("draft_service 未装配")
-        system_prompt = self._build_chapter_brief(plan, chapter, audit_issues or [])
+        cfg: object | None = (
+            await self._project_config_getter(plan.project_id)
+            if self._project_config_getter is not None
+            else None
+        )
+        brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
+        system_prompt = self._build_chapter_brief(
+            plan, chapter, audit_issues=audit_issues or [], **brief_inputs
+        )
         agent = await self._writer_factory(
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
@@ -810,21 +828,8 @@ class BookAgenticPipeline:
             },
         )
 
-    @staticmethod
-    def _build_chapter_brief(plan: WritingPlan, chapter: dict, audit_issues: list[str]) -> str:
-        """构造章 brief：大纲切片 + 角色摘要 + 风格/偏好注入（镜像 F44/BookService）."""
-        character_summary = (
-            "主角自定" if not plan.character_ids else "见角色档案（plan.character_ids）"
-        )
-        brief = (
-            "你是一位小说章节写作者。请严格按大纲切片撰写本章正文。\n"
-            f"【章节大纲】{chapter['description']}\n"
-            f"【角色摘要】{character_summary}\n"
-            "【风格/偏好注入】遵循项目写作风格与用户偏好（偏好优先于通用文风）。"
-        )
-        if audit_issues:
-            brief += "\n【审校意见（修订必改）】" + "；".join(audit_issues)
-        return brief
+    # #1185：章 brief 三轨副本收敛——本轨直接复用 domain 单一实现（签名见 chapter_brief）
+    _build_chapter_brief = staticmethod(build_chapter_brief)
 
     @instrument(caller_type="agent")
     async def _delegate_audit(self, chapter: dict) -> tuple[dict, dict]:

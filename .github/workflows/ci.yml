@@ -105,6 +105,14 @@ jobs:
             # 扩容规则：新增「被 e2e 硬编码锁定的契约源」时在此追加文件（登记进 docs/contract-guard.md）。
             contract:
               - 'backend/src/inkflow/infrastructure/agent/tools/registry.py'
+              # 写作链契约源（#1184a）：prompt 契约源改动须触发联保测试，登记见 docs/contract-guard.md。
+              - 'backend/src/inkflow/infrastructure/agent/agentic_writer.py'
+              - 'backend/src/inkflow/infrastructure/agent/book_agentic_pipeline.py'
+              - 'backend/src/inkflow/infrastructure/agent/book_pipeline.py'
+              - 'backend/src/inkflow/domain/services/book_service.py'
+              - 'backend/src/inkflow/domain/services/context_service.py'
+              - 'backend/src/inkflow/domain/services/writing_service.py'
+              - 'backend/src/inkflow/api/routers/books.py'
             ci:
               - '.github/**'
             # 文档类变更：分支保护 required checks（lint/unit/build）在 docs-only PR 也必须

@@ -458,6 +458,10 @@ F6 被依赖:
   F7 (CLI)             — write 命令的 --show-context 调试输出
 ```
 
+> ⚠️ **状态标记待复核（2026-09-15，审计发现）**：上方 `F3 (writing_service) — 写作前调用 build_context`
+> 与源码不符——F6 上下文注入链**三轨零调用**（#1175），产线运行的是 `NullContextProvider`（#1176）。
+> 修正排期见 0.15.0 W3（#1184b）。同类另见 `specs/f44-book-orchestrator/spec.md` §11 L691-692。
+
 ---
 
 ## 12. 关键架构决策记录

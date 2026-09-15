@@ -101,14 +101,14 @@ class KernelHandle:
 
 | 优先级 | 条件 | 结果 |
 |--------|------|------|
-| 1 | env `INKFLOW_INSTANCE_KIND` ∈ {`dev`,`rc`,`release`} | 该值 |
-| 2 | `sys.frozen == True` | `release` |
+| 1 | env `INKFLOW_INSTANCE_KIND` ∈ {`dev`,`rc`,`prod`}（`release` 为 `prod` 的输入别名） | 该值 |
+| 2 | `sys.frozen == True` | `prod` |
 | 3 | `packaging.version.Version(__version__).is_prerelease` | `rc` |
 | 4 | 其他 | `dev` |
 
 - **传递路径**：GUI 壳按 `app.isPackaged` 判定后经 spawn `env` 显式传 `INKFLOW_INSTANCE_KIND`；CLI/MCP/skills 由 `ensure_kernel()` 自判
 - **禁止**按 `cwd` / 路径形状猜测 kind（worktree、主仓、任意 cwd 都可能跑同一份 dev 代码）
-- 非法值（如 `INKFLOW_INSTANCE_KIND=prod`）→ 回落推断（不抛错，宽松语义）
+- `release` 作为输入别名归一为 `prod`（旧脚本 / GUI spawn env 兼容）；其他非法值 → 回落推断（不抛错，宽松语义）
 
 #### 2.4.2 全量实例注册表
 
@@ -120,7 +120,7 @@ class KernelHandle:
 
 | 字段 | 类型 | 必填 | 含义 |
 |------|------|------|------|
-| `kind` | str | 是 | `dev` \| `rc` \| `release` |
+| `kind` | str | 是 | `dev` \| `rc` \| `prod` |
 | `port` | int | 是 | 内核监听端口（127.0.0.1） |
 | `token` | str | 是 | 鉴权 token |
 | `pid` | int | 是 | 内核进程 PID |
@@ -262,8 +262,10 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 | kind | 并发策略 | 机制 | 互斥名 |
 |------|----------|------|--------|
 | `rc` | **机器级存活期互斥**（同机限 1） | 具名互斥体，**持锁至进程退出**（不释放，由 OS 随进程回收） | `InkFlowKernelRc` |
-| `release` | **机器级存活期互斥**（同机限 1） | 同上 | `InkFlowKernelRelease` |
-| `dev` | **允许多开** | 不获取存活期互斥；仅保留既有拉起动作互斥 | `InkFlowKernelBootstrap`（既有） |
+| `prod` | **机器级存活期互斥**（同机限 1） | 同上 | `InkFlowKernelProd` |
+| `dev` | **同 data_dir 单内核** | 同走存活期互斥，互斥名带 data_dir 摘要（不同 data_dir / worktree 互不阻塞） | `InkFlowKernelDev-<sha256(data_dir)[:16]>` |
+
+> **1.3 修订（#1188）**：`dev` 从「允许多开（不获取互斥）」改为「同 data_dir 单内核」；`release` 重命名为 `prod`（输入别名 `release` 归一为 `prod`）。三 kind **统一走存活期互斥**，差异仅在互斥名——「data_dir 是否参与判定」由 `_lifetime_mutex_name(kind, state_file)` 单点决定。
 
 **语义对照（本 1.2 修订的实质）**：
 
@@ -273,26 +275,31 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
   finally: _release_mutex(mutex_handle)      ← 拉起完成即释放
   ⇒ 想表达「只允许一个内核存活」，实际只表达「防双 spawn」
 
-1.2（rc/release 路径）
-  _acquire_lifetime_mutex("InkFlowKernel<Kind>")  ← 「只允许一个内核存活」
+1.2（rc/prod 路径）
+  _acquire_lifetime_mutex(name)                    ← 「只允许一个内核存活」
+  name = _lifetime_mutex_name(kind, state_file)    ← rc/prod 全局；dev 按 data_dir 摘要
   （不释放；随进程退出由 OS 自动回收）
   ⇒ 语义与意图一致
 ```
 
-**准入顺序**（`ensure_kernel()` 内，复用判定之前）：
+**准入顺序**（`ensure_kernel()` 内，**复用判定在前**）：
 
 ```
-1. kind = resolve_instance_kind()
-2. if kind != 'dev':
-       handle = _acquire_lifetime_mutex(kind)
-       if handle is None:                      # 同 kind 内核已存活
-           既有 = 注册表查同 kind 存活实例
-           抛 KernelStartupError（消息含既有实例 port / pid / data_dir）
-3. （dev 或已拿到存活期互斥）→ 既有复用判定 → 拉起动作互斥 → spawn
+1. 复用判定（kernel.json + pid 存活 + /health 200 + 版本兼容）→ 命中即返回（不取互斥）
+2. kind = resolve_instance_kind()
+   handle = _acquire_lifetime_mutex(_lifetime_mutex_name(kind, state_file))   # 三 kind 统一
+   if handle is None:                          # 互斥被占
+       复检一次复用（持有者可能刚就绪落盘）→ 命中即复用
+       否则 既有 = 注册表查同 kind 存活实例
+              抛 KernelStartupError（消息含既有实例 port / pid / data_dir）
+3. 拉起动作互斥 → spawn
 ```
 
-- **dev 路径完全不变**（不引入任何新准入分支）—— 保证既有测试与 worktree 多开零回归
-- `rc`/`release` 的互斥在 `ensure_kernel` 内部持有并**不释放**，随调用方进程退出由 OS 回收
+> **顺序理由（#1171）**：存活期互斥**永不释放**且机器级（rc/prod）或按 data_dir（dev）。若在复用判定之前取，则同一进程内第二个调用方必然撞上自己持有的互斥 → 明明有可用内核却被拒（报错形态）。故互斥只在**确实要拉起**时取；被占时复检复用兜住「持有者刚就绪」的竞态窗口。
+
+- **dev 按 data_dir 分域**：同 data_dir 限 1 个；不同 data_dir（含各 worktree）互不阻塞——worktree 并行开发不受影响
+- `_lifetime_mutex_name` 是「data_dir 是否参与」的**唯一判定点**：将来 rc/prod 若要按 data_dir 分域，改动面仅该函数
+- `rc`/`prod`/`dev` 的互斥均在 `ensure_kernel` 内部持有并**不释放**，随调用方进程退出由 OS 回收
 - **失败消息**（可感知，不静默）：`KernelStartupError` 含既有实例的 `kind` / `port` / `pid` / `data_dir`，指引用户处理既有实例；GUI 侧转为错误对话框（ADR-059 ②）
 
 ---
@@ -303,9 +310,9 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 
 - 路径：`config.data_dir / "kernel.json"`（打包 = `%APPDATA%\InkFlow\kernel.json`；dev = 默认 data_dir）
 - 生命周期：内核启动 → 写；内核退出 → **不主动删**（stale 判定由读取方处理——崩溃场景无清理方，读取方判定更可靠）
-- **多内核并存：按 kind 分层（1.2 修订，#1153/ADR-059）**
-  - `dev` → **允许多开**（各自 data_dir 下独立 kernel.json；注册表记录全部）
-  - `rc` / `release` → **同 kind 限 1 个**（机器级存活期互斥 §5.6）；跨 kind 互不阻塞（rc 与 release 可各 1 个）
+- **多内核并存：按 kind 分层（1.2 修订，#1153/ADR-059；1.3 再修订 #1188）**
+  - `dev` → **同 data_dir 限 1 个**（存活期互斥名含 data_dir 摘要；不同 data_dir / worktree 互不阻塞；各自 data_dir 下独立 kernel.json）
+  - `rc` / `prod` → **同 kind 限 1 个**（机器级存活期互斥 §5.6）；跨 kind 互不阻塞（rc 与 prod 可各 1 个）
   - 注册表（§2.4.2）承载「有哪些实例」的可见性，kernel.json 仍只承载「默认实例」发现
 
 ### 6.2 日志
@@ -411,7 +418,7 @@ CLI 测试: kernel status（信封/退出码/未运行语义）              ~4 
 | 内核空闲回收/自动退出 | ADR-030 D2=A：常驻到显式退出 | 永不（除非用户反转拍板） |
 | 开机自启 | 用户环境配置差异；发布包统一处理 | 发布包/1.0.0 |
 | kernel.json 加密 | %APPDATA% 用户私有 ACL 已够（本地威胁模型） | 永不 |
-| ~~多内核并存/负载均衡~~ | **1.2 修订（#1153/ADR-059）**：dev 多开为明确支持语义（§5.6/§6.1）；rc/正式仍限 1 个。负载均衡仍不做（本地单机无此需求） | dev 多开 ✅ 已实现；负载均衡 永不 |
+| ~~多内核并存/负载均衡~~ | **1.2 修订（#1153/ADR-059）；1.3 再修订（#1188）**：dev「同 data_dir 限 1 个」（§5.6/§6.1，不同 data_dir / worktree 并行不受限）；rc/正式仍限 1 个。负载均衡仍不做（本地单机无此需求） | 按 kind + data_dir 分域 ✅ 已实现；负载均衡 永不 |
 | 守护进程监督内核生命周期 | ADR-029 已判定 daemon 为伪需求；注册表清理走惰性 GC（§2.4.2） | 永不 |
 
 ---

@@ -514,3 +514,46 @@ class TestBuiltinSkillSlugsV522:
             "worldview-methodology",
             "polishing-methodology",
         ]
+
+
+# ── #1185 A9/A2 · 两 factory 传参 + world 白名单（P1-3 / P1-4）────────
+
+
+class TestWriterTrackWorldToolWhitelist:
+    """A2：writer 白名单须含 world 工具（P1-3 世界观双重锁死）.
+
+    `_WRITER_READER_NAMES`（agentic_writer.py:35-43）现只有 5 只读，无 world。
+
+    ⚠️ 「常量含 world」断言属 W2 范畴（#1185 盲区），2026-09-15 已拆出至
+    `.hermes/pending-w2/`；此处保留已绿的「world 工具物化」用例。
+    """
+
+    def test_build_agentic_writer_materializes_world_tool(self):
+        """world_service 注入 → world 工具实际物化进 tools（P1-3 第 2 重锁）."""
+        reader_deps = ReaderToolDeps(
+            character_service=AsyncMock(),
+            foreshadowing_service=AsyncMock(),
+            summary_service=AsyncMock(),
+            chapter_audit_service=AsyncMock(),
+            world_service=AsyncMock(),
+        )
+
+        tools = build_reader_tools(reader_deps)
+
+        assert "get_world_setting" in [t.spec.name for t in tools]
+
+
+class TestWriterFactoryPassesToolAndSkillIds:
+    """A9：两 factory 均须传 tool_ids / skill_ids（P1-4 授权未接）.
+
+    - `api/routers/books.py` `_writer_factory`（T2/T3/T4 共享面）
+    - `api/deps_agentic_writer.py` `_build_agent`（T1 独立实现）
+
+    当前两者都不传 → 走 `_WRITER_READER_NAMES` 硬编码兜底、skill_ids 恒 None
+    → `_append_skills` 永不执行（F39 skill 注入在所有写作轨失效）。
+
+    两 factory 均为**依赖函数内的闭包**，只能经装配层驱动；行为断言落在
+    `tests/api/test_writer_factory_authorization.py`（import 真实依赖函数、
+    patch `build_agentic_writer`、断言 kwargs 透传）。
+    本文件只锁「白名单常量」这类可直接观测的面。
+    """

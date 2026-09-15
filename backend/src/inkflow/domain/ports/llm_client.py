@@ -65,6 +65,14 @@ class ChatMessage:
     content: str
     """消息内容。"""
 
+    reasoning_content: str | None = None
+    """assistant 轮次的思考链（#1172）。
+
+    DeepSeek 等思考模型要求多轮历史中每条 assistant 消息回传 `reasoning_content`，
+    缺失时 LiteLLM 注入空格占位 → 思考链变空 → 静默质量退化。仅 assistant 轮次有效，
+    其余角色 / 旧数据保持 None（不注入空串）。
+    """
+
 
 class LLMClientProtocol(Protocol):
     """LLM 客户端端口 — 统一 chat / stream / completion 接口。
