@@ -676,9 +676,7 @@ class BookAgenticPipeline:
             raise ValueError("draft_service 未装配")
         return self._plan
 
-    async def _chapter_deps(
-        self, plan: WritingPlan, chapter: dict
-    ) -> tuple[str, dict[str, object]]:
+    async def _chapter_deps(self, plan: WritingPlan, chapter: dict) -> tuple[str, dict[str, Any]]:
         """章 brief 装配（#1186 收敛 `_delegate_write`/`_revise_chapter` 重复取值）.
 
         返回 ``(system_prompt, brief_inputs)``：后者供调用方取 ``default_words``
@@ -691,7 +689,7 @@ class BookAgenticPipeline:
             else None
         )
         brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
-        return self._build_chapter_brief(plan, chapter, **brief_inputs), dict(brief_inputs)
+        return self._build_chapter_brief(plan, chapter, **brief_inputs), brief_inputs
 
     async def _write_with_retry(
         self, chapter: dict, *, audit_issues: list[str] | None = None
