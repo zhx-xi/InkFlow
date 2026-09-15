@@ -287,7 +287,14 @@ class LangChainLLMClient:
 
     @staticmethod
     def _to_langchain_messages(messages: list[ChatMessage]) -> list:
-        """将领域层 ChatMessage 转换为 LangChain 消息类型。"""
+        """将领域层 ChatMessage 转换为 LangChain 消息类型。
+
+        #1172：assistant 轮次携带 reasoning_content 时经 `additional_kwargs` 透传——
+        langchain-litellm 仅从 `additional_kwargs["reasoning_content"]` 还原该字段
+        （`_convert_message_to_dict`，litellm.py:387），LiteLLM 的 DeepSeek 适配
+        （`_fill_reasoning_content`，transformation.py:77）据此免于注入空格占位。
+        `response_metadata` / `provider_specific_fields` 在该转换中被丢弃，不可用。
+        """
         role_map: dict[str, type] = {
             "system": SystemMessage,
             "user": HumanMessage,
@@ -298,7 +305,13 @@ class LangChainLLMClient:
             if msg.role not in role_map:
                 raise ValueError(f"未知消息角色: {msg.role} (unknown role)")
             msg_cls = role_map[msg.role]
-            result.append(msg_cls(content=msg.content))
+            reasoning = getattr(msg, "reasoning_content", None)
+            if msg.role == "assistant" and reasoning:
+                result.append(
+                    msg_cls(content=msg.content, additional_kwargs={"reasoning_content": reasoning})
+                )
+            else:
+                result.append(msg_cls(content=msg.content))
         return result
 
     @staticmethod
