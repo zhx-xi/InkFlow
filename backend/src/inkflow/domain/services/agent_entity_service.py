@@ -103,11 +103,18 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ, ToolOp.WRITE]),
+            # #1180（2026-09-16 显式扩权）：写手须读世界观设定，否则设定漂移
+            # 结构性不可避免（世界观在写作轨双重锁死，P1-3）。主路径
+            # （agentic_writer.resolve_writer_authorization）由此拿到 world 只读工具。
+            GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
         "tool_ids": [
             "search_characters",
             "check_foreshadowing",
             "get_prior_summary",
+            # #1180：world 只读工具（与 grants 的 WORLD.READ 同源语义）
+            "list_world_settings",
+            "get_world_setting",
             "save_draft",
         ],
         "skill_name": "writing-methodology",

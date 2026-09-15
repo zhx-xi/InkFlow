@@ -161,6 +161,9 @@ WHITELIST_MAP = {
             "search_characters",
             "check_foreshadowing",
             "get_prior_summary",
+            # #1180（2026-09-16）：world 只读工具随世界观解锁一并出厂
+            "list_world_settings",
+            "get_world_setting",
             "save_draft",
         },
         "writing-methodology",
@@ -578,7 +581,14 @@ class TestSeedAgents:
 
 GRANTS_WHITELIST_MAP = {
     "架构师": {"character": {"read"}, "foreshadowing": {"read"}, "writing": {"read"}},
-    "写手": {"character": {"read"}, "foreshadowing": {"read"}, "writing": {"read", "write"}},
+    # #1180（2026-09-16 显式扩权）：写手加 WORLD.READ——世界观在写作轨原为
+    # 双重锁死（P1-3），主路径 resolve_writer_authorization 由此拿到 world 工具。
+    "写手": {
+        "character": {"read"},
+        "foreshadowing": {"read"},
+        "writing": {"read", "write"},
+        "world": {"read"},
+    },
     "审校员": {"writing": {"read"}, "character": {"read"}},
     "修订师": {"writing": {"read", "write"}},
     "世界观顾问": {"character": {"read"}, "foreshadowing": {"read"}},
@@ -625,7 +635,9 @@ class TestBuiltinGrants:
                 _grants_to_map(agent.grants) == GRANTS_WHITELIST_MAP[name]
             ), f"{name} grants 与出厂字面值不符: {agent.grants}"
             # 双写契约【G】：tool_ids 旧集合不变（spec §5.1 tool_ids 保留列）
-            assert set(agent.tool_ids) == tool_ids, f"{name} tool_ids 集合被破坏: {agent.tool_ids}"
+            assert (
+                set(agent.tool_ids) == tool_ids
+            ), f"{name} tool_ids 集合被破坏: {agent.tool_ids}"
 
     async def test_builtin_agent_specs_have_grants(self):
         """BUILTIN_AGENT_SPECS 每项含 'grants' 键且归一值 == GRANTS_WHITELIST_MAP
@@ -640,10 +652,12 @@ class TestBuiltinGrants:
         for name, grants_map in GRANTS_WHITELIST_MAP.items():
             spec = by_name[name]
             assert "grants" in spec, f"{name} BUILTIN_AGENT_SPECS 缺 grants 键"
-            assert isinstance(spec["grants"], list), f"{name} grants 必须为 list[GrantEntry]"
-            assert all(isinstance(g, GrantEntry) for g in spec["grants"]), (
-
-                f"{name} grants 元素必须为 GrantEntry"
-
-            )
-            assert _grants_to_map(spec["grants"]) == grants_map, f"{name} spec grants 与字面值不符"
+            assert isinstance(
+                spec["grants"], list
+            ), f"{name} grants 必须为 list[GrantEntry]"
+            assert all(
+                isinstance(g, GrantEntry) for g in spec["grants"]
+            ), f"{name} grants 元素必须为 GrantEntry"
+            assert (
+                _grants_to_map(spec["grants"]) == grants_map
+            ), f"{name} spec grants 与字面值不符"

@@ -103,6 +103,15 @@ EXPECTED_READER_NAMES = [
     "count_words",
 ]
 
+# #1180（2026-09-16 显式扩列）：writer 轨兜底白名单 = 旧 5 只读 + world 只读 2
+# （未配置 grants 的项目也能拿到世界观）；#956 §4 防的是「静默」扩权，此处为显式
+# 加入，随断言同步升级。独立常量——EXPECTED_READER_NAMES 另供「目录原序」用例。
+EXPECTED_WRITER_FALLBACK_NAMES = [
+    *EXPECTED_READER_NAMES,
+    "list_world_settings",
+    "get_world_setting",
+]
+
 # #956 §1.3：deps 无 world_service（4 字段）时 include=None 全量 = §1.3 序去 world 2 的 8 名
 READER_NAMES_NO_WORLD = [
     "search_characters",
@@ -232,9 +241,12 @@ class TestBuildAgenticWriterToolWhitelist:
     @patch("inkflow.infrastructure.agent.agentic_writer.build_save_draft_tool")
     @patch("inkflow.infrastructure.agent.agentic_writer.build_reader_tools")
     def test_tool_ids_none_full_tools_and_prompt_unchanged(self, m_rt, m_sd, m_da):
-        """tool_ids=None/skill_ids=None → 现 F27 行为：全量 5 只读 + save_draft，
-        system_prompt 原样透传（向后兼容守护，RED 阶段即 PASS）."""
-        m_rt.return_value = [_fake_tool(name) for name in EXPECTED_READER_NAMES]
+        """tool_ids=None/skill_ids=None → 现 F27 行为：全量旧 5 只读 + save_draft，
+        system_prompt 原样透传（向后兼容守护，RED 阶段即 PASS）。
+
+        #1180：兜底白名单已显式扩列 world 只读 2（EXPECTED_WRITER_FALLBACK_NAMES）。
+        """
+        m_rt.return_value = [_fake_tool(name) for name in EXPECTED_WRITER_FALLBACK_NAMES]
         m_sd.return_value = _fake_tool("save_draft")
 
         agent = build_agentic_writer(
@@ -246,12 +258,18 @@ class TestBuildAgenticWriterToolWhitelist:
         )
 
         assert m_rt.call_count == 1
-        # #956 §4：writer 轨 tool_ids=None → 显式锁旧 5（include=_WRITER_READER_NAMES 兜底）
-        assert _kwarg_or_positional(m_rt.call_args, "include", 1, None) == EXPECTED_READER_NAMES
+        # #956 §4：writer 轨 tool_ids=None → 显式锁兜底白名单（include=_WRITER_READER_NAMES）
+        assert (
+            _kwarg_or_positional(m_rt.call_args, "include", 1, None)
+            == EXPECTED_WRITER_FALLBACK_NAMES
+        )
         assert m_sd.call_count == 1
         assert m_da.call_count == 1
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
-        assert [tool.spec.name for tool in tools] == [*EXPECTED_READER_NAMES, "save_draft"]
+        assert [tool.spec.name for tool in tools] == [
+            *EXPECTED_WRITER_FALLBACK_NAMES,
+            "save_draft",
+        ]
         prompt = _kwarg_or_positional(m_da.call_args, "system_prompt", 4, None)
         assert prompt == BASE_PROMPT
         assert isinstance(agent, DeepAgentInvokeAdapter)
@@ -516,6 +534,73 @@ class TestBuiltinSkillSlugsV522:
         ]
 
 
+# ── #1185 盲区 4 · 死参数静态检查：build_writer_agent_system_prompt ──
+
+
+class TestWriterSystemPromptDeadParams:
+    """`agentic_writer.py:64-89` 声明 outline/context/min_words/style_hint 四参
+    从不读取（P2-6 死参数）。
+
+    既有覆盖的盲区：
+    - `test_f27_api_gaps.py:545-559` 只调 `(pm)` 四参全默认 → 死参数不可见
+    - `test_deps_agentic_model_resolution.py:88/140/203` 把函数整个 patch 成
+      `return_value="prompt"` → **函数体根本不执行**
+
+    本类直接传 4 个可辨识实参，断言渲染产物含它们。当前模板
+    `variables: [project_id, chapter_id]` 只有两键 → 必 FAIL。
+
+    修复（W2-P4 #1174/#1177 家族）：四参进 render 变量 dict，模板
+    `variables` 同步声明 → 渲染产物含四值。
+    """
+
+    def _fake_pm(self) -> MagicMock:
+        """PromptManager 鸭子对象：render 出含 project_id/chapter_id 的 prompt."""
+        pm = MagicMock()
+        template = SimpleNamespace(system_prompt="基础提示", variables=["project_id", "chapter_id"])
+        pm.load.return_value = template
+        pm.render.side_effect = lambda _t, variables: SimpleNamespace(
+            messages=[{"content": "基础提示 " + str(sorted(variables.items()))}]
+        )
+        return pm
+
+    def test_context_reaches_rendered_prompt(self):
+        """context 实参必须进渲染产物（当前是死参数 → FAIL）."""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            build_writer_agent_system_prompt,
+        )
+
+        result = build_writer_agent_system_prompt(
+            self._fake_pm(), context="【角色】宁晚：太虚剑派掌门之女"
+        )
+
+        assert "宁晚" in result
+
+    def test_outline_reaches_rendered_prompt(self):
+        """outline 实参必须进渲染产物（当前是死参数 → FAIL）."""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            build_writer_agent_system_prompt,
+        )
+
+        result = build_writer_agent_system_prompt(
+            self._fake_pm(), outline="主角在时间旅途中发现悖论"
+        )
+
+        assert "时间旅途中发现悖论" in result
+
+    def test_min_words_and_style_hint_reach_rendered_prompt(self):
+        """min_words / style_hint 实参必须进渲染产物（当前是死参数 → FAIL）."""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            build_writer_agent_system_prompt,
+        )
+
+        result = build_writer_agent_system_prompt(
+            self._fake_pm(), min_words=3333, style_hint="慢热日常·白描"
+        )
+
+        assert "3333" in result
+        assert "慢热日常·白描" in result
+
+
 # ── #1185 A9/A2 · 两 factory 传参 + world 白名单（P1-3 / P1-4）────────
 
 
@@ -527,6 +612,12 @@ class TestWriterTrackWorldToolWhitelist:
     ⚠️ 「常量含 world」断言属 W2 范畴（#1185 盲区），2026-09-15 已拆出至
     `.hermes/pending-w2/`；此处保留已绿的「world 工具物化」用例。
     """
+
+    def test_writer_whitelist_includes_world_tools(self):
+        """`_WRITER_READER_NAMES` 须含 world 检索工具（世界观可达 writer）."""
+        from inkflow.infrastructure.agent.agentic_writer import _WRITER_READER_NAMES
+
+        assert "get_world_setting" in _WRITER_READER_NAMES
 
     def test_build_agentic_writer_materializes_world_tool(self):
         """world_service 注入 → world 工具实际物化进 tools（P1-3 第 2 重锁）."""

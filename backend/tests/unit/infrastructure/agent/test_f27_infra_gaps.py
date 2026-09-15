@@ -160,6 +160,10 @@ def test_build_writer_agent_system_prompt():
 
     #275 契约升级：无参调用向后兼容——render 变量 dict 恒含 project_id/chapter_id 键
     （值为空串），模板变量化后 validate() 仍通过。
+
+    #1174/#1177 死参数族（本批 #1180 同批修复）：四参 outline/context/min_words/
+    style_hint 现一并进 render 变量 dict（原为声明后从不读取的死参数）——本断言
+    随语义升级为 6 键全量。
     """
     from inkflow.infrastructure.agent.agentic_writer import (
         build_writer_agent_system_prompt,
@@ -174,7 +178,17 @@ def test_build_writer_agent_system_prompt():
     pm.render.return_value = rendered
     result = build_writer_agent_system_prompt(pm)
     pm.load.assert_called_once_with("writer_agent")
-    pm.render.assert_called_once_with(template, {"project_id": "", "chapter_id": ""})
+    pm.render.assert_called_once_with(
+        template,
+        {
+            "project_id": "",
+            "chapter_id": "",
+            "outline": "",
+            "context": "",
+            "min_words": "2000",
+            "style_hint": "",
+        },
+    )
     assert result == "渲染后的 system prompt"
 
 
@@ -234,8 +248,8 @@ async def test_build_agentic_writer_assembles_six_tools():
 def test_build_writer_agent_system_prompt_injects_project_context() -> None:
     """#275 装配契约: 传 project_id/chapter_id → render 收到真实值 + 结果含二者.
 
-    RED 预期: 当前实现 render(template, {}) → assert_called_once_with 断言失败
-    （clean FAILED）。
+    本批 #1180（#1174/#1177 死参数族）：四参 outline/context/min_words/style_hint
+    一并进 render 变量 dict → 断言随语义升级为 6 键全量（未传时取默认值）。
     """
     from inkflow.infrastructure.agent.agentic_writer import (
         build_writer_agent_system_prompt,
@@ -257,7 +271,14 @@ def test_build_writer_agent_system_prompt_injects_project_context() -> None:
 
     pm.render.assert_called_once_with(
         template,
-        {"project_id": str(PROJECT_ID), "chapter_id": str(CHAPTER_ID)},
+        {
+            "project_id": str(PROJECT_ID),
+            "chapter_id": str(CHAPTER_ID),
+            "outline": "",
+            "context": "",
+            "min_words": "2000",
+            "style_hint": "",
+        },
     )
     assert str(PROJECT_ID) in result
     assert str(CHAPTER_ID) in result
