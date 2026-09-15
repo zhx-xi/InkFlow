@@ -29,9 +29,11 @@ P0-3（F3 轨上下文恒空）。
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from inkflow.api.routers.books import get_book_service
 from inkflow.infrastructure.database.models.outline import OutlineORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
@@ -101,7 +103,70 @@ def _patch_pipelines(monkeypatch):
     )
 
 
+# ── A9：books.py writer factory 透传 tool_ids / skill_ids ──────────────
+
+
+async def test_books_writer_factory_forwards_authorization(db_session, monkeypatch):
+    """`get_book_service` 的 `_writer_factory` 须把 tool_ids/skill_ids 透传。
+
+    可证伪性：factory 不传（现状）→ captured 无这两键 → FAIL。
+    """
+    plan_id = uuid.UUID(int=1)
+    await _seed(db_session, plan_id=plan_id)
+
+    captured: dict = {}
+
+    def _fake_writer(**kwargs):
+        captured.update(kwargs)
+        agent = MagicMock()
+        agent.invoke = AsyncMock(
+            return_value={"messages": [{"type": "ai", "content": "第一章正文内容"}]}
+        )
+        return agent
+
+    monkeypatch.setattr(
+        "inkflow.infrastructure.agent.agentic_writer.build_agentic_writer", _fake_writer
+    )
+
+    svc = get_book_service(db_session)
+    await svc.write_book(plan_id)
+
+    assert "tool_ids" in captured, "books.py writer factory 必须透传 tool_ids"
+    assert "skill_ids" in captured, "books.py writer factory 必须透传 skill_ids"
+
+
 # ── A9：deps_agentic_writer.py factory 透传 tool_ids / skill_ids ───────
+
+
+async def test_deps_agentic_writer_factory_forwards_authorization(monkeypatch):
+    """`get_agentic_writer_service` 的 `_build_agent` 须透传 tool_ids/skill_ids。
+
+    可证伪性：不传（现状）→ captured 无这两键 → FAIL。
+    """
+    from inkflow.api import deps_agentic_writer as daw_mod
+
+    captured: dict = {}
+
+    def _fake_writer(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "inkflow.infrastructure.agent.agentic_writer.build_agentic_writer", _fake_writer
+    )
+
+    # 闭包捕获于 get_agentic_writer_service 返回值内部 —— 经其公开面驱动
+    svc = daw_mod.get_agentic_writer_service(MagicMock())
+    factory = getattr(svc, "_agent_factory", None)
+    assert factory is not None, "AgenticWriterService 未暴露 agent_factory"
+
+    request = MagicMock()
+    request.project_id = uuid.uuid4()
+    request.chapter_id = uuid.uuid4()
+    factory(request)  # `_build_agent` 为同步函数（deps_agentic_writer.py:79）
+
+    assert "tool_ids" in captured, "deps_agentic_writer.py 必须透传 tool_ids"
+    assert "skill_ids" in captured, "deps_agentic_writer.py 必须透传 skill_ids"
 
 
 # ── A11：F3 轨 context_provider 注入非 Null ────────────────────────────

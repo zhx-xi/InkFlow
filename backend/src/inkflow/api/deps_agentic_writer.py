@@ -55,7 +55,9 @@ def get_agentic_writer_service(
         AgenticWriterDeps,
         build_agentic_writer,
         build_writer_agent_system_prompt,
+        resolve_writer_authorization,
     )
+
     # 循环依赖注意：直接 Python 调用无 FastAPI 依赖缓存——内联构建共享同源实例
     draft_service = deps_module.DraftService(
         draft_repo=deps_module.SQLiteDraftRepository(db),
@@ -71,10 +73,14 @@ def get_agentic_writer_service(
         chapter_audit_service=deps_module.get_chapter_audit_service(db),
         draft_service=draft_service,
         audit_service=audit_service,
+        # #1180：world 只读 service 注入（镜像 chat 轨 deps_chat_agent.py:228）
+        world_service=deps_module.get_world_service(db),
         # #976 D3（2026-09-06 拍板扩展）：agentic 轨按章 id 反查卷（同 chat 语义）
         volume_lookup=deps_module._make_draft_volume_lookup(db),
     )
     prompt_manager = deps_module.LangChainPromptManager()
+    # #1181：写作轨授权（F58 grants + F39 skill 白名单）——内置「写手」Agent 实体同源
+    tool_ids, skill_ids = resolve_writer_authorization()
 
     def _build_agent(request: AgenticWriteRequest) -> object:
         """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
@@ -89,10 +95,13 @@ def get_agentic_writer_service(
             base_url=base_url,
             deps=deps,
             system_prompt=system_prompt,
+            tool_ids=tool_ids,
+            skill_ids=skill_ids,
             expected_project_id=request.project_id,
             expected_chapter_id=request.chapter_id,
             reasoning_effort=effort,
         )
+
     # 模型/密钥/base_url 同源装配（#758 空默认回退首个 chat provider，镜像 #738，防空 key 500）
     model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
     # F59-M4（B7）：全局思考档位（None 项目级 → 全局兜底；全 None → "default"）

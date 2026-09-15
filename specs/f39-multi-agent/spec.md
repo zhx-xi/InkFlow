@@ -295,7 +295,7 @@ def build_agentic_writer(
 | Agent | 定位 | 出厂工具白名单（tool_ids） | 出厂 skill（skill_ids = 目录名 slug） |
 |-------|------|---------------------------|--------------------------------------|
 | 架构师 | 章节结构/大纲规划 | search_characters, check_foreshadowing, get_prior_summary | architecture-methodology |
-| 写手 | 正文生成 | 检索全 3 + save_draft | writing-methodology |
+| 写手 | 正文生成 | 检索全 3 + list_world_settings, get_world_setting + save_draft | writing-methodology |
 | 审校员 | 一致性审计 | audit_chapter, count_words, search_characters | audit-methodology |
 | 修订师 | 修订打磨 | get_prior_summary, count_words, save_draft | revision-methodology |
 | 世界观顾问 | 世界观一致 | search_characters, check_foreshadowing | worldview-methodology |

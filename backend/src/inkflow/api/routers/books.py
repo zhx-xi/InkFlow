@@ -300,6 +300,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         get_foreshadowing_service,
         get_memory_service,
         get_summary_service,
+        get_world_service,
     )
     from inkflow.core.config import config
     from inkflow.domain.services.audit_log_service import AuditLogService
@@ -307,6 +308,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
     from inkflow.infrastructure.agent.agentic_writer import (
         AgenticWriterDeps,
         build_agentic_writer,
+        resolve_writer_authorization,
     )
     from inkflow.infrastructure.database.repositories.audit_log_repo import (
         SQLiteAuditLogRepository,
@@ -332,11 +334,15 @@ def _build_book_service(db: AsyncSession) -> BookService:
         chapter_audit_service=get_chapter_audit_service(db),
         draft_service=draft_service,
         audit_service=AuditLogService(SQLiteAuditLogRepository(db)),
+        # #1180：world 只读 service 注入（镜像 chat 轨 deps_chat_agent.py:228）
+        world_service=get_world_service(db),
         # #976 D3：writer 轨工具草稿卷解析——_volume_lookup 同时兼容 outline id 与
         # 章 id（工具收到 expected_chapter_id=outline.chapter_id 可为 None → 未分组，
         # 与委托兜底按 volume_outline_id 语义一致）
         volume_lookup=_volume_lookup,
     )
+    # #1181：写作轨授权（F58 grants + F39 skill 白名单）——内置「写手」Agent 实体同源
+    tool_ids, skill_ids = resolve_writer_authorization()
 
     async def _writer_factory(
         *,
@@ -376,6 +382,8 @@ def _build_book_service(db: AsyncSession) -> BookService:
             base_url=base_url,
             deps=deps,
             system_prompt=system_prompt,
+            tool_ids=tool_ids,
+            skill_ids=skill_ids,
             expected_project_id=expected_project_id,
             expected_chapter_id=expected_chapter_id,
             expected_source_outline_id=expected_source_outline_id,

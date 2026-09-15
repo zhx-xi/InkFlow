@@ -38,9 +38,35 @@ _WRITER_READER_NAMES = [
     "get_prior_summary",
     "audit_chapter",
     "count_words",
+    # #1180（2026-09-16 显式扩列）：world 只读工具纳入写作轨兜底。
+    # #956 §4 的原始意图是防 reader 目录扩权被**静默**带入——此处为**显式**
+    # 加入（世界观不可达是 P1-3 缺陷：设定漂移的结构性成因），不违背该意图。
+    "list_world_settings",
+    "get_world_setting",
 ]
 """writer 轨只读工具白名单（#956 §4）：tool_ids=None 时显式锁旧 5 只读，
-防 §1.3 reader 目录扩权（10/8）把新检索工具静默带入写作轨。"""
+防 §1.3 reader 目录扩权（10/8）把新检索工具静默带入写作轨。
+
+#1180：扩列 2 个 world 只读工具——未配置 grants 的项目也能拿到世界观
+（与「显式授权」主路径互补：缺一都会留下缺陷面）。"""
+
+
+def resolve_writer_authorization() -> tuple[list[str], list[str]]:
+    """写作轨授权来源（#1181）：内置「写手」Agent 实体的 grants/技能白名单。
+
+    写作轨（T1 单章 / T2-T4 book 三轨）无请求级 Agent 实例，其语义对应物即
+    出厂内置的 `role_key="writer"` Agent（`builtin=True`、不可编辑 → 确定性
+    常量）。取 spec.grants 经 `expand_grants` 展开为工具名清单（F58 真数据面，
+    与 chat 轨 resolve_grants → build_tools_by_grants 同源语义）。
+
+    Returns:
+        (tool_ids, skill_ids)：工具名清单 + skill 目录名清单（F39 #522）。
+    """
+    from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+    from inkflow.infrastructure.agent.tools.registry import expand_grants
+
+    spec = next(s for s in BUILTIN_AGENT_SPECS if s["role_key"] == "writer")
+    return expand_grants(list(spec["grants"])), [spec["skill_name"]]
 
 
 @dataclass
@@ -53,6 +79,10 @@ class AgenticWriterDeps:
     chapter_audit_service: object
     draft_service: object
     audit_service: object
+    world_service: object | None = None
+    """#1180：世界观只读 service（有 list_settings/get_setting，WorldService 形态）。
+    未注入 → world 工具不物化（与 ReaderToolDeps.world_service 同语义）；
+    装配层两 factory 均注入（镜像 chat 轨 deps_chat_agent.py:228）。"""
     skill_lookup: Callable[[str], object | None] | None = None
     """skill 查表函数（F39 M3 + #522）：按 skill 目录名取 Skill 鸭子对象
     （含 name/content），None = 未注入（仅 skill_ids 非 None 时读取）。"""
@@ -71,10 +101,14 @@ def build_writer_agent_system_prompt(
     min_words: int = 2000,
     style_hint: str = "",
 ) -> str:
-    """渲染 writer_agent.yaml system_prompt（#275: 注入当前项目/章节 UUID）.
+    """渲染 writer_agent.yaml system_prompt（#275: 注入当前项目/章节 UUID）。
 
     变量 dict 恒含 project_id/chapter_id 键（None → 空串）——模板 variables
     声明后 PromptManager.render 的 validate 要求两键必传。
+
+    #1174/#1177 死参数族（原 agentic_writer.py:64-89 声明四参从不读取）：
+    outline/context/min_words/style_hint 现一并进 render 变量 dict，模板
+    variables 同步声明 → 四值可达渲染产物。
     """
     template = prompt_manager.load("writer_agent")
     rendered = prompt_manager.render(
@@ -82,6 +116,10 @@ def build_writer_agent_system_prompt(
         {
             "project_id": str(project_id) if project_id is not None else "",
             "chapter_id": str(chapter_id) if chapter_id is not None else "",
+            "outline": outline,
+            "context": context,
+            "min_words": str(min_words),
+            "style_hint": style_hint,
         },
     )
     if rendered.messages:
@@ -177,6 +215,9 @@ def build_agentic_writer(
         foreshadowing_service=deps.foreshadowing_service,
         summary_service=deps.summary_service,
         chapter_audit_service=deps.chapter_audit_service,
+        # #1180 第 2 重锁：world_service 未注入 → world 工具根本不物化
+        # （reader_tools.py 过滤条件），单改白名单无效。
+        world_service=deps.world_service,
     )
     # #956 §4：writer 轨 tool_ids=None → include 显式兜底旧 5（reader 目录扩权不波及）
     tools = build_reader_tools(
