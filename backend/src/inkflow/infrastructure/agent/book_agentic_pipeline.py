@@ -43,6 +43,8 @@ from inkflow.domain.services.chapter_brief import (
     ContextBuilder,
     ProjectConfigGetter,
     build_chapter_brief,
+    chapter_write_messages,
+    record_word_deviation,
     resolve_brief_setting,
 )
 from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
@@ -797,18 +799,13 @@ class BookAgenticPipeline:
             expected_source_outline_id=chapter["outline_id"],
             expected_volume_outline_id=chapter.get("volume_outline_id"),
         )
+        messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
         result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)
-            [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (f"请撰写章节《{chapter['name']}》：{chapter['description']}"),
-                },
-            ],
-            config={"configurable": {"thread_id": self._thread_id}},
+            messages, config={"configurable": {"thread_id": self._thread_id}}
         )
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
+        record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter["name"])
         draft = await self._draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按 F27 契约提供 async create
             project_id=plan.project_id,
             chapter_id=chapter["chapter_id"],

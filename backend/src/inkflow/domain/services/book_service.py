@@ -40,7 +40,12 @@ from inkflow.domain.models.writing_plan import (
     validate_at_least_one_hard_limit,
 )
 from inkflow.domain.services.book_run_mixin import BookRunMixin
-from inkflow.domain.services.chapter_brief import build_chapter_brief, resolve_brief_setting
+from inkflow.domain.services.chapter_brief import (
+    build_chapter_brief,
+    chapter_write_messages,
+    record_word_deviation,
+    resolve_brief_setting,
+)
 from inkflow.domain.services.usage_accounting import (
     _extract_saved_draft_id,
     draft_fallback_needed,
@@ -433,17 +438,13 @@ class BookService(BookRunMixin):
             if plan.status != "running":
                 raise ValueError("运行未处于可暂停状态")
             plan.status = "paused"
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {"run_id": str(plan.id), "status": "paused"}
         if action == "resume":
             if plan.status != "paused":
                 raise ValueError("运行未处于可暂停状态")
             plan.status = "running"
-            await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
-                plan
-            )
+            await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {"run_id": str(plan.id), "status": "running"}
         if action == "redirect":
             if not target:
@@ -838,12 +839,8 @@ class BookService(BookRunMixin):
             expected_source_outline_id=chapter.id,
             expected_volume_outline_id=chapter.parent_id,
         )
-        result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"请撰写章节《{chapter.name}》：{chapter.description}"},
-            ]
-        )
+        messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
+        result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
         prompt_tokens, completion_tokens, total = result_usage(result)
         plan.limits["tokens_used"] = plan.limits.get("tokens_used", 0) + total
         plan.limits["prompt_tokens"] = plan.limits.get("prompt_tokens", 0) + prompt_tokens
@@ -853,6 +850,7 @@ class BookService(BookRunMixin):
         if plan.limits["tokens_used"] > limits.max_tokens:
             plan.limits["tokens_warning"] = True
         content = _extract_final_content(result)
+        record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter.name)
         if draft_fallback_needed(result):
             # #975 守卫：agent 未显式 save_draft → 兜底建草稿（#976 D3 卷透传）
             volume_id: uuid.UUID | None = None
