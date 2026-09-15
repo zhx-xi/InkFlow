@@ -110,7 +110,7 @@ items 按 timestamp 降序；字段见 F57 spec §2.2（level/caller_type/caller
 
 - **RED 契约**（先行全 FAIL 才实现）：
   - `tests/api/test_logs_query_contract.py`（新建）：B2 多值（level=INFO,WARN / caller_type=api,agent）、B3 UUID（含 422）、B4 埋点记录沿用请求头 correlation_id（TestClient 发头→GET 回查）。
-  - `backend/tests/unit/test_logging_structured_sink.py`（新建）：B1 setup_logging 后 log_structured INFO 落 store 目录（data_dir/resolve tmp 隔离）；debug=False 时 DEBUG 不落；非 bind 记录不落；sink 异常不带崩。
+  - `backend/tests/unit/logging/test_logging_structured_sink.py`（新建）：B1 setup_logging 后 log_structured INFO 落 store 目录（data_dir/resolve tmp 隔离）；debug=False 时 DEBUG 不落；非 bind 记录不落；sink 异常不带崩。
   - `renderer/src/api/logs.test.ts` + `pages/logs.test.tsx`（新建）：§3/§4 契约。
   - 既有文件迁移批：AppNav.test / App.routing.test / i18n.contract.test（MODIFY，RED 期落盘）。
 - **E2E**（`e2e-logs.spec.ts`，CI 裁判，不计覆盖）：launch→等内核→POST /api/v1/logs（kernelFetch 造前端记录）或触发真实操作→导航 #/logs→断言 `log-row` 出现与 t() 渲染文案→切分类 tab→断言过滤生效。

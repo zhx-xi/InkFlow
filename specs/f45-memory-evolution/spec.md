@@ -462,9 +462,9 @@ PreferenceSource.collect(project_id, chapter_id):
 | MODIFY | `backend/src/inkflow/cli/commands/memory_cmd.py` | user-list/user-remove 子命令 |
 | MODIFY | `backend/src/inkflow/infrastructure/context/preference_source.py` | collect 注入用户级字面偏好（M1） |
 | MODIFY | `backend/src/inkflow/api/deps.py` | user_preference_repo/memory_service 装配扩展 |
-| CREATE | `backend/tests/unit/test_user_preference_learner.py` | 用户级聚合契约（阈值/保守规则/跨项目） |
-| CREATE | `backend/tests/unit/test_user_preference_repo.py` | user_preferences 仓储集成（真实 SQLite） |
-| CREATE | `backend/tests/unit/test_memory_service_user.py` | M1 编排契约（零行为/落库/删除/项目删除惰性重算 + 幽灵项目过滤） |
+| CREATE | `backend/tests/unit/domain/services/test_user_preference_learner.py` | 用户级聚合契约（阈值/保守规则/跨项目） |
+| CREATE | `backend/tests/unit/infrastructure/database/test_user_preference_repo.py` | user_preferences 仓储集成（真实 SQLite） |
+| CREATE | `backend/tests/unit/domain/services/test_memory_service_user.py` | M1 编排契约（零行为/落库/删除/项目删除惰性重算 + 幽灵项目过滤） |
 | MODIFY | `tests/api/test_memory_api.py` | user-preferences 端点契约 |
 | MODIFY | `tests/cli/test_cli_memory.py` | user-list/user-remove 契约（**已登记 ci.yml integration-cli-backend**） |
 
@@ -483,9 +483,9 @@ PreferenceSource.collect(project_id, chapter_id):
 | MODIFY | `backend/src/inkflow/domain/services/memory_service.py` | summarize 编排 + 锚点哈希 + 审计 |
 | MODIFY | `backend/src/inkflow/cli/commands/write.py` | 🧠 风格指令输出 |
 | MODIFY | `backend/src/inkflow/api/deps.py` | semantic_summary_repo/summarizer 装配 |
-| CREATE | `backend/tests/unit/test_semantic_summarizer.py` | 总结管线契约（模板渲染/mock LLM/JSON 解析/修复重试/防幻觉 B） |
-| CREATE | `backend/tests/unit/test_semantic_summary_repo.py` | semantic_summaries 仓储集成 |
-| MODIFY | `backend/tests/unit/test_preference_source.py` | M2 注入优先级 + 字面兜底 + 归属 title |
+| CREATE | `backend/tests/unit/domain/services/test_semantic_summarizer.py` | 总结管线契约（模板渲染/mock LLM/JSON 解析/修复重试/防幻觉 B） |
+| CREATE | `backend/tests/unit/infrastructure/database/test_semantic_summary_repo.py` | semantic_summaries 仓储集成 |
+| MODIFY | `backend/tests/unit/infrastructure/context/test_preference_source.py` | M2 注入优先级 + 字面兜底 + 归属 title |
 | MODIFY | `tests/api/test_memory_api.py` | summaries/summarize 端点契约 |
 | MODIFY | `tests/cli/test_cli_memory.py` | summarize 子命令契约 |
 
@@ -573,9 +573,9 @@ PreferenceSource.collect(project_id, chapter_id):
 
 ### M1（#339 用户级偏好层）
 
-- **M1-1 用户级聚合全绿**: `pytest tests/unit/test_user_preference_learner.py` — 保守规则（单项目不升）+ 第 2 项目落库 + 第 3 项目更新 + 跨项目不混算 + 共享 extract_edits
-- **M1-2 编排服务全绿**: `pytest tests/unit/test_memory_service_user.py` — memory_learning=false 零行为 + user_preferences CRUD + 项目删除惰性重算（查询时触发 + 幽灵项目过滤）+ stats user 层计数
-- **M1-3 仓储全绿**: `pytest tests/unit/test_user_preference_repo.py` — 真实 SQLite CRUD + source_projects/source_events JSON 往返
+- **M1-1 用户级聚合全绿**: `pytest backend/tests/unit/domain/services/test_user_preference_learner.py` — 保守规则（单项目不升）+ 第 2 项目落库 + 第 3 项目更新 + 跨项目不混算 + 共享 extract_edits
+- **M1-2 编排服务全绿**: `pytest backend/tests/unit/domain/services/test_memory_service_user.py` — memory_learning=false 零行为 + user_preferences CRUD + 项目删除惰性重算（查询时触发 + 幽灵项目过滤）+ stats user 层计数
+- **M1-3 仓储全绿**: `pytest backend/tests/unit/infrastructure/database/test_user_preference_repo.py` — 真实 SQLite CRUD + source_projects/source_events JSON 往返
 - **M1-4 API 全绿**: `tests/api/test_memory_api.py` — user-preferences list/delete 200/404
 - **M1-5 CLI 全绿**: `tests/cli/test_cli_memory.py`（已登记 ci.yml）— user-list/user-remove 信封/人类模式/退出码
 - **M1-6 归属分层（手工）**: 项目 A、B 都开启 memory_learning；A 中「说→低声道」改 2 次（仅 A）、B 中「说→低声道」改 2 次 → `inkflow memory user-list` 出现该偏好（project_count=2）；A 中「她→林晚」改 2 次（仅 A）→ user-list 不出现（项目特有设定不升用户级）
@@ -586,16 +586,16 @@ PreferenceSource.collect(project_id, chapter_id):
 
 ### M2（#340 语义风格提取）
 
-- **M2-1 总结管线全绿**: `pytest tests/unit/test_semantic_summarizer.py` — 锚点为空不调 LLM + 模板渲染 + mock LLM JSON 解析 + 修复重试 + 幂等（anchor_hash）+ 锚点变化重新总结
-- **M2-2 防幻觉 B 全绿**: `pytest tests/unit/test_semantic_summarizer.py -k hallucination` — mock LLM 编造偏好 → anchor_refs 校验拒绝 + 审计 semantic_summary_failed
-- **M2-3 仓储全绿**: `pytest tests/unit/test_semantic_summary_repo.py` — semantic_summaries CRUD + scope 过滤
-- **M2-4 注入升级全绿**: `pytest tests/unit/test_preference_source.py` — 语义总结优先 + 字面兜底 + 项目级/用户级 title 区分 + 预算延续
+- **M2-1 总结管线全绿**: `pytest backend/tests/unit/domain/services/test_semantic_summarizer.py` — 锚点为空不调 LLM + 模板渲染 + mock LLM JSON 解析 + 修复重试 + 幂等（anchor_hash）+ 锚点变化重新总结
+- **M2-2 防幻觉 B 全绿**: `pytest backend/tests/unit/domain/services/test_semantic_summarizer.py -k hallucination` — mock LLM 编造偏好 → anchor_refs 校验拒绝 + 审计 semantic_summary_failed
+- **M2-3 仓储全绿**: `pytest backend/tests/unit/infrastructure/database/test_semantic_summary_repo.py` — semantic_summaries CRUD + scope 过滤
+- **M2-4 注入升级全绿**: `pytest backend/tests/unit/infrastructure/context/test_preference_source.py` — 语义总结优先 + 字面兜底 + 项目级/用户级 title 区分 + 预算延续
 - **M2-5 API 全绿**: `tests/api/test_memory_api.py` — summaries 200（含零行为空）/ summarize 200/502
 - **M2-6 CLI 全绿**: `tests/cli/test_cli_memory.py` — summarize 信封/人类模式/--force/退出码
 - **M2-7 可解释抽象偏好（手工）**: 项目有 ≥5 条项目级偏好 → `inkflow memory summarize --project-id` → 输出「项目风格」+「通用风格」两段可读抽象指令（非字面碎片）
 - **M2-8 注入形态升级（手工）**: summarize 后 `write next --mode agentic` 人类模式出现「🧠 风格指令：...」；`--json` 信封含 semantic_summaries 字段
 - **M2-9 锚点未变幂等（手工）**: 连续两次 summarize 无新修改 → 第二次输出「锚点未变化，复用既有摘要」且不调用 LLM（日志无 LLM 调用记录）
-- **M2-10 惰性总结 + 后台刷新（契约，Q2=B）**: 锚点变化 → collect 先用旧总结注入（注入不等待 LLM）+ 审计 pending_summary；后台任务基建（F44 阶段4）就位后异步刷新总结；基建缺位时降级同步总结兜底（`pytest tests/unit/test_preference_source.py -k lazy_summary`）
+- **M2-10 惰性总结 + 后台刷新（契约，Q2=B）**: 锚点变化 → collect 先用旧总结注入（注入不等待 LLM）+ 审计 pending_summary；后台任务基建（F44 阶段4）就位后异步刷新总结；基建缺位时降级同步总结兜底（`pytest backend/tests/unit/infrastructure/context/test_preference_source.py -k lazy_summary`）
 
 > 所有里程碑验收以本节 M1/M2 为准（#339/#340 验收标准映射：归属分层→M1-6、跨项目不混算→M1-7、可解释抽象偏好→M2-7、不编造证据之外偏好→M2-2/M2-8）。
 

@@ -276,7 +276,7 @@ inkflow skills remove <NAME> [--json]
 | `skills/inkflow/references/*.md` | 官方包 20 文件蓝本复制改造（cli-commands 全量 23 组 / json-contracts / workflows / kernel / projects / chapters / writing / audit / library-* / models / templates / agent / memory / export / style / extract / system / mcp-setup.md 占位）——按 §2.4 契约 |
 | `backend/src/inkflow/cli/commands/skills.py` | skills 命令组（§4：install/list/verify/remove 本地文件操作） |
 | `backend/src/inkflow/cli/skills_parser.py` | frontmatter 解析/校验纯函数（deepagents `_parse_skill_metadata` 规则镜像，供命令组与测试复用） |
-| `backend/tests/cli/test_cli_skills.py` | CLI 契约测试（RED 先行，§9；tmp_path 真实目录导入） |
+| `tests/cli/test_cli_skills.py` | CLI 契约测试（RED 先行，§9；tmp_path 真实目录导入） |
 | `backend/tests/unit/test_skills_parser.py` | frontmatter 校验纯函数测试（§9，deepagents 规则逐条） |
 
 ### 8.2 MODIFY（修改）
@@ -306,7 +306,7 @@ inkflow skills remove <NAME> [--json]
 | 层 | 载体 | 覆盖 |
 |----|------|------|
 | unit | `backend/tests/unit/test_skills_parser.py`（新建） | frontmatter 解析/校验纯函数：必填字段（N1）、name 合规（N2：长度/字符/连字符/目录名一致）、description 截断（N3）、可选字段宽容（license/compatibility/metadata/allowed-tools 格式错误忽略）——**deepagents `_parse_skill_metadata` 规则逐条镜像测试** |
-| CLI | `backend/tests/cli/test_cli_skills.py`（新建） | install/list/verify/remove 成功路径 + 错误路径（N4-N7），**tmp_path 真实目录导入**（构造含 SKILL.md 的临时 skill 包 → install → 断言落盘结构），`--json` 信封断言（`json.loads(result.stdout)`） |
+| CLI | `tests/cli/test_cli_skills.py`（新建） | install/list/verify/remove 成功路径 + 错误路径（N4-N7），**tmp_path 真实目录导入**（构造含 SKILL.md 的临时 skill 包 → install → 断言落盘结构），`--json` 信封断言（`json.loads(result.stdout)`） |
 | 官方包一致性 | 实现期人工核对 | 官方包 20 文件与 Hermes 蓝本 diff 核对（去 Hermes 视角残留）；`json-contracts.md` 示例字段 vs tests/cli/ 断言（ADR-022 同步纪律） |
 | rc 阶段手工 | 漂移验证四件套（§13 M3-M6） | 官方轨 GitHub 资产完整 + 用户自定义轨 install/list/verify/remove 真实走查 + 注入生效验证 |
 
@@ -391,7 +391,7 @@ F19 为拆分条目：GUI 壳（0.3.0）/ 打包分发（0.4.0）/ skills 包（
 | # | 验收项（M 行） | 验证方式 | 载体 |
 |---|---------------|----------|------|
 | M1 | 官方包 `skills/inkflow/` 完整落盘：SKILL.md（frontmatter）+ references/ 20 文件（含 mcp-setup.md 占位）蓝本复制改造完成 | 源码树检查 + 与 Hermes 蓝本 diff 核对 | 单元 + 手工 |
-| M2 | 用户自定义轨命令真实可用：`skills install/list/verify/remove` 全命令 `--json` 信封正确、退出码 0/1/2 符合 F7；install（tmp_path 真实导入）→list→verify→remove 闭环通过 | `backend/tests/cli/test_cli_skills.py` 全绿 + 手工 CLI 走查 | CLI 测试 + 手工 |
+| M2 | 用户自定义轨命令真实可用：`skills install/list/verify/remove` 全命令 `--json` 信封正确、退出码 0/1/2 符合 F7；install（tmp_path 真实导入）→list→verify→remove 闭环通过 | `tests/cli/test_cli_skills.py` 全绿 + 手工 CLI 走查 | CLI 测试 + 手工 |
 | M3 | 官方轨 GitHub 资产完整（漂移四件套 #1 调整版）：tag 上 `skills/inkflow/` 文件完整（20 references + SKILL.md），frontmatter 合规 | rc 阶段从 tag 拉取核对（原「打包产物数据完整」因 Q3 拍板不随安装包，调整为 GitHub 资产检查；后续单独打包时补验打包产物） | 手工 + 脚本 |
 | M4 | CLI/API skill 命令真实可用（漂移四件套 #2）：`inkflow skills list --json` 返回已导入 skills，无 ModuleNotFoundError | 本地 + 打包 exe 实测 | 手工 + 脚本 |
 | M5 | skill 注入生效（漂移四件套 #3）：**外部 agent（Hermes/Codex 等）加载官方包后执行旅程 C 任务，决策轨迹可见实际调用 `inkflow <cmd> --json`**（非静默忽略），命令参数符合 cli-commands.md——注：本期为官方包对 agent 的可用性验证，用户自定义轨的 agent 注入属其他 issue | rc 阶段真实 agent 走查，决策轨迹截图/日志留档 | 手工 |

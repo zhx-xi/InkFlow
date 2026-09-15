@@ -203,11 +203,11 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 
 | M | 验收 | 载体 |
 |---|------|------|
-| M1 | 后端 `logging` 结构化 schema（caller_type/correlation_id/message_key/params）+ 脱敏契约通过 | `backend/tests/unit/test_logging_schema.py` |
+| M1 | 后端 `logging` 结构化 schema（caller_type/correlation_id/message_key/params）+ 脱敏契约通过 | `backend/tests/unit/logging/test_logging_schema.py` |
 | M2 | `/api/v1/logs` GET/POST + `/api/v1/i18n/messages` 契约通过 | `tests/api/test_logs_api.py` / `test_i18n_api.py` |
-| M3 | i18n resolver（优先级 + t 插值 + 缺键回退）+ zh/en 键对称（含后端各域 + 前端 log.ts）通过 | `backend/tests/unit/test_i18n_resolver.py` + 前端 `i18n.contract.test.ts` |
-| M4 | 后端所有 API 路由端点 + agent/LLM/工具/CLI/MCP 埋点（**可断言**：任一端点 handler 触发 DEBUG 入口日志；DEBUG 关闭时无 DEBUG 记录）+ 前端 logger/bridge；INFO 数据变化可见 | `backend/tests/unit/test_logging_instrumentation.py` + 前端 `logger.test.ts` + DEBUG 关闭断言（`backend/tests/unit/test_logging_schema.py`） |
-| M5 | 提示词/工具/skill 全译（zh/en）+ per-call 准实时切换生效 | `backend/tests/unit/test_i18n_prompts.py` |
+| M3 | i18n resolver（优先级 + t 插值 + 缺键回退）+ zh/en 键对称（含后端各域 + 前端 log.ts）通过 | `backend/tests/unit/i18n/test_i18n_resolver.py` + 前端 `i18n.contract.test.ts` |
+| M4 | 后端所有 API 路由端点 + agent/LLM/工具/CLI/MCP 埋点（**可断言**：任一端点 handler 触发 DEBUG 入口日志；DEBUG 关闭时无 DEBUG 记录）+ 前端 logger/bridge；INFO 数据变化可见 | `backend/tests/unit/logging/test_logging_instrumentation.py` + 前端 `logger.test.ts` + DEBUG 关闭断言（`backend/tests/unit/logging/test_logging_schema.py`） |
+| M5 | 提示词/工具/skill 全译（zh/en）+ per-call 准实时切换生效 | `backend/tests/unit/i18n/test_i18n_s4_domains.py`（提示词/skill 键对称 + per-call 切换）/ `backend/tests/unit/i18n/test_tool_i18n_parity.py`（工具译名双向 parity） |
 | M6 | 零回归（backend 全测 + 前端 vitest/tsc/lint + ruff/mypy） | CI |
 
 > 所有里程碑验收以本节 M1-M6 为准；#496 依赖 M1-M3（日志结构 + 消息目录就绪）后消费。

@@ -13,10 +13,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L13) · [2. 数据模型](L45) · [3. API 契约](L389) · [4. CLI 命令签名](L625)
-> [5. 统一提取门面与增量提取算法（横切收敛核心）](L703) · [6. 提取类型注册表与增量状态语义](L1059) · [7. 边界情况与错误处理](L1130) · [8. 文件结构](L1172)
-> [9. 测试策略](L1328) · [10. 不在范围内](L1388) · [11. 依赖关系](L1409) · [12. 关键架构决策记录](L1455)
-> [13. 验收标准](L1485) · [待澄清问题（≤ 3 个，全部 ✅ 已确认——留痕保留，正文已按拍板结果修订）](L1506)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 统一提取门面与增量提取算法（横切收敛核心） · 6. 提取类型注册表与增量状态语义 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，全部 ✅ 已确认——留痕保留，正文已按拍板结果修订）
 ---
 
 ## 1. 概述
@@ -1407,7 +1407,7 @@ backend/tests/unit/
 └── test_extractions_api.py           ← CREATE: API 集成（Mock ExtractionService，4 端点）
 
 tests/cli/
-├── test_cli_extraction.py            ← CREATE: extract 组（Mock ExtractionService，信封/退出码）
+├── test_cli_extraction_crud.py       ← CREATE: extract 组（Mock ExtractionService，信封/退出码）
 └── test_cli_vector.py                ← CREATE: vector 组（Mock ExtractionService，信封/退出码）
 ```
 
@@ -1452,7 +1452,7 @@ backend/src/inkflow/
 
 > **不新增依赖**: chromadb / langchain-chroma / sentence-transformers 已在 `backend/pyproject.toml` dependencies 锁定（ADR-025 uv.lock），RAG 配置（embedding_model / vector_store_dir / vector_store_collections / retrieval_top_k / embedding_device）已在 `backend/src/inkflow/core/config.py` 存在——**spec 声明使用现有依赖与配置，不新增 pyproject/config 变更**（唯一例外：若实现需要暴露 chunk 大小常量，写代码常量而非配置，YAGNI）。
 >
-> ⚠️ **CI 覆盖盲区防范（Issue #59/#61 教训）**: `tests/cli/test_cli_extraction.py` 与 `tests/cli/test_cli_vector.py` **默认不被任何 CI job 收集**——实施时必须将其**显式加入 ci.yml `integration-cli-backend` job 的 pytest 文件列表**（与现有 12 个 `../tests/cli/test_cli_*.py` 并列；PowerShell 反引号续行、Windows 下 pytest 不展开 glob，须显式文件名——见 §9/§12）。`backend/tests/unit/` 新文件由 `unit-test-backend` job 的 `pytest tests/unit/` 自动覆盖（无需改 ci.yml）。
+> ⚠️ **CI 覆盖盲区防范（Issue #59/#61 教训）**: `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py` **默认不被任何 CI job 收集**——实施时必须将其**显式加入 ci.yml `integration-cli-backend` job 的 pytest 文件列表**（与现有 12 个 `../tests/cli/test_cli_*.py` 并列；PowerShell 反引号续行、Windows 下 pytest 不展开 glob，须显式文件名——见 §9/§12）。`backend/tests/unit/` 新文件由 `unit-test-backend` job 的 `pytest tests/unit/` 自动覆盖（无需改 ci.yml）。
 
 ### 8.1 ExtractionRunRepositoryProtocol（参照 F9 `character_repository.py` Protocol 风格）
 
@@ -1545,7 +1545,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 - F14 模块行覆盖率 **≥ 80%**（门面分发全分支、增量判定全分支、RAG 实现全方法，同 F9-F13）
 - 全仓覆盖率 **≥ 60%**（0.2.0 DoD，ADR-019）
 - CI 门禁：ruff + mypy + pytest 全绿（ADR-017/018）；domain/ 零 FastAPI/Typer/SQLAlchemy/LangChain import（ADR-002/015——`_chunking.py` 纯函数、门面只依赖 Protocol）
-- **CI 覆盖盲区防范**: `tests/cli/test_cli_extraction.py` 与 `tests/cli/test_cli_vector.py` 必须显式加入 ci.yml `integration-cli-backend` job（Issue #59/#61 教训，见 §8 注记）——实施 PR 中 ci.yml 修改与测试文件同时合入
+- **CI 覆盖盲区防范**: `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py` 必须显式加入 ci.yml `integration-cli-backend` job（Issue #59/#61 教训，见 §8 注记）——实施 PR 中 ci.yml 修改与测试文件同时合入
 - **CI 无网络约束**: 所有测试**不触发 BGE 模型下载**——RAG 测试一律 FakeEmbeddings 注入；生产装配（deps.get_vector_store）不进入任何测试路径（BGE 下载 ~100MB 只在真实运行时发生，§11 影响）
 
 ---
@@ -1649,7 +1649,7 @@ F14 被依赖:
 | API 布局 | 统一入口扁平（POST /api/v1/extract）+ runs/向量嵌套项目路径 | extract 的 type 是资源维度（镜像 F9 `/characters/extract` 扁平先例）；runs/vector 是项目级资源（沿袭「创建/列表嵌套项目路径」风格）；静态路径段无歧义（§3.1） |
 | CLI 布局 | `inkflow extract`（run/status）+ `inkflow vector`（reindex/retrieve）两个顶级组 | 提取与向量是两个用户心智（一键沉淀 vs RAG 运维）；不塞进既有模块组（character extract 等保留不动——向后兼容，F9-F13 命令不迁移）；--json 信封/退出码沿用 F7 全局约定 |
 | 伏笔提取合并 | 按 (project_id, title) 匹配活动伏笔 → 非空覆盖 / 新建；**status 永不重置**；不自动回收 | F13 partial unique 的「同名 = 同一伏笔」档案语义（F13 §12 已声明为 F14 提供合并锚点）；status 是作者确认的状态机（自动迁移会破坏「已回收」语义）；自动回收归 Phase 2+（§5.4） |
-| CLI 测试归属 | `tests/cli/test_cli_extraction.py` + `test_cli_vector.py`（顶层 tests/cli/）+ ci.yml `integration-cli-backend` job 显式列出 | 新增 CLI 测试文件默认是 CI 盲区（Issue #59 实测）；显式文件列表是既有 job 风格（Windows 下 pytest 不展开 glob，陷阱 15）；unit 新文件由 `pytest tests/unit/` 自动覆盖 |
+| CLI 测试归属 | `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` + `test_cli_vector.py`（顶层 tests/cli/）+ ci.yml `integration-cli-backend` job 显式列出 | 新增 CLI 测试文件默认是 CI 盲区（Issue #59 实测）；显式文件列表是既有 job 风格（Windows 下 pytest 不展开 glob，陷阱 15）；unit 新文件由 `pytest tests/unit/` 自动覆盖 |
 | TIMELINE 提取管线（选项 B，v1.1） | 新建「章节文本 → 时间线事件」LLM 提取管线（`_timeline_extractor.py` + `timeline_extract.yaml`，镜像 F9 骨架）+ 设置项 `timeline_auto_extract`（默认 **false**；请求 `auto_extract` / CLI `--auto-extract` 可覆盖）；关闭时退回 F12 确定性检查 | 用户拍板 Q2=选项 B（含附加要求：AI 自动化需设置项由用户选择是否开启）——AI 自动写事件档案是**副作用型**能力（直接落库作者档案），默认关闭避免意外修改，显式开启 = 知情同意（与 F13 注入「默认进 dynamic 层」的差异：写入型自动化门槛高于读取型）；关闭语义保留 v1.0 的确定性检查（两种语义并存、设置项切换）；估算 +1.5 人天（§5.5/§13 M5b） |
 | 事件-章节联动 source_chapter_id（v1.1） | F12 事件实体新增 `source_chapter_id`（UUID?，FK→chapters.id ON DELETE SET NULL，已索引）；事件合并匹配键 `(project_id, title, source_chapter_id)`；仓储新增 `list_by_chapter` | 用户拍板 Q3 综合方案要求「精确提取 + 事件和章节联动」；与 F13 的 `event_id` 锚点**同构**（跨模块引用先例：F13 引 F12 事件、F14 引 F2 章节——引用方模块负责校验，被引用方只加可空 FK + SET NULL 语义）；同章同名 = 同一事件（重提取更新）、跨章同名 = 不同事件（章节是事件实例的语境）；章节软删保留来源锚点、硬删 SET NULL（事件档案不因来源删除而丢失） |
 | 增量粒度综合（源 hash + 联动，v1.1） | 保留 v1.0 的**按源 sha256 hash** 增量（选项 A 核心）+ 事件-章节联动（重提取按 `source_chapter_id` 匹配更新）；实体级字段 diff 仍归 Phase 2+ | 用户拍板 Q3=综合方案（在 A 与 B 之间取交集：A 的精确内容指纹 + B 的实体来源追踪）；MVP 收益上限 = 「章节变更 → 该章事件精准更新」闭环（M10 手工实证）；字段级 diff 的跨章节实体追踪（F9 档案无来源章节字段）仍超出 MVP 范围（YAGNI） |
@@ -1664,20 +1664,20 @@ F14 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 校验（ExtractionType 6 值 / ExtractionRequest 互斥与类型约束 / ExtractionResult / ExtractionRun / ReindexResult） | `pytest tests/unit/test_extraction_models.py -v` 全绿 |
-| M2 | ExtractionRun 仓储（get/upsert(ON CONFLICT)/list，in-memory SQLite） | `pytest tests/unit/test_extraction_run_repo.py -v` 全绿 |
-| M3 | 门面分发（Mock 各模块 Service：6 类型委托（timeline 双语义：设置项开/关；STYLE → StyleService.analyze，F16 已注册）+ 项目校验 + 结果归一） | `pytest tests/unit/test_extraction_service.py -v` 全绿 |
-| M4 | 增量提取算法（hash 变更检测 / skip / force / 手动模式 / 断点续跑 / 部分失败语义；timeline 开启时按源增量、关闭时每次执行） | `pytest tests/unit/test_extraction_service.py -v` 全绿（增量相关用例） |
-| M5 | 伏笔提取管线（foreshadowing_extract.yaml + ForeshadowingExtractor：解析/重试/合并/幂等） | `pytest tests/unit/test_foreshadowing_extractor.py -v` 全绿 |
-| M5b | **时间线提取管线**（timeline_extract.yaml + TimelineExtractor：解析/重试/事件合并（匹配键 (project_id, title, source_chapter_id)）/ 设置项开/关切换（门面层判定）/ 事件-章节联动语义；含跨模块 MODIFY F12 四文件（source_chapter_id 字段 + list_by_chapter）） | `pytest tests/unit/test_timeline_extractor.py -v` 全绿 + F12 相关用例（test_timeline_repo 增补 list_by_chapter 用例） |
-| M6 | LangChainVectorStore（FakeEmbeddings + tmp chroma：index/index_batch/retrieve/delete/delete_project/cosine/min_score/project_id 过滤） | `pytest tests/unit/test_langchain_vector_store.py -v` 全绿 |
-| M7 | 章节分块 + reindex/retrieve 编排（_chunking.py + ExtractionService.reindex/retrieve + 索引编排） | `pytest tests/unit/test_chunking.py tests/unit/test_extraction_service.py -v` 全绿 |
-| M8 | API 4 端点 + 错误路径全绿 | `pytest tests/unit/test_extractions_api.py -v` 全绿 |
-| M9 | CLI extract/vector 组（信封/退出码/RAG_ERROR——UNSUPPORTED_TYPE 已随 F16 删除，style 走成功路径）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_extraction.py` 与 `tests/cli/test_cli_vector.py`** | `pytest tests/cli/test_cli_extraction.py tests/cli/test_cli_vector.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
+| M1 | 领域模型 + DTO 校验（ExtractionType 6 值 / ExtractionRequest 互斥与类型约束 / ExtractionResult / ExtractionRun / ReindexResult） | `pytest backend/tests/unit/domain/models/test_extraction_models.py -v` 全绿 |
+| M2 | ExtractionRun 仓储（get/upsert(ON CONFLICT)/list，in-memory SQLite） | `pytest backend/tests/unit/infrastructure/database/test_extraction_run_repo.py -v` 全绿 |
+| M3 | 门面分发（Mock 各模块 Service：6 类型委托（timeline 双语义：设置项开/关；STYLE → StyleService.analyze，F16 已注册）+ 项目校验 + 结果归一） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
+| M4 | 增量提取算法（hash 变更检测 / skip / force / 手动模式 / 断点续跑 / 部分失败语义；timeline 开启时按源增量、关闭时每次执行） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿（增量相关用例） |
+| M5 | 伏笔提取管线（foreshadowing_extract.yaml + ForeshadowingExtractor：解析/重试/合并/幂等） | `pytest backend/tests/unit/domain/services/test_foreshadowing_extractor.py -v` 全绿 |
+| M5b | **时间线提取管线**（timeline_extract.yaml + TimelineExtractor：解析/重试/事件合并（匹配键 (project_id, title, source_chapter_id)）/ 设置项开/关切换（门面层判定）/ 事件-章节联动语义；含跨模块 MODIFY F12 四文件（source_chapter_id 字段 + list_by_chapter）） | `pytest backend/tests/unit/domain/services/test_timeline_extractor.py -v` 全绿 + F12 相关用例（test_timeline_repo 增补 list_by_chapter 用例） |
+| M6 | LangChainVectorStore（FakeEmbeddings + tmp chroma：index/index_batch/retrieve/delete/delete_project/cosine/min_score/project_id 过滤） | `pytest backend/tests/unit/infrastructure/rag/test_langchain_vector_store.py -v` 全绿 |
+| M7 | 章节分块 + reindex/retrieve 编排（_chunking.py + ExtractionService.reindex/retrieve + 索引编排） | `pytest backend/tests/unit/domain/services/test_chunking.py backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
+| M8 | API 4 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_extractions_api.py -v` 全绿 |
+| M9 | CLI extract/vector 组（信封/退出码/RAG_ERROR——UNSUPPORTED_TYPE 已随 F16 删除，style 走成功路径）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py`** | `pytest tests/cli/test_cli_extraction_crud.py tests/cli/test_cli_extraction_errors.py tests/cli/test_cli_vector.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
 | M10 | 手工验证闭环（含 BGE 首次下载）：建项目/章节 → 增量提取 → 索引 → 检索 → 变更重提取 → **时间线提取联动** | 手工验证（`inkflow chapter create` 建 2+ 章 → `inkflow extract run --type character --chapters ... --index` 首次 success → 再次同请求 status=skipped（⏭）→ 修改第 2 章内容（`chapter update`）→ 再提取只处理第 2 章（processed_sources=1、skipped_sources=1）→ `inkflow vector reindex` 全量 → `inkflow vector retrieve --query <章节人物/伏笔关键词>` 返回相关实体（首次自动下载 BGE ~100MB，需网络）→ **时间线场景（Q2/Q3 拍板）**：项目更新设置 `config.extra["timeline_auto_extract"]=true`（或每次调用带 `--auto-extract` 单次覆盖）→ `inkflow extract run --type timeline --chapters ...` 提取事件 → `inkflow timeline list` 事件带 `source_chapter_id`（来源章节）→ 修改某章内容后重提取 → 同源事件被更新（updated>0）、新事件 created → 章节硬删后事件保留且 source_chapter_id 置空） |
 | M11 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F14 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015，含 `_chunking.py`） |
-| M12 | 切片器变体 + 重叠 + 元数据 + 指纹联动（#277 M3，P1——**先行合入**） | `pytest tests/unit/test_chunking_modes.py tests/unit/test_chunking.py -v` 全绿（段落切分/重叠率 ∈ 区间/块 id 三态/对话降级/LLM 降级/元数据 fallback/指纹联动）；扩展 test_search_service.py 元数据缺键 `.get()` fallback 用例；手工：改切片配置 → stale → `vector reindex` → 检索正常且无幽灵块、无相邻重复块 |
-| M13 | 对话切片器 + LLM 分析切片器（#278 M4，P2——**同里程碑后续批次**） | `pytest tests/unit/test_chunking_modes.py -v` 全绿（说话人切换边界/短块合并/无对话降级段落；LLM mock analyzer 边界生效/失败降级不中断/hash 相同跳过 analyzer）；手工：对话文本检索返回对话级 chunk；LLM 档内容未变章节不重复调用 analyzer |
+| M12 | 切片器变体 + 重叠 + 元数据 + 指纹联动（#277 M3，P1——**先行合入**） | `pytest backend/tests/unit/domain/services/test_chunking_modes.py backend/tests/unit/domain/services/test_chunking.py -v` 全绿（段落切分/重叠率 ∈ 区间/块 id 三态/对话降级/LLM 降级/元数据 fallback/指纹联动）；扩展 test_search_service.py 元数据缺键 `.get()` fallback 用例；手工：改切片配置 → stale → `vector reindex` → 检索正常且无幽灵块、无相邻重复块 |
+| M13 | 对话切片器 + LLM 分析切片器（#278 M4，P2——**同里程碑后续批次**） | `pytest backend/tests/unit/domain/services/test_chunking_modes.py -v` 全绿（说话人切换边界/短块合并/无对话降级段落；LLM mock analyzer 边界生效/失败降级不中断/hash 相同跳过 analyzer）；手工：对话文本检索返回对话级 chunk；LLM 档内容未变章节不重复调用 analyzer |
 
 > **验收标准 ↔ Issue #44 映射**: ①「≥6 种提取类型统一接口」→ M1/M3/M8/M9（ExtractionType 6 值 + 注册表 6 槽 + 统一 API/CLI）；②「增量提取（只处理变更内容）」→ M4/M10（hash 追踪 + skip + 断点续跑，手工闭环含「只处理第 2 章」实证）；③「RAG 向量存储落地（chromadb + BGE）」→ M6/M7/M10（LangChainVectorStore + reindex/retrieve + 手工检索闭环，BGE 首次下载 ~100MB 在 M10 实证）；**Q2/Q3 拍板范围** → M5b/M10（时间线提取管线 + 设置项切换 + 事件-章节联动，§2.6/§5.5）。
 
@@ -1696,7 +1696,6 @@ F14 被依赖:
 
 ---
 
-*本文档为 F14 功能规格（What），实施步骤（How）见后续 `specs/f14-extraction/plan.md`。所有里程碑验收以本节 M1-M13 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）；增量提取语义基于 §5.2/§6.2/§6.3。

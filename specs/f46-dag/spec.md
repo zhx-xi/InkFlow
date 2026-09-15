@@ -371,9 +371,9 @@ def _make_gate(from_id: str, to_id: str):
 | MODIFY | `backend/src/inkflow/api/routers/project.py`（或 `domain/services/project_service.py`，实现确认） | agent_relations API 层语义校验 → 422（死引用/自身环/conditional 唯一后继，§2.3） |
 | MODIFY | `backend/src/inkflow/infrastructure/agent/execution_store.py` | 执行记录增加 `relations` 元数据字段（JSON 快照，§5.4） |
 | MODIFY | `backend/src/inkflow/api/routers/agent.py` | `GET /pipelines/executions/{id}` 响应透出 relations（§5.4，F29 既有端点扩展） |
-| MODIFY | `backend/tests/unit/test_agent_service.py`（既有，追加） | `_apply_agent_relations` 契约：空回退/死引用回退/自身环回退/合成环回退/sequential 同层打破并行/data 同层注入/conditional 边标记 + conditional_edges 集合 |
-| CREATE | `backend/tests/unit/test_agent_relations.py`（若既有过厚则独立） | ProjectConfig.agent_relations 存储层校验（结构/自环/重复边/类型）+ API 层校验（死引用/自身环/conditional 唯一后继 422） |
-| MODIFY | `backend/tests/unit/test_langgraph_pipeline.py`（既有，追加） | 条件边构建（add_conditional_edges 两路：gate 通过执行目标 / 不通过跳过）+ 终点被跳过 final_output 回退 + 环检测回归 |
+| MODIFY | `backend/tests/unit/domain/services/test_agent_service.py`（既有，追加） | `_apply_agent_relations` 契约：空回退/死引用回退/自身环回退/合成环回退/sequential 同层打破并行/data 同层注入/conditional 边标记 + conditional_edges 集合 |
+| CREATE | `backend/tests/unit/domain/services/test_agent_relations.py`（若既有过厚则独立） | ProjectConfig.agent_relations 存储层校验（结构/自环/重复边/类型）+ API 层校验（死引用/自身环/conditional 唯一后继 422） |
+| MODIFY | `backend/tests/unit/infrastructure/agent/test_langgraph_pipeline.py`（既有，追加） | 条件边构建（add_conditional_edges 两路：gate 通过执行目标 / 不通过跳过）+ 终点被跳过 final_output 回退 + 环检测回归 |
 | MODIFY | `tests/cli/test_cli_project*.py`（既有，追加） | PATCH config.agent_relations 经 CLI 读写契约（#251 已合入；形态有变则降级 API 层，§4） |
 
 ### 前端
@@ -454,7 +454,7 @@ def _make_gate(from_id: str, to_id: str):
 
 - **M1 Spike 结论（已完成）**: `docs/f46-dag-spike-2026-08-16.md` — deepagents 0.7.5 无 DAG/条件边注入 → 自研 LangGraph 编排层 + `add_conditional_edges` 条件分支实证
 - **M2 Spec 合入**: 本 spec v1.0 合入 worktree 分支（spec 与实现同 PR）
-- **M3 RED 批全 FAIL**: `pytest backend/tests/unit/test_agent_relations.py` + 追加段（test_agent_service/test_langgraph_pipeline）— 收集期 ModuleNotFoundError/ImportError（`AgentRelation`/`_apply_agent_relations` 不存在）+ 422/条件边断言 FAIL
+- **M3 RED 批全 FAIL**: `pytest backend/tests/unit/domain/services/test_agent_relations.py` + 追加段（test_agent_service/test_langgraph_pipeline）— 收集期 ModuleNotFoundError/ImportError（`AgentRelation`/`_apply_agent_relations` 不存在）+ 422/条件边断言 FAIL
 - **M4 线性兼容零回归（#270 验收「兼容线性模式」）**: `pytest backend/tests/unit/` — `agent_relations` 空 = 纯基线，既有 test_agent_service/test_langgraph_pipeline 全绿；supervisor 模式零回归
 - **M5 数据面 + 校验（#270 验收「可配置依赖关系」）**: `test_agent_relations.py` + API — `agent_relations` 存储层校验（类型/自环/重复边）；API 422（死引用/自身环/conditional 唯一后继）；`_apply_agent_relations`（空回退/死引用回退/自身环回退/合成环回退/sequential 同层打破并行/data 同层注入/conditional 标记 + conditional_edges 集合）
 - **M6 执行引擎 DAG（#270 验收「按 DAG 执行，含条件分支语义」）**: `test_langgraph_pipeline.py` + `test_agent_service.py` — `add_conditional_edges` 两路（gate 通过执行目标 / 不通过跳过目标及其下游）；终点跳过 final_output 回退内容角色（writer）；环检测回归；relations 快照回填（`GET /executions/{id}` 透出）

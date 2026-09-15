@@ -16,10 +16,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L18) · [2. 内核进程化（子任务 A，#77）](L58) · [3. Electron 壳（子任务 B，#78）](L200) · [4. 渲染层（子任务 C，#79）](L390)
-> [5. UI 打磨（子任务 D，#98）](L553) · [6. 交互反馈与产品化补全（#99）](L727) · [7. 导航重构：侧边栏 + 设定库项目上下文 + 设置页框架（子任务 E，#105）](L776) · [8. 模型管理页：多 Provider/Model 注册 + 角色绑定 + embedding（子任务 F，#106）](L902)
-> [9. Agent 模板：引用式 + 角色独立温度 + 风险确认（子任务 G，#107）](L1001) · [10. 不在范围内](L1089) · [11. 依赖关系](L1102) · [12. 关键架构决策记录（#77）](L1115)
-> [13. 待澄清问题（≤3）](L1125)
+> 1. 概述 · 2. 内核进程化（子任务 A，#77） · 3. Electron 壳（子任务 B，#78） · 4. 渲染层（子任务 C，#79）
+> 5. UI 打磨（子任务 D，#98） · 6. 交互反馈与产品化补全（#99） · 7. 导航重构：侧边栏 + 设定库项目上下文 + 设置页框架（子任务 E，#105） · 8. 模型管理页：多 Provider/Model 注册 + 角色绑定 + embedding（子任务 F，#106）
+> 9. Agent 模板：引用式 + 角色独立温度 + 风险确认（子任务 G，#107） · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录（#77）
+> 13. 待澄清问题（≤3）
 ---
 
 ## 1. 概述
@@ -191,7 +191,7 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 | MODIFY | `backend/src/inkflow/core/database.py` | connect 事件 PRAGMA（WAL + busy_timeout），**连接工厂统一处** |
 | MODIFY | `tests/cli/test_cli_serve.py` | 重写：mock 目标从 `uvicorn.run` 变为交付逻辑/Server 装配；`--port 0`、`--port-file`、`--token` 断言 |
 | NEW | `tests/api/test_token_auth.py` | 无 token → 401；错误 token → 401；正确 token → 200；/health 豁免（按 Q2） |
-| NEW | `tests/unit/test_database_pragma.py`（或并入既有 database 测试） | 文件库连接 PRAGMA journal_mode=wal + busy_timeout 断言；内存库幂等断言 |
+| NEW | `backend/tests/unit/infrastructure/database/test_database_pragma.py`（或并入既有 database 测试） | 文件库连接 PRAGMA journal_mode=wal + busy_timeout 断言；内存库幂等断言 |
 | MODIFY | `.github/workflows/ci.yml` | 新增 tests/api/test_token_auth.py 自动被 unit job 覆盖（tests/api/ 路径核对）；若新增 `tests/cli/` 文件必须显式追加 `integration-cli-backend` job（Issue #59 教训） |
 
 ### 2.6 测试策略

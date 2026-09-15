@@ -17,10 +17,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L19) · [2. 数据模型](L73) · [3. API 契约](L344) · [4. CLI 命令签名](L490)
-> [5. 设置库 + 双轨加载 + 主进程桥接 + 表单守卫（关键差异节）](L503) · [6. 组织规则](L775) · [7. 边界情况与错误处理](L828) · [8. 文件结构](L851)
-> [9. 测试策略](L917) · [10. 不在范围内](L988) · [11. 依赖关系](L1006) · [12. 关键架构决策记录](L1023)
-> [13. 验收标准](L1039) · [14. 待澄清问题（≤3，评审时确认）](L1085)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 设置库 + 双轨加载 + 主进程桥接 + 表单守卫（关键差异节） · 6. 组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 14. 待澄清问题（≤3，评审时确认）
 ---
 
 ## 1. 概述
@@ -867,9 +867,9 @@ backend/src/inkflow/domain/ports/settings_repository.py                ← CREAT
 backend/src/inkflow/domain/services/settings_service.py                ← CREATE: SettingsService（§2.5）
 backend/src/inkflow/infrastructure/database/models/settings.py         ← CREATE: SettingsORM（§2.3）
 backend/src/inkflow/infrastructure/database/repositories/settings_repo.py ← CREATE: SQLiteSettingsRepository（get_all/set_many）
-backend/tests/unit/test_settings_models.py                             ← CREATE: DTO 枚举/未知字段/默认值（§9）
-backend/tests/unit/test_settings_repo.py                               ← CREATE: repo upsert/编解码（§9）
-backend/tests/unit/test_settings_service.py                            ← CREATE: 默认补齐/部分更新/白名单/脏数据（§9）
+backend/tests/unit/domain/models/test_settings_models.py                             ← CREATE: DTO 枚举/未知字段/默认值（§9）
+backend/tests/unit/infrastructure/database/test_settings_repo.py                               ← CREATE: repo upsert/编解码（§9）
+backend/tests/unit/domain/services/test_settings_service.py                            ← CREATE: 默认补齐/部分更新/白名单/脏数据（§9）
 tests/api/test_settings_api.py                                         ← MODIFY（评审 🟡 修订：文件已存在——F19 #79 llm-keys/llm-test 契约 563 行）：**追加** F32 段（GET/PATCH /settings），严禁覆盖既有契约；沿用文件头模式（TestClient 直连 app + monkeypatch.delenv INKFLOW_SERVER_TOKEN 无 token 直通，§9.1 详）
 ```
 
@@ -1066,7 +1066,7 @@ RED 批 1（后端契约）：test_settings_models → test_settings_repo → te
 
 ```powershell
 # 后端单元 + API（从仓库根；unit 与顶层 tests 分开跑——#61 教训）
-uv run --project backend pytest backend/tests/unit/test_settings_models.py backend/tests/unit/test_settings_repo.py backend/tests/unit/test_settings_service.py -q
+uv run --project backend pytest backend/tests/unit/domain/models/test_settings_models.py backend/tests/unit/infrastructure/database/test_settings_repo.py backend/tests/unit/domain/services/test_settings_service.py -q
 uv run --project backend pytest tests/api/test_settings_api.py -q
 # 全仓覆盖率复验（ADR-027：行 98.5 / 分支 95.0，ci_cd/check_coverage.py 断言）
 uv run --project backend pytest backend/tests/unit tests/api tests/integration tests/cli --cov=inkflow --cov-branch --cov-report=term-missing -q

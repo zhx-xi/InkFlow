@@ -246,8 +246,8 @@ write.detail.unknown        // 未知
 | `backend/src/inkflow/infrastructure/agent/supervisor_pipeline.py` | MODIFY：`_decide_next_action` 收集 decision trace（PR 2） |
 | `backend/src/inkflow/infrastructure/database/execution_store.py` | MODIFY：`update_stages` 接受 trace + 落库（PR 2） |
 | `backend/src/inkflow/domain/services/agent_service.py` | MODIFY：`_run_pipeline` 透传 trace 到 `update_stages`；`get_status` 返回 trace（PR 2） |
-| `backend/tests/unit/test_agent_trace.py` | NEW（PR 2 RED） |
-| `backend/tests/unit/test_chat_pipeline.py` | NEW（PR 1 RED） |
+| `backend/tests/unit/infrastructure/agent/test_agent_trace.py` | NEW（PR 2 RED） |
+| `backend/tests/unit/infrastructure/agent/test_chat_pipeline.py` | NEW（PR 1 RED） |
 | `tests/api/test_pipeline_execute_chat.py` | NEW（PR 1 RED） |
 
 ### 8.2 前端
@@ -336,7 +336,7 @@ write.detail.unknown        // 未知
 ### 14.5 测试策略（RED 契约）
 
 **后端（pytest）**：
-- `tests/unit/test_chat_agent_stream.py`（NEW，RED）：`get_chat_agent_service` 装配全量工具（5 只读 + save_draft，mock service）；SSE 帧协议三形态（delta / tool_call+tool_result / done）；错误帧（LLMRequestError → error）；astream_events 事件流 → 帧映射（on_chat_model_stream → delta，on_tool_start → tool_call，on_tool_end → tool_result）；prompt 空白 422。
+- `backend/tests/unit/api/routers/test_chat_agent_stream.py`（NEW，RED）：`get_chat_agent_service` 装配全量工具（5 只读 + save_draft，mock service）；SSE 帧协议三形态（delta / tool_call+tool_result / done）；错误帧（LLMRequestError → error）；astream_events 事件流 → 帧映射（on_chat_model_stream → delta，on_tool_start → tool_call，on_tool_end → tool_result）；prompt 空白 422。
 - `tests/api/test_chat_agent_api.py`（NEW，RED）：POST `/api/v1/chat/agent/stream` 冒烟（mock harness，帧类型表）。
 
 **前端（Vitest + RTL）**：
@@ -353,7 +353,7 @@ write.detail.unknown        // 未知
 | `backend/src/inkflow/infrastructure/agent/chat_agent_service.py` | NEW：`ChatAgentService`（astream_events 事件→帧映射，infrastructure 层，可 import deepagents；ADR-015 隔离） |
 | `backend/src/inkflow/infrastructure/agent/pipeline_templates.py` | MODIFY：新增 `_CHAT_SYSTEM_AGENT_PROMPT` 常量 |
 | `backend/src/inkflow/api/deps.py` | MODIFY：新增 `get_chat_agent_service`（全量工具装配） |
-| `backend/tests/unit/test_chat_agent_stream.py` | NEW（RED） |
+| `backend/tests/unit/api/routers/test_chat_agent_stream.py` | NEW（RED） |
 | `tests/api/test_chat_agent_api.py` | NEW（RED） |
 
 **前端**：
@@ -555,7 +555,7 @@ sessions.chat.titleEmpty    // 未命名会话
 ### 17.6 测试策略（RED 契约）
 
 **后端（pytest）**：
-- `tests/unit/test_conversation_title.py`（NEW）：`Conversation` 领域模型 `title` 字段默认空 / 上限 200 校验（超 200 → ValidationError）；`ConversationCreate` 带/不带 title；`ensure_conversation_title_column` 幂等迁移三形态（旧库补列/新库 no-op/无表 no-op）。
+- `backend/tests/unit/infrastructure/database/test_conversation_title.py`（NEW）：`Conversation` 领域模型 `title` 字段默认空 / 上限 200 校验（超 200 → ValidationError）；`ConversationCreate` 带/不带 title；`ensure_conversation_title_column` 幂等迁移三形态（旧库补列/新库 no-op/无表 no-op）。
 - `tests/api/test_chat_conversation.py`（NEW 或 MODIFY）：`POST /chat/conversations` 带 title → 201 返回含 title；`PATCH /chat/conversations/{id}` 改 title（成功/404/超 200 → 422）；`GET /chat/conversations` 返回 title；`_conversation_to_json` 序列化含 title。
 
 **前端（Vitest + RTL）**：

@@ -562,7 +562,7 @@ class RelationExtractionService:
 
 #### 5.5.5 运行记录（复用 F14 extraction_runs，占位节拍板项定稿）
 
-- **不建自有表**：复用 `extraction_runs`——`ExtractionType` 新增第 7 值 `KNOWLEDGE_RELATION = "knowledge_relation"`（`backend/tests/unit/test_extraction_models.py` 既有 `len(ExtractionType) == 6` 断言**同步改 7**，RED 第一批）
+- **不建自有表**：复用 `extraction_runs`——`ExtractionType` 新增第 7 值 `KNOWLEDGE_RELATION = "knowledge_relation"`（`backend/tests/unit/domain/models/test_extraction_models.py` 既有 `len(ExtractionType) == 6` 断言**同步改 7**，RED 第一批）
 - run 记录字段口径：`type=knowledge_relation`；`source_key=f"kg:{method}"`（rule/ai/both）；`status` success（created>0 或全幂等跳过）/ skipped（无章节/未启用）/ error（LLM 失败/未配模型走 error + error 文案）；手动触发与定时触发**同表同口径**（触发源不区分——Q3=A 拍板运行记录不做 GUI 展示面，#496 统一日志页承接）
 - 定时触发每项目一条 run；手动触发同（project + method 一条）
 
@@ -594,9 +594,9 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 
 | 测试文件 | 层 | 覆盖 | CI 登记 |
 |---------|-----|------|---------|
-| `backend/tests/unit/test_relation_extraction_service.py` | unit | 规则三规则集逐条 + 跨项目/已删跳过 + AI mock LLM 解析/重试 + 未配模型 LLMNotConfiguredError + 名称解析失败 warnings + 幂等跳过 + both 降级 | tests/unit/ glob 自动收集（零登记） |
-| `backend/tests/unit/test_kg_extract_scheduler.py` | unit | run_cycle：disabled 跳过/逐项目执行/单项目异常不中断 + 每周期重读设置 + startup 补跑/首启立跑 + stop 幂等 | 同上 |
-| `backend/tests/unit/test_extraction_models.py`（MODIFY） | unit | `len(ExtractionType) == 7` + KNOWLEDGE_RELATION 值断言 | 既有文件零登记 |
+| `backend/tests/unit/domain/services/test_relation_extraction_service.py` | unit | 规则三规则集逐条 + 跨项目/已删跳过 + AI mock LLM 解析/重试 + 未配模型 LLMNotConfiguredError + 名称解析失败 warnings + 幂等跳过 + both 降级 | tests/unit/ glob 自动收集（零登记） |
+| `backend/tests/unit/infrastructure/scheduler/test_kg_extract_scheduler.py` | unit | run_cycle：disabled 跳过/逐项目执行/单项目异常不中断 + 每周期重读设置 + startup 补跑/首启立跑 + stop 幂等 | 同上 |
+| `backend/tests/unit/domain/models/test_extraction_models.py`（MODIFY） | unit | `len(ExtractionType) == 7` + KNOWLEDGE_RELATION 值断言 | 既有文件零登记 |
 | `tests/api/test_knowledge_extract_api.py` | api | extract 端点契约（200/404/422 未配模型/422 非法 method）+ status 端点 | tests/api/ glob 自动收集（零登记） |
 | `tests/cli/test_cli_knowledge_extract.py` | cli | extract 命令信封/退出码/--method 透传 | ⚠️ **显式追加 ci.yml `integration-cli-backend` job 文件列表**（Windows pytest 不展开 glob，§8 CI 盲区防范同款） |
 | `frontend/.../settings-kg-extract.test.tsx` | 前端 vitest | 开关/频率/方式渲染 + AI 选项未配模型 disabled+提示 + 立即运行按钮（vi.mock API，同 library-p*.test.tsx 模式） | renderer 目录通配自动收集（实现期核对） |
@@ -671,9 +671,9 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 | `backend/src/inkflow/api/deps.py` | **MODIFY** | 新增 `get_knowledge_graph_service` 装配 |
 | `backend/src/inkflow/cli/commands/knowledge_graph.py` | **CREATE** | `inkflow knowledge` 组（§4） |
 | `backend/src/inkflow/cli/app.py` | **MODIFY** | 注册 knowledge 命令组 |
-| `backend/tests/unit/test_knowledge_relation_repo.py` | **CREATE** | 仓储层（CRUD/唯一约束/过滤/真删/delete_by_entity） |
-| `backend/tests/unit/test_knowledge_graph_service.py` | **CREATE** | 服务层（校验链/聚合合并/去重/清理回调/孤立边防御） |
-| `backend/tests/unit/test_knowledge_graph_api.py` | **CREATE** | API 契约（CRUD/错误映射/图谱聚合响应形状） |
+| `backend/tests/unit/infrastructure/database/test_knowledge_relation_repo.py` | **CREATE** | 仓储层（CRUD/唯一约束/过滤/真删/delete_by_entity） |
+| `backend/tests/unit/domain/services/test_knowledge_graph_service.py` | **CREATE** | 服务层（校验链/聚合合并/去重/清理回调/孤立边防御） |
+| `backend/tests/unit/api/routers/test_knowledge_graph_api.py` | **CREATE** | API 契约（CRUD/错误映射/图谱聚合响应形状） |
 | `tests/cli/test_cli_knowledge_graph.py` | **CREATE** | CLI 命令（信封/退出码/graph 输出） |
 | `frontend/packages/renderer/src/components/knowledge-graph/KnowledgeGraphCanvas.tsx` | **CREATE** | 图谱画布（@xyflow/react 节点/边渲染 + 拖拽/缩放/点击交互） |
 | `frontend/packages/renderer/src/components/knowledge-graph/RelationForm.tsx` | **CREATE** | 新建/编辑关系表单（EntityPicker 起点/终点搜索选择） |
@@ -791,9 +791,9 @@ F48 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/test_knowledge_relation_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；knowledge_relations 无 is_deleted 列 |
-| M2 | 服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法） | `pytest backend/tests/unit/test_knowledge_graph_service.py -v` 全绿（Q1=A 定稿：character→character 合法分支 + 双轨聚合去重用例） |
-| M3 | API 契约（CRUD + 图谱聚合 + 错误映射） | `pytest backend/tests/unit/test_knowledge_graph_api.py -v` 全绿 |
+| M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/infrastructure/database/test_knowledge_relation_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；knowledge_relations 无 is_deleted 列 |
+| M2 | 服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法） | `pytest backend/tests/unit/domain/services/test_knowledge_graph_service.py -v` 全绿（Q1=A 定稿：character→character 合法分支 + 双轨聚合去重用例） |
+| M3 | API 契约（CRUD + 图谱聚合 + 错误映射） | `pytest backend/tests/unit/api/routers/test_knowledge_graph_api.py -v` 全绿 |
 | M4 | 图谱聚合合并 + 去重 + 孤立边防御 + 清理回调 | service 聚合测试全绿（合并 character_relations/去重/孤立边跳过/cleanup_for_entity 回调） |
 | M5 | CLI knowledge 组 | `pytest ../tests/cli/test_cli_knowledge_graph.py -v` 全绿（**且已追加 ci.yml integration-cli-backend job**） |
 | M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest library-kg.test.tsx 全绿（@xyflow/react 渲染，Q2=A 定稿）；手工验证：切到知识图谱 tab → 画布渲染节点/边 → 拖拽/缩放 → 点击边详情 → 新建关系 → 删除 |

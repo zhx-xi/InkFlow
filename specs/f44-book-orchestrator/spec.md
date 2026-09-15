@@ -541,7 +541,7 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 
 **422 语义升级（承接 #860）**：#860 验「有没有 key」；#860 之后 #929 实证还须验「装配的是不是可用 chat 模型」与「模型从哪来」——预检 + per-delegate 双点使凭据错误在入口可见（progress_reason 通道沿用 §5.5，运行期异常兜底不变）。
 
-**测试锚**：`tests/unit/api/routers/test_book_run_929.py`（R1-R4 + G1：装配期零解析 / 委托收到 project_model kw / 真实 getter 透传项目模型 / 预检先于 prepare）。
+**测试锚**：`backend/tests/unit/api/routers/test_book_run_929.py`（R1-R4 + G1：装配期零解析 / 委托收到 project_model kw / 真实 getter 透传项目模型 / 预检先于 prepare）。
 
 ## 6. 组织规则
 
@@ -607,9 +607,9 @@ frontend/packages/renderer/src/components/BookRunPanel.tsx      # 运行状态/�
 frontend/packages/renderer/src/components/ExecutionTraceRow.tsx # 子 agent 展开行 + 观察流三层密度切换（trace/density，阶段 1-4）
 frontend/packages/renderer/src/pages/book.tsx           # 新 book 页或并入写作页域（落点实现会话定，阶段 1）
 frontend/packages/renderer/src/components/__tests__/book*.test.tsx  # 前端组件测试（Vitest，§9.1 前端层）
-backend/tests/unit/test_writing_plan_model.py           # 模型/上限校验单测
-backend/tests/unit/test_book_service.py                 # 服务层（安全阀/进度/上限）
-backend/tests/unit/test_planner_service.py              # 访谈循环（v1.2：LLM 动态提问 mock——问题生成/确定项提取/冲突回问/总体确认/失败降级）
+backend/tests/unit/domain/models/test_writing_plan_model.py           # 模型/上限校验单测
+backend/tests/unit/domain/services/test_book_service.py                 # 服务层（安全阀/进度/上限）
+backend/tests/unit/domain/services/test_planner_service.py              # 访谈循环（v1.2：LLM 动态提问 mock——问题生成/确定项提取/冲突回问/总体确认/失败降级）
 tests/integration/test_book_repository.py               # 仓储集成
 tests/api/test_books_api.py                             # API 契约（新增文件须登记 ci.yml integration 链）
 tests/cli/test_book_cmd.py                              # CLI 契约（登记 ci.yml integration-cli-backend）
@@ -640,7 +640,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 
 | 层 | 文件 | 覆盖 | 命令 |
 |----|------|------|------|
-| 单元 | `backend/tests/unit/test_writing_plan_model.py` / `test_book_service.py` / `test_planner_service.py` | 模型校验、上限校验（至少一道护栏）、进度状态机、安全阀判定（纯逻辑，mock 仓储）、访谈循环（mock LLM，v1.2：动态提问/确定项提取/冲突回问/总体确认/失败降级） | `pytest tests/unit/` |
+| 单元 | `backend/tests/unit/domain/models/test_writing_plan_model.py` / `test_book_service.py` / `test_planner_service.py` | 模型校验、上限校验（至少一道护栏）、进度状态机、安全阀判定（纯逻辑，mock 仓储）、访谈循环（mock LLM，v1.2：动态提问/确定项提取/冲突回问/总体确认/失败降级） | `pytest tests/unit/` |
 | 集成 | `tests/integration/test_book_repository.py` | WritingPlan/PlannerSession 仓储（in-memory SQLite）、thread_id 落库、confirmed_items/conflicts JSON 列读写（v1.2） | 顶层集成 job |
 | API | `tests/api/test_books_api.py` | 端点契约：planner 启谈/回复/confirm/auto（LLM mock）、runs 启动/状态、confirm、intervene、summary、异常映射（404/409/422） | integration-agent-backend 链登记 |
 | CLI | `tests/cli/test_book_cmd.py` | `inkflow book` 命令组（CliRunner + 临时 SQLite，isolated_db 双 patch 模式） | integration-cli-backend 链登记 |

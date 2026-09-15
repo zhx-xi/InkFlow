@@ -464,7 +464,7 @@ reparent:  1) 直接子地点集合 = list(parent_id == id)
 | `backend/src/inkflow/api/routers/world_settings.py` | **MODIFY** | create/update body 加 parent_id；新增 ancestors/descendants 端点；delete 加 cascade/reparent_to 参数与 422 校验 |
 | `backend/src/inkflow/cli/commands/world.py` | **MODIFY** | 新增 `ancestors`/`descendants` 子命令；create/update 加 `--parent`；delete 加 `--cascade`/`--reparent-to` |
 | `backend/tests/unit/test_world_*.py` | **MODIFY** | 既有测试补 parent_id 字段 + 新用例（见 §9） |
-| `backend/tests/unit/test_world_location_tree.py` | **CREATE** | 地点树专项测试（CTE/循环/删除语义/过滤/迁移） |
+| `backend/tests/unit/core/test_world_location_tree.py` | **CREATE** | 地点树专项测试（CTE/循环/删除语义/过滤/迁移） |
 | `tests/cli/test_cli_world.py` | **MODIFY** | ancestors/descendants 命令 + --parent + delete 参数用例 |
 
 > **CI 盲区防范**：`tests/cli/test_cli_world.py` 已在 ci.yml `integration-cli-backend` 文件列表（L411 实测）——新增命令用例在同文件内追加，**无需改 ci.yml**；新增单元测试落在 `backend/tests/unit/` 自动覆盖。
@@ -560,11 +560,11 @@ F35 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 数据模型 + 迁移（列/索引/幂等） | `pytest backend/tests/unit/test_world_location_tree.py -k migration` 全绿；全新库 create_all 含列；旧库升级幂等 |
+| M1 | 数据模型 + 迁移（列/索引/幂等） | `pytest backend/tests/unit/core/test_world_location_tree.py -k migration` 全绿；全新库 create_all 含列；旧库升级幂等 |
 | M2 | 递归 CTE（ancestors/descendants） | repo 测试全绿（3 层树正确序）；API ancestors/descendants 契约测试全绿 |
 | M3 | 校验链（父不存在/跨项目/循环/同级同名/顶层同名/置顶） | service + API 测试全绿（负例命中目标校验分支） |
 | M4 | **删除语义（无子软删/有子 422/级联真删/reparent 平移/目标校验）** | service 测试全绿（删除矩阵断言）；API DELETE 参数契约测试全绿 |
-| M5 | **列表 parent_id 过滤（Q3=A）** | `pytest backend/tests/unit/test_world_location_tree.py -k 'filter'` 全绿（缺省/直接子级/top_level_only）；API `GET /world-settings?parent_id=` 契约测试全绿（向后兼容回归） |
+| M5 | **列表 parent_id 过滤（Q3=A）** | `pytest backend/tests/unit/core/test_world_location_tree.py -k 'filter'` 全绿（缺省/直接子级/top_level_only）；API `GET /world-settings?parent_id=` 契约测试全绿（向后兼容回归） |
 | M6 | CLI（ancestors/descendants/--parent/delete 参数） | `pytest ../tests/cli/test_cli_world.py -v` 全绿 |
 | M7 | 手工验证 | 创建 3 层树 → ancestors 面包屑正确 → 无参删父（422）→ cascade 真删（子树消失）→ 重建后 reparent（子改挂）→ 循环挂接被拒（422） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过 |
@@ -583,7 +583,6 @@ F35 被依赖:
 
 ---
 
-*本文档为 F35 功能规格（What），实施步骤（How）见后续 `specs/f35-world-tree/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。

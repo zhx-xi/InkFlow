@@ -249,7 +249,7 @@ score = count × 0.5^(Δt_active / half_life)
 - `backend/src/inkflow/api/routers/memory.py`（DELETE /memory/summaries）
 - `backend/src/inkflow/cli/commands/memory_cmd.py`（summary --remove）
 - `backend/src/inkflow/core/database.py`（若加列 → ensure_*_column 幂等迁移，见 §2.1）
-- `backend/tests/unit/test_memory_service.py`（排序/过滤/衰减断言）
+- `backend/tests/unit/domain/services/test_memory_service.py`（排序/过滤/衰减断言）
 - `frontend/packages/renderer/src/api/memory.ts`（summary remove + 字段）
 - `frontend/packages/renderer/src/pages/memory.tsx`（删除总结按钮 + 被覆盖/降权状态 + 查看/恢复入口）
 - `frontend/packages/renderer/src/pages/project-settings.tsx`（衰减设置区块：开关 + τ 输入，i18n）

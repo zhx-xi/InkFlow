@@ -201,11 +201,11 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 | CREATE | `backend/src/inkflow/infrastructure/agent/deepagents/profiles.py` | HarnessProfile 注册表（key 格式 `openai:<model>`） |
 | MODIFY | `backend/src/inkflow/cli/commands/agent_cmd.py` | 新增 `tools list` 子命令（本地枚举，豁免 HTTP——F38 豁免清单登记） |
 | MODIFY | `backend/pyproject.toml` | 新增 deepagents==0.7.5 + langchain>=1.3.14（依赖论证见 §11） |
-| CREATE | `backend/tests/unit/test_reader_tools.py` | 工具包装 service 的 mock 测试（**unit 目录扁平无 agent/ 子目录，源码核实 2026-08-10**；unit-test-backend 自动覆盖） |
-| CREATE | `backend/tests/unit/test_deepagents_harness.py` | 装配/注册/excluded_tools/前缀剥离契约测试 |
+| CREATE | `backend/tests/unit/infrastructure/agent/test_reader_tools.py` | 工具包装 service 的 mock 测试（**unit 目录扁平无 agent/ 子目录，源码核实 2026-08-10**；unit-test-backend 自动覆盖） |
+| CREATE | `backend/tests/unit/infrastructure/agent/test_deepagents_harness.py` | 装配/注册/excluded_tools/前缀剥离契约测试 |
 | CREATE | `tests/cli/test_cli_agent_tools.py` | CLI tools list 测试（**须显式加入 ci.yml integration-cli-backend job**） |
 
-> **v1.1 删除文件**（v1.0 清单）：`domain/ports/llm_client.py` MODIFY（chat_with_tools 取消）、`infrastructure/llm/langchain_client.py` MODIFY（bind_tools 取消）、`tests/unit/ports/test_llm_client_tools.py`、`tests/unit/infrastructure/test_langchain_tools.py`（对应端口/适配器测试取消，能力并入 harness 测试）。
+> **v1.1 删除文件**（v1.0 清单）：`domain/ports/llm_client.py` MODIFY（chat_with_tools 取消）、`infrastructure/llm/langchain_client.py` MODIFY（bind_tools 取消）、v1.0 计划中的两个工具测试（`ports`/`infrastructure` 目录各一）**取消创建**（对应端口/适配器测试随能力收敛取消，覆盖并入 `backend/tests/unit/infrastructure/agent/test_deepagents_harness.py`）。
 
 ---
 
@@ -276,8 +276,8 @@ def build_deep_agent(*, model: str, api_key: str, base_url: str,
 
 ## 13. 验收标准
 
-- **M1 集成层契约全绿**: `pytest tests/unit/test_deepagents_harness.py` — 装配（ChatOpenAI 直传 mock）+ HarnessProfile key `openai:<model>` + excluded_tools + 模型名前缀剥离；RED（ModuleNotFoundError）→ GREEN 全过
-- **M2 工具全绿**: `pytest tests/unit/test_reader_tools.py` — 5 工具正反例（audit_chapter 包装 F34、count_words 纯函数）
+- **M1 集成层契约全绿**: `pytest backend/tests/unit/infrastructure/agent/test_deepagents_harness.py` — 装配（ChatOpenAI 直传 mock）+ HarnessProfile key `openai:<model>` + excluded_tools + 模型名前缀剥离；RED（ModuleNotFoundError）→ GREEN 全过
+- **M2 工具全绿**: `pytest backend/tests/unit/infrastructure/agent/test_reader_tools.py` — 5 工具正反例（audit_chapter 包装 F34、count_words 纯函数）
 - **M3 CLI 全绿**: `pytest tests/cli/test_cli_agent_tools.py`（**已登记 ci.yml integration-cli-backend**）— `inkflow agent tools list --json` 输出 5 工具信封 + ensure_kernel 未被调用断言
 - **M4 回归**: 全仓测试零回归（unit + tests/cli 分命令跑），覆盖率 ≥60%（ADR-027 全量门禁）
 - **M5 真实模型冒烟（手工）**: 真实 LLM（如有 key）经 `build_deep_agent` 装配后单次 invoke 返回正确 tool_calls（复用 Spike 0 脚本模式；覆盖剥离前缀后的真实调用——Spike 遗留点 1）
@@ -532,9 +532,9 @@ ChatPanel 工具调用区域新增**分段控件**（非下拉、非闪电按钮
 
 ### 6.6 验收标准（阶段②）
 
-- **M5** 删除工具契约测试（7 工具正例/拒绝/异常 → JSON 信封）——`pytest tests/unit/test_delete_tools.py`
-- **M6** HITL 中断 + resume 测试（ask_once → interrupt → approve → 删除成功；reject → 不删除）——`pytest tests/unit/test_delete_hitl.py`
-- **M7** 装配守卫测试（manual 不注入删除工具；auto 注入且不 interrupt）——`pytest tests/unit/test_delete_assembly.py`
+- **M5** 删除工具契约测试（7 工具正例/拒绝/异常 → JSON 信封）——`pytest backend/tests/unit/infrastructure/agent/test_delete_tools.py`
+- **M6** HITL 中断 + resume 测试（ask_once → interrupt → approve → 删除成功；reject → 不删除）——`pytest backend/tests/unit/infrastructure/agent/test_delete_hitl.py`
+- **M7** 装配守卫测试（manual 不注入删除工具；auto 注入且不 interrupt）——`pytest backend/tests/unit/api/deps/test_delete_assembly.py`
 - **M8** 前端 vitest（分段控件三态切换 + PATCH + HITL 弹窗 + resume 调用）——`vitest ChatPanel.delete-auth.test.tsx`
 - **M9** 回归零失败
 
@@ -566,7 +566,7 @@ ChatPanel 工具调用区域新增**分段控件**（非下拉、非闪电按钮
 
 ### 7.4 验收标准（阶段③）
 
-- **M10** agent_run/agent_call 契约测试——`pytest tests/unit/test_agent_chain_tools.py`
+- **M10** agent_run/agent_call 契约测试——`pytest backend/tests/unit/infrastructure/agent/test_agent_chain_tools.py`
 - **M11** 装配注入测试——mock 断言 build_agent_chain_tools 被调
 - **M12** 回归零失败
 

@@ -439,9 +439,9 @@ F20 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 18 参数模型 schema 契约 | `pytest tests/unit/test_mcp_schemas.py -v` 全绿（action 枚举/字段/JSON Schema） |
-| M2 | 工具工厂端点映射 | `pytest tests/unit/test_mcp_tools.py -v` 全绿（mock InkFlowHTTPClient：method/path/body 透传 + 错误映射） |
-| M3 | server 装配 + tools/list 18 项 | `pytest tests/unit/test_mcp_server.py -v` 全绿（tools/list 恰好 18 项 + import 面收敛断言） |
+| M1 | 18 参数模型 schema 契约 | `pytest backend/tests/unit/mcp/test_mcp_schemas.py -v` 全绿（action 枚举/字段/JSON Schema） |
+| M2 | 工具工厂端点映射 | `pytest backend/tests/unit/mcp/test_mcp_tools.py -v` 全绿（mock InkFlowHTTPClient：method/path/body 透传 + 错误映射） |
+| M3 | server 装配 + tools/list 18 项 | `pytest backend/tests/unit/mcp/test_mcp_server.py -v` 全绿（tools/list 恰好 18 项 + import 面收敛断言） |
 | M4 | stdio 协议 + 冷启动链路 | `pytest tests/cli/test_cli_mcp.py -v` 全绿（真实内核轨，**已登记 ci.yml integration-cli-backend**）——initialize → tools/list → tools/call 端到端 + 无内核自动拉起 |
 | M5 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check` + mypy 通过 |
 
@@ -490,7 +490,6 @@ F20 被依赖:
 
 ---
 
-*本文档为 F20 功能规格（What），实施步骤（How）见后续 `specs/f20-mcp/plan.md`。所有里程碑验收以本节 M1-M6 为准。*
 
 
 ---
@@ -652,7 +651,7 @@ F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（
 | CREATE | `backend/src/inkflow/mcp/info.py` | `locate_mcp_client()` + `build_mcp_info()`（含 config_template 构造） |
 | CREATE | `backend/src/inkflow/api/routers/mcp.py` | `GET /api/v1/mcp/info` router |
 | MODIFY | `backend/src/inkflow/api/app.py` | import + `include_router(mcp.router)` |
-| CREATE | `backend/tests/unit/test_mcp_info_api.py` | RED 契约：端点形状 + version 动态 + config_template 一致性 + locate 函数 |
+| CREATE | `backend/tests/unit/api/routers/test_mcp_info_api.py` | RED 契约：端点形状 + version 动态 + config_template 一致性 + locate 函数 |
 | CREATE | `frontend/packages/renderer/src/components/McpSettingsCard.tsx` | GUI「MCP 接入」面板（方案 A） |
 | MODIFY | `frontend/packages/renderer/src/pages/settings.tsx` | GeneralPanel 内挂载 `<McpSettingsCard />` |
 | MODIFY | `frontend/packages/renderer/src/api/client.ts` | 新增 `fetchMcpInfo()` 类型化调用 |
@@ -668,7 +667,7 @@ F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（
 
 | 层次 | 覆盖 | 命令 |
 |------|------|------|
-| backend/unit | `/api/v1/mcp/info` 端点形状 + version 动态 + config_template 三宿主键 + locate_mcp_client 三形态 | `cd backend; uv run pytest tests/unit/test_mcp_info_api.py` |
+| backend/unit | `/api/v1/mcp/info` 端点形状 + version 动态 + config_template 三宿主键 + locate_mcp_client 三形态 | `cd backend; uv run pytest backend/tests/unit/api/routers/test_mcp_info_api.py` |
 | frontend/vitest | McpSettingsCard 展示路径 + 一键复制（clipboard mock） | `pnpm vitest run McpSettingsCard` |
 
 覆盖率：本模块为只读端点 + 展示面板，无新分支逻辑；端点形状与 resolve 逻辑为断言主体。全局 ≥60% 达标（新增逻辑面窄，不拉低）。
@@ -705,7 +704,7 @@ F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（
 
 | # | 里程碑 | 验证 |
 |---|--------|------|
-| M1 | RED 契约 FAIL 确认 | 后端 `uv run pytest tests/unit/test_mcp_info_api.py` 全 FAIL（ModuleNotFoundError / 断言失败）；前端 `pnpm vitest run McpSettingsCard` FAIL（组件不存在 collection error） |
+| M1 | RED 契约 FAIL 确认 | 后端 `uv run pytest backend/tests/unit/api/routers/test_mcp_info_api.py` 全 FAIL（ModuleNotFoundError / 断言失败）；前端 `pnpm vitest run McpSettingsCard` FAIL（组件不存在 collection error） |
 | M2 | GREEN | 后端 `cd backend; uv run pytest tests/unit/ ../tests/` + ruff + mypy 全绿；前端 `pnpm vitest run && pnpm tsc --noEmit` 全绿 |
 | M3 | PR merged + CLOSED | `gh pr merge --squash --delete-branch`；#563 CLOSED；#551 CLOSED（收尾）；`git worktree remove` |
 

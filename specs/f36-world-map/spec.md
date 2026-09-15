@@ -545,10 +545,10 @@ children:    repo.children(map_id)（单 SQL JOIN + 地点软删过滤，§5.2�
 | `backend/src/inkflow/api/deps.py` | **MODIFY** | 新增 `get_map_service` 装配 |
 | `backend/src/inkflow/cli/commands/map.py` | **CREATE** | `inkflow map` 组（§4） |
 | `backend/src/inkflow/cli/app.py` | **MODIFY** | 注册 map 命令组 |
-| `backend/tests/unit/test_map_repo.py` | **CREATE** | 仓储层（CRUD/children JOIN/唯一约束/真删） |
-| `backend/tests/unit/test_map_service.py` | **CREATE** | 服务层（校验链/真删级联/reparent/文件生命周期编排/项目硬删钩子） |
-| `backend/tests/unit/test_map_asset_store.py` | **CREATE** | 资产层（save/delete/copy/魔数/大小/路径穿越） |
-| `backend/tests/unit/test_map_api.py` | **CREATE** | API 契约（multipart 上传/下载/删除参数/错误映射） |
+| `backend/tests/unit/infrastructure/database/test_map_repo.py` | **CREATE** | 仓储层（CRUD/children JOIN/唯一约束/真删） |
+| `backend/tests/unit/domain/services/test_map_service.py` | **CREATE** | 服务层（校验链/真删级联/reparent/文件生命周期编排/项目硬删钩子） |
+| `backend/tests/unit/infrastructure/assets/test_map_asset_store.py` | **CREATE** | 资产层（save/delete/copy/魔数/大小/路径穿越） |
+| `backend/tests/unit/api/routers/test_map_api.py` | **CREATE** | API 契约（multipart 上传/下载/删除参数/错误映射） |
 | `tests/cli/test_cli_map.py` | **CREATE** | CLI 命令（信封/退出码/图片上传/删除参数） |
 
 | `backend/src/inkflow/domain/services/world_service.py` | **MODIFY** | delete_setting 加 location_cleanup 可选回调（cascade/force 硬删分支调用，D10=b 接线；v1.2 补） |
@@ -656,10 +656,10 @@ F36 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/test_map_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；maps 无 is_deleted 列 |
-| M2 | 资产存储（save/delete/copy/resolve/校验） | `pytest backend/tests/unit/test_map_asset_store.py -v` 全绿（魔数/大小/路径穿越/copy） |
-| M3 | 服务编排（校验链/真删矩阵/reparent/文件生命周期/项目硬删钩子） | `pytest backend/tests/unit/test_map_service.py -v` 全绿（v1.3 #368：create_map parent_map_id 校验链——父图不存在/跨项目 422 MapParentMapNotFoundError；层级深度不限；v1.4 #378：update_map 改挂 parent_map_id——成功/改根图/父图不存在 422/自身或子孙循环 422 MapParentCycleError） |
-| M4 | API 契约（multipart 上传/下载/换图/删除参数/错误映射） | `pytest backend/tests/unit/test_map_api.py -v` 全绿（v1.3 #368：POST parent_map_id Form 透传 + 422 映射；v1.4 #378：PATCH parent_map_id body 透传 + 循环 422 映射） |
+| M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/infrastructure/database/test_map_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；maps 无 is_deleted 列 |
+| M2 | 资产存储（save/delete/copy/resolve/校验） | `pytest backend/tests/unit/infrastructure/assets/test_map_asset_store.py -v` 全绿（魔数/大小/路径穿越/copy） |
+| M3 | 服务编排（校验链/真删矩阵/reparent/文件生命周期/项目硬删钩子） | `pytest backend/tests/unit/domain/services/test_map_service.py -v` 全绿（v1.3 #368：create_map parent_map_id 校验链——父图不存在/跨项目 422 MapParentMapNotFoundError；层级深度不限；v1.4 #378：update_map 改挂 parent_map_id——成功/改根图/父图不存在 422/自身或子孙循环 422 MapParentCycleError） |
+| M4 | API 契约（multipart 上传/下载/换图/删除参数/错误映射） | `pytest backend/tests/unit/api/routers/test_map_api.py -v` 全绿（v1.3 #368：POST parent_map_id Form 透传 + 422 映射；v1.4 #378：PATCH parent_map_id body 透传 + 循环 422 映射） |
 | M5 | children drill-down + 面包屑导航链路（含地点软删过滤） | children JOIN 测试全绿（含 B 软删后 C 消失用例）；手工验证：图 A pin→B，B 挂图 C → children(A)=[C]；B 归档 → children(A)=[] |
 | M6 | CLI map 组 | `pytest ../tests/cli/test_cli_map.py -v` 全绿（**且已追加 ci.yml integration-cli-backend job**） |
 | M7 | 手工验证 | 上传图片建图 → pin 关联地点 → 换图 → 有子图删除（422）→ cascade 真删（文件消失）→ 重建后 reparent（子图改挂 + 目标补 pin）→ 硬删地点 pin 转纯注释 |
@@ -679,7 +679,6 @@ F36 被依赖:
 
 ---
 
-*本文档为 F36 功能规格（What），实施步骤（How）见后续 `specs/f36-world-map/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。

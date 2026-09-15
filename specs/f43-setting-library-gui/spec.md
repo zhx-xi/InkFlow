@@ -1018,11 +1018,11 @@ P5 追加（删除后引用残留清理）：
 | MODIFY | `backend/src/inkflow/domain/models/copy.py` | WorldCopyRequest 加 self_only（2.5） |
 | MODIFY | `backend/src/inkflow/domain/services/copy_service.py` | copy 加 self_only 参数 + 复制集合分支（5.6） |
 | MODIFY | `backend/src/inkflow/api/routers/world_settings.py` | copy 端点透传 self_only + 互斥 422（2.5/3.3） |
-| MODIFY | `backend/tests/unit/test_character_models.py` | extra 字段契约 |
-| MODIFY | `backend/tests/unit/test_character_api.py` | 创建/更新带 extra 透传契约 |
-| MODIFY | `backend/tests/unit/test_character_service.py` | create_character extra 参数契约 |
-| MODIFY | `backend/tests/unit/test_copy_api.py` | self_only 请求契约 + 422 互斥 |
-| MODIFY | `backend/tests/unit/test_copy_service.py` | self_only 复制集合分支契约 |
+| MODIFY | `backend/tests/unit/domain/models/test_character_models.py` | extra 字段契约 |
+| MODIFY | `backend/tests/unit/api/routers/test_character_api.py` | 创建/更新带 extra 透传契约 |
+| MODIFY | `backend/tests/unit/domain/services/test_character_service.py` | create_character extra 参数契约 |
+| MODIFY | `backend/tests/unit/api/routers/test_copy_api.py` | self_only 请求契约 + 422 互斥 |
+| MODIFY | `backend/tests/unit/domain/services/test_copy_service.py` | self_only 复制集合分支契约 |
 | MODIFY | `tests/e2e/e2e-library.spec.ts` | P0 遗留编辑/删除 E2E 契约（§9.3） |
 
 P2 追加（地图工作台 + 后端扩展）：
@@ -1051,7 +1051,7 @@ P2 追加（地图工作台 + 后端扩展）：
 | MODIFY | `backend/src/inkflow/api/routers/maps.py` | add_pin/update_pin 透传 type/ref_id；create_map 加 bg_source Form；update_map 透传 bg_source/extra |
 | MODIFY | `backend/src/inkflow/api/deps.py` | get_map_service 注入 character_repo/timeline_repo |
 | MODIFY | `backend/src/inkflow/core/database.py` | `ensure_map_columns(conn)`（§2.7.3）+ lifespan 接线 |
-| NEW | `backend/tests/unit/test_map_p2.py` | P2 后端契约（§9.5 B1-B7）：models 字段 + service 校验 + api 透传 + repo 往返 + 迁移 |
+| NEW | `backend/tests/unit/domain/ports/test_map_p2.py` | P2 后端契约（§9.5 B1-B7）：models 字段 + service 校验 + api 透传 + repo 往返 + 迁移 |
 
 > **测试文件拆分（900 行护栏）**：library.test.tsx 已 ~788 行，P2 前端契约估算 ~400 行 → 拆 `library-p2.test.tsx` 兄弟文件（自带全套基础设施，对齐 P1 `library-p1.test.tsx` 先例）；后端契约新拆 `test_map_p2.py`（test_map_service.py 已 830 行，追加会超 900 护栏）。
 > **ci.yml 登记**：前端无新测试文件目录（同 pages/ 目录，既有 job glob 覆盖）；后端 unit 测试由 `pytest tests/unit/` 全目录跑（非显式文件列表）→ 新文件 `test_map_p2.py` 自动覆盖，零登记。
@@ -1084,8 +1084,8 @@ P3+P4 追加（大纲三级 + 章关联 + 时间线双序 + 单事件检查）�
 | MODIFY | `backend/src/inkflow/domain/models/timeline.py` | EventCheckReport 模型 |
 | MODIFY | `backend/src/inkflow/domain/services/timeline_service.py` | check_event 方法 |
 | MODIFY | `backend/src/inkflow/api/routers/timeline.py` | GET /timeline/events/{id}/check 端点 |
-| NEW | `backend/tests/unit/test_outline_p3.py` | P3 后端契约（§9.7 O 系列） |
-| MODIFY | `backend/tests/unit/test_timeline_check.py` | P4 单事件检查契约（§9.7 T 系列） |
+| NEW | `backend/tests/unit/domain/ports/test_outline_p3.py` | P3 后端契约（§9.7 O 系列） |
+| MODIFY | `backend/tests/unit/domain/services/test_timeline_check.py` | P4 单事件检查契约（§9.7 T 系列） |
 
 > **测试文件拆分（900 行护栏，本批）**：`library.tsx` 已 847 行 → 大纲/时间线渲染拆独立组件 `OutlineTree.tsx`/`TimelineView.tsx`；前端契约拆 `library-p3.test.tsx`/`library-p4.test.tsx`；后端 `test_outline_service.py`(626)/`test_outline_api.py`(740) 追加会超护栏 → 新拆 `test_outline_p3.py`；`test_timeline_check.py`(396) 追加单事件检查契约安全。
 
@@ -1104,13 +1104,13 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | MODIFY | `backend/src/inkflow/domain/services/timeline_service.py` | delete_event 注入 map_cleanup 钩子 → clear_ref_pins('event') |
 | MODIFY | `backend/src/inkflow/domain/services/world_service.py` | delete_setting reparent 路径补 location_cleanup 钩子 |
 | MODIFY | `backend/src/inkflow/api/deps.py` | 装配 character/timeline service 的 map_cleanup 钩子 |
-| MODIFY | `backend/tests/unit/test_character_repo.py` | hard_delete 级联删关系契约（真实 SQLite 轨） |
-| MODIFY | `backend/tests/unit/test_outline_repo.py` | hard_delete 子大纲 parent_id + 情节点清理契约 |
-| MODIFY | `backend/tests/unit/test_timeline_repo.py` | hard_delete 伏笔 event_id 清理契约 |
-| MODIFY | `backend/tests/unit/test_chapter_repo.py` | delete_chapter 6 处引用清理契约 |
-| MODIFY | `backend/tests/unit/test_map_service.py` | clear_ref_pins 新钩子 + clear_location_pins 扩展契约 |
-| MODIFY | `backend/tests/unit/test_world_service.py` | reparent 路径补钩子契约 |
-| MODIFY | `backend/tests/unit/test_character_api.py` / `test_outline_api.py` / `test_timeline_api.py` / `test_chapter_api.py` | DELETE 端点清理语义契约（mock 断言） |
+| MODIFY | `backend/tests/unit/infrastructure/database/test_character_repo.py` | hard_delete 级联删关系契约（真实 SQLite 轨） |
+| MODIFY | `backend/tests/unit/infrastructure/database/test_outline_repo.py` | hard_delete 子大纲 parent_id + 情节点清理契约 |
+| MODIFY | `backend/tests/unit/infrastructure/database/test_timeline_repo.py` | hard_delete 伏笔 event_id 清理契约 |
+| MODIFY | `backend/tests/unit/infrastructure/database/test_chapter_repo.py` | delete_chapter 6 处引用清理契约 |
+| MODIFY | `backend/tests/unit/domain/services/test_map_service.py` | clear_ref_pins 新钩子 + clear_location_pins 扩展契约 |
+| MODIFY | `backend/tests/unit/domain/services/test_world_service.py` | reparent 路径补钩子契约 |
+| MODIFY | `backend/tests/unit/api/routers/test_character_api.py` / `test_outline_api.py` / `test_timeline_api.py` / `test_chapter_api.py` | DELETE 端点清理语义契约（mock 断言） |
 
 **前端**：
 
@@ -1393,7 +1393,7 @@ P5 追加：
 | M7 | 前端测试全绿（既有 + D 系列） | `pnpm --filter renderer test` 全绿 |
 | M8 | PR 合入 + CI 全绿（statusCheckRollup 对照）；PR body `Closes #284`（最后一批） | gh pr checks 轮询 + gh pr view |
 | M9 | issue #284 关闭（最后一批）；worktree 清理 + 状态标记 ✅ | gh issue view 284 |
-| M10 | 角色等级必填 + 枚举校验（#833）：创建/修改角色缺 `extra.role_rank` 或非法值 → 422；AI 工具 `create_character` 补 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create` 加 `--role-rank` | RED 契约全 FAIL 实证 + 后端测试全绿（`uv run pytest backend/tests/unit/test_character_role_rank.py` + 全量） |
+| M10 | 角色等级必填 + 枚举校验（#833）：创建/修改角色缺 `extra.role_rank` 或非法值 → 422；AI 工具 `create_character` 补 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create` 加 `--role-rank` | RED 契约全 FAIL 实证 + 后端测试全绿（`uv run pytest backend/tests/unit/domain/ports/test_character_role_rank.py` + 全量） |
 
 ---
 

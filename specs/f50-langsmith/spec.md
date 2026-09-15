@@ -105,7 +105,7 @@
 
 ## 6. 测试策略
 
-### 6.1 单元测试（`backend/tests/unit/test_langsmith_tracing.py`）
+### 6.1 单元测试（`backend/tests/unit/core/test_langsmith_tracing.py`）
 
 纯函数为主（不依赖真实 os.environ 残留）：
 
@@ -135,7 +135,7 @@
 | 路径 | 职责 |
 |------|------|
 | `backend/src/inkflow/core/langsmith_tracing.py` | `resolve_langsmith_trace_env` / `apply_langsmith_tracing` + `_LANGSMITH_ENV_KEYS` 常量 |
-| `backend/tests/unit/test_langsmith_tracing.py` | 单元测试（§6.1） |
+| `backend/tests/unit/core/test_langsmith_tracing.py` | 单元测试（§6.1） |
 
 ### MODIFY
 

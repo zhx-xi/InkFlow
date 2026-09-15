@@ -10,10 +10,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L12) · [2. 产物契约](L50) · [3. 依赖瘦身（T0，用户拍板 2026-08-06：B+ 方案）](L137) · [4. PyInstaller 内核打包](L217)
-> [5. B+ 装配改造：API embedding（用户拍板 2026-08-06：P1=A 并入本任务）](L301) · [6. electron-builder 分发配置](L415) · [7. GitHub Release 自动发布（release.yml）](L462) · [8. 文件结构](L525)
-> [9. 测试策略](L562) · [10. 不在范围内](L591) · [11. 依赖关系](L608) · [12. 关键架构决策记录](L636)
-> [13. 验收标准](L652) · [待澄清问题（已拍板，留痕）](L672)
+> 1. 概述 · 2. 产物契约 · 3. 依赖瘦身（T0，用户拍板 2026-08-06：B+ 方案） · 4. PyInstaller 内核打包
+> 5. B+ 装配改造：API embedding（用户拍板 2026-08-06：P1=A 并入本任务） · 6. electron-builder 分发配置 · 7. GitHub Release 自动发布（release.yml） · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（已拍板，留痕）
 ---
 
 ## 1. 概述
@@ -372,7 +372,7 @@ async def get_vector_store() -> LangChainVectorStore:
 
 | # | 契约 | 测试载体 |
 |---|------|----------|
-| E1 | 未配置 embedding 模型 → `RAGUnavailableError`（500 RAG 前缀） | unit `tests/unit/test_deps_embedding.py` |
+| E1 | 未配置 embedding 模型 → `RAGUnavailableError`（500 RAG 前缀） | unit `backend/tests/unit/infrastructure/rag/test_deps_embedding.py` |
 | E2 | 配置 embedding 模型 → 构造 `OpenAIEmbeddings`（mock ProviderConfig 装配，断言 model/base_url/api_key 透传） | 同上 |
 | E3 | 已配置 → `get_vector_store()` 正常返回 store（懒加载单例不变） | 同上 |
 | E4 | 非 embedding 类型模型（chat）不被消费 → 仍报 E1 | 同上 |
@@ -538,8 +538,8 @@ git tag v0.4.0 && git push origin v0.4.0    # 触发 release.yml
 | `backend/pyinstaller/inkflow.spec` | PyInstaller 配置（§4.2） |
 | `backend/pyinstaller/README.md` | 本地打包操作说明（命令 + 冒烟步骤 + **ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 设置**——评审 🟡9：国内本地打包必设，CI runner 无此问题） |
 | `.github/workflows/release.yml` | tag 触发发布流水线（§7.1） |
-| `backend/tests/unit/test_deps_embedding.py` | §5.3 E1-E4 契约测试（RED 先行） |
-| `backend/tests/unit/test_config_frozen.py` | Q7=B 数据目录双路径测试（monkeypatch sys.frozen） |
+| `backend/tests/unit/infrastructure/rag/test_deps_embedding.py` | §5.3 E1-E4 契约测试（RED 先行） |
+| `backend/tests/unit/core/test_config_frozen.py` | Q7=B 数据目录双路径测试（monkeypatch sys.frozen） |
 | `ci_cd/check_version_consistency.py`（可选） | 版本一致性护栏（§2.4 验证：pyproject/package.json 对齐） |
 
 ### 8.2 MODIFY（修改）
@@ -572,9 +572,9 @@ git tag v0.4.0 && git push origin v0.4.0    # 触发 release.yml
 
 | 层 | 载体 | 覆盖 |
 |----|------|------|
-| unit | `tests/unit/test_deps_embedding.py`（新建） | §5.3 E1-E4 装配契约（RED 先行，Codex 按契约实现） |
-| unit（新建） | `tests/unit/test_config_frozen.py`（Q7 拍板 B 配套） | config.py sys.frozen 双路径：monkeypatch sys.frozen=True → %APPDATA%/InkFlow；False → ./data（dev 不变） |
-| unit（既有） | `tests/unit/test_langchain_vector_store.py` | RAG 存储不变（FakeEmbeddings 注入，无网络）；B+ 改造不触碰 |
+| unit | `backend/tests/unit/infrastructure/rag/test_deps_embedding.py`（新建） | §5.3 E1-E4 装配契约（RED 先行，Codex 按契约实现） |
+| unit（新建） | `backend/tests/unit/core/test_config_frozen.py`（Q7 拍板 B 配套） | config.py sys.frozen 双路径：monkeypatch sys.frozen=True → %APPDATA%/InkFlow；False → ./data（dev 不变） |
+| unit（既有） | `backend/tests/unit/infrastructure/rag/test_langchain_vector_store.py` | RAG 存储不变（FakeEmbeddings 注入，无网络）；B+ 改造不触碰 |
 | guardrail/lint | 全仓 grep `HuggingFaceBgeEmbeddings` = 0 | §5.3 E5 |
 | 集成（既有） | `tests/api/` + `tests/cli/` | 全量回归（B+ 改造不破坏既有端点；覆盖率门槛 98.5/95.0 不变，ADR-027） |
 | CI | ci.yml 既有 job | 本任务 PR 全绿（release.yml 单独验证，不进 PR CI——tag 触发） |

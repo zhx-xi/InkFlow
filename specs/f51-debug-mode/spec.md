@@ -260,9 +260,9 @@ def resolve_log_dir() -> Path:
 
 | 层 | 载体 | 覆盖 |
 |----|------|------|
-| unit（扩展） | `tests/unit/test_log.py` | frozen 日志目录解析（monkeypatch `sys.frozen`）/ debug 级别开关 |
+| unit（扩展） | `backend/tests/unit/core/test_log.py` | frozen 日志目录解析（monkeypatch `sys.frozen`）/ debug 级别开关 |
 | unit（扩展） | `tests/cli/test_cli_serve.py`（**仓库根 tests/，非 backend/tests/**——serve 契约测试在此，504 行既有） | serve debug 分支（token /docs / uvicorn log_level），`INKFLOW_READY` 契约不破。**⚠️ 该文件 L336-342 硬断言 `uvicorn.Config(..., log_level=\"info\")`——加 debug 分支后仅非 debug 态成立，须标注兼容策略**（debug 分支用 `if config.debug` 隔离，非 debug 断言不变） |
-| unit（扩展） | `tests/unit/test_config_frozen.py`（已存在，非「（如存在）」）+ `tests/unit/test_config_instance_env.py`（204 行，instance.env 基础设施已测） | config.debug 读取优先级（env > instance.env > config.json，含 §7 冲突场景） |
+| unit（扩展） | `backend/tests/unit/core/test_config_frozen.py`（已存在，非「（如存在）」）+ `backend/tests/unit/core/test_config_instance_env.py`（204 行，instance.env 基础设施已测） | config.debug 读取优先级（env > instance.env > config.json，含 §7 冲突场景） |
 | frontend unit | `main.menu.test.ts` | debug 门控注册 DevTools（打包版 + debug 也注册）；幂等去重保持。**⚠️ spec 改 `setupAppMenu(isPackaged, isDebug=false)` 带默认值，既有 6 个单参调用编译兼容（缺省 false=现行为）**；新增 `setupAppMenu(true, true)` 注册 / `(true, false)` 不注册 |
 | frontend unit | `main.tray.test.ts` | dev 钩子门控改 `!isPackaged \|\| isDebug` 后打包版 debug 暴露。**⚠️ 该文件目前零钩子用例（grep kernelInfo/Hook 0 命中），正/负向均须新建** |
 | CI | ci.yml 既有 job | 本 spec PR 全绿（coverage-backend 98.5/95.0 不变，ADR-027） |
@@ -331,8 +331,8 @@ def resolve_log_dir() -> Path:
 
 | # | 验收项（M 行） | 验证方式 | 载体 |
 |---|---------------|----------|------|
-| M1 | 打包版启动后日志落 `%APPDATA%/InkFlow/logs/inkflow_*.log`（#713） | 打包版实测（frozen）+ `tests/unit/test_log.py` frozen 分支 | 手动 + 单元 |
-| M2 | `INKFLOW_DEBUG=1` 时 console + 文件日志均 DEBUG（#713） | 设 env 启动实测 + `tests/unit/test_log.py` debug 级别开关（断言 sink level）；**三路触发源（env/instance.env/config.json）各验一次** | 手动 + 单元 |
+| M1 | 打包版启动后日志落 `%APPDATA%/InkFlow/logs/inkflow_*.log`（#713） | 打包版实测（frozen）+ `backend/tests/unit/core/test_log.py` frozen 分支 | 手动 + 单元 |
+| M2 | `INKFLOW_DEBUG=1` 时 console + 文件日志均 DEBUG（#713） | 设 env 启动实测 + `backend/tests/unit/core/test_log.py` debug 级别开关（断言 sink level）；**三路触发源（env/instance.env/config.json）各验一次** | 手动 + 单元 |
 | M3 | 打包版 + debug：F12 / Ctrl+Shift+I 可开 DevTools；`__kernelInfo`/`__trayInfo`/`__trayActions` 暴露（#714） | `main.menu.test.ts`（isDebug 门控注册）+ `main.tray.test.ts`（钩子暴露，正/负向）+ 打包版实测 | 单元 + 手动 |
 | M4 | debug 起内核可达 `/docs`（**用 actual_port** + 已知 token + `X-InkFlow-Token` header curl 成功）；uvicorn debug 日志（#715） | `tests/cli/test_cli_serve.py` debug 分支（token //docs actual_port / `uvicorn.Config` log_level）、`INKFLOW_READY` 四字段不破 | 单元 + 手动 |
 | M5 | 非 debug 回归：随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子 | 契约测试（`test_serve_default_token_is_random_per_start`、`main.menu.test.ts` 生产零注册）+ **新增「缺省不注册 Timer / 不自动 /docs」负向用例** | 单元 + 手动 |

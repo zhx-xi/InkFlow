@@ -13,10 +13,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L12) · [2. 数据模型](L44) · [3. API 契约](L369) · [4. CLI 命令签名](L612)
-> [5. AI 生成模式（关键差异：生成而非提取）](L702) · [6. 大纲/弧线/情节点组织规则](L841) · [7. 边界情况与错误处理](L874) · [8. 文件结构](L921)
-> [9. 测试策略](L1040) · [10. 不在范围内](L1087) · [11. 依赖关系](L1109) · [12. 关键架构决策记录](L1144)
-> [13. 验收标准](L1170) · [待澄清问题（≤ 3 个，评审时确认）](L1186)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. AI 生成模式（关键差异：生成而非提取） · 6. 大纲/弧线/情节点组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述
@@ -1201,11 +1201,11 @@ F11 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（三实体 + 生成 DTO schema，含 partial unique 语义） | `pytest tests/unit/test_outline_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（三实体 CRUD + 级联 + 唯一约束 + next_position/clear_arc） | `pytest tests/unit/test_outline_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（同名/arc 归属/级联编排） | `pytest tests/unit/test_outline_service.py -v` 全绿 |
-| M4 | AI 生成管线（解析/重试/落库策略/弧线复用/save 两态，Mock LLM） | `pytest tests/unit/test_outline_generation.py -v` 全绿 |
-| M5 | API 18 端点 + 错误路径全绿 | `pytest tests/unit/test_outline_api.py -v` 全绿 |
+| M1 | 领域模型 + DTO 验证（三实体 + 生成 DTO schema，含 partial unique 语义） | `pytest backend/tests/unit/domain/models/test_outline_models.py -v` 全绿 |
+| M2 | 仓储层全部方法（三实体 CRUD + 级联 + 唯一约束 + next_position/clear_arc） | `pytest backend/tests/unit/infrastructure/database/test_outline_repo.py -v` 全绿 |
+| M3 | 服务层 CRUD + 业务校验（同名/arc 归属/级联编排） | `pytest backend/tests/unit/domain/services/test_outline_service.py -v` 全绿 |
+| M4 | AI 生成管线（解析/重试/落库策略/弧线复用/save 两态，Mock LLM） | `pytest backend/tests/unit/domain/ports/test_outline_generation.py -v` 全绿 |
+| M5 | API 18 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_outline_api.py -v` 全绿 |
 | M6 | CLI outline 组（信封/退出码/确认交互/point+arc 子组/generate） | `pytest tests/test_cli_outline.py -v` 全绿 |
 | M7 | 真实 LLM 联调：对项目执行 generate 成功落库（含弧线复用） | 手工验证（配置任一 Provider Key，`inkflow outline generate`；二次生成验证同名 422 与弧线复用） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F11 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017） |
@@ -1223,7 +1223,6 @@ F11 被依赖:
 
 ---
 
-*本文档为 F11 功能规格（What），实施步骤（How）见后续 `specs/f11-outline/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。
@@ -1291,7 +1290,7 @@ F11 被依赖:
 ## 15. 增量（#669）：AI 生成覆盖当前大纲（替换语义，用户确认后覆盖）
 
 > 拍板（2026-09-03）：覆盖=**写前用户确认，确认后替换**（非追加；#668 追加语义另轨）。
-> 权威实现契约：RED 契约测试 `backend/tests/unit/test_outline_replace.py` + `backend/tests/unit/api/routers/test_outline_replace_api.py`（本节为其 spec 化摘要）。
+> 权威实现契约：RED 契约测试 `backend/tests/unit/domain/ports/test_outline_replace.py` + `backend/tests/unit/api/routers/test_outline_replace_api.py`（本节为其 spec 化摘要）。
 
 ### 15.1 请求扩展（OutlineGenerateRequest，§2.6）
 
@@ -1325,7 +1324,7 @@ POST /outlines/generate (mode=replace)
 
 ### 15.4 测试锚点（RED 契约）
 
-`backend/tests/unit/test_outline_replace.py`（A1-A14 领域/服务/管线）+ `backend/tests/unit/api/routers/test_outline_replace_api.py`（B1-B7 HTTP）；既有 §9 用例（new 模式）零回归（mode 默认值=现行为）。
+`backend/tests/unit/domain/ports/test_outline_replace.py`（A1-A14 领域/服务/管线）+ `backend/tests/unit/api/routers/test_outline_replace_api.py`（B1-B7 HTTP）；既有 §9 用例（new 模式）零回归（mode 默认值=现行为）。
 
 ---
 

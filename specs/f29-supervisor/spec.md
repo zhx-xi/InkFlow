@@ -371,11 +371,11 @@ async def hitl_node(state: SupervisorState) -> dict:
 | MODIFY | `backend/src/inkflow/domain/services/agent_service.py` | `execute()` mode 分派（supervisor → 角色池装配 + SupervisorPipeline）；`_run_pipeline` HITL 状态更新（waiting_hitl/confirm 恢复）；`confirm_execution()` 新方法 |
 | MODIFY | `backend/src/inkflow/api/routers/agent.py` | execute 透传 mode（既有端点）；新增 `POST /pipelines/executions/{id}/confirm`（§3） |
 | MODIFY | `backend/src/inkflow/infrastructure/agent/execution_store.py` | 新增 `update_status`（waiting_hitl）+ `get_hitl_payload`（payload 快照） |
-| CREATE | `backend/tests/unit/test_supervisor_pipeline.py` | SupervisorPipeline 整模块 RED（§9） |
-| CREATE | `backend/tests/unit/test_supervisor_state.py` | SupervisorState/计数（steps/consecutive/route_history）契约 |
-| MODIFY | `backend/tests/unit/test_agent_service.py`（既有，追加） | mode 分派（supervisor 走角色池装配不重排）+ confirm_execution 契约 |
-| MODIFY | `backend/tests/unit/test_agent_api.py` 或等效（既有，追加） | execute mode 透传 + confirm 端点契约（422/404/成功） |
-| MODIFY | `backend/tests/unit/test_langgraph_pipeline.py`（既有，守护） | 静态模式零回归（mode 默认 static） |
+| CREATE | `backend/tests/unit/infrastructure/agent/test_supervisor_pipeline.py` | SupervisorPipeline 整模块 RED（§9） |
+| CREATE | `backend/tests/unit/infrastructure/agent/test_supervisor_state.py` | SupervisorState/计数（steps/consecutive/route_history）契约 |
+| MODIFY | `backend/tests/unit/domain/services/test_agent_service.py`（既有，追加） | mode 分派（supervisor 走角色池装配不重排）+ confirm_execution 契约 |
+| MODIFY | `tests/api/test_agent_api.py` 或等效（既有，追加） | execute mode 透传 + confirm 端点契约（422/404/成功） |
+| MODIFY | `backend/tests/unit/infrastructure/agent/test_langgraph_pipeline.py`（既有，守护） | 静态模式零回归（mode 默认 static） |
 
 ### 前端
 
@@ -451,7 +451,7 @@ async def hitl_node(state: SupervisorState) -> dict:
 
 - **M1 Spike 结论（已完成）**: `docs/f29-supervisor-spike-2026-08-13.md` — deepagents 0.7.5 无动态路由 → 自研 LangGraph StateGraph 编排层
 - **M2 Spec 合入**: 本 spec 合入 worktree 分支（spec 与实现同 PR）
-- **M3 RED 批全 FAIL**: `pytest backend/tests/unit/test_supervisor_pipeline.py test_supervisor_state.py` — 收集期 ModuleNotFoundError（模块不存在）+ 追加段 422/404 FAIL（既有文件）
+- **M3 RED 批全 FAIL**: `pytest backend/tests/unit/infrastructure/agent/test_supervisor_pipeline.py test_supervisor_state.py` — 收集期 ModuleNotFoundError（模块不存在）+ 追加段 422/404 FAIL（既有文件）
 - **M4 后端测试全绿**: `pytest backend/tests/unit/` — 本模块 + 既有零回归（static 默认守护）
 - **M5 Supervisor 自主编排动态路由**: `test_supervisor_pipeline.py::test_dynamic_route` — mock LLM 决策序列 → Command(goto) 路由正确（route_history 断言）
 - **M6 振荡护栏 + deterministic 回退**: `test_supervisor_pipeline.py::test_oscillation_guard` + `test_fallback_chain` — 同角色连续 3 次/步数 30 超限 → fallback 固定链 + final_output=reviser

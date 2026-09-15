@@ -461,16 +461,16 @@ F30 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | state.py 三态读写 + 原子写 | `pytest tests/unit/test_kernel_state.py -v` 全绿 |
-| M2 | bootstrap.py 复用/拉起/互斥/超时/重试 | `pytest tests/unit/test_kernel_bootstrap.py -v` 全绿 |
-| M3 | 版本校验 | `pytest tests/unit/test_kernel_version.py -v` 全绿 |
+| M1 | state.py 三态读写 + 原子写 | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_state.py -v` 全绿 |
+| M2 | bootstrap.py 复用/拉起/互斥/超时/重试 | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_bootstrap.py -v` 全绿 |
+| M3 | 版本校验 | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_version.py -v` 全绿 |
 | M4 | CLI kernel status（信封/退出码） | `pytest ../tests/cli/test_cli_kernel.py -v` 全绿（且已追加 ci.yml integration-cli-backend job） |
 | M5 | 手工验证：无内核 → ensure_kernel 拉起 → kernel.json 写入 → 二次调用复用（pid 不变） | 手工验证（`python -c "import asyncio; from inkflow.infrastructure.kernel import ensure_kernel; ..."` 两次调用比对 pid） |
 | M6 | 手工验证：kill 内核 → 残留 kernel.json 被判定 stale → 重新拉起 | 手工验证（Start-Process 内核 → Stop-Process → ensure_kernel → 新 pid） |
 | M7 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过 |
-| M8 | **（1.2 新增）实例类型判定 + 触发路径** | `pytest tests/unit/infrastructure/kernel/test_kernel_instance_kind.py -v` 全绿（env 显式 / frozen / 预发布 / 缺省 / 非法值五路径） |
-| M9 | **（1.2 新增）rc 存活期互斥 + dev 多开** | `pytest tests/unit/infrastructure/kernel/test_kernel_concurrency_kind.py -v` 全绿（rc 第二个被拒且消息含既有实例信息；dev 两实例均放行） |
-| M10 | **（1.2 新增）注册表读写 + 惰性 GC** | `pytest tests/unit/infrastructure/kernel/test_kernel_registry.py -v` 全绿（写入七字段 / pid 死条目被清理 / 跨 kind 并存） |
+| M8 | **（1.2 新增）实例类型判定 + 触发路径** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_instance_kind.py -v` 全绿（env 显式 / frozen / 预发布 / 缺省 / 非法值五路径） |
+| M9 | **（1.2 新增）rc 存活期互斥 + dev 多开** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_concurrency_kind.py -v` 全绿（rc 第二个被拒且消息含既有实例信息；dev 两实例均放行） |
+| M10 | **（1.2 新增）注册表读写 + 惰性 GC** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_registry.py -v` 全绿（写入七字段 / pid 死条目被清理 / 跨 kind 并存） |
 
 > Issue #166 验收标准映射：kernel.json 写入正确 = M1/M5；复用不 spawn = M2/M5；双客户端只一个内核 = M2（互斥用例）；崩溃残留 stale 清理 = M1/M6。
 

@@ -89,7 +89,7 @@
 | `backend/src/inkflow/infrastructure/agent/chat_agent_service.py` | MODIFY（stream_events 增 steps 收集 + 返回终态；注入 run_repo 可选）|
 | `backend/src/inkflow/api/routers/chat_stream.py` | MODIFY（stream_chat_agent 前置 create + 结束 save + done 帧带 run_id）|
 | `backend/src/inkflow/api/deps.py` | MODIFY（复用 get_agent_run_repo；stream_chat_agent 装配）|
-| `backend/tests/unit/test_chat_agent_stream.py` | MODIFY（追加可重放收集/落库用例）|
+| `backend/tests/unit/api/routers/test_chat_agent_stream.py` | MODIFY（追加可重放收集/落库用例）|
 
 ## 7. 门禁
 

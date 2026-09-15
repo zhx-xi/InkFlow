@@ -11,10 +11,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L13) · [2. 数据模型](L53) · [3. API 契约](L131) · [4. CLI 命令签名（Q3 拍板：默认流式）](L175)
-> [5. 流式管线设计（服务层）](L210) · [6. SSE 帧协议](L304) · [7. 边界情况与错误处理](L358) · [8. 文件结构](L373)
-> [9. 测试策略](L415) · [10. 不在范围内](L496) · [11. 依赖关系](L512) · [12. 关键架构决策记录](L525)
-> [13. 验收标准](L539) · [待澄清问题（3 个，已全部拍板 ✅）](L556)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名（Q3 拍板：默认流式）
+> 5. 流式管线设计（服务层） · 6. SSE 帧协议 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（3 个，已全部拍板 ✅）
 ---
 
 ## 1. 概述
@@ -547,9 +547,9 @@ async def test_stream_generate_deltas(override_writing_service):
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | WritingStreamEvent 模型 + StreamWritingRequest 判别联合（mode 分发/非法 mode/字段校验继承） | `pytest tests/unit/test_writing_models.py -v` 全绿（流式相关用例） |
-| M2 | service 流式·generate（校验前置 / delta 透传 / done 帧完整 / 格式无效不重试 / 空流 / prompt 组装回归） | `pytest tests/unit/test_writing_service.py -v` 全绿（流式用例） |
-| M3 | service 流式·continue/revise（tail 截断 / 无 FormatValidator / target_range warning） | `pytest tests/unit/test_writing_service.py -v` 全绿（流式用例） |
+| M1 | WritingStreamEvent 模型 + StreamWritingRequest 判别联合（mode 分发/非法 mode/字段校验继承） | `pytest backend/tests/unit/domain/models/test_writing_models.py -v` 全绿（流式相关用例） |
+| M2 | service 流式·generate（校验前置 / delta 透传 / done 帧完整 / 格式无效不重试 / 空流 / prompt 组装回归） | `pytest backend/tests/unit/domain/services/test_writing_service.py -v` 全绿（流式用例） |
+| M3 | service 流式·continue/revise（tail 截断 / 无 FormatValidator / target_range warning） | `pytest backend/tests/unit/domain/services/test_writing_service.py -v` 全绿（流式用例） |
 | M4 | API 统一端点成功路径（httpx-sse delta 序列 + done 帧 + Content-Type + 三 mode 判别） | `pytest tests/api/test_writing_api.py -v` 全绿（流式用例） |
 | M5 | API 错误路径（404/422 流前 HTTP / 流中 error 帧 / 客户端断开终止） | `pytest tests/api/test_writing_api.py -v` 全绿（流式用例） |
 | M6 | CLI 人类模式流式（逐 token 输出 + 摘要 + --count 循环 + Ctrl+C + NOT_FOUND/LLM_ERROR） | `pytest tests/cli/test_cli_write.py -v` 全绿（流式用例） |
@@ -570,7 +570,6 @@ async def test_stream_generate_deltas(override_writing_service):
 
 ---
 
-*本文档为 F23 功能规格（What），实施步骤（How）见后续 `specs/f23-sse/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §6 SSE 帧协议 + §7 边界事实，不重复、不新增行为）。SSE 帧序列与流式错误处理为本节重点（§14.2）。
@@ -1277,7 +1276,7 @@ frontend/packages/renderer/src/
 >
 > | 门禁 | 位置 | 检查 | 产物 |
 > |------|------|------|------|
-> | **M1 快照漂移** | `backend/tests/unit/test_openapi_contract.py` | 后端 schema ↔ `ci_cd/openapi_snapshot.json` | `uv run python ../ci_cd/export_openapi.py`（cwd=backend） |
+> | **M1 快照漂移** | `backend/tests/unit/api/routers/test_openapi_contract.py` | 后端 schema ↔ `ci_cd/openapi_snapshot.json` | `uv run python ../ci_cd/export_openapi.py`（cwd=backend） |
 > | **前端类型漂移** | CI `lint-frontend` job | `pnpm gen:api` 后 `git diff --exit-code -- api/schema/openapi.d.ts` | `pnpm gen:api`（cwd=`frontend/packages/renderer`） |
 > | **前端调用面契约** | `src/api/__contract__/contract.test.ts` | 前端 `apiFetch` 调用面 ⊆ 快照路径 | 端点须**先存在于快照** |
 >
