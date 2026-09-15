@@ -406,3 +406,22 @@ AI 编码助手在开始任何工作前，应**按顺序**阅读以下文件：
 - 无 monster files（>900 行会被 `ci_cd/check_file_length.py` 拦截）；文件/目录结构有意识设计
 - 新代码全类型化：避免裸 `Any`（存量 Any 渐进清理中——数量降至零后开启 `disallow_any_explicit` 预算门）；边界用 Pydantic 校验后传类型化变量
 - 提交信息与 PR 标题遵循 Conventional Commits（commit-msg 钩子 + CI 双重拦截）
+
+## 11. 发布记录（Release Log）
+
+### v0.14.0 rc 修复链（rc1 → rc9，2026-09-10 ~ 09-15）
+
+| rc | 结果 | 缺陷 → 根因 |
+|---|---|---|
+| rc1 | ❌ 无产物 | `inkflow.spec` excludes litellm（#1024 迁移未同步）→ 内核 import 崩（#1072） |
+| rc2 | ❌ | MCP exe `--version` 门禁前提错（MCP 无该接口）→ 改 stdio 握手（#1078） |
+| rc4 | ❌ | 发布冒烟未补 `force=true`（#1085 门禁）→ 打 tag 即挂（#1123） |
+| rc5 | ❌ | planner 必答项「主题」无法落库 → 访谈 15 轮不收敛（#1128） |
+| rc6 | ✅ 旅程全绿 | 挂 #1011（fresh DB reindex→retrieve 首调 500） |
+| rc7/rc8 | ✅ | 迭代修复批 |
+| **rc9** | ✅ **验证通过** | 打包形态 A1-A5 + 旅程 stage0-6b + 回归 C10-C15 全 PASS |
+
+> v0.14.0 首次发布因「需先同步文档、使 tag 指向含文档的 commit」而**撤销**
+> （删 Release + tag，本地与远端），文档合入后重新打 tag。
+> 已知遗留（非阻塞，挂 0.15.0）：#1171（CLI 内核泄漏 + kernel.json 互覆）、
+> #1172（多轮历史丢弃 reasoning_content）。

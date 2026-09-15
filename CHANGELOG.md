@@ -6,13 +6,62 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-15
+
 ### 变更
 - **serve debug 自动弹 /docs 逃生门（#949）**：新增进程 env `INKFLOW_DEBUG_NO_BROWSER`（`1`/`true`/`on`，trim+lowercase，判据对齐 `INKFLOW_DEBUG`），为真时 debug 分支跳过自动打开 `/docs` 的 `threading.Timer` 注册（e2e 真实拉起内核的用例每例弹一次浏览器，纯副作用零断言贡献）。默认行为不变（未设仍自动弹，F51 D2 拍板）；`--open-browser` 显式路径不受影响；token / docs 门控 / 日志级别 / DevTools 联动全部不变。e2e（e2e-debug-triad `baseEnv()` / e2e-packaged `launchPackaged()`）统一注入该 env 消除测试弹窗。
+- **#1103**：全仓过度设计清理（ponytail-audit 分 8 批，净减约 850–1050 行）。
+- **#1137**：coverage 门禁余量 ≥1pp（ADR-027）。
 
 ### 修复
 - **i18n 同名键冲突导致会话分组标题被静默覆盖（#1016）**：`nav.group.sessions` 在 `zh.ts`/`en.ts` 与 `session-ux.ts` 重复定义，`useI18n` 展开合并时后者覆盖前者，左导航文案被静默改写。拆分键位：`nav.group.sessions`（AppNav 分组标题）=「会话」/ "Sessions"、新键 `session.group.title`（SessionBar 栏内标题）=「会话列表」/ "Session List"（与会话页 header 一致）；`i18n.contract.test` 新增跨域重复键护栏（13 个来源字典两两 key 交集必须为空，zh/en 两侧），根治「后写吞前写」整族问题。
 - **config.json 全局配置只写不读（#987）**：`config.json` 并入 pydantic 启动源（方案 A，`ConfigJsonSettingsSource` 镜像 #977 instance.env 源形态），优先级链 init > 进程 env > instance.env > .env > config.json > secrets——GUI 设置页/`config set`/#735 D2 自动配置三路写入的全局默认模型等键内核重启后不再静默丢失。debug 键 F51 D1/D8 语义零翻转。
 - **chromadb 匿名遥测关闭（#946）**：`LangChainVectorStore` 的两条 chromadb 客户端创建路径（实体 collection `_get_collection` / 指纹 meta collection `_get_meta_collection`）收敛到唯一入口 `_create_client()`，统一传 `Settings(anonymized_telemetry=False)`——chromadb 默认 `True`，未显式关闭会把本地运行数据经 OTLP 上报外部；测试侧直连 chroma 的校验客户端（持久化/一致性 journey）同步关闭，本地与 CI 运行均不外泄。
+
+### 新增
+
+- **F23 变更推送（#1086–#1089 / #1102）**：EventBus + 事件信封 + `GET /events/stream`；
+  前端订阅客户端 + debounce 失效调度；批次 A 域接入（8 域发布 + 页面订阅）；
+  跨界面可见性 E2E。含「订阅就绪前的写入丢失窗口」修复。
+- **F44 写章链路根治（#996/#997/#994 / #1097）**：草稿锚点传递（`source_outline_id`/`volume_id`）
+  + 同章幂等覆盖 + 草稿确认回填大纲章节节点（`outlines.chapter_id`）；自动建卷并把生成章节挂到该卷。
+- **F59 思考档位（reasoning effort）**：多档位控制 + `supports_reasoning` 能力字段 +
+  不支持模型置灰；chat/agent 端点装配 kwargs（default 不注入 / high 注入 / manual 覆盖）。
+- **首启引导页改造（#1152/#1129）**：provider 行可编辑 + 模型实时探测 + 选中模型落库 +
+  模型就绪判据与真实可用性对齐（不再被「完成模型配置」阻断页锁死）。
+- **内核实例类型化并发约束（#1153）**：rc/正式存活期单内核互斥 + dev 允许多开 + 托盘全量可见。
+- **记忆提取覆盖会话详情（#1098）**：`memory/stats` 数据源纳入 agentic 会话轨。
+- **章节正文格式归一（#1095/#1109/#1110/#1111/#1121）**：标题/缩进归一、
+  禁用 markdown `#` 标题、`_strip_markdown` 非幂等修复。
+
+### 修复（发布阻断链）
+
+- **#1072**：`inkflow.spec` 排除 litellm 致打包版内核崩溃（#1024 LiteLLM 迁移未同步 spec）。
+- **#1078**：MCP exe 版本门禁断言无效（MCP 入口无 `--version`）→ 改 stdio 握手探针。
+- **#1123**：发布冒烟脚本未补 `force=true`（#1085 探测门禁）→ 打 rc tag 即挂。
+- **#1128（0.14.0 主流程卡死）**：planner 必答项「主题」无法落库致 15 轮后 `confirm` 恒 rc=1。
+  修复后实测 3 轮收敛。
+- **#1127**：打包版每次 CLI 调用泄漏一个内核（`_poll_state_file` 读到旧 state 致 spawn 孤儿）。
+
+### 修复（其它）
+
+- **UUID 溢出族（#1106/#1139/#1151/#1162/#1166）**：超范围 UUID 由 500 改为 404；
+  写侧（move/PATCH/conversations）盲落孤儿防护 + 嵌套 FK query 参数守卫。
+- **#1138**：`create_*` 不校验 project 存在致 201 写孤儿行。
+- **#1149**：章节创建对不存在项目 500 → 404。
+- **#1161**：ChatPanel 挂载期历史加载覆盖新消息。
+- **#1093**：地图 /image 破图（`<img src>` 无法携带认证头 → 401）。
+- **#1094**：章节树字数不顶格 + hover 重叠。
+- **#1099/#1000/#1069**：日志时间戳统一 UTC 存储 + 显示层本地化（ADR-055）。
+- **#1096**：`INKFLOW_SECRET_KEY` 空告警无引导。
+- **e2e/CI 稳健性**：#1117/#1125/#1155/#1156/#1159/#1064/#1068/#1077/#1083/#1130/#1143/#1065。
+
+### 已知遗留（非阻塞）
+
+- **#1171**：CLI `ensure_kernel` 不复用 `--port-file` → 每条命令泄漏一个内核 +
+  `kernel.json` 互覆（实测 35 实例）。产品主路径不受影响。
+- **#1172**：多轮历史重建丢弃 `reasoning_content` → 思考模型收到空白思考链，
+  多轮质量静默退化（实测 3 轮 36 次告警）。
 
 ## [0.13.0] - 2026-09-08
 
