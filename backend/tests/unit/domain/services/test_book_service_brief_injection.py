@@ -37,6 +37,7 @@ RED 预期（当前 `book_service.py:866-876` 必须全部 FAIL）
 
 from __future__ import annotations
 
+import logging
 import pathlib
 import uuid
 from datetime import UTC, datetime
@@ -55,6 +56,14 @@ from inkflow.domain.models.context import (
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
 from inkflow.domain.services.book_service import BookService
+
+# W2-C（#1183）：RED 期该符号尚不存在 → 延迟导入，避免 collection ERROR
+# 连坐本文件既有的 15 条绿用例（TDD：新用例独立 FAIL，不阻断全文件）。
+try:
+    from inkflow.domain.services.chapter_brief import record_word_deviation
+except ImportError:  # pragma: no cover - RED 期占位，GREEN 后必走不到
+    # GREEN 后该分支不可达（符号恒存在）——保留占位仅为 RED 期不连坐全文件
+    record_word_deviation = None  # type: ignore[assignment]  # 占位赋值与 import 类型不符
 
 # ── fixture 锚点值（真实可辨识，与实现的硬编码字面量不同源）──────────
 
@@ -363,3 +372,89 @@ def test_base_file_still_has_known_tautological_assertion():
         f"基文件已降至 {n_lines} 行（<=890，护栏有空间）—— "
         "请把有效断言迁回基文件原位并清理本文件重复用例（#1185）"
     )
+
+
+# ── W2-C（#1183）：user 消息字数 + 生成后偏差记录 ──────────────────────
+#
+# 背景：W1 已交付 brief 【目标字数】段（TestWordTargetInjection 全绿）。
+# 但 issue #1183 正文列明的另两条验收未闭：
+#   F2  user 消息无字数（三轨均 f"请撰写章节《{name}》：{description}"）
+#   ④   生成后无 count_words 偏差记录（「不建议硬失败」= 记录而非阻断）
+# 本批（W2-C）只补这两条，不动已绿的 brief 注入。
+
+TARGET_WORDS = 800000
+
+
+async def _invoke_capture(plan: WritingPlan, chapter: Outline, **svc_over):
+    """驱动 T2 `_delegate_chapter`，返回 writer_factory 收到的 messages。"""
+    agent = AsyncMock()
+    agent.invoke.return_value = {
+        "messages": [SimpleNamespace(content="第一章正文内容", tool_calls=[])]
+    }
+    outline_repo = AsyncMock()
+    outline_repo.list.return_value = ([chapter], 1)
+    deps = dict(
+        repo=AsyncMock(),
+        writer_factory=AsyncMock(return_value=agent),
+        draft_service=AsyncMock(),
+        outline_repo=outline_repo,
+        limits=STAGE1_LIMITS,
+        project_config_getter=AsyncMock(return_value={"default_words": TARGET_WORDS}),
+    )
+    deps.update(svc_over)
+    svc = BookService(**deps)
+    await svc._delegate_chapter(plan, chapter, STAGE1_LIMITS)
+    return agent.invoke.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_user_message_carries_target_word_count():
+    """user 消息须携带目标字数（F2：三轨 user 消息均无字数）。
+
+    可证伪性：删掉 user 消息里的字数后缀 → FAIL
+    （现状 `book_service.py:844` 恒为 `请撰写章节《{name}》：{description}`）。
+    """
+    messages = await _invoke_capture(_plan(), _outline())
+
+    user = next(m for m in messages if m["role"] == "user")["content"]
+    assert str(TARGET_WORDS) in user, "user 消息须含目标字数"
+    assert "请撰写章节" in user, "原有指令语义不得丢失"
+
+
+# ── G2：生成后字数偏差记录（记录，不硬失败）──────────────────────────
+
+
+def test_word_deviation_is_recorded_within_tolerance(caplog):
+    """产出字数落在目标 ±30% 内 → 记录偏差，不告警。
+
+    issue 验收：「连续多章产出的 word_count 落在预期区间（容忍 LLM 漂移，
+    如 ±30%）」「不建议硬失败」。可证伪性：删掉偏差记录 → FAIL（无日志）。
+    """
+    with caplog.at_level(logging.INFO):
+        deviation = record_word_deviation("字" * TARGET_WORDS, TARGET_WORDS, chapter_name="第一章")
+
+    assert deviation == pytest.approx(1.0, abs=0.01)
+    assert any("字数" in r.message or "word" in r.message.lower() for r in caplog.records)
+
+
+def test_word_deviation_flags_drift_beyond_tolerance(caplog):
+    """产出字数超出 ±30% → 记录**告警**（仍不抛异常，不阻断写作链）。
+
+    可证伪性：把告警降级为 info / 去掉阈值判断 → FAIL。
+    """
+    with caplog.at_level(logging.WARNING):
+        deviation = record_word_deviation(
+            "字" * (TARGET_WORDS // 3), TARGET_WORDS, chapter_name="第一章"
+        )
+
+    assert deviation < 0.7
+    assert any(r.levelno >= logging.WARNING for r in caplog.records)
+
+
+def test_word_deviation_without_target_does_not_record(caplog):
+    """无目标字数（未配置）→ 不记录、不告警（回归：不得凭空告警）。"""
+    with caplog.at_level(logging.DEBUG):
+        deviation = record_word_deviation("正文", None, chapter_name="第一章")
+
+    assert deviation is None
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]

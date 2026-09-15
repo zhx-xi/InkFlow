@@ -43,6 +43,8 @@ from inkflow.domain.services.chapter_brief import (
     ContextBuilder,
     ProjectConfigGetter,
     build_chapter_brief,
+    chapter_write_messages,
+    record_word_deviation,
     resolve_brief_setting,
 )
 from inkflow.domain.services.usage_accounting import (
@@ -489,17 +491,11 @@ class BookVolumePipeline:
             expected_source_outline_id=chapter["outline_id"],
             expected_volume_outline_id=chapter.get("volume_outline_id"),
         )
-        result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
-            [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (f"请撰写章节《{chapter['name']}》：{chapter['description']}"),
-                },
-            ]
-        )
+        messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
+        result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
+        record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter["name"])
         if draft_fallback_needed(result):
             # #975 守卫：agent 未显式 save_draft → 服务层兜底建草稿（#976 D3 卷透传）
             draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create

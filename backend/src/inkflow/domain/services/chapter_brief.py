@@ -24,16 +24,23 @@
 
 依据: specs/f44-book-orchestrator/spec.md §5.1；
     .hermes/audit-writing-chain-20260915.md P0-2 / P1-2 / P1-5 / P1-6。
+
+writer 消息与生成后偏差记录（#1183）同为本模块职责（三轨共用，防副本漂移）：
+
+7. user 消息     ``chapter_write_messages``（携带目标字数，三轨不再各写一份 f-string）
+8. 字数偏差       ``record_word_deviation``（生成后只记录不抛异常，不阻断写作链）
 """
 
 from __future__ import annotations
 
 import inspect
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from inkflow.domain.models.writing_plan import WritingPlan
+from inkflow.domain.services._word_count import count_words
 
 #: 装配层 F6 上下文回调：(project_id, chapter) → str；同步/异步返回均容忍（鸭子类型）.
 ContextBuilder = Callable[[uuid.UUID, object], Awaitable[str] | str]
@@ -43,6 +50,11 @@ ProjectConfigGetter = Callable[[uuid.UUID], Awaitable[object]]
 
 #: 项目级风格缺席时的通用祈使句（保留「风格/偏好」语义，不省略段）。
 _DEFAULT_STYLE_HINT = "遵循项目写作风格与用户偏好（偏好优先于通用文风）。"
+
+#: 生成字数偏差容忍带（±30%）——带内 info 记录、带外 warning 记录（#1183，不阻断）。
+_WORD_DEVIATION_TOLERANCE = 0.3
+
+logger = logging.getLogger(__name__)
 
 
 def _chapter_value(chapter: object, key: str) -> Any:
@@ -116,6 +128,57 @@ def build_chapter_brief(
     if issues:
         lines.append("【审校意见（修订必改）】" + "；".join(issues))
     return "\n".join(lines)
+
+
+def chapter_write_messages(
+    system_prompt: str, chapter: object, default_words: int | None
+) -> list[dict[str, str]]:
+    """构造 writer agent 消息（system + user）— 三轨唯一实现（#1183）.
+
+    user 消息保持「请撰写章节《name》：description」指令语义；``default_words``
+    非 None 时追加目标字数（issue #1183：三轨 user 消息均需暴露字数约束）。
+
+    Args:
+        system_prompt: 章 brief（``build_chapter_brief`` 产出）.
+        chapter: 章 Outline 领域对象（T2 轨）或 ChapterDict（T3/T4 轨）.
+        default_words: 项目级 ``config.default_words``；None = 不追加（保持原样）.
+
+    Returns:
+        ``[{"role": "system", ...}, {"role": "user", ...}]``（agent.invoke 首参）.
+    """
+    instruction = (
+        f"请撰写章节《{_text(_chapter_value(chapter, 'name'))}》："
+        f"{_text(_chapter_value(chapter, 'description'))}"
+    )
+    if default_words is not None:
+        instruction += f"（目标字数 {default_words} 字）"
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": instruction},
+    ]
+
+
+def record_word_deviation(content: str, target: int | None, *, chapter_name: str) -> float | None:
+    """记录生成字数相对目标字数的偏差（只记录不抛异常，#1183）。
+
+    Args:
+        content: 该章生成正文（agent.invoke 结果末条 message content）.
+        target: 目标字数（项目级 ``config.default_words``）；None/<=0 = 未配置.
+        chapter_name: 章名（日志可读性）.
+
+    Returns:
+        偏差比 = 实际字数 / 目标字数；target 为 None/<=0 → 返回 None 且不记录。
+    """
+    if target is None or target <= 0:
+        return None
+    actual = count_words(content)
+    deviation = actual / target
+    message = f"章《{chapter_name}》字数偏差 {deviation:.2f}：实际 {actual} / 目标 {target}"
+    if 1 - _WORD_DEVIATION_TOLERANCE <= deviation <= 1 + _WORD_DEVIATION_TOLERANCE:
+        logger.info(message)
+    else:
+        logger.warning(message)
+    return deviation
 
 
 async def resolve_brief_setting(
