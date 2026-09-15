@@ -721,13 +721,13 @@ class BookAgenticPipeline:
             expected_volume_outline_id=chapter.get("volume_outline_id"),
         )
         messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
-        result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)
+        result = await agent.invoke(  # type: ignore[union-attr]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)（_require_deps 守卫无法收窄 Optional 工厂）
             messages, config={"configurable": {"thread_id": self._thread_id}}
         )
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
         record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter["name"])
-        draft = await self._draft_service.create(  # type: ignore[attr-defined,union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
+        draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
             project_id=plan.project_id,
             chapter_id=chapter["chapter_id"],
             content=content,
