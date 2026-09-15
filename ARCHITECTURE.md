@@ -48,7 +48,7 @@ D:\develop\projects\
 │   │   └── f52-cloud-protocol\   #   云端接口 Protocol spec
 │   ├── frontend\                    # ★ 前端（0.3.0 F19 GUI 起；云 Web 一套两用，ADR-020）
 │   │   └── packages\                #   pnpm workspace 双包：renderer（React19+Vite6）+ electron（薄壳）
-│   ├── ci_cd\                       # ★ CI 质量护栏（check_file_length / check_noqa_reason / api-coverage.md）
+│   ├── ci_cd\                       # ★ CI 质量护栏（check_file_length / check_noqa_reason / check_doc_pointers / api-coverage.md）
 │   ├── backend\
 │   │   ├── pyproject.toml           # 项目配置、依赖、工具设置
 │   │   ├── uv.lock                   # 依赖锁定（ADR-025，唯一真相，CI --frozen）
