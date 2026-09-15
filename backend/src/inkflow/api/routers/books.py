@@ -412,6 +412,10 @@ def _build_book_service(db: AsyncSession) -> BookService:
             draft_service=draft_service,
             audit_callable=LangChainLLMClient().chat,
             volume_lookup=_volume_lookup,
+            # #1174/#1177：F34 优先——审计走 ChapterAuditService（人设/设定漂移 +
+            # 字数 + 静态一致性），chapter_service 供正文落章（F34 的输入面）
+            audit_service=get_chapter_audit_service(db),
+            chapter_service=chapter_svc,
             context_builder=_context_builder,
             project_config_getter=_project_config_getter,
         )

@@ -58,14 +58,20 @@ def _parse_decision(content: str) -> tuple[str, str, str] | None:
 
 
 def _parse_audit(content: str) -> dict:
-    """解析审校 LLM 输出 → {score, issues}；解析失败返回零分空问题（不阻塞编排）."""
+    """解析审校 LLM 输出 → {score, issues}；解析失败返回零分空问题（不阻塞编排）.
+
+    #1177：恒补 F34 漂移字段（character_drift/setting_drift）——裸 LLM 分支无漂移
+    检测能力，置空列表保证审计结论键契约在任意分支下成立。
+    """
     data = _try_json(content)
     if data is None:
-        return {"score": 0, "issues": []}
+        return {"score": 0, "issues": [], "character_drift": [], "setting_drift": []}
     issues = data.get("issues", [])
     return {
         "score": int(data.get("score", 0)),
         "issues": [str(i) for i in issues] if isinstance(issues, list) else [],
+        "character_drift": [],
+        "setting_drift": [],
     }
 
 

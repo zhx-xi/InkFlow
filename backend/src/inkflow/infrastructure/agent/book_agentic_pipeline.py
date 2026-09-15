@@ -48,6 +48,14 @@ from inkflow.domain.services.chapter_brief import (
     resolve_brief_setting,
 )
 from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
+from inkflow.infrastructure.agent._audit_bridge import (
+    audit_event,
+    build_audit_messages,
+    persist_chapter_body,
+    read_draft_body,
+    read_draft_content,
+    report_to_audit_dict,
+)
 from inkflow.infrastructure.agent.book_agentic_helpers import (
     _bump_chapter_ops,
     _chapter_failed,
@@ -343,20 +351,25 @@ async def _write_chapter(
 async def _audit_chapter(
     state: BookAgenticState, pipeline: BookAgenticPipeline
 ) -> dict[str, object]:
-    """audit_chapter：audit_callable（注入）或 llm_client.chat（非决策调用）→ audit_results.
+    """audit_chapter：注入 F34 服务优先，否则 audit_callable / llm_client.chat → audit_results.
 
+    #1174：审计输入是本章**正文**——从 state["results"][oid]（= execution_id = draft id）
+    经 draft_service 取回后传入；取不到 → content=""，由 _delegate_audit 草稿回读兜底。
     #902：成功审校 chat → audit usage 事件（source="audit"）；异常 → 零事件。
     """
     oid = state.get("target_outline_id", "")
     chapter = _find_chapter(state["chapters"], oid)
     update = _counter_update(state, "audit_chapter")
-    audit: dict = {"score": 0, "issues": []}
+    audit: dict = {"score": 0, "issues": [], "character_drift": [], "setting_drift": []}
     event: dict | None = None
     if chapter is not None:
         try:
-            audit, event = await pipeline._delegate_audit(chapter)
+            body = await read_draft_content(
+                pipeline._draft_service, str(state.get("results", {}).get(oid, ""))
+            )
+            audit, event = await pipeline._delegate_audit(chapter, content=body)
         except Exception:
-            audit = {"score": 0, "issues": []}
+            audit = {"score": 0, "issues": [], "character_drift": [], "setting_drift": []}
     extra: dict[str, object] = {
         "audit_results": {oid: audit},
         "usage": [event] if event is not None else [],
@@ -455,6 +468,8 @@ class BookAgenticPipeline:
         writer_factory: Callable[..., Awaitable[object]] | None = None,
         draft_service: object | None = None,
         audit_callable: Callable[..., Awaitable[object]] | None = None,
+        audit_service: object | None = None,
+        chapter_service: object | None = None,
         retry_limit: int = 2,
         checkpointer: InMemorySaver | None = None,
         checkpoint_path: str | Path | None = None,
@@ -475,6 +490,8 @@ class BookAgenticPipeline:
         self._writer_factory = writer_factory
         self._draft_service = draft_service
         self._audit_callable = audit_callable
+        self._audit_service = audit_service
+        self._chapter_service = chapter_service
         self._context_builder = context_builder
         self._project_config_getter = project_config_getter
         self._volume_lookup = volume_lookup
@@ -773,37 +790,33 @@ class BookAgenticPipeline:
     _build_chapter_brief = staticmethod(build_chapter_brief)
 
     @instrument(caller_type="agent")
-    async def _delegate_audit(self, chapter: dict) -> tuple[dict, dict]:
-        """审校委托：audit_callable 注入优先，否则 llm_client.chat（非决策调用）.
+    async def _delegate_audit(self, chapter: dict, *, content: str = "") -> tuple[dict, dict]:
+        """审校委托（优先级）：注入 F34 服务 → audit_callable → llm_client.chat.
 
-        #902：返回 (audit, usage 事件)——事件 source="audit"、chapter=str(outline_id)，
-        取自底层 chat 响应（audit_callable 鸭子 async chat(messages) 同 llm.chat 形态）。
+        #1174：审计输入是本章**正文**（content 参数；空 → 回读该章最新草稿），
+        不再喂 chapter["description"]（大纲描述）。
+        #1177：F34 分支把四项检查（人设/设定漂移 + 字数 + 静态）映射为契约 dict
+        （character_drift/setting_drift/issues/score/findings）。
+        #902：返回 (audit, usage 事件)——事件 source="audit"、chapter=str(outline_id)；
+        F34 分支无 chat 响应 → 全零事件（防伪计费）。
         """
-        messages = [
-            ChatMessage(
-                role="system",
-                content="你是小说章节质量审校员。请审校章节正文并输出 JSON 质量评估。",
-            ),
-            ChatMessage(
-                role="user",
-                content=(
-                    f"请审校章节《{chapter.get('name', '')}》：{chapter.get('description', '')}。"
-                    '输出格式：{"score": <0-100 整数>, "issues": ["<问题1>", ...]}。'
-                ),
-            ),
-        ]
+        messages = build_audit_messages(chapter, content)
+        project_id = getattr(self._plan, "project_id", None)
+        chapter_id = chapter.get("chapter_id")
+        if self._audit_service is not None and chapter_id is not None:
+            text = content
+            if not text.strip():
+                text = await read_draft_body(self._draft_service, project_id, chapter)
+            if text.strip() and await persist_chapter_body(self._chapter_service, chapter_id, text):
+                report = await self._audit_service.audit(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按 F34 契约提供 async audit(project_id, chapter_id, include_static=...)
+                    project_id, chapter_id, include_static=True
+                )
+                return (report_to_audit_dict(report), audit_event(chapter, None))
         if self._audit_callable is not None:
             response = await self._audit_callable(messages)
         else:
             response = await self._llm.chat(messages)  # type: ignore[attr-defined]  # 鸭子类型：llm_client 按 F29 契约提供 async chat(messages)
-        prompt_tokens, completion_tokens, total_tokens = chat_response_usage(response)
         return (
             _parse_audit(str(getattr(response, "content", ""))),
-            _usage_event(
-                "audit",
-                str(chapter["outline_id"]),
-                prompt_tokens,
-                completion_tokens,
-                total_tokens,
-            ),
+            audit_event(chapter, response),
         )
