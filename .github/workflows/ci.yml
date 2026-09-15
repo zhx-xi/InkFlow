@@ -198,6 +198,12 @@ jobs:
           uv run python ../ci_cd/check_noqa_reason.py src/ ../tests/ tests/unit/
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: "Guardrail: doc pointers in AGENTS.md must resolve"
+        shell: pwsh
+        run: |
+          uv run python ../ci_cd/check_doc_pointers.py ..
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run ci_cd guard tests
         shell: pwsh
         run: |
