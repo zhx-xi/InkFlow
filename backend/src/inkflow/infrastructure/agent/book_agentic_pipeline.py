@@ -20,7 +20,6 @@ checkpoint/HITL：book_supervisor 节点 LLM 决策 → Command(goto) 路由到�
 
 from __future__ import annotations
 
-import json
 import operator
 import uuid
 from collections.abc import Awaitable, Callable
@@ -42,12 +41,27 @@ from inkflow.domain.ports.llm_client import ChatMessage
 from inkflow.domain.services.chapter_brief import (
     ContextBuilder,
     ProjectConfigGetter,
+    build_book_task_context,
     build_chapter_brief,
     chapter_write_messages,
     record_word_deviation,
     resolve_brief_setting,
 )
 from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
+from inkflow.infrastructure.agent.book_agentic_helpers import (
+    _bump_chapter_ops,
+    _chapter_failed,
+    _chapter_written,
+    _counter_update,
+    _extract_final_content,
+    _find_chapter,
+    _first_unaudited_written,
+    _parse_audit,
+    _parse_decision,
+    _plan_to_dict,
+    _restore_plan,
+    _usage_event,
+)
 from inkflow.logging import instrument
 
 _R = TypeVar("_R")
@@ -75,6 +89,9 @@ class BookAgenticState(TypedDict):
     # chapter_ops = 各章 write/audit/revise 累计次数（章节循环护栏数据源）
     target_outline_id: NotRequired[str]
     chapter_ops: NotRequired[dict[str, int]]
+    # #1186 P2-a：书任务上下文段（书名/大纲切片/风格偏好/角色摘要）——bootstrap 解析一次，
+    # 决策消息直接读 state（决策最多重试 4 次，不重复 await 装配层取值）
+    book_context: NotRequired[str]
     llm_client: Annotated[object, UntrackedValue(object)]
 
 
@@ -99,122 +116,6 @@ _DEFAULT_SUPERVISOR_PROMPT = (
     "你是小说创作管线的 book-level 编排 supervisor，负责书级动态路由决策。"
     "请根据书任务上下文、各章状态、书进度、路由历史与护栏约束，选择下一个操作或结束。"
 )
-
-
-def _try_json(content: str) -> dict | None:
-    """宽松 JSON 解析：仅接受 dict；其余（含列表/标量）返回 None."""
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def _parse_decision(content: str) -> tuple[str, str, str] | None:
-    """解析 LLM 决策 JSON → (action, op, outline_id)；空 content/解析失败返回 None.
-
-    宽松解析（镜像 F29 _parse_decision）：LLM 可能返回 markdown 代码块围栏包裹的
-    JSON，先试完整解析，失败则提取首个 { 到末个 } 子串。
-    """
-    if not content.strip():
-        return None
-    data = _try_json(content)
-    if data is None:
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end != -1 and start < end:
-            data = _try_json(content[start : end + 1])
-    if data is None:
-        return None
-    action = data.get("action")
-    if action == "goto":
-        op = data.get("op")
-        oid = data.get("outline_id")
-        if isinstance(op, str) and op and isinstance(oid, str) and oid:
-            return ("goto", op, oid)
-        return None
-    if action in ("finish", "fallback"):
-        return (action, "", "")
-    return None
-
-
-def _parse_audit(content: str) -> dict:
-    """解析审校 LLM 输出 → {score, issues}；解析失败返回零分空问题（不阻塞编排）."""
-    data = _try_json(content)
-    if data is None:
-        return {"score": 0, "issues": []}
-    issues = data.get("issues", [])
-    return {
-        "score": int(data.get("score", 0)),
-        "issues": [str(i) for i in issues] if isinstance(issues, list) else [],
-    }
-
-
-def _find_chapter(chapters: list[dict], outline_id: str) -> dict | None:
-    """按 outline_id（uuid 或 str）查章 dict；无 → None."""
-    for ch in chapters:
-        if str(ch.get("outline_id", "")) == str(outline_id):
-            return ch
-    return None
-
-
-def _extract_final_content(result: dict[str, Any]) -> str:
-    """从 agent.invoke 结果（dict，含 "messages"）提取最终 message content（镜像 F44）."""
-    messages = result.get("messages", [])
-    if not messages:
-        return ""
-    final = messages[-1]
-    content = getattr(final, "content", None)
-    if content is None and isinstance(final, dict):
-        content = final.get("content")
-    if content is None:
-        return ""
-    return str(content)
-
-
-def _plan_to_dict(plan: object) -> dict:
-    """WritingPlan → JSON dict；鸭子对象（SimpleNamespace）→ vars 快照（UUID 转 str）."""
-    if hasattr(plan, "model_dump"):
-        return cast(dict, plan.model_dump(mode="json"))  # 鸭子类型：WritingPlan 提供 model_dump
-    data = dict(vars(plan))
-    return {k: (str(v) if isinstance(v, uuid.UUID) else v) for k, v in data.items()}
-
-
-def _restore_plan(data: dict) -> WritingPlan:
-    """从 checkpoint 状态还原 WritingPlan（过滤未知键，兼容鸭子对象快照）."""
-    fields = WritingPlan.model_fields
-    return WritingPlan(**{k: v for k, v in data.items() if k in fields})
-
-
-def _counter_update(state: BookAgenticState, op: str) -> dict[str, object]:
-    """操作节点计数（镜像 F29 _role_node）：steps/consecutive/last_op."""
-    consecutive = state.get("consecutive", 0)
-    if state.get("last_op", "") == op:
-        consecutive += 1
-    else:
-        consecutive = 1
-    return {
-        "steps": state.get("steps", 0) + 1,
-        "consecutive": consecutive,
-        "last_op": op,
-    }
-
-
-def _bump_chapter_ops(state: BookAgenticState, outline_id: str) -> dict[str, int]:
-    """各章 write/audit/revise 累计次数 +1（章节循环护栏数据源）."""
-    ops = dict(state.get("chapter_ops", {}))
-    ops[outline_id] = ops.get(outline_id, 0) + 1
-    return ops
-
-
-def _first_unaudited_written(state: BookAgenticState) -> str | None:
-    """返回已写未审的章 outline_id（progress=in_progress 且无 audit_results）；无 → None."""
-    progress = state.get("progress", {})
-    audit_results = state.get("audit_results", {})
-    for oid in progress:
-        if progress[oid] == "in_progress" and oid not in audit_results:
-            return oid
-    return None
 
 
 def _guarded_route(
@@ -250,7 +151,7 @@ def _guarded_route(
 def _build_decision_messages(
     state: BookAgenticState, config: AgenticBookConfig, attempt: int
 ) -> list[ChatMessage]:
-    """组装决策消息：system（操作池+各章状态+书进度+路由历史+护栏，含「决策」字样——RED 契约）
+    """组装决策消息：system（书任务上下文+操作池+各章状态+书进度+路由历史+护栏，含「决策」字样）
     + user（结构化 JSON 要求；重试时重申路由历史）."""
     system_prompt = config.supervisor_prompt or _DEFAULT_SUPERVISOR_PROMPT
     chapter_lines = "\n".join(
@@ -258,6 +159,9 @@ def _build_decision_messages(
         f"{state.get('progress', {}).get(str(ch.get('outline_id', '')), 'pending')}）"
         for ch in state["chapters"]
     )
+    # #1186 P2-a：书任务上下文段（bootstrap 已解析；缺失 → 整段省略，不落占位符）
+    book_context = str(state.get("book_context", "")).strip()
+    context_section = f"{book_context}\n\n" if book_context else ""
     history = " → ".join(state.get("route_history", [])) or "（无）"
     done = sum(1 for s in state.get("progress", {}).values() if s == "done")
     failed = sum(1 for s in state.get("progress", {}).values() if s == "failed")
@@ -270,6 +174,7 @@ def _build_decision_messages(
         "- revise_chapter: 按审校意见修订一章\n"
         "- mark_done: 标记一章完成\n"
         "- finish_book: 全书完成\n\n"
+        f"{context_section}"
         f"各章状态：\n{chapter_lines}\n\n"
         f"书进度：done={done}，failed={failed}，总章数={len(state['chapters'])}\n"
         f"路由历史：{history}\n"
@@ -375,12 +280,18 @@ async def _supervisor_node(state: BookAgenticState, pipeline: BookAgenticPipelin
 
 @instrument(caller_type="agent")
 async def _bootstrap_node(state: BookAgenticState, pipeline: BookAgenticPipeline) -> Command[Any]:
-    """启动节点：注入 llm_client（UntrackedValue）；hitl_points 含 book_start → 先走 hitl.
+    """启动节点：注入 llm_client（UntrackedValue）+ 书任务上下文（#1186 P2-a 解析一次）；
+    hitl_points 含 book_start → 先走 hitl.
 
     恒返回 Command(goto=...)：bootstrap 无静态出边（Spike ② 教训——Command 与静态边
     并存会 fan-out）。
     """
-    update: dict[str, object] = {"llm_client": pipeline._llm}
+    update: dict[str, object] = {
+        "llm_client": pipeline._llm,
+        # #1186 P2-a：决策输入的书任务上下文在此解析一次写入 state —— 后续每次决策
+        # （含重试 4 次 / 各操作节点回环）只读 state，不重复 await 装配层取值
+        "book_context": await pipeline._resolve_book_context(state),
+    }
     goto = "hitl" if "book_start" in pipeline._config.hitl_points else "book_supervisor"
     return Command(update=update, goto=goto)
 
@@ -420,27 +331,12 @@ async def _write_chapter(
     """
     oid = state.get("target_outline_id", "")
     chapter = _find_chapter(state["chapters"], oid)
-    update = _counter_update(state, "write_chapter")
     if chapter is None:
-        return {**update, "results": {oid: "failed"}, "progress": {oid: "failed"}}
-    execution_id: str | None = None
-    event: dict | None = None
-    for _ in range(1 + pipeline._retry_limit):
-        try:
-            execution_id, event = await pipeline._delegate_write(chapter)
-        except Exception:
-            continue
-        else:
-            break
+        return _chapter_failed(state, "write_chapter", oid)
+    execution_id, event = await pipeline._write_with_retry(chapter)
     if execution_id is None:
-        return {**update, "results": {oid: "failed"}, "progress": {oid: "failed"}}
-    return {
-        **update,
-        "chapter_ops": _bump_chapter_ops(state, oid),
-        "results": {oid: execution_id},
-        "progress": {oid: "in_progress"},
-        "usage": [event] if event is not None else [],
-    }
+        return _chapter_failed(state, "write_chapter", oid)
+    return _chapter_written(state, "write_chapter", oid, execution_id, event)
 
 
 @instrument(caller_type="agent")
@@ -480,28 +376,14 @@ async def _revise_chapter(
     """
     oid = state.get("target_outline_id", "")
     chapter = _find_chapter(state["chapters"], oid)
-    update = _counter_update(state, "revise_chapter")
     if chapter is None:
-        return {**update, "results": {oid: "failed"}, "progress": {oid: "failed"}}
+        return _chapter_failed(state, "revise_chapter", oid)
     audit = state.get("audit_results", {}).get(oid, {})
     audit_issues = [str(i) for i in audit.get("issues", [])] if isinstance(audit, dict) else []
-    execution_id: str | None = None
-    event: dict | None = None
-    for _ in range(1 + pipeline._retry_limit):
-        try:
-            execution_id, event = await pipeline._delegate_write(chapter, audit_issues=audit_issues)
-        except Exception:
-            continue
-        else:
-            break
+    execution_id, event = await pipeline._write_with_retry(chapter, audit_issues=audit_issues)
     if execution_id is None:
-        return {**update, "results": {oid: "failed"}, "progress": {oid: "failed"}}
-    return {
-        **update,
-        "chapter_ops": _bump_chapter_ops(state, oid),
-        "results": {oid: execution_id},
-        "usage": [event] if event is not None else [],
-    }
+        return _chapter_failed(state, "revise_chapter", oid)
+    return _chapter_written(state, "revise_chapter", oid, execution_id, event)
 
 
 @instrument(caller_type="agent")
@@ -543,15 +425,7 @@ async def _fallback_node(
         oid = str(chapter["outline_id"])
         if progress.get(oid) == "done":
             continue
-        execution_id: str | None = None
-        event: dict | None = None
-        for _ in range(1 + pipeline._retry_limit):
-            try:
-                execution_id, event = await pipeline._delegate_write(chapter)
-            except Exception:
-                continue
-            else:
-                break
+        execution_id, event = await pipeline._write_with_retry(chapter)
         if execution_id is None:
             progress[oid] = "failed"
             results[oid] = "failed"
@@ -586,12 +460,16 @@ class BookAgenticPipeline:
         checkpoint_path: str | Path | None = None,
         context_builder: ContextBuilder | None = None,
         project_config_getter: ProjectConfigGetter | None = None,
+        volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]] | None = None,
     ) -> None:
         """构造：llm_client 经 UntrackedValue 注入（不参与 checkpointer 序列化，R7）.
 
         checkpointer 显式传入 → 优先使用（不打开文件）；否则 checkpoint_path → 每次
         execute/resume 临时打开 AsyncSqliteSaver 文件后端（跨实例/跨进程 resume 可行）；
         两者皆无 → 进程内 InMemorySaver。
+
+        volume_lookup: #976 卷解析回调（镜像 F44 BookVolumePipeline）——缺失 → 兜底
+            草稿不归卷（volume_id=None），既有装配不受影响。
         """
         self._llm = llm_client
         self._writer_factory = writer_factory
@@ -599,6 +477,7 @@ class BookAgenticPipeline:
         self._audit_callable = audit_callable
         self._context_builder = context_builder
         self._project_config_getter = project_config_getter
+        self._volume_lookup = volume_lookup
         self._retry_limit = retry_limit
         if checkpointer is None and checkpoint_path is None:
             checkpointer = InMemorySaver()
@@ -608,6 +487,26 @@ class BookAgenticPipeline:
         self._plan: WritingPlan | None = None
         self._limits = BookLimits()
         self._config = AgenticBookConfig()
+
+    async def _resolve_book_context(self, state: BookAgenticState) -> str:
+        """书任务上下文段装配（#1186 P2-a）：解析 setting → 委托域层渲染.
+
+        渲染实现在 :func:`chapter_brief.build_book_task_context`（域层单一实现点）；
+        本方法只负责装配层取值（project_config_getter / context_builder）。
+        书级决策取首章为 F6 设定上下文代表（``get_context`` 按项目注入，忽略章参）。
+        """
+        plan = self._plan
+        if plan is None:
+            return ""
+        chapters: list[dict] = state["chapters"]
+        chapter: object = chapters[0] if chapters else None
+        project_config: object | None = (
+            await self._project_config_getter(plan.project_id)
+            if self._project_config_getter is not None
+            else None
+        )
+        setting = await resolve_brief_setting(self._context_builder, project_config, plan, chapter)
+        return build_book_task_context(plan, chapters, setting)
 
     def _build_graph(
         self, checkpointer: BaseCheckpointSaver
@@ -767,6 +666,45 @@ class BookAgenticPipeline:
         return await self._run_with_checkpointer(_read, thread_id=run_id)
 
     @instrument(caller_type="agent")
+    def _require_deps(self, *, writer: bool = False, drafts: bool = False) -> WritingPlan:
+        """装配守卫（#1186 收敛三条重复 ``raise ValueError("… 未装配")``）→ plan."""
+        if self._plan is None:
+            raise ValueError("plan 未装配")
+        if writer and self._writer_factory is None:
+            raise ValueError("writer_factory 未装配")
+        if drafts and self._draft_service is None:
+            raise ValueError("draft_service 未装配")
+        return self._plan
+
+    async def _chapter_deps(self, plan: WritingPlan, chapter: dict) -> tuple[str, dict[str, Any]]:
+        """章 brief 装配（#1186 收敛 `_delegate_write`/`_revise_chapter` 重复取值）.
+
+        返回 ``(system_prompt, brief_inputs)``：后者供调用方取 ``default_words``
+        （消息构造 :func:`chapter_write_messages` 与字数偏差记录
+        :func:`record_word_deviation` 共用），避免重复 ``resolve_brief_setting``。
+        """
+        cfg: object | None = (
+            await self._project_config_getter(plan.project_id)
+            if self._project_config_getter is not None
+            else None
+        )
+        brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
+        return self._build_chapter_brief(plan, chapter, **brief_inputs), brief_inputs
+
+    async def _write_with_retry(
+        self, chapter: dict, *, audit_issues: list[str] | None = None
+    ) -> tuple[str | None, dict | None]:
+        """委托写作 + retry_limit 重试（#1186 收敛 write/revise/fallback 三处逐字重复的重试环）.
+
+        全部尝试失败 → (None, None)（调用方按失败路径落 progress=results=failed）。
+        """
+        for _ in range(1 + self._retry_limit):
+            try:
+                return await self._delegate_write(chapter, audit_issues=audit_issues)
+            except Exception:  # 逐次重试语义：单次失败不中断，交由下轮
+                continue
+        return None, None
+
     async def _delegate_write(
         self, chapter: dict, *, audit_issues: list[str] | None = None
     ) -> tuple[str, dict]:
@@ -776,23 +714,11 @@ class BookAgenticPipeline:
         #902：usage 事件只来自真实 invoke 结果（messages usage_metadata / 顶层 usage），
         双源皆缺 → 全零事件（无伪计费）；source="write"、chapter=str(outline_id)。
         """
-        plan = self._plan
-        if plan is None:
-            raise ValueError("plan 未装配")
-        if self._writer_factory is None:
-            raise ValueError("writer_factory 未装配")
-        if self._draft_service is None:
-            raise ValueError("draft_service 未装配")
-        cfg: object | None = (
-            await self._project_config_getter(plan.project_id)
-            if self._project_config_getter is not None
-            else None
-        )
-        brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
-        system_prompt = self._build_chapter_brief(
-            plan, chapter, audit_issues=audit_issues or [], **brief_inputs
-        )
-        agent = await self._writer_factory(
+        plan = self._require_deps(writer=True, drafts=True)
+        system_prompt, brief_inputs = await self._chapter_deps(plan, chapter)
+        if audit_issues:
+            system_prompt += "\n【审校意见（修订必改）】" + "；".join(audit_issues)
+        agent = await self._writer_factory(  # type: ignore[misc]  # 已过 _require_deps 守卫
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
             expected_chapter_id=chapter["chapter_id"],
@@ -800,30 +726,48 @@ class BookAgenticPipeline:
             expected_volume_outline_id=chapter.get("volume_outline_id"),
         )
         messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
-        result = await agent.invoke(  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)
+        result = await agent.invoke(  # type: ignore[union-attr]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)（_require_deps 守卫无法收窄 Optional 工厂）
             messages, config={"configurable": {"thread_id": self._thread_id}}
         )
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
         content = _extract_final_content(result)
         record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter["name"])
-        draft = await self._draft_service.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_service 按 F27 契约提供 async create
+        draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
             project_id=plan.project_id,
             chapter_id=chapter["chapter_id"],
             content=content,
             summary="书级 agent 编排保存",
+            volume_id=await self._resolve_draft_volume(plan, chapter),
             source_outline_id=chapter["outline_id"],
         )
         execution_id = str(getattr(draft, "id", ""))
         return (
             execution_id,
-            {
-                "source": "write",
-                "chapter": str(chapter["outline_id"]),
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-            },
+            _usage_event(
+                "write",
+                str(chapter["outline_id"]),
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            ),
         )
+
+    async def _resolve_draft_volume(self, plan: WritingPlan, chapter: dict) -> uuid.UUID | None:
+        """#976 D3/D5：委托落草稿卷解析（volume_lookup 未装配/无映射/解析失败 → None）.
+
+        查表键：章 dict 的 ``volume_outline_id``（卷 outline 节点 id）优先，回退
+        ``outline_id``（章 dict 恒含）；str/UUID 双形态容错归一为 UUID。
+        """
+        if self._volume_lookup is None:
+            return None
+        lookup_id = chapter.get("volume_outline_id") or chapter["outline_id"]
+        volume_raw = await self._volume_lookup(plan.project_id, lookup_id)
+        if volume_raw is None:
+            return None
+        try:
+            return volume_raw if isinstance(volume_raw, uuid.UUID) else uuid.UUID(str(volume_raw))
+        except (TypeError, ValueError):
+            return None
 
     # #1185：章 brief 三轨副本收敛——本轨直接复用 domain 单一实现（签名见 chapter_brief）
     _build_chapter_brief = staticmethod(build_chapter_brief)
@@ -855,11 +799,11 @@ class BookAgenticPipeline:
         prompt_tokens, completion_tokens, total_tokens = chat_response_usage(response)
         return (
             _parse_audit(str(getattr(response, "content", ""))),
-            {
-                "source": "audit",
-                "chapter": str(chapter["outline_id"]),
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-            },
+            _usage_event(
+                "audit",
+                str(chapter["outline_id"]),
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            ),
         )

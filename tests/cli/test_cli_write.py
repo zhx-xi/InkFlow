@@ -183,7 +183,19 @@ class TestWriteNext:
         assert "--show-context" in result.output
 
     def test_next_show_context_placeholder(self, cli_runner, fake_http_client):
-        """--show-context 占位打印（F23 流式: 仍在摘要行后 echo，spec §4.1）."""
+        """--show-context 打印真实上下文（#1186 P2-b 语义升级；spec f6 §6 L310）.
+
+        原断言形态（已废止）：恒打印占位符
+        `(--show-context 功能将在 F6 联调时启用)` 且位于摘要行之后 ——
+        该占位符正是 #1186 P2-b 要修掉的缺陷，升级为断言真实 ContextAssemblyResult。
+        """
+        fake_http_client.post.return_value = {
+            "blocks": [],
+            "budget_tokens": 8000,
+            "total_tokens": 321,
+            "model": "test-model",
+            "dropped": [],
+        }
         result = cli_runner.invoke(
             app,
             [
@@ -199,10 +211,12 @@ class TestWriteNext:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert "(--show-context 功能将在 F6 联调时启用)" in result.output
-        # 流式摘要行先输出，占位提示在其后
+        # 占位符已废止 → 打印真实上下文（blocks/budget/total/model）
+        assert "(--show-context 功能将在 F6 联调时启用)" not in result.output
+        assert "321" in result.output
+        # 流式摘要行先输出，上下文摘要在其后
         assert result.output.index("✅ 章节生成成功: 4 字 (重试 0 次, test-model)") < (
-            result.output.index("(--show-context 功能将在 F6 联调时启用)")
+            result.output.index("321")
         )
 
     def test_next_llm_error_before_stream(self, cli_runner, fake_http_client):

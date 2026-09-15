@@ -411,6 +411,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
             writer_factory=_writer_factory,
             draft_service=draft_service,
             audit_callable=LangChainLLMClient().chat,
+            volume_lookup=_volume_lookup,
             context_builder=_context_builder,
             project_config_getter=_project_config_getter,
         )

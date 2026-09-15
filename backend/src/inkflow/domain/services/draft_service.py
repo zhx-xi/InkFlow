@@ -22,7 +22,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import cast
 
-from inkflow.domain.models.chapter import ChapterStatus, ChapterUpdate
+from inkflow.domain.models.chapter import (
+    ChapterStatus,
+    ChapterUpdate,
+    normalize_chapter_content,
+)
 from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.domain.services._word_count import count_words
 
@@ -66,8 +70,7 @@ class DraftService:
         memory_service: object | None = None,
         chapter_creator: object | None = None,
         outline_bindder: Callable[[str, str], Awaitable[None]] | None = None,
-        volume_ensurer: Callable[[uuid.UUID, uuid.UUID], Awaitable[uuid.UUID | None]]
-        | None = None,
+        volume_ensurer: Callable[[uuid.UUID, uuid.UUID], Awaitable[uuid.UUID | None]] | None = None,
     ) -> None:
         self._repo = draft_repo
         self._chapter_service = chapter_service
@@ -110,10 +113,13 @@ class DraftService:
             raise ValueError("project_id 不能为全零 UUID（#275 孤儿数据签名）")
         if not content.strip():
             raise ValueError("草稿内容不能为空")
+        # #1186 P2-c：草稿层落库前经 #1095 归一闸口（GUI 草稿预览与确认落章同口径；
+        # title 传 "" —— 草稿无标题，仅「首行重复标题行」检测受影响，缩进/markdown 归一无关）
+        normalized = normalize_chapter_content(content, "")
         draft: Draft = await self._repo.create(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 create
             project_id=project_id,
             chapter_id=chapter_id,
-            content=content,
+            content=normalized,
             summary=summary,
             agent_run_id=agent_run_id,
             volume_id=volume_id,
@@ -125,7 +131,7 @@ class DraftService:
                 project_id=project_id,
                 chapter_id=chapter_id,
                 severity_summary="draft_saved",
-                summary=f"草稿保存 {count_words(content)} 字",
+                summary=f"草稿保存 {count_words(normalized)} 字",
                 degraded=True,
             )
         return draft
@@ -214,13 +220,10 @@ class DraftService:
                 and self._volume_ensurer is not None
                 and effective_source is not None
             ):
-                resolved_volume_id = await self._volume_ensurer(
-                    draft.project_id, effective_source
-                )
+                resolved_volume_id = await self._volume_ensurer(draft.project_id, effective_source)
             create_method = cast(
                 Callable[..., Awaitable[object]],
-                getattr(self._chapter_creator, "create_chapter", None)
-                or self._chapter_creator,
+                getattr(self._chapter_creator, "create_chapter", None) or self._chapter_creator,
             )
             created = await create_method(
                 draft.project_id,
@@ -231,11 +234,7 @@ class DraftService:
             created_id = getattr(created, "id", None)
             if created_id is None:
                 raise DraftStateError("自动建章失败：未返回章节 id")
-            target = (
-                created_id
-                if isinstance(created_id, uuid.UUID)
-                else uuid.UUID(str(created_id))
-            )
+            target = created_id if isinstance(created_id, uuid.UUID) else uuid.UUID(str(created_id))
             new_chapter_id = target
             await self._repo.update_chapter_binding(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按 D4 契约提供 update_chapter_binding
                 draft_id, target
@@ -314,6 +313,9 @@ class DraftService:
         """
         if not content.strip():
             raise ValueError("草稿内容不能为空")
+        # #1186 P2-c：编辑流同样先归一 —— F28 diff 的 before/after 均为归一值
+        # （否则归一改写本身会被误学成用户偏好信号）
+        normalized = normalize_chapter_content(content, "")
         draft = await self._repo.get(draft_id)  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 get
         if draft is None:
             raise DraftNotFoundError("草稿不存在")
@@ -321,7 +323,7 @@ class DraftService:
             message = "草稿已确认" if draft.status is DraftStatus.CONFIRMED else "草稿已拒绝"
             raise DraftStateError(message)
         updated: Draft | None = await self._repo.update_content(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_content；注解收窄 Any（镜像 confirm 写法）
-            draft_id, content
+            draft_id, normalized
         )
         if updated is None:
             raise DraftNotFoundError("草稿不存在")
@@ -331,8 +333,8 @@ class DraftService:
                 draft_id=draft_id,
                 project_id=draft.project_id,
                 chapter_id=draft.chapter_id,
-                before=draft.content,
-                after=content,
+                before=normalize_chapter_content(draft.content, ""),
+                after=normalized,
                 agent_run_id=draft.agent_run_id,
             )
             self.last_learned = bool(getattr(self._memory_service, "last_learned", False))
@@ -394,6 +396,8 @@ class DraftService:
         """
         if not content.strip():
             raise ValueError("草稿内容不能为空")
+        # #1186 P2-c：agent 覆盖路径同口径归一（#997 幂等覆盖不引入第二套正文形态）
+        normalized = normalize_chapter_content(content, "")
         draft = await self._repo.get(draft_id)  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 get
         if draft is None:
             raise DraftNotFoundError("草稿不存在")
@@ -402,7 +406,7 @@ class DraftService:
             raise DraftStateError(message)
         updated: Draft | None = await self._repo.update_content(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_content
             draft_id,
-            content,
+            normalized,
             summary=summary,
         )
         if updated is None:
