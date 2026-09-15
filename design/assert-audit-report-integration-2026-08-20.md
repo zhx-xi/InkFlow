@@ -93,10 +93,10 @@ scan_v2_out.txt 的 A1-true-smoke 共 23 处，但 **只有 2 处属于本审计
 ### 1.4 范围外 A1 命中源码确认（backend/tests/unit，供参考）
 | 文件:行 | 测试名 | 确认结果 |
 |---|---|---|
-| backend/tests/unit/test_drop_is_deleted_migration.py:62 | test_migrate_drop_missing_table_noop | **真 noop**（L65 仅调用，无断言）：迁移函数对不存在表的行为只验证「不抛错」，若函数部分写入（建表）无法察觉 |
-| backend/tests/unit/test_kg_extract_scheduler.py:332 | test_stop_is_idempotent | **真 noop**（L336-340 stop/start/stop/stop 无断言）：改 stop 实现为泄漏任务/误 stop 其他任务仍绿 |
-| backend/tests/unit/test_pipeline_templates.py:81/124 | test_placeholders_covered_by_input_from | **扫描误报**：断言在 helper `_assert_placeholders_covered_by_input_from` 内（函数体仅调用 helper），实际有效 |
-| backend/tests/unit/test_agent_relations.py（8 处）、test_writing_plan_model.py:178/183、test_search_models.py:139、test_settings_models.py:246、test_kernel_windows_real.py:75/147、test_cloud_protocols.py:101、test_pyinstaller_spec.py:25、tests/conftest.py:31 | — | 未逐一读源码，需人工复核（疑似含 helper 断言式误报，如 pipeline_templates 先例） |
+| backend/tests/unit/infrastructure/database/test_drop_is_deleted_migration.py:62 | test_migrate_drop_missing_table_noop | **真 noop**（L65 仅调用，无断言）：迁移函数对不存在表的行为只验证「不抛错」，若函数部分写入（建表）无法察觉 |
+| backend/tests/unit/infrastructure/scheduler/test_kg_extract_scheduler.py:332 | test_stop_is_idempotent | **真 noop**（L336-340 stop/start/stop/stop 无断言）：改 stop 实现为泄漏任务/误 stop 其他任务仍绿 |
+| backend/tests/unit/infrastructure/agent/test_pipeline_templates.py:81/124 | test_placeholders_covered_by_input_from | **扫描误报**：断言在 helper `_assert_placeholders_covered_by_input_from` 内（函数体仅调用 helper），实际有效 |
+| backend/tests/unit/domain/services/test_agent_relations.py（8 处）、test_writing_plan_model.py:178/183、test_search_models.py:139、test_settings_models.py:246、test_kernel_windows_real.py:75/147、test_cloud_protocols.py:101、test_pyinstaller_spec.py:25、tests/conftest.py:31 | — | 未逐一读源码，需人工复核（疑似含 helper 断言式误报，如 pipeline_templates 先例） |
 
 ---
 

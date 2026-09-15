@@ -236,10 +236,10 @@ detect 维度不匹配
 
 | 现有资产 | 复用方式 |
 |---|---|
-| `tests/unit/test_langchain_vector_store.py` 的 `FakeEmbeddings`（384 维字符袋）+ `store` fixture（真实 Chroma + tmp_path） | 直接用于 §4.1-C 全部用例（维度探测/差集清理/meta collection/去重）；`make_entity` 助手扩展 metadata 参数即可 |
-| `tests/unit/test_deps_embedding.py` 的 `_reset_vector_store_singleton` autouse fixture + `_repo_with_providers` + `_embedding_provider` | §4.1-D 单例刷新用例零成本接入；E5/E6 与其 E1-E4 同文件同风格（同 spec 演进，建议并入同一文件） |
-| `tests/unit/test_search_semantic.py` | stale 期间检索语义（§4.2-21）、世界观直查路径（§4.2-22）的 mock 底座；其「异常 → 200 空结果」契约需按新语义**修订**（stale ≠ 异常） |
-| `tests/unit/test_search_service.py` | `_map_retrieved` 缺键 fallback 断言延续到 chapter_x/chapter_y 新键（P2-1 回归）；去重后 top_k 截断断言 |
+| `backend/tests/unit/infrastructure/rag/test_langchain_vector_store.py` 的 `FakeEmbeddings`（384 维字符袋）+ `store` fixture（真实 Chroma + tmp_path） | 直接用于 §4.1-C 全部用例（维度探测/差集清理/meta collection/去重）；`make_entity` 助手扩展 metadata 参数即可 |
+| `backend/tests/unit/infrastructure/rag/test_deps_embedding.py` 的 `_reset_vector_store_singleton` autouse fixture + `_repo_with_providers` + `_embedding_provider` | §4.1-D 单例刷新用例零成本接入；E5/E6 与其 E1-E4 同文件同风格（同 spec 演进，建议并入同一文件） |
+| `backend/tests/unit/domain/services/test_search_semantic.py` | stale 期间检索语义（§4.2-21）、世界观直查路径（§4.2-22）的 mock 底座；其「异常 → 200 空结果」契约需按新语义**修订**（stale ≠ 异常） |
+| `backend/tests/unit/domain/services/test_search_service.py` | `_map_retrieved` 缺键 fallback 断言延续到 chapter_x/chapter_y 新键（P2-1 回归）；去重后 top_k 截断断言 |
 | `tests/api/` conftest（override_get_db）+ `test_project_api.py` / extraction API 测试 | §4.2 全部 API 用例的骨架；reindex 端点测试已有先例（幂等断言可复制） |
 | CLI 测试（F14 的 `tests/cli` vector 组，CI 显式列表） | CLI stale 警告断言 + 新 `vector status` 子命令；**注意 F14 坑 #8：新增 CLI 测试文件必须显式加入 ci.yml job 列表** |
 | F14 `extraction_runs` 表 + `_content_hash`（sha256） | LLM 切片增量跳过的数据源（P2-2）；增量断言在 service 层测试复用其 repo stub |

@@ -43,7 +43,7 @@
 | 10 | **LangChain 版本升级破坏兼容** | `uv lock` 时 pyproject.toml 的 `<2.0.0` 上限保护；手动升级需显式 `uv lock` 重新解析 + 跑全量测试 |
 | 12 | **CI job 名带 `-backend` 后缀** | 前端接入后会有 `-frontend` 后缀，新增 job 时注意命名约定 |
 | 20 | **pre-commit ruff 版本漂移** | 本地 venv 可能更新到 0.16+，与 `.pre-commit-config.yaml` 钉住版本漂移 → commit 前先 `git add -A` 再 commit，或 `pre-commit run ruff-format --files` 预修 |
-| 21 | **后台 serve 污染测试** | 跑测试前先杀 `inkflow serve`（否则污染 tests/unit/test_log.py） |
+| 21 | **后台 serve 污染测试** | 跑测试前先杀 `inkflow serve`（否则污染 backend/tests/unit/core/test_log.py） |
 | 22 | **hermes 终端 `&` 调用运算符误判** | 命令以 `& "path"` 开头会被 Hermes 终端误判为后台；写完整路径裸命令 |
 | 23 | **PowerShell 输出管道 BOM 污染** | `curl | python -c` 管道注入 UTF-8 BOM；先 `-o` 落文件再读，或走 gh api |
 

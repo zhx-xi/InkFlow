@@ -46,7 +46,7 @@
 
 ### 3.3 🟡 P3 — test_log 回归测试隔离缺陷
 
-- `tests/unit/test_log.py::test_setup_logging_creates_log_in_backend_logs_from_other_cwd` 假设 `backend/logs/` 无现存日志文件
+- `backend/tests/unit/core/test_log.py::test_setup_logging_creates_log_in_backend_logs_from_other_cwd` 假设 `backend/logs/` 无现存日志文件
 - 实测复现：serve 进程占用 `inkflow_2026-08-01.log` 时测试误报 1 fail；清理后 3 passed
 - 根因：测试依赖全局环境状态（真实 logs 目录），非代码 bug；CI 干净环境掩盖
 - 处置：测试改用 `tmp_path` 隔离，不触碰真实 `backend/logs`
