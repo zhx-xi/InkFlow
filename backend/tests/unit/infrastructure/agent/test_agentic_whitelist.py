@@ -514,3 +514,113 @@ class TestBuiltinSkillSlugsV522:
             "worldview-methodology",
             "polishing-methodology",
         ]
+
+
+# ── #1185 盲区 4 · 死参数静态检查：build_writer_agent_system_prompt ──
+
+
+class TestWriterSystemPromptDeadParams:
+    """`agentic_writer.py:64-89` 声明 outline/context/min_words/style_hint 四参
+    从不读取（P2-6 死参数）。
+
+    既有覆盖的盲区：
+    - `test_f27_api_gaps.py:545-559` 只调 `(pm)` 四参全默认 → 死参数不可见
+    - `test_deps_agentic_model_resolution.py:88/140/203` 把函数整个 patch 成
+      `return_value="prompt"` → **函数体根本不执行**
+
+    本类直接传 4 个可辨识实参，断言渲染产物含它们。当前模板
+    `variables: [project_id, chapter_id]` 只有两键 → 必 FAIL。
+    """
+
+    def _fake_pm(self) -> MagicMock:
+        """PromptManager 鸭子对象：render 出含 project_id/chapter_id 的 prompt."""
+        pm = MagicMock()
+        template = SimpleNamespace(system_prompt="基础提示", variables=["project_id", "chapter_id"])
+        pm.load.return_value = template
+        pm.render.side_effect = lambda _t, variables: SimpleNamespace(
+            messages=[{"content": "基础提示 " + str(sorted(variables.items()))}]
+        )
+        return pm
+
+    def test_context_reaches_rendered_prompt(self):
+        """context 实参必须进渲染产物（当前是死参数 → FAIL）."""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            build_writer_agent_system_prompt,
+        )
+
+        result = build_writer_agent_system_prompt(
+            self._fake_pm(), context="【角色】宁晚：太虚剑派掌门之女"
+        )
+
+        assert "宁晚" in result
+
+    def test_outline_reaches_rendered_prompt(self):
+        """outline 实参必须进渲染产物（当前是死参数 → FAIL）."""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            build_writer_agent_system_prompt,
+        )
+
+        result = build_writer_agent_system_prompt(
+            self._fake_pm(), outline="主角在时间旅途中发现悖论"
+        )
+
+        assert "时间旅途中发现悖论" in result
+
+    def test_min_words_and_style_hint_reach_rendered_prompt(self):
+        """min_words / style_hint 实参必须进渲染产物（当前是死参数 → FAIL）."""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            build_writer_agent_system_prompt,
+        )
+
+        result = build_writer_agent_system_prompt(
+            self._fake_pm(), min_words=3333, style_hint="慢热日常·白描"
+        )
+
+        assert "3333" in result
+        assert "慢热日常·白描" in result
+
+
+# ── #1185 A9/A2 · 两 factory 传参 + world 白名单（P1-3 / P1-4）────────
+
+
+class TestWriterTrackWorldToolWhitelist:
+    """A2：writer 白名单须含 world 工具（P1-3 世界观双重锁死）.
+
+    `_WRITER_READER_NAMES`（agentic_writer.py:35-43）现只有 5 只读，无 world。
+    """
+
+    def test_writer_whitelist_includes_world_tools(self):
+        """`_WRITER_READER_NAMES` 须含 world 检索工具（世界观可达 writer）."""
+        from inkflow.infrastructure.agent.agentic_writer import _WRITER_READER_NAMES
+
+        assert "get_world_setting" in _WRITER_READER_NAMES
+
+    def test_build_agentic_writer_materializes_world_tool(self):
+        """world_service 注入 → world 工具实际物化进 tools（P1-3 第 2 重锁）."""
+        reader_deps = ReaderToolDeps(
+            character_service=AsyncMock(),
+            foreshadowing_service=AsyncMock(),
+            summary_service=AsyncMock(),
+            chapter_audit_service=AsyncMock(),
+            world_service=AsyncMock(),
+        )
+
+        tools = build_reader_tools(reader_deps)
+
+        assert "get_world_setting" in [t.spec.name for t in tools]
+
+
+class TestWriterFactoryPassesToolAndSkillIds:
+    """A9：两 factory 均须传 tool_ids / skill_ids（P1-4 授权未接）.
+
+    - `api/routers/books.py` `_writer_factory`（T2/T3/T4 共享面）
+    - `api/deps_agentic_writer.py` `_build_agent`（T1 独立实现）
+
+    当前两者都不传 → 走 `_WRITER_READER_NAMES` 硬编码兜底、skill_ids 恒 None
+    → `_append_skills` 永不执行（F39 skill 注入在所有写作轨失效）。
+
+    两 factory 均为**依赖函数内的闭包**，只能经装配层驱动；行为断言落在
+    `tests/api/test_writer_factory_authorization.py`（import 真实依赖函数、
+    patch `build_agentic_writer`、断言 kwargs 透传）。
+    本文件只锁「白名单常量」这类可直接观测的面。
+    """

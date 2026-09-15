@@ -156,6 +156,7 @@ class ProjectRepositoryProtocol(Protocol):
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - **spec 是开发的唯一真相来源**。如果发现 spec 与实现矛盾，先更新 spec，再改代码
 - **Spec 篇幅纪律（2026-08-08 #201 立规）**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录（tests/implementation/decisions 等），但 **spec.md 头部必须显式声明 references/ 清单**（防 agent 漏读）；已实现 spec 只加「快速导航」块（§N 标题 + 行号）不物理拆分
+- **Spec 状态标记证据要求**：spec 中 `✅ 已实现` 必须附可验证证据（测试名 / PR 编号 / `文件:行号`），无证据视为待验证 → 条款与覆盖边界见 `docs/contract-guard.md` §「spec 状态标记证据要求」
 
 ### 5.2 开始新功能
 

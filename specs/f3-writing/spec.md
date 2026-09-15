@@ -505,6 +505,11 @@ F3 依赖:
   F5 (llm_service)     ✅ — LLMClientProtocol + PromptTemplateProtocol（ADR-015 隔离）
   F6 (context_service) ⏳ — ContextProviderProtocol 上下文注入（F3 提供 Null 实现先行开发，
                              F6 就绪后替换为真实实现，零改动）
+```
+
+> ⚠️ **状态标记待复核（2026-09-15，审计发现）**：上方「F6 就绪后替换为真实实现，零改动」
+> 与源码不符——替换**从未发生**，产线仍运行 `NullContextProvider`（#1176 / #1175）。
+> 修正排期见 0.15.0 W3（#1184b）。同类另见 `specs/f44-book-orchestrator/spec.md` §11 L691-692。
 
 F3 被依赖:
   F4 (agent_service) — Writer/Reviser 环节调用 generate_chapter / continue_writing / revise_content
