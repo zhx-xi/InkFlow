@@ -290,8 +290,9 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
    handle = _acquire_lifetime_mutex(_lifetime_mutex_name(kind, state_file))   # 三 kind 统一
    if handle is None:                          # 互斥被占
        复检一次复用（持有者可能刚就绪落盘）→ 命中即复用
-       否则 既有 = 注册表查同 kind 存活实例
-              抛 KernelStartupError（消息含既有实例 port / pid / data_dir）
+       否则 轮询 kernel.json ≤ timeout（吸收对端冷启动窗口；#1192）
+            超时仍无 → 既有 = 注册表查同 kind 存活实例
+                       抛 KernelStartupError（消息含既有实例 port / pid / data_dir）
 3. 拉起动作互斥 → spawn
 ```
 

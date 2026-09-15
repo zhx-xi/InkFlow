@@ -19,10 +19,9 @@ from inkflow.infrastructure.kernel.instance_kind import (
 )
 from inkflow.infrastructure.kernel.kernel_errors import KernelStartupError
 
-# 存活期互斥被占后的「等待复用」窗口（#1171）：
-# 持有者可能仍在拉起早期（尚未落 kernel.json）。此窗口远小于冷启动 timeout，
-# 只用于吸收并发竞态窗口；超时即判定为既有实例冲突。
-_LIFETIME_REUSE_WAIT = 5.0
+# 存活期互斥被占后等待对端落 kernel.json 的窗口 = 调用方 timeout（#1192）：
+# 对端可能是正在冷启动的实例，窗口须覆盖其完整启动时长；
+# 原 5.0s 硬截断在高负载下误报「既有实例已存在」（诊断文案还引导用户去退出一个正在启动的实例）。
 
 
 @dataclass(frozen=True)
@@ -430,7 +429,7 @@ async def ensure_kernel(
         #   - 就绪 → 前持有者已拉起完成 → 复用
         #   - 未就绪（含超时）→ 判定为（同 data_dir 的）既有实例冲突 → 拒绝
         # 不用注册表做准入判据（有 GC 延迟，非可靠信号）；注册表仅用于**拒绝消息**。
-        st = _poll_state_file(state_file, timeout=min(timeout, _LIFETIME_REUSE_WAIT))
+        st = _poll_state_file(state_file, timeout=timeout)
         if st is not None:
             _log_kernel_event(f"复用并发实例内核 pid={st.pid} port={st.port}")
             return KernelHandle(
