@@ -316,3 +316,48 @@ async def test_second_dev_same_data_dir_rejected(tmp_path, mocks):
         await ensure_kernel(
             state_file=tmp_path / "kernel.json", spawn_cmd=SPAWN_CMD, instance_kind="dev"
         )
+
+
+# ── #1192：存活期互斥被占后的等待窗口（并发冷启动复用）──────────────────
+
+
+async def test_lifetime_busy_waits_full_timeout_window(tmp_path, mocks):
+    """#1192：互斥被占 → 等待对端落 kernel.json 的窗口 = 调用方 timeout，不被 5s 截断。
+
+    RED 契约（当前实现 ``min(60, _LIFETIME_REUSE_WAIT=5.0)`` → FAIL）：
+    并发冷启动时第二个进程要等的是「对端**完整冷启动**」（高负载下 > 5s），
+    窗口过小 → 误报既有实例冲突，且诊断文案引导用户去退出一个**正在启动**的实例。
+
+    可证伪性：恢复 ``min(timeout, 5.0)`` 截断 → 本用例 FAIL。
+    """
+    mocks.lifetime.return_value = None  # 存活期互斥被占（对端正在拉起）
+    mocks.read.side_effect = [None, None]  # 两次复用判定均未就绪（kernel.json 尚未落盘）
+
+    handle = await ensure_kernel(
+        state_file=tmp_path / "kernel.json",
+        spawn_cmd=SPAWN_CMD,
+        timeout=60.0,
+        instance_kind="dev",
+    )
+
+    assert handle.reused is True, "对端就绪后应复用，而非报既有实例冲突"
+    assert (
+        mocks.poll.call_args.kwargs["timeout"] == 60.0
+    ), "等待窗口须等于调用方 timeout（存活期互斥分支与 Bootstrap 互斥分支口径统一）"
+
+
+async def test_lifetime_busy_still_rejects_when_never_ready(tmp_path, mocks):
+    """#1192 保护带：对端始终不就绪 → 仍抛 KernelStartupError（放大窗口不弱化拒绝语义）。"""
+    mocks.lifetime.return_value = None
+    mocks.read.side_effect = [None, None]
+    mocks.poll.return_value = None
+
+    with pytest.raises(KernelStartupError) as exc:
+        await ensure_kernel(
+            state_file=tmp_path / "kernel.json",
+            spawn_cmd=SPAWN_CMD,
+            timeout=60.0,
+            instance_kind="dev",
+        )
+
+    assert "已被占用" in str(exc.value)
