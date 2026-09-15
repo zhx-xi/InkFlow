@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -12,8 +13,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from inkflow.infrastructure.kernel import registry, state
-from inkflow.infrastructure.kernel.instance_kind import resolve_instance_kind
+from inkflow.infrastructure.kernel.instance_kind import (
+    normalize_instance_kind,
+    resolve_instance_kind,
+)
 from inkflow.infrastructure.kernel.kernel_errors import KernelStartupError
+
+# 存活期互斥被占后的「等待复用」窗口（#1171）：
+# 持有者可能仍在拉起早期（尚未落 kernel.json）。此窗口远小于冷启动 timeout，
+# 只用于吸收并发竞态窗口；超时即判定为既有实例冲突。
+_LIFETIME_REUSE_WAIT = 5.0
 
 
 @dataclass(frozen=True)
@@ -108,12 +117,31 @@ def _release_mutex(handle: object | None) -> None:
         ctypes.windll.kernel32.CloseHandle(handle)
 
 
-def _acquire_lifetime_mutex(kind: str) -> object | None:
-    """获取**存活期**互斥（spec §5.6 / ADR-059 ②）：具名互斥体 ``InkFlowKernel<Kind>``。
+def _lifetime_mutex_name(kind: str, state_file: Path) -> str:
+    """存活期互斥名（spec §5.6 / ADR-059 ②，#1188）。
+
+    - ``dev``：互斥名含 **data_dir 摘要** → 同 data_dir 单内核，不同 data_dir
+      （含各 worktree）互不阻塞。目录经 ``resolve()`` + ``lower()`` 归一
+      （Windows 大小写不敏感 + 相对/绝对同指一个目录必须同互斥名）。
+    - ``rc`` / ``prod``：data_dir 维度**恒定收敛** → 机器级单内核（全局）。
+
+    🔴 「data_dir 是否参与判定」**只在本函数**分支，调用方不得再判 kind——
+    将来 rc/prod 若要按 data_dir 分域，改动面 = 本函数一处。
+    """
+    if kind == "dev":
+        data_dir = str(state_file.parent.resolve()).lower()
+        key = hashlib.sha256(data_dir.encode("utf-8")).hexdigest()[:16]
+        return f"InkFlowKernelDev-{key}"
+    return f"InkFlowKernel{kind.capitalize()}"
+
+
+def _acquire_lifetime_mutex(kind: str, state_file: Path) -> object | None:
+    """获取**存活期**互斥（spec §5.6 / ADR-059 ②）：具名互斥体，三 kind 统一走此路。
 
     与 ``_acquire_mutex``（拉起动作互斥，finally 释放）不同：本互斥表达
-    「同 kind 只允许一个内核**存活**」，故**永不释放**——随调用方进程退出由
-    OS 自动回收（rc/release 各一个独立互斥名，跨 kind 互不阻塞）。
+    「同互斥名只允许一个内核**存活**」，故**永不释放**——随调用方进程退出由
+    OS 自动回收（互斥名由 ``_lifetime_mutex_name`` 决定；rc/prod 全局各一个、
+    dev 按 data_dir 分域）。
 
     成功 → 句柄；已被占用（Windows 错误码 183）→ None；非 Windows 平台返回
     哨兵对象（无互斥语义，测试全 mock）。
@@ -123,7 +151,7 @@ def _acquire_lifetime_mutex(kind: str) -> object | None:
     import ctypes
 
     handle: object | None = ctypes.windll.kernel32.CreateMutexW(
-        None, False, f"InkFlowKernel{kind.capitalize()}"
+        None, False, _lifetime_mutex_name(kind, state_file)
     )
     if not handle:
         return None
@@ -352,33 +380,59 @@ async def ensure_kernel(
 
     client_version = inkflow.__version__
 
-    # 4. 实例类型准入（spec §5.6 / ADR-059 ②，**复用判定之前**）：
-    #    rc/release → 机器级存活期互斥（限额 1，跨 kind 互不阻塞）；dev → 多开放行
-    kind = instance_kind or resolve_instance_kind()
-    if kind != "dev":
-        lifetime_handle = _acquire_lifetime_mutex(kind)
-        if lifetime_handle is None:
-            existing = registry.find_by_kind(registry.registry_dir(state_file), kind)
-            detail = (
-                f"pid={existing[0].pid} port={existing[0].port} data_dir={existing[0].data_dir}"
-                if existing
-                else "注册表未记录存活实例（可能刚退出，请稍后重试）"
-            )
-            raise KernelStartupError(
-                f"{kind} 内核实例已存在（存活期互斥 InkFlowKernel{kind.capitalize()} "
-                f"已被占用）：{detail}；请先退出既有实例再拉起"
-            )
-
-    # 5. 复用判定（spec §5.1 分支 1）
-    st = state.read_kernel_state(state_file)
-    if st is not None:
-        alive = state.is_process_alive(st.pid)
-        healthy = _probe_health(st.port, st.token, health_timeout)
+    # 4. 复用判定（spec §5.1 分支 1，**存活期互斥之前**）：
+    #    必须先在，否则同进程/并发的第二个调用方永远复用不到既有内核——
+    #    它会撞上本进程已持有且永不释放的存活期互斥 → 被拒（#1171 报错形态）。
+    def _try_reuse() -> KernelHandle | None:
+        """读状态文件 + pid 存活 + /health + 版本兼容 → 复用句柄；否则 None。"""
+        st0 = state.read_kernel_state(state_file)
+        if st0 is None:
+            return None
+        alive = state.is_process_alive(st0.pid)
+        healthy = _probe_health(st0.port, st0.token, health_timeout)
         compatible = True
         if version_check:
-            compatible = state.is_version_compatible(st.version, client_version)
-        if alive and healthy and compatible:
-            _log_kernel_event(f"复用内核 pid={st.pid} port={st.port} version={st.version}")
+            compatible = state.is_version_compatible(st0.version, client_version)
+        if not (alive and healthy and compatible):
+            # stale：先备份再拉起（spec §5.1 分支 4）
+            state.mark_stale(state_file)
+            _log_kernel_event(f"stale 清理 {state_file.name}（pid 死/health 失败/版本不匹配）")
+            return None
+        _log_kernel_event(f"复用内核 pid={st0.pid} port={st0.port} version={st0.version}")
+        return KernelHandle(
+            port=st0.port,
+            token=st0.token,
+            pid=st0.pid,
+            version=st0.version,
+            started_at=st0.started_at,
+            reused=True,
+        )
+
+    reused = _try_reuse()
+    if reused is not None:
+        return reused
+
+    # 5. 实例类型准入（spec §5.6 / ADR-059 ②）：**只在确实要拉起时**取存活期互斥。
+    #    三 kind 统一走此路，差异仅在互斥名（_lifetime_mutex_name）——rc/prod
+    #    全局单内核；dev 按 data_dir 分域（同 data_dir 单内核，不同 worktree 互不阻塞）。
+    #    被占 → 提示既有实例（同 data_dir）。
+    # 显式传入 → 归一（``release`` 别名 / 大小写 / 空白）；非法显式值回落自判
+    # （宽松语义，与 resolve_instance_kind 对非法 env 的处理一致）。
+    kind = normalize_instance_kind(instance_kind) or resolve_instance_kind()
+    lifetime_handle = _acquire_lifetime_mutex(kind, state_file)
+    if lifetime_handle is None:
+        # 互斥被占 ≠ 一定冲突：持有者可能刚就绪并写好 kernel.json（拉起竞态窗口）
+        # → 复检一次复用。
+        reused = _try_reuse()
+        if reused is not None:
+            return reused
+        # 判定信号 = **单一事实源：kernel.json 是否已就绪**（方案 A，用户拍板）。
+        #   - 就绪 → 前持有者已拉起完成 → 复用
+        #   - 未就绪（含超时）→ 判定为（同 data_dir 的）既有实例冲突 → 拒绝
+        # 不用注册表做准入判据（有 GC 延迟，非可靠信号）；注册表仅用于**拒绝消息**。
+        st = _poll_state_file(state_file, timeout=min(timeout, _LIFETIME_REUSE_WAIT))
+        if st is not None:
+            _log_kernel_event(f"复用并发实例内核 pid={st.pid} port={st.port}")
             return KernelHandle(
                 port=st.port,
                 token=st.token,
@@ -387,9 +441,17 @@ async def ensure_kernel(
                 started_at=st.started_at,
                 reused=True,
             )
-        # stale：先备份再拉起（spec §5.1 分支 4）
-        state.mark_stale(state_file)
-        _log_kernel_event(f"stale 清理 {state_file.name}（pid 死/health 失败/版本不匹配）")
+        existing = registry.find_by_kind(registry.registry_dir(state_file), kind)
+        detail = (
+            f"pid={existing[0].pid} port={existing[0].port} data_dir={existing[0].data_dir}"
+            if existing
+            else "注册表未记录存活实例（可能刚退出，请稍后重试）"
+        )
+        raise KernelStartupError(
+            f"{kind} 内核实例已存在（存活期互斥 "
+            f"{_lifetime_mutex_name(kind, state_file)} 已被占用）：{detail}；"
+            "请先退出既有实例再拉起"
+        )
 
     # 6. 互斥（spec §5.1 分支 2/3）
     mutex_handle = _acquire_mutex("InkFlowKernelBootstrap")
