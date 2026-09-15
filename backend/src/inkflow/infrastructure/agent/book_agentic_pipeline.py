@@ -676,15 +676,22 @@ class BookAgenticPipeline:
             raise ValueError("draft_service 未装配")
         return self._plan
 
-    async def _chapter_deps(self, plan: WritingPlan, chapter: dict) -> str:
-        """章 brief 装配（#1186 收敛 `_delegate_write`/`_revise_chapter` 重复取值）."""
+    async def _chapter_deps(
+        self, plan: WritingPlan, chapter: dict
+    ) -> tuple[str, dict[str, object]]:
+        """章 brief 装配（#1186 收敛 `_delegate_write`/`_revise_chapter` 重复取值）.
+
+        返回 ``(system_prompt, brief_inputs)``：后者供调用方取 ``default_words``
+        （消息构造 :func:`chapter_write_messages` 与字数偏差记录
+        :func:`record_word_deviation` 共用），避免重复 ``resolve_brief_setting``。
+        """
         cfg: object | None = (
             await self._project_config_getter(plan.project_id)
             if self._project_config_getter is not None
             else None
         )
         brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
-        return self._build_chapter_brief(plan, chapter, **brief_inputs)
+        return self._build_chapter_brief(plan, chapter, **brief_inputs), dict(brief_inputs)
 
     async def _write_with_retry(
         self, chapter: dict, *, audit_issues: list[str] | None = None
@@ -710,7 +717,7 @@ class BookAgenticPipeline:
         双源皆缺 → 全零事件（无伪计费）；source="write"、chapter=str(outline_id)。
         """
         plan = self._require_deps(writer=True, drafts=True)
-        system_prompt = await self._chapter_deps(plan, chapter)
+        system_prompt, brief_inputs = await self._chapter_deps(plan, chapter)
         if audit_issues:
             system_prompt += "\n【审校意见（修订必改）】" + "；".join(audit_issues)
         agent = await self._writer_factory(  # type: ignore[misc]  # 已过 _require_deps 守卫

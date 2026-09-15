@@ -38,6 +38,7 @@ BOOK_TITLE = "蜀山，我是掌门"
 CHAPTER_OUTLINE = "主角随师父出诊，于山道救下重伤的散修，引出医武不分家的传承。"
 CHARACTER_SUMMARY = "主角：少年掌门，医道初成，性格沉静。"
 PROJECT_STYLE = "古典仙侠，白描为主，忌恶俗打脸立威。"
+TARGET_WORDS = 3000
 
 
 def _make_plan() -> WritingPlan:
@@ -112,9 +113,18 @@ class _FakeAgent:
 class _FakeWriterFactory:
     def __init__(self) -> None:
         self.content = "本章正文。" * 50
+        # 每次 writer invoke 的 messages 快照（断言 user 消息字数约束用）
+        self.invoked_messages: list[list[dict[str, str]]] = []
 
     async def __call__(self, **kwargs):
-        return _FakeAgent(self.content)
+        agent = _FakeAgent(self.content)
+        factory = self
+
+        async def _invoke(messages, config=None):
+            factory.invoked_messages.append(messages)
+            return await agent.invoke(messages, config)
+
+        return SimpleNamespace(invoke=_invoke)
 
 
 # ── P2-a：supervisor 决策输入含书任务上下文 ────────────────────
@@ -235,3 +245,46 @@ class TestFallbackDraftVolume:
         assert drafts.created, "兜底未产生 draft_service.create 调用"
         for call in drafts.created:
             assert call.get("volume_id") is None
+
+
+# ── P2-a′：book 轨 writer user 消息含目标字数（#1183 三轨统一）────────
+
+
+class TestWriterUserMessageWordTarget:
+    async def test_user_message_carries_default_words(self) -> None:
+        """book 轨 ``_delegate_write`` 须经 ``chapter_write_messages`` 构造消息，
+        user 消息带项目级 ``default_words`` 目标字数（#1183 三轨统一）。
+
+        回归守护：``_delegate_write`` 曾直接引用未定义的 ``brief_inputs``，
+        被 ``_write_with_retry`` 的 ``except Exception`` 静默吞掉
+        → draft_service.create 永不执行。本用例同时断言 create 发生
+        （兜底/正常写入路径未被异常短路）。
+        """
+        from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeline
+
+        chapters = _make_chapters()
+        drafts = _CaptureDraftService()
+        factory = _FakeWriterFactory()
+        llm = _CapturingLLM([_gotos("write_chapter", chapters[0]["outline_id"])])
+
+        async def _config_getter(project_id):
+            return SimpleNamespace(writing_style=PROJECT_STYLE, default_words=TARGET_WORDS)
+
+        pipeline = BookAgenticPipeline(
+            llm,
+            writer_factory=factory,
+            draft_service=drafts,
+            audit_callable=llm.chat,
+            project_config_getter=_config_getter,
+        )
+        await pipeline.execute(_make_plan(), chapters, _make_limits())
+
+        assert factory.invoked_messages, "writer agent 未被调用（_delegate_write 异常被吞）"
+        user_messages = [
+            m["content"] for msgs in factory.invoked_messages for m in msgs if m["role"] == "user"
+        ]
+        assert user_messages, "writer 消息缺 user 段"
+        assert any(
+            str(TARGET_WORDS) in content for content in user_messages
+        ), f"book 轨 user 消息缺目标字数 {TARGET_WORDS}：{user_messages}"
+        assert drafts.created, "draft_service.create 未执行（写入路径被异常短路）"
