@@ -219,3 +219,33 @@ async def resolve_brief_setting(
         "project_style": project_style,
         "default_words": default_words,
     }
+
+
+def build_book_task_context(
+    plan: WritingPlan, chapters: list[dict], setting: dict[str, Any]
+) -> str:
+    """书任务上下文段（book supervisor 决策输入，f49 §5.3 / #1186 P2-a）.
+
+    与 :func:`build_chapter_brief` 同属「写作链 prompt 段渲染」单一实现点，
+    故与此处同住（`book_agentic_pipeline` 侧仅做装配调用，不重复渲染逻辑）.
+
+    Args:
+        plan: 书级计划（取 title）.
+        chapters: 章 dict 列表（取 name + description 作大纲切片）.
+        setting: :func:`resolve_brief_setting` 的产出（context / project_style）.
+
+    Returns:
+        段式文本：书名 + 大纲切片 + 风格偏好 + 角色/设定摘要；
+        context / style 缺席 → 对应行**显式缺席**（不伪造占位符，风格回退通用祈使句）.
+    """
+    lines = ["书任务上下文：", f"- 书名：{plan.title}"]
+    outline_lines = [
+        f"  - {ch.get('name', '')}：{str(ch.get('description') or '').strip()}" for ch in chapters
+    ]
+    if outline_lines:
+        lines.append("- 大纲切片：\n" + "\n".join(outline_lines))
+    lines.append(f"- 风格偏好：{_text(setting.get('project_style')) or _DEFAULT_STYLE_HINT}")
+    context_text = _text(setting.get("context"))
+    if context_text:
+        lines.append(f"- 角色/设定摘要：{context_text}")
+    return "\n".join(lines)

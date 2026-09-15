@@ -64,21 +64,31 @@ def _make_chapters() -> list[dict]:
     ]
 
 
+def _gotos(op: str, outline_id) -> str:
+    """决策 JSON（goto 形态）。"""
+    return f'{{"action": "goto", "op": "{op}", "outline_id": "{outline_id}"}}'
+
+
 def _make_limits() -> BookLimits:
     return BookLimits(max_chapters=5, max_agent_calls=50)
 
 
 class _CapturingLLM:
-    """捕获决策消息的 fake LLM（镜像 FakeDecisionLLM 判别式：system 含「决策」）。"""
+    """捕获决策消息的 fake LLM（镜像 FakeDecisionLLM 判别式：system 含「决策」）。
 
-    def __init__(self) -> None:
+    decisions: 决策轮次队列；耗尽后回 '{"action": "finish"}'。
+    """
+
+    def __init__(self, decisions: list[str] | None = None) -> None:
         self.decision_systems: list[str] = []
+        self._decisions = list(decisions or [])
 
     async def chat(self, messages, **kwargs):
         system = messages[0].content if messages else ""
         if "决策" in system:
             self.decision_systems.append(system)
-            return SimpleNamespace(content='{"action": "finish"}')
+            content = self._decisions.pop(0) if self._decisions else '{"action": "finish"}'
+            return SimpleNamespace(content=content)
         return SimpleNamespace(content='{"score": 85, "issues": []}')
 
 
@@ -174,11 +184,18 @@ class TestSupervisorDecisionContext:
 
 class TestFallbackDraftVolume:
     async def test_fallback_draft_carries_volume_id(self) -> None:
-        """P2-d：兜底 draft_service.create 须收到非 None 的 volume_id（镜像另两轨）。"""
+        """P2-d：兜底 draft_service.create 须收到非 None 的 volume_id（镜像另两轨）。
+
+        路由到 fallback 的确定性手法：决策返回一个合法 ``goto``，但 ``max_steps=0``
+        → `_guarded_route` 首条判据（steps >= max_steps）即返回 None → supervisor
+        goto="fallback"（见 book_agentic_pipeline `_supervisor_node` / `_guarded_route`）。
+        注意：不能靠「决策队列耗尽→finish」——``action == "finish"`` 在护栏之前短路。
+        """
         from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeline
 
+        chapters = _make_chapters()
         drafts = _CaptureDraftService()
-        llm = _CapturingLLM()
+        llm = _CapturingLLM([_gotos("write_chapter", chapters[0]["outline_id"])])
 
         async def _volume_lookup(project_id, lookup_id):
             return VOLUME_ID
@@ -190,10 +207,31 @@ class TestFallbackDraftVolume:
             audit_callable=llm.chat,
             volume_lookup=_volume_lookup,
         )
-        await pipeline.execute(_make_plan(), _make_chapters(), _make_limits())
+        # max_steps=0 → 首个决策必被护栏判 fallback（确定性兜底路径）
+        await pipeline.execute(
+            _make_plan(), chapters, BookLimits(max_chapters=5, max_agent_calls=50, max_steps=0)
+        )
 
         assert drafts.created, "兜底未产生 draft_service.create 调用"
         for call in drafts.created:
             assert (
                 call.get("volume_id") == VOLUME_ID
             ), f"兜底 draft 未透传 volume_id（应为 {VOLUME_ID}）：{call}"
+
+    async def test_no_volume_lookup_leaves_volume_none(self) -> None:
+        """P2-d 反例守护：未装配 volume_lookup → volume_id=None（既有装配不受影响）。"""
+        from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeline
+
+        chapters = _make_chapters()
+        drafts = _CaptureDraftService()
+        llm = _CapturingLLM([_gotos("write_chapter", chapters[0]["outline_id"])])
+        pipeline = BookAgenticPipeline(
+            llm, writer_factory=_FakeWriterFactory(), draft_service=drafts, audit_callable=llm.chat
+        )
+        await pipeline.execute(
+            _make_plan(), chapters, BookLimits(max_chapters=5, max_agent_calls=50, max_steps=0)
+        )
+
+        assert drafts.created, "兜底未产生 draft_service.create 调用"
+        for call in drafts.created:
+            assert call.get("volume_id") is None

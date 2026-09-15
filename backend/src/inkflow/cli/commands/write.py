@@ -23,8 +23,6 @@ from inkflow.logging import instrument
 
 app = typer.Typer(help="AI 写作命令", no_args_is_help=True)
 
-_SHOW_CONTEXT_NOTE = "(--show-context 功能将在 F6 联调时启用)"
-
 _AGENTIC_TIMEOUT = 300.0  # agentic 多步 ReAct 长任务端点 per-request 超时（#274）
 
 
@@ -95,6 +93,16 @@ def _echo_warnings(warnings: list[str]) -> None:
     """格式校验/修订警告逐条 echo（spec §4.1 / §7 E6/E7）."""
     for w in warnings:
         typer.echo(f"⚠ {w}")
+
+
+def _echo_assembly(assembly: dict) -> None:
+    """--show-context 人类模式：打印本次组装的 ContextAssemblyResult 摘要（f6 §6 L310）."""
+    typer.echo(
+        f"上下文注入: {assembly.get('model') or '-'} | "
+        f"{assembly.get('total_tokens')}/{assembly.get('budget_tokens')} tokens | "
+        f"blocks={len(assembly.get('blocks') or [])} | "
+        f"dropped={len(assembly.get('dropped') or [])}"
+    )
 
 
 def _agentic_tool_sequence(steps: list[dict]) -> str:
@@ -171,11 +179,26 @@ def next(
     cli_ctx = _get_cli_ctx(ctx)
     if json_output:
         cli_ctx.json_output = True
+    assembly: dict | None = None
 
     async def _impl() -> dict | list[dict]:
+        nonlocal assembly
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            if show_context:
+                # #1186 P2-b：--show-context 调既有 HTTP 端点（Issue #169 CLI 恒经 HTTP，
+                # 不在 CLI 本地 build_context）；writing_requirements 用 --outline 语义，
+                # model 留空 = 服务端按兜底窗口计预算（命令无 --model 参数）
+                assembly = await client.post(
+                    "/context/assemble",
+                    json={
+                        "project_id": project_id,
+                        "chapter_id": chapter_id,
+                        "model": "",
+                        "writing_requirements": outline,
+                    },
+                )
             if mode == "agentic":
                 request = AgenticWriteRequest(
                     project_id=uuid.UUID(project_id),
@@ -207,9 +230,7 @@ def next(
                 results.append(
                     await _collect_stream(
                         cli_ctx,
-                        client.stream_sse(
-                            "/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT
-                        ),
+                        client.stream_sse("/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT),
                         WritingMode.GENERATE.value,
                     )
                 )
@@ -220,7 +241,10 @@ def next(
         return
     if mode == "agentic":
         # agentic 分支恒返回 dict（deterministic 分支恒返回 list）
-        _echo_agentic_result(cli_ctx, results)
+        _echo_agentic_result(
+            cli_ctx,
+            {**results, "context": assembly} if show_context and assembly is not None else results,
+        )
         return
     for i, result in enumerate(results):
         if result.get("error"):
@@ -236,9 +260,16 @@ def next(
                 typer.echo()  # 章间空行分隔（spec §4.1）
     if cli_ctx.json_output:
         data = results[0] if len(results) == 1 else results
+        if show_context and assembly is not None:
+            # #1186 P2-b：--json 信封 data 增 context 键（多章列表另行包裹为 chapters）
+            data = (
+                {**data, "context": assembly}
+                if isinstance(data, dict)
+                else {"chapters": data, "context": assembly}
+            )
         print_result(cli_ctx, data)
-    if show_context and not cli_ctx.json_output:
-        typer.echo(_SHOW_CONTEXT_NOTE)
+    elif show_context and assembly is not None:
+        _echo_assembly(assembly)
 
 
 @app.command("continue")
@@ -270,9 +301,7 @@ def continue_(
             }
             return await _collect_stream(
                 cli_ctx,
-                client.stream_sse(
-                    "/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT
-                ),
+                client.stream_sse("/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT),
                 WritingMode.CONTINUE.value,
             )
 
@@ -318,9 +347,7 @@ def revise(
                 body["target_range"] = range_
             return await _collect_stream(
                 cli_ctx,
-                client.stream_sse(
-                    "/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT
-                ),
+                client.stream_sse("/writing/stream", json=body, timeout=LLM_TASK_TIMEOUT),
                 WritingMode.REVISE.value,
             )
 
