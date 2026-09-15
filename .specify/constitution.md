@@ -1,6 +1,6 @@
 # InkFlow Constitution — 项目章程
 
-> 版本 2.0 | 基于 ADR-001~030 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）；2026-08-07 LLM 行对齐 ADR-005v2（ChatLiteLLM→ChatOpenAI）；2026-08-08 ADR 范围 001~028→001~030（#201）
+> 版本 2.1 | 基于 ADR-001~059 | 依据 PRD v2.2 | 2026-08-02 结构同步修订（ADR-019 v2 里程碑 + ADR-025 依赖锁定）；2026-08-07 LLM 行对齐 ADR-005v2（ChatLiteLLM→ChatOpenAI）；2026-08-08 ADR 范围 001~028→001~030（#201）；2026-09-15 ADR 范围 001~030→001~059 + 新增 §四 4.5「语言与异步惯例」（原 AGENTS.md §6.1 独有项）+ §6.1/§6.3 plan.md 降为可选形态（#1190 批 A：AGENTS.md SSOT 归位）
 
 ---
 
@@ -102,6 +102,13 @@ docs: 文档
 chore: 构建/工具/依赖
 ```
 
+### 4.5 语言与异步惯例
+- 所有文件顶部 `from __future__ import annotations`
+- 枚举使用 `StrEnum`（Python 3.11+），注意 Ruff UP042 规则
+- `async/await` 贯穿全栈：FastAPI → Service → Repository → SQLAlchemy async
+- docstring 用中文，代码用英文
+- Pydantic v2 风格：`model_config = {"from_attributes": True}`（非 `class Config`）
+
 ---
 
 ## 五、测试规范
@@ -151,10 +158,12 @@ Constitution → Specify → Clarify → Plan → Tasks → Implement
 ### 6.1 规格文件结构
 ```
 specs/
-└── {feature-name}/
-    ├── spec.md    # 什么（What）— 功能规格
-    └── plan.md    # 如何（How）— 实施计划
+└── {feature}/
+    ├── spec.md    # 什么（What）— 功能规格（唯一真相）
+    └── plan.md    # （可选形态）如何（How）— 实施计划
 ```
+
+`plan.md` 为**可选形态**：实施计划默认由 `spec.md §8`（文件结构）+ `§13`（验收命令）+ GitHub Issue 承载，仅超复杂批次另建独立 `plan.md`。
 
 ### 6.2 Spec 必须包含
 - 概述（1-2 句）
@@ -171,6 +180,8 @@ specs/
 - 逐任务分解（每个 2-5 分钟）
 - 每个任务包含完整 RED→GREEN→REFACTOR 三步
 - 验证命令与预期结果
+
+> 当前口径：Plan 五要素由 **spec §8（文件清单）+ §13（验证命令）** 承载；独立 `plan.md` 仅在超复杂批次使用。
 
 ---
 

@@ -18,7 +18,7 @@
 ## 质量标准（PR 必过）
 
 - ruff lint（规则集见 `backend/pyproject.toml`）+ mypy 类型检查（严格化配置）
-- 单元 + 集成测试全绿（覆盖率 ≥ 70%）
+- 单元 + 集成测试全绿（覆盖率门禁：98.5% 行 / 95.0% 分支，ADR-027）
 - 新代码全类型化，无裸 `Any`；抑制必须带理由（`# noqa: X  # reason`）
 - 无 monster files（>900 行被 `ci_cd/check_file_length.py` 拦截）
 - 详细陷阱清单见 `ai-traps.md`
