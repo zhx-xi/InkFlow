@@ -421,10 +421,10 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 | MODIFY | `backend/src/inkflow/api/deps.py` | AgenticWriterDeps / draft_service / repos 装配 |
 | MODIFY | `backend/src/inkflow/cli/commands/write.py` | next 命令加 --mode/--max-steps/--token-budget |
 | MODIFY | `backend/src/inkflow/cli/commands/agent_cmd.py` | 新增 draft/run 子命令组 |
-| CREATE | `backend/tests/unit/test_agentic_writer_service.py` | 编排服务契约（mock LLM 序列驱动，RED 主批） |
-| CREATE | `backend/tests/unit/test_save_draft_tool.py` | 写工具契约（service 注入 + 事务 + 审计） |
-| CREATE | `backend/tests/unit/test_draft_repo.py` | 草稿仓储集成（真实 SQLite 轨） |
-| CREATE | `backend/tests/unit/test_agent_run_repo.py` | run 仓储集成（真实 SQLite 轨） |
+| CREATE | `backend/tests/unit/domain/services/test_agentic_writer_service.py` | 编排服务契约（mock LLM 序列驱动，RED 主批） |
+| CREATE | `backend/tests/unit/infrastructure/agent/test_save_draft_tool.py` | 写工具契约（service 注入 + 事务 + 审计） |
+| CREATE | `backend/tests/unit/infrastructure/database/test_draft_repo.py` | 草稿仓储集成（真实 SQLite 轨） |
+| CREATE | `backend/tests/unit/infrastructure/database/test_agent_run_repo.py` | run 仓储集成（真实 SQLite 轨） |
 | CREATE | `tests/cli/test_cli_agent_draft.py` | draft 子命令 CLI 测试（**须登记 ci.yml integration-cli-backend**） |
 | CREATE | `tests/cli/test_cli_agent_run.py` | run 子命令 CLI 测试（同上登记） |
 | CREATE | `tests/cli/test_cli_write_agentic.py` | write next --mode agentic CLI 测试（同上登记） |
@@ -494,10 +494,10 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 
 ## 13. 验收标准
 
-- **M1 编排契约全绿**: `pytest tests/unit/test_agentic_writer_service.py` — 7 类契约（正常闭环/同工具×5/max_steps/空 content 重试/save_draft 落库+确认/审计日志/决策轨迹）RED（ModuleNotFoundError）→ GREEN 全过
-- **M2 写工具全绿**: `pytest tests/unit/test_save_draft_tool.py` — 正反例 + 单事务断言 + 审计写入
-- **M3 仓储全绿**: `pytest tests/unit/test_draft_repo.py tests/unit/test_agent_run_repo.py` — 真实 SQLite 轨 CRUD + JSON 快照
-- **M4 回归零破坏**: F26 5 只读工具测试仍绿（`tests/unit/test_reader_tools.py`）+ deterministic 全路径（`tests/api/test_writing_api.py` 等）零回归；覆盖率全仓 ≥60%（ADR-027 门禁 98.5/95.0）
+- **M1 编排契约全绿**: `pytest backend/tests/unit/domain/services/test_agentic_writer_service.py` — 7 类契约（正常闭环/同工具×5/max_steps/空 content 重试/save_draft 落库+确认/审计日志/决策轨迹）RED（ModuleNotFoundError）→ GREEN 全过
+- **M2 写工具全绿**: `pytest backend/tests/unit/infrastructure/agent/test_save_draft_tool.py` — 正反例 + 单事务断言 + 审计写入
+- **M3 仓储全绿**: `pytest backend/tests/unit/infrastructure/database/test_draft_repo.py backend/tests/unit/infrastructure/database/test_agent_run_repo.py` — 真实 SQLite 轨 CRUD + JSON 快照
+- **M4 回归零破坏**: F26 5 只读工具测试仍绿（`backend/tests/unit/infrastructure/agent/test_reader_tools.py`）+ deterministic 全路径（`tests/api/test_writing_api.py` 等）零回归；覆盖率全仓 ≥60%（ADR-027 门禁 98.5/95.0）
 - **M5 CLI 全绿**: `tests/cli/test_cli_write_agentic.py test_cli_agent_draft.py test_cli_agent_run.py`（**已登记 ci.yml integration-cli-backend**）— 信封/人类模式/退出码
 - **M6 API 全绿**: agentic/generate + runs + drafts 端点契约（404/409/422 映射 + 双形态 200）
 - **M7 真实模型冒烟（手工）**: 有 key 时 `write next --mode agentic` 真实运行 1 章 ≥ 2000 字、正文命中检索角色名/伏笔（升级路径验收判据②）
@@ -799,10 +799,10 @@ async def book_supervisor_node(state: BookAgenticState, config: AgenticBookConfi
 | MODIFY | `backend/src/inkflow/domain/services/book_run_mixin.py` | 预校验配合（如需） |
 | MODIFY | `backend/src/inkflow/api/routers/books.py` | BookRunRequest 增加 `mode` Literal + `config` 字段；_run_book mode=agentic 分派（§3/§5.4） |
 | MODIFY | `backend/src/inkflow/api/deps.py` 或 books.py `_build_book_service` | 装配 BookAgenticPipeline（llm_client + writer_factory + draft_service + audit_service + checkpointer 注入） |
-| CREATE | `backend/tests/unit/test_book_agentic_pipeline.py` | 整模块 RED（§9） |
-| CREATE | `backend/tests/unit/test_book_agentic_service.py` | write_book_agentic + prepare_run mode=agentic + confirm_run agentic 契约 |
-| MODIFY | `backend/tests/unit/test_book_pipeline.py`（既有，守护） | 既有 F44 模式零回归 |
-| MODIFY | `backend/tests/unit/test_book_service_stage4_gaps.py`（既有，守护） | 既有 F44 状态机零回归 |
+| CREATE | `backend/tests/unit/infrastructure/agent/test_book_agentic_pipeline.py` | 整模块 RED（§9） |
+| CREATE | `backend/tests/unit/domain/services/test_book_agentic_service.py` | write_book_agentic + prepare_run mode=agentic + confirm_run agentic 契约 |
+| MODIFY | `backend/tests/unit/infrastructure/agent/test_book_pipeline.py`（既有，守护） | 既有 F44 模式零回归 |
+| MODIFY | `backend/tests/unit/domain/services/test_book_service_stage4_gaps.py`（既有，守护） | 既有 F44 状态机零回归 |
 
 ### 前端
 
@@ -869,7 +869,7 @@ async def book_supervisor_node(state: BookAgenticState, config: AgenticBookConfi
 > 对应 issue #551 后端批验收要点。实现 PR `Part of #551`（**禁 Closes #551**——前端批 #597 才关闭）。#551 保持 OPEN。
 
 - **M0** spec 定稿合入 worktree（本会话第一步）
-- **M1** RED 批全 FAIL：`pytest backend/tests/unit/test_book_agentic_pipeline.py test_book_agentic_service.py` — 收集期 ModuleNotFoundError（模块不存在）+ 追加 mode=agentic 段 FAIL
+- **M1** RED 批全 FAIL：`pytest backend/tests/unit/infrastructure/agent/test_book_agentic_pipeline.py test_book_agentic_service.py` — 收集期 ModuleNotFoundError（模块不存在）+ 追加 mode=agentic 段 FAIL
 - **M2** GREEN + 父侧重跑全绿：pytest backend/tests/unit/（本模块 + 既有 F44/F29 零回归，mode 默认 static 守护）
 - **M3** 书级自主编排：book_supervisor mock 决策序列 → Command(goto) 路由正确 → completed + 章节落盘非空
 - **M4** 章节级自主循环：同章 write→audit→revise 直至 mark_done；循环上限强制 mark_done；audit_required 跳审强制 audit

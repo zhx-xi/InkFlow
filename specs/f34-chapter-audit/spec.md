@@ -419,12 +419,12 @@ chapter_audit_drift.yaml:
 | CREATE | `infrastructure/database/repositories/audit_log_repo.py` | SQLiteAuditLogRepository（轻量 CRUD） |
 | CREATE | `api/routers/chapter_audit.py` | POST audit / POST confirm / GET audit-logs（§3） |
 | CREATE | `cli/commands/audit_chapter.py` | `inkflow audit chapter` 子命令（含 --confirm/--history/--note，§4；挂入 F15 audit 组） |
-| CREATE | `backend/tests/unit/test_chapter_audit_models.py` | DTO/枚举校验 |
-| CREATE | `backend/tests/unit/test_chapter_audit_service.py` | 编排（mock repos + **Fake LLM 固定返回**）——字数判定/降级/跳过/排序 |
-| CREATE | `backend/tests/unit/test_audit_context.py` | 截断/预算/名称匹配 |
-| CREATE | `backend/tests/unit/test_audit_log_repo.py` | audit_logs 轻量记录 CRUD（真 SQLite 内存库） |
-| CREATE | `backend/tests/unit/test_audit_service_confirm.py` | confirm 状态机（accept/reject/重复/无 pending 422） |
-| CREATE | `backend/tests/unit/test_chapter_audit_llm.py` | LLM 解析（Fake 返回 JSON → 映射；非法 JSON 重试 → 降级） |
+| CREATE | `backend/tests/unit/domain/models/test_chapter_audit_models.py` | DTO/枚举校验 |
+| CREATE | `backend/tests/unit/domain/services/test_chapter_audit_service.py` | 编排（mock repos + **Fake LLM 固定返回**）——字数判定/降级/跳过/排序 |
+| CREATE | `backend/tests/unit/domain/services/test_audit_context.py` | 截断/预算/名称匹配 |
+| CREATE | `backend/tests/unit/infrastructure/database/test_audit_log_repo.py` | audit_logs 轻量记录 CRUD（真 SQLite 内存库） |
+| CREATE | `backend/tests/unit/domain/services/test_audit_service_confirm.py` | confirm 状态机（accept/reject/重复/无 pending 422） |
+| CREATE | `backend/tests/unit/domain/services/test_chapter_audit_llm.py` | LLM 解析（Fake 返回 JSON → 映射；非法 JSON 重试 → 降级） |
 | CREATE | `tests/api/test_chapter_audit_api.py` | API 端点（404/422/200 降级/confirm/audit-logs） |
 | CREATE | `tests/cli/test_cli_audit_chapter.py` | CLI（触发/--confirm/--history/--note 校验/--json/404） |
 | CREATE | `frontend/packages/renderer/src/...`（Q3=C 最小版，实现会话细化） | 章节页审计按钮 + 报告弹层 + accept/reject（F19 渲染层接线） |
@@ -465,11 +465,11 @@ class ChapterAuditService:
 
 | 层 | 文件 | 内容 |
 |----|------|------|
-| 单元 | `tests/unit/test_chapter_audit_service.py` | 编排（mock repos + Fake LLM）：字数判定边界（79%/80%/120%/121%）、无档案跳过、降级、排序 |
-| 单元 | `tests/unit/test_audit_context.py` | 截断预算、名称匹配（jieba）、超长章节采样 |
-| 单元 | `tests/unit/test_chapter_audit_llm.py` | LLM JSON 解析、非法 JSON 重试、重试后降级 |
-| 单元 | `tests/unit/test_audit_log_repo.py` | audit_logs CRUD（真 SQLite）：add/latest_pending/confirm/list 分页/FK 级联 |
-| 单元 | `tests/unit/test_audit_service_confirm.py` | confirm 状态机（accept/reject/重复 422/无 pending 422/note 落库） |
+| 单元 | `backend/tests/unit/domain/services/test_chapter_audit_service.py` | 编排（mock repos + Fake LLM）：字数判定边界（79%/80%/120%/121%）、无档案跳过、降级、排序 |
+| 单元 | `backend/tests/unit/domain/services/test_audit_context.py` | 截断预算、名称匹配（jieba）、超长章节采样 |
+| 单元 | `backend/tests/unit/domain/services/test_chapter_audit_llm.py` | LLM JSON 解析、非法 JSON 重试、重试后降级 |
+| 单元 | `backend/tests/unit/infrastructure/database/test_audit_log_repo.py` | audit_logs CRUD（真 SQLite）：add/latest_pending/confirm/list 分页/FK 级联 |
+| 单元 | `backend/tests/unit/domain/services/test_audit_service_confirm.py` | confirm 状态机（accept/reject/重复 422/无 pending 422/note 落库） |
 | API | `tests/api/test_chapter_audit_api.py` | 404（项目/章节）/422（confirm 无 pending）/200 降级 /200 确认 /audit-logs 分页 |
 | CLI | `tests/cli/test_cli_audit_chapter.py` | 触发输出、--confirm accept/reject、--note 校验、--history、--json 信封、404/422 错误 |
 | E2E | 前端最小版（Q3=C） | GUI 展示 findings + accept/reject 点击闭环（章节页） |
@@ -560,15 +560,15 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 | # | 验收标准 | 自动化载体 | 验证命令（backend 目录，uv run） |
 |---|----------|------------|-------------------------------|
 | M1 | 手动触发审计（API）返回报告，含字数/人设/设定/静态检查项 | API | `pytest ../tests/api/test_chapter_audit_api.py` |
-| M2 | 字数判定边界正确（79%/80%/120%/121%） | 单元 | `pytest tests/unit/test_chapter_audit_service.py -k word` |
-| M3 | Fake LLM 人设漂移命中 → ERROR finding + ref_entity | 单元 | `pytest tests/unit/test_chapter_audit_llm.py` |
-| M4 | LLM 失败 → 200 + degraded + 确定性检查仍在 + 记录 degraded | 单元+API | `pytest tests/unit/test_chapter_audit_service.py -k degrade` |
-| M5 | **v1.1：审计落 audit_logs（severity_summary 正确，重复审计多条）** | 单元 | `pytest tests/unit/test_audit_log_repo.py tests/unit/test_chapter_audit_service.py -k log` |
-| M6 | confirm 闭环（accept → accepted + confirmed_at；重复 → 422；无 pending → 422） | 单元+API | `pytest tests/unit/test_audit_service_confirm.py` |
+| M2 | 字数判定边界正确（79%/80%/120%/121%） | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_service.py -k word` |
+| M3 | Fake LLM 人设漂移命中 → ERROR finding + ref_entity | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_llm.py` |
+| M4 | LLM 失败 → 200 + degraded + 确定性检查仍在 + 记录 degraded | 单元+API | `pytest backend/tests/unit/domain/services/test_chapter_audit_service.py -k degrade` |
+| M5 | **v1.1：审计落 audit_logs（severity_summary 正确，重复审计多条）** | 单元 | `pytest backend/tests/unit/infrastructure/database/test_audit_log_repo.py backend/tests/unit/domain/services/test_chapter_audit_service.py -k log` |
+| M6 | confirm 闭环（accept → accepted + confirmed_at；重复 → 422；无 pending → 422） | 单元+API | `pytest backend/tests/unit/domain/services/test_audit_service_confirm.py` |
 | M7 | **v1.1：CLI --confirm accept/reject + --note 落库 + --history 列表 + --note 无 --confirm 报错** | CLI | `pytest ../tests/cli/test_cli_audit_chapter.py` |
-| M8 | **v1.1：audit-logs API 分页查询 + 章节删除级联** | API+单元 | `pytest ../tests/api/test_chapter_audit_api.py tests/unit/test_audit_log_repo.py -k cascade` |
-| M9 | 静态委托过滤（仅本章相关 findings 展示） | 单元 | `pytest tests/unit/test_chapter_audit_service.py -k static` |
-| M10 | 空档案跳过 / 空章节仅字数 | 单元 | `pytest tests/unit/test_chapter_audit_service.py -k empty` |
+| M8 | **v1.1：audit-logs API 分页查询 + 章节删除级联** | API+单元 | `pytest ../tests/api/test_chapter_audit_api.py backend/tests/unit/infrastructure/database/test_audit_log_repo.py -k cascade` |
+| M9 | 静态委托过滤（仅本章相关 findings 展示） | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_service.py -k static` |
+| M10 | 空档案跳过 / 空章节仅字数 | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_service.py -k empty` |
 | M11 | **v1.1：GUI 最小版** 章节页审计按钮 → 报告弹层 → accept/reject 点击闭环（audit_logs 状态更新） | E2E | `pytest`（前端 E2E，Q3=C 细化） |
 | M12 | 全量门禁：lint/unit/integration/api/cli 绿 + 覆盖率达标 | CI | `uv run ruff check src/ tests/unit/ ../tests/` + 全量 pytest |
 | M13 | 真实 LLM 验证（ADR-026 label 触发） | CI（label） | e2e-ai-backend job：真实模型一次审计成功 + 降级路径 |

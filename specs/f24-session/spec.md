@@ -20,10 +20,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L19) · [2. 数据模型](L60) · [3. API 契约](L316) · [4. CLI 命令签名](L490)
-> [5. 会话状态机与履历模式（关键差异：确定性状态追踪 + 履历日志）](L540) · [6. 会话组织规则](L626) · [7. 边界情况与错误处理](L645) · [8. 文件结构](L668)
-> [9. 测试策略](L782) · [10. 不在范围内](L811) · [11. 依赖关系](L829) · [12. 关键架构决策记录](L846)
-> [13. 验收标准](L862) · [待澄清问题（≤ 3 个，评审时确认）](L879)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 会话状态机与履历模式（关键差异：确定性状态追踪 + 履历日志） · 6. 会话组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述
@@ -873,11 +873,11 @@ F24 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（类型/状态枚举/标题/消息/错误校验/视图模型） | `pytest tests/unit/test_session_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（双实体 CRUD + 过滤列表 + seq 分配 + 归档/解除/真实删除/级联 + 视图聚合） | `pytest tests/unit/test_session_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（项目存在性/更新忽略 status/404 全路径） | `pytest tests/unit/test_session_service.py -v` 全绿 |
-| M4 | 状态机迁移矩阵（4 状态 × 4 动作全组合 + 时间戳副产物 + 终态不可逆） | `pytest tests/unit/test_session_service.py -v`（状态机专项组）全绿 |
-| M5 | API 12 端点 + 错误路径全绿（404/422/跨模块错误复用） | `pytest tests/unit/test_session_api.py -v` 全绿 |
+| M1 | 领域模型 + DTO 验证（类型/状态枚举/标题/消息/错误校验/视图模型） | `pytest backend/tests/unit/domain/models/test_session_models.py -v` 全绿 |
+| M2 | 仓储层全部方法（双实体 CRUD + 过滤列表 + seq 分配 + 归档/解除/真实删除/级联 + 视图聚合） | `pytest backend/tests/unit/infrastructure/database/test_session_repo.py -v` 全绿 |
+| M3 | 服务层 CRUD + 业务校验（项目存在性/更新忽略 status/404 全路径） | `pytest backend/tests/unit/domain/services/test_session_service.py -v` 全绿 |
+| M4 | 状态机迁移矩阵（4 状态 × 4 动作全组合 + 时间戳副产物 + 终态不可逆） | `pytest backend/tests/unit/domain/services/test_session_service.py -v`（状态机专项组）全绿 |
+| M5 | API 12 端点 + 错误路径全绿（404/422/跨模块错误复用） | `pytest backend/tests/unit/api/routers/test_session_api.py -v` 全绿 |
 | M6 | CLI session 组（信封/退出码/状态机命令/日志命令） | `pytest ../tests/cli/test_cli_session.py -v` 全绿（且已追加 ci.yml integration-cli-backend job） |
 | M7 | 手工验证：建任务会话 → 暂停 → 恢复 → 追加进度日志 → 完成 → 履历查询闭环 | 手工验证（`inkflow session create` → `pause` → `resume` → `log add` ×2 → `complete` → `logs` 看 seq 1..n 履历完整） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过；domain/ 零框架 import（ADR-002/015） |
@@ -896,7 +896,6 @@ F24 被依赖:
 
 ---
 
-*本文档为 F24 功能规格（What），实施步骤（How）见后续 `specs/f24-session/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §5 状态机与履历 + §7 边界事实，不重复、不新增行为）。状态机与中断恢复语义为本节重点（§14.2）。

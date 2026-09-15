@@ -14,10 +14,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L13) · [2. 数据模型](L39) · [3. API 契约](L287) · [4. CLI 命令签名](L470)
-> [5. 伏笔状态机与注入模式（关键差异：确定性状态追踪 + F6 数据源替换）](L530) · [6. 伏笔组织规则](L673) · [7. 边界情况与错误处理](L707) · [8. 文件结构](L746)
-> [9. 测试策略](L859) · [10. 不在范围内](L895) · [11. 依赖关系](L916) · [12. 关键架构决策记录](L957)
-> [13. 验收标准](L981) · [待澄清问题（≤ 3 个，评审时确认）](L996)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 伏笔状态机与注入模式（关键差异：确定性状态追踪 + F6 数据源替换） · 6. 伏笔组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述
@@ -992,11 +992,11 @@ F13 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（状态枚举/priority/event_id 锚点与清除语义） | `pytest tests/unit/test_foreshadowing_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（单实体 CRUD + partial unique + list_open + status 过滤） | `pytest tests/unit/test_foreshadowing_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（同名 422/事件校验 422（不存在/跨项目）/状态机迁移/resolved_at 维护/404 全路径） | `pytest tests/unit/test_foreshadowing_service.py -v` 全绿 |
-| M4 | F6 数据源替换（ForeshadowingSource：ContextItem 构造/priority 透传/空数据/排序） | `pytest tests/unit/test_foreshadowing_source.py -v` 全绿 |
-| M5 | API 8 端点 + 错误路径全绿 | `pytest tests/unit/test_foreshadowing_api.py -v` 全绿 |
+| M1 | 领域模型 + DTO 验证（状态枚举/priority/event_id 锚点与清除语义） | `pytest backend/tests/unit/domain/models/test_foreshadowing_models.py -v` 全绿 |
+| M2 | 仓储层全部方法（单实体 CRUD + partial unique + list_open + status 过滤） | `pytest backend/tests/unit/infrastructure/database/test_foreshadowing_repo.py -v` 全绿 |
+| M3 | 服务层 CRUD + 业务校验（同名 422/事件校验 422（不存在/跨项目）/状态机迁移/resolved_at 维护/404 全路径） | `pytest backend/tests/unit/domain/services/test_foreshadowing_service.py -v` 全绿 |
+| M4 | F6 数据源替换（ForeshadowingSource：ContextItem 构造/priority 透传/空数据/排序） | `pytest backend/tests/unit/infrastructure/context/test_foreshadowing_source.py -v` 全绿 |
+| M5 | API 8 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_foreshadowing_api.py -v` 全绿 |
 | M6 | CLI foreshadowing 组（信封/退出码/确认交互/resolve-reopen 输出）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_foreshadowing.py`** | `pytest tests/cli/test_cli_foreshadowing.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
 | M7 | 手工验证闭环：建伏笔挂 F12 事件 → 写作注入 → 回收 → 不再注入 | 手工验证（`inkflow timeline create` 建事件 → `inkflow foreshadowing create --event-id <事件> ...` 建 2+ 伏笔（其中 ≥1 条挂接事件）→ `inkflow write next --show-context` 看到「## 伏笔：XXX」分段且按 priority 排序 → `resolve` 一条 → 再写作该条不再出现；F6 dynamic 预算充足时全部 open 注入） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F13 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
@@ -1013,7 +1013,6 @@ F13 被依赖:
 
 ---
 
-*本文档为 F13 功能规格（What），实施步骤（How）见后续 `specs/f13-foreshadowing/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。

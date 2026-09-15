@@ -360,10 +360,10 @@ $ inkflow export 我的书 --include-settings --json
 | CREATE | `domain/services/_export_filename.py` | `suggest_filename(title, fmt)`（§7 E5/E7） |
 | CREATE | `api/routers/export.py` | GET `/api/v1/projects/{pid}/export`（§3） |
 | CREATE | `cli/commands/export.py` | `inkflow export` 组（§4） |
-| CREATE | `backend/tests/unit/test_output_models.py` | DTO/枚举测试（§9） |
-| CREATE | `backend/tests/unit/test_output_service.py` | 聚合编排测试（§9） |
-| CREATE | `backend/tests/unit/test_txt_exporter.py` | TXT 序列化器（结构/编号/附录/确定性） |
-| CREATE | `backend/tests/unit/test_output_service_export.py` | 全管线集成（mock repos → 文本非空 + 结构嗅探） |
+| CREATE | `backend/tests/unit/domain/services/test_output_models.py` | DTO/枚举测试（§9） |
+| CREATE | `backend/tests/unit/domain/services/test_output_service.py` | 聚合编排测试（§9） |
+| CREATE | `backend/tests/unit/domain/services/test_txt_exporter.py` | TXT 序列化器（结构/编号/附录/确定性） |
+| CREATE | `backend/tests/unit/domain/services/test_output_service_export.py` | 全管线集成（mock repos → 文本非空 + 结构嗅探） |
 | CREATE | `tests/cli/test_cli_export.py` | CLI 测试（仓库根 `tests/cli/`，Issue #61 约定；**新文件必须显式追加 integration-cli-backend job**——陷阱 13/15） |
 | CREATE | `tests/api/test_export_api.py` | API 端点测试（仓库根 `tests/api/`，F32 先例 `test_settings_api.py` 同处） |
 | MODIFY | `api/app.py` | `app.include_router(export.router)` + import（1 行） |
@@ -416,8 +416,8 @@ class ExportService:
 
 | 层 | 文件 | 内容 |
 |----|------|------|
-| 单元 | `tests/unit/test_txt_exporter.py` | TXT 序列化器纯函数：给定 BookDocument fixture → 断言结构（书名/分隔线/卷章编号/附录分节） |
-| 单元 | `tests/unit/test_output_service.py` | 聚合编排：mock 7 个 repo → 断言 BookDocument 组装（排序/软删排除/include_settings 分支/循环分页） |
+| 单元 | `backend/tests/unit/domain/services/test_txt_exporter.py` | TXT 序列化器纯函数：给定 BookDocument fixture → 断言结构（书名/分隔线/卷章编号/附录分节） |
+| 单元 | `backend/tests/unit/domain/services/test_output_service.py` | 聚合编排：mock 7 个 repo → 断言 BookDocument 组装（排序/软删排除/include_settings 分支/循环分页） |
 | API | `tests/api/test_export_api.py` | TestClient：200 下载（Content-Type/Content-Disposition 头 + 文本非空）、404 项目不存在、422 非法 format、token 中间件生效（F19 契约） |
 | CLI | `tests/cli/test_cli_export.py` | CliRunner：写文件成功（文本落盘 + 信封）、`--json`、404 错误、目录 vs 文件路径语义 |
 
@@ -505,14 +505,14 @@ class ExportService:
 
 | # | 验收标准 | 自动化载体 | 验证命令（backend 目录，uv run） |
 |---|----------|------------|-------------------------------|
-| M1 | `inkflow export <项目>` 产出 TXT（书名/分隔线/卷/章/正文结构），**>50 章项目不丢章（分页拉全）** | CLI+单元 | `pytest ../tests/cli/test_cli_export.py tests/unit/test_output_service.py`（+ 手工跑命令） |
-| M2 | `--include-settings` 含 5 类设定档案附录；缺省不含 | 单元+CLI | `pytest tests/unit/test_txt_exporter.py tests/unit/test_output_service.py` |
-| M3 | 确定性：同项目同参数两次导出字节相同 | 单元 | `pytest tests/unit/test_txt_exporter.py -k deterministic` |
-| M4 | 软删内容不导出（卷/章/角色/世界观/大纲/时间线/伏笔） | 单元 | `pytest tests/unit/test_output_service.py -k deleted` |
-| M5 | 未分组章进入「未分组」卷且排最后 | 单元 | `pytest tests/unit/test_output_service.py -k ungrouped` |
-| M6 | 空项目导出 200 空文档（不报错） | API+CLI | `pytest tests/unit/test_output_service_export.py` |
+| M1 | `inkflow export <项目>` 产出 TXT（书名/分隔线/卷/章/正文结构），**>50 章项目不丢章（分页拉全）** | CLI+单元 | `pytest ../tests/cli/test_cli_export.py backend/tests/unit/domain/services/test_output_service.py`（+ 手工跑命令） |
+| M2 | `--include-settings` 含 5 类设定档案附录；缺省不含 | 单元+CLI | `pytest backend/tests/unit/domain/services/test_txt_exporter.py backend/tests/unit/domain/services/test_output_service.py` |
+| M3 | 确定性：同项目同参数两次导出字节相同 | 单元 | `pytest backend/tests/unit/domain/services/test_txt_exporter.py -k deterministic` |
+| M4 | 软删内容不导出（卷/章/角色/世界观/大纲/时间线/伏笔） | 单元 | `pytest backend/tests/unit/domain/services/test_output_service.py -k deleted` |
+| M5 | 未分组章进入「未分组」卷且排最后 | 单元 | `pytest backend/tests/unit/domain/services/test_output_service.py -k ungrouped` |
+| M6 | 空项目导出 200 空文档（不报错） | API+CLI | `pytest backend/tests/unit/domain/services/test_output_service_export.py` |
 | M7 | API `GET /api/v1/projects/{pid}/export` 200 + Content-Type/Content-Disposition；404 项目不存在；422 非 txt format | API | `pytest ../tests/api/test_export_api.py` |
-| M8 | 文件名非法字符清洗 + 空书名占位 | 单元 | `pytest tests/unit/test_output_models.py -k filename` |
+| M8 | 文件名非法字符清洗 + 空书名占位 | 单元 | `pytest backend/tests/unit/domain/services/test_output_models.py -k filename` |
 | M9 | 全量门禁：lint/unit/integration/api/cli 绿 + 覆盖率达标 | CI | `uv run ruff check src/ tests/unit/ ../tests/` + 全量 pytest |
 | M10 | 手工闭环：CLI 导出 TXT → 记事本/网文平台打开验证可读（中文无乱码） | 手动 | 发布前冒烟（rc 门禁复用，f19-packaging 先例） |
 

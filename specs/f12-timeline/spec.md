@@ -13,10 +13,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L12) · [2. 数据模型](L36) · [3. API 契约](L323) · [4. CLI 命令签名](L509)
-> [5. 一致性检查模式（关键差异：确定性算法而非 AI）](L574) · [6. 时间线组织规则](L684) · [7. 边界情况与错误处理](L717) · [8. 文件结构](L753)
-> [9. 测试策略](L841) · [10. 不在范围内](L892) · [11. 依赖关系](L912) · [12. 关键架构决策记录](L941)
-> [13. 验收标准](L962) · [待澄清问题（≤ 3 个，评审时确认）](L977)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 一致性检查模式（关键差异：确定性算法而非 AI） · 6. 时间线组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述
@@ -973,11 +973,11 @@ F12 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（双时间维度字段 + 清除语义 + 检查报告模型） | `pytest tests/unit/test_timeline_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（单实体 CRUD + 双索引 + next_position + 软删除） | `pytest tests/unit/test_timeline_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（next_position 编排/更新清除编排/404 全路径） | `pytest tests/unit/test_timeline_service.py -v` 全绿 |
-| M4 | 一致性检查算法（相邻对扫描/倒叙声明/未知时间/同刻/快照断言） | `pytest tests/unit/test_timeline_check.py -v` 全绿 |
-| M5 | API 8 端点 + 错误路径全绿 | `pytest tests/unit/test_timeline_api.py -v` 全绿 |
+| M1 | 领域模型 + DTO 验证（双时间维度字段 + 清除语义 + 检查报告模型） | `pytest backend/tests/unit/domain/models/test_timeline_models.py -v` 全绿 |
+| M2 | 仓储层全部方法（单实体 CRUD + 双索引 + next_position + 软删除） | `pytest backend/tests/unit/infrastructure/database/test_timeline_repo.py -v` 全绿 |
+| M3 | 服务层 CRUD + 业务校验（next_position 编排/更新清除编排/404 全路径） | `pytest backend/tests/unit/domain/services/test_timeline_service.py -v` 全绿 |
+| M4 | 一致性检查算法（相邻对扫描/倒叙声明/未知时间/同刻/快照断言） | `pytest backend/tests/unit/domain/services/test_timeline_check.py -v` 全绿 |
+| M5 | API 8 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_timeline_api.py -v` 全绿 |
 | M6 | CLI timeline 组（信封/退出码/确认交互/check 摘要） | `pytest tests/test_cli_timeline.py -v` 全绿 |
 | M7 | 手工验证：真实项目建事件 → 双线总览 → 检查 → 修正闭环 | 手工验证（`inkflow timeline create` 建 3+ 事件制造逆序 → `inkflow timeline check` 看到冲突 → 加 flashback 标记 → 重查 consistent=true；`inkflow timeline view` 双线正确） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F12 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
@@ -994,7 +994,6 @@ F12 被依赖:
 
 ---
 
-*本文档为 F12 功能规格（What），实施步骤（How）见后续 `specs/f12-timeline/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。

@@ -9,9 +9,9 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L11) · [2. 数据模型](L24) · [3. API 契约](L130) · [4. CLI 命令签名](L289)
-> [5. 管线执行流程与状态机](L338) · [6. 管线模板与 YAML 配置](L383) · [7. 边界情况与错误处理](L438) · [8. 文件结构](L466)
-> [9. 测试策略](L505) · [10. 不在范围内](L577) · [11. 依赖关系](L592) · [12. 关键架构决策记录](L608)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 管线执行流程与状态机 · 6. 管线模板与 YAML 配置 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
 ---
 
 ## 1. 概述
@@ -733,19 +733,19 @@ stage_results = [
 | `backend/src/inkflow/infrastructure/agent/pipeline_nodes.py` | MODIFY | 节点改为增量返回，删除原地 mutate 与全量返回 |
 | `backend/src/inkflow/infrastructure/agent/langgraph_pipeline.py` | MODIFY | PipelineState 定义 + StateGraph(PipelineState) + results 汇总 + 消除 type: ignore |
 | `backend/src/inkflow/domain/ports/agent_pipeline.py` | MODIFY | PipelineError 加 `result: PipelineResult \| None = None` 类属性（纯类型声明） |
-| `backend/tests/unit/test_pipeline_nodes.py` | **NEW** | 节点增量契约测试（RED 载体） |
-| `backend/tests/unit/test_langgraph_pipeline.py` | 不改 | 既有黑盒契约测试，行为不变基线 |
+| `backend/tests/unit/infrastructure/agent/test_pipeline_nodes.py` | **NEW** | 节点增量契约测试（RED 载体） |
+| `backend/tests/unit/infrastructure/agent/test_langgraph_pipeline.py` | 不改 | 既有黑盒契约测试，行为不变基线 |
 | `specs/f4-pipeline-engine/spec.md` | NEW | 本 spec（同 PR 合入） |
 
 ## 6. 测试策略
 
 ### 6.1 既有测试（行为不变基线）
 
-`backend/tests/unit/test_langgraph_pipeline.py` 10 个测试**一字不改**：全部经 `execute()` 黑盒断言，重构前后都必须全绿——它们是行为不变的证明。
+`backend/tests/unit/infrastructure/agent/test_langgraph_pipeline.py` 10 个测试**一字不改**：全部经 `execute()` 黑盒断言，重构前后都必须全绿——它们是行为不变的证明。
 
 ### 6.2 新增节点契约测试（RED 载体）
 
-`backend/tests/unit/test_pipeline_nodes.py`（新建，unit 目录自动进 CI）：
+`backend/tests/unit/infrastructure/agent/test_pipeline_nodes.py`（新建，unit 目录自动进 CI）：
 
 | 用例 | 断言 |
 |------|------|
@@ -761,7 +761,7 @@ stage_results = [
 ## 7. 验收标准
 
 1. **测试先行（F15 规矩）**：先写新测试并确认 RED FAIL（新测试失败、既有测试全绿），再实现
-2. `pytest backend/tests/unit/test_langgraph_pipeline.py backend/tests/unit/test_pipeline_nodes.py` 全绿
+2. `pytest backend/tests/unit/infrastructure/agent/test_langgraph_pipeline.py backend/tests/unit/infrastructure/agent/test_pipeline_nodes.py` 全绿
 3. `langgraph_pipeline.py` / `pipeline_nodes.py` 中无 `type: ignore`（0 处）
 4. 行为不变：§4 全部 7 项由既有黑盒测试证明（重构前后同绿）
 5. 不做 Phase 2 并行（本 Issue 只做状态机制重构，并行留待后续）

@@ -474,11 +474,11 @@ mode=semantic:
 | CREATE | `infrastructure/database/repositories/search_repo.py` | SQLiteSearchRepository：FTS5 建表/重建/查询原生 SQL + meta 读写（含 ai_maintenance 设置） |
 | CREATE | `api/routers/search.py` | GET `/api/v1/search` + POST `/api/v1/search/rebuild`（§3） |
 | CREATE | `cli/commands/search.py` | `inkflow search` 命令 + `--rebuild`（§4；ensure_kernel + InkFlowHTTPClient，F38 模式） |
-| CREATE | `backend/tests/unit/test_search_models.py` | DTO 校验（空白/超长/枚举/project_ids 必填） |
-| CREATE | `backend/tests/unit/test_search_tokenizer.py` | 分词/转义/MATCH 构造（中文词、保留字、标点过滤） |
-| CREATE | `backend/tests/unit/test_search_service.py` | 编排：mock repos + mock search_repo → 判脏/重建/增量/软删排除/多项目 |
-| CREATE | `backend/tests/unit/test_search_index.py` | **真 SQLite 内存库 FTS5 集成**（§9.2 关键场景） |
-| CREATE | `backend/tests/unit/test_search_semantic.py` | semantic 模式：FakeEmbeddings + 临时 chroma（F14 先例）→ 映射/覆盖缺口/空库降级 |
+| CREATE | `backend/tests/unit/domain/models/test_search_models.py` | DTO 校验（空白/超长/枚举/project_ids 必填） |
+| CREATE | `backend/tests/unit/domain/services/test_search_tokenizer.py` | 分词/转义/MATCH 构造（中文词、保留字、标点过滤） |
+| CREATE | `backend/tests/unit/domain/services/test_search_service.py` | 编排：mock repos + mock search_repo → 判脏/重建/增量/软删排除/多项目 |
+| CREATE | `backend/tests/unit/infrastructure/database/test_search_index.py` | **真 SQLite 内存库 FTS5 集成**（§9.2 关键场景） |
+| CREATE | `backend/tests/unit/domain/services/test_search_semantic.py` | semantic 模式：FakeEmbeddings + 临时 chroma（F14 先例）→ 映射/覆盖缺口/空库降级 |
 | CREATE | `tests/cli/test_cli_search.py` | CLI 测试（仓库根 `tests/cli/`，Issue #61 约定；**新文件必须显式追加 integration-cli-backend job**——陷阱 13/15） |
 | CREATE | `tests/api/test_search_api.py` | API 端点测试（仓库根 `tests/api/`，F21 同款落点） |
 | MODIFY | `api/app.py` | `app.include_router(search.router)` + import（1 行） |
@@ -526,10 +526,10 @@ class SearchRepositoryProtocol(Protocol):
 
 | 层 | 文件 | 内容 |
 |----|------|------|
-| 单元 | `tests/unit/test_search_tokenizer.py` | 分词纯函数：中文词拆分、保留字转义、标点过滤、XML 转义 |
-| 单元 | `tests/unit/test_search_service.py` | 编排：mock 数据源 repos + mock search_repo → 判脏（stale/新鲜/首次）、重建触发、增量触发、软删排除、多项目校验、types 筛选透传 |
-| 集成 | `tests/unit/test_search_index.py` | **真 SQLite 内存 FTS5**（`aiosqlite :memory:` + CREATE VIRTUAL TABLE）：索引→查询闭环、中文命中、snippet `<mark>` 断言、BM25 排序、多项目过滤、分页 |
-| 单元 | `tests/unit/test_search_semantic.py` | semantic：**mock VectorStoreProtocol**（父侧裁定 2026-08-09：F22 是 RAG 消费方，mock retrieve 返回固定 RetrievedEntity 等价 FakeEmbeddings 固定向量；真 chroma 集成已由 F14 test_langchain_vector_store.py 覆盖且避免 chromadb/coverage 同进程冲突，ci.yml 无需新增 --ignore）→ EntityType 映射、outline 恒空（覆盖缺口）、空库空结果、失败不降级 |
+| 单元 | `backend/tests/unit/domain/services/test_search_tokenizer.py` | 分词纯函数：中文词拆分、保留字转义、标点过滤、XML 转义 |
+| 单元 | `backend/tests/unit/domain/services/test_search_service.py` | 编排：mock 数据源 repos + mock search_repo → 判脏（stale/新鲜/首次）、重建触发、增量触发、软删排除、多项目校验、types 筛选透传 |
+| 集成 | `backend/tests/unit/infrastructure/database/test_search_index.py` | **真 SQLite 内存 FTS5**（`aiosqlite :memory:` + CREATE VIRTUAL TABLE）：索引→查询闭环、中文命中、snippet `<mark>` 断言、BM25 排序、多项目过滤、分页 |
+| 单元 | `backend/tests/unit/domain/services/test_search_semantic.py` | semantic：**mock VectorStoreProtocol**（父侧裁定 2026-08-09：F22 是 RAG 消费方，mock retrieve 返回固定 RetrievedEntity 等价 FakeEmbeddings 固定向量；真 chroma 集成已由 F14 test_langchain_vector_store.py 覆盖且避免 chromadb/coverage 同进程冲突，ci.yml 无需新增 --ignore）→ EntityType 映射、outline 恒空（覆盖缺口）、空库空结果、失败不降级 |
 | API | `tests/api/test_search_api.py` | TestClient：200 命中/空结果/404/422（含 project_id+project_ids 双缺 422）、mode 参数、token 中间件、POST rebuild（200 全量/单项目、404 项目不存在） |
 | CLI | `tests/cli/test_cli_search.py` | CliRunner + F38 mock 轨（patch ensure_kernel + InkFlowHTTPClient）：命中输出、`--json` 信封、404 错误、多 `-p` 多 `-t`、`--rebuild`、`--mode` |
 
@@ -622,22 +622,22 @@ F22 编号 0.6.0 立项未改号（ADR-019 v5 口径）；变体编号声明依�
 
 | # | 验收标准 | 自动化载体 | 验证命令（backend 目录，uv run） |
 |---|----------|------------|-------------------------------|
-| M1 | 中文关键词跨类型搜索：`search 龙 -p <项目>` 命中章节正文 + 角色 + 世界观 | 集成+CLI | `pytest tests/unit/test_search_index.py tests/unit/test_search_service.py` |
+| M1 | 中文关键词跨类型搜索：`search 龙 -p <项目>` 命中章节正文 + 角色 + 世界观 | 集成+CLI | `pytest backend/tests/unit/infrastructure/database/test_search_index.py backend/tests/unit/domain/services/test_search_service.py` |
 | M2 | 类型筛选：`-t chapter` 只返回章节命中 | CLI+API | `pytest ../tests/cli/test_cli_search.py ../tests/api/test_search_api.py` |
-| M3 | 高亮：snippet 含 `<mark>` 标记且位置正确 | 集成 | `pytest tests/unit/test_search_index.py -k snippet` |
+| M3 | 高亮：snippet 含 `<mark>` 标记且位置正确 | 集成 | `pytest backend/tests/unit/infrastructure/database/test_search_index.py -k snippet` |
 | M4 | API `GET /api/v1/search` 200 命中/空结果/404/422 全矩阵（含双参数缺省 422）+ POST rebuild（200/404） | API | `pytest ../tests/api/test_search_api.py` |
-| M5 | 索引脏检测：内容变更后首查重建并命中新内容；无变更不重建 | 单元 | `pytest tests/unit/test_search_service.py -k stale` |
-| M6 | 软删内容不命中 | 单元 | `pytest tests/unit/test_search_service.py -k deleted` |
-| M7 | FTS5 保留字/特殊字符查询安全（`AND`、引号、XML 标签） | 单元+集成 | `pytest tests/unit/test_search_tokenizer.py tests/unit/test_search_index.py -k escape` |
-| M8 | 确定性：同数据同查询两次结果一致 | 集成 | `pytest tests/unit/test_search_index.py -k deterministic` |
-| M9 | 空查询 422 / 纯标点查询空结果 | API+单元 | `pytest ../tests/api/test_search_api.py tests/unit/test_search_tokenizer.py` |
-| M10 | **v1.1：多项目检索** `project_ids=1,2` 两项目命中 + 404 单项目失败 | 集成+API | `pytest tests/unit/test_search_index.py -k multi tests/unit/test_search_service.py -k multi` |
-| M11 | **v1.1：AI 自动维护** `ai_maintenance=true` + 变更 → 增量同步；增量失败回退懒重建 | 单元 | `pytest tests/unit/test_search_service.py -k incremental` |
-| M12 | **v1.1：semantic 模式** FakeEmbeddings 命中映射 + outline 恒空（覆盖缺口）+ embedding 异常 200 空 | 单元 | `pytest tests/unit/test_search_semantic.py` |
-| M13 | **v1.1/v1.2：手动 rebuild** `inkflow search --rebuild` 强制全量重建（经 POST rebuild 端点） | CLI+单元 | `pytest ../tests/cli/test_cli_search.py tests/unit/test_search_service.py -k rebuild` |
+| M5 | 索引脏检测：内容变更后首查重建并命中新内容；无变更不重建 | 单元 | `pytest backend/tests/unit/domain/services/test_search_service.py -k stale` |
+| M6 | 软删内容不命中 | 单元 | `pytest backend/tests/unit/domain/services/test_search_service.py -k deleted` |
+| M7 | FTS5 保留字/特殊字符查询安全（`AND`、引号、XML 标签） | 单元+集成 | `pytest backend/tests/unit/domain/services/test_search_tokenizer.py backend/tests/unit/infrastructure/database/test_search_index.py -k escape` |
+| M8 | 确定性：同数据同查询两次结果一致 | 集成 | `pytest backend/tests/unit/infrastructure/database/test_search_index.py -k deterministic` |
+| M9 | 空查询 422 / 纯标点查询空结果 | API+单元 | `pytest ../tests/api/test_search_api.py backend/tests/unit/domain/services/test_search_tokenizer.py` |
+| M10 | **v1.1：多项目检索** `project_ids=1,2` 两项目命中 + 404 单项目失败 | 集成+API | `pytest backend/tests/unit/infrastructure/database/test_search_index.py -k multi backend/tests/unit/domain/services/test_search_service.py -k multi` |
+| M11 | **v1.1：AI 自动维护** `ai_maintenance=true` + 变更 → 增量同步；增量失败回退懒重建 | 单元 | `pytest backend/tests/unit/domain/services/test_search_service.py -k incremental` |
+| M12 | **v1.1：semantic 模式** FakeEmbeddings 命中映射 + outline 恒空（覆盖缺口）+ embedding 异常 200 空 | 单元 | `pytest backend/tests/unit/domain/services/test_search_semantic.py` |
+| M13 | **v1.1/v1.2：手动 rebuild** `inkflow search --rebuild` 强制全量重建（经 POST rebuild 端点） | CLI+单元 | `pytest ../tests/cli/test_cli_search.py backend/tests/unit/domain/services/test_search_service.py -k rebuild` |
 | M14 | 全量门禁：lint/unit/integration/api/cli 绿 + 覆盖率达标 | CI | `uv run ruff check src/ tests/unit/ ../tests/` + 全量 pytest |
 | M15 | 手工闭环：CLI 搜索真实项目中文词命中 + GUI 未来接线冒烟 | 手动 | 发布前冒烟 |
-| M16 | **2026-08-31：semantic/vector retrieve 遇 chromadb hnsw 段读取失败不吞空**——服务层捕获 VectorStoreError → 自愈 reindex 一次重试/清晰上抛（非「内部错误（无详情）」） | 单元 | pytest tests/unit/test_langchain_vector_store.py -k hnsw tests/unit/domain/services/test_extraction_retrieve.py -k reindex_retry |
+| M16 | **2026-08-31：semantic/vector retrieve 遇 chromadb hnsw 段读取失败不吞空**——服务层捕获 VectorStoreError → 自愈 reindex 一次重试/清晰上抛（非「内部错误（无详情）」） | 单元 | pytest backend/tests/unit/infrastructure/rag/test_langchain_vector_store.py -k hnsw backend/tests/unit/domain/services/test_extraction_retrieve.py -k reindex_retry |
 
 > Issue #54 验收标准映射：跨内容类型搜索=M1 · 类型筛选=M2 · 搜索高亮=M3；v1.1 新增（用户拍板 2026-08-09）：AI 检索=M12 · 同世界观跨项目=M10 · AI 自动维护=M11。
 

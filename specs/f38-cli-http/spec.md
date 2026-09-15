@@ -15,7 +15,7 @@
 >
 > **状态**: ✅ 已实现（PR #213，#169 2026-08-09）
 
-> **快速导航**（2026-08-09 #169）：[§1 概述](L21) · [§2 数据模型](L82) · [§3 API 契约](L163) · [§4 CLI 签名](L218) · [§5 关键差异](L264) · [§6 组织规则](L358) · [§7 边界与错误](L388) · [§8 文件结构](L410) · [§9 测试策略](L465) · [§10 不在范围](L526) · [§11 依赖](L542) · [§12 决策记录](L564) · [§13 验收](L579) · [待澄清](L594)
+> **快速导航**（2026-08-09 #169）：§1 概述 · §2 数据模型 · §3 API 契约 · §4 CLI 签名 · §5 关键差异 · §6 组织规则 · §7 边界与错误 · §8 文件结构 · §9 测试策略 · §10 不在范围 · §11 依赖 · §12 决策记录 · §13 验收 · 待澄清
 
 ---
 
@@ -603,7 +603,7 @@ F38 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | HTTP 客户端层（`infrastructure/http/`） | `pytest backend/tests/unit/test_http_client.py -v` 全绿（base_url/token 注入、错误映射表、SSE 流式转发、**零 cli import 断言**、**命令 import 面收敛断言**） |
+| M1 | HTTP 客户端层（`infrastructure/http/`） | `pytest backend/tests/unit/api/routers/test_http_client.py -v` 全绿（base_url/token 注入、错误映射表、SSE 流式转发、**零 cli import 断言**、**命令 import 面收敛断言**） |
 | M2 | 顶层接线 + 14 个命令改造 | mock 轨：改造后 22 个 CLI 测试文件全绿（分布 5 个 job 逐个验证）；**serve/kernel/config/llm 4 个豁免命令模块与测试 git diff 为空**；真实轨：M5 |
 | M3 | 错误映射（HTTP 状态 → F7 错误码） | unit 测试全绿（404→NOT_FOUND、422→VALIDATION_ERROR、401→CONFIG_ERROR、500+LLM_ERROR 头→LLM_ERROR、500 无头→INTERNAL_ERROR、连接失败→KERNEL_ERROR、内核拉起失败→KERNEL_ERROR） |
 | M4 | 既有 CLI 测试改造 + writing 响应头 | 22 个改造文件全绿（mock 轨）+ `tests/api/test_writing_*.py` 响应头断言补测全绿；豁免文件零改动 |

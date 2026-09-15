@@ -28,7 +28,7 @@
 | F6 `context_service` | 上下文管理：角色/世界观/伏笔/时间线注入 + 章节摘要（分层 Token 预算） | 经写作管道自动装配 | `/api/v1/context/assemble` · `/chapters/{id}/summary` | [`specs/f6-context/`](specs/f6-context/spec.md) | ✅ PR #27 |
 | F7 `cli_interface` | 全局 CLI 约定：JSON 信封 / 退出码 / 错误码（`--json` 全局选项） | 所有 `inkflow` 命令 | — | [`specs/f7-cli/`](specs/f7-cli/spec.md) | ✅ PR #28 |
 | F8 CI 治理 | 测试分层（unit / integration / CLI）+ CI 门禁（ruff + mypy + pytest + 覆盖率） | — | — | [ADR-018](adr/test-ci/ADR-018.md)（无独立 spec） | ✅ PRs #24+#25 |
-| P0-11 云端 Protocol | 云端接口端口契约：Auth / Database / Storage / User / Sync / MCPTransport（Protocol 定义，实现留云端里程碑） | — | 端口定义（domain/ports/cloud/） | [`specs/f52-cloud-protocol/`](specs/f52-cloud-protocol/spec.md) | ✅ PR #37 |
+| P0-11 云端 Protocol（F52） | 云端接口端口契约：Auth / Database / Storage / User / Sync / MCPTransport（Protocol 定义，实现留云端里程碑） | — | 端口定义（domain/ports/cloud/） | [`specs/f52-cloud-protocol/`](specs/f52-cloud-protocol/spec.md) | ✅ PR #37 |
 
 ### 1.2 创作工具链（0.2.0，F9-F16，8 模块全交付 ✅）
 
@@ -209,6 +209,23 @@
 
 **0.14.0 状态**：F59 M1-M6 已合入 main（2026-09-09，PR #1024/#1026/#1038/#1037/#1048/#1049，M5 实证证据见 #966）；后续修复批 #1044/#1054（翻译器门禁，PR #1053/#1055）已合入；实证收口 #1047（dashscope 推断项，ADR-051 修订记录 R1-R3）随本 PR 交付。0.13.0 遗留项（F58 Phase 2 A2 动态重绑定、#980-2b 卷分组数据模型）同归 0.14.0。 **v0.14.0 验证**：打包版实测 high 档产生 reasoning 帧、none 档关闭；遗留 #1172（多轮历史丢弃 reasoning_content，挂 0.15.0）。
 
+### 1.13 增量型模块补登记（0.9.0-0.15.0，2026-09-15 #1190 批 B 补录）
+
+> 本节补登记此前**仅散见于 §三 版本映射**或**完全未登记**的增量型模块（非独立新业务实体，故未进入 §1.1-§1.12 的主线小节）。
+
+| 模块 | 版本 | 核心能力 | Spec | 状态 |
+|------|------|---------|------|------|
+| F47 `f47-chat-exec-detail` | 0.9.0 | 写作页底部 AI 聊天框 + AI 执行详情页（思维链 / 工具调用 / supervisor 路由 + 正文↔详情视图切换） | [`specs/f47-chat-exec-detail/`](specs/f47-chat-exec-detail/spec.md) | ✅ PR #418 |
+| F53 `f53-secret-redact` | 0.12.0 | 对话输入机密脱敏：正则形态 + 已存密钥子串双兜底，落点在 chat 两条流式端点入口（消息/SSE 协议外行为不变） | [`specs/f53-secret-redact/`](specs/f53-secret-redact/spec.md) | ✅ PR #616 |
+| F54 `f54-trace-replay` | 0.12.0 | AI 执行链路可重放：chat 流式落 `run_id` + steps（复用 F27 `agent_runs` 表，`mode="chat"`，零迁移） | [`specs/f54-trace-replay/`](specs/f54-trace-replay/spec.md) | ✅ PR #623 |
+| F55 `f55-unified-exec-view` | 0.12.0 | 统一 AI 执行工作流视图：链式静态 stage + agentic 动态 tool_call 双时间线走同一执行详情入口（视图层统一，存储不合并） | [`specs/f55-unified-exec-view/`](specs/f55-unified-exec-view/spec.md) | ✅ PR #610 |
+| F57 `f57-logging-i18n` | 0.13.0 | 日志埋点 + 全链路 i18n：后端结构化日志 schema + `/api/v1/logs`·`/api/v1/i18n/messages` + 前端 logger 桥接 + 提示词/工具/skill 全译（zh/en，per-call 准实时切换） | [`specs/f57-logging-i18n/`](specs/f57-logging-i18n/spec.md) | ✅ PR #891/#894 |
+| F496 `f496-log-page` | 0.13.0 | 统一日志页：内核（api/agent/tool/cli/mcp）/ GUI（frontend）/ AI（llm）三类日志分类展示 + 时间/级别/关键字过滤 + 消息键 i18n 渲染（spec 头部状态行待同步） | [`specs/f496-log-page/`](specs/f496-log-page/spec.md) | ✅ PR #916 |
+| F61a `f61-secret-bootstrap` | 0.15.0 | 密钥自举与告警收敛：`INKFLOW_SECRET_KEY` 首启自动生成（G3）+ 明文存储告警去重（G1）+ GUI 可见告警（G2） | [`specs/f61-secret-bootstrap/`](specs/f61-secret-bootstrap/spec.md) | 🔄 PR #1105（G1/G3 已合入 v0.14.0，G2 随 #1096 收口） |
+| F61b `f61-llm-config-consistency` | 0.14.0 | LLM 配置域一致性治理：chat 装配旁路收敛（30+ 处直读 `llm_default_model` 收敛到 resolver）+ 显式 embedding 误配类型校验 + 保存前连通探测门禁 | [`specs/f61-llm-config-consistency/`](specs/f61-llm-config-consistency/spec.md) | ✅ PR #1085 |
+
+> **f61 同号拆分（#1190 批 B 发现）**：`specs/f61-secret-bootstrap/` 与 `specs/f61-llm-config-consistency/` 两个 spec 复用同一 F 编号——按语义拆分为 **F61a**（密钥自举，#1096 / 0.15.0）与 **F61b**（LLM 配置域一致性，#936 / 0.14.0），**不合并为一条**；后续新 spec 顺延新编号（ADR-019），不再复用。
+
 ---
 
 ## 二、规划中功能
@@ -274,4 +291,4 @@
 
 ---
 
-*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v12 修订 2026-09-08：0.13.0 Chat Agent 工具矩阵 F58 + 写章链路根治 + planner 质量交付，61/61 issues 全关，v0.13.0-rc6 验证通过；补录 0.12.0 AI 全自动写作 + 内置内容补全（65/65 issues 全关）与 0.12.1（0.12.0 rc10 GUI 反馈 + 后续修复批，77/77 issues 全关）——均为已发布版本此前漏同步；v11 修订 2026-08-22：0.11.0 = 0.10.1 更名正式发布，49/49 issues 全关，PR #491-#513 为 0.10.1 部分 + #527-#590 为 0.11.0 补充；v10 修订 2026-08-19：0.10.1（更名 0.11.0）UI/产品修复批 15/15 issues 全关，PR #491-#513；v9 修订 2026-08-18：0.10.0 长任务编排器 F44 + 记忆演进 F45 交付，20/20 issues 全关；v8 修订 2026-08-16：0.9.0 多 Agent 一期 + MCP 提前 + RAG 切片 + DAG 编排交付，2026-08-17 正式发布）。*
+*本文件由功能盘点建立于 2026-08-02（0.2.0 交付后），与 AGENTS.md / ADR-019 口径一致（v13 修订 2026-09-15：#1190 批 B 补登记 F47/F53/F54/F55/F57/F496 与 F61 同号拆分（F61a/F61b）、F52 编号口径（新增 §1.13）；v12 修订 2026-09-08：0.13.0 Chat Agent 工具矩阵 F58 + 写章链路根治 + planner 质量交付，61/61 issues 全关，v0.13.0-rc6 验证通过；补录 0.12.0 AI 全自动写作 + 内置内容补全（65/65 issues 全关）与 0.12.1（0.12.0 rc10 GUI 反馈 + 后续修复批，77/77 issues 全关）——均为已发布版本此前漏同步；v11 修订 2026-08-22：0.11.0 = 0.10.1 更名正式发布，49/49 issues 全关，PR #491-#513 为 0.10.1 部分 + #527-#590 为 0.11.0 补充；v10 修订 2026-08-19：0.10.1（更名 0.11.0）UI/产品修复批 15/15 issues 全关，PR #491-#513；v9 修订 2026-08-18：0.10.0 长任务编排器 F44 + 记忆演进 F45 交付，20/20 issues 全关；v8 修订 2026-08-16：0.9.0 多 Agent 一期 + MCP 提前 + RAG 切片 + DAG 编排交付，2026-08-17 正式发布）。*

@@ -10,10 +10,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L12) · [2. 数据模型](L47) · [3. API 契约](L239) · [4. CLI 命令签名](L430)
-> [5. 审计规则引擎（横切审计核心）](L473) · [6. 审计组织规则](L704) · [7. 边界情况与错误处理](L740) · [8. 文件结构](L770)
-> [9. 测试策略](L930) · [10. 不在范围内](L979) · [11. 依赖关系](L1000) · [12. 关键架构决策记录](L1044)
-> [13. 验收标准](L1068) · [待澄清问题（≤ 3 个，评审时确认）](L1086)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 审计规则引擎（横切审计核心） · 6. 审计组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述
@@ -1076,12 +1076,12 @@ F15 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 报告模型 + DTO 校验（AuditDimension 5 值 / AuditSeverity 3 值 / AuditFinding 可空字段 / AuditSummary 计数 / AuditReport 序列化 + ConsistencyReport 引用） | `pytest tests/unit/test_audit_models.py -v` 全绿 |
-| M2 | 规则引擎·角色维度（R-C1 关系引用完整性：活动/软删 warning/悬空 error 全分支；R-C2 分组引用完整性） | `pytest tests/unit/test_audit_service.py -v` 全绿（R-C1/R-C2 用例） |
-| M3 | 规则引擎·世界 + 伏笔维度（R-W1 条目内容健康度 / R-W2 档案缺口 / R-F1 event_id 锚点（软删 warning、悬空 error）/ R-F2 status-resolved_at 状态机一致性） | `pytest tests/unit/test_audit_service.py -v` 全绿（R-W*/R-F* 用例） |
-| M4 | 规则引擎·时间线委托 + 跨维度（R-T1 委托 Mock check_consistency → 转换 + 嵌套透传；R-X1 事件 source_chapter_id 章节校验；R-X2 run 缺口：error run warning + 从未提取章节 info） | `pytest tests/unit/test_audit_service.py -v` 全绿（R-T1/R-X* 用例） |
-| M5 | 服务编排（分页循环全量读取 / 汇总计数 / consistent 语义 / findings 排序 / counts / 项目校验 404 / 失败传播 / 确定性快照断言） | `pytest tests/unit/test_audit_service.py -v` 全绿（编排用例） |
-| M6 | API GET /audit（成功路径 / 404 项目不存在 / 无效 UUID / 500 透传 / 幂等） | `pytest tests/unit/test_audit_api.py -v` 全绿 |
+| M1 | 报告模型 + DTO 校验（AuditDimension 5 值 / AuditSeverity 3 值 / AuditFinding 可空字段 / AuditSummary 计数 / AuditReport 序列化 + ConsistencyReport 引用） | `pytest backend/tests/unit/domain/models/test_audit_models.py -v` 全绿 |
+| M2 | 规则引擎·角色维度（R-C1 关系引用完整性：活动/软删 warning/悬空 error 全分支；R-C2 分组引用完整性） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-C1/R-C2 用例） |
+| M3 | 规则引擎·世界 + 伏笔维度（R-W1 条目内容健康度 / R-W2 档案缺口 / R-F1 event_id 锚点（软删 warning、悬空 error）/ R-F2 status-resolved_at 状态机一致性） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-W*/R-F* 用例） |
+| M4 | 规则引擎·时间线委托 + 跨维度（R-T1 委托 Mock check_consistency → 转换 + 嵌套透传；R-X1 事件 source_chapter_id 章节校验；R-X2 run 缺口：error run warning + 从未提取章节 info） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-T1/R-X* 用例） |
+| M5 | 服务编排（分页循环全量读取 / 汇总计数 / consistent 语义 / findings 排序 / counts / 项目校验 404 / 失败传播 / 确定性快照断言） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（编排用例） |
+| M6 | API GET /audit（成功路径 / 404 项目不存在 / 无效 UUID / 500 透传 / 幂等） | `pytest backend/tests/unit/api/routers/test_audit_api.py -v` 全绿 |
 | M7 | CLI audit 组（摘要两种形态 / --json 完整报告 / 退出码 0 语义 / NOT_FOUND / DB_ERROR / 缺参退出码 2）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_audit.py`** | `pytest tests/cli/test_cli_audit.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
 | M8 | 手工验证闭环：真实项目全流程 | 手工验证（`inkflow project create` + `chapter create` 建 2+ 章 → `audit check` 见 info（未建档案/未提取章节）→ `character create` 建 2 角色 + `relation add` 建关系 → `world create` 建条目 → `timeline create` 建 3 事件制造逆序（如 5.0/3.0/4.0）→ `foreshadowing create --event-id ...` 建伏笔挂事件 → `audit check` 见：时间线 error（未声明倒叙）+ 其余维度干净 → `timeline update` 修正时间或加 flashback 标记 → `timeline delete` 软删某事件 → `audit check` 见伏笔锚点 warning（事件已软删）+ 时间线 error 消除 → `foreshadowing update --event-id \"\"` 解除挂接 → `audit check` 全维度 error=0（warning/info 可留）→ **悬空场景**：SQLite 直接插入一条 from/to 指向不存在角色的关系（`sqlite3 data.db "INSERT INTO character_relations (...) VALUES (...)"`）→ `audit check` 见 R-C1 error「悬空引用」→ 删除该行 → 恢复一致；`--json` 信封与 summary.consistent 全程可断言） |
 | M9 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F15 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
@@ -1100,7 +1100,6 @@ F15 被依赖:
 
 ---
 
-*本文档为 F15 功能规格（What），实施步骤（How）见后续 `specs/f15-consistency-audit/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。

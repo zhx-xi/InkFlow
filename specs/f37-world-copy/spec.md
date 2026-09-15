@@ -254,11 +254,11 @@ async def copy(self, relative_path: str, *, map_id: uuid.UUID) -> str:
 | `backend/src/inkflow/api/routers/world_settings.py` | **MODIFY** | 新增 POST `/projects/{target_project_id}/world-settings/copy` 端点（**注册在 `{setting_id}` 之前**，F10 extract 先例）；`_get_copy_svc` 装配 copy service；`_run_service` 加 CopySource/CopyRoot 两个 404 分支 |
 | `backend/src/inkflow/cli/commands/world.py` | **MODIFY** | 新增 `copy` 子命令（位置参数 `<source> <target>` + `--root`；CLI 恒 HTTP——POST copy 端点，F38 后形态） |
 | `backend/src/inkflow/api/deps.py` | **MODIFY** | 新增 `get_copy_service(db)` 装配 WorldCopyService（repository/project_repo/map_repo/asset_store 全量接线） |
-| `backend/tests/unit/test_copy_service.py` | **CREATE** | 复制编排（层序/映射/冲突/回滚/地图复制/全局图/pin 转纯注释） |
-| `backend/tests/unit/test_copy_api.py` | **CREATE** | API 契约（copy 端点/错误映射/路由顺序） |
+| `backend/tests/unit/domain/services/test_copy_service.py` | **CREATE** | 复制编排（层序/映射/冲突/回滚/地图复制/全局图/pin 转纯注释） |
+| `backend/tests/unit/api/routers/test_copy_api.py` | **CREATE** | API 契约（copy 端点/错误映射/路由顺序） |
 | `tests/cli/test_cli_world_copy.py` | **CREATE** | `world copy` 命令用例（信封/退出码/跳过；F37 拆分——test_cli_world.py 追加后超 900 行护栏，F35/F36 先例） |
-| `backend/tests/unit/test_world_repo.py` | **MODIFY** | 追加 `list_all_active` 契约（3 用例：软删过滤/created_at ASC 排序/空项目） |
-| `backend/tests/unit/test_map_repo.py` | **MODIFY** | 升级 `test_list_by_root_locations`（显式 include_global=False 保持原语义）+ 追加 include_global 契约（4 用例） |
+| `backend/tests/unit/infrastructure/database/test_world_repo.py` | **MODIFY** | 追加 `list_all_active` 契约（3 用例：软删过滤/created_at ASC 排序/空项目） |
+| `backend/tests/unit/infrastructure/database/test_map_repo.py` | **MODIFY** | 升级 `test_list_by_root_locations`（显式 include_global=False 保持原语义）+ 追加 include_global 契约（4 用例） |
 
 > **CI 盲区防范**：`tests/cli/test_cli_world_copy.py` 为 F37 新文件——已追加进 ci.yml `integration-cli-backend` job 文件列表（**必须登记，否则 CI 盲区绿**；F35/F36 拆分先例同款）。`backend/tests/unit/` 新文件由 unit-test-backend 自动收集无需登记。
 
@@ -348,11 +348,11 @@ F37 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | copy_service 整棵/子树复制 + 层序映射 | `pytest backend/tests/unit/test_copy_service.py -k tree` 全绿 |
-| M2 | 冲突语义（跳过/父跳子置顶/不覆盖） | `pytest backend/tests/unit/test_copy_service.py -k conflict` 全绿 |
-| M3 | 地图复制（关联图/全局图/文件复制/pin 重挂/pin 转纯注释/文件缺失跳过） | `pytest backend/tests/unit/test_copy_service.py -k map` 全绿（含 Q3=B 全局图用例 + 转纯注释用例） |
-| M4 | 单事务回滚 + 空源 | `pytest backend/tests/unit/test_copy_service.py -k rollback` 全绿 |
-| M5 | API copy 端点（含路由顺序） | `pytest backend/tests/unit/test_copy_api.py -v` 全绿 |
+| M1 | copy_service 整棵/子树复制 + 层序映射 | `pytest backend/tests/unit/domain/services/test_copy_service.py -k tree` 全绿 |
+| M2 | 冲突语义（跳过/父跳子置顶/不覆盖） | `pytest backend/tests/unit/domain/services/test_copy_service.py -k conflict` 全绿 |
+| M3 | 地图复制（关联图/全局图/文件复制/pin 重挂/pin 转纯注释/文件缺失跳过） | `pytest backend/tests/unit/domain/services/test_copy_service.py -k map` 全绿（含 Q3=B 全局图用例 + 转纯注释用例） |
+| M4 | 单事务回滚 + 空源 | `pytest backend/tests/unit/domain/services/test_copy_service.py -k rollback` 全绿 |
+| M5 | API copy 端点（含路由顺序） | `pytest backend/tests/unit/api/routers/test_copy_api.py -v` 全绿 |
 | M6 | CLI world copy | `pytest ../tests/cli/test_cli_world.py -v` 全绿 |
 | M7 | 手工验证 | 源项目建 3 层树 + 1 关联图 + 1 全局图（含跨集合 pin）→ `world copy` 到新项目 → 目标树结构/图/pin 完整、全局图 root NULL、跨集合 pin 转纯注释 → 再复制同名项目 → 跳过 + warning |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过 |
@@ -371,7 +371,6 @@ F37 被依赖:
 
 ---
 
-*本文档为 F37 功能规格（What），实施步骤（How）见后续 `specs/f37-world-copy/plan.md`。所有里程碑验收以本节 M1-M8 为准。*
 ## 14. 动作确认
 
 > 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。

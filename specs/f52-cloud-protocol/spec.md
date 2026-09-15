@@ -203,7 +203,7 @@ MODIFY: 无（不触碰已实现模块；`domain/ports/__init__.py` 可选导出
   2. 每个 Protocol 用 `Mock(spec=Protocol)` 验证方法签名存在且可调用
   3. 数据类型（AuthCredentials/UserIdentity/UserProfile/SyncResult）可实例化
   4. dataclass 字段默认值符合本地模式（如 `tenant_id="local"`）
-- **命令**: `cd backend && pytest tests/unit/test_cloud_protocols.py -v`
+- **命令**: `cd backend && pytest backend/tests/unit/domain/ports/test_cloud_protocols.py -v`
 - **覆盖率目标**: 新增文件 100%（纯接口定义）
 
 ---
@@ -249,6 +249,6 @@ P0-11 被依赖: 无（2.0.0 云端实现消费；当前模块不引用）
 ## 10. 验收标准
 
 - **M1**: 6 个 Protocol 文件 + `cloud/__init__.py` 聚合导出
-- **M2**: `backend/tests/unit/test_cloud_protocols.py` 全绿（import + Mock 签名验证 + dataclass 实例化）
-- **M3**: `cd backend && pytest tests/unit/test_cloud_protocols.py -v` 通过；全量 `pytest tests/` 无回归
+- **M2**: `backend/tests/unit/domain/ports/test_cloud_protocols.py` 全绿（import + Mock 签名验证 + dataclass 实例化）
+- **M3**: `cd backend && pytest backend/tests/unit/domain/ports/test_cloud_protocols.py -v` 通过；全量 `pytest tests/` 无回归
 - **M4**: PR 引用 #34（`Closes #34`）与 ADR-001/ADR-002/ADR-024；Issue 验收清单全部勾选

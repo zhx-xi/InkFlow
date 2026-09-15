@@ -420,13 +420,13 @@ def build_agentic_writer(
 
 | 文件 | 内容 |
 |------|------|
-| `backend/tests/unit/test_agent_service.py` | Agent 服务 CRUD + 白名单校验 + builtin 保护 |
-| `backend/tests/unit/test_skill_service.py` | Skill 服务 CRUD + frontmatter 解析 + 级联清引用 |
-| `backend/tests/unit/test_tool_catalog.py` | 6 工具目录 + group 分组 + save_draft 静态 spec |
-| `backend/tests/unit/test_agentic_whitelist.py` | `build_agentic_writer` 白名单过滤（工具 + skill 拼接） |
-| `backend/tests/integration/test_agents_api.py` | `/api/v1/agents` 端点契约（含 `/tools` 路由顺序） |
-| `backend/tests/integration/test_skills_api.py` | `/api/v1/skills` 端点契约（frontmatter 校验 + 反查） |
-| `backend/tests/integration/test_builtin_seed.py` | seed 幂等（6 Agent + 6 Skill + 重复启动不重复插入） |
+| `backend/tests/unit/domain/services/test_agent_service.py` | Agent 服务 CRUD + 白名单校验 + builtin 保护 |
+| `backend/tests/unit/domain/services/test_skill_service.py` | Skill 服务 CRUD + frontmatter 解析 + 级联清引用 |
+| `backend/tests/unit/domain/models/test_tool_catalog.py` | 6 工具目录 + group 分组 + save_draft 静态 spec |
+| `backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` | `build_agentic_writer` 白名单过滤（工具 + skill 拼接） |
+| `tests/api/test_agents_api.py` | `/api/v1/agents` 端点契约（含 `/tools` 路由顺序） |
+| `tests/api/test_skills_api.py` | `/api/v1/skills` 端点契约（frontmatter 校验 + 反查） |
+| `tests/integration/test_builtin_seed.py` | seed 幂等（6 Agent + 6 Skill + 重复启动不重复插入） |
 | `frontend/.../agents.test.tsx` + `skills.test.tsx` | store 单测 + 组件测试（Vitest + RTL） |
 | `frontend/.../e2e/*.spec.ts` | 上传→绑定→引用视图→删除确认 全流程（F40）+ 创建→编辑→白名单展示→删除确认（F41） |
 
@@ -510,9 +510,9 @@ def build_agentic_writer(
 
 | M | 验收 | 验证 |
 |---|------|------|
-| M1 | Agent/Skill 实体 CRUD（列表/详情/创建/更新/删除）API 契约全绿；同名 422、非法 id 404 | `pytest tests/unit/test_agent_service.py tests/unit/test_skill_service.py tests/integration/test_agents_api.py tests/integration/test_skills_api.py` |
-| M2 | 工具目录 = 完整 6 工具（含 save_draft）+ group 分组；`GET /agents/tools` 不被 `/{agent_id}` 吞 | `pytest tests/unit/test_tool_catalog.py tests/integration/test_agents_api.py -k tools` |
-| M3 | 白名单装配确定性：`tool_ids` 只 build 命中工具、`skill_ids` 只拼命中 skill（base 前 skill 后）；`None` 向后兼容 | `pytest tests/unit/test_agentic_whitelist.py` |
+| M1 | Agent/Skill 实体 CRUD（列表/详情/创建/更新/删除）API 契约全绿；同名 422、非法 id 404 | `pytest backend/tests/unit/domain/services/test_agent_service.py backend/tests/unit/domain/services/test_skill_service.py tests/api/test_agents_api.py tests/api/test_skills_api.py` |
+| M2 | 工具目录 = 完整 6 工具（含 save_draft）+ group 分组；`GET /agents/tools` 不被 `/{agent_id}` 吞 | `pytest backend/tests/unit/domain/models/test_tool_catalog.py tests/api/test_agents_api.py -k tools` |
+| M3 | 白名单装配确定性：`tool_ids` 只 build 命中工具、`skill_ids` 只拼命中 skill（base 前 skill 后）；`None` 向后兼容 | `pytest backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` |
 | M4 | 内置 seed 幂等：启动后 6 Agent 落库 + 6 Skill 文件回补就绪，重复启动不重复插入/写入 | `pytest tests/integration/test_builtin_seed.py` + 手工 `inkflow agent list`/`inkflow skill list` |
 | M5 | 内置只读（PATCH/DELETE 409）；被引用 user skill 删除级联清引用 | `pytest` 服务层 + 端点契约用例 |
 
@@ -520,7 +520,7 @@ def build_agentic_writer(
 
 | M | 验收 | 验证 |
 |---|------|------|
-| M6 | 上传：frontmatter 解析（name/description/tags）+ 内容预览；格式非法/同名 422 提示 | `pytest tests/integration/test_skills_api.py` + 前端 store/组件测试 |
+| M6 | 上传：frontmatter 解析（name/description/tags）+ 内容预览；格式非法/同名 422 提示 | `pytest tests/api/test_skills_api.py` + 前端 store/组件测试 |
 | M7 | 上传时绑定：显式指定 Agent（默认不勾选 + 可搜索 + 「应用到全部」）；管理列表（来源/反查）；删除确认列影响面 | 前端组件测试 + E2E `上传→绑定→引用视图→删除确认` |
 
 ### F41 自定义 Agent 编辑（#260）

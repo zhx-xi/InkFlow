@@ -76,7 +76,7 @@ def redact_secrets(prompt: str, known_keys: list[str] | None = None) -> str:
 
 ## 4. 测试策略（RED 契约 → GREEN）
 
-### 4.1 单元测试（`backend/tests/unit/test_redact.py`，NEW）
+### 4.1 单元测试（`backend/tests/unit/infrastructure/llm/test_redact.py`，NEW）
 
 - **A 正则**：
   - `sk-` 形态 → `sk-****`（key 部分被替换，前缀保留）。
@@ -87,7 +87,7 @@ def redact_secrets(prompt: str, known_keys: list[str] | None = None) -> str:
   - `known_keys=["sk-abc..."]`，prompt 含该 key → 被 `****` 替换。
   - `known_keys=[]` → 仅 A。
 - **无匹配** → 原样。
-- **回调语义**（端点级，`test_chat_stream.py` 追加）：mock LLM 收到的 `messages[0].content` 不含密钥（已替换）。
+- **回调语义**（端点级，`test_chat_stream_api.py` 追加）：mock LLM 收到的 `messages[0].content` 不含密钥（已替换）。
 
 ## 5. 范围外声明
 
@@ -102,8 +102,8 @@ def redact_secrets(prompt: str, known_keys: list[str] | None = None) -> str:
 |------|------|
 | `backend/src/inkflow/infrastructure/llm/redact.py` | NEW（§3.1 `redact_secrets` + `load_known_keys`） |
 | `backend/src/inkflow/api/routers/chat_stream.py` | MODIFY（§3.2 两条端点入口接线） |
-| `backend/tests/unit/test_redact.py` | NEW（RED） |
-| `backend/tests/unit/test_chat_stream.py` | MODIFY（追加端点级脱敏断言） |
+| `backend/tests/unit/infrastructure/llm/test_redact.py` | NEW（RED） |
+| `backend/tests/unit/api/routers/test_chat_stream_api.py` | MODIFY（追加端点级脱敏断言） |
 
 ## 7. 门禁
 

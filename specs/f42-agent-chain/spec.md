@@ -444,15 +444,15 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 | MODIFY | `backend/src/inkflow/infrastructure/agent/pipeline_nodes.py` | **4 具名节点 → `generic_node`（upstream_keys 从 stage.input_from 推导，v1.2）**；`_build_messages` 注入键集 = input_from ∪ 占位符扫描 + `.get` 防御 + 同层强制空（L58-64，v1.3 B8） |
 | MODIFY | `backend/src/inkflow/api/routers/project.py`（或 `domain/services/project_service.py`，实现确认） | agent_order API 层语义校验 → 422（§2.3）；存量裸名规范化钩子（F6，拆 issue） |
 | MODIFY | `backend/src/inkflow/api/routers/writing.py`（或 agent.py） | GUI 写作入口 → 管线 execute 接线（§5.6，拆 issue） |
-| MODIFY | `backend/tests/unit/test_agent_service.py`（既有文件，追加） | ① sentinel 不覆盖断言（mock LLM 收 model 参数）；② 裸名回退；③ `_apply_agent_order` 双模式/层级重排/跳过/回退/全连接边/一致性校验契约 |
-| MODIFY | `backend/tests/unit/test_langgraph_pipeline.py`（既有文件，**预期修改清单 R1**） | ① `test_validate_multiple_entries`/`test_validate_no_terminal`/`test_execute_invalid_config_raises`：断言反转（放宽后合法）；② `test_execute_unknown_stage_type_raises`：删除（守卫移除）；③ `test_execute_node_pipeline_error_propagates`/`test_execute_node_generic_exception_wrapped`：monkeypatch 目标改通用节点；④ 追加层级拓扑/并行层/终点角色校验/可达性测试 |
-| CREATE | `backend/tests/unit/test_project_config_order.py`（若既有测试过厚则独立） | ProjectConfig.agent_order 存储层校验（结构/空槽/长度 >10/跨层重复） |
+| MODIFY | `backend/tests/unit/domain/services/test_agent_service.py`（既有文件，追加） | ① sentinel 不覆盖断言（mock LLM 收 model 参数）；② 裸名回退；③ `_apply_agent_order` 双模式/层级重排/跳过/回退/全连接边/一致性校验契约 |
+| MODIFY | `backend/tests/unit/infrastructure/agent/test_langgraph_pipeline.py`（既有文件，**预期修改清单 R1**） | ① `test_validate_multiple_entries`/`test_validate_no_terminal`/`test_execute_invalid_config_raises`：断言反转（放宽后合法）；② `test_execute_unknown_stage_type_raises`：删除（守卫移除）；③ `test_execute_node_pipeline_error_propagates`/`test_execute_node_generic_exception_wrapped`：monkeypatch 目标改通用节点；④ 追加层级拓扑/并行层/终点角色校验/可达性测试 |
+| CREATE | `backend/tests/unit/domain/models/test_project_config_order.py`（若既有测试过厚则独立） | ProjectConfig.agent_order 存储层校验（结构/空槽/长度 >10/跨层重复） |
 | MODIFY | `tests/cli/test_cli_project*.py`（既有，追加） | PATCH config.agent_order 经 CLI 读写契约（依赖 #251；未合入则降级 API 层测试，§4） |
 | MODIFY | `backend/src/inkflow/domain/services/agent_entity_service.py`（v1.5） | `BUILTIN_AGENT_SPECS` 世界观顾问/润色师 `role_key: None` → `"worldview"`/`"polisher"`（§5.7.1）+ 自定义 Agent 创建时 role_key 分配（slug 化 + 冲突后缀，§5.7.2） |
 | MODIFY | `backend/src/inkflow/domain/services/agent_service.py`（v1.5） | `_apply_agent_order`/装配点扩展：模板 stages 缺失角色（6 内置新增 2 + 自定义 Agent）构造占位 stage，prompt/name 从 AgentEntity 真源取（注入 AgentRepositoryProtocol 或数据缓存，§5.7.4）；成品身份规则扩展（worldview/polisher 为内容角色） |
 | MODIFY | `backend/src/inkflow/api/routers/agents.py`（或 agent_entity 服务，v1.5） | `POST /api/v1/agents` 响应含分配后 role_key；`GET /api/v1/agents` 透出（#473 既有，无契约破坏） |
-| CREATE/MODIFY | `backend/tests/unit/test_agent_entity_service.py`（v1.5，追加） | ① role_key 全集 6 契约（内置 4+2）；② 自定义 Agent role_key 分配（slug/冲突后缀/不可变）；③ seed 迁移（存量 role_key 补值） |
-| MODIFY | `backend/tests/unit/test_agent_service.py`（v1.5，追加） | 模板 stages 缺失角色 stage 构造（worldview/polisher/自定义，prompt 真源断言）；成品身份扩展断言（worldview 排最后 → 成品 = worldview 输出） |
+| CREATE/MODIFY | `backend/tests/unit/domain/services/test_agent_entity_service.py`（v1.5，追加） | ① role_key 全集 6 契约（内置 4+2）；② 自定义 Agent role_key 分配（slug/冲突后缀/不可变）；③ seed 迁移（存量 role_key 补值） |
+| MODIFY | `backend/tests/unit/domain/services/test_agent_service.py`（v1.5，追加） | 模板 stages 缺失角色 stage 构造（worldview/polisher/自定义，prompt 真源断言）；成品身份扩展断言（worldview 排最后 → 成品 = worldview 输出） |
 
 ### 前端
 
@@ -560,15 +560,15 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 
 > 合并 #268 + #269 issue 验收要点（v1.1 按拍板修订）；M1-M3 为 #268（W2），M4-M6 为 #269（W3），M7 收尾。实现 PR 按里程碑分批合入。
 
-- **M1 三态执行修复（#268 后端）**: `pytest backend/tests/unit/test_agent_service.py` — `agent_* = "__default__"` 执行不抛 ValueError 且 mock LLM 收到模板角色模型（非 sentinel）；`agent_* = null` → 角色跳过（Q2 拍板）；裸模型名 → warning + 回退跟随默认
+- **M1 三态执行修复（#268 后端）**: `pytest backend/tests/unit/domain/services/test_agent_service.py` — `agent_* = "__default__"` 执行不抛 ValueError 且 mock LLM 收到模板角色模型（非 sentinel）；`agent_* = null` → 角色跳过（Q2 拍板）；裸模型名 → warning + 回退跟随默认
 - **M2 模型选择 UI（#268 前端）**: `pnpm vitest run src/components/AgentChainCard.test.tsx`（新建）— 开关打开条件渲染 Select（数据源 mock provider-configs chat 模型）；选「跟随默认」→ PATCH sentinel；选具体模型 → PATCH provider/model；关闭 → PATCH null；未注册/格式不合规值显示标记且保存不阻塞；默认模型 Select（settings.tsx）数据源 = provider-configs chat 列表
 - **M3 模型选择持久化 + 写作验证（#268 验收闭环，v1.3 口径修订）**: GUI 打开角色→选模型→保存→重启保持；**写作流程（全自动/续写管线路径，v1.3 B2）按指定模型执行（内核 stderr 可查模型名）**；关闭 → 角色跳过（配置驱动模式，stderr 可查跳过日志）；config.agent_* 值均为 provider/model 或 sentinel 或 null；**agentic 路径不在本验收范围（保持全局默认模型，§1.3 边界）**
-- **M4 层级拓扑 + 校验（#269 后端，v1.3 断言契约修订）**: `pytest backend/tests/unit/test_project_config_order.py` + `test_langgraph_pipeline.py` — agent_order 层级结构/空槽允许/长度 >10 拒绝/跨层重复拒绝；PATCH 语义校验 422（缺启用角色）；**任意角色名允许（内置 + 自定义，v1.2）**；存量项目零迁移；**并行层断言 = 层序单调（per-role 响应表 mock，v1.3 R2）**；变量空注入防御（未来层/同层 → 空串）；环检测 + 可达性回归；**终点角色类型校验（成品身份）**
-- **M5 执行拓扑重排（#269 集成）**: `pytest backend/tests/unit/test_agent_service.py` — `_apply_agent_order` **双模式分派（空=默认模板模式 null 不跳过）/层级重排（含 `[["architect"],["writer","auditor"],["reviser"]]` 并行场景）/跳过过滤（配置驱动模式）/空回退/非法回退/一致性校验**；全连接边断言（input_from=前序全部、output_to=后序全部）；重排后 validate() 恒通过；**自定义角色执行（模板 roles 装配 → 通用节点，upstream 从 input_from 推导，v1.2/v1.3）**
+- **M4 层级拓扑 + 校验（#269 后端，v1.3 断言契约修订）**: `pytest backend/tests/unit/domain/models/test_project_config_order.py` + `test_langgraph_pipeline.py` — agent_order 层级结构/空槽允许/长度 >10 拒绝/跨层重复拒绝；PATCH 语义校验 422（缺启用角色）；**任意角色名允许（内置 + 自定义，v1.2）**；存量项目零迁移；**并行层断言 = 层序单调（per-role 响应表 mock，v1.3 R2）**；变量空注入防御（未来层/同层 → 空串）；环检测 + 可达性回归；**终点角色类型校验（成品身份）**
+- **M5 执行拓扑重排（#269 集成）**: `pytest backend/tests/unit/domain/services/test_agent_service.py` — `_apply_agent_order` **双模式分派（空=默认模板模式 null 不跳过）/层级重排（含 `[["architect"],["writer","auditor"],["reviser"]]` 并行场景）/跳过过滤（配置驱动模式）/空回退/非法回退/一致性校验**；全连接边断言（input_from=前序全部、output_to=后序全部）；重排后 validate() 恒通过；**自定义角色执行（模板 roles 装配 → 通用节点，upstream 从 input_from 推导，v1.2/v1.3）**
 - **M6 槽位编辑 UI + 持久化（#269 验收闭环，v1.3 口径修订）**: GUI 每角色槽位编号 **0-9**（同编号=并行组）→ PATCH agent_order 层级结构 → 重启保持；默认模板显示槽 0-3；写作流程按槽位序执行（内核 stderr / 执行日志可验证：**层间串行可验证，层内并行不承诺 stderr 序**）；保存时角色级空输入提示（静态依赖分析）；**调整顺序/关闭角色后成品类型不变（reviser 输出）断言**
 - **M7 CLI 读写 + 回归（#269 CLI + 全仓）**: 依赖 #251 合入后 `inkflow project get --id N` 输出含 agent_order、update 可写（#251 未合入则降级 API 层验证，PR 标注）；**除 §8 R1 预期修改清单外全仓零回归** + 覆盖率门禁（ADR-027）；spec §8 文件结构逐项核对
 - **M8 GUI 写作管线化（v1.3 B2，拆 issue 实现）**: `pytest`（双模板注册/执行契约）+ 手工 — 写作页「全自动生成」→ 管线 execute（builtin:write_auto）按 agent_order/agent_* 执行（stderr 可查模型名/层序）；「续写」→ builtin:write_continue；执行状态展示（进行中/成功/失败 + 成品落章）；**#268/#269 验收原文「写作流程按指定模型/新顺序执行」在 GUI 主路径通过**
-- **M9 链动态化 + 模板联动（v1.5 #484，S2 实现轨）**: `pytest backend/tests/unit/test_agent_entity_service.py` + `test_agent_service.py` + `pnpm vitest run src/components/AgentChainCard.test.tsx src/components/TemplateDialog.test.tsx` — ① role_key 全集 6（世界观顾问=worldview/润色师=polisher，存量 seed 迁移补值）；② 链增/删/改角色（添加角色 → 三态 + agent_order → 重启保持；关闭 → 从 agent_order 移除）；③ 自定义 Agent 进链（创建 → role_key 分配 → 角色池 → 进链执行，prompt = AgentEntity.system_prompt）；④ 模板引用任意角色组合（TemplateDialog 角色列表从真源派生，roles Record 保存/回读）；⑤ 执行层缺失角色 stage 构造 + 成品身份扩展（worldview 排最后 → 成品 = worldview 输出）；⑥ 三组件 4 键硬编码删除（AgentChainCard/AgentRelationEditor/TemplateDialog）+ 回归；⑦ GUI 手工闭环：设置页链添加世界观顾问 → 保存 → 重启保持 → 写作按新链执行（stderr 可查）
+- **M9 链动态化 + 模板联动（v1.5 #484，S2 实现轨）**: `pytest backend/tests/unit/domain/services/test_agent_entity_service.py` + `test_agent_service.py` + `pnpm vitest run src/components/AgentChainCard.test.tsx src/components/TemplateDialog.test.tsx` — ① role_key 全集 6（世界观顾问=worldview/润色师=polisher，存量 seed 迁移补值）；② 链增/删/改角色（添加角色 → 三态 + agent_order → 重启保持；关闭 → 从 agent_order 移除）；③ 自定义 Agent 进链（创建 → role_key 分配 → 角色池 → 进链执行，prompt = AgentEntity.system_prompt）；④ 模板引用任意角色组合（TemplateDialog 角色列表从真源派生，roles Record 保存/回读）；⑤ 执行层缺失角色 stage 构造 + 成品身份扩展（worldview 排最后 → 成品 = worldview 输出）；⑥ 三组件 4 键硬编码删除（AgentChainCard/AgentRelationEditor/TemplateDialog）+ 回归；⑦ GUI 手工闭环：设置页链添加世界观顾问 → 保存 → 重启保持 → 写作按新链执行（stderr 可查）
 
 ---
 

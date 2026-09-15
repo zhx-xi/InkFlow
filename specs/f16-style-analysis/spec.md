@@ -11,10 +11,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L13) · [2. 数据模型](L49) · [3. API 契约](L334) · [4. CLI 命令签名](L533)
-> [5. 风格检测算法（确定性文本分析核心）](L596) · [6. 风格报告组织规则](L926) · [7. 边界情况与错误处理](L964) · [8. 文件结构](L1003)
-> [9. 测试策略](L1219) · [10. 不在范围内](L1282) · [11. 依赖关系](L1303) · [12. 关键架构决策记录](L1343)
-> [13. 验收标准](L1371) · [待澄清问题（≤ 3 个，已全部拍板 ✅）](L1392)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. 风格检测算法（确定性文本分析核心） · 6. 风格报告组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，已全部拍板 ✅）
 ---
 
 ## 1. 概述
@@ -1003,7 +1003,7 @@ async def _dispatch(self, request, source, project) -> _Normalized:
 | CLI 项目不存在 / 无效 UUID | 退出码 1 + NOT_FOUND 信封（同 F12/F15 先例） |
 | CLI 分析发现 likely_ai | 退出码 **0**（成功执行；结论是「结果」而非「执行错误」——同 F15 Q1 语义）；人类可读摘要显示「⚠ 倾向 AI 生成」 |
 | CLI --json 输出 | 完整 StyleReport（model_dump(mode="json")），信封 {"ok": true, "data": ...} |
-| 删除 StyleNotImplementedError 后的占位测试同步 | `test_extraction_service.py` 的 `test_style_raises_not_implemented` / `test_style_project_not_found_first` 与 `test_cli_extraction.py` 的 `test_run_style_unsupported` **必须同步更新**为 style 成功路径用例——这是 F16 落地后的预期行为（§8.2/§12 声明） |
+| 删除 StyleNotImplementedError 后的占位测试同步 | `test_extraction_service.py` 的 `test_style_raises_not_implemented` / `test_style_project_not_found_first` 与 `test_cli_extraction_crud.py` 的 `test_run_style_unsupported` **必须同步更新**为 style 成功路径用例——这是 F16 落地后的预期行为（§8.2/§12 声明） |
 
 ---
 
@@ -1112,12 +1112,12 @@ backend/src/inkflow/
 ```
 
 ```text
-backend/tests/unit/test_extraction_service.py ← MODIFY F14: test_style_raises_not_implemented →
+backend/tests/unit/domain/services/test_extraction_service.py ← MODIFY F14: test_style_raises_not_implemented →
                                                     style 成功路径用例（Mock StyleService 委托 +
                                                     归一断言）；test_style_project_not_found_first 保留
                                                     （项目校验先于 handler 的语义不变，断言改为
                                                     StyleService 未被调用）
-tests/cli/test_cli_extraction.py               ← MODIFY F14: test_run_style_unsupported →
+tests/cli/test_cli_extraction_crud.py          ← MODIFY F14: test_run_style_unsupported →
                                                     style 成功执行用例（退出码 0 + success 摘要/信封）
 .github/workflows/ci.yml                       ← MODIFY: integration-cli-backend job 文件列表
                                                     显式加入 ../tests/cli/test_cli_style.py
@@ -1274,7 +1274,7 @@ CLI 测试: style 组（Mock StyleService）                        ~12 cases
 
 **CLI（test_cli_style.py，Mock StyleService）**: analyze 人类可读输出（三大板块摘要 + jieba 行 + LLM 行（开启时）+ verdict 中文映射 + 高频词前 5 + warnings 逐条）/ --json 完整报告信封 / 三选一缺参 → 退出码 2（Typer）/ --text 与 --text-file 同时 → 退出码 2 / 项目不存在 → NOT_FOUND 信封退出码 1 / VALIDATION_ERROR 信封（Service 抛 StyleValidationError）/ DB_ERROR 信封 / LLM_ERROR 信封（Service 抛 StyleLLMUnavailableError / StyleLLMAnalysisError，Q1=C）/ 发现 likely_ai → 退出码 0（结论是结果非错误）/ **--llm-analysis 透传**（Mock 断言 Service 收到 True；--no-llm-analysis → False；缺省 → None）
 
-**F14 占位测试同步（MODIFY）**: `test_extraction_service.py` 的 `test_style_raises_not_implemented` → 改为 style 成功路径（Mock StyleService：_dispatch 委托调用断言 + 归一断言 created=0/updated=0/model=None/detail=StyleReport.dump/warnings 透传）；`test_style_project_not_found_first` 保留（项目校验先于 handler 的语义不变，断言 StyleService.analyze 未被调用）；新增 `_resolve_sources` STYLE 分支用例（固定 full 源、skip=False）与 `_indexing_enabled` STYLE 用例（恒 False + warning 文案）。`test_cli_extraction.py` 的 `test_run_style_unsupported` → 改为 style 成功执行用例（Mock extract 返回 success 结果 → 退出码 0 + 摘要/信封断言）。
+**F14 占位测试同步（MODIFY）**: `test_extraction_service.py` 的 `test_style_raises_not_implemented` → 改为 style 成功路径（Mock StyleService：_dispatch 委托调用断言 + 归一断言 created=0/updated=0/model=None/detail=StyleReport.dump/warnings 透传）；`test_style_project_not_found_first` 保留（项目校验先于 handler 的语义不变，断言 StyleService.analyze 未被调用）；新增 `_resolve_sources` STYLE 分支用例（固定 full 源、skip=False）与 `_indexing_enabled` STYLE 用例（恒 False + warning 文案）。`test_cli_extraction_crud.py` 的 `test_run_style_unsupported` → 改为 style 成功执行用例（Mock extract 返回 success 结果 → 退出码 0 + 摘要/信封断言）。
 
 ### 覆盖率目标
 
@@ -1341,7 +1341,7 @@ F16 被依赖:
   F3 (writing_service) ⏳ — (Phase 2+ 联调) 风格检测结果作为写作自查的可选环节（§10）
 ```
 
-> **跨模块 MODIFY 声明（与 F15 的差异）**: F15 是**零跨模块 MODIFY** 的纯消费者；F16 唯一的跨模块改动是 **F14 注册表注册 handler**（F14 §12 已承诺的既定落点，接口零变更）+ **F14 占位测试同步更新**（`test_extraction_service.py` / `test_cli_extraction.py` 的 STYLE 占位用例——这是占位机制退役的预期行为，§8.2/§12 声明）+ **F14 spec 同步修订**（§1/§6.1/§6.4/§7/§11/§12 的 STYLE 占位表述）。除此之外**零跨模块 MODIFY**：不给 F1/F2 加任何方法（项目校验走既有 `get`、章节读取走既有 `get_chapter`），不新增任何字段/表到既有模块。
+> **跨模块 MODIFY 声明（与 F15 的差异）**: F15 是**零跨模块 MODIFY** 的纯消费者；F16 唯一的跨模块改动是 **F14 注册表注册 handler**（F14 §12 已承诺的既定落点，接口零变更）+ **F14 占位测试同步更新**（`test_extraction_service.py` / `test_cli_extraction_crud.py` 的 STYLE 占位用例——这是占位机制退役的预期行为，§8.2/§12 声明）+ **F14 spec 同步修订**（§1/§6.1/§6.4/§7/§11/§12 的 STYLE 占位表述）。除此之外**零跨模块 MODIFY**：不给 F1/F2 加任何方法（项目校验走既有 `get`、章节读取走既有 `get_chapter`），不新增任何字段/表到既有模块。
 >
 > **编号口径**: F16 = 风格检测（ADR-019 现行口径）；旧文档中指向一致性审计的「F16」编号均为 ADR-019 之前旧编号（实际 = F15），本 spec 及后续一律以 ADR-019 为准（同 F9/F10/F12/F13/F14/F15 spec §11 声明）。
 
@@ -1379,16 +1379,16 @@ F16 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 报告模型 + DTO 校验（WordFrequency / StyleFingerprint 12 字段 / AITraceVerdict 三值 / AITraceFeature / AITraceAssessment / LexicalAnalysis / StyleReport 序列化 + StyleAnalyzeRequest 互斥与边界校验） | `pytest tests/unit/test_style_models.py -v` 全绿 |
-| M2 | 算法·预处理与 token 化（去空白 / 句子切分 / 段落切分 / 标点统计 / 对话检测 / 零依赖 token 化全分支 + **jieba.lcut 精确模式分词断言（Q2=C）**） | `pytest tests/unit/test_style_analyzer.py -v` 全绿（预处理/token 用例） |
-| M3 | 算法·风格指纹（12 项统计数值断言 + 空文本/无句尾符/单句边界 + **指纹与基础 lexical 同源、jieba 板块不影响指纹数值（Q2=C）**） | `pytest tests/unit/test_style_analyzer.py -v` 全绿（指纹用例） |
-| M4 | 算法·AI 痕迹（8 特征评分函数边界表驱动 + ai_score 等权均值 + verdict 三档阈值 + evidence 规则 + 过短/无词条边界） | `pytest tests/unit/test_style_analyzer.py -v` 全绿（AI 痕迹用例） |
-| M5 | 算法·词汇分析（total/unique/avg/top_words 排序/停用词占比 + 停用词表命中 + **jieba 增强板块：jieba_total/unique/avg/top_words 排序/停用词过滤/与正则词块对比「单字词切分」断言（Q2=C）**） | `pytest tests/unit/test_style_analyzer.py -v` 全绿（词汇用例） |
-| M5b | **LLM 深度分析管线（Q1=C）**：`style_llm_analysis.yaml` 模板 + `StyleLLMAnalyzer`（合法 JSON→StyleLLMAssessment / 围栏提取 / 修复重试 ≤2→StyleLLMAnalysisError / verdict 非法值 / reasoning 超长截断 ≤2000 / 空文本不调用 LLM）+ 设置项三级判定（请求显式 true/false / 项目配置 `extra["style_llm_analysis"]` / 默认 false）+ llm_analysis=true 但未装配 → `StyleLLMUnavailableError` | `pytest tests/unit/test_style_llm_analyzer.py tests/unit/test_style_service.py -v` 全绿 |
-| M6 | 服务编排（项目校验 404 / 输入互斥与缺失 422 / 章节校验 / 多章合并与 source 标记 / warnings 组合 / 确定性快照断言 / 失败传播 + **llm_analysis 三级判定与 llm_assessment 注入（Q1=C）**） | `pytest tests/unit/test_style_service.py -v` 全绿 |
-| M7 | API POST /style/analyze（成功路径 / 404 / 422 全路径 / 无效 UUID / 500 透传 / 幂等 + **llm_analysis 透传与 LLM 相关 500 透传（Q1=C）**） | `pytest tests/unit/test_style_api.py -v` 全绿 |
+| M1 | 报告模型 + DTO 校验（WordFrequency / StyleFingerprint 12 字段 / AITraceVerdict 三值 / AITraceFeature / AITraceAssessment / LexicalAnalysis / StyleReport 序列化 + StyleAnalyzeRequest 互斥与边界校验） | `pytest backend/tests/unit/domain/models/test_style_models.py -v` 全绿 |
+| M2 | 算法·预处理与 token 化（去空白 / 句子切分 / 段落切分 / 标点统计 / 对话检测 / 零依赖 token 化全分支 + **jieba.lcut 精确模式分词断言（Q2=C）**） | `pytest backend/tests/unit/domain/services/test_style_analyzer.py -v` 全绿（预处理/token 用例） |
+| M3 | 算法·风格指纹（12 项统计数值断言 + 空文本/无句尾符/单句边界 + **指纹与基础 lexical 同源、jieba 板块不影响指纹数值（Q2=C）**） | `pytest backend/tests/unit/domain/services/test_style_analyzer.py -v` 全绿（指纹用例） |
+| M4 | 算法·AI 痕迹（8 特征评分函数边界表驱动 + ai_score 等权均值 + verdict 三档阈值 + evidence 规则 + 过短/无词条边界） | `pytest backend/tests/unit/domain/services/test_style_analyzer.py -v` 全绿（AI 痕迹用例） |
+| M5 | 算法·词汇分析（total/unique/avg/top_words 排序/停用词占比 + 停用词表命中 + **jieba 增强板块：jieba_total/unique/avg/top_words 排序/停用词过滤/与正则词块对比「单字词切分」断言（Q2=C）**） | `pytest backend/tests/unit/domain/services/test_style_analyzer.py -v` 全绿（词汇用例） |
+| M5b | **LLM 深度分析管线（Q1=C）**：`style_llm_analysis.yaml` 模板 + `StyleLLMAnalyzer`（合法 JSON→StyleLLMAssessment / 围栏提取 / 修复重试 ≤2→StyleLLMAnalysisError / verdict 非法值 / reasoning 超长截断 ≤2000 / 空文本不调用 LLM）+ 设置项三级判定（请求显式 true/false / 项目配置 `extra["style_llm_analysis"]` / 默认 false）+ llm_analysis=true 但未装配 → `StyleLLMUnavailableError` | `pytest backend/tests/unit/domain/services/test_style_llm_analyzer.py backend/tests/unit/domain/services/test_style_service.py -v` 全绿 |
+| M6 | 服务编排（项目校验 404 / 输入互斥与缺失 422 / 章节校验 / 多章合并与 source 标记 / warnings 组合 / 确定性快照断言 / 失败传播 + **llm_analysis 三级判定与 llm_assessment 注入（Q1=C）**） | `pytest backend/tests/unit/domain/services/test_style_service.py -v` 全绿 |
+| M7 | API POST /style/analyze（成功路径 / 404 / 422 全路径 / 无效 UUID / 500 透传 / 幂等 + **llm_analysis 透传与 LLM 相关 500 透传（Q1=C）**） | `pytest backend/tests/unit/api/routers/test_style_api.py -v` 全绿 |
 | M8 | CLI style 组（三大板块摘要 / jieba 行 / LLM 行 / verdict 中文映射 / --json 完整报告 / 缺参退出码 2 / NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / DB_ERROR / likely_ai 退出码 0 + **--llm-analysis/--no-llm-analysis 透传（Q1=C）**）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_style.py`** | `pytest tests/cli/test_cli_style.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
-| M9 | F14 门面 STYLE 落地（_handlers 注册 / _validate_input style 行 / _resolve_sources full 源 / _dispatch 委托与归一 / _indexing_enabled 恒 False / **删除 StyleNotImplementedError** / extractions router 与 extract CLI 异常映射 / 占位测试同步更新） | `pytest tests/unit/test_extraction_service.py tests/cli/test_cli_extraction.py -v` 全绿（style 相关用例全部通过；含 F14 全量回归） |
+| M9 | F14 门面 STYLE 落地（_handlers 注册 / _validate_input style 行 / _resolve_sources full 源 / _dispatch 委托与归一 / _indexing_enabled 恒 False / **删除 StyleNotImplementedError** / extractions router 与 extract CLI 异常映射 / 占位测试同步更新） | `pytest backend/tests/unit/domain/services/test_extraction_service.py tests/cli/test_cli_extraction_crud.py -v` 全绿（style 相关用例全部通过；含 F14 全量回归） |
 | M10 | 手工验证闭环：真实项目全流程 | 手工验证（`inkflow project create` 建项目 → `chapter create` 建 2 章（内容含对话/感叹/省略号）→ `inkflow style analyze --project-id <uuid> --chapters <id1>,<id2>` 输出三大板块摘要 + 「多章节合并分析」warning → `--json` 信封含 fingerprint/ai_trace/lexical 全字段（lexical 含 jieba 板块）→ `inkflow style analyze --text "……"` 手动模式 source=manual → **jieba 增强（Q2=C）**：`--json` 检查 `lexical.jieba` 板块数值与基础板块并存 → **LLM 深度分析（Q1=C）**：项目配置 `config.extra["style_llm_analysis"]=true`（或单次 `--llm-analysis` 覆盖）后 `inkflow style analyze --chapters <id1> --llm-analysis --json` → 报告含 `llm_assessment` 板块（真实 LLM，需网络）；不开启时 `llm_assessment=null` → **F14 门面**：`inkflow extract run --type style --chapters <id1> --json` 返回 success 信封（created=0/updated=0、detail=StyleReport、**无 llm_assessment——门面恒确定性**）→ 再次执行同命令（run 记录 upsert、仍 success——每次执行）→ `inkflow extract status` 可见 style 的 run 行 → `inkflow style analyze --project-id <uuid>`（缺参）退出码 2 → `inkflow style analyze --project-id 00000000-0000-0000-0000-000000000000 --text "……"` 退出码 1 NOT_FOUND → 修改章节内容后重分析 → 报告数值变化（指纹反映新文本）） |
 | M11 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F16 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015，含 `_style_analyzer.py` 与 `_style_llm_analyzer.py`——后者仅 ports Protocol import）；**pyproject + uv.lock 变更（jieba，Q2=C——uv lock 更新在实现阶段执行，CI `uv sync --frozen` 依赖此变更，§8）** |
 
@@ -1406,7 +1406,6 @@ F16 被依赖:
 
 ---
 
-*本文档为 F16 功能规格（What），实施步骤（How）见后续 `specs/f16-style-analysis/plan.md`。所有里程碑验收以本节 M1-M11 为准。*
 ## 14. 动作确认
 
 > 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）。

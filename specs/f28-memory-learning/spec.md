@@ -426,11 +426,11 @@ class PreferenceSource:
 | CREATE | `backend/src/inkflow/cli/commands/memory_cmd.py` | memory list/remove/stats 命令组 |
 | MODIFY | `backend/src/inkflow/cli/app.py` | 注册 memory 命令组 |
 | MODIFY | `backend/src/inkflow/cli/commands/write.py` | next 命令 --memory-learning/--no-memory-learning |
-| CREATE | `backend/tests/unit/test_preference_learner.py` | 提取算法契约（difflib 片段/分类/阈值聚合，RED 主批） |
-| CREATE | `backend/tests/unit/test_memory_service.py` | 编排服务契约（事件捕获/偏好 CRUD/开关判定/统计，全 mock 轨） |
-| CREATE | `backend/tests/unit/test_preference_repo.py` | 偏好仓储集成（真实 SQLite 轨） |
-| CREATE | `backend/tests/unit/test_memory_event_repo.py` | 事件仓储集成（真实 SQLite 轨） |
-| CREATE | `backend/tests/unit/test_preference_source.py` | 注入源契约（开关/冲突过滤/limit/透明标注） |
+| CREATE | `backend/tests/unit/domain/services/test_preference_learner.py` | 提取算法契约（difflib 片段/分类/阈值聚合，RED 主批） |
+| CREATE | `backend/tests/unit/domain/services/test_memory_service.py` | 编排服务契约（事件捕获/偏好 CRUD/开关判定/统计，全 mock 轨） |
+| CREATE | `backend/tests/unit/infrastructure/database/test_preference_repo.py` | 偏好仓储集成（真实 SQLite 轨） |
+| CREATE | `backend/tests/unit/infrastructure/database/test_memory_event_repo.py` | 事件仓储集成（真实 SQLite 轨） |
+| CREATE | `backend/tests/unit/infrastructure/context/test_preference_source.py` | 注入源契约（开关/冲突过滤/limit/透明标注） |
 | CREATE | `tests/api/test_memory_api.py` | 偏好/统计端点 + PATCH drafts 契约 |
 | CREATE | `tests/cli/test_cli_memory.py` | memory 命令 CLI 测试（**须登记 ci.yml integration-cli-backend**） |
 
@@ -497,10 +497,10 @@ class PreferenceSource:
 
 ## 13. 验收标准
 
-- **M1 提取算法全绿**: `pytest tests/unit/test_preference_learner.py` — 阈值语义（1 次不学/2 次学/3 次更新）+ 分类 + 噪声过滤 RED（ModuleNotFoundError）→ GREEN 全过
-- **M2 编排服务全绿**: `pytest tests/unit/test_memory_service.py` — 零行为开关 + 事件捕获 + 偏好 CRUD + 统计 + 级联
-- **M3 仓储全绿**: `pytest tests/unit/test_preference_repo.py tests/unit/test_memory_event_repo.py` — 真实 SQLite 轨 CRUD + JSON 往返
-- **M4 注入源全绿**: `pytest tests/unit/test_preference_source.py` — 开关关闭返回 [] / 冲突过滤 / limit / 透明标注
+- **M1 提取算法全绿**: `pytest backend/tests/unit/domain/services/test_preference_learner.py` — 阈值语义（1 次不学/2 次学/3 次更新）+ 分类 + 噪声过滤 RED（ModuleNotFoundError）→ GREEN 全过
+- **M2 编排服务全绿**: `pytest backend/tests/unit/domain/services/test_memory_service.py` — 零行为开关 + 事件捕获 + 偏好 CRUD + 统计 + 级联
+- **M3 仓储全绿**: `pytest backend/tests/unit/infrastructure/database/test_preference_repo.py backend/tests/unit/infrastructure/database/test_memory_event_repo.py` — 真实 SQLite 轨 CRUD + JSON 往返
+- **M4 注入源全绿**: `pytest backend/tests/unit/infrastructure/context/test_preference_source.py` — 开关关闭返回 [] / 冲突过滤 / limit / 透明标注
 - **M5 API 全绿**: `tests/api/test_memory_api.py` — PATCH drafts 200/404/409/422 + preferences list/delete + stats 口径
 - **M6 CLI 全绿**: `tests/cli/test_cli_memory.py`（**已登记 ci.yml integration-cli-backend**）— 信封/人类模式/退出码
 - **M7 回归零破坏**: F27 drafts 既有测试（confirm/reject/update 语义）+ F6 context 既有测试 + deterministic 全路径零回归；覆盖率全仓 ≥60%（ADR-027 门禁 98.5/95.0）

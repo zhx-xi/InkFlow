@@ -15,10 +15,10 @@
 
 >
 > **快速导航**（2026-08-08 #201）：
-> [1. 概述](L12) · [2. 数据模型](L33) · [3. API 契约](L239) · [4. CLI 命令签名](L406)
-> [5. AI 提取模式（样板核心）](L476) · [6. 关系图谱与分组管理规则](L572) · [7. 边界情况与错误处理](L600) · [8. 文件结构](L641)
-> [9. 测试策略](L743) · [10. 不在范围内](L788) · [11. 依赖关系](L808) · [12. 关键架构决策记录](L835)
-> [13. 验收标准](L856) · [待澄清问题（≤ 3 个，评审时确认）](L872)
+> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
+> 5. AI 提取模式（样板核心） · 6. 关系图谱与分组管理规则 · 7. 边界情况与错误处理 · 8. 文件结构
+> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
+> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述
@@ -880,11 +880,11 @@ F9 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（含 partial unique 语义、提取 DTO schema） | `pytest tests/unit/test_character_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（角色/分组/关系 CRUD + 级联 + 唯一约束） | `pytest tests/unit/test_character_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（同名/自环/跨项目/级联恢复） | `pytest tests/unit/test_character_service.py -v` 全绿 |
-| M4 | AI 提取管线（解析/重试/合并策略/幂等性，Mock LLM） | `pytest tests/unit/test_character_extraction.py -v` 全绿 |
-| M5 | API 16 端点 + 错误路径全绿 | `pytest tests/unit/test_character_api.py -v` 全绿 |
+| M1 | 领域模型 + DTO 验证（含 partial unique 语义、提取 DTO schema） | `pytest backend/tests/unit/domain/models/test_character_models.py -v` 全绿 |
+| M2 | 仓储层全部方法（角色/分组/关系 CRUD + 级联 + 唯一约束） | `pytest backend/tests/unit/infrastructure/database/test_character_repo.py -v` 全绿 |
+| M3 | 服务层 CRUD + 业务校验（同名/自环/跨项目/级联恢复） | `pytest backend/tests/unit/domain/services/test_character_service.py -v` 全绿 |
+| M4 | AI 提取管线（解析/重试/合并策略/幂等性，Mock LLM） | `pytest backend/tests/unit/domain/ports/test_character_extraction.py -v` 全绿 |
+| M5 | API 16 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_character_api.py -v` 全绿 |
 | M6 | CLI character 组（信封/退出码/确认交互/双文本通道） | `pytest tests/test_cli_character.py -v` 全绿 |
 | M7 | 真实 LLM 联调：对一章正文执行 extract 成功落库 | 手工验证（配置任一 Provider Key，`inkflow character extract`） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F9 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017） |
@@ -902,7 +902,6 @@ F9 被依赖:
 
 ---
 
-*本文档为 F9 功能规格（What），实施步骤（How）见后续 `specs/f9-character/plan.md`。所有里程碑验收以本节 M1-M9 为准。*
 ## 14. 动作确认
 
 > 基于 §3 API + §4 CLI + §7 边界事实的状态流表，不新增行为。
