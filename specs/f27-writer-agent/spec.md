@@ -665,7 +665,9 @@ START → bootstrap(注入 llm_client/UntrackedValue, 镜像 F29/F44)
       → book_supervisor(LLM 决策 → Command(goto=book_op / END / fallback),
          无静态出边——Spike ② 教训)
             → write_chapter(委托 F27 writer agent → save_draft → 章落盘 + 进度 done)
-            → audit_chapter(章审校 LLM → 质量分/问题清单)
+            → audit_chapter(委托 **F34 ChapterAuditService.audit** —— 四项检查: 字数 + 人设漂移 +
+                设定漂移 + 静态一致性；输入 = 该章正文，非大纲描述。见 `specs/f34-chapter-audit/spec.md`
+                与 `specs/f26-agent-tools/spec.md` §2.3 `audit_chapter` 工具——**同名同义，皆包装 F34**)
             → revise_chapter(按 audit 结果修订章内容 → 重新落盘)
             → mark_done(标记该章完成 → 推进下一章)
             → fallback(确定性: 剩余章一次写完成)
@@ -685,6 +687,8 @@ START → bootstrap(注入 llm_client/UntrackedValue, 镜像 F29/F44)
 - agent 可对同一章连续 goto `write_chapter → audit_chapter → revise_chapter → audit_chapter → ...` 直到其 LLM 决策认定「该章满意」→ goto `mark_done` → 下一章
 - **循环上限**：`max_chapter_cycles`（默认 5）——同一章从首次 write 起累计 write/audit/revise/组合操作次数达上限 → 强制 `mark_done`（防无限修订，§7 场景 5）
 - **审校下限**：`audit_required=true` 时，某章 write 后未 audit 即试图 `mark_done`/跳至下一章 → supervisor 护栏强制 goto `audit_chapter`（规格化下限，防「只写不审」降级）
+- **审校语义（#1177 收敛）**：`audit_chapter` **节点**与 F26 `audit_chapter` **工具**同名同义——两者皆**包装 F34 `ChapterAuditService.audit(project_id, chapter_id)`**，不再存在「轻量质量分」的第二套审计实现。节点负责把该章正文送达 F34 的输入面（F2 章实体 `chapter.content`），F34 自行取角色/世界观档案并施加截断预算。审计结论以扁平 dict 落入 `audit_results`：`{score, issues, character_drift, setting_drift}`（+ `degraded`/`findings`）。
+- **正文本场（#1174）**：审计输入**必须是该章正文**——不得以 `chapter["description"]`（大纲描述）冒充。正文来源 = 本次写作产出（draft）或 `state["results"][outline_id]` 指向的 execution_id 反查草稿。
 - **进度落盘**：每章 write/audit/revise 完成中间态写 `WritingPlan.progress`（`in_progress`）；`mark_done` 写 `done` + `execution_refs[str(outline_id)]`；失败写 `failed`
 - **章级失败重试**：write_chapter 委托失败 → 重试 N 次（默认 2，复用 F44 `retry_limit`）→ failed 标记 + trigger book_supervisor 决策（跳过/重写/中断）
 
@@ -693,7 +697,7 @@ START → bootstrap(注入 llm_client/UntrackedValue, 镜像 F29/F44)
 | 原语 | 输入 | 执行 | 输出（状态增量） |
 |------|------|------|------------------|
 | `write_chapter` | outline_id + chapter brief | 委托 F27 writer agent（build_agentic_writer，章 brief 渲染）→ agent.invoke → draft_service.create | `{results[str(outline_id)]: draft.id}` + progress[outline_id]=in_progress |
-| `audit_chapter` | outline_id + 章内容 | LLM 审校（质量分 + 问题清单）→ 落 audit 记录 | `{audit_results[str(outline_id)]: {score, issues}}` |
+| `audit_chapter` | outline_id + **该章正文** | **委托 F34 `ChapterAuditService.audit(project_id, chapter_id)`**（四项检查：字数 + 人设漂移 + 设定漂移 + 静态一致性；见 `specs/f34-chapter-audit/spec.md` §1/§5.1）。正文先经 F2 章实体落盘（F34 的输入面 = `chapter.content`），截断预算由 F34 内部 `_audit_context.truncate_chapter` 施加 | `{audit_results[str(outline_id)]: {score, issues, character_drift, setting_drift}}` |
 | `revise_chapter` | outline_id + audit 问题 | 委托改写 agent（按 audit 问题修订）→ draft 重新落盘 | `{results[str(outline_id)]: draft.id}` |
 | `mark_done` | outline_id | progress[outline_id]=done + execution_refs 落库 | 进度快照 |
 | `finish_book` | — | plan.status=completed → 全书完成 | status |
