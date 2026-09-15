@@ -49,6 +49,8 @@ from inkflow.domain.models.context import (
     ContextAssemblyResult,
     ContextBlock,
     ContextItem,
+    ContextLayer,
+    ContextSourceType,
 )
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
@@ -168,17 +170,27 @@ class TestSettingInjectionIntoBrief:
         """
         from inkflow.domain.services.context_service import ContextService
 
-        # render_system_prompt 是纯函数（吃 ContextAssemblyResult）→ 直接驱动
+        # render_system_prompt 是纯函数（吃 ContextAssemblyResult）→ 直接驱动。
+        # 契约要点是「ContextService 产出被 brief 消费」，故只构造最小合法的
+        # ContextAssemblyResult（5 个必需字段齐备即可，不追求预算语义保真）。
+        content = REAL_CHARACTER_NAME + "：太虚剑派掌门之女"
         result = ContextAssemblyResult(
             blocks=[
                 ContextBlock(
                     item=ContextItem(
+                        source=ContextSourceType.CHARACTER_SETTING,
                         title="角色",
-                        content=REAL_CHARACTER_NAME + "：太虚剑派掌门之女",
+                        content=content,
                     ),
+                    layer=ContextLayer.COMPRESSIBLE,
+                    token_count=len(content),
                     compressed=False,
                 )
-            ]
+            ],
+            budget_tokens=len(content),
+            total_tokens=len(content),
+            model="test-model",
+            dropped=[],
         )
         rendered = ContextService.render_system_prompt(None, result)
         assert REAL_CHARACTER_NAME in rendered, "ContextService 渲染产物须含设定文本"

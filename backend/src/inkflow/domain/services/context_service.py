@@ -10,8 +10,10 @@ ContextService 是 F6 的核心服务，负责:
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable
 
+from inkflow.core.config import config
 from inkflow.core.model_registry import calculate_budget, get_layer_cap
 from inkflow.domain.models.context import (
     SOURCE_LAYER,
@@ -104,6 +106,52 @@ class ContextService:
         result = await self._allocate(all_items, budget, request.model)
         result.model = request.model
         return result
+
+    async def get_context(
+        self,
+        *,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None = None,
+        mode: str = "generate",
+    ) -> str:
+        """ContextProviderProtocol 适配入口 — 返回注入 Prompt 的上下文文本.
+
+        F3 WritingService 通过 Port（`ContextProviderProtocol.get_context`）取上下文，
+        而 F6 的组装入口是 `build_context(ContextRequest)`；本方法弥合两者：
+        构造 ContextRequest → build_context → render_system_prompt → str。
+
+        Args:
+            project_id: 项目 ID。
+            chapter_id: 章节 ID（可选；当前 5 源均按项目注入，忽略此参）。
+            mode: 写作模式（"generate" / "continue" / "revise"）——仅作为
+                writing_requirements 文案来源，真实内容由各数据源决定。
+
+        Returns:
+            渲染后的系统提示词分段文本；失败时返回空串（降级路径）。
+
+        Note:
+            `_char_count` 已接受可变参（`*args, **kwargs`，见文件末）：
+
+            - 数据源在 `build_context` 内已单独 try/except 兜底；
+            - `get_budget` 对未注册模型会 ValueError（单测注入的模型名常见）；
+            - protected 层条目（如超长偏好）可能抛 `ContextBudgetExceededError`。
+
+            上述任一都不得让写作主链路失败 → 统一降级为空串（等价 NullContextProvider）。
+        """
+        from inkflow.domain.models.context import ContextRequest
+
+        try:
+            result = await self.build_context(
+                ContextRequest(
+                    project_id=project_id,
+                    chapter_id=chapter_id,
+                    model=config.llm_default_model,
+                    writing_requirements=f"模式：{mode}",
+                )
+            )
+            return self.render_system_prompt(result)
+        except Exception:  # 上下文注入为增强项，任何失败降级为空上下文
+            return ""
 
     def get_budget(self, model: str, max_tokens: int | None = None) -> int:
         """计算上下文预算 = min(模型窗口, max_tokens) × max_ratio.
