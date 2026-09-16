@@ -24,6 +24,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi, type Mock } from 'vitest';
 import { app, dialog, ipcMain } from 'electron';
 import { parseReadyLine } from './kernel';
+import { resetMainInstance } from './__testutils__/main-boot';
 import './main';
 
 type AnyHandler = (...args: unknown[]) => void;
@@ -183,15 +184,18 @@ const kernelSpawnCount = (): number =>
   spawnMock.mock.calls.filter((c: unknown[]) => c[0] !== 'taskkill').length;
 
 /** 新模块实例（状态归零：consecutiveFailures/kernelProcess/stopping/quitInProgress）。
- *  ⚠️ fakeChild 的 emitter 是 hoisted 单例：旧实例 spawnKernel 注册的事件回调会跨实例
- *  累积（emit 触发多组回调 → kill/spawn 计数爆炸，实测）——必须先 removeAllListeners
- *  清掉旧回调，再 resetModules + import（新实例注册自己的回调）。 */
+ *  ⚠️ 清理职责全部下沉到 `__testutils__/main-boot.ts`（#1219 根治：旧实例的
+ *  interval / globalThis 钩子 / logger 端点 / child emitter 回调都必须显式清，
+ *  resetModules 本身不回收副作用——三文件共用同一实现，拒绝同族分叉）。 */
 const freshInstance = async (): Promise<void> => {
-  fakeChild.removeAllListeners();
-  fakeChild.stdout.removeAllListeners();
-  fakeChild.stderr.removeAllListeners();
-  vi.resetModules();
-  await import('./main');
+  // 旧 logger 模块引用必须在 resetModules 之前取（清的是旧实例持有的那份 endpoint）
+  const { setMainLogEndpoint } = await import('./logger');
+  await resetMainInstance({
+    vi,
+    fakeChild,
+    importMain: () => import('./main'),
+    resetLogEndpoint: setMainLogEndpoint,
+  });
 };
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => void;
@@ -801,13 +805,11 @@ describe('内核启动/失败/退出路径（boot 全量执行）', () => {
 
   it('生产模式（isPackaged=true）：__kernelInfo 钩子短路 + 内核命令走 resources 分支', async () => {
     vi.useFakeTimers();
-    delete (globalThis as { __kernelInfo?: unknown }).__kernelInfo; // 清旧实例残留
-    fakeChild.removeAllListeners();
-    fakeChild.stdout.removeAllListeners();
-    fakeChild.stderr.removeAllListeners();
-    vi.resetModules();
     appMock.isPackaged = true; // 先设再 import → 新实例 boot 即走生产分支
-    await import('./main');
+    // #1219：换实例统一走 freshInstance（显式清旧实例 interval/钩子/端点/回调），
+    // 不再手搓「delete 钩子 + removeAllListeners + resetModules」三步——
+    // 手搓版漏清旧 interval 与 logger 端点，正是块级计数串扰的来源。
+    await freshInstance();
     emitReady(51234, 'a');
     await vi.advanceTimersByTimeAsync(0);
     expect((globalThis as { __kernelInfo?: unknown }).__kernelInfo).toBeUndefined();
@@ -828,11 +830,7 @@ describe('mainWindow 为 null 容错（?. 短路，依赖声明顺序）', () =>
   it('容错：mainWindow 为 null 时三个 handler 均不抛异常且无副作用', async () => {
     vi.useFakeTimers();
     // 干净实例：清旧回调 + resetModules 清空 ipcMain.on 调用记录 → import 后恰好 3 条
-    fakeChild.removeAllListeners();
-    fakeChild.stdout.removeAllListeners();
-    fakeChild.stderr.removeAllListeners();
-    vi.resetModules();
-    await import('./main');
+    await freshInstance();
     const calls = vi.mocked(ipcMain.on).mock.calls;
     expect(calls).toHaveLength(3);
     const lastMinimize = calls[0][1] as unknown as IpcHandler;

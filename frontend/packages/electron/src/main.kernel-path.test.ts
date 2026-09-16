@@ -35,6 +35,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import path from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { resetMainInstance } from './__testutils__/main-boot';
 
 type AnyHandler = (...args: unknown[]) => void;
 
@@ -257,9 +258,6 @@ const flushMicrotasks = (): Promise<void> => new Promise((resolve) => setTimeout
 
 /** 新模块实例 boot（env/appData stub 必须先于调用生效；boot 内 resolveKernelStatePath 读它们） */
 async function bootFresh(options: { env?: Record<string, string>; packagedAppDataDir?: string } = {}): Promise<void> {
-  fakeChild.removeAllListeners();
-  fakeChild.stdout.removeAllListeners();
-  fakeChild.stderr.removeAllListeners();
   appMock.isPackaged = options.packagedAppDataDir !== undefined;
   if (options.packagedAppDataDir) {
     stubAppDataPath(options.packagedAppDataDir);
@@ -270,9 +268,15 @@ async function bootFresh(options: { env?: Record<string, string>; packagedAppDat
     vi.stubEnv(key, value);
   }
   spawnMock.mockClear();
-  delete (globalThis as { __kernelInfo?: unknown }).__kernelInfo;
-  vi.resetModules();
-  await import('./main');
+  // #1219：旧 interval / globalThis 钩子 / logger 端点 / child 回调的清理统一走共享助手
+  // （本文件只需额外处理 env/appData/isPackaged 这些 boot 入参）。
+  const { setMainLogEndpoint } = await import('./logger');
+  await resetMainInstance({
+    vi,
+    fakeChild,
+    importMain: () => import('./main'),
+    resetLogEndpoint: setMainLogEndpoint,
+  });
 }
 
 /** boot → spawn → 内核 READY（fake child 发 INKFLOW_READY 行 → kernelStatePath 写盘链执行） */
