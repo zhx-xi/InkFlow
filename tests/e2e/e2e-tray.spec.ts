@@ -27,6 +27,7 @@ import {
 } from '@playwright/test';
 import { createIsolatedEnv } from './e2e-isolation';
 import { ensureModelConfigured } from './e2e-model-ready';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -227,13 +228,45 @@ async function launchAppWithUserData(
   if (configureModel) {
     const kernel = await waitKernelInfo(app);
     await ensureModelConfigured(kernel);
+    // #1194：renderer 的 readiness 查询是一次性的（App.tsx useEffect [booted] → loadReadiness，
+    // 无轮询无重试）——若查询落在预置完成之前，SetupGuide 永久盖住主 UI → gotoNav 30s 超时。
+    // 同款握手见 e2e-shell.spec.ts:124-126：预置落库后 reload → 重查 readiness=ready → 门控放行。
+    const win = await app.firstWindow();
+    await win.reload();
+    await expect(win).toHaveTitle(/InkFlow/);
   }
   return app;
 }
 
 /** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置） */
 async function gotoNav(window: Page, name: string): Promise<void> {
+  // #1194/#1198：冷启动/重启后渲染层可能未出 boot gate（BootGate/SetupGuide 盖住主 UI）→
+  // 裸 click 撞 30s 超时。复用全仓就绪握手（e2e-app-ready.ts，#1125）：条件等待 app-nav
+  // 可见后再点（延迟挂载只会延长等待，不会失败——非固定时序）。
+  await awaitAppReady(window, expect);
   await window.getByRole('link', { name }).click();
+}
+
+/**
+ * 触发自绘关闭按钮真实路径（renderer → window:close IPC → mainWindow.close()）。
+ *
+ * ⚠️ 不可用 window.close()：sandbox renderer 下它直接销毁窗口、不触发主进程 close 事件
+ * （2026-08-08 E2E 实测），拦截不生效。
+ *
+ * #1198（M3 签名）：quit 语义下 close → window-all-closed → shutdown → app.exit 可能在
+ * evaluate 的响应回传前销毁目标 → 「Target page, context or browser has been closed」。
+ * 该异常本身即「关闭已生效」的证据——吞掉它，由调用方的 waitForAppExit /
+ * waitForWindowVisible 做确定性断言（同族 6 处调用点统一走本 helper，#1198 建议 2）。
+ */
+async function requestWindowClose(win: Page): Promise<void> {
+  try {
+    await win.evaluate(() => window.INKFLOW_API.windowControls.close());
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/Target (page, context or browser has been )?closed/i.test(msg)) {
+      throw err;
+    }
+  }
 }
 
 /** 轮询 __trayInfo.closeBehavior 直到等于期望值（IPC 推送后事件驱动刷新，spec f31 §9；应用退出时读钩子返回 undefined 继续轮询） */
@@ -276,9 +309,8 @@ test('托盘 M1（spec §13 M1）：关闭 → 窗口隐藏 + 内核存活 + 托
     expect(tray.closeBehavior).toBe('tray');
 
     // 触发关闭：走自绘关闭按钮的真实路径（renderer → window:close IPC → mainWindow.close() →
-    // win.on('close') 拦截）。⚠️ 不可用 window.close()：sandbox renderer 下它直接销毁窗口、
-    // 不触发主进程 close 事件（2026-08-08 E2E 实测），拦截不生效。
-    await win.evaluate(() => window.INKFLOW_API.windowControls.close());
+    // win.on('close') 拦截）。竞态防御见 requestWindowClose doc（#1198）。
+    await requestWindowClose(win);
 
     // 窗口隐藏（spec §5.2 tray 行：preventDefault + hide，内核保持运行）
     await waitForWindowVisible(app, false);
@@ -309,8 +341,8 @@ test('托盘 M2a（spec §13 M2 前半）：托盘「打开」→ 窗口恢复�
     const kernel = await waitKernelInfo(app);
     kernelPid = await readKernelPid(iso.dataDir);
 
-    // 先关闭 → 隐藏（默认 tray 行为；自绘按钮真实路径，见 M1 注释）
-    await win.evaluate(() => window.INKFLOW_API.windowControls.close());
+    // 先关闭 → 隐藏（默认 tray 行为；自绘按钮真实路径，竞态防御见 requestWindowClose doc）
+    await requestWindowClose(win);
     await waitForWindowVisible(app, false);
 
     // 托盘「打开主窗口」→ __trayActions.show()（spec §9：CI 无真实托盘，钩子直调）
@@ -380,8 +412,8 @@ test('托盘 M3（spec §13 M3）：设置「直接退出」→ 关闭 = 完整�
     expect(tray?.closeBehavior, '__trayInfo.closeBehavior 应在 setCloseBehavior 后生效').toBe('quit');
 
     // 触发窗口关闭 → 不拦截（spec §5.2 quit 行）→ window-all-closed → shutdown()
-    // （自绘按钮真实路径，见 M1 注释）
-    await win.evaluate(() => window.INKFLOW_API.windowControls.close());
+    // （自绘按钮真实路径；quit 语义下 app 可能在 evaluate 回传前退出 → 竞态防御见 requestWindowClose doc，#1198 实证签名）
+    await requestWindowClose(win);
 
     await waitForAppExit(app, 20_000);
     appExited = true;
@@ -411,8 +443,8 @@ test('托盘 M4（spec §13 M4）：单实例——二次启动 → 聚焦已有
     kernelPid = await readKernelPid(iso.dataDir);
 
     // 先隐藏 A（默认 tray 行为）→ second-instance 的「聚焦恢复」才可观测（spec §5.5 #8；
-    // 自绘按钮真实路径，见 M1 注释）
-    await winA.evaluate(() => window.INKFLOW_API.windowControls.close());
+    // 自绘按钮真实路径，竞态防御见 requestWindowClose doc）
+    await requestWindowClose(winA);
     await waitForWindowVisible(appA, false);
 
     // 第二次启动同 MAIN_JS：单实例锁获取失败（spec §5.5）→ 快速退出，不 spawn 不建窗
@@ -546,9 +578,9 @@ test.describe('F32 关闭行为持久化（#152）', () => {
         // 确定性闸门：PATCH 落库 + IPC 推送生效（spec §5.3：IPC 只在 PATCH 成功后推送）
         await waitForCloseBehavior(app1, 'quit');
 
-        // 关闭窗口（自绘按钮真实路径，见 M1 注释：window.close() 不触发主进程 close 拦截）→
-        // quit 语义 → window-all-closed → shutdown() → 完整退出
-        await win1.evaluate(() => window.INKFLOW_API.windowControls.close());
+        // 关闭窗口（自绘按钮真实路径；quit 语义下 app 可能在 evaluate 回传前退出 →
+        // 竞态防御见 requestWindowClose doc，#1198）→ window-all-closed → shutdown() → 完整退出
+        await requestWindowClose(win1);
         await waitForAppExit(app1, 20_000);
         app1Exited = true;
         expect(isAlive(kernel1.pid), `第一程内核 pid=${kernel1.pid} 应回收`).toBe(false);
@@ -586,8 +618,8 @@ test.describe('F32 关闭行为持久化（#152）', () => {
         });
         expect(restore.status, '恢复 close_behavior=tray 应 200').toBe(200);
 
-        // 关闭窗口 → 仍完整退出（重启后行为未回退默认）
-        await win2.evaluate(() => window.INKFLOW_API.windowControls.close());
+        // 关闭窗口 → 仍完整退出（重启后行为未回退默认）；竞态防御见 requestWindowClose doc（#1198）
+        await requestWindowClose(win2);
         await waitForAppExit(app2, 20_000);
         app2Exited = true;
         expect(isAlive(kernel2.pid), `第二程内核 pid=${kernel2.pid} 应回收`).toBe(false);
