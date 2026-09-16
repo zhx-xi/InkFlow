@@ -7,6 +7,7 @@ import { useThemeEffect } from './theme';
 import { useThemeStore } from './stores/theme';
 import { useKernelStore } from './stores/kernel';
 import { useModelReadinessStore } from './stores/modelReadiness';
+import { useDataChangeSubscription } from './hooks/useDataChangeSubscription';
 import type { Lang, ThemeName } from './theme';
 import { AppNav } from './components/AppNav';
 import { BootGate } from './components/BootGate';
@@ -24,6 +25,9 @@ import { BookPage } from './pages/book';
 import { SessionsPage } from './pages/sessions';
 import { MemoryPage } from './pages/memory';
 import { LogsPage } from './pages/logs';
+
+/** #1218：影响模型就绪判据的变更域（F23 spec §15.6.2 失效矩阵：provider_config / settings → modelReadiness） */
+const READINESS_DOMAINS: readonly string[] = ['provider_config', 'settings'];
 
 /** 页面标题随路由变化（顶栏文本元素；正文 h1 承担 heading 语义） */
 const TITLE_BY_PATH: Record<string, string> = {
@@ -52,7 +56,6 @@ function AppLayout() {
   // F60 #934：首启模型就绪判据（readiness=null 视为未就绪——引导不可绕过；
   // 查询失败时 readiness 也是 null，用户可经「重试」重新查询，spec §7 边界 #6）
   const readiness = useModelReadinessStore((s) => s.readiness);
-  const loadReadiness = useModelReadinessStore((s) => s.load);
 
   // #384 轮询生命周期归 store 管：挂载启动 / 卸载停止
   useEffect(() => {
@@ -66,9 +69,30 @@ function AppLayout() {
   }, []);
 
   // F60 #934：内核就绪后查询模型就绪判据（gate 数据源；仅 booted 后查，避免内核未起时空查）
+  // #1218：查询不再是一次性的——未就绪期间由 store 持续重查（外部完成配置后自动放行），
+  // 窗口 focus 立即重查（补充手段，已就绪时零查询）。轮询是兜底，F23 推送是主路径。
   useEffect(() => {
-    if (booted) void loadReadiness();
-  }, [booted, loadReadiness]);
+    if (booted) useModelReadinessStore.getState().startPolling();
+    return () => useModelReadinessStore.getState().stopPolling();
+  }, [booted]);
+
+  // #1218：窗口 focus → 重查（轮询是兜底，focus 让"切回 GUI 即放行"零等待）。
+  // 不按 ready 早退：就绪后若外部又改配置（换 provider/删 key）仍需纠偏；单次 GET 代价可忽略。
+  useEffect(() => {
+    const onFocus = () => {
+      if (!useKernelStore.getState().booted) return;
+      void useModelReadinessStore.getState().load();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  // #1218：F23 变更推送（§15.6.2 失效矩阵：provider_config/settings → modelReadiness）——
+  // 外部（CLI/API/另一窗口）完成配置后事件即时到达 → 立即重查，无需等轮询周期。
+  // 复用既有单例订阅（不新造抽象）；自产写入（source=gui）被 hook 内部过滤。
+  useDataChangeSubscription(READINESS_DOMAINS, () => {
+    void useModelReadinessStore.getState().load();
+  });
 
   // 门控：启动期（!booted）渲染封面，不渲染主 UI
   if (!booted) {
