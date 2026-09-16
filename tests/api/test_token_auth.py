@@ -183,9 +183,7 @@ class TestTokenAuthRequired:
         assert resp.status_code == 401
         assert resp.json() == {"detail": "Unauthorized"}
 
-    def test_correct_token_returns_200(
-        self, client, set_token_env, patched_project_list_service
-    ):
+    def test_correct_token_returns_200(self, client, set_token_env, patched_project_list_service):
         """GET /api/v1/projects 带正确 token → 200。
 
         正确 token 放行至路由层；service 层被 mock（设计假设 #7），
@@ -290,13 +288,11 @@ class TestTokenAuthExemptions:
         schema = client.get("/openapi.json").json()
         schemes = schema["components"]["securitySchemes"]
         bearer_schemes = [
-            s
-            for s in schemes.values()
-            if s.get("type") == "http" and s.get("scheme") == "bearer"
+            s for s in schemes.values() if s.get("type") == "http" and s.get("scheme") == "bearer"
         ]
-        assert (
-            bearer_schemes
-        ), f"OpenAPI components.securitySchemes 缺少 HTTPBearer scheme: {list(schemes)}"
+        assert bearer_schemes, (
+            f"OpenAPI components.securitySchemes 缺少 HTTPBearer scheme: {list(schemes)}"
+        )
 
 
 # ── 无 token 模式（env 未设置 → 直通，spec §2.3.1 补充行）──

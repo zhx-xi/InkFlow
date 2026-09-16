@@ -150,11 +150,7 @@ async def test_map_repo_clear_ref_pins_and_root_locations(db_session) -> None:
     assert await repo.clear_ref_pins("role", [42]) == 1
     assert await repo.clear_map_root_locations([1]) == 1
 
-    stored_pin = (
-        await db_session.execute(select(MapPinORM).where(MapPinORM.id == 1))
-    ).scalar_one()
-    stored_map = (
-        await db_session.execute(select(MapORM).where(MapORM.id == 1))
-    ).scalar_one()
+    stored_pin = (await db_session.execute(select(MapPinORM).where(MapPinORM.id == 1))).scalar_one()
+    stored_map = (await db_session.execute(select(MapORM).where(MapORM.id == 1))).scalar_one()
     assert stored_pin.ref_id is None
     assert stored_map.root_location_id is None

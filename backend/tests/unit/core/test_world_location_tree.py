@@ -442,7 +442,12 @@ class TestWorldListParentFilter:
         settings, total = await repo.list(project.id, sort_by="name", sort_desc=False)
         assert total == 6
         assert [s.name for s in settings] == [
-            "loc_A", "loc_B", "loc_C", "loc_D", "loc_E", "loc_root",
+            "loc_A",
+            "loc_B",
+            "loc_C",
+            "loc_D",
+            "loc_E",
+            "loc_root",
         ]
 
     async def test_list_parent_id_returns_direct_children(self, db_session, project):

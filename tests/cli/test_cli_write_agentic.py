@@ -258,6 +258,8 @@ class TestWriteNextAgenticTimeout:
         call = fake_http_client.post.await_args
         assert call.args[0] == "/writing/agentic/generate"
         assert call.kwargs.get("timeout") == 300.0
+
+
 # ═══ F45 M2 追加段（2026-08-18，spec §4.2/§5.7 write next 🧠 风格指令输出）═══
 
 

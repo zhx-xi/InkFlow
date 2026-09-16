@@ -89,9 +89,9 @@ def test_spec_packages_mcp_entrypoint():
     用 `src/inkflow/mcp/__main__.py`，stdio 薄客户端不启动 uvicorn）。"""
     src = _spec_source()
     # ① 必须有 inkflow-mcp 命名 EXE
-    assert (
-        'name="inkflow-mcp"' in src or 'name = "inkflow-mcp"' in src
-    ), "spec 缺少 inkflow-mcp EXE（#424）"
+    assert 'name="inkflow-mcp"' in src or 'name = "inkflow-mcp"' in src, (
+        "spec 缺少 inkflow-mcp EXE（#424）"
+    )
     # ② 入口脚本必须指向 mcp 模块（stdio 薄客户端，非 __main__.py 的 serve）
     assert "mcp" in src, "spec 缺少 mcp 入口引用（#424）"
 
@@ -111,7 +111,7 @@ def test_spec_mcp_entrypoint_includes_db_dynamic_modules():
     # 必须含 aiosqlite（MCP 薄客户端 import 链仍会拉 db 层）
     assert '"aiosqlite"' in mcp_analysis, "mcp Analysis 缺 aiosqlite hiddenimport（#424 复发）"
     # 必须含 sqlalchemy sqlite async dialect（同主 Analysis）
-    assert (
-        "sqlalchemy.dialects.sqlite.aiosqlite" in mcp_analysis
-    ), "mcp Analysis 缺 sqlalchemy sqlite dialect（#424 复发）"
+    assert "sqlalchemy.dialects.sqlite.aiosqlite" in mcp_analysis, (
+        "mcp Analysis 缺 sqlalchemy sqlite dialect（#424 复发）"
+    )
     assert "mcp" in src, "spec 缺少 mcp 入口引用（#424）"

@@ -133,9 +133,7 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
                 # expected_source_outline_id 至少其一）→ create 前查同项目同章
                 # status='draft' 未确认稿；命中 → 覆盖正文返回同 draft_id（不新增行）。
                 # 鸭子兼容：find_pending 返回值非 Draft 实例（裸 AsyncMock）视为未命中。
-                group_key = (
-                    deps.expected_source_outline_id is not None or _chapter_id is not None
-                )
+                group_key = deps.expected_source_outline_id is not None or _chapter_id is not None
                 if group_key:
                     # 鸭子兼容：draft_service 未注入异步 find_pending（旧 mock 只有
                     # create）→ 跳过幂等查询走既有 create 路径（零回归）
@@ -185,10 +183,7 @@ def build_save_draft_tool(deps: SaveDraftToolDeps) -> Tool:
                     lookup_key = (
                         _chapter_id
                         if _chapter_id is not None
-                        else (
-                            deps.expected_volume_outline_id
-                            or deps.expected_source_outline_id
-                        )
+                        else (deps.expected_volume_outline_id or deps.expected_source_outline_id)
                     )
                     volume_raw = await deps.volume_lookup(_project_id, lookup_key)
                     if volume_raw is not None:

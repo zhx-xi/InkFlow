@@ -56,12 +56,8 @@ async def test_memory_tools_coerce_fallback_and_update_optional_fields() -> None
         audit_service=_audit(),
         expected_project_id=None,
     )
-    deps.memory_service.create_preference = AsyncMock(
-        return_value=SimpleNamespace(id="pref-1")
-    )
-    deps.memory_service.update_preference = AsyncMock(
-        return_value=SimpleNamespace(id="pref-1")
-    )
+    deps.memory_service.create_preference = AsyncMock(return_value=SimpleNamespace(id="pref-1"))
+    deps.memory_service.update_preference = AsyncMock(return_value=SimpleNamespace(id="pref-1"))
     deps.memory_service.list_preferences = AsyncMock(return_value=([], 0))
     tools = {tool.spec.name: tool for tool in build_memory_tools(deps)}
 
@@ -176,9 +172,7 @@ async def test_setting_write_tools_coerce_group_and_parent_ids() -> None:
         audit_service=_audit(),
         expected_project_id=None,
     )
-    deps.character_service.create_character = AsyncMock(
-        return_value=SimpleNamespace(id="char-1")
-    )
+    deps.character_service.create_character = AsyncMock(return_value=SimpleNamespace(id="char-1"))
     deps.world_service.create_setting = AsyncMock(return_value=SimpleNamespace(id="setting-1"))
     tools = {tool.spec.name: tool for tool in build_setting_write_tools(deps)}
 

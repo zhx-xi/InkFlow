@@ -139,10 +139,14 @@ class TestBookDraftAnchorIdemChain996997:
 
             # 该 outline 在 drafts 表仅 1 行，content==v2，source_outline_id 非空，volume_id==卷
             rows = (
-                await db.execute(
-                    select(DraftORM).where(DraftORM.source_outline_id == str(OUTLINE_ID))
+                (
+                    await db.execute(
+                        select(DraftORM).where(DraftORM.source_outline_id == str(OUTLINE_ID))
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(rows) == 1, f"同章幂等应仅 1 行，实际 {len(rows)}"
             row = rows[0]
             assert row.content == CONTENT_V2

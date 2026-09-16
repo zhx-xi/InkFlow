@@ -42,9 +42,7 @@ def fake_http_client():
             "inkflow.cli.commands.vector.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -188,9 +186,7 @@ def test_status_stale_fresh_reason_prints_warning(cli_runner, fake_http_client) 
     assert "索引可能过期" in result.output
 
 
-def test_reindex_status_fetch_failure_proceeds(
-    cli_runner, fake_http_client
-) -> None:
+def test_reindex_status_fetch_failure_proceeds(cli_runner, fake_http_client) -> None:
     """status 查询异常 → 不阻断 reindex（171-172 行）。"""
     fake_http_client.get = AsyncMock(side_effect=RuntimeError("status boom"))
     fake_http_client.post = AsyncMock(
@@ -212,9 +208,7 @@ def test_reindex_status_fetch_failure_proceeds(
     assert "索引完成" in result.output
 
 
-def test_retrieve_status_fetch_failure_proceeds(
-    cli_runner, fake_http_client
-) -> None:
+def test_retrieve_status_fetch_failure_proceeds(cli_runner, fake_http_client) -> None:
     """status 查询异常 → 不阻断 retrieve（218-219 行）。"""
     fake_http_client.get = AsyncMock(side_effect=RuntimeError("status boom"))
     fake_http_client.post = AsyncMock(

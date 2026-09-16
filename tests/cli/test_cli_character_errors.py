@@ -64,9 +64,7 @@ def fake_http_client():
             "inkflow.cli.commands.character.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.character.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.character.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
@@ -154,7 +152,15 @@ class TestCharacterErrorMapping:
         )
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "林尘",
+                "--role-rank",
+                "major",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -178,7 +184,15 @@ class TestCharacterErrorMapping:
         )
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "林尘",
+                "--role-rank",
+                "major",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -192,7 +206,15 @@ class TestCharacterErrorMapping:
         fake_http_client.post.side_effect = _http_error(404, "角色不存在")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "林尘",
+                "--role-rank",
+                "major",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -364,10 +386,7 @@ class TestCharacterErrorMapping:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert (
-            f"[师徒] {rel['from_character_id']} → {rel['to_character_id']}"
-            in result.output
-        )
+        assert f"[师徒] {rel['from_character_id']} → {rel['to_character_id']}" in result.output
         assert "亦师亦友" in result.output
 
     def test_extract_text_file_missing(self, cli_runner, fake_http_client):

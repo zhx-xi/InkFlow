@@ -62,9 +62,7 @@ def fake_http_client():
             "inkflow.cli.commands.character.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.character.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.character.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
@@ -184,7 +182,15 @@ class TestCharacterCreate:
         fake_http_client.post.return_value = _make_character(name="林尘")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "林尘",
+                "--role-rank",
+                "major",
+            ],
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
@@ -195,7 +201,15 @@ class TestCharacterCreate:
         fake_http_client.post.side_effect = _http_error(422, "同名角色")
         result = cli_runner.invoke(
             app,
-            ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--name",
+                "林尘",
+                "--role-rank",
+                "major",
+            ],
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 1
@@ -213,7 +227,15 @@ class TestCharacterCreate:
         ):
             result = cli_runner.invoke(
                 app,
-                ["create", "--project-id", str(PID), "--name", "林尘", "--role-rank", "major"],
+                [
+                    "create",
+                    "--project-id",
+                    str(PID),
+                    "--name",
+                    "林尘",
+                    "--role-rank",
+                    "major",
+                ],
                 obj=CliContext(json_output=True),
             )
         assert result.exit_code == 1

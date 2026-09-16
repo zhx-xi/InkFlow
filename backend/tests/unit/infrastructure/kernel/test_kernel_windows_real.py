@@ -83,9 +83,7 @@ def test_release_mutex_none_is_noop():
 def test_spawn_kernel_real_process_and_log_file(tmp_path):
     """真实 Popen：detach 子进程运行 + stdout 重定向到日志文件。"""
     log_file = tmp_path / "inkflow-kernel.log"
-    proc = _spawn_kernel(
-        [sys.executable, "-c", "import time; time.sleep(30)"], log_file
-    )
+    proc = _spawn_kernel([sys.executable, "-c", "import time; time.sleep(30)"], log_file)
     try:
         assert proc.pid > 0
         assert proc.poll() is None  # 进程存活（CREATE_NO_WINDOW detach）
@@ -159,9 +157,7 @@ def test_acquire_mutex_create_failure_returns_none(monkeypatch):
     """CreateMutexW 返回 NULL（内核对象创建失败）→ None（L56 分支）。"""
     import ctypes
 
-    monkeypatch.setattr(
-        ctypes.windll.kernel32, "CreateMutexW", lambda *a, **k: 0
-    )
+    monkeypatch.setattr(ctypes.windll.kernel32, "CreateMutexW", lambda *a, **k: 0)
     assert _acquire_mutex("InkFlowTestMutexFail") is None
 
 
@@ -171,9 +167,7 @@ def test_is_process_alive_getexitcode_failure_returns_false(monkeypatch):
 
     from inkflow.infrastructure.kernel.state import is_process_alive
 
-    monkeypatch.setattr(
-        ctypes.windll.kernel32, "GetExitCodeProcess", lambda *a, **k: 0
-    )
+    monkeypatch.setattr(ctypes.windll.kernel32, "GetExitCodeProcess", lambda *a, **k: 0)
     assert is_process_alive(12345) is False
 
 
@@ -222,9 +216,7 @@ def test_read_lenient_type_mismatch_returns_none(tmp_path):
         ("version", 1.0),  # version 非 str
     ],
 )
-def test_read_lenient_any_field_type_mismatch_returns_none(
-    tmp_path, bad_key, bad_value
-):
+def test_read_lenient_any_field_type_mismatch_returns_none(tmp_path, bad_key, bad_value):
     """任一字段类型不符 → None（QA 补测：token/pid/version 类型分支）。"""
     path = tmp_path / "kernel.json"
     path.write_text(

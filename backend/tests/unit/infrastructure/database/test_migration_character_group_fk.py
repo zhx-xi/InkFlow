@@ -75,12 +75,8 @@ def _create_old_schema(conn) -> None:
             "FOREIGN KEY(to_character_id) REFERENCES characters(id) ON DELETE CASCADE)"
         )
     )
-    conn.execute(
-        text("INSERT INTO character_groups (id, project_id, name) VALUES (1, 1, 'g')")
-    )
-    conn.execute(
-        text("INSERT INTO character_groups (id, project_id, name) VALUES (2, 1, 'g2')")
-    )
+    conn.execute(text("INSERT INTO character_groups (id, project_id, name) VALUES (1, 1, 'g')"))
+    conn.execute(text("INSERT INTO character_groups (id, project_id, name) VALUES (2, 1, 'g2')"))
     conn.execute(
         text("INSERT INTO characters (id, project_id, name, group_id) VALUES (1, 1, 'c1', 1)")
     )
@@ -134,9 +130,7 @@ def test_migration_function_idempotent() -> None:
         ensure_character_group_members_migration(conn)
 
         assert "group_id" not in _columns(conn, "characters")
-        members = conn.execute(
-            text("SELECT COUNT(*) FROM character_group_members")
-        ).fetchone()
+        members = conn.execute(text("SELECT COUNT(*) FROM character_group_members")).fetchone()
         assert members is not None and members[0] == 2
     engine.dispose()
 
@@ -169,12 +163,8 @@ def test_fresh_schema_noop_without_group_id() -> None:
                 "PRIMARY KEY(character_id, group_id))"
             )
         )
-        conn.execute(
-            text("INSERT INTO character_groups (id, project_id, name) VALUES (1, 1, 'g')")
-        )
-        conn.execute(
-            text("INSERT INTO characters (id, project_id, name) VALUES (1, 1, 'c1')")
-        )
+        conn.execute(text("INSERT INTO character_groups (id, project_id, name) VALUES (1, 1, 'g')"))
+        conn.execute(text("INSERT INTO characters (id, project_id, name) VALUES (1, 1, 'c1')"))
 
     with engine.connect() as conn:
         ensure_character_group_members_migration(conn)  # no-op 不抛错
@@ -275,9 +265,7 @@ async def test_upgrade_helper_retry_after_partial_crash_self_heals(tmp_path):
 
         async with engine.connect() as conn:
             cols = await conn.run_sync(lambda c: _columns(c, "characters"))
-            chars = (
-                await conn.execute(text("SELECT COUNT(*) FROM characters"))
-            ).fetchone()
+            chars = (await conn.execute(text("SELECT COUNT(*) FROM characters"))).fetchone()
             members = (
                 await conn.execute(text("SELECT COUNT(*) FROM character_group_members"))
             ).fetchone()

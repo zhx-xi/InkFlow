@@ -32,9 +32,7 @@ def _preset_result(mode: str) -> WritingResult:
         format_valid=True,
         retry_count=1,
         model="deepseek/deepseek-chat",
-        token_usage=TokenUsage(
-            prompt_tokens=1820, completion_tokens=2600, total_tokens=4420
-        ),
+        token_usage=TokenUsage(prompt_tokens=1820, completion_tokens=2600, total_tokens=4420),
         warnings=[],
     )
 
@@ -128,9 +126,7 @@ async def test_revise_endpoint(override_writing_service):
 
 
 @pytest.mark.asyncio
-async def test_generate_project_not_found(
-    override_writing_service, mock_writing_service
-):
+async def test_generate_project_not_found(override_writing_service, mock_writing_service):
     """项目不存在 → 404 \"项目不存在\"（不带 X-InkFlow-Error-Code 头，spec §3.3）。"""
     mock_writing_service.generate_chapter.side_effect = LLMRequestError("项目不存在")
     body = {**_payload(), "outline": "测试大纲"}
@@ -142,9 +138,7 @@ async def test_generate_project_not_found(
 
 
 @pytest.mark.asyncio
-async def test_generate_chapter_not_found(
-    override_writing_service, mock_writing_service
-):
+async def test_generate_chapter_not_found(override_writing_service, mock_writing_service):
     """章节不存在/不属于项目 → 404 \"章节不存在\"。"""
     mock_writing_service.generate_chapter.side_effect = LLMRequestError("章节不存在")
     body = {**_payload(), "outline": "测试大纲"}
@@ -171,9 +165,7 @@ async def test_generate_llm_error_500(override_writing_service, mock_writing_ser
 
     Issue #169 🟡-4：须带 X-InkFlow-Error-Code: LLM_ERROR 响应头（spec §3.3）。
     """
-    mock_writing_service.generate_chapter.side_effect = LLMRequestError(
-        "API key invalid"
-    )
+    mock_writing_service.generate_chapter.side_effect = LLMRequestError("API key invalid")
     body = {**_payload(), "outline": "测试大纲"}
     async with _client() as client:
         resp = await client.post("/api/v1/writing/generate", json=body)
@@ -191,9 +183,7 @@ async def test_generate_llm_error_500(override_writing_service, mock_writing_ser
 @pytest.mark.asyncio
 async def test_continue_llm_error_500(override_writing_service, mock_writing_service):
     """continue 端点 LLM 调用失败 → 500 通用消息（_map_service_error 非 404 分支）。"""
-    mock_writing_service.continue_writing.side_effect = LLMRequestError(
-        "API key invalid"
-    )
+    mock_writing_service.continue_writing.side_effect = LLMRequestError("API key invalid")
     body = {**_payload(), "existing_content": "林尘深吸一口气，缓缓走向试炼台……" * 3}
     async with _client() as client:
         resp = await client.post("/api/v1/writing/continue", json=body)
@@ -293,9 +283,7 @@ class TestStreamGenerate:
     """
 
     @pytest.mark.asyncio
-    async def test_stream_generate_deltas(
-        self, override_writing_service, mock_writing_service
-    ):
+    async def test_stream_generate_deltas(self, override_writing_service, mock_writing_service):
         """2 delta + done 帧序列，delta 拼接 == 全文，done 帧字段完整透传。"""
         from inkflow.domain.models.writing import WritingStreamEvent
 
@@ -350,9 +338,7 @@ class TestStreamContinue:
     """
 
     @pytest.mark.asyncio
-    async def test_stream_continue_deltas(
-        self, override_writing_service, mock_writing_service
-    ):
+    async def test_stream_continue_deltas(self, override_writing_service, mock_writing_service):
         """2 delta + done 帧序列，判别分发到 stream_continue。"""
         from inkflow.domain.models.writing import WritingStreamEvent
 
@@ -373,8 +359,7 @@ class TestStreamContinue:
         body = {
             **_payload(),
             "mode": "continue",
-            "existing_content": "林尘深吸一口气，缓缓走向试炼台，全场寂静无声。"
-            * 3,  # F3: ≥50 字
+            "existing_content": "林尘深吸一口气，缓缓走向试炼台，全场寂静无声。" * 3,  # F3: ≥50 字
         }
         async with (
             _stream_client() as client,
@@ -401,9 +386,7 @@ class TestStreamRevise:
     """
 
     @pytest.mark.asyncio
-    async def test_stream_revise_deltas(
-        self, override_writing_service, mock_writing_service
-    ):
+    async def test_stream_revise_deltas(self, override_writing_service, mock_writing_service):
         """2 delta + done 帧序列，done 帧无 format_valid。"""
         from inkflow.domain.models.writing import WritingStreamEvent
 
@@ -437,9 +420,7 @@ class TestStreamRevise:
         assert joined == "修订后的段落：对话更紧凑，节奏明快。"
         done = frames[-1]
         assert done["done"] is True
-        assert (
-            "format_valid" not in done
-        )  # §6.1 不变量 5：revise done 帧无 format_valid
+        assert "format_valid" not in done  # §6.1 不变量 5：revise done 帧无 format_valid
         assert done["warnings"] == ["未能定位目标范围…已全文修订"]
         assert done["word_count"] == 1200
         assert done["model"] == "deepseek/deepseek-chat"

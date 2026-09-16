@@ -76,17 +76,17 @@ class TestI1IdempotencyIssueSamples:
     def test_idempotent(self, name: str, content: str) -> None:
         once = normalize_chapter_content(content, TITLE)
         twice = normalize_chapter_content(once, TITLE)
-        assert (
-            once == twice
-        ), f"[{name}] 归一非幂等\n  输入: {content!r}\n  一次: {once!r}\n  二次: {twice!r}"
+        assert once == twice, (
+            f"[{name}] 归一非幂等\n  输入: {content!r}\n  一次: {once!r}\n  二次: {twice!r}"
+        )
 
     @pytest.mark.parametrize(("name", "content"), ISSUE_SAMPLES)
     def test_guard_fixed_point(self, name: str, content: str) -> None:
         """I2：归一产物不得再被判脏（否则落库/导出反复归一）。"""
         once = normalize_chapter_content(content, TITLE)
-        assert (
-            chapter_content_needs_normalize(once, TITLE) is False
-        ), f"[{name}] 守卫非不动点\n  归一产物: {once!r}"
+        assert chapter_content_needs_normalize(once, TITLE) is False, (
+            f"[{name}] 守卫非不动点\n  归一产物: {once!r}"
+        )
 
 
 class TestI2ExhaustiveConvergence:

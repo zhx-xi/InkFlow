@@ -141,9 +141,7 @@ class ManageForeshadowingParams(BaseModel):
 class WriteParams(BaseModel):
     """写作工具参数：generate/continue/revise + 草稿确认（#933，Q3=A）。"""
 
-    action: Literal[
-        "generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"
-    ]
+    action: Literal["generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"]
     project_id: str | None = None
     chapter_id: str | None = None
     outline: str | None = None

@@ -74,9 +74,7 @@ def fake_http_client():
             "inkflow.cli.commands.style.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.style.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.style.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -127,9 +125,7 @@ def _report(**overrides: object) -> dict:
                     "note": "感叹号密度 0.0164（≥ 0.005）——感叹号使用正常",
                 },
             ],
-            "evidence": [
-                "各特征得分均低于 0.5，无明显 AI 特征（综合得分 0.23 → likely_human）"
-            ],
+            "evidence": ["各特征得分均低于 0.5，无明显 AI 特征（综合得分 0.23 → likely_human）"],
         },
         "lexical": {
             "total_words": 1520,
@@ -190,21 +186,14 @@ class TestStyleAnalyze:
         assert "字数 2850" in result.output and "句子 62" in result.output
         # 高频词前 5（(count DESC, first_index ASC) 排序，§6.3）
         assert "林晚(12)" in result.output and "她(9)" in result.output
-        assert (
-            "说(8)" in result.output
-            and "夜(7)" in result.output
-            and "风(6)" in result.output
-        )
+        assert "说(8)" in result.output and "夜(7)" in result.output and "风(6)" in result.output
         # AI 痕迹: ai_score + verdict 中文映射 + 倾向特征逐条（[特征名] note）
         assert "【AI 痕迹】" in result.output
         assert "AI 得分 0.23 → ✅ 倾向人类创作" in result.output
         assert "[sentence_uniformity] 句长变异系数 0.62——句式波动正常" in result.output
         # 词汇分析 + jieba 增强行 + LLM 深度分析行
         assert "【词汇分析】" in result.output
-        assert (
-            "总词数 1520 · 唯一词 927 · 平均词长 2.42 · 停用词占比 0.2812"
-            in result.output
-        )
+        assert "总词数 1520 · 唯一词 927 · 平均词长 2.42 · 停用词占比 0.2812" in result.output
         assert "【jieba 增强】" in result.output and "总词数 1631" in result.output
         assert "【LLM 深度分析】" in result.output and "gpt-4o" in result.output
         # warnings 逐条 + 末尾提示 --json
@@ -229,9 +218,7 @@ class TestStyleAnalyze:
         ],
         ids=["likely_human", "uncertain", "likely_ai"],
     )
-    def test_analyze_human_verdict_mapping(
-        self, cli_runner, fake_http_client, verdict, expected
-    ):
+    def test_analyze_human_verdict_mapping(self, cli_runner, fake_http_client, verdict, expected):
         """verdict 三档中文映射（spec §4.3/§6.2）；likely_ai 结论 → 退出码恒 0。"""
         report = _report(
             ai_trace={
@@ -309,9 +296,7 @@ class TestStyleAnalyze:
             timeout=300.0,  # #926 迁移：LLM 长任务 per-request timeout
         )
 
-    def test_analyze_no_llm_analysis_false_passthrough(
-        self, cli_runner, fake_http_client
-    ):
+    def test_analyze_no_llm_analysis_false_passthrough(self, cli_runner, fake_http_client):
         """--no-llm-analysis 显式关闭 → body 收到 llm_analysis=False（spec §2.8）。"""
         fake_http_client.post.return_value = _report()
         result = cli_runner.invoke(
@@ -467,9 +452,7 @@ class TestStyleAnalyzeEdgeBranches:
 
     def test_analyze_human_top_words_overflow(self, cli_runner, fake_http_client):
         """高频词超过 5 个 → 前 5 个 + 省略号（spec §4.3 _TOP_WORDS_LIMIT）."""
-        words = [
-            {"word": f"词{i}", "count": 10 - i, "first_index": i} for i in range(6)
-        ]
+        words = [{"word": f"词{i}", "count": 10 - i, "first_index": i} for i in range(6)]
         report = _report(
             fingerprint={
                 "char_count": 100,
@@ -539,10 +522,7 @@ class TestStyleAnalyzeEdgeBranches:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert (
-            f"【LLM 深度分析】⚠ 倾向 AI 生成（gpt-4o）——{long_reasoning[:40]}…"
-            in result.output
-        )
+        assert f"【LLM 深度分析】⚠ 倾向 AI 生成（gpt-4o）——{long_reasoning[:40]}…" in result.output
 
     def test_analyze_text_and_chapters_exit_2(self, cli_runner, fake_http_client):
         """--text 与 --chapters 同时使用 → 退出码 2（三选一互斥第二分支）."""

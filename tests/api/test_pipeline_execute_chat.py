@@ -78,9 +78,7 @@ class TestExecuteChatPipeline:
         assert req.variables["prompt"] == "解释这个角色的动机"
 
     @patch("inkflow.api.routers.agent._svc")
-    def test_execute_chat_missing_prompt_returns_422(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_execute_chat_missing_prompt_returns_422(self, mock_get_svc: MagicMock) -> None:
         """chat 管线 variables 缺 prompt → 422（spec §5 错误表）。"""
         _mock_svc(mock_get_svc)
         resp = client.post(

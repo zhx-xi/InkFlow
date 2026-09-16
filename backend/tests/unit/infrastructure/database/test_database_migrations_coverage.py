@@ -34,9 +34,7 @@ def _columns(conn, table: str) -> set[str]:
 
 def _tables(conn) -> set[str]:
     """sqlite_master 全部表名。"""
-    rows = conn.execute(
-        text("SELECT name FROM sqlite_master WHERE type='table'")
-    ).fetchall()
+    rows = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
     return {row[0] for row in rows}
 
 
@@ -136,9 +134,7 @@ class TestChatMessagesConversationIdColumn:
     def test_missing_table_noop(self, tmp_path) -> None:
         from inkflow.core.database import ensure_chat_messages_conversation_id_column
 
-        _missing_table_noop(
-            tmp_path, ensure_chat_messages_conversation_id_column, "cc1.db"
-        )
+        _missing_table_noop(tmp_path, ensure_chat_messages_conversation_id_column, "cc1.db")
 
     def test_old_schema_adds_column_and_backfills(self, tmp_path) -> None:
         """旧库缺 conversation_id + 存量 NULL 消息 → 补列并回填 conversation。"""
@@ -163,17 +159,13 @@ class TestChatMessagesConversationIdColumn:
                     "project_id INTEGER NOT NULL)"
                 )
             )
-            conn.execute(
-                text("INSERT INTO chat_messages (project_id) VALUES (1), (1), (2)")
-            )
+            conn.execute(text("INSERT INTO chat_messages (project_id) VALUES (1), (1), (2)"))
         with engine.connect() as conn:
             assert "conversation_id" not in _columns(conn, "chat_messages")
             ensure_chat_messages_conversation_id_column(conn)
             assert "conversation_id" in _columns(conn, "chat_messages")
             # 回填：每个 project 一条 conversation，消息全部挂接
-            conversations = conn.execute(
-                text("SELECT COUNT(*) FROM conversations")
-            ).fetchone()
+            conversations = conn.execute(text("SELECT COUNT(*) FROM conversations")).fetchone()
             assert conversations is not None
             assert conversations[0] == 2
             null_count = conn.execute(
@@ -192,9 +184,7 @@ class TestConversationsDeletePermissionColumn:
             ensure_conversations_delete_permission_column,
         )
 
-        _missing_table_noop(
-            tmp_path, ensure_conversations_delete_permission_column, "dp1.db"
-        )
+        _missing_table_noop(tmp_path, ensure_conversations_delete_permission_column, "dp1.db")
 
     def test_old_schema_adds_column(self, tmp_path) -> None:
         from inkflow.core.database import (
@@ -319,9 +309,7 @@ class TestCharacterGroupMembersMigration:
             ensure_character_group_members_migration(conn)
             assert "character_group_members" in _tables(conn)
             assert "group_id" not in _columns(conn, "characters")
-            members = conn.execute(
-                text("SELECT COUNT(*) FROM character_group_members")
-            ).fetchone()
+            members = conn.execute(text("SELECT COUNT(*) FROM character_group_members")).fetchone()
             assert members is not None
             assert members[0] == 1
         engine.dispose()
@@ -332,9 +320,7 @@ class TestCharacterGroupMembersMigration:
         db = tmp_path / "g2.db"
         engine = create_engine(f"sqlite:///{db}")
         with engine.begin() as conn:
-            conn.execute(
-                text("CREATE TABLE characters (id INTEGER PRIMARY KEY AUTOINCREMENT)")
-            )
+            conn.execute(text("CREATE TABLE characters (id INTEGER PRIMARY KEY AUTOINCREMENT)"))
         with engine.connect() as conn:
             ensure_character_group_members_migration(conn)
             assert "group_id" not in _columns(conn, "characters")

@@ -102,9 +102,7 @@ class TestResolveApiKeyBranches:
         )
         with pytest.raises(ProviderConfigServiceError) as exc_info:
             await svc.create(
-                ProviderConfigCreate(
-                    name="x", models=[ProviderModel(id="m1", type="chat")]
-                )
+                ProviderConfigCreate(name="x", models=[ProviderModel(id="m1", type="chat")])
             )
         assert "缺少 API Key" in str(exc_info.value)
 
@@ -118,9 +116,7 @@ class TestResolveApiKeyBranches:
         )
         with pytest.raises(ProviderConfigServiceError):
             await svc.create(
-                ProviderConfigCreate(
-                    name="x", models=[ProviderModel(id="m1", type="chat")]
-                )
+                ProviderConfigCreate(name="x", models=[ProviderModel(id="m1", type="chat")])
             )
         assert not (tmp_path / "keys").exists(), "只读探测路径不得产生 mkdir 副作用"
 
@@ -129,17 +125,13 @@ class TestResolveApiKeyBranches:
         (tmp_path / "keys").mkdir()
         repo = _repo()
         probe = _FakeProbe()
-        svc = ProviderConfigService(
-            repository=repo, config=_CfgWithDir(tmp_path), probe=probe
-        )
+        svc = ProviderConfigService(repository=repo, config=_CfgWithDir(tmp_path), probe=probe)
         with patch(
             "inkflow.infrastructure.llm.key_manager.APIKeyManager.get_key",
             return_value="real-key",
         ):
             await svc.create(
-                ProviderConfigCreate(
-                    name="x", models=[ProviderModel(id="m1", type="chat")]
-                )
+                ProviderConfigCreate(name="x", models=[ProviderModel(id="m1", type="chat")])
             )
         assert probe.chat_calls[0][2] == "real-key", "解析到的 key 须传入探测"
 
@@ -148,17 +140,13 @@ class TestResolveApiKeyBranches:
         (tmp_path / "keys").mkdir()
         repo = _repo()
         probe = _FakeProbe()
-        svc = ProviderConfigService(
-            repository=repo, config=_CfgWithDir(tmp_path), probe=probe
-        )
+        svc = ProviderConfigService(repository=repo, config=_CfgWithDir(tmp_path), probe=probe)
         with patch(
             "inkflow.infrastructure.llm.key_manager.APIKeyManager.get_key",
             side_effect=OSError("corrupt"),
         ):
             await svc.create(
-                ProviderConfigCreate(
-                    name="x", models=[ProviderModel(id="m1", type="chat")]
-                )
+                ProviderConfigCreate(name="x", models=[ProviderModel(id="m1", type="chat")])
             )
         assert probe.chat_calls[0][2] == "", "异常路径 key 退化为空串，不阻断保存"
 
@@ -214,14 +202,12 @@ class TestSetEmbeddingNoChangePath:
         )
         repo = _repo(zhipu)
         repo.list = AsyncMock(return_value=[zhipu])
-        svc = ProviderConfigService(
-            repository=repo, config=_CfgNoDataDir(), probe=_FakeProbe()
-        )
+        svc = ProviderConfigService(repository=repo, config=_CfgNoDataDir(), probe=_FakeProbe())
         result = await svc.set_embedding_model("zhipu", "emb-1")
         assert result.name == "zhipu"
-        assert (
-            next(m for m in result.models if m.id == "emb-1").type == "embedding"
-        ), "幂等激活语义：已激活仍返回 embedding 型"
+        assert next(m for m in result.models if m.id == "emb-1").type == "embedding", (
+            "幂等激活语义：已激活仍返回 embedding 型"
+        )
 
 
 class TestLazyTemplateMapProtocol:
@@ -324,9 +310,7 @@ class TestInfrastructureProbeReal:
         probe = InfrastructureLLMProbe()
         fake_emb = MagicMock()
         fake_emb.embed_query = MagicMock(return_value=[0.1] * 16)
-        with patch(
-            "langchain_litellm.LiteLLMEmbeddings", return_value=fake_emb
-        ) as m_cls:
+        with patch("langchain_litellm.LiteLLMEmbeddings", return_value=fake_emb) as m_cls:
             dim = await probe.probe_embedding("zhipu", "embedding-3", "k", "https://z.test/v1")
         assert dim == 16, "须返回真实向量维度"
         kwargs = m_cls.call_args.kwargs
@@ -341,9 +325,7 @@ class TestInfrastructureProbeReal:
         probe = InfrastructureLLMProbe()
         fake_emb = MagicMock()
         fake_emb.embed_query = MagicMock(return_value=[0.0] * 4)
-        with patch(
-            "langchain_litellm.LiteLLMEmbeddings", return_value=fake_emb
-        ) as m_cls:
+        with patch("langchain_litellm.LiteLLMEmbeddings", return_value=fake_emb) as m_cls:
             await probe.probe_embedding("zhipu", "zhipu/embedding-3", "k")
         assert m_cls.call_args.kwargs.get("model") == "openai/embedding-3"
 
@@ -367,10 +349,13 @@ class TestInfrastructureProbeReal:
         probe = InfrastructureLLMProbe()
         fake_client = MagicMock()
         fake_client.chat = MagicMock(side_effect=RuntimeError("401"))
-        with patch(
-            "inkflow.infrastructure.llm.langchain_client.LangChainLLMClient",
-            return_value=fake_client,
-        ), pytest.raises(RuntimeError):
+        with (
+            patch(
+                "inkflow.infrastructure.llm.langchain_client.LangChainLLMClient",
+                return_value=fake_client,
+            ),
+            pytest.raises(RuntimeError),
+        ):
             await probe.probe_chat("deepseek", "deepseek-chat", "k")
 
 
@@ -395,9 +380,7 @@ class TestForceBranchOnExtractions:
                 id=1, name="zhipu", models=[ProviderModel(id="emb-1", type="embedding")]
             )
         )
-        monkeypatch.setattr(
-            extractions, "get_provider_config_service", lambda db: svc
-        )
+        monkeypatch.setattr(extractions, "get_provider_config_service", lambda db: svc)
         resp = TestClient(app).put(
             "/api/v1/vector/embedding-model?force=true",
             json={"provider": "zhipu", "model_id": "emb-1"},
@@ -423,9 +406,7 @@ class TestForceBranchOnExtractions:
                 "embedding 模型 zhipu/emb-1 探测失败：ValueError；如需强制保存请使用 force=true"
             )
         )
-        monkeypatch.setattr(
-            extractions, "get_provider_config_service", lambda db: svc
-        )
+        monkeypatch.setattr(extractions, "get_provider_config_service", lambda db: svc)
         resp = TestClient(app).put(
             "/api/v1/vector/embedding-model",
             json={"provider": "zhipu", "model_id": "emb-1"},

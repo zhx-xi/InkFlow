@@ -208,7 +208,7 @@ class TestPromptManagerPerLocale:
         tmpl_dir = tmp_path / "templates"
         tmpl_dir.mkdir()
         (tmpl_dir / "flat.yaml").write_text(
-            "name: flat\nsystem_prompt: \"Flat {x}\"\nhuman_prompt: \"\"\nvariables: [x]\n",
+            'name: flat\nsystem_prompt: "Flat {x}"\nhuman_prompt: ""\nvariables: [x]\n',
             encoding="utf-8",
         )
         pm = LangChainPromptManager(templates_dir=tmpl_dir)

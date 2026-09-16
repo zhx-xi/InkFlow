@@ -74,9 +74,9 @@ def test_no_duplicate_vse_class_across_derived_modules():
             continue
         attr = getattr(mod, "VectorStoreError", None)
         if attr is not None:
-            assert (
-                attr is vse
-            ), f"模块 {name!r} 定义了不同的 VectorStoreError 类对象（异常身份分裂/双加载）"
+            assert attr is vse, (
+                f"模块 {name!r} 定义了不同的 VectorStoreError 类对象（异常身份分裂/双加载）"
+            )
 
 
 @pytest.mark.parametrize("module_name", [_RAG_MODULE, _SERVICE_MODULE])

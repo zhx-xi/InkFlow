@@ -188,9 +188,7 @@ def test_981_character_update_name_only_has_no_extra(
     assert "extra" not in call.kwargs["json"]
 
 
-def test_981_character_update_role_rank_sets_extra(
-    cli_runner: CliRunner, fake_http_client
-) -> None:
+def test_981_character_update_role_rank_sets_extra(cli_runner: CliRunner, fake_http_client) -> None:
     """#981 规则2：--role-rank protagonist → body extra == {"role_rank": "protagonist"}。"""
     fake_http_client.patch.return_value = _make_character(extra={"role_rank": "protagonist"})
 

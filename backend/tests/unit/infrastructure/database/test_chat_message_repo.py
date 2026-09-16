@@ -153,9 +153,7 @@ class TestConversationLifecycle:
         assert conv.is_deleted is False
         assert conv.created_at.tzinfo is not None
 
-    async def test_get_active_conversation_returns_most_recent_not_archived(
-        self, db_session
-    ):
+    async def test_get_active_conversation_returns_most_recent_not_archived(self, db_session):
         repo = SQLiteChatMessageRepository(db_session)
         await repo.create_conversation(PROJECT_ID)  # conv A
         await repo.create_conversation(PROJECT_ID)  # conv B
@@ -181,9 +179,7 @@ class TestListByConversation:
         repo = SQLiteChatMessageRepository(db_session)
         base = datetime(2026, 8, 20, 8, 0, 0, tzinfo=UTC)
         for i, content in enumerate(["第一", "第二", "第三"]):
-            await repo.add(
-                _make_message(content=content, created_at=base.replace(hour=8 + i))
-            )
+            await repo.add(_make_message(content=content, created_at=base.replace(hour=8 + i)))
         await repo.add(
             _make_message(project_id=PROJECT_ID_2, conversation_id=CONV_ID_2, content="另一线程")
         )
@@ -285,9 +281,7 @@ class TestListConversations:
         assert convs[0]["project_name"] is None
         assert convs[0]["updated_at"].startswith("2026-08-20T10:00:00")
 
-    async def test_multiple_conversations_same_project_shown_separately(
-        self, db_session
-    ):
+    async def test_multiple_conversations_same_project_shown_separately(self, db_session):
         """#744 核心：同一项目两个线程 → 列表输出两个卡（各 count/updated_at 独立）。"""
         repo = SQLiteChatMessageRepository(db_session)
         await repo.add(

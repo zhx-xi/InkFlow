@@ -128,5 +128,3 @@ class TestTokenBudgetConfigLayerRatio:
             }
         )
         assert cfg.layer_ratio[ContextLayer.PROTECTED] == 0.3
-
-

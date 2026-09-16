@@ -65,9 +65,7 @@ def check_cli_zip_structure(namelist: list[str]) -> list[str]:
     missing: list[str] = []
     if "inkflow/inkflow.exe" not in entries:
         missing.append("inkflow/inkflow.exe")
-    if not any(
-        e == "inkflow/_internal/" or e.startswith("inkflow/_internal/") for e in entries
-    ):
+    if not any(e == "inkflow/_internal/" or e.startswith("inkflow/_internal/") for e in entries):
         missing.append("inkflow/_internal/")
     mcp_rel = mcp_exe_rel_path()
     if mcp_rel not in entries:
@@ -359,9 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     rows: list[tuple[str, bool, str]] = []
 
     if args.cli_zip is not None:
-        label_structure = (
-            "CLI zip structure (inkflow/inkflow.exe, _internal, inkflow-mcp, skills)"
-        )
+        label_structure = "CLI zip structure (inkflow/inkflow.exe, _internal, inkflow-mcp, skills)"
         label_dist = "CLI zip single inkflow-*.dist-info"
         label_version = "CLI zip version == tag (inkflow.exe --version)"
         label_mcp_version = "CLI zip MCP stdio handshake (tools/list)"

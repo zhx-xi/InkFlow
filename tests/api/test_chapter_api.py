@@ -148,9 +148,7 @@ async def test_move_chapter_api(db_session, sample_project, override_get_db):
         )
         ch_id = r3.json()["id"]
 
-        resp = await client.post(
-            f"/api/v1/chapters/{ch_id}/move?target_volume_id={v2_id}"
-        )
+        resp = await client.post(f"/api/v1/chapters/{ch_id}/move?target_volume_id={v2_id}")
         assert resp.status_code == 200
         assert resp.json()["volume_id"] == v2_id
 
@@ -177,9 +175,7 @@ async def test_get_volume_api(db_session, sample_project, override_get_db):
         assert data["title"] == "第一卷"
         assert data["project_id"] == created.json()["project_id"]
 
-        missing = await client.get(
-            "/api/v1/volumes/00000000-0000-0000-0000-000000000000"
-        )
+        missing = await client.get("/api/v1/volumes/00000000-0000-0000-0000-000000000000")
         assert missing.status_code == 404
         assert missing.json()["detail"] == "卷不存在"
 
@@ -199,9 +195,7 @@ async def test_update_volume_api(db_session, sample_project, override_get_db):
         assert created.status_code == 201
         vol_id = created.json()["id"]
 
-        resp = await client.patch(
-            f"/api/v1/volumes/{vol_id}", json={"title": "第一卷·修订"}
-        )
+        resp = await client.patch(f"/api/v1/volumes/{vol_id}", json={"title": "第一卷·修订"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == vol_id
@@ -271,9 +265,7 @@ async def test_list_chapters_structure(db_session, sample_project, override_get_
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_list_chapters_filter_by_volume(
-    db_session, sample_project, override_get_db
-):
+async def test_list_chapters_filter_by_volume(db_session, sample_project, override_get_db):
     """GET chapters 按 volume_id 过滤：只返回该卷下的章节."""
     from inkflow.api.app import app
 
@@ -311,9 +303,7 @@ async def test_list_chapters_filter_by_volume(
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_list_chapters_filter_by_status(
-    db_session, sample_project, override_get_db
-):
+async def test_list_chapters_filter_by_status(db_session, sample_project, override_get_db):
     """GET chapters 按 status 过滤：只返回指定状态的章节."""
     from inkflow.api.app import app
 
@@ -398,9 +388,7 @@ async def test_get_chapter_api(db_session, sample_project, override_get_db):
         assert data["status"] == "draft"
         assert data["word_count"] > 0
 
-        missing = await client.get(
-            "/api/v1/chapters/00000000-0000-0000-0000-000000000000"
-        )
+        missing = await client.get("/api/v1/chapters/00000000-0000-0000-0000-000000000000")
         assert missing.status_code == 404
         assert missing.json()["detail"] == "章节不存在"
 
@@ -517,9 +505,7 @@ class TestVolumeAPIMocked:
         svc = _mock_svc(mock_get_svc)
         svc.update_volume = AsyncMock(return_value=None)
 
-        response = client.patch(
-            f"/api/v1/volumes/{uuid.uuid4()}", json={"title": "不存在"}
-        )
+        response = client.patch(f"/api/v1/volumes/{uuid.uuid4()}", json={"title": "不存在"})
         assert response.status_code == 404
         assert response.json()["detail"] == "卷不存在"
 
@@ -553,9 +539,7 @@ class TestChapterAPIMocked:
         assert data["id"] == str(ch.id)
         assert data["title"] == "第一章·定稿"
         assert data["status"] == "draft"
-        svc.create_chapter.assert_awaited_once_with(
-            PID, "第一章·定稿", None, "正文内容", 3
-        )
+        svc.create_chapter.assert_awaited_once_with(PID, "第一章·定稿", None, "正文内容", 3)
 
     @patch("inkflow.api.routers.chapter.get_chapter_service")
     def test_list_chapters_success(self, mock_get_svc: MagicMock) -> None:
@@ -564,9 +548,7 @@ class TestChapterAPIMocked:
         ch = _chapter()
         svc.list_chapters = AsyncMock(return_value=([ch], 1))
 
-        response = client.get(
-            f"/api/v1/projects/{PID}/chapters", params={"offset": 0, "limit": 10}
-        )
+        response = client.get(f"/api/v1/projects/{PID}/chapters", params={"offset": 0, "limit": 10})
         assert response.status_code == 200
         data = response.json()
         assert data["total"] == 1
@@ -591,9 +573,7 @@ class TestChapterAPIMocked:
         svc = _mock_svc(mock_get_svc)
         svc.update_chapter = AsyncMock(return_value=None)
 
-        response = client.patch(
-            f"/api/v1/chapters/{uuid.uuid4()}", json={"title": "不存在"}
-        )
+        response = client.patch(f"/api/v1/chapters/{uuid.uuid4()}", json={"title": "不存在"})
         assert response.status_code == 404
         assert response.json()["detail"] == "章节不存在"
 
@@ -626,9 +606,7 @@ async def test_create_volume_invalid_project_id_404(db_session, override_get_db)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/v1/projects/not-a-uuid/volumes", json={"title": "卷"}
-        )
+        resp = await client.post("/api/v1/projects/not-a-uuid/volumes", json={"title": "卷"})
     assert resp.status_code == 404
     assert resp.json()["detail"] == "项目不存在"
 
@@ -670,9 +648,7 @@ async def test_delete_chapter_missing_404(db_session, override_get_db):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.delete(
-            "/api/v1/chapters/00000000-0000-0000-0000-000000000000"
-        )
+        resp = await client.delete("/api/v1/chapters/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "章节不存在"
 
@@ -685,18 +661,14 @@ async def test_move_chapter_missing_404(db_session, override_get_db):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/v1/chapters/00000000-0000-0000-0000-000000000000/move"
-        )
+        resp = await client.post("/api/v1/chapters/00000000-0000-0000-0000-000000000000/move")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "章节不存在"
 
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_move_chapter_invalid_target_volume_404(
-    db_session, sample_project, override_get_db
-):
+async def test_move_chapter_invalid_target_volume_404(db_session, sample_project, override_get_db):
     """move 目标卷 ID 非法格式 → 404（_parse_id 默认 detail「资源不存在」）。"""
     from inkflow.api.app import app
 
@@ -709,9 +681,7 @@ async def test_move_chapter_invalid_target_volume_404(
         assert created.status_code == 201
         chapter_id = created.json()["id"]
 
-        resp = await client.post(
-            f"/api/v1/chapters/{chapter_id}/move?target_volume_id=bad-id"
-        )
+        resp = await client.post(f"/api/v1/chapters/{chapter_id}/move?target_volume_id=bad-id")
     assert resp.status_code == 404
     # 🔒 强化（#524）：锁 detail（router _parse_id 默认文案「资源不存在」）
     assert resp.json()["detail"] == "资源不存在"
@@ -741,9 +711,7 @@ class TestChapterAPIMockedSuccess:
         ch = _chapter(title="第一章·修订")
         svc.update_chapter = AsyncMock(return_value=ch)
 
-        response = client.patch(
-            f"/api/v1/chapters/{ch.id}", json={"title": "第一章·修订"}
-        )
+        response = client.patch(f"/api/v1/chapters/{ch.id}", json={"title": "第一章·修订"})
         assert response.status_code == 200
         assert response.json()["title"] == "第一章·修订"
         svc.update_chapter.assert_awaited_once()
@@ -797,9 +765,7 @@ class TestVolumeAPIMockedSuccess:
         vol = _volume(title="第一卷·修订")
         svc.update_volume = AsyncMock(return_value=vol)
 
-        response = client.patch(
-            f"/api/v1/volumes/{vol.id}", json={"title": "第一卷·修订"}
-        )
+        response = client.patch(f"/api/v1/volumes/{vol.id}", json={"title": "第一卷·修订"})
         assert response.status_code == 200
         assert response.json()["title"] == "第一卷·修订"
         svc.update_volume.assert_awaited_once()

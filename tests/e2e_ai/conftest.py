@@ -64,9 +64,7 @@ def zhipu_api_key() -> str:
     """zhipu key（chat 软降级 + embedding 两项共用）；缺失 → skip。"""
     key = _first_env("ZHIPU_API_KEY", "INKFLOW_ZHIPU_API_KEY")
     if key is None:
-        pytest.skip(
-            "缺少 ZHIPU_API_KEY（或 INKFLOW_ZHIPU_API_KEY）— zhipu 真实模型测试跳过"
-        )
+        pytest.skip("缺少 ZHIPU_API_KEY（或 INKFLOW_ZHIPU_API_KEY）— zhipu 真实模型测试跳过")
     return key
 
 

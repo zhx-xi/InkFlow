@@ -25,6 +25,7 @@ RED 预期（对照当前实现）:
 - test_ignores_conflicting_caller_project_id: 当前 caller 传错 id → {ok:False}（拒绝）；
   断言"使用绑定值成功" FAILED。
 """
+
 from __future__ import annotations
 
 import json
@@ -105,7 +106,7 @@ def test_save_draft_tool_spec() -> None:
 
 
 def test_save_draft_params_validation() -> None:
-    """契约②: SaveDraftParams 仅 content 必填、summary 可选（无 project_id/chapter_id）. """
+    """契约②: SaveDraftParams 仅 content 必填、summary 可选（无 project_id/chapter_id）."""
     params = SaveDraftParams(content=CONTENT)
     assert params.summary is None
     # project_id/chapter_id 字段已移除

@@ -51,8 +51,7 @@ def _collect_semantic_keys() -> dict[str, set[str]]:
                     isinstance(value, ast.Constant)
                     and isinstance(value.value, str)
                     and (
-                        value.value.startswith("log.event.")
-                        or value.value.startswith("log.check.")
+                        value.value.startswith("log.event.") or value.value.startswith("log.check.")
                     )
                 ):
                     found.setdefault(value.value, set()).add(str(py.relative_to(SRC)))

@@ -162,7 +162,9 @@ async def agentic_generate(
         result["semantic_summaries"] = await memory_svc.get_summaries(data.project_id)
     except Exception:
         result["semantic_summaries"] = {
-            "project_id": str(data.project_id), "project": None, "user": None,
+            "project_id": str(data.project_id),
+            "project": None,
+            "user": None,
         }
     return result
 

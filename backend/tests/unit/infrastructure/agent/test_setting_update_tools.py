@@ -9,6 +9,7 @@
 4. expected_project_id 绑定：装配期注入后，func 恒用绑定值（LLM 不自报项目 ID）。
 5. 成功/失败均落审计（audit_service.record），审计自身异常静默。
 """
+
 from __future__ import annotations
 
 import json
@@ -75,9 +76,7 @@ class TestBuildSettingUpdateTools:
     async def test_update_character_failure_envelope(self) -> None:
         """service 抛异常 → {"ok": False, "error": "..."}（工具内部吞异常不抛出）。"""
         deps = _make_deps()
-        deps.character_service.update_character = AsyncMock(
-            side_effect=ValueError("角色不存在")
-        )
+        deps.character_service.update_character = AsyncMock(side_effect=ValueError("角色不存在"))
         tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
         result = json.loads(
             await tools["update_character"].func(character_id="char-1", name="林晚")
@@ -103,9 +102,7 @@ class TestBuildSettingUpdateTools:
     async def test_update_world_setting_failure_envelope(self) -> None:
         """update_world_setting 失败 → {"ok": False, "error": "..."}。"""
         deps = _make_deps()
-        deps.world_service.update_setting = AsyncMock(
-            side_effect=ValueError("世界观条目不存在")
-        )
+        deps.world_service.update_setting = AsyncMock(side_effect=ValueError("世界观条目不存在"))
         tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
         result = json.loads(
             await tools["update_world_setting"].func(setting_id="world-1", name="天元大陆")
@@ -162,9 +159,7 @@ class TestSettingUpdateToolAudit:
     @pytest.mark.asyncio
     async def test_failure_records_audit(self) -> None:
         deps = _make_deps()
-        deps.character_service.update_character = AsyncMock(
-            side_effect=ValueError("boom")
-        )
+        deps.character_service.update_character = AsyncMock(side_effect=ValueError("boom"))
         tools = {t.spec.name: t for t in build_setting_update_tools(deps)}
         await tools["update_character"].func(character_id="char-1", name="林晚")
         assert deps.audit_service.record.await_count >= 1

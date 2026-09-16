@@ -192,9 +192,7 @@ async def test_intervene_pause_200(client, override_services):
     run_id = str(uuid.uuid4())
     book.intervene.return_value = {"run_id": run_id, "status": "paused"}
 
-    resp = await client.post(
-        f"{BASE}/runs/{run_id}/intervene", json={"action": "pause"}
-    )
+    resp = await client.post(f"{BASE}/runs/{run_id}/intervene", json={"action": "pause"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -216,9 +214,7 @@ async def test_intervene_resume_200(client, override_services):
     run_id = str(uuid.uuid4())
     book.intervene.return_value = {"run_id": run_id, "status": "running"}
 
-    resp = await client.post(
-        f"{BASE}/runs/{run_id}/intervene", json={"action": "resume"}
-    )
+    resp = await client.post(f"{BASE}/runs/{run_id}/intervene", json={"action": "resume"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -302,9 +298,7 @@ async def test_intervene_missing_404(client, override_services):
     _, book = override_services
     book.intervene.side_effect = ValueError("运行不存在")
 
-    resp = await client.post(
-        f"{BASE}/runs/{uuid.uuid4()}/intervene", json={"action": "pause"}
-    )
+    resp = await client.post(f"{BASE}/runs/{uuid.uuid4()}/intervene", json={"action": "pause"})
 
     assert resp.status_code == 404
     assert "不存在" in resp.json()["detail"]
@@ -362,9 +356,7 @@ async def test_run_summary_200(client, override_services):
             "agent_calls": 1,
             "chapters_written": 1,
         },
-        "steps": [
-            {"index": 0, "outline_id": "c1", "status": "done", "execution_id": "e1"}
-        ],
+        "steps": [{"index": 0, "outline_id": "c1", "status": "done", "execution_id": "e1"}],
         "next": {"volume_index": 0, "total_volumes": 1, "finished": False},
     }
 
@@ -486,16 +478,12 @@ class TestCoverageGapApi:
         )
 
         await asyncio.sleep(0)
-        book.write_book_volume.assert_awaited_once_with(
-            plan_id, BookLimits(max_chapters=3)
-        )
+        book.write_book_volume.assert_awaited_once_with(plan_id, BookLimits(max_chapters=3))
         book.write_book.assert_not_awaited()
 
     @pytest.mark.asyncio
     @pytest.mark.api
-    async def test_runs_start_mode_volume_partial_limits_defaults(
-        self, client, override_services
-    ):
+    async def test_runs_start_mode_volume_partial_limits_defaults(self, client, override_services):
         """mode=volume + 部分键 limits → BookLimits 未传字段取模型默认。
 
         锁 BookLimits(**data.limits) 构造语义（books.py L227）：只传
@@ -527,9 +515,7 @@ class TestCoverageGapApi:
         )
 
         await asyncio.sleep(0)
-        book.write_book_volume.assert_awaited_once_with(
-            plan_id, BookLimits(max_tokens=50_000)
-        )
+        book.write_book_volume.assert_awaited_once_with(plan_id, BookLimits(max_tokens=50_000))
         received = book.write_book_volume.await_args.args[1]
         assert received.max_chapters == 100
         assert received.max_agent_calls == 200
@@ -537,9 +523,7 @@ class TestCoverageGapApi:
     @pytest.mark.parametrize("detail", ["其它错误", "运行已中止"])
     @pytest.mark.asyncio
     @pytest.mark.api
-    async def test_confirm_run_other_value_error_422(
-        self, client, override_services, detail
-    ):
+    async def test_confirm_run_other_value_error_422(self, client, override_services, detail):
         """confirm 其它 ValueError（非「不存在」非「未处于等待确认状态」）→ 422 兜底。
 
         覆盖 books.py L259（confirm_run 兜底 422）——既有用例只覆盖

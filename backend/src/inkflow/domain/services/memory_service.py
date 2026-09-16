@@ -709,8 +709,12 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         Returns: {"project_id", "summarized", "project"|None, "user"|None}.
         """
         if project_id.int > 2**63 - 1:
-            return {"project_id": str(project_id), "summarized": False,
-                    "project": None, "user": None}
+            return {
+                "project_id": str(project_id),
+                "summarized": False,
+                "project": None,
+                "user": None,
+            }
         project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
             project_id.int
         )

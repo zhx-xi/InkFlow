@@ -196,14 +196,13 @@ def _assert_tool_catalog(items: list) -> None:
         assert by_name[n]["allow_custom_agent"] is True, f"{n} 应 allow_custom_agent=True"
         assert by_name[n]["is_core"] is False, f"{n} 应为 is_core=False"
         domain, op = EXPECTED_DOMAIN_OP[n]
-        assert by_name[n]["domain"] == domain, (
-            f"{n} domain 应为 {domain}: {by_name[n]['domain']}"
-        )
+        assert by_name[n]["domain"] == domain, f"{n} domain 应为 {domain}: {by_name[n]['domain']}"
         assert by_name[n]["op"] == op, f"{n} op 应为 {op}: {by_name[n]['op']}"
     assert len(CUSTOM_TOOL_NAMES) == 39, "自定义 Agent 可见工具应为 39"
     save_draft = by_name["save_draft"]
     assert save_draft["group"] == "writing"
     assert save_draft["allow_custom_agent"] is True
+
 
 ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
 """token 来源环境变量（spec §2.3.1）：本文件全部用例依赖未设置 → 直通。"""
@@ -235,14 +234,12 @@ class TestToolCatalog:
     _parse_id 解析失败 → 404「Agent 不存在」→ 下方 200 断言 FAIL。
     """
 
-    async def test_tools_route_not_swallowed_by_agent_id(
-        self, client, db_session, override_get_db
-    ):
+    async def test_tools_route_not_swallowed_by_agent_id(self, client, db_session, override_get_db):
         """【G】GET /api/v1/agents/tools → 200（非 404）+ 顶层含 items 键。"""
         resp = await client.get(ENDPOINT_TOOLS)
-        assert (
-            resp.status_code == 200
-        ), f"/tools 被 /{{agent_id}} 吞（路由顺序错）或端点未实现: {resp.status_code}"
+        assert resp.status_code == 200, (
+            f"/tools 被 /{{agent_id}} 吞（路由顺序错）或端点未实现: {resp.status_code}"
+        )
         body = resp.json()
         assert isinstance(body, dict)
         assert "items" in body

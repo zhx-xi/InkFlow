@@ -8,6 +8,7 @@
 依据: issue #848 + specs/f10-world-settings/spec.md §7（复制守卫行）+
 specs/f37-world-copy/spec.md（复制语义）.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -35,7 +36,7 @@ def _setting(
     parent_id: uuid.UUID | None = None,
     category: str = "",
 ) -> object:
-    """构造测试用世界观条目（惰性 import 领域模型；返回注解省略防 F821）. """
+    """构造测试用世界观条目（惰性 import 领域模型；返回注解省略防 F821）."""
     from inkflow.domain.models.world import WorldSetting
 
     return WorldSetting(
@@ -53,7 +54,7 @@ def _setting(
 
 @pytest.fixture
 def mock_repo() -> MagicMock:
-    """Mock WorldRepositoryProtocol — 方法显式默认值（显式 AsyncMock 防假绿）. """
+    """Mock WorldRepositoryProtocol — 方法显式默认值（显式 AsyncMock 防假绿）."""
     repo = MagicMock(spec=WorldRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.add = AsyncMock(side_effect=lambda s: s)
@@ -67,7 +68,7 @@ def mock_repo() -> MagicMock:
 
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — 源/目标项目均存在. """
+    """Mock ProjectRepositoryProtocol — 源/目标项目均存在."""
     repo = MagicMock(spec=ProjectRepositoryProtocol)
     repo.get = AsyncMock(
         side_effect=lambda pid: SimpleNamespace(id=pid) if pid in (SOURCE_INT, TARGET_INT) else None
@@ -77,7 +78,7 @@ def mock_project_repo() -> MagicMock:
 
 @pytest.fixture
 def service(mock_repo: MagicMock, mock_project_repo: MagicMock) -> WorldCopyService:
-    """被测 WorldCopyService 实例（无 map/asset → 跳过地图复制聚焦条目守卫）. """
+    """被测 WorldCopyService 实例（无 map/asset → 跳过地图复制聚焦条目守卫）."""
     return WorldCopyService(
         repository=mock_repo,
         project_repo=mock_project_repo,
@@ -87,7 +88,7 @@ def service(mock_repo: MagicMock, mock_project_repo: MagicMock) -> WorldCopyServ
 
 
 class TestCopyGuard:
-    """#848 复制守卫（copy 直调 repo.add 的旁路封堵）. """
+    """#848 复制守卫（copy 直调 repo.add 的旁路封堵）."""
 
     async def test_copy_category_entry_to_target_without_category_skipped(
         self, service: WorldCopyService, mock_repo: MagicMock

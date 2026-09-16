@@ -60,9 +60,7 @@ def _make_draft_volume_lookup(
 
     chapter_svc = ChapterService(db)
 
-    async def _lookup(
-        project_id: uuid.UUID, chapter_id: uuid.UUID | None
-    ) -> str | None:
+    async def _lookup(project_id: uuid.UUID, chapter_id: uuid.UUID | None) -> str | None:
         if chapter_id is None:
             return None
         try:

@@ -64,7 +64,7 @@ def _outline(
     parent_id: uuid.UUID | None = None,
     chapter_id: uuid.UUID | None = None,
 ) -> Outline:
-    """构造测试用大纲实体（三级字段透传）. """
+    """构造测试用大纲实体（三级字段透传）."""
     return Outline(
         id=uuid.uuid4(),
         project_id=project_id,
@@ -82,7 +82,7 @@ def _outline(
 
 @pytest.fixture
 def mock_repo() -> MagicMock:
-    """Mock OutlineRepositoryProtocol — 默认全方法可用. """
+    """Mock OutlineRepositoryProtocol — 默认全方法可用."""
     repo = MagicMock(spec=OutlineRepositoryProtocol)
     repo.add = AsyncMock(side_effect=lambda o: o)
     repo.get = AsyncMock(return_value=None)
@@ -99,7 +99,7 @@ def _make_service(repo: MagicMock) -> OutlineService:
 
 
 def _payload(outline: dict | None = None, arcs: list[dict] | None = None) -> str:
-    """构造合法生成 JSON 输出（outline/arcs/plot_points 三层）. """
+    """构造合法生成 JSON 输出（outline/arcs/plot_points 三层）."""
     return json.dumps(
         {
             "outline": outline
@@ -174,28 +174,28 @@ class TestOutlineTreeGuard:
 
     @pytest.mark.asyncio
     async def test_gc1_create_orphan_chapter_rejected(self, mock_repo) -> None:
-        """GC1 create level=chapter + parent_id=None（孤立章）→ 422 OutlineHierarchyError. """
+        """GC1 create level=chapter + parent_id=None（孤立章）→ 422 OutlineHierarchyError."""
         svc = _make_service(mock_repo)
         with pytest.raises(OutlineHierarchyError):
             await svc.create_outline(PID, "孤立章", level="chapter", parent_id=None)
 
     @pytest.mark.asyncio
     async def test_gc2_create_volume_without_overall_parent_rejected(self, mock_repo) -> None:
-        """GC2 create level=volume + parent_id=None → 422 OutlineHierarchyError. """
+        """GC2 create level=volume + parent_id=None → 422 OutlineHierarchyError."""
         svc = _make_service(mock_repo)
         with pytest.raises(OutlineHierarchyError):
             await svc.create_outline(PID, "卷甲", level="volume", parent_id=None)
 
     @pytest.mark.asyncio
     async def test_gc3_create_overall_with_parent_rejected(self, mock_repo) -> None:
-        """GC3 create level=overall + parent_id 非空 → 422（overall 不允许挂父）. """
+        """GC3 create level=overall + parent_id 非空 → 422（overall 不允许挂父）."""
         svc = _make_service(mock_repo)
         with pytest.raises(OutlineHierarchyError):
             await svc.create_outline(PID, "整本", level="overall", parent_id=uuid.uuid4())
 
     @pytest.mark.asyncio
     async def test_gc4_valid_tree_overall_volume_chapter_succeeds(self, mock_repo) -> None:
-        """GC4 合法树 overall→volume→chapter → 全部成功，父链正确. """
+        """GC4 合法树 overall→volume→chapter → 全部成功，父链正确."""
         overall = _outline("整本", level="overall")
         volume = _outline("卷一", level="volume", parent_id=overall.id)
         parent_map = {overall.id.int: overall, volume.id.int: volume}
@@ -220,7 +220,7 @@ class TestOutlineTreeGuard:
 
     @pytest.mark.asyncio
     async def test_gc5_create_chapter_under_volume_succeeds(self, mock_repo) -> None:
-        """GC5 create level=chapter 挂 volume → 成功. """
+        """GC5 create level=chapter 挂 volume → 成功."""
         volume = _outline("卷一", level="volume")
         mock_repo.get = AsyncMock(return_value=volume)
         svc = _make_service(mock_repo)
@@ -230,7 +230,7 @@ class TestOutlineTreeGuard:
 
     @pytest.mark.asyncio
     async def test_gc6_update_clears_chapter_parent_rejected(self, mock_repo) -> None:
-        """GC6 update 清除 chapter 的 parent（置孤立章）→ 422 OutlineHierarchyError. """
+        """GC6 update 清除 chapter 的 parent（置孤立章）→ 422 OutlineHierarchyError."""
         existing = _outline("第一章", level="chapter", parent_id=uuid.uuid4())
         mock_repo.get = AsyncMock(return_value=existing)
         svc = _make_service(mock_repo)
@@ -246,7 +246,7 @@ class TestOutlineGeneratorTreeGuard:
     """#835 AI 生成器 GeneratedOutline 加 level/parent，落库建链."""
 
     def test_gc7_generated_outline_has_level_and_parent(self) -> None:
-        """GC7 GeneratedOutline 含 level（默认 overall）/parent（默认 None）+ level 非法校验. """
+        """GC7 GeneratedOutline 含 level（默认 overall）/parent（默认 None）+ level 非法校验."""
         g = GeneratedOutline(level="overall")
         assert g.level == "overall"
         assert g.parent is None
@@ -262,7 +262,7 @@ class TestOutlineGeneratorTreeGuard:
     async def test_gc8_generate_persists_overall_root(
         self, generator, mock_llm, mock_gen_repo
     ) -> None:
-        """GC8 generate（outline 无 level）→ 落库 outline=overall 根（非孤立章）. """
+        """GC8 generate（outline 无 level）→ 落库 outline=overall 根（非孤立章）."""
         mock_llm.chat.return_value = _ok_response(
             _payload(outline={"name": "整本大纲", "description": "总体设计"})
         )
@@ -279,7 +279,7 @@ class TestOutlineGeneratorTreeGuard:
     async def test_gc9_generate_chapter_links_parent_by_name(
         self, generator, mock_llm, mock_gen_repo
     ) -> None:
-        """GC9 generate（outline level=chapter + parent 名）→ 落库链接父大纲. """
+        """GC9 generate（outline level=chapter + parent 名）→ 落库链接父大纲."""
         volume = _outline("卷一", level="volume")
 
         async def fake_get_by_name(pid, name):

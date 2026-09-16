@@ -160,9 +160,7 @@ class PreferenceSupersedeDeterminer:
         for retry_count in range(_MAX_PARSE_RETRIES + 1):
             # 传消息列表副本，避免客户端变异影响重试历史记录；
             # LLM 调用失败透传，不消耗解析重试（F16 §5.6 注同款）
-            response = await self._llm.chat(
-                list(messages), model=model, temperature=_TEMPERATURE
-            )
+            response = await self._llm.chat(list(messages), model=model, temperature=_TEMPERATURE)
 
             last_raw = response.content
             outcome = self._parse_output(last_raw)

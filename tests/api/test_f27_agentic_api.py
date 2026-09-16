@@ -184,9 +184,7 @@ async def test_agentic_generate_completed(overrides):
         updated_at="2026-08-10T12:00:05",
     )
     async with _client() as client:
-        resp = await client.post(
-            "/api/v1/writing/agentic/generate", json=_generate_payload()
-        )
+        resp = await client.post("/api/v1/writing/agentic/generate", json=_generate_payload())
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "completed"
@@ -213,9 +211,7 @@ async def test_agentic_generate_guardrail_200(overrides):
         updated_at="2026-08-10T12:00:05",
     )
     async with _client() as client:
-        resp = await client.post(
-            "/api/v1/writing/agentic/generate", json=_generate_payload()
-        )
+        resp = await client.post("/api/v1/writing/agentic/generate", json=_generate_payload())
     assert resp.status_code == 200
     assert resp.json()["status"] == "terminated_by_guardrail"
     assert resp.json()["terminated_by"] == "max_steps"
@@ -256,9 +252,7 @@ async def test_agentic_generate_404(overrides):
     writer = overrides["writer"]
     writer.run.side_effect = AgenticWriteNotFoundError("章节不存在")
     async with _client() as client:
-        resp = await client.post(
-            "/api/v1/writing/agentic/generate", json=_generate_payload()
-        )
+        resp = await client.post("/api/v1/writing/agentic/generate", json=_generate_payload())
     assert resp.status_code == 404
     # 🔒 强化（#524）：锁 detail（router 将 AgenticWriteNotFoundError 消息透传为 404 detail）
     assert resp.json()["detail"] == "章节不存在"
@@ -278,9 +272,7 @@ async def test_agentic_generate_422_invalid_max_steps(overrides):
     assert resp.status_code == 422
     # 🔒 强化（#524）：Pydantic 422 detail 为 list 形态——锁形态区分「参数校验 422」与「业务 422」
     assert isinstance(resp.json()["detail"], list)
-    assert any(
-        "max_steps" in str(item.get("loc", "")) for item in resp.json()["detail"]
-    )
+    assert any("max_steps" in str(item.get("loc", "")) for item in resp.json()["detail"])
 
 
 # ── agent runs 端点 ─────────────────────────────────────────────────
@@ -451,9 +443,7 @@ async def test_drafts_prune_orphans_dry_run(overrides):
     draft_svc.prune_orphans = AsyncMock(return_value=2)
 
     async with _client() as client:
-        resp = await client.post(
-            "/api/v1/agent/drafts/prune-orphans", json={"dry_run": True}
-        )
+        resp = await client.post("/api/v1/agent/drafts/prune-orphans", json={"dry_run": True})
 
     assert resp.status_code == 200
     assert resp.json() == {"deleted": 2}

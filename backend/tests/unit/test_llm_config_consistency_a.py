@@ -99,8 +99,12 @@ class TestSnapshotDefectFixed:
         from inkflow.infrastructure.agent import pipeline_templates as pt
 
         with _mutated_default(SNAPSHOT_B):
-            for tid in ("builtin:chat", "builtin:write_chapter", "builtin:write_auto",
-                        "builtin:write_continue"):
+            for tid in (
+                "builtin:chat",
+                "builtin:write_chapter",
+                "builtin:write_auto",
+                "builtin:write_continue",
+            ):
                 tpl = pt.get_template(tid)
                 assert tpl is not None, f"模板 {tid} 应存在"
                 models = {s.agent.model for s in tpl.stages}

@@ -51,9 +51,7 @@ async def test_delete_volume_with_chapters_no_param_409(
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_delete_volume_cascade_chapters(
-    db_session, sample_project, override_get_db
-):
+async def test_delete_volume_cascade_chapters(db_session, sample_project, override_get_db):
     """delete_chapters=true → 204 且卷下章节被真正级联删除（旧实现只解绑不删章，本测试 RED）。"""
     from inkflow.api.app import app
 
@@ -100,9 +98,7 @@ async def test_delete_volume_cascade_chapters(
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_delete_volume_move_chapters_to_target(
-    db_session, sample_project, override_get_db
-):
+async def test_delete_volume_move_chapters_to_target(db_session, sample_project, override_get_db):
     """move_to=<vid> → 204 且卷下章节改挂目标卷（旧实现把章 volume_id 置 None，本测试 RED）。"""
     from inkflow.api.app import app
 
@@ -157,9 +153,7 @@ async def test_delete_volume_move_chapters_to_target(
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_delete_volume_move_to_nonexistent_422(
-    db_session, sample_project, override_get_db
-):
+async def test_delete_volume_move_to_nonexistent_422(db_session, sample_project, override_get_db):
     """move_to=<不存在的卷 id> → 422（旧实现忽略参数直接删除返回 204，本测试 RED）。"""
     from inkflow.api.app import app
 
@@ -186,9 +180,7 @@ async def test_delete_volume_move_to_nonexistent_422(
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_delete_volume_move_to_self_422(
-    db_session, sample_project, override_get_db
-):
+async def test_delete_volume_move_to_self_422(db_session, sample_project, override_get_db):
     """move_to=<本卷 id> → 422（旧实现忽略参数直接删除返回 204，本测试 RED）。"""
     from inkflow.api.app import app
 

@@ -79,6 +79,7 @@ async def test_spawn_with_key_registers_and_pops_after_done():
 async def test_spawn_boom_no_unretrieved_warning():
     """契约 1b：异常任务不产生 'Task exception was never retrieved' 警告
     （done_callback 已取 exception）；spawn 调用本身不抛。"""
+
     async def _boom() -> None:
         raise RuntimeError("后台任务失败")
 

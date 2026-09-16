@@ -135,9 +135,7 @@ def test_read_kernel_state_type_mismatch_returns_none(tmp_path):
         ("started_at", 12345),  # started_at 非 str
     ],
 )
-def test_read_kernel_state_any_field_type_mismatch_returns_none(
-    tmp_path, bad_key, bad_value
-):
+def test_read_kernel_state_any_field_type_mismatch_returns_none(tmp_path, bad_key, bad_value):
     """任一字段类型不符 → None（QA 补测 2026-08-07：覆盖全部五字段类型分支）。"""
     path = tmp_path / "kernel.json"
     payload = _valid_payload()

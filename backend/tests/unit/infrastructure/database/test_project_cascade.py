@@ -137,9 +137,9 @@ async def test_hard_delete_cascades_all_child_entities(db_session: AsyncSession)
 
     assert deleted is True
     for model, _table in _ENTITY_MODELS:
-        assert (
-            await _count_by_project(db_session, model, pid) == 0
-        ), f"{_table} 残留: 级联清理未生效"
+        assert await _count_by_project(db_session, model, pid) == 0, (
+            f"{_table} 残留: 级联清理未生效"
+        )
 
 
 async def test_hard_delete_same_name_create_succeeds(db_session: AsyncSession) -> None:

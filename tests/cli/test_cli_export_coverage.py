@@ -53,13 +53,9 @@ def fake_http_client():
         yield mock_instance
 
 
-def test_uuid_project_resolved_directly(
-    cli_runner, fake_http_client, tmp_path
-) -> None:
+def test_uuid_project_resolved_directly(cli_runner, fake_http_client, tmp_path) -> None:
     """UUID 形 project → GET /projects/{pid} 直查名称并成功导出（--json）。"""
-    fake_http_client.get = AsyncMock(
-        return_value={"id": str(PROJECT_UUID), "name": "我的书"}
-    )
+    fake_http_client.get = AsyncMock(return_value={"id": str(PROJECT_UUID), "name": "我的书"})
     fake_http_client.get_raw = AsyncMock(return_value="正文内容")
 
     result = cli_runner.invoke(

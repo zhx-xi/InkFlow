@@ -139,9 +139,7 @@ def _sample_respond_response():
         "session_id": "sess-1",
         "round": 2,
         "completed": False,
-        "questions": [
-            {"id": "q4", "text": "配角：需要几个主要配角？", "template": "___ 个"}
-        ],
+        "questions": [{"id": "q4", "text": "配角：需要几个主要配角？", "template": "___ 个"}],
         "writing_plan": None,
     }
 
@@ -167,9 +165,7 @@ def test_plan_start_human(fake_http_client):
     """plan start 人类模式：POST planner + stdout 含问题文本 + exit 0。"""
     fake_http_client.post.return_value = _sample_start_response()
 
-    result = _invoke(
-        "plan", "start", "写一本关于时间旅者的悬疑小说", "--project", "proj-1"
-    )
+    result = _invoke("plan", "start", "写一本关于时间旅者的悬疑小说", "--project", "proj-1")
 
     assert result.exit_code == 0
     out = _strip_ansi(result.stdout)
@@ -259,9 +255,7 @@ def test_plan_auto_calls_write_auto_path(fake_http_client):
         },
     ]
 
-    result = _invoke(
-        "plan", "auto", "写一本关于时间旅者的悬疑小说", "--project", "proj-1"
-    )
+    result = _invoke("plan", "auto", "写一本关于时间旅者的悬疑小说", "--project", "proj-1")
 
     assert result.exit_code == 0
     out = _strip_ansi(result.stdout)
@@ -768,9 +762,7 @@ def test_plan_show_confirmed_items(fake_http_client):
         "asked_questions": [],
         "answers": {"q1": "悬疑为主，加入时间悖论"},
         "authorized": [],
-        "confirmed_items": [
-            {"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"}
-        ],
+        "confirmed_items": [{"key": "题材", "value": "悬疑 + 时间悖论科幻", "source": "user"}],
         "conflicts": [],
         "confirming": False,
         "writing_plan_id": None,

@@ -169,7 +169,8 @@ class SemanticSummarizer:
         #    与 PromptTemplateProtocol.render 声明的 variables: dict[str, str] 泛型不符（预期）
         template = self._prompts.load(_TEMPLATE_NAME)
         rendered = self._prompts.render(
-            template, {"anchors": anchors}  # type: ignore[dict-item]  # 契约透传原始 anchors 列表
+            template,
+            {"anchors": anchors},  # type: ignore[dict-item]  # 契约透传原始 anchors 列表
         )
         messages = [ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages]
 
@@ -179,9 +180,7 @@ class SemanticSummarizer:
         for retry_count in range(_MAX_PARSE_RETRIES + 1):
             # 传消息列表副本，避免客户端变异影响重试历史记录；
             # LLM 调用失败透传，不消耗解析重试（F16 §5.6 注同款）
-            response = await self._llm.chat(
-                list(messages), model=model, temperature=_TEMPERATURE
-            )
+            response = await self._llm.chat(list(messages), model=model, temperature=_TEMPERATURE)
 
             last_raw = response.content
             outcome = self._parse_output(last_raw)

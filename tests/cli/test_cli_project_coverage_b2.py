@@ -53,9 +53,7 @@ def fake_http_client():
             "inkflow.cli.commands.project.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.project.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.project.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)

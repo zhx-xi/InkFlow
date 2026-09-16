@@ -71,11 +71,15 @@ class TestChatCompletionsStream:
     """② SSE 流式：逐帧 delta + data:[DONE] 结尾。"""
 
     def test_stream_returns_delta_frames_then_done(self, client: TestClient) -> None:
-        with client.stream("POST", "/v1/chat/completions", json={
-            "model": "fake/correct",
-            "messages": [{"role": "user", "content": "hi"}],
-            "stream": True,
-        }) as resp:
+        with client.stream(
+            "POST",
+            "/v1/chat/completions",
+            json={
+                "model": "fake/correct",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+        ) as resp:
             assert resp.status_code == 200
             assert resp.headers["content-type"].startswith("text/event-stream")
             frames: list[str] = []
@@ -94,11 +98,15 @@ class TestChatCompletionsStream:
 
     def test_stream_error_frame_emitted(self, client: TestClient) -> None:
         """错误场景流式：以 error 帧结束（不抛裸异常）。"""
-        with client.stream("POST", "/v1/chat/completions", json={
-            "model": "fake/error-500",
-            "messages": [{"role": "user", "content": "hi"}],
-            "stream": True,
-        }) as resp:
+        with client.stream(
+            "POST",
+            "/v1/chat/completions",
+            json={
+                "model": "fake/error-500",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+        ) as resp:
             frames: list[str] = []
             for line in resp.iter_lines():
                 if line:
@@ -135,9 +143,7 @@ class TestScriptedTimeoutAndSignature:
         assert resp.status_code == 200
         assert resp.json()["choices"][0]["message"]["content"] == ""
 
-    def test_sentinel_signature_override_via_http(
-        self, client: TestClient, server_app
-    ) -> None:
+    def test_sentinel_signature_override_via_http(self, client: TestClient, server_app) -> None:
         """哨兵 [[fake-scenario:error-429]] 经 HTTP 应覆盖 model 并计入错误计数。"""
         payload = {
             "model": "fake/correct",

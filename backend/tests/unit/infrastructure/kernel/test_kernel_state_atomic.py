@@ -10,6 +10,7 @@
    （后端进程级 verify 由 tests/cli/ 真子进程补测，本文件为确定性单测）。
 本文件是回归护栏（当前实现已原子写，直接 PASS）；GREEN 无 src 改动。
 """
+
 from __future__ import annotations
 
 from pathlib import Path

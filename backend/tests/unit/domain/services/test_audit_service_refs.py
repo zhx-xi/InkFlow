@@ -668,10 +668,7 @@ async def test_consistent_false_with_error():
 
 
 async def test_findings_sorted_stable_order():
-    (
-        "findings 按 (dimension 序, severity error→warning→info, "
-        "entity_name) 稳定排序（spec §6.3）。"
-    )
+    "findings 按 (dimension 序, severity error→warning→info, entity_name) 稳定排序（spec §6.3）。"
     deps = _Deps(_project(), events=[_event(EV_1, "林晚入宫")])
     c_shen = _char(C_A, "沈砚", group_ids=[G_MISSING])  # R-C2 error（悬空分组）
     c_lin = _char(C_B, "林晚", group_ids=[G_DELETED])  # R-C2 error（悬空分组，真删无 warning 档）

@@ -44,9 +44,7 @@ def fake_http_client():
             "inkflow.cli.commands.audit_chapter.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.audit_chapter.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.audit_chapter.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -85,9 +83,7 @@ def test_generic_exception_maps_to_db_error(cli_runner, fake_http_client) -> Non
     assert "内部错误" in result.output
 
 
-def test_project_name_loop_continue_then_not_found(
-    cli_runner, fake_http_client
-) -> None:
+def test_project_name_loop_continue_then_not_found(cli_runner, fake_http_client) -> None:
     """项目名列表含非同名项 → 循环继续 → NOT_FOUND（100->99 弧）。"""
     fake_http_client.get = AsyncMock(
         return_value={"items": [{"id": str(PID), "name": "别的项目"}], "total": 1}
@@ -106,9 +102,7 @@ def test_project_name_loop_continue_then_not_found(
 def test_chapter_name_resolves_across_pages(cli_runner, fake_http_client) -> None:
     """章名在第一页查无、第二页命中 → 分页循环 offset 递增（119 行）。"""
     page1 = {
-        "items": [
-            {"id": str(uuid.uuid4()), "title": f"无关章节 {i}"} for i in range(50)
-        ],
+        "items": [{"id": str(uuid.uuid4()), "title": f"无关章节 {i}"} for i in range(50)],
         "total": 51,
     }
     page2 = {
@@ -146,9 +140,7 @@ def test_chapter_name_resolves_across_pages(cli_runner, fake_http_client) -> Non
     fake_http_client.post.assert_awaited_once()
 
 
-def test_chapter_name_loop_continue_then_not_found(
-    cli_runner, fake_http_client
-) -> None:
+def test_chapter_name_loop_continue_then_not_found(cli_runner, fake_http_client) -> None:
     """章名列表含非同名项 → 循环继续 → NOT_FOUND（135->134 弧）。"""
 
     async def _get(path: str, **kwargs):

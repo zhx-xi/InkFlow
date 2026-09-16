@@ -152,7 +152,7 @@ class SQLiteOutlineRepository:
 
     async def get(self, outline_id: int) -> Outline | None:
         """按主键查询大纲。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if outline_id < -2**63 or outline_id >= 2**63:
+        if outline_id < -(2**63) or outline_id >= 2**63:
             return None
         stmt = select(OutlineORM).where(OutlineORM.id == outline_id)
         result = await self._session.execute(stmt)
@@ -416,7 +416,7 @@ class SQLiteOutlineRepository:
 
     async def get_arc(self, arc_id: int) -> StoryArc | None:
         """按主键查询故事弧线。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if arc_id < -2**63 or arc_id >= 2**63:
+        if arc_id < -(2**63) or arc_id >= 2**63:
             return None
         stmt = select(StoryArcORM).where(StoryArcORM.id == arc_id)
         result = await self._session.execute(stmt)

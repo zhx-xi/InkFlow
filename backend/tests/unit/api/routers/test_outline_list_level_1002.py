@@ -132,9 +132,7 @@ class TestOutlineListLevel1002:
         svc.list_outlines = AsyncMock(return_value=([], 0))
         svc.list_points = AsyncMock(return_value=[])
 
-        response = client.get(
-            f"/api/v1/projects/{PID}/outlines", params={"level": "bogus"}
-        )
+        response = client.get(f"/api/v1/projects/{PID}/outlines", params={"level": "bogus"})
         assert response.status_code == 200
         assert response.json()["items"] == []
         svc.list_outlines.assert_awaited_once_with(

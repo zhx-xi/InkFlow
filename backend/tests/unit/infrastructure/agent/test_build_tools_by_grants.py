@@ -111,8 +111,12 @@ class TestBuildToolsByGrants:
         tools = build_tools_by_grants(grants, _make_unified_deps())
         names = [t.spec.name for t in tools]
         assert names == [
-            "create_overall_outline", "create_volume_outline", "create_chapter_outline",
-            "update_volume_outline", "update_chapter_outline", "create_plot_point",
+            "create_overall_outline",
+            "create_volume_outline",
+            "create_chapter_outline",
+            "update_volume_outline",
+            "update_chapter_outline",
+            "create_plot_point",
             "update_plot_point",
         ]
 

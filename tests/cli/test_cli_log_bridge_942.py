@@ -63,9 +63,7 @@ def bridge_env(tmp_path_factory):
     os.environ["INKFLOW_DATA_DIR"] = str(child_data_dir)
     handle = None
     try:
-        handle = asyncio.run(
-            ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT)
-        )
+        handle = asyncio.run(ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT))
         yield SimpleNamespace(handle=handle, state_file=state_file, data_dir=child_data_dir)
     finally:
         if handle is not None:
@@ -133,18 +131,14 @@ class TestCliLogBridgeIntegration:
 
     def test_failed_cli_command_recorded_as_warn(self, bridge_env: SimpleNamespace) -> None:
         """不存在的 project_id → 内核 404 → CLI exit 1 → WARN checkpoint。"""
-        proc = _cli(
-            "chapter", "list", "-p", "00000000-0000-4000-8000-000000000099"
-        )
+        proc = _cli("chapter", "list", "-p", "00000000-0000-4000-8000-000000000099")
         assert proc.returncode != 0
         data = _poll_cli_records(bridge_env, expect_event="chapter.list")
         item = next(i for i in data["items"] if i["event"] == "chapter.list")
         assert item["level"] == "WARN"
         assert item["caller_type"] == "cli"
 
-    def test_write_operation_auditable_with_project(
-        self, bridge_env: SimpleNamespace
-    ) -> None:
+    def test_write_operation_auditable_with_project(self, bridge_env: SimpleNamespace) -> None:
         """审计闭环（M3）：CLI 建项目 → api 旁证 >0 → 记录可按 project 回查。"""
         proc = _cli("--json", "project", "create", "--name", "942桥接审计")
         assert proc.returncode == 0, proc.stderr[-500:]
@@ -160,9 +154,7 @@ class TestCliLogBridgeIntegration:
 
         api_data = _query_cli_logs(bridge_env, caller_type="api")["data"]
         assert api_data["total"] > 0, "内核 api 记录也空——装配/数据目录异常，本文件判据失效"
-        create_api = next(
-            (i for i in api_data["items"] if i["event"] == "create_project"), None
-        )
+        create_api = next((i for i in api_data["items"] if i["event"] == "create_project"), None)
         assert create_api is not None, "CLI 建项目未在内核留 api 痕（服务层埋点异常）"
 
     def test_body_content_never_forwarded(self, bridge_env: SimpleNamespace) -> None:

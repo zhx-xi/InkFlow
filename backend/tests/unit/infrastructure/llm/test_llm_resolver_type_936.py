@@ -262,9 +262,7 @@ class TestChatTypeGuard:
         from inkflow.api._llm_resolver import resolve_llm_credentials
         from inkflow.domain.models.provider_config import ProviderModel
 
-        registry = _registry_entry(
-            "deepseek", [ProviderModel(id="deepseek-v4-flash", type="chat")]
-        )
+        registry = _registry_entry("deepseek", [ProviderModel(id="deepseek-v4-flash", type="chat")])
 
         with (
             patch(

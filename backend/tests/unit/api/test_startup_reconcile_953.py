@@ -119,6 +119,5 @@ def test_lifespan_wires_reconcile() -> None:
         "RED-3a: lifespan 启动钩子必须在 seed 后调用 reconcile_stale_running_plans(异步工厂)"
     )
     assert source.index("reconcile_stale_running_plans") < source.index("yield"), (
-        "RED-3a: reconcile 必须在 lifespan yield 之前执行（启动段），"
-        "防函数存在但从不调用"
+        "RED-3a: reconcile 必须在 lifespan yield 之前执行（启动段），防函数存在但从不调用"
     )

@@ -97,9 +97,7 @@ class TestMapCoverageGaps:
         assert result.exit_code == 0
         assert "✅ 地图创建成功" in result.stdout
 
-    def test_get_human_output_with_image_download(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_get_human_output_with_image_download(self, cli_runner, fake_http_client, tmp_path):
         """get 非 --json → 人类输出；--image-output 下载图片."""
         fake_http_client.get = AsyncMock(
             return_value={
@@ -310,9 +308,7 @@ class TestMapCoverageGaps:
 
     def test_invalid_uuid_not_found(self, cli_runner, fake_http_client):
         """_parse_uuid 非法 → NOT_FOUND 信封（L54-56）."""
-        result = cli_runner.invoke(
-            app, ["get", "not-a-uuid"], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["get", "not-a-uuid"], obj=CliContext(json_output=True))
         assert result.exit_code == 1
         err = json.loads(result.stdout)["error"]
         assert err["code"] == "NOT_FOUND"

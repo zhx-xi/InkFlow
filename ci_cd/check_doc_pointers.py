@@ -52,9 +52,7 @@ def _is_pointer(token: str) -> bool:
         return False
     if token.startswith(EXCLUDE_PREFIXES):
         return False
-    return token.startswith(TOP_LEVEL_DIRS) or (
-        "/" not in token and token.endswith(".md")
-    )
+    return token.startswith(TOP_LEVEL_DIRS) or ("/" not in token and token.endswith(".md"))
 
 
 def _find_pointers(text: str) -> list[tuple[int, str]]:
@@ -79,16 +77,12 @@ def _scan(repo_root: str, doc: str) -> tuple[int, list[tuple[str, int, str]]]:
     doc_path = root / doc
     pointers = _find_pointers(doc_path.read_text(encoding="utf-8"))
     broken = [
-        (str(doc_path), lineno, token)
-        for lineno, token in pointers
-        if not _resolves(root, token)
+        (str(doc_path), lineno, token) for lineno, token in pointers if not _resolves(root, token)
     ]
     return len(pointers), broken
 
 
-def check_doc_pointers(
-    repo_root: str, doc: str = "AGENTS.md"
-) -> list[tuple[str, int, str]]:
+def check_doc_pointers(repo_root: str, doc: str = "AGENTS.md") -> list[tuple[str, int, str]]:
     """返回失效指针列表：(文件, 行号, token)。空列表 = 全部有效。"""
     return _scan(repo_root, doc)[1]
 

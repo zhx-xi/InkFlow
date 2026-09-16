@@ -115,7 +115,7 @@ class TestProviderBuiltinKeyMigration:
 
             value = (
                 await conn.execute(
-                    text("SELECT builtin_key FROM provider_configs " "WHERE name = 'openai'")
+                    text("SELECT builtin_key FROM provider_configs WHERE name = 'openai'")
                 )
             ).scalar_one()
             assert value is None

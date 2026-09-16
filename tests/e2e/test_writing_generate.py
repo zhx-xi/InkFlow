@@ -34,16 +34,12 @@ async def test_writing_generate_real(db_session, llm_env):
 
     # 建章节
     chapter_svc = ChapterService(db_session)
-    chapter = await chapter_svc.create_chapter(
-        project_id=project_id, title="e2e 测试章节"
-    )
+    chapter = await chapter_svc.create_chapter(project_id=project_id, title="e2e 测试章节")
     chapter_id = chapter.id
 
     # WritingService 真实装配（照抄 deps.py get_writing_service，api_key 注入）
     service = WritingService(
-        llm_client=LangChainLLMClient(
-            api_key=llm_env["api_key"], default_model=llm_env["model"]
-        ),
+        llm_client=LangChainLLMClient(api_key=llm_env["api_key"], default_model=llm_env["model"]),
         prompt_manager=LangChainPromptManager(),
         project_repo=SQLiteProjectRepository(db_session),
         chapter_repo=SQLiteChapterRepository(db_session),

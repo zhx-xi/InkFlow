@@ -140,9 +140,7 @@ def fake_http_client():
             "inkflow.cli.commands.export.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.export.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.export.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -197,15 +195,12 @@ class TestExportSuccess:
         expected = out_dir / f"{PROJECT_NAME}-txt.txt"
         assert expected.read_text(encoding="utf-8") == TXT
         # 名称解析调用（GET /projects?search=）
-        fake_http_client.get.assert_awaited_once_with(
-            "/projects", params={"search": PROJECT_NAME}
-        )
+        fake_http_client.get.assert_awaited_once_with("/projects", params={"search": PROJECT_NAME})
         # 下载路径
         assert fake_http_client.get_raw.await_args.args[0] == f"/projects/{PID}/export"
         # 人类模式成功文案（码点精确，见设计假设 7）
         assert (
-            f"✅ 导出成功: {PROJECT_NAME} → {expected} ({EXPECTED_BYTES:,} bytes)"
-            in result.output
+            f"✅ 导出成功: {PROJECT_NAME} → {expected} ({EXPECTED_BYTES:,} bytes)" in result.output
         )
 
     def test_export_json_envelope(self, cli_runner, fake_http_client, tmp_path):
@@ -235,9 +230,7 @@ class TestExportSuccess:
             },
         }
 
-    def test_export_numeric_id_skips_search(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_export_numeric_id_skips_search(self, cli_runner, fake_http_client, tmp_path):
         """数字 project 参数 → 直接当 ID（F1 约定）：不搜索，GET /projects/42 取名称。"""
         out_dir = tmp_path / "out"
         out_dir.mkdir()
@@ -273,13 +266,9 @@ class TestExportIncludeSettings:
 
         assert result.exit_code == 0
         assert fake_http_client.get_raw.await_args.args[0] == f"/projects/{PID}/export"
-        assert (
-            _raw_call_params(fake_http_client.get_raw).get("include_settings") == "true"
-        )
+        assert _raw_call_params(fake_http_client.get_raw).get("include_settings") == "true"
 
-    def test_export_include_settings_default_false(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_export_include_settings_default_false(self, cli_runner, fake_http_client, tmp_path):
         """缺省（不带 flag）→ 下载 query **完全不含** include_settings 键。
 
         #247 契约收紧（rc1 验证实测）：旧实现 `params={"include_settings":
@@ -303,9 +292,7 @@ class TestExportIncludeSettings:
 
 
 class TestExportOutputPaths:
-    def test_export_output_file_writes_directly(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_export_output_file_writes_directly(self, cli_runner, fake_http_client, tmp_path):
         """--output 为文件路径 → 直接写入该文件（建议文件名仅入信封，spec §4）。"""
         out_dir = tmp_path / "out"
         out_dir.mkdir()
@@ -326,9 +313,7 @@ class TestExportOutputPaths:
         assert data["data"]["filename"] == f"{PROJECT_NAME}-txt.txt"
         assert data["data"]["path"] == str(target)
 
-    def test_export_default_output_cwd(
-        self, cli_runner, fake_http_client, tmp_path, monkeypatch
-    ):
+    def test_export_default_output_cwd(self, cli_runner, fake_http_client, tmp_path, monkeypatch):
         """缺省 --output → 当前工作目录 + 建议文件名（spec §4 默认语义）。"""
         monkeypatch.chdir(tmp_path)
         fake_http_client.get.return_value = _project_list()

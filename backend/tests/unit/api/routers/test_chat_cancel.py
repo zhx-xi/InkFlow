@@ -20,6 +20,7 @@ RUNNING 落到 TERMINATED/COMPLETED/FAILED 终态，绝不遗留 running（M3 �
    - 未注册/已完成/不存在 → 404。
    - abort 后同 conversation 的新 run 独立注册、可正常 abort（前 run 的取消不污染）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -114,9 +115,7 @@ class TestAgentStreamDisconnectTerminal:
     """断连/取消 → run 必达终态（不遗留 running）；CancelledError 不被 except Exception 吞掉。"""
 
     @pytest.mark.asyncio
-    async def test_cancelled_error_leaves_run_terminated(
-        self, override_agent_stream
-    ) -> None:
+    async def test_cancelled_error_leaves_run_terminated(self, override_agent_stream) -> None:
         """await LLM 期间被取消（CancelledError）→ 落 TERMINATED 终态，绝不遗留 running。
 
         RED：当前路由 `except Exception` 不捕获 CancelledError → _end_run_terminated
@@ -137,9 +136,10 @@ class TestAgentStreamDisconnectTerminal:
         # 驱动端点：CancelledError 上抛到 ASGI 层（Starlette 可能中断/500），
         # 终态断言是核心契约，客户端侧异常容错。
         try:
-            async with _make_client() as client, aconnect_sse(
-                client, "POST", "/api/v1/chat/agent/stream", json=_payload()
-            ) as sse:
+            async with (
+                _make_client() as client,
+                aconnect_sse(client, "POST", "/api/v1/chat/agent/stream", json=_payload()) as sse,
+            ):
                 async for _ in sse.aiter_sse():
                     pass
         except Exception:
@@ -166,9 +166,10 @@ class TestAgentStreamDisconnectTerminal:
         svc.stream_events = _gen
         override_agent_stream(svc, repo)
 
-        async with _make_client() as client, aconnect_sse(
-            client, "POST", "/api/v1/chat/agent/stream", json=_payload()
-        ) as sse:
+        async with (
+            _make_client() as client,
+            aconnect_sse(client, "POST", "/api/v1/chat/agent/stream", json=_payload()) as sse,
+        ):
             frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
 
         assert repo.save.called

@@ -47,9 +47,7 @@ def _kill_kernel_tree(pid: int) -> None:
     if pid <= 0:
         return
     with contextlib.suppress(OSError, subprocess.SubprocessError):
-        subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15
-        )
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15)
 
 
 def _skip_ci() -> bool:
@@ -191,9 +189,7 @@ class TestMcpNewSurfaceStdio933:
 
     @pytest.mark.asyncio
     async def test_manage_config_provider_list(self, stdio_env):
-        envelope, is_error = await _call(
-            stdio_env, "manage_config", {"action": "provider_list"}
-        )
+        envelope, is_error = await _call(stdio_env, "manage_config", {"action": "provider_list"})
         assert is_error is False
         assert envelope["ok"] is True
         # GET /provider-configs 返回 {items, total}
@@ -269,9 +265,7 @@ class TestMcpNewSurfaceStdio933:
     @pytest.mark.asyncio
     async def test_write_confirm_draft_missing_id_invalid_args(self, stdio_env):
         """缺 draft_id → 本地 INVALID_ARGS（零 HTTP 往返，spec §7 #16）。"""
-        envelope, is_error = await _call(
-            stdio_env, "write", {"action": "confirm_draft"}
-        )
+        envelope, is_error = await _call(stdio_env, "write", {"action": "confirm_draft"})
         assert is_error is True
         assert envelope["ok"] is False
         assert envelope["error"]["code"] == "INVALID_ARGS"

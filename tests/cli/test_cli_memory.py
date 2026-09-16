@@ -108,9 +108,7 @@ def _stats_payload(**overrides) -> dict:
 
 def _invoke(*args: str):
     """memory 命令调用（obj=CliContext 必带；--json 与 obj.json_output 同步）。"""
-    return runner.invoke(
-        app, list(args), obj=CliContext(json_output=("--json" in args))
-    )
+    return runner.invoke(app, list(args), obj=CliContext(json_output=("--json" in args)))
 
 
 @pytest.fixture
@@ -179,9 +177,7 @@ class TestMemoryList:
         fake_http_client.get.return_value = {"items": [], "total": 0}
         result = _invoke("list", "--project-id", PROJECT_ID, "--category", "addressing")
         assert result.exit_code == 0
-        assert (
-            fake_http_client.get.await_args.kwargs["params"]["category"] == "addressing"
-        )
+        assert fake_http_client.get.await_args.kwargs["params"]["category"] == "addressing"
 
 
 class TestMemoryRemove:
@@ -353,9 +349,7 @@ class TestMemoryUserList:
         fake_http_client.get.return_value = {"items": [], "total": 0}
         result = _invoke("user-list", "--category", "style_word")
         assert result.exit_code == 0
-        assert (
-            fake_http_client.get.await_args.kwargs["params"]["category"] == "style_word"
-        )
+        assert fake_http_client.get.await_args.kwargs["params"]["category"] == "style_word"
 
 
 class TestMemoryUserRemove:
@@ -429,6 +423,8 @@ class TestMemoryUserNoneData:
         result = _invoke("user-remove", PREFERENCE_ID)
         assert result.exit_code == 0
         assert result.stdout == ""
+
+
 # ═══ F45 M2 追加段（2026-08-18，spec §4.1 summarize 子命令）═══
 
 
@@ -520,7 +516,6 @@ class TestMemorySummarize:
         assert "❌ LLM 总结失败" in result.stderr
 
 
-
 class TestMemorySummarizeRemove:
     """inkflow memory summarize --remove — 删除语义总结（#619 F49 ③）.
 
@@ -553,8 +548,6 @@ class TestMemorySummarizeRemove:
         """--remove --json: stdout 信封 == API 响应原样。"""
         payload = {"project_id": PROJECT_ID, "deleted": True}
         fake_http_client.delete.return_value = payload
-        result = _invoke(
-            "summarize", "--project-id", PROJECT_ID, "--remove", "--json"
-        )
+        result = _invoke("summarize", "--project-id", PROJECT_ID, "--remove", "--json")
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {"ok": True, "data": payload}

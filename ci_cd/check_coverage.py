@@ -37,9 +37,7 @@ def main() -> int:
         print(f"FAIL: line coverage {line_rate:.2f}% < {line_min}%", file=sys.stderr)
         ok = False
     if branch_rate < branch_min:
-        print(
-            f"FAIL: branch coverage {branch_rate:.2f}% < {branch_min}%", file=sys.stderr
-        )
+        print(f"FAIL: branch coverage {branch_rate:.2f}% < {branch_min}%", file=sys.stderr)
         ok = False
     return 0 if ok else 1
 

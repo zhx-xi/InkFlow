@@ -66,9 +66,7 @@ def fake_http_client():
             "inkflow.cli.commands.timeline.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.timeline.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.timeline.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -261,9 +259,7 @@ class TestTimelineErrorMapping:
         """API 422（参数校验）→ VALIDATION_ERROR 信封."""
         from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
 
-        fake_http_client.patch.side_effect = HttpApiError(
-            422, "Input should be a valid string"
-        )
+        fake_http_client.patch.side_effect = HttpApiError(422, "Input should be a valid string")
         result = cli_runner.invoke(
             app,
             ["update", "--id", str(uuid.uuid4()), "--title", "新名"],
@@ -296,9 +292,7 @@ class TestTimelineHumanOutput:
 
     def test_create_time_unknown_human(self, cli_runner, fake_http_client):
         """create 人类模式无时间信息 → 时间未知."""
-        fake_http_client.post.return_value = _make_event(
-            time_value=None, time_display=""
-        )
+        fake_http_client.post.return_value = _make_event(time_value=None, time_display="")
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--title", "林尘觉醒金手指"],

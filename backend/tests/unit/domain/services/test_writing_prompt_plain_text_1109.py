@@ -42,9 +42,7 @@ FULLWIDTH = "\u3000"
 # （「不要 markdown 标题行」），禁词会误伤正确实现。
 FORBIDDEN_MARKERS = ("Markdown 格式", "章节标题使用", "```", "# 标记")
 
-WRITER_AGENT_YAML_DIR = (
-    Path(__file__).resolve().parents[4] / "src" / "inkflow" / "i18n" / "prompts"
-)
+WRITER_AGENT_YAML_DIR = Path(__file__).resolve().parents[4] / "src" / "inkflow" / "i18n" / "prompts"
 
 # 两个 locale 都必须收敛：#1109 首轮只改了 zh，en 镜像漏改（同源同病）
 WRITER_AGENT_LOCALES = ("zh", "en")
@@ -193,9 +191,9 @@ class TestContinuePromptInheritsPlainText:
             "stream_continue",
         )
         for marker in FORBIDDEN_MARKERS:
-            assert (
-                marker not in prompt
-            ), f"continue prompt 仍指示 markdown（命中 {marker!r}）\n  prompt: {prompt!r}"
+            assert marker not in prompt, (
+                f"continue prompt 仍指示 markdown（命中 {marker!r}）\n  prompt: {prompt!r}"
+            )
 
 
 class TestWriterAgentPromptPlainText:
@@ -210,11 +208,7 @@ class TestWriterAgentPromptPlainText:
         for marker in LOCALE_FORBIDDEN[locale]:
             assert marker not in text, (
                 f"[{locale}] writer_agent.yaml 仍指示 markdown 标题行（命中 {marker!r}）:\n"
-                + "\n".join(
-                    f"  {ln}"
-                    for ln in text.splitlines()
-                    if marker.split()[0] in ln
-                )
+                + "\n".join(f"  {ln}" for ln in text.splitlines() if marker.split()[0] in ln)
             )
         assert "```" not in text
         if locale == "zh":

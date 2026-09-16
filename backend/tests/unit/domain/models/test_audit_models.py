@@ -161,7 +161,7 @@ class TestAuditFindingModel:
         assert finding.dimension is AuditDimension.TIMELINE
         assert finding.severity is AuditSeverity.ERROR
         assert finding.message == (
-            "未声明的倒叙: 叙事顺序中「林晚入宫」(时间 5.0) " "之后是「外门往事」(时间 3.0)"
+            "未声明的倒叙: 叙事顺序中「林晚入宫」(时间 5.0) 之后是「外门往事」(时间 3.0)"
         )
         assert finding.entity_type == "event"
         assert finding.entity_id == EID

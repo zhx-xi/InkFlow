@@ -92,9 +92,7 @@ def _entry_miss() -> SimpleNamespace:
 def _patch_registry(monkeypatch: pytest.MonkeyPatch, entry: object | None) -> mock.MagicMock:
     """patch provider_config._await_registry_entry（构造点/直调共用注册表 seam）。"""
     fake = mock.MagicMock(return_value=entry)
-    monkeypatch.setattr(
-        "inkflow.infrastructure.llm.provider_config._await_registry_entry", fake
-    )
+    monkeypatch.setattr("inkflow.infrastructure.llm.provider_config._await_registry_entry", fake)
     return fake
 
 
@@ -116,9 +114,7 @@ class TestResolveReasoningManual:
 
         assert resolve_reasoning_manual(CUSTOM_MODEL) is False
 
-    def test_entry_without_override_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_entry_without_override_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """条目存在但 supports_reasoning=None（自动探测）→ None，绝不泄漏 False。"""
         entry = _registry_entry([SimpleNamespace(id="custom-q", supports_reasoning=None)])
         _patch_registry(monkeypatch, entry)
@@ -148,9 +144,7 @@ class TestResolveReasoningManual:
         assert resolve_reasoning_manual("custom-q") is None
         assert fake.call_count == 0, "裸名不得触达注册表查询"
 
-    def test_registry_exception_soft_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_registry_exception_soft_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """注册表查询异常（DB 未初始化/无表）→ None（镜像 get_provider_config 回退）。"""
 
         def _boom(_provider: str) -> SimpleNamespace:
@@ -243,13 +237,13 @@ class TestHarnessManualOverride:
 
         monkeypatch.setattr(harness, "resolve_reasoning_manual", lambda _m: True)
         chat_cls = self._raw_build(
-            harness, model=CUSTOM_MODEL, effort="high",
+            harness,
+            model=CUSTOM_MODEL,
+            effort="high",
         )
         kwargs = chat_cls.call_args[1]
         mk = kwargs.get("model_kwargs") or {}
-        assert mk.get("reasoning_effort") == "high", (
-            f"manual=True 必须注入，实得 kwargs={kwargs}"
-        )
+        assert mk.get("reasoning_effort") == "high", f"manual=True 必须注入，实得 kwargs={kwargs}"
 
     def test_manual_true_carries_allowed_openai_params_bypass(
         self, monkeypatch: pytest.MonkeyPatch
@@ -452,9 +446,7 @@ def loguru_records():
     from loguru import logger
 
     records: list[dict] = []
-    sink_id = logger.add(
-        lambda m: records.append(m.record), level="WARNING", format="{message}"
-    )
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING", format="{message}")
     yield records
     logger.remove(sink_id)
 
@@ -506,9 +498,7 @@ class TestManualOverrideWireEvidence:
         assert not leaked, f"manual=False 不得发送思考参数，实得 {leaked}"
         warns = [r for r in loguru_records if r["level"].name == "WARNING"]
         assert warns
-        assert (warns[-1]["extra"].get("params") or {}).get("reason") == (
-            "capability_unsupported"
-        )
+        assert (warns[-1]["extra"].get("params") or {}).get("reason") == ("capability_unsupported")
 
     async def test_manual_none_litellm_known_model_wire_ok(
         self, echo_base: str, monkeypatch
@@ -615,7 +605,7 @@ class TestContentTextIntentionalSilence:
 
         assert content_text(weird) == ""
         assert not [r for r in loguru_records if r["level"].name == "WARNING"], (
-            "有意静默：非预期形状归 "" 不发任何 WARNING（拍板 b）"
+            "有意静默：非预期形状归  不发任何 WARNING（拍板 b）"
         )
 
     def test_source_annotates_intentional_silence(self) -> None:

@@ -615,8 +615,11 @@ class TestBuildDeepAgentReasoningInjection:
 
         chat_cls, _ = harness_patches
         build_deep_agent(
-            model="zhipu/glm-4.5", api_key="sk-test", base_url="https://x/v1",
-            tools=[], system_prompt="p",
+            model="zhipu/glm-4.5",
+            api_key="sk-test",
+            base_url="https://x/v1",
+            tools=[],
+            system_prompt="p",
         )
         assert "reasoning_effort" not in chat_cls.call_args[1]
         assert "model_kwargs" not in chat_cls.call_args[1]

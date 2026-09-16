@@ -104,9 +104,7 @@ def fake_env(monkeypatch):
     返回**同一个**预建实例（lambda 闭包），断言 `fake_env.client.calls` 才能命中。
     """
     client = FakeClient(SimpleNamespace(port=1, token="t"))
-    fake_ensure = AsyncMock(
-        return_value=SimpleNamespace(port=1, token="t", pid=2, version="0.1.0")
-    )
+    fake_ensure = AsyncMock(return_value=SimpleNamespace(port=1, token="t", pid=2, version="0.1.0"))
     monkeypatch.setattr(kernel_mod, "ensure_kernel", fake_ensure)
     monkeypatch.setattr(http_mod, "InkFlowHTTPClient", lambda handle: client)
     return SimpleNamespace(client=client, fake_ensure=fake_ensure)
@@ -239,8 +237,7 @@ class TestTimeoutEnvelope:
         fake_env.client.post_error = HttpApiError(
             status_code=0,
             detail=(
-                "请求超时（300s）：服务端任务可能仍在进行，"
-                "请稍后用 list/get 查询结果，勿直接重试"
+                "请求超时（300s）：服务端任务可能仍在进行，请稍后用 list/get 查询结果，勿直接重试"
             ),
             code="TIMEOUT",
         )

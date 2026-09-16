@@ -26,9 +26,7 @@ def redact_secrets(prompt: str, known_keys: list[str] | None = None) -> str:
     result = prompt
     # unescape 先于 known_keys：#632 要求 known_keys 整串替换先于长串正则，但若 stored key
     # 在 prompt 里以 \uXXXX 转义形态出现，必须先归一到字面字符才能被 known_keys/正则命中。
-    result = _UNICODE_ESCAPE_PATTERN.sub(
-        lambda m: chr(int(m.group(0)[2:], 16)), result
-    )
+    result = _UNICODE_ESCAPE_PATTERN.sub(lambda m: chr(int(m.group(0)[2:], 16)), result)
     for key in known_keys or []:
         result = result.replace(key, "****")
     result = _SK_PATTERN.sub("sk-****", result)

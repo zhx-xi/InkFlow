@@ -174,7 +174,7 @@ def test_known_key_escaped_form_is_redacted():
     转义形态的 key 无法被 known_keys 命中（长串正则阈值外也漏）→ 泄漏。
     修复方向：unescape 先于 known_keys（#632 的「known_keys 先于长串正则」仍保持）。
     """
-    key = ("n" * 18)  # 18 位 <24（长串正则阈值外），非 sk-/Bearer 形态，仅 known_keys 能遮蔽
+    key = "n" * 18  # 18 位 <24（长串正则阈值外），非 sk-/Bearer 形态，仅 known_keys 能遮蔽
     escaped = "".join("\\u" + format(ord(c), "04x") for c in key)  # 全转义形态
     prompt = "token=" + escaped
     result = redact_secrets(prompt, [key])

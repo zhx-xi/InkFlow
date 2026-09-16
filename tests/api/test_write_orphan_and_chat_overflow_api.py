@@ -82,9 +82,7 @@ async def _db_volume_id(db_session, chapter_id: str) -> int:
     """DB 复读章节当前 volume_id（写侧契约的权威判据）。"""
     return (
         await db_session.execute(
-            select(ChapterORM.volume_id).where(
-                ChapterORM.id == uuid.UUID(chapter_id).int
-            )
+            select(ChapterORM.volume_id).where(ChapterORM.id == uuid.UUID(chapter_id).int)
         )
     ).scalar_one()
 
@@ -96,22 +94,16 @@ async def _db_volume_id(db_session, chapter_id: str) -> int:
 class TestSessionsProjectOverflowNoError:
     """GET /sessions?project_id —— 过滤值超范围 = 不命中 → 200 + 空。"""
 
-    async def test_overflow_project_filter_returns_empty(
-        self, client, db_session, override_get_db
-    ):
+    async def test_overflow_project_filter_returns_empty(self, client, db_session, override_get_db):
         resp = await client.get("/api/v1/sessions", params={"project_id": str(_ovf())})
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
     async def test_in_range_missing_project_filter_returns_empty(
         self, client, db_session, override_get_db
     ):
-        resp = await client.get(
-            "/api/v1/sessions", params={"project_id": str(MISSING_SMALL)}
-        )
+        resp = await client.get("/api/v1/sessions", params={"project_id": str(MISSING_SMALL)})
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
@@ -119,9 +111,7 @@ class TestSessionsProjectOverflowNoError:
         self, client, db_session, override_get_db, api_project
     ):
         """反例：真实项目（无会话）→ 200，过滤功能未被守卫误吞。"""
-        resp = await client.get(
-            "/api/v1/sessions", params={"project_id": api_project["id"]}
-        )
+        resp = await client.get("/api/v1/sessions", params={"project_id": api_project["id"]})
         assert resp.status_code == 200
 
 
@@ -134,23 +124,13 @@ class TestChatMessagesConversationOverflow:
     repo 层守卫短路（线程不存在 → 无消息可读 → 200 空）。
     """
 
-    async def test_overflow_conversation_200_empty(
-        self, client, db_session, override_get_db
-    ):
-        resp = await client.get(
-            "/api/v1/chat/messages", params={"conversation_id": str(_ovf())}
-        )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
-        assert (
-            resp.status_code == 200
-        ), f"应 200 + 空（#1165 定档），实际 {resp.status_code}"
+    async def test_overflow_conversation_200_empty(self, client, db_session, override_get_db):
+        resp = await client.get("/api/v1/chat/messages", params={"conversation_id": str(_ovf())})
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
+        assert resp.status_code == 200, f"应 200 + 空（#1165 定档），实际 {resp.status_code}"
         assert resp.json()["items"] == []
 
-    async def test_missing_small_conversation_200_empty(
-        self, client, db_session, override_get_db
-    ):
+    async def test_missing_small_conversation_200_empty(self, client, db_session, override_get_db):
         resp = await client.get(
             "/api/v1/chat/messages", params={"conversation_id": str(MISSING_SMALL)}
         )
@@ -166,9 +146,7 @@ class TestChatMessagesConversationOverflow:
         )
         assert conv.status_code == 201, conv.text[:200]
         cid = conv.json()["conversation_id"]
-        resp = await client.get(
-            "/api/v1/chat/messages", params={"conversation_id": cid}
-        )
+        resp = await client.get("/api/v1/chat/messages", params={"conversation_id": cid})
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
@@ -189,21 +167,15 @@ class TestAgentStreamAndExtractOverflowNoError:
                 "messages": [{"role": "user", "content": "hi"}],
             },
         )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
 
-    async def test_knowledge_extract_overflow_not_500(
-        self, client, db_session, override_get_db
-    ):
+    async def test_knowledge_extract_overflow_not_500(self, client, db_session, override_get_db):
         """body.project_id 超范围 → 不得 500（404 或 200 空结果均可，扫描链 repo 守卫后必不炸）。"""
         resp = await client.post(
             "/api/v1/knowledge/extract",
             json={"project_id": str(_ovf()), "text": "x" * 10, "source": "manual"},
         )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
 
 
 # ── 病①+③ 写侧：move / PATCH volume_id ──────────────────────────────
@@ -224,13 +196,11 @@ class TestMoveChapterTargetVolume:
         resp = await client.post(
             f"/api/v1/chapters/{ch_id}/move", params={"target_volume_id": str(_ovf())}
         )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
         assert resp.status_code == 422, f"目标卷不存在应 422，实际 {resp.status_code}"
-        assert (
-            await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int
-        ), "拒绝后 volume_id 必须保持原值"
+        assert await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int, (
+            "拒绝后 volume_id 必须保持原值"
+        )
 
     async def test_missing_small_target_422_no_blind_write(
         self, client, db_session, override_get_db, api_project
@@ -242,16 +212,12 @@ class TestMoveChapterTargetVolume:
             f"/api/v1/chapters/{ch_id}/move",
             params={"target_volume_id": str(MISSING_SMALL)},
         )
-        assert (
-            resp.status_code == 422
-        ), f"应 422，实际 {resp.status_code}: {resp.text[:200]}"
-        assert (
-            await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int
-        ), "盲落孤儿回归！DB volume_id 被写成不存在的卷"
+        assert resp.status_code == 422, f"应 422，实际 {resp.status_code}: {resp.text[:200]}"
+        assert await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int, (
+            "盲落孤儿回归！DB volume_id 被写成不存在的卷"
+        )
 
-    async def test_real_target_move_works(
-        self, client, db_session, override_get_db, api_project
-    ):
+    async def test_real_target_move_works(self, client, db_session, override_get_db, api_project):
         """反例：真实目标卷 → 200 且 DB **真的改了**（校验不得把正常 move 挡死）。"""
         pid = api_project["id"]
         _, ch_id = await _seed_vol_and_ch(client, pid, "mv-ok")
@@ -286,12 +252,8 @@ class TestPatchChapterVolume:
     ):
         pid = api_project["id"]
         vol_id, ch_id = await _seed_vol_and_ch(client, pid, "pt-a")
-        resp = await client.patch(
-            f"/api/v1/chapters/{ch_id}", json={"volume_id": str(_ovf())}
-        )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
+        resp = await client.patch(f"/api/v1/chapters/{ch_id}", json={"volume_id": str(_ovf())})
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
         assert resp.status_code == 422, f"应 422，实际 {resp.status_code}"
         assert await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int
 
@@ -304,12 +266,8 @@ class TestPatchChapterVolume:
         resp = await client.patch(
             f"/api/v1/chapters/{ch_id}", json={"volume_id": str(MISSING_SMALL)}
         )
-        assert (
-            resp.status_code == 422
-        ), f"应 422，实际 {resp.status_code}: {resp.text[:200]}"
-        assert (
-            await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int
-        ), "盲落孤儿回归！"
+        assert resp.status_code == 422, f"应 422，实际 {resp.status_code}: {resp.text[:200]}"
+        assert await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int, "盲落孤儿回归！"
 
     async def test_real_volume_reassign_works(
         self, client, db_session, override_get_db, api_project
@@ -322,9 +280,7 @@ class TestPatchChapterVolume:
             json={"title": "pt-dst", "order_index": 2},
         )
         dst_id = dst.json()["id"]
-        resp = await client.patch(
-            f"/api/v1/chapters/{ch_id}", json={"volume_id": dst_id}
-        )
+        resp = await client.patch(f"/api/v1/chapters/{ch_id}", json={"volume_id": dst_id})
         assert resp.status_code == 200, resp.text[:200]
         assert await _db_volume_id(db_session, ch_id) == uuid.UUID(dst_id).int
 
@@ -334,9 +290,7 @@ class TestPatchChapterVolume:
         """反例：只改 title 不带 volume_id → 200 且 volume 不变（exclude_unset 语义）。"""
         pid = api_project["id"]
         vol_id, ch_id = await _seed_vol_and_ch(client, pid, "pt-t")
-        resp = await client.patch(
-            f"/api/v1/chapters/{ch_id}", json={"title": "renamed"}
-        )
+        resp = await client.patch(f"/api/v1/chapters/{ch_id}", json={"title": "renamed"})
         assert resp.status_code == 200, resp.text[:200]
         assert await _db_volume_id(db_session, ch_id) == uuid.UUID(vol_id).int
 
@@ -348,15 +302,9 @@ class TestPatchChapterVolume:
 class TestCreateConversationProjectValidation:
     """POST /chat/conversations —— project 存在性预检（#1138 孤儿行口径：404 + 零落库）。"""
 
-    async def test_overflow_project_404_not_500(
-        self, client, db_session, override_get_db
-    ):
-        resp = await client.post(
-            "/api/v1/chat/conversations", json={"project_id": str(_ovf())}
-        )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500: {resp.status_code} {resp.text[:200]}"
+    async def test_overflow_project_404_not_500(self, client, db_session, override_get_db):
+        resp = await client.post("/api/v1/chat/conversations", json={"project_id": str(_ovf())})
+        assert resp.status_code != 500, f"不得 500: {resp.status_code} {resp.text[:200]}"
         assert resp.status_code == 404, f"项目不存在应 404，实际 {resp.status_code}"
         rows = (
             await db_session.execute(select(func.count()).select_from(ConversationORM))
@@ -370,17 +318,13 @@ class TestCreateConversationProjectValidation:
         resp = await client.post(
             "/api/v1/chat/conversations", json={"project_id": str(MISSING_SMALL)}
         )
-        assert (
-            resp.status_code == 404
-        ), f"应 404，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, f"应 404，实际 {resp.status_code}: {resp.text[:200]}"
         rows = (
             await db_session.execute(select(func.count()).select_from(ConversationORM))
         ).scalar_one()
         assert rows == 0, "孤儿 conversation 行落库回归！"
 
-    async def test_live_project_201(
-        self, client, db_session, override_get_db, api_project
-    ):
+    async def test_live_project_201(self, client, db_session, override_get_db, api_project):
         """反例：真实项目 → 201 且返回体带 conversation_id。"""
         resp = await client.post(
             "/api/v1/chat/conversations", json={"project_id": api_project["id"]}

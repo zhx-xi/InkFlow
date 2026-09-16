@@ -49,9 +49,9 @@ def _assert_placeholders_covered_by_input_from(stages: list[PipelineStage]) -> N
     """F4 校验：每 stage 的 {xxx_output} 占位符 ⊆ input_from。"""
     for stage in stages:
         placeholders = _role_output_placeholders(stage.agent.system_prompt)
-        assert placeholders <= set(
-            stage.input_from
-        ), f"stage {stage.id} prompt 引用 {placeholders} 但 input_from={stage.input_from}"
+        assert placeholders <= set(stage.input_from), (
+            f"stage {stage.id} prompt 引用 {placeholders} 但 input_from={stage.input_from}"
+        )
 
 
 class TestWriteAutoTemplate:

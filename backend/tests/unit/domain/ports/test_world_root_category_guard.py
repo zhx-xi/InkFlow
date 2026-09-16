@@ -9,6 +9,7 @@
 
 依据: issue #834 + specs/f10-world-settings/spec.md §5.1/§13。
 """
+
 from __future__ import annotations
 
 import json

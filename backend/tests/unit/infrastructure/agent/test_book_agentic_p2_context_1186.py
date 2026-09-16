@@ -224,9 +224,9 @@ class TestFallbackDraftVolume:
 
         assert drafts.created, "兜底未产生 draft_service.create 调用"
         for call in drafts.created:
-            assert (
-                call.get("volume_id") == VOLUME_ID
-            ), f"兜底 draft 未透传 volume_id（应为 {VOLUME_ID}）：{call}"
+            assert call.get("volume_id") == VOLUME_ID, (
+                f"兜底 draft 未透传 volume_id（应为 {VOLUME_ID}）：{call}"
+            )
 
     async def test_no_volume_lookup_leaves_volume_none(self) -> None:
         """P2-d 反例守护：未装配 volume_lookup → volume_id=None（既有装配不受影响）。"""
@@ -284,7 +284,7 @@ class TestWriterUserMessageWordTarget:
             m["content"] for msgs in factory.invoked_messages for m in msgs if m["role"] == "user"
         ]
         assert user_messages, "writer 消息缺 user 段"
-        assert any(
-            str(TARGET_WORDS) in content for content in user_messages
-        ), f"book 轨 user 消息缺目标字数 {TARGET_WORDS}：{user_messages}"
+        assert any(str(TARGET_WORDS) in content for content in user_messages), (
+            f"book 轨 user 消息缺目标字数 {TARGET_WORDS}：{user_messages}"
+        )
         assert drafts.created, "draft_service.create 未执行（写入路径被异常短路）"

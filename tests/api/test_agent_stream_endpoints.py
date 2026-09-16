@@ -66,7 +66,9 @@ def _stream_stub(*events):
 
 def _client() -> AsyncClient:
     return AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test", timeout=httpx.Timeout(30.0)
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        timeout=httpx.Timeout(30.0),
     )
 
 
@@ -96,7 +98,11 @@ class TestEncodeFramePipeline:
 
     def test_done_frame_with_metadata(self):
         ev = PipelineStreamEvent(
-            type="done", done=True, final_output="正文", intent="content", execution_id="e1"
+            type="done",
+            done=True,
+            final_output="正文",
+            intent="content",
+            execution_id="e1",
         )
         payload = json.loads(_encode_frame_pipeline(ev)[6:])
         assert payload["type"] == "done"
@@ -135,19 +141,31 @@ class TestPipelinesStreamEndpoint:
         """200 + delta/done(final_output, intent=content) 帧。"""
         svc = _make_svc(
             SimpleNamespace(
-                type="delta", delta="序章", done=False, final_output="", intent=None,
-                error="", execution_id="",
+                type="delta",
+                delta="序章",
+                done=False,
+                final_output="",
+                intent=None,
+                error="",
+                execution_id="",
             ),
             SimpleNamespace(
-                type="done", delta="", done=True, final_output="序章正文", intent="content",
-                error="", execution_id="e1",
+                type="done",
+                delta="",
+                done=True,
+                final_output="序章正文",
+                intent="content",
+                error="",
+                execution_id="e1",
             ),
         )
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with (
                 _client() as client,
                 aconnect_sse(
-                    client, "POST", "/api/v1/agent/pipelines/stream",
+                    client,
+                    "POST",
+                    "/api/v1/agent/pipelines/stream",
                     json=_make_request(pipeline="builtin:write_continue"),
                 ) as sse,
             ):
@@ -172,7 +190,10 @@ class TestPipelinesStreamEndpoint:
             async with (
                 _client() as client,
                 aconnect_sse(
-                    client, "POST", "/api/v1/agent/pipelines/stream", json=_make_request()
+                    client,
+                    "POST",
+                    "/api/v1/agent/pipelines/stream",
+                    json=_make_request(),
                 ) as sse,
             ):
                 assert sse.response.status_code == 200
@@ -185,8 +206,13 @@ class TestPipelinesStreamEndpoint:
         """request.is_disconnected() = True → _event_stream 首帧前 return（空 body）。"""
         svc = _make_svc(
             SimpleNamespace(
-                type="delta", delta="一", done=False, final_output="", intent=None,
-                error="", execution_id="",
+                type="delta",
+                delta="一",
+                done=False,
+                final_output="",
+                intent=None,
+                error="",
+                execution_id="",
             ),
         )
         request = MagicMock()
@@ -209,7 +235,8 @@ class TestPipelinesStreamEndpoint:
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
                 resp = await client.post(
-                    "/api/v1/agent/pipelines/stream", json=_make_request(pipeline="builtin:chat")
+                    "/api/v1/agent/pipelines/stream",
+                    json=_make_request(pipeline="builtin:chat"),
                 )
         assert resp.status_code == 422
         assert resp.json()["detail"] == "chat 管线需要 variables.prompt"
@@ -227,7 +254,8 @@ class TestExecutePipelineValidation:
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
                 resp = await client.post(
-                    "/api/v1/agent/pipelines/execute", json=_make_request(pipeline="builtin:chat")
+                    "/api/v1/agent/pipelines/execute",
+                    json=_make_request(pipeline="builtin:chat"),
                 )
         assert resp.status_code == 422
         assert resp.json()["detail"] == "chat 管线需要 variables.prompt"
@@ -240,9 +268,7 @@ class TestExecutePipelineValidation:
         svc.execute = AsyncMock(side_effect=AgentServiceError("项目不存在"))
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
-                resp = await client.post(
-                    "/api/v1/agent/pipelines/execute", json=_make_request()
-                )
+                resp = await client.post("/api/v1/agent/pipelines/execute", json=_make_request())
         assert resp.status_code == 404
         assert resp.json()["detail"] == "项目不存在"
 
@@ -254,9 +280,7 @@ class TestExecutePipelineValidation:
         svc.execute = AsyncMock(side_effect=AgentServiceError("章节不存在"))
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
-                resp = await client.post(
-                    "/api/v1/agent/pipelines/execute", json=_make_request()
-                )
+                resp = await client.post("/api/v1/agent/pipelines/execute", json=_make_request())
         assert resp.status_code == 404
         assert resp.json()["detail"] == "章节不存在"
 
@@ -289,7 +313,8 @@ class TestRemainingEndpoints:
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
                 resp = await client.get(
-                    "/api/v1/agent/pipelines/executions", params={"project_id": PROJECT_ID}
+                    "/api/v1/agent/pipelines/executions",
+                    params={"project_id": PROJECT_ID},
                 )
         assert resp.status_code == 200
         assert resp.json() == {"items": [], "total": 0}
@@ -310,7 +335,11 @@ class TestRemainingEndpoints:
                             {
                                 "id": "s1",
                                 "name": "阶段1",
-                                "agent": {"id": "a1", "name": "A1", "system_prompt": "提示"},
+                                "agent": {
+                                    "id": "a1",
+                                    "name": "A1",
+                                    "system_prompt": "提示",
+                                },
                             }
                         ],
                     },
@@ -344,7 +373,8 @@ class TestConfirmExecution:
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
                 resp = await client.post(
-                    "/api/v1/agent/pipelines/executions/abc/confirm", json={"approved": True}
+                    "/api/v1/agent/pipelines/executions/abc/confirm",
+                    json={"approved": True},
                 )
         assert resp.status_code == 404
         assert resp.json()["detail"] == "执行记录不存在"
@@ -358,7 +388,8 @@ class TestConfirmExecution:
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with _client() as client:
                 resp = await client.post(
-                    "/api/v1/agent/pipelines/executions/abc/confirm", json={"approved": False}
+                    "/api/v1/agent/pipelines/executions/abc/confirm",
+                    json={"approved": False},
                 )
         assert resp.status_code == 422
         assert resp.json()["detail"] == "状态不符"
@@ -382,7 +413,9 @@ class TestSvcAssembly:
                 patch(
                     "inkflow.infrastructure.database.repositories.character_repo.SQLiteCharacterRepository"
                 ),
-                patch("inkflow.infrastructure.database.repositories.world_repo.SQLiteWorldRepository"),
+                patch(
+                    "inkflow.infrastructure.database.repositories.world_repo.SQLiteWorldRepository"
+                ),
                 patch(
                     "inkflow.infrastructure.database.repositories.outline_repo.SQLiteOutlineRepository"
                 ),

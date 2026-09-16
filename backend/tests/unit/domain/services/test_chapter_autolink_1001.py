@@ -78,9 +78,7 @@ class TestChapterAutolinkTrigger:
         assert saved is not None
         autolinker.assert_awaited_once_with(pid, ch.id, TITLE)
 
-    async def test_second_content_write_does_not_retrigger(
-        self, svc, autolinker, project
-    ) -> None:
+    async def test_second_content_write_does_not_retrigger(self, svc, autolinker, project) -> None:
         """【R】已有正文后再写正文 → 不再触发（幂等：重复写入不重复）。"""
         pid = uuid.UUID(int=project.id)
         ch = await svc.create_chapter(pid, TITLE, content="")
@@ -99,9 +97,7 @@ class TestChapterAutolinkTrigger:
         await svc.update_chapter(ch.id, ChapterUpdate(content="   \n  "))
         autolinker.assert_not_awaited()
 
-    async def test_whitespace_then_real_content_triggers(
-        self, svc, autolinker, project
-    ) -> None:
+    async def test_whitespace_then_real_content_triggers(self, svc, autolinker, project) -> None:
         """【R】先落空白再落正文 → 空白不算「首次正文」→ 仍触发。"""
         pid = uuid.UUID(int=project.id)
         ch = await svc.create_chapter(pid, TITLE, content="")
@@ -111,9 +107,7 @@ class TestChapterAutolinkTrigger:
         await svc.update_chapter(ch.id, ChapterUpdate(content="正文"))
         autolinker.assert_awaited_once_with(pid, ch.id, TITLE)
 
-    async def test_title_only_update_does_not_trigger(
-        self, svc, autolinker, project
-    ) -> None:
+    async def test_title_only_update_does_not_trigger(self, svc, autolinker, project) -> None:
         """【R】仅改标题（正文已存在）→ 不重触发（仅「正文首次落盘」入口）。"""
         pid = uuid.UUID(int=project.id)
         ch = await svc.create_chapter(pid, TITLE, content="正文")
@@ -128,9 +122,7 @@ class TestChapterAutolinkTrigger:
         ch = await svc.create_chapter(pid, TITLE, content="创建即带正文")
         autolinker.assert_awaited_once_with(pid, ch.id, TITLE)
 
-    async def test_create_without_content_does_not_trigger(
-        self, svc, autolinker, project
-    ) -> None:
+    async def test_create_without_content_does_not_trigger(self, svc, autolinker, project) -> None:
         """【R】创建空章 → 不触发。"""
         pid = uuid.UUID(int=project.id)
         await svc.create_chapter(pid, TITLE, content="")
@@ -145,9 +137,7 @@ class TestChapterAutolinkTrigger:
         assert saved is not None
         assert saved.content == "正文"
 
-    async def test_autolinker_exception_does_not_break_save(
-        self, db_session, project
-    ) -> None:
+    async def test_autolinker_exception_does_not_break_save(self, db_session, project) -> None:
         """【R】弱依赖铁律：关联器抛错 → 正文仍落盘、update 不抛错。"""
         pid = uuid.UUID(int=project.id)
         boom = AsyncMock(side_effect=RuntimeError("autolink boom"))
@@ -161,9 +151,7 @@ class TestChapterAutolinkTrigger:
         assert reread is not None
         assert reread.content == "正文必须落盘"
 
-    async def test_update_missing_chapter_does_not_trigger(
-        self, svc, autolinker, project
-    ) -> None:
+    async def test_update_missing_chapter_does_not_trigger(self, svc, autolinker, project) -> None:
         """【R】更新不存在的章节 → None 且不触发。"""
         missing = uuid.UUID("3f2e1d4a-0000-4000-8000-00000000dead")
         assert await svc.update_chapter(missing, ChapterUpdate(content="正文")) is None

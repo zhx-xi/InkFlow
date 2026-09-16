@@ -52,9 +52,7 @@ def fake_http_client():
             "inkflow.cli.commands.project.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.project.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.project.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
@@ -326,9 +324,7 @@ class TestProjectUpdateAgentOrder:
         from inkflow.cli.commands.project import app
 
         fake_http_client.patch.return_value = _make_project()
-        order = (
-            '[["agent_architect"],["agent_writer","agent_auditor"],["agent_reviser"]]'
-        )
+        order = '[["agent_architect"],["agent_writer","agent_auditor"],["agent_reviser"]]'
         result = cli_runner.invoke(
             app,
             ["update", "--id", "1", "--config", f"agent_order={order}"],

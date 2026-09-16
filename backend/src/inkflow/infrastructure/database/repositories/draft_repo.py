@@ -94,18 +94,14 @@ class SQLiteDraftRepository:
             summary=summary,
             agent_run_id=agent_run_id,
             volume_id=str(volume_id) if volume_id is not None else None,
-            source_outline_id=(
-                str(source_outline_id) if source_outline_id is not None else None
-            ),
+            source_outline_id=(str(source_outline_id) if source_outline_id is not None else None),
         )
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def update_chapter_binding(
-        self, draft_id: str, chapter_id: uuid.UUID
-    ) -> Draft | None:
+    async def update_chapter_binding(self, draft_id: str, chapter_id: uuid.UUID) -> Draft | None:
         """回填草稿的目标章节绑定（#976 D4 confirm 自动建章后落库）.
 
         Args:

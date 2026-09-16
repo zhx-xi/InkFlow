@@ -49,11 +49,13 @@ from inkflow.infrastructure.agent.tools.save_draft_tool import (
     build_save_draft_tool,
 )
 from inkflow.infrastructure.database.models.agent_run import DraftORM
-from inkflow.infrastructure.database.repositories.draft_repo import SQLiteDraftRepository
+from inkflow.infrastructure.database.repositories.draft_repo import (
+    SQLiteDraftRepository,
+)
 
 # 小整数项目/章节 UUID（InkFlow 惯例：UUID=int(orm_id)，防 128 位随机 UUID 溢出 SQLite
 # INTEGER；DraftORM.project_id/chapter_id 为 String(36) 无 FK，chapter_id 可空——无需 seed 行）
-PROJECT_ID = uuid.UUID(int=7)          # 非全零（DraftService.create 拒绝全零项目）
+PROJECT_ID = uuid.UUID(int=7)  # 非全零（DraftService.create 拒绝全零项目）
 CHAPTER_ID = uuid.UUID(int=8)
 DRAFT_CONTENT = "这是 agent 写出的章节草稿正文，测试落库正确性。"
 DRAFT_SUMMARY = "测试保存"
@@ -69,7 +71,6 @@ def _reset_tool_db_lock():
     yield
     with contextlib.suppress(Exception):
         _tool_db_lock_mod._tool_db_lock = asyncio.Lock()
-
 
 
 class _DummyAudit:
@@ -107,7 +108,10 @@ def _make_fake_model() -> _FakeSaveDraftModel:
                     tool_calls=[
                         {
                             "name": "save_draft",
-                            "args": {"content": DRAFT_CONTENT, "summary": DRAFT_SUMMARY},
+                            "args": {
+                                "content": DRAFT_CONTENT,
+                                "summary": DRAFT_SUMMARY,
+                            },
                             "id": "call_save_draft_1",
                             "type": "tool_call",
                         }
@@ -119,7 +123,9 @@ def _make_fake_model() -> _FakeSaveDraftModel:
     )
 
 
-async def _build_adapter(db: AsyncSession) -> tuple[DeepAgentInvokeAdapter, DraftService]:
+async def _build_adapter(
+    db: AsyncSession,
+) -> tuple[DeepAgentInvokeAdapter, DraftService]:
     """装配：真实 DraftService(真实 SQLiteDraftRepository) → build_save_draft_tool →
     _map_tools → 真实 create_agent(fake model) 内层图 → DeepAgentInvokeAdapter。"""
     draft_svc = DraftService(draft_repo=SQLiteDraftRepository(db))

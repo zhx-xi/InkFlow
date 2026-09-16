@@ -13,9 +13,7 @@ from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 @pytest.mark.e2e
 async def test_llm_connectivity(llm_env):
     """真实 key 最小请求：key 有效 / 协议兼容 / 网络可达。"""
-    client = LangChainLLMClient(
-        api_key=llm_env["api_key"], default_model=llm_env["model"]
-    )
+    client = LangChainLLMClient(api_key=llm_env["api_key"], default_model=llm_env["model"])
 
     resp = await client.chat(
         [ChatMessage(role="user", content="只回复两个字：正常")],

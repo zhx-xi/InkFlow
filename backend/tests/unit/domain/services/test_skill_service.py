@@ -174,9 +174,9 @@ class TestEnsureBuiltinSkills:
     def test_ensure_writes_six_builtin_skills(self, tmp_path: Path) -> None:
         """空根目录 → 写出 6 个内置 SKILL.md，返回 6；每个目录的 SKILL.md
         frontmatter name == 目录名（英文 slug）。"""
-        assert (
-            ensure_builtin_skills is not None
-        ), "RED: old impl lacks ensure_builtin_skills (GREEN contract 5)"
+        assert ensure_builtin_skills is not None, (
+            "RED: old impl lacks ensure_builtin_skills (GREEN contract 5)"
+        )
         n = ensure_builtin_skills(tmp_path)
         assert n == 6
         dirs = sorted(p.name for p in tmp_path.iterdir() if p.is_dir())
@@ -192,9 +192,9 @@ class TestEnsureBuiltinSkills:
     def test_ensure_idempotent_and_backfills(self, tmp_path: Path) -> None:
         """幂等：二次调用返回 0（已存在跳过）；删除一个内置目录后再次调用 →
         回补该目录并返回 1。"""
-        assert (
-            ensure_builtin_skills is not None
-        ), "RED 期旧实现无 ensure_builtin_skills——GREEN 契约点 5"
+        assert ensure_builtin_skills is not None, (
+            "RED 期旧实现无 ensure_builtin_skills——GREEN 契约点 5"
+        )
         assert ensure_builtin_skills(tmp_path) == 6
         assert ensure_builtin_skills(tmp_path) == 0  # 已存在 → 跳过
         shutil.rmtree(tmp_path / "writing-methodology")
@@ -471,12 +471,7 @@ class TestCoverageGapDefensiveBranches:
         分支未覆盖；本用例在其后仍有 name 行，断言最终提取到 name。
         """
         content = (
-            "---\n"
-            "no-colon-line\n"
-            "name: web-research\n"
-            "description: 网络调研方法论\n"
-            "---\n"
-            "# 正文\n"
+            "---\nno-colon-line\nname: web-research\ndescription: 网络调研方法论\n---\n# 正文\n"
         )
         assert _frontmatter_name(content) == "web-research"
 
@@ -561,9 +556,9 @@ class TestBuiltinSkillContentContract:
         """每个内置 content ≥ 20 行（splitlines；当前 ~10 行 → FAIL）。"""
         for spec in BUILTIN_SKILL_SPECS:
             lines = spec["content"].splitlines()
-            assert (
-                len(lines) >= 20
-            ), f"{spec['name']} content 仅 {len(lines)} 行，提示词过短（应 ≥20 行）"
+            assert len(lines) >= 20, (
+                f"{spec['name']} content 仅 {len(lines)} 行，提示词过短（应 ≥20 行）"
+            )
 
     def test_each_builtin_content_has_method_steps_section(self) -> None:
         """每个内置 content 含「## 方法步骤」小节（结构化方法论步骤）。"""

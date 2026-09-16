@@ -113,9 +113,9 @@ def test_bridge_handler_idempotent(tmp_path):
     log_module.setup_logging(log_dir=tmp_path)
 
     added = [h for h in root.handlers if h not in before]
-    assert (
-        len(added) == 1
-    ), f"std 桥 handler 应恰好 1 个（防重复 setup_logging 叠加/漏装），实际新增 {len(added)}"
+    assert len(added) == 1, (
+        f"std 桥 handler 应恰好 1 个（防重复 setup_logging 叠加/漏装），实际新增 {len(added)}"
+    )
 
 
 # ── 契约 4（PR #1023 评审 M1）：三方库 INFO 不得淹没文件 sink，inkflow 自身信号保留 ──

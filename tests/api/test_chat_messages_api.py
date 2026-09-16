@@ -32,7 +32,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from inkflow.api.app import app  # 必须先于 stub 行（GREEN 时真模块已注册进 sys.modules）
+from inkflow.api.app import (
+    app,  # 必须先于 stub 行（GREEN 时真模块已注册进 sys.modules）
+)
 
 # RED 逃生门不变：chat_messages 模块缺失时注入同路径 stub（GREEN 后 setdefault 不覆盖真模块）
 _stub_chat_router = ModuleType("inkflow.api.routers.chat_messages")
@@ -267,9 +269,7 @@ class TestConversationsEndpoint:
             assert key in data["items"][0]
         chat_svc.list_conversations.assert_awaited_once()
 
-    async def test_list_conversations_include_deleted_200(
-        self, chat_svc, override_chat_svc
-    ):
+    async def test_list_conversations_include_deleted_200(self, chat_svc, override_chat_svc):
         conv = _conversation_dict()
         chat_svc.list_conversations.return_value = [conv]
         async with _client() as client:
@@ -325,9 +325,9 @@ class TestCreateConversationEndpoint:
 
     def test_chat_create_conversation_route_registered_in_app(self):
         paths = _chat_route_paths()
-        assert any(
-            p.endswith("/chat/conversations") for p in paths
-        ), f"缺 chat create conversation 路由: {sorted(paths)}"
+        assert any(p.endswith("/chat/conversations") for p in paths), (
+            f"缺 chat create conversation 路由: {sorted(paths)}"
+        )
 
 
 class TestChatAssembly:
@@ -366,6 +366,6 @@ class TestRestoreConversationEndpoint:
 
     def test_chat_restore_conversation_route_registered_in_app(self):
         paths = _chat_route_paths()
-        assert any(
-            p.endswith("/chat/conversations/{conversation_id}/restore") for p in paths
-        ), f"缺 chat restore conversation 路由: {sorted(paths)}"
+        assert any(p.endswith("/chat/conversations/{conversation_id}/restore") for p in paths), (
+            f"缺 chat restore conversation 路由: {sorted(paths)}"
+        )

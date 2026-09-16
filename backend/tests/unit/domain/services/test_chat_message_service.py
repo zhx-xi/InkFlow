@@ -152,9 +152,7 @@ class TestAddMessage:
         assert isinstance(added, ChatMessage)
         assert added.conversation_id == CID
 
-    async def test_add_message_resolves_active_conversation_when_missing(
-        self, service, fake_repo
-    ):
+    async def test_add_message_resolves_active_conversation_when_missing(self, service, fake_repo):
         """#744：add_message 缺 conversation_id → get_or_create 自动解析（无则新建）。"""
         fake_repo.get_active_conversation = AsyncMock(return_value=None)
         created = await service.add_message(
@@ -164,9 +162,7 @@ class TestAddMessage:
         fake_repo.create_conversation.assert_awaited_once_with(PID)
         assert created.conversation_id == CID  # create_conversation 返回的 id
 
-    async def test_add_message_reuses_active_conversation_when_exists(
-        self, service, fake_repo
-    ):
+    async def test_add_message_reuses_active_conversation_when_exists(self, service, fake_repo):
         """#744：存在活动线程 → get_or_create 复用其 conversation_id（不新建）。"""
         active = _conversation()
         fake_repo.get_active_conversation = AsyncMock(return_value=active)
@@ -183,7 +179,7 @@ class TestAddMessage:
                 conversation_id=CID,
                 role="ai",
                 content="好的。",
-                intent="conversation"
+                intent="conversation",
             )
         )
         assert created.intent == "conversation"

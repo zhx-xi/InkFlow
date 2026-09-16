@@ -38,7 +38,7 @@ from func_cov_plugin import (  # noqa: E402  # ci_cd 导入需先插入 sys.path
 )
 
 # ── 固件：合成源码树 ────────────────────────────────────────────────
-_SRC_PKG = '''\
+_SRC_PKG = """\
 def top():
     return 1
 
@@ -72,7 +72,7 @@ async def a_fn():
 
 
 def proto() -> int: ...
-'''
+"""
 
 
 @pytest.fixture

@@ -79,9 +79,7 @@ class TestBuildAgenticWriterAnchorPassthrough:
     @patch("inkflow.infrastructure.agent.agentic_writer.build_deep_agent")
     @patch("inkflow.infrastructure.agent.agentic_writer.build_save_draft_tool")
     @patch("inkflow.infrastructure.agent.agentic_writer.build_reader_tools")
-    def test_anchor_params_passed_to_save_draft_tool(
-        self, m_rt, m_sd, m_da
-    ) -> None:
+    def test_anchor_params_passed_to_save_draft_tool(self, m_rt, m_sd, m_da) -> None:
         """【R】expected_source_outline_id/expected_volume_outline_id 透传进 SaveDraftToolDeps。
 
         当前 build_agentic_writer 无这两形参 → TypeError（RED）。

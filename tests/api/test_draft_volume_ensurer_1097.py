@@ -84,7 +84,11 @@ async def test_ensurer_creates_volume_from_volume_parent(db_session):
 
     project_id = await _make_project(db_session)
     volume_outline_id = await _add_outline(
-        db_session, project_id=project_id, level="volume", name="第一卷·蜀山重立", parent_id=None
+        db_session,
+        project_id=project_id,
+        level="volume",
+        name="第一卷·蜀山重立",
+        parent_id=None,
     )
     chapter_outline_id = await _add_outline(
         db_session,
@@ -95,16 +99,14 @@ async def test_ensurer_creates_volume_from_volume_parent(db_session):
     )
     ensurer = make_volume_ensurer(db_session)
 
-    result = await ensurer(
-        uuid.UUID(int=project_id), uuid.UUID(int=chapter_outline_id)
-    )
+    result = await ensurer(uuid.UUID(int=project_id), uuid.UUID(int=chapter_outline_id))
 
     assert result is not None
     rows = (
-        await db_session.execute(
-            select(VolumeORM).where(VolumeORM.project_id == project_id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(VolumeORM).where(VolumeORM.project_id == project_id)))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].title == "第一卷·蜀山重立"
     assert str(result) == str(uuid.UUID(int=int(rows[0].id)))
@@ -119,7 +121,11 @@ async def test_ensurer_reuses_same_named_volume(db_session):
 
     project_id = await _make_project(db_session, "幂等测试书")
     volume_outline_id = await _add_outline(
-        db_session, project_id=project_id, level="volume", name="第一卷·蜀山重立", parent_id=None
+        db_session,
+        project_id=project_id,
+        level="volume",
+        name="第一卷·蜀山重立",
+        parent_id=None,
     )
     first_outline = await _add_outline(
         db_session,
@@ -154,7 +160,11 @@ async def test_ensurer_returns_none_without_volume_parent(db_session):
 
     project_id = await _make_project(db_session, "孤立章测试书")
     chapter_outline_id = await _add_outline(
-        db_session, project_id=project_id, level="chapter", name="第1章 独章", parent_id=None
+        db_session,
+        project_id=project_id,
+        level="chapter",
+        name="第1章 独章",
+        parent_id=None,
     )
     ensurer = make_volume_ensurer(db_session)
 
@@ -190,7 +200,11 @@ async def test_ensurer_isolates_projects(db_session):
     project_a = await _make_project(db_session, "项目A书")
     project_b = await _make_project(db_session, "项目B书")
     foreign_volume_outline = await _add_outline(
-        db_session, project_id=project_b, level="volume", name="第一卷·外项目", parent_id=None
+        db_session,
+        project_id=project_b,
+        level="volume",
+        name="第一卷·外项目",
+        parent_id=None,
     )
     chapter_outline_id = await _add_outline(
         db_session,

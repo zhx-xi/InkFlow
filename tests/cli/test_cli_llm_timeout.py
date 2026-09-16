@@ -220,9 +220,7 @@ class TestCliLongTaskPerRequestTimeout:
     GREEN 后各调用点补 `timeout=LLM_TASK_TIMEOUT`（=300.0）→ 全部 PASS。
     """
 
-    @pytest.mark.parametrize(
-        "app,argv,expected_path,post_ret,get_ret", _LONG_TASK_CASES
-    )
+    @pytest.mark.parametrize("app,argv,expected_path,post_ret,get_ret", _LONG_TASK_CASES)
     def test_long_task_post_has_300s_timeout(
         self,
         cli_runner,
@@ -247,9 +245,7 @@ class TestCliLongTaskPerRequestTimeout:
         # 【R】当前无 timeout → None != 300.0 → FAIL；GREEN 后 == 300.0 → PASS。
         assert call.kwargs.get("timeout") == 300.0
 
-    def test_book_plan_auto_both_posts_use_300s_timeout(
-        self, cli_runner, fake_http_client
-    ):
+    def test_book_plan_auto_both_posts_use_300s_timeout(self, cli_runner, fake_http_client):
         """【R】A13：book plan auto 两次 post（planner + respond）均带 timeout=300.0."""
         fake_http_client.post.return_value = {"session_id": "sess-1"}
         cli_runner.invoke(

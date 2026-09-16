@@ -183,6 +183,9 @@ jobs:
           }
           if ($ruffExit -ne 0) { exit $ruffExit }
 
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/unit/ ../tests/ ../ci_cd/
+
       - name: Type check with mypy
         run: uv run mypy src/ --ignore-missing-imports
 

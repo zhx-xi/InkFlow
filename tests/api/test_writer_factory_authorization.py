@@ -50,9 +50,7 @@ async def _seed(db_session, *, plan_id: uuid.UUID) -> None:
     口径镜像 `test_books_coverage_backfill_1137.py::_seed_plan`：
     WritingPlanORM.id / project_id 存**字符串**形态的 UUID，且显式 commit。
     """
-    db_session.add(
-        ProjectORM(id=SEED_PROJECT_ID.int, name="测试项目", language="zh-CN")
-    )
+    db_session.add(ProjectORM(id=SEED_PROJECT_ID.int, name="测试项目", language="zh-CN"))
     db_session.add(
         OutlineORM(
             id=11,
@@ -91,12 +89,8 @@ async def _seed(db_session, *, plan_id: uuid.UUID) -> None:
 @pytest.fixture(autouse=True)
 def _patch_pipelines(monkeypatch):
     """隔离 books.py 模块级 pipeline 单例（镜像 test_books_coverage_backfill_1137）。"""
-    monkeypatch.setattr(
-        "inkflow.api.routers.books._book_volume_pipeline", None, raising=False
-    )
-    monkeypatch.setattr(
-        "inkflow.api.routers.books._book_agentic_pipeline", None, raising=False
-    )
+    monkeypatch.setattr("inkflow.api.routers.books._book_volume_pipeline", None, raising=False)
+    monkeypatch.setattr("inkflow.api.routers.books._book_agentic_pipeline", None, raising=False)
     monkeypatch.setattr(
         "inkflow.api._llm_resolver.resolve_llm_credentials",
         lambda *a, **kw: ("model", "key", "url"),
@@ -184,6 +178,6 @@ async def test_get_writing_service_injects_real_context_provider(db_session):
     svc = get_writing_service(db_session)
 
     provider = svc._context_provider
-    assert not isinstance(
-        provider, NullContextProvider
-    ), "F3 轨必须注入真实 ContextProvider（F6），当前为 NullContextProvider"
+    assert not isinstance(provider, NullContextProvider), (
+        "F3 轨必须注入真实 ContextProvider（F6），当前为 NullContextProvider"
+    )

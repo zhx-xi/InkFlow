@@ -90,17 +90,13 @@ async def _outline_chapter_id(client: AsyncClient, project_id: int, outline_id: 
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_patch_content_autolinks_matching_chapter_outline(
-    client, sample_project
-) -> None:
+async def test_patch_content_autolinks_matching_chapter_outline(client, sample_project) -> None:
     """【R】PATCH 正文 → 同名唯一章级大纲 chapter_id 回填为本章 id。"""
     pid = sample_project.id
     outline = await _create_outline(client, pid, TITLE)
     chapter = await _create_chapter(client, pid, TITLE)
 
-    resp = await client.patch(
-        f"/api/v1/chapters/{chapter['id']}", json={"content": CONTENT}
-    )
+    resp = await client.patch(f"/api/v1/chapters/{chapter['id']}", json={"content": CONTENT})
     assert resp.status_code == 200
 
     assert await _outline_chapter_id(client, pid, outline["id"]) == chapter["id"]
@@ -115,9 +111,7 @@ async def test_repeat_patch_keeps_single_binding(client, sample_project) -> None
     chapter = await _create_chapter(client, pid, TITLE)
 
     for content in (CONTENT, f"{CONTENT} 第二段"):
-        resp = await client.patch(
-            f"/api/v1/chapters/{chapter['id']}", json={"content": content}
-        )
+        resp = await client.patch(f"/api/v1/chapters/{chapter['id']}", json={"content": content})
         assert resp.status_code == 200
 
     assert await _outline_chapter_id(client, pid, outline["id"]) == chapter["id"]
@@ -131,9 +125,7 @@ async def test_no_match_keeps_chapter_id_null(client, sample_project) -> None:
     outline = await _create_outline(client, pid, TITLE)
     chapter = await _create_chapter(client, pid, "未匹配章")
 
-    resp = await client.patch(
-        f"/api/v1/chapters/{chapter['id']}", json={"content": CONTENT}
-    )
+    resp = await client.patch(f"/api/v1/chapters/{chapter['id']}", json={"content": CONTENT})
     assert resp.status_code == 200
 
     assert await _outline_chapter_id(client, pid, outline["id"]) is None

@@ -227,8 +227,7 @@ class CharacterGroupMemberORM(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<CharacterGroupMemberORM character_id={self.character_id} "
-            f"group_id={self.group_id}>"
+            f"<CharacterGroupMemberORM character_id={self.character_id} group_id={self.group_id}>"
         )
 
 

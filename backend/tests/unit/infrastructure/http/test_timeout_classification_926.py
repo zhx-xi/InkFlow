@@ -106,6 +106,7 @@ class TestTimeoutClassification:
         RED 现状: httpx.ReadTimeout 直接从 `_request` 抛出（无 try/except TimeoutException）
         → 非 HttpApiError → FAIL。
         """
+
         def _handler(request):
             raise httpx.ReadTimeout("simulated read timeout", request=request)
 
@@ -128,6 +129,7 @@ class TestTimeoutClassification:
         契约 §4-B-R2 / §1-D1。
         RED 现状: httpx.ReadTimeout 直接抛出（非 HttpApiError）→ FAIL。
         """
+
         def _handler(request):
             raise httpx.ReadTimeout("simulated read timeout", request=request)
 
@@ -149,6 +151,7 @@ class TestTimeoutClassification:
         契约 §4-B-R3 / §1-D1。
         RED 现状: httpx.ReadTimeout 直接抛出（非 HttpApiError）→ FAIL。
         """
+
         def _handler(request):
             raise httpx.ReadTimeout("simulated read timeout", request=request)
 
@@ -170,6 +173,7 @@ class TestTimeoutClassification:
         契约 §4-B-R4 / §1-D1。
         RED 现状: httpx.ReadTimeout 直接抛出（非 HttpApiError）→ FAIL。
         """
+
         def _handler(request):
             raise httpx.ReadTimeout("simulated read timeout", request=request)
 
@@ -191,15 +195,14 @@ class TestTimeoutClassification:
         契约 §4-B-R5（per-request 覆盖生效，而非全局 0.05/30.0）。
         现即 PASS（post 已具 timeout 参数透传，mock 轨超时惰性）→ 守护不误伤。
         """
+
         def _handler(request):
             time.sleep(0.3)
             return _json_response(200, {"ok": True, "id": "p1"})
 
         with _mock_http(handle, _handler):
             async with InkFlowHTTPClient(handle, timeout=0.05) as client:
-                result = await client.post(
-                    "/llm/long", json={"project_id": "p1"}, timeout=5.0
-                )
+                result = await client.post("/llm/long", json={"project_id": "p1"}, timeout=5.0)
 
         assert result == {"ok": True, "id": "p1"}
 
@@ -211,6 +214,7 @@ class TestTimeoutClassification:
         RED 现状: httpx.ReadTimeout 落入 `except httpx.HTTPError`
         → code=STREAM_INTERRUPTED + 空 detail → FAIL。
         """
+
         class _SlowIdleStream(httpx.AsyncByteStream):
             async def __aiter__(self):
                 yield b'data: {"done": false, "delta": "part"}\n\n'
@@ -243,6 +247,7 @@ class TestTimeoutClassification:
         现即 PASS（当前实现不 catch ConnectError，GREEN 的 `_send` 同样 only catch
         TimeoutException）→ 守护。
         """
+
         def _handler(request):
             raise httpx.ConnectError("connection refused")
 
@@ -274,6 +279,7 @@ class TestTimeoutClassification:
         契约 §4-B-G2。
         现即 PASS → 守护。
         """
+
         def _handler(request):
             return _json_response(404, {"detail": "项目不存在"})
 
@@ -293,6 +299,7 @@ class TestTimeoutClassification:
         契约 §4-B-G2。
         现即 PASS → 守护。
         """
+
         def _handler(request):
             return _json_response(500, {"detail": "内部错误"})
 

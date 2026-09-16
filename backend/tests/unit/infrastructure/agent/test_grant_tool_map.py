@@ -55,23 +55,53 @@ from inkflow.infrastructure.agent.tools import ALL_TOOL_SPECS
 # 49 全集 − {agent_run, agent_call} = 47 名（8 删除核心 + 39 非核心）
 # #955 迁移: 33→42；#956 迁移: 42→47（+get_character/list/get_foreshadowing/list/get_world_setting）
 EXPECTED_MAPPED_NAMES = {
-    "list_outlines", "get_outline", "list_plot_points",
-    "create_overall_outline", "create_volume_outline", "create_chapter_outline",
-    "update_volume_outline", "update_chapter_outline", "create_plot_point",
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "create_overall_outline",
+    "create_volume_outline",
+    "create_chapter_outline",
+    "update_volume_outline",
+    "update_chapter_outline",
+    "create_plot_point",
     "update_plot_point",
-    "delete_outline", "delete_plot_point",
-    "search_characters", "get_character", "create_character", "update_character",
+    "delete_outline",
+    "delete_plot_point",
+    "search_characters",
+    "get_character",
+    "create_character",
+    "update_character",
     "delete_character",
-    "list_maps", "list_world_settings", "get_world_setting", "create_world_setting",
-    "update_world_setting", "create_map", "update_map", "delete_world_setting", "delete_map",
-    "list_timeline_events", "create_timeline_event", "update_timeline_event",
+    "list_maps",
+    "list_world_settings",
+    "get_world_setting",
+    "create_world_setting",
+    "update_world_setting",
+    "create_map",
+    "update_map",
+    "delete_world_setting",
+    "delete_map",
+    "list_timeline_events",
+    "create_timeline_event",
+    "update_timeline_event",
     "delete_timeline_event",
-    "check_foreshadowing", "list_foreshadowing", "get_foreshadowing",
-    "create_foreshadowing", "update_foreshadowing",
+    "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "create_foreshadowing",
+    "update_foreshadowing",
     "delete_foreshadowing",
-    "memory_list", "memory_add", "memory_update", "memory_remove",
-    "get_prior_summary", "audit_chapter", "count_words", "save_draft",
-    "generate", "continue", "revise",
+    "memory_list",
+    "memory_add",
+    "memory_update",
+    "memory_remove",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+    "save_draft",
+    "generate",
+    "continue",
+    "revise",
 }
 
 # 39 非核心（allow_custom_agent=True）名，供「恰一次」断言（含在 ALL_TOOL_SPECS 中）
@@ -130,9 +160,13 @@ class TestGrantToolMapInvariants:
 
         mapped = set(_mapped_names(GRANT_TOOL_MAP))
         delete_tools = {
-            "delete_character", "delete_world_setting", "delete_outline",
+            "delete_character",
+            "delete_world_setting",
+            "delete_outline",
             "delete_plot_point",  # #955 新增
-            "delete_map", "delete_timeline_event", "delete_foreshadowing",
+            "delete_map",
+            "delete_timeline_event",
+            "delete_foreshadowing",
             "memory_remove",
         }
         assert delete_tools <= mapped
@@ -231,10 +265,16 @@ class TestExpandGrants:
         ]
         # #955 迁移: outline·write 展开序 == §3 七名
         assert expand_grants(grants) == [
-            "create_overall_outline", "create_volume_outline", "create_chapter_outline",
-            "update_volume_outline", "update_chapter_outline", "create_plot_point",
+            "create_overall_outline",
+            "create_volume_outline",
+            "create_chapter_outline",
+            "update_volume_outline",
+            "update_chapter_outline",
+            "create_plot_point",
             "update_plot_point",
-            "get_prior_summary", "audit_chapter", "count_words",
+            "get_prior_summary",
+            "audit_chapter",
+            "count_words",
         ]
 
     def test_expand_empty_ops_contributes_nothing(self):  # 【R】
@@ -247,7 +287,9 @@ class TestExpandGrants:
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
         ]
         assert expand_grants(grants) == [
-            "get_prior_summary", "audit_chapter", "count_words",
+            "get_prior_summary",
+            "audit_chapter",
+            "count_words",
         ]
 
     def test_expand_empty_grants_empty(self):  # 【R】

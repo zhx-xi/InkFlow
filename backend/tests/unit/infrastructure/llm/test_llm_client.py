@@ -456,6 +456,6 @@ class TestLangChainLLMClientErrorMapping:
         with patch("inkflow.infrastructure.llm.langchain_client.ChatLiteLLM") as mock_chat:
             LangChainLLMClient()._get_chat_model(provider_cfg)
         kwargs = mock_chat.call_args[1]
-        assert (
-            kwargs["request_timeout"] >= 300
-        ), f"request_timeout={kwargs.get('request_timeout')} 对慢模型太紧（#344 根因）"
+        assert kwargs["request_timeout"] >= 300, (
+            f"request_timeout={kwargs.get('request_timeout')} 对慢模型太紧（#344 根因）"
+        )

@@ -65,9 +65,7 @@ def fake_http_client():
                 )
             ),
         ),
-        patch(
-            "inkflow.cli.commands.project.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.project.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         # lazy import：RED 阶段 inkflow.infrastructure.http 未实现（patch 先行
         # 失败为预期形态，此行使 GREEN 后真实错误类可用）
@@ -135,9 +133,7 @@ def fake_http_client():
 
 @pytest.mark.project
 def test_create_output(fake_http_client):
-    result = runner.invoke(
-        app, ["project", "create", "--name", "测试小说", "--tags", "玄幻"]
-    )
+    result = runner.invoke(app, ["project", "create", "--name", "测试小说", "--tags", "玄幻"])
     assert result.exit_code == 0, result.output
     assert "✅" in result.output
     assert "测试小说" in result.output
@@ -145,9 +141,7 @@ def test_create_output(fake_http_client):
 
 @pytest.mark.project
 def test_create_json_output(fake_http_client):
-    result = runner.invoke(
-        app, ["--json", "project", "create", "--name", "星辰", "--tags", "科幻"]
-    )
+    result = runner.invoke(app, ["--json", "project", "create", "--name", "星辰", "--tags", "科幻"])
     assert result.exit_code == 0, result.output
     data = _parse_json_output(result.output)
     assert data["name"] == "星辰"
@@ -155,9 +149,7 @@ def test_create_json_output(fake_http_client):
 
 @pytest.mark.project
 def test_create_with_target_words(fake_http_client):
-    result = runner.invoke(
-        app, ["--json", "project", "create", "--name", "长篇", "-w", "300000"]
-    )
+    result = runner.invoke(app, ["--json", "project", "create", "--name", "长篇", "-w", "300000"])
     assert result.exit_code == 0
     data = _parse_json_output(result.output)
     assert data["target_words"] == 300000
@@ -257,9 +249,7 @@ def test_delete_not_found(fake_http_client):
 @pytest.mark.project
 def test_delete_permanent(fake_http_client):
     runner.invoke(app, ["project", "create", "--name", "永久删除", "--tags", "武侠"])
-    result = runner.invoke(
-        app, ["project", "delete", "--id", "1", "--permanent", "--force"]
-    )
+    result = runner.invoke(app, ["project", "delete", "--id", "1", "--permanent", "--force"])
     assert result.exit_code == 0
     assert "永久删除" in result.output
 
@@ -381,15 +371,15 @@ def test_serve_smoke(tmp_path):
             except (ConnectionRefusedError, OSError):
                 pass
             time.sleep(0.3)
-        assert (
-            status == 200 and '"status":"ok"' in body
-        ), f"health with token failed: status={status} body={body}"
+        assert status == 200 and '"status":"ok"' in body, (
+            f"health with token failed: status={status} body={body}"
+        )
 
         # 3) 反向断言（Q2=B 核心语义）：无 token 请求 /health → 401
         status_no_token, body_no_token = _health(None)
-        assert (
-            status_no_token == 401
-        ), f"expected 401 without token, got {status_no_token}: {body_no_token}"
+        assert status_no_token == 401, (
+            f"expected 401 without token, got {status_no_token}: {body_no_token}"
+        )
     finally:
         proc.terminate()
         proc.wait(timeout=5)

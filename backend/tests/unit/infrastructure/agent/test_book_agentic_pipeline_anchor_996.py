@@ -61,7 +61,7 @@ class FakeDraftService:
 
 
 def _chapter(**overrides) -> dict:
-    """构造章 dict（ChapterDict 形态，含 volume_outline_id）. """
+    """构造章 dict（ChapterDict 形态，含 volume_outline_id）."""
     base = {
         "outline_id": OUTLINE_ID,
         "chapter_id": CHAPTER_ID,
@@ -75,7 +75,7 @@ def _chapter(**overrides) -> dict:
 
 
 def _plan_obj():
-    """WritingPlan 鸭子对象（_delegate_write 只消费 project_id/character_ids）. """
+    """WritingPlan 鸭子对象（_delegate_write 只消费 project_id/character_ids）."""
     return SimpleNamespace(
         id=uuid.uuid4(),
         project_id=uuid.uuid4(),

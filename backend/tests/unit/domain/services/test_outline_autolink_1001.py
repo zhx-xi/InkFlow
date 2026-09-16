@@ -124,17 +124,13 @@ class TestAutoLinkChapterDirect:
         assert await service.auto_link_chapter(OUTLINE_UUID, CHAPTER_UUID) is False
         mock_repo.update.assert_not_awaited()
 
-    async def test_idempotent_when_already_bound_to_same_chapter(
-        self, service, mock_repo
-    ) -> None:
+    async def test_idempotent_when_already_bound_to_same_chapter(self, service, mock_repo) -> None:
         """【R】已绑定同一章（重复写入）→ 不重复写、返回 False（幂等）。"""
         mock_repo.get = AsyncMock(return_value=_outline(chapter_id=CHAPTER_UUID))
         assert await service.auto_link_chapter(OUTLINE_UUID, CHAPTER_UUID) is False
         mock_repo.update.assert_not_awaited()
 
-    async def test_does_not_overwrite_existing_other_binding(
-        self, service, mock_repo
-    ) -> None:
+    async def test_does_not_overwrite_existing_other_binding(self, service, mock_repo) -> None:
         """【R】已绑定到别的章 → 不覆盖（不静默改错，保留手动兜底）。"""
         mock_repo.get = AsyncMock(return_value=_outline(chapter_id=OTHER_CHAPTER_UUID))
         assert await service.auto_link_chapter(OUTLINE_UUID, CHAPTER_UUID) is False
@@ -145,15 +141,11 @@ class TestAutoLinkChapterDirect:
     ) -> None:
         """【R】目标章属于别的项目 → 不写（跨项目防御）。"""
         mock_repo.get = AsyncMock(return_value=_outline())
-        mock_chapter_repo.get_chapter = AsyncMock(
-            return_value=_chapter(project_id=PID_OTHER)
-        )
+        mock_chapter_repo.get_chapter = AsyncMock(return_value=_chapter(project_id=PID_OTHER))
         assert await service.auto_link_chapter(OUTLINE_UUID, CHAPTER_UUID) is False
         mock_repo.update.assert_not_awaited()
 
-    async def test_rejects_missing_chapter_row(
-        self, service, mock_repo, mock_chapter_repo
-    ) -> None:
+    async def test_rejects_missing_chapter_row(self, service, mock_repo, mock_chapter_repo) -> None:
         """【R】目标章行不存在 → 不写。"""
         mock_repo.get = AsyncMock(return_value=_outline())
         mock_chapter_repo.get_chapter = AsyncMock(return_value=None)
@@ -171,9 +163,7 @@ class TestAutoLinkChapterDirect:
 class TestAutoLinkChapterByTitle:
     """§16.2 auto_link_chapter_by_title(project_id, chapter_id, title)。"""
 
-    async def test_unique_hit_across_numbering_forms_binds(
-        self, service, mock_repo
-    ) -> None:
+    async def test_unique_hit_across_numbering_forms_binds(self, service, mock_repo) -> None:
         """【R】#999 形态不对称：大纲名 arabic / 章标题 chinese → 仍唯一命中回填。"""
         target = _outline(name=TITLE_ARABIC, chapter_id=None)
         mock_repo.get_by_name = AsyncMock(return_value=target)
@@ -192,9 +182,7 @@ class TestAutoLinkChapterByTitle:
         assert await service.auto_link_chapter_by_title(PID, CHAPTER_UUID, TITLE) is None
         mock_repo.update.assert_not_awaited()
 
-    async def test_returns_none_on_duplicate_canonical_names(
-        self, service, mock_repo
-    ) -> None:
+    async def test_returns_none_on_duplicate_canonical_names(self, service, mock_repo) -> None:
         """【R】候选形态命中到不同大纲（多义）→ 不自动改（保留手动「关联章节」兜底）。"""
         arabic = _outline(name=TITLE_ARABIC)
         chinese = _outline(name=TITLE)
@@ -215,9 +203,7 @@ class TestAutoLinkChapterByTitle:
 
     async def test_ignores_no_exact_match(self, service, mock_repo) -> None:
         """【R】名称只是近似（候选形态均无精确行）→ 不绑。"""
-        mock_repo.get_by_name = AsyncMock(
-            return_value=_outline(name=f"{TITLE}（上）")
-        )
+        mock_repo.get_by_name = AsyncMock(return_value=_outline(name=f"{TITLE}（上）"))
         assert await service.auto_link_chapter_by_title(PID, CHAPTER_UUID, TITLE) is None
         mock_repo.update.assert_not_awaited()
 
@@ -226,9 +212,7 @@ class TestAutoLinkChapterByTitle:
         assert await service.auto_link_chapter_by_title(PID, CHAPTER_UUID, "   ") is None
         mock_repo.get_by_name.assert_not_awaited()
 
-    async def test_returns_none_when_target_already_bound(
-        self, service, mock_repo
-    ) -> None:
+    async def test_returns_none_when_target_already_bound(self, service, mock_repo) -> None:
         """【R】唯一命中但已绑定别的章 → 不覆盖，返回 None。"""
         bound = _outline(name=TITLE_ARABIC, chapter_id=OTHER_CHAPTER_UUID)
         mock_repo.get_by_name = AsyncMock(return_value=bound)

@@ -10,6 +10,7 @@ create_world_setting 等设定库写入工具时工具不存在 → 卡 running�
 4. expected_project_id 绑定：装配期注入后，func 总是使用绑定值（LLM 不自报项目 ID）。
 5. 成功/失败均落审计（audit_service.record），审计自身异常静默。
 """
+
 from __future__ import annotations
 
 import json
@@ -79,9 +80,7 @@ class TestBuildSettingWriteTools:
     async def test_create_world_setting_success_envelope(self) -> None:
         """create_world_setting 成功 → {"ok": True, "setting_id": "<id>"}。"""
         deps = _make_deps()
-        deps.world_service.create_setting = AsyncMock(
-            return_value=SimpleNamespace(id="world-1")
-        )
+        deps.world_service.create_setting = AsyncMock(return_value=SimpleNamespace(id="world-1"))
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
         result = json.loads(await tools["create_world_setting"].func(name="天元大陆"))
         assert result["ok"] is True
@@ -91,13 +90,9 @@ class TestBuildSettingWriteTools:
     async def test_expected_project_id_binding(self) -> None:
         """装配期绑定 expected_project_id：caller 传入的 project_id 被忽略，恒用绑定值。"""
         deps = _make_deps()
-        deps.character_service.create_character = AsyncMock(
-            return_value=SimpleNamespace(id="c1")
-        )
+        deps.character_service.create_character = AsyncMock(return_value=SimpleNamespace(id="c1"))
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        await tools["create_character"].func(
-            name="林晚", project_id=FOREIGN_PROJECT_ID
-        )
+        await tools["create_character"].func(name="林晚", project_id=FOREIGN_PROJECT_ID)
         args, kwargs = deps.character_service.create_character.call_args
         used_project_id = kwargs.get("project_id") or (args[0] if args else None)
         assert str(used_project_id) == str(PROJECT_ID)
@@ -119,9 +114,7 @@ class TestSettingWriteToolAudit:
     @pytest.mark.asyncio
     async def test_failure_records_audit(self) -> None:
         deps = _make_deps()
-        deps.character_service.create_character = AsyncMock(
-            side_effect=ValueError("boom")
-        )
+        deps.character_service.create_character = AsyncMock(side_effect=ValueError("boom"))
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
         await tools["create_character"].func(name="林晚")
         assert deps.audit_service.record.await_count >= 1

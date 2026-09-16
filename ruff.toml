@@ -1,0 +1,14 @@
+# 仓库根 ruff 配置（#1148）：统一「从 repo root 调用 ruff」的口径——pre-commit 钩子、开发者手动、IDE。
+#
+# 背景：ruff 的配置发现以 cwd 为锚。CI 从 backend/ 跑，src 根 = {backend, backend/src}
+# → inkflow 判 first-party、line-length 100；pre-commit 钩子从 repo root 跑，顶层
+# tests/、ci_cd/ 命中不了 backend/pyproject.toml，缺省 src 根 = {root, root/src}
+# → 顶层 tests/ci_cd 被误判 first-party（I001 互逆）+ line-length 退回 88（format 互逆）
+# → 钩子反复重排 CI 已认可的文件（#1143 实证污染带的配置侧根因；另一半是版本双轨，
+# 已由 .pre-commit-config.yaml rev v0.6.0→v0.16.1 修复）。
+#
+# 本文件仅影响 root cwd 视角；CI（backend cwd）命中 backend/pyproject.toml，零影响。
+extend = "backend/pyproject.toml"
+
+# 与 backend 视角的缺省 src 解析结果（{backend, backend/src}）逐一对齐（相对本文件目录）。
+src = ["backend", "backend/src"]

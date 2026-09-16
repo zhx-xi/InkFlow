@@ -62,9 +62,7 @@ def fake_http_client():
             "inkflow.cli.commands.world.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.world.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.world.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
@@ -121,9 +119,7 @@ class TestWorldCategoryAdd:
     def test_add_kind_abstract(self, cli_runner, fake_http_client):
         """成功 --kind abstract → body 中 kind 值等于 abstract。"""
 
-        fake_http_client.post.return_value = _make_category(
-            name="背景设定", kind="abstract"
-        )
+        fake_http_client.post.return_value = _make_category(name="背景设定", kind="abstract")
         result = cli_runner.invoke(
             app,
             [
@@ -144,9 +140,7 @@ class TestWorldCategoryAdd:
 
     def test_add_human(self, cli_runner, fake_http_client):
         """人类模式成功 → stdout 含 分类创建成功、name、kind。"""
-        fake_http_client.post.return_value = _make_category(
-            name="背景设定", kind="geo"
-        )
+        fake_http_client.post.return_value = _make_category(name="背景设定", kind="geo")
         result = cli_runner.invoke(
             app,
             ["category", "add", "--project-id", str(PID), "--name", "背景设定"],
@@ -171,9 +165,7 @@ class TestWorldCategoryAdd:
 
     def test_add_name_conflict_human(self, cli_runner, fake_http_client):
         """422 同名（人类）：exit 1 + 输出含 detail 原文。"""
-        fake_http_client.post.side_effect = _http_error(
-            422, "分类名已存在: 背景设定"
-        )
+        fake_http_client.post.side_effect = _http_error(422, "分类名已存在: 背景设定")
         result = cli_runner.invoke(
             app,
             ["category", "add", "--project-id", str(PID), "--name", "背景设定"],
@@ -184,9 +176,7 @@ class TestWorldCategoryAdd:
 
     def test_add_name_conflict_json(self, cli_runner, fake_http_client):
         """422 同名（--json）：exit 1 + 信封 VALIDATION_ERROR + message 含 detail。"""
-        fake_http_client.post.side_effect = _http_error(
-            422, "分类名已存在: 背景设定"
-        )
+        fake_http_client.post.side_effect = _http_error(422, "分类名已存在: 背景设定")
         result = cli_runner.invoke(
             app,
             ["category", "add", "--project-id", str(PID), "--name", "背景设定"],

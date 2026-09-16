@@ -7,6 +7,7 @@
 3. expected_project_id/expected_chapter_id 绑定。
 4. 成功/失败均落审计（audit_service.record），审计异常静默。
 """
+
 from __future__ import annotations
 
 import json
@@ -118,17 +119,12 @@ class TestBuildWritingTools:
         assert str(used.project_id) == str(PROJECT_ID)
         assert str(used.chapter_id) == str(CHAPTER_ID)
 
-
     @pytest.mark.asyncio
     async def test_continue_failure_envelope(self) -> None:
         deps = _make_deps()
-        deps.writing_service.continue_writing = AsyncMock(
-            side_effect=ValueError("已有内容太短")
-        )
+        deps.writing_service.continue_writing = AsyncMock(side_effect=ValueError("已有内容太短"))
         tools = {t.spec.name: t for t in build_writing_tools(deps)}
-        result = json.loads(
-            await tools["continue"].func(existing_content="已有内容" * 20)
-        )
+        result = json.loads(await tools["continue"].func(existing_content="已有内容" * 20))
         assert result["ok"] is False
         assert "已有内容太短" in result["error"]
 
@@ -166,9 +162,7 @@ class TestWritingToolAudit:
     @pytest.mark.asyncio
     async def test_failure_records_audit(self) -> None:
         deps = _make_deps()
-        deps.writing_service.generate_chapter = AsyncMock(
-            side_effect=ValueError("boom")
-        )
+        deps.writing_service.generate_chapter = AsyncMock(side_effect=ValueError("boom"))
         tools = {t.spec.name: t for t in build_writing_tools(deps)}
         await tools["generate"].func(outline="第一章大纲")
         assert deps.audit_service.record.await_count >= 1

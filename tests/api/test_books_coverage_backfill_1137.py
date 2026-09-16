@@ -33,7 +33,9 @@ from inkflow.infrastructure.database.models.character import CharacterORM
 from inkflow.infrastructure.database.models.outline import OutlineORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
-from inkflow.infrastructure.database.repositories.project_repo import SQLiteProjectRepository
+from inkflow.infrastructure.database.repositories.project_repo import (
+    SQLiteProjectRepository,
+)
 from inkflow.infrastructure.repositories.book_repository import SQLiteBookRepository
 
 BASE = "/api/v1/agent/books"
@@ -53,12 +55,8 @@ def client(monkeypatch):
 @pytest.fixture(autouse=True)
 def _reset_book_pipelines(monkeypatch):
     """隔离 books.py 模块级 pipeline 单例（复用会绑到已释放的测试 session）。"""
-    monkeypatch.setattr(
-        "inkflow.api.routers.books._book_volume_pipeline", None, raising=False
-    )
-    monkeypatch.setattr(
-        "inkflow.api.routers.books._book_agentic_pipeline", None, raising=False
-    )
+    monkeypatch.setattr("inkflow.api.routers.books._book_volume_pipeline", None, raising=False)
+    monkeypatch.setattr("inkflow.api.routers.books._book_agentic_pipeline", None, raising=False)
 
 
 def _provider(db_session):
@@ -210,9 +208,7 @@ async def test_planner_start_builds_project_context_from_outlines_and_characters
 
 @pytest.mark.asyncio
 @pytest.mark.api
-async def test_start_run_falls_through_when_plan_lookup_raises(
-    client, db_session, monkeypatch
-):
+async def test_start_run_falls_through_when_plan_lookup_raises(client, db_session, monkeypatch):
     """#929：/runs 入口预检 plan 查询异常 → 吞异常继续预检，凭据按全局默认解析（不 500）。"""
     plan_id = uuid.uuid4()
     calls = {"n": 0}
@@ -223,9 +219,7 @@ async def test_start_run_falls_through_when_plan_lookup_raises(
             raise RuntimeError("writing plan repo down")
         return
 
-    monkeypatch.setattr(
-        SQLiteBookRepository, "get_writing_plan", _flaky_get_writing_plan
-    )
+    monkeypatch.setattr(SQLiteBookRepository, "get_writing_plan", _flaky_get_writing_plan)
     resolve = MagicMock(return_value=("model", "key", "url"))
     monkeypatch.setattr("inkflow.api._llm_resolver.resolve_llm_credentials", resolve)
     app.dependency_overrides[get_book_service] = _provider(db_session)
@@ -244,9 +238,7 @@ async def test_start_run_falls_through_when_plan_lookup_raises(
 
 @pytest.mark.asyncio
 @pytest.mark.api
-async def test_start_run_precheck_survives_project_config_lookup_failure(
-    db_session, monkeypatch
-):
+async def test_start_run_precheck_survives_project_config_lookup_failure(db_session, monkeypatch):
     """端到端预检：项目配置读取异常被吞 → cfg=None → 无章快路径返回 completed（非 500）。"""
     planned_plan_id = uuid.uuid4()
     await _seed_project(db_session)
@@ -270,16 +262,12 @@ async def test_start_run_precheck_survives_project_config_lookup_failure(
 
 @pytest.mark.asyncio
 @pytest.mark.api
-async def test_write_book_resolves_draft_volume_from_outline_and_chapter(
-    db_session, monkeypatch
-):
+async def test_write_book_resolves_draft_volume_from_outline_and_chapter(db_session, monkeypatch):
     """#976 D3：草稿兜底卷解析 —— 章 id → 写作卷 UUID；无映射/越界 → None。"""
     await _seed_project(db_session)
     plan_id = uuid.uuid4()
     db_session.add(VolumeORM(id=3, project_id=SEED_PROJECT_ID.int, title="第一卷"))
-    db_session.add(
-        ChapterORM(id=20, project_id=SEED_PROJECT_ID.int, volume_id=3, title="第一章")
-    )
+    db_session.add(ChapterORM(id=20, project_id=SEED_PROJECT_ID.int, volume_id=3, title="第一章"))
     db_session.add(
         OutlineORM(
             id=11,
@@ -335,4 +323,3 @@ async def test_write_book_resolves_draft_volume_from_outline_and_chapter(
     assert await volume_lookup(SEED_PROJECT_ID, uuid.UUID(int=999999)) is None
     # uuid4 随机值溢出 SQLite INTEGER 主键 → None（不做越界查询）
     assert await volume_lookup(SEED_PROJECT_ID, uuid.UUID(int=2**63)) is None
-

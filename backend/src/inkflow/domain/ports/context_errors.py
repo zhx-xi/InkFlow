@@ -22,7 +22,7 @@ class ContextBudgetExceededError(Exception):
         self.budget = budget
         self.required = required
         self.suggestion = suggestion
-        msg = f"上下文预算超限: protected 层需要 {required} tokens, " f"预算 {budget} tokens"
+        msg = f"上下文预算超限: protected 层需要 {required} tokens, 预算 {budget} tokens"
         if suggestion:
             msg += f"\n建议: {suggestion}"
         super().__init__(msg)

@@ -33,7 +33,7 @@ from coverage_called import (  # noqa: E402  # ci_cd 导入需先插入 sys.path
 )
 
 # ── 固件：合成源码树 + 真实 coverage 数据 ───────────────────────────
-_SRC = '''\
+_SRC = """\
 def top():
     return 1
 
@@ -50,7 +50,7 @@ class C:
 
 def never_called():
     return 4
-'''
+"""
 
 
 @pytest.fixture

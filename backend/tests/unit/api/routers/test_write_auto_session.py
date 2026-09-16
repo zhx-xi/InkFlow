@@ -63,9 +63,9 @@ def test_write_auto_uses_independent_session(fake_db):
     try:
         svc = books.get_planner_service(db=fake_db)
         asyncio.run(svc._write_auto("00000000-0000-0000-0000-000000000001", "一句话"))
-        assert (
-            mock_factory.called
-        ), "write_auto 未使用 async_session_factory 独立 session（#462 根因）"
+        assert mock_factory.called, (
+            "write_auto 未使用 async_session_factory 独立 session（#462 根因）"
+        )
         assert mock_agent.execute.await_count == 1, "execute 应被调用一次"
     finally:
         pf.stop()
@@ -83,9 +83,9 @@ def test_write_auto_not_using_request_db(fake_db):
             args = mock_svc.call_args.args
             passed_db = args[0] if args else None
             assert passed_db is not fake_db, "write_auto 复用请求 db 执行长任务（#462 根因）"
-            assert (
-                passed_db is mock_session
-            ), "write_auto 未传独立 session（async_session_factory 产物）"
+            assert passed_db is mock_session, (
+                "write_auto 未传独立 session（async_session_factory 产物）"
+            )
     finally:
         pf.stop()
         ps.stop()

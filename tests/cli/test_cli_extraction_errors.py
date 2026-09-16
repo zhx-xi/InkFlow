@@ -68,9 +68,7 @@ def fake_http_client():
             "inkflow.cli.commands.extract.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.extract.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.extract.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -250,9 +248,7 @@ class TestExtractRunErrorMapping:
             in data["error"]["message"]
         )
 
-    def test_run_pydantic_validation_error_empty_messages(
-        self, cli_runner, fake_http_client
-    ):
+    def test_run_pydantic_validation_error_empty_messages(self, cli_runner, fake_http_client):
         """detail 为空 → 兜底文案「参数校验失败」透传."""
         from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
 
@@ -335,10 +331,7 @@ class TestExtractRunErrorMapping:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert (
-            "✅ 提取完成: character 处理 2 个源（跳过 0），新增 3 更新 2"
-            in result.output
-        )
+        assert "✅ 提取完成: character 处理 2 个源（跳过 0），新增 3 更新 2" in result.output
         assert "警告" not in result.output
 
     def test_run_text_file_and_chapters_exit_2(self, cli_runner, fake_http_client):
@@ -379,8 +372,5 @@ class TestExtractStatusEdgeBranches:
         assert result.exit_code == 0
         # #1069（ADR-055）：run_at 本地时区显示（期望值测试侧独立换算，非自引用）
         expected_at = local_display("2026-08-02T10:00:00")[:16]
-        assert (
-            f"  [character] {CH1} — ✅ success ({expected_at}, 新增 2 更新 1)"
-            in (result.output)
-        )
+        assert f"  [character] {CH1} — ✅ success ({expected_at}, 新增 2 更新 1)" in (result.output)
         assert "已索引" not in result.output

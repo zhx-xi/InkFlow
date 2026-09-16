@@ -12,6 +12,7 @@ bijection）+ §8 RED-C（退役守护：ALL_TOOL_SPECS 名集**不含** create_
 文件路径：backend/tests/unit/i18n/ → parents[3] = backend 根
 （镜像 test_i18n_s4_domains.py 的 _I18N_SRC 形态）。
 """
+
 from __future__ import annotations
 
 import json

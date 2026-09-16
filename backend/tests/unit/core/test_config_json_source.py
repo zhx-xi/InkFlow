@@ -49,9 +49,7 @@ def _patch_anchor(monkeypatch, anchor: Path) -> None:
     镜像 test_config_instance_env.py:50 手法：raising=False 容忍属性缺失场景，
     GREEN 阶段覆盖真实函数，load_instance_env / 新源命中锚点。
     """
-    monkeypatch.setattr(
-        core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
-    )
+    monkeypatch.setattr(core_config_mod, "get_instance_env_path", lambda: anchor, raising=False)
 
 
 def _empty_anchor(monkeypatch, tmp_path) -> Path:
@@ -333,9 +331,7 @@ def test_config_json_data_dir_key_never_startup_field(monkeypatch, tmp_path) -> 
     cwd = tmp_path / "cwd"
     (cwd / "data").mkdir(parents=True)
     evil = tmp_path / "evil"
-    (cwd / "data" / "config.json").write_text(
-        json.dumps({"data_dir": str(evil)}), encoding="utf-8"
-    )
+    (cwd / "data" / "config.json").write_text(json.dumps({"data_dir": str(evil)}), encoding="utf-8")
     monkeypatch.chdir(cwd)
 
     settings = InkFlowConfig()

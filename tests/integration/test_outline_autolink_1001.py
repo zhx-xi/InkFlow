@@ -27,7 +27,9 @@ from inkflow.domain.models.chapter import ChapterUpdate
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.outline import OutlineORM
 from inkflow.infrastructure.database.models.project import ProjectORM
-from inkflow.infrastructure.database.repositories.draft_repo import SQLiteDraftRepository
+from inkflow.infrastructure.database.repositories.draft_repo import (
+    SQLiteDraftRepository,
+)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -157,9 +159,7 @@ class TestChapterContentAutolink1001:
             await db.commit()
 
             svc = get_chapter_service(db)
-            await svc.update_chapter(
-                UNMATCHED_CHAPTER_UUID, ChapterUpdate(content=CONTENT)
-            )
+            await svc.update_chapter(UNMATCHED_CHAPTER_UUID, ChapterUpdate(content=CONTENT))
 
             outline_row = await db.get(OutlineORM, OUTLINE_ID_INT)
             assert outline_row is not None

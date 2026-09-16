@@ -76,14 +76,9 @@ def _create_v011(db: Path) -> dict[str, int]:
     engine = create_engine(f"sqlite:///{db}")
     with engine.begin() as conn:
         conn.execute(
-            text(
-                "CREATE TABLE projects ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)"
-            )
+            text("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
         )
-        conn.execute(
-            text("INSERT INTO projects (id, name) VALUES (1, '蜀山'), (2, '他项目')")
-        )
+        conn.execute(text("INSERT INTO projects (id, name) VALUES (1, '蜀山'), (2, '他项目')"))
         conn.execute(
             text(
                 "CREATE TABLE character_groups ("

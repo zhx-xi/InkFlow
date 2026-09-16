@@ -92,9 +92,9 @@ def _param(call, name: str, pos: int):
 def _parse_ready(output: str) -> dict:
     """从 CLI 输出解析 INKFLOW_READY 交付行，断言恰好出现一次且为单行 JSON."""
     lines = [ln for ln in output.splitlines() if ln.startswith("INKFLOW_READY ")]
-    assert (
-        len(lines) == 1
-    ), f"INKFLOW_READY 交付行应恰好输出一次，实际 {len(lines)} 行。输出: {output!r}"
+    assert len(lines) == 1, (
+        f"INKFLOW_READY 交付行应恰好输出一次，实际 {len(lines)} 行。输出: {output!r}"
+    )
     return json.loads(lines[0][len("INKFLOW_READY ") :])
 
 
@@ -444,9 +444,7 @@ class TestWritePortFileSeam:
 
         assert result.exit_code == 0
         assert port_file.exists()
-        assert json.loads(port_file.read_text(encoding="utf-8")) == _parse_ready(
-            result.output
-        )
+        assert json.loads(port_file.read_text(encoding="utf-8")) == _parse_ready(result.output)
         assert not (tmp_path / "serve.json.tmp").exists()
 
 

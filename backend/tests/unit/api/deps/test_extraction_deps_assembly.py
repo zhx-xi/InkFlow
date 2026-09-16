@@ -15,6 +15,7 @@
 
 ⚠️ RED 期形态：当前无条件 get_vector_store() → 未配 embedding 时异常上抛 → 断言 FAIL（干净 RED）。
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -47,7 +48,8 @@ async def test_extraction_service_assembles_without_embedding(db) -> None:
     修复后应降级为 None，服务层仅在 index=True 时才报 RAGUnavailableError。
     """
     with patch.object(
-        deps, "get_vector_store",
+        deps,
+        "get_vector_store",
         AsyncMock(side_effect=RAGUnavailableError("未配置 embedding 模型")),
     ):
         svc = await deps.get_extraction_service(db=db)

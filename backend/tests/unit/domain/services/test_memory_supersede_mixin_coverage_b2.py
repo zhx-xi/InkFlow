@@ -185,9 +185,7 @@ async def test_user_supersede_error_audits_and_skips_candidate() -> None:
 async def test_user_supersede_dropped_audits_and_still_creates() -> None:
     """用户级 dropped>0 -> 丢弃审计 + 候选仍落库（115-116）。"""
     learner = FakeLearner(user_candidates=[[_user_candidate("新user语")]])
-    service, deps = _make_service(
-        learner=learner, determiner=_determiner(values=[], dropped=2)
-    )
+    service, deps = _make_service(learner=learner, determiner=_determiner(values=[], dropped=2))
     deps["user_preference_repo"].list_all.return_value = (
         [_user_pref("旧user语", pref_id="upref-old")],
         1,

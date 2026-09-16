@@ -107,9 +107,7 @@ def test_broken_pointer_reports_token_and_lineno_and_main_exits_one(
     """反例（核心）：1 个失效指针 → 1 条报告（文件/行号/token 正确）+ main 退出码 1。"""
     module = _load_script()
     doc_path = _write_tokens(tmp_path, ["AGENTS.md", "tests/missing-spec.md"])
-    assert module.check_doc_pointers(str(tmp_path)) == [
-        (str(doc_path), 2, "tests/missing-spec.md")
-    ]
+    assert module.check_doc_pointers(str(tmp_path)) == [(str(doc_path), 2, "tests/missing-spec.md")]
     monkeypatch.setattr(sys, "argv", ["check_doc_pointers.py", str(tmp_path)])
     assert module.main() == 1
     out = capsys.readouterr().out
@@ -155,30 +153,22 @@ def test_directory_token_is_judged_as_directory(tmp_path: Path) -> None:
 
     bad_root = tmp_path / "bad"
     _write_tokens(bad_root, ["tests/nodir/"])
-    assert module.check_doc_pointers(str(bad_root)) == [
-        (str(bad_root / DOC), 1, "tests/nodir/")
-    ]
+    assert module.check_doc_pointers(str(bad_root)) == [(str(bad_root / DOC), 1, "tests/nodir/")]
 
     file_root = tmp_path / "file-root"
     file_root.mkdir()
     (file_root / "tests").mkdir()
     (file_root / "tests" / "nodir").write_text("同名文件不是目录\n", encoding="utf-8")
     _write_tokens(file_root, ["tests/nodir/"])
-    assert module.check_doc_pointers(str(file_root)) == [
-        (str(file_root / DOC), 1, "tests/nodir/")
-    ]
+    assert module.check_doc_pointers(str(file_root)) == [(str(file_root / DOC), 1, "tests/nodir/")]
 
 
-def test_repeated_token_counts_once_at_first_line(
-    monkeypatch, tmp_path: Path, capsys
-) -> None:
+def test_repeated_token_counts_once_at_first_line(monkeypatch, tmp_path: Path, capsys) -> None:
     """去重口径：同一 token 多次出现只算 1 个指针，行号取首次出现（基线 31 的口径）。"""
     module = _load_script()
     (tmp_path / "design").mkdir()
     _write_lines(tmp_path, ["`design/`", "`missing.md`", "`design/`", "`missing.md`"])
-    assert module.check_doc_pointers(str(tmp_path)) == [
-        (str(tmp_path / DOC), 2, "missing.md")
-    ]
+    assert module.check_doc_pointers(str(tmp_path)) == [(str(tmp_path / DOC), 2, "missing.md")]
     monkeypatch.setattr(sys, "argv", ["check_doc_pointers.py", str(tmp_path)])
     assert module.main() == 1
     assert "[check_doc_pointers] 1 broken pointer(s):" in capsys.readouterr().out

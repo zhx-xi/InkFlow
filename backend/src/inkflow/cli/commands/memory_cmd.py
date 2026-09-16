@@ -223,6 +223,7 @@ def memory_user_remove(
         return
     typer.echo("✅ 已删除用户级偏好（所有项目生成立即停止注入）")
 
+
 @app.command("summarize")
 @instrument(caller_type="cli")
 def memory_summarize(

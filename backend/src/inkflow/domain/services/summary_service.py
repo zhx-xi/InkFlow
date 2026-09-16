@@ -129,8 +129,7 @@ class SummaryService:
             # #936 A 项：经 resolve_model 单一入口走守卫语义（domain 层不 import api 层
             # resolver，依赖方向）；此处是「无前缀回退」非装配点，空值保持既有降级行为。
             resolved_model = (
-                resolve_model(None, None, model if "/" in model else config.llm_default_model)
-                or ""
+                resolve_model(None, None, model if "/" in model else config.llm_default_model) or ""
             )
 
             response = await self._llm.chat(messages, model=resolved_model)

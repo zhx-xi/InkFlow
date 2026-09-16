@@ -57,9 +57,7 @@ class TestCreateAutoSetsGlobalDefault:
         """含 chat 模型 + 全局默认空 → 写入 f"{provider}/{首个chat模型}" + 落盘。"""
         config_obj = _FakeConfig(llm_default_model="")
         svc = _make_service(_mock_repo(), config_obj)
-        with patch(
-            "inkflow.domain.services.provider_config_service.save_config_json"
-        ) as mock_save:
+        with patch("inkflow.domain.services.provider_config_service.save_config_json") as mock_save:
             await svc.create(
                 ProviderConfigCreate(
                     name="openai",
@@ -78,9 +76,7 @@ class TestCreateAutoSetsGlobalDefault:
         """全局默认已配置 → 不覆盖，不调 save_config_json。"""
         config_obj = _FakeConfig(llm_default_model="deepseek/deepseek-v4-flash")
         svc = _make_service(_mock_repo(), config_obj)
-        with patch(
-            "inkflow.domain.services.provider_config_service.save_config_json"
-        ) as mock_save:
+        with patch("inkflow.domain.services.provider_config_service.save_config_json") as mock_save:
             await svc.create(
                 ProviderConfigCreate(
                     name="openai",
@@ -94,9 +90,7 @@ class TestCreateAutoSetsGlobalDefault:
         """仅 embedding 模型 → 不写入（需 >=1 个 chat 模型）。"""
         config_obj = _FakeConfig(llm_default_model="")
         svc = _make_service(_mock_repo(), config_obj)
-        with patch(
-            "inkflow.domain.services.provider_config_service.save_config_json"
-        ) as mock_save:
+        with patch("inkflow.domain.services.provider_config_service.save_config_json") as mock_save:
             await svc.create(
                 ProviderConfigCreate(
                     name="openai",

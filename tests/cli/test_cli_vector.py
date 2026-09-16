@@ -66,9 +66,7 @@ def fake_http_client():
             "inkflow.cli.commands.vector.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -324,15 +322,9 @@ class TestVectorRetrieve:
         """结果按 relevance_score 降序输出（服务返回乱序时 CLI 负责排序）."""
         fake_http_client.post.return_value = {
             "items": [
-                _make_retrieved(
-                    entity_id="low", relevance_score=0.5, metadata={"name": "低相关"}
-                ),
-                _make_retrieved(
-                    entity_id="high", relevance_score=0.9, metadata={"name": "高相关"}
-                ),
-                _make_retrieved(
-                    entity_id="mid", relevance_score=0.7, metadata={"name": "中相关"}
-                ),
+                _make_retrieved(entity_id="low", relevance_score=0.5, metadata={"name": "低相关"}),
+                _make_retrieved(entity_id="high", relevance_score=0.9, metadata={"name": "高相关"}),
+                _make_retrieved(entity_id="mid", relevance_score=0.7, metadata={"name": "中相关"}),
             ]
         }
         result = cli_runner.invoke(
@@ -501,9 +493,7 @@ class TestVectorStatus:
 
     def test_status_json(self, cli_runner, fake_http_client):
         """status --json → 成功信封 + data（stale/reason/configured_fp）。"""
-        fake_http_client.get.return_value = _make_status(
-            stale=True, reason="model_changed"
-        )
+        fake_http_client.get.return_value = _make_status(stale=True, reason="model_changed")
         result = cli_runner.invoke(
             app,
             ["status", "--project-id", str(PID)],
@@ -514,9 +504,7 @@ class TestVectorStatus:
         assert data["ok"] is True
         assert data["data"]["stale"] is True
         assert data["data"]["reason"] == "model_changed"
-        assert data["data"]["configured_fp"]["embedding"]["model_id"] == (
-            "text-embedding-3-small"
-        )
+        assert data["data"]["configured_fp"]["embedding"]["model_id"] == ("text-embedding-3-small")
         fake_http_client.get.assert_awaited_once_with(f"/projects/{PID}/vector/status")
 
     def test_status_human_fresh(self, cli_runner, fake_http_client):
@@ -533,9 +521,7 @@ class TestVectorStatus:
 
     def test_status_human_stale(self, cli_runner, fake_http_client):
         """status 人类模式 stale → 输出不一致警告 + reason 文案（模型已变更）。"""
-        fake_http_client.get.return_value = _make_status(
-            stale=True, reason="model_changed"
-        )
+        fake_http_client.get.return_value = _make_status(stale=True, reason="model_changed")
         result = cli_runner.invoke(
             app,
             ["status", "--project-id", str(PID)],
@@ -567,9 +553,7 @@ class TestVectorStaleWarning:
 
     def test_reindex_stale_warns_and_continues(self, cli_runner, fake_http_client):
         """reindex 前置 stale → 输出「索引可能过期」警告 + 仍执行 reindex。"""
-        fake_http_client.get.return_value = _make_status(
-            stale=True, reason="model_changed"
-        )
+        fake_http_client.get.return_value = _make_status(stale=True, reason="model_changed")
         fake_http_client.post.return_value = _make_reindex_result()
         result = cli_runner.invoke(
             app,
@@ -597,13 +581,9 @@ class TestVectorStaleWarning:
         assert result.exit_code == 0
         assert "索引可能过期" not in result.output
 
-    def test_retrieve_stale_warns_and_returns_results(
-        self, cli_runner, fake_http_client
-    ):
+    def test_retrieve_stale_warns_and_returns_results(self, cli_runner, fake_http_client):
         """retrieve 前置 stale → 警告首行 + 结果正常返回（stale 不阻断检索）。"""
-        fake_http_client.get.return_value = _make_status(
-            stale=True, reason="chunking_changed"
-        )
+        fake_http_client.get.return_value = _make_status(stale=True, reason="chunking_changed")
         fake_http_client.post.return_value = {"items": [_make_retrieved()]}
         result = cli_runner.invoke(
             app,

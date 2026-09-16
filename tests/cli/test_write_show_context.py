@@ -91,9 +91,7 @@ def fake_http_client():
             "inkflow.cli.commands.write.ensure_kernel",
             AsyncMock(return_value=_fake_handle()),
         ),
-        patch(
-            "inkflow.cli.commands.write.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.write.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -141,16 +139,12 @@ class TestWriteShowContext:
         assert result.exit_code == 0, result.output
         assert _PLACEHOLDER not in result.output, "仍打印占位符（功能未接）"
         # 真实上下文：token 数可见（blocks=1 / budget=8000 / total=1234）
-        assert (
-            "1234" in result.output
-        ), f"--show-context 未打印真实 token 数：\n{result.output}"
+        assert "1234" in result.output, f"--show-context 未打印真实 token 数：\n{result.output}"
         # 必须真的调过 /context/assemble（HTTP 轨，非本地组装）
-        called_paths = [
-            c.args[0] for c in fake_http_client.post.call_args_list if c.args
-        ]
-        assert (
-            "/context/assemble" in called_paths
-        ), f"未调用 /context/assemble（CLI 恒经 HTTP）：{called_paths}"
+        called_paths = [c.args[0] for c in fake_http_client.post.call_args_list if c.args]
+        assert "/context/assemble" in called_paths, (
+            f"未调用 /context/assemble（CLI 恒经 HTTP）：{called_paths}"
+        )
 
     def test_show_context_json_envelope(
         self, cli_runner: CliRunner, fake_http_client: AsyncMock

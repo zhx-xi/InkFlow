@@ -606,9 +606,9 @@ class TestMergeRoleConfigsSentinel:
 
         stages = {s.id: s for s in pipeline.executed_stages}
         for stage in stages.values():
-            assert (
-                stage.agent.model == "deepseek/deepseek-v4-flash"
-            ), f"sentinel 应回退项目 model，实际 {stage.id}={stage.agent.model}"
+            assert stage.agent.model == "deepseek/deepseek-v4-flash", (
+                f"sentinel 应回退项目 model，实际 {stage.id}={stage.agent.model}"
+            )
 
     async def test_none_roles_fall_back_to_project_model(self):
         """#373（方案 B）：四角色 None/缺键（GUI 默认形态——前端不发 agent_* 键
@@ -623,9 +623,9 @@ class TestMergeRoleConfigsSentinel:
 
         stages = {s.id: s for s in pipeline.executed_stages}
         for stage in stages.values():
-            assert (
-                stage.agent.model == "deepseek/deepseek-v4-flash"
-            ), f"未配置角色应回退项目 model，实际 {stage.id}={stage.agent.model}"
+            assert stage.agent.model == "deepseek/deepseek-v4-flash", (
+                f"未配置角色应回退项目 model，实际 {stage.id}={stage.agent.model}"
+            )
             assert stage.agent.model != "openai/gpt-4o"
 
 

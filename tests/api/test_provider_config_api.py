@@ -458,10 +458,13 @@ class TestSeedBuiltinProviders:
         """
         monkeypatch.delenv(ENV_TOKEN, raising=False)
         monkeypatch.chdir(tmp_path)
-        with patch(
-            "inkflow.api.routers.provider_configs._get_key_manager",
-            return_value=FakeKeyManager(),
-        ), TestClient(app) as tc:
+        with (
+            patch(
+                "inkflow.api.routers.provider_configs._get_key_manager",
+                return_value=FakeKeyManager(),
+            ),
+            TestClient(app) as tc,
+        ):
             resp = tc.get(ENDPOINT)
         assert resp.status_code == 200
         names = [it["name"] for it in resp.json()["items"]]
@@ -489,9 +492,7 @@ class TestSeedBuiltinProviders:
             SQLiteProviderConfigRepository,
         )
 
-        svc = ProviderConfigService(
-            repository=SQLiteProviderConfigRepository(db_session)
-        )
+        svc = ProviderConfigService(repository=SQLiteProviderConfigRepository(db_session))
         assert await svc.seed_builtin_providers() == 4
         assert await svc.seed_builtin_providers() == 0  # 幂等：不重复插入
 
@@ -569,9 +570,7 @@ class TestCreateProviderConfig:
         ],
         ids=["name_missing", "name_blank", "model_type_invalid", "model_id_blank"],
     )
-    async def test_create_validation_422(
-        self, client, db_session, override_get_db, body
-    ):
+    async def test_create_validation_422(self, client, db_session, override_get_db, body):
         """name 缺失/空白、models[].type 非法、models[].id 空白 → 422（#8）。"""
         resp = await client.post(ENDPOINT, json=body)
         assert resp.status_code == 422
@@ -602,9 +601,7 @@ class TestCreateProviderConfig:
 class TestGetProviderConfig:
     """详情端点契约（设计假设 #9）。"""
 
-    async def test_get_detail_200(
-        self, client, db_session, override_get_db, patch_key_manager
-    ):
+    async def test_get_detail_200(self, client, db_session, override_get_db, patch_key_manager):
         """详情：200 + 完整响应结构（含 models 原样、key_saved）。"""
         row = await _seed_provider(
             db_session,
@@ -650,9 +647,7 @@ class TestGetProviderConfig:
 class TestUpdateProviderConfig:
     """更新端点契约（设计假设 #9/#11/#12）。"""
 
-    async def test_patch_partial_200(
-        self, client, db_session, override_get_db, patch_key_manager
-    ):
+    async def test_patch_partial_200(self, client, db_session, override_get_db, patch_key_manager):
         """部分更新：200 + 仅提供字段变更，未提供字段原样保留（#11）。"""
         row = await _seed_provider(
             db_session,
@@ -732,9 +727,7 @@ class TestUpdateProviderConfig:
         ],
         ids=["name_blank", "model_type_invalid"],
     )
-    async def test_patch_validation_422(
-        self, client, db_session, override_get_db, body
-    ):
+    async def test_patch_validation_422(self, client, db_session, override_get_db, body):
         """PATCH 提供即校验：name 空白 / type 非法 → 422（#8）。"""
         row = await _seed_provider(db_session, name="my-provider")
         resp = await client.patch(f"{ENDPOINT}/{row.id}", json=body)
@@ -839,9 +832,7 @@ class TestBuiltinKeyContract:
             SQLiteProviderConfigRepository,
         )
 
-        return ProviderConfigService(
-            repository=SQLiteProviderConfigRepository(db_session)
-        )
+        return ProviderConfigService(repository=SQLiteProviderConfigRepository(db_session))
 
     @staticmethod
     async def _get_orm_row(db_session, name: str):
@@ -884,9 +875,7 @@ class TestBuiltinKeyContract:
         assert resp.status_code == 200
         assert resp.json()["name"] == "myai"
 
-        assert (
-            await svc.seed_builtin_providers() == 0
-        )  # RED: 按名判重 → 实际 1（openai 复活）
+        assert await svc.seed_builtin_providers() == 0  # RED: 按名判重 → 实际 1（openai 复活）
 
         patch_key_manager([])
         resp2 = await client.get(ENDPOINT)

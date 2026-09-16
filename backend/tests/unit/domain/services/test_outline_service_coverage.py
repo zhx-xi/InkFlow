@@ -29,7 +29,7 @@ def _svc(repo=None, chapter_repo=None) -> OutlineService:
 
 @pytest.mark.asyncio
 async def test_validate_chapter_repo_none_skips_check():
-    """覆盖 L178 br=[182]：chapter_repo None 跳过章校验（向后兼容；#835 章须挂卷）. """
+    """覆盖 L178 br=[182]：chapter_repo None 跳过章校验（向后兼容；#835 章须挂卷）."""
     volume = SimpleNamespace(level="volume", project_id=PID)
     repo = AsyncMock()
     repo.get.return_value = volume
@@ -39,7 +39,7 @@ async def test_validate_chapter_repo_none_skips_check():
 
 @pytest.mark.asyncio
 async def test_validate_chapter_matches_project():
-    """覆盖 L180 br=[182]：章存在且同项目 -> 校验通过（#835 章须挂卷）. """
+    """覆盖 L180 br=[182]：章存在且同项目 -> 校验通过（#835 章须挂卷）."""
     volume = SimpleNamespace(level="volume", project_id=PID)
     repo = AsyncMock()
     repo.get.return_value = volume
@@ -52,7 +52,7 @@ async def test_validate_chapter_matches_project():
 
 @pytest.mark.asyncio
 async def test_validate_volume_repo_none_and_no_existing():
-    """覆盖 L185 br=[189] + L192 br=[exit]：volume 分支 chapter_repo None 且无卷纲（#835）. """
+    """覆盖 L185 br=[189] + L192 br=[exit]：volume 分支 chapter_repo None 且无卷纲（#835）."""
     repo = AsyncMock()
     repo.get.return_value = SimpleNamespace(level="overall", project_id=PID)
     repo.get_outline_by_volume.return_value = None

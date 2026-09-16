@@ -362,9 +362,9 @@ class _WriteToolFlowAgent:
         }
         yield {
             "event": "on_chat_model_end",
-            "data": {"output": SimpleNamespace(
-                content="草稿已保存", tool_calls=[], response_metadata={}
-            )},
+            "data": {
+                "output": SimpleNamespace(content="草稿已保存", tool_calls=[], response_metadata={})
+            },
         }
 
 
@@ -479,9 +479,7 @@ class TestChatAgentMemoryInjection:
             ]
 
         agent = _FakeAgent()
-        svc = ChatAgentService(
-            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
-        )
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter)
         _, inputs = await _drain(svc, agent, prompt="第二轮：写他的背景", project_id=PROJECT_ID)
         messages = inputs["messages"]
         # 位置与角色映射：user→HumanMessage，ai→AIMessage
@@ -506,9 +504,7 @@ class TestChatAgentMemoryInjection:
             return []
 
         agent = _FakeAgent()
-        svc = ChatAgentService(
-            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
-        )
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter)
         await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
         assert received == [PROJECT_ID]
 
@@ -521,9 +517,7 @@ class TestChatAgentMemoryInjection:
             raise RuntimeError("history load failed")
 
         agent = _FakeAgent()
-        svc = ChatAgentService(
-            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
-        )
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter)
         frames, inputs = await _drain(svc, agent, prompt="你好", project_id=PROJECT_ID)
         assert [m.content for m in inputs["messages"]] == [BASE_PROMPT, "你好"]
         assert frames[-1].done is True
@@ -551,9 +545,7 @@ class TestChatAgentMemoryInjection:
             return []
 
         agent = _FakeAgent()
-        svc = ChatAgentService(
-            agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter
-        )
+        svc = ChatAgentService(agent=agent, system_prompt=BASE_PROMPT, history_getter=_getter)
         await _drain(svc, agent, prompt="你好", project_id=None)
         assert called is False
         assert [m.content for m in agent.calls[0]["inputs"]["messages"]] == [

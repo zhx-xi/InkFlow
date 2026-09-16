@@ -161,14 +161,12 @@ class TestChatAgentReasoningResolution:
     @pytest.mark.asyncio
     async def test_default_when_all_unset(self) -> None:
         """全局显式 'default' → 装配传 'default'（构造点不发参数另有契约锁）。"""
-        m_da = await _assemble(
-            request_effort=None, project=_project(None), global_effort="default"
-        )
+        m_da = await _assemble(request_effort=None, project=_project(None), global_effort="default")
         assert m_da.call_args.kwargs.get("reasoning_effort") == "default"
 
     @pytest.mark.asyncio
     async def test_explicit_default_at_request_overrides_project(self) -> None:
-        """"default" 是显式档位：请求级 default 覆盖项目 high。"""
+        """ "default" 是显式档位：请求级 default 覆盖项目 high。"""
         m_da = await _assemble(request_effort="default", project=_project("high"))
         assert m_da.call_args.kwargs.get("reasoning_effort") == "default"
 

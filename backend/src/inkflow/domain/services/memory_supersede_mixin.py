@@ -7,6 +7,7 @@ LLM 判定取代逻辑超 900 行护栏，按 fix-010 mixin 抽取先例拆出�
 - 混入类：self._supersede_determiner / _preference_repo / _user_preference_repo /
   _audit_service / _llm_default_model / last_learned 均由 MemoryService 提供。
 """
+
 from __future__ import annotations
 
 from inkflow.domain.ports.preference_supersede_errors import SupersedeDeterminationError

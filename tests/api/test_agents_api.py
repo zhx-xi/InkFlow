@@ -311,8 +311,6 @@ def _assert_response_contract(data: dict) -> None:
     assert isinstance(data["builtin"], bool)
 
 
-
-
 # ── GET /api/v1/agents（spec §3.1 列表）──
 
 
@@ -329,9 +327,7 @@ class TestListAgents:
         assert body["items"] == []
         assert body["total"] == 0
 
-    async def test_list_returns_seeded_agents(
-        self, client, db_session, override_get_db
-    ):
+    async def test_list_returns_seeded_agents(self, client, db_session, override_get_db):
         """seed 2 条（1 自定义 + 1 内置）→ 200 + {items, total}；builtin 值回显。"""
         row_a = await _seed_agent(db_session, name="自定义甲", description="甲说明")
         row_b = await _seed_agent(
@@ -359,8 +355,6 @@ class TestListAgents:
         assert by_id[str(row_b.id)]["tool_ids"] == ["count_words", "save_draft"]
 
 
-
-
 # ── POST /api/v1/agents（spec §3.1 新建）──
 # #838 工具目录契约已拆到 test_agents_tools_api.py。
 
@@ -370,16 +364,10 @@ class TestListAgents:
 class TestCreateAgent:
     """新建端点契约（设计假设 #8/#9/#11/#14）。"""
 
-    async def test_create_201_contract(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_create_201_contract(self, client, db_session, override_get_db, skills_root):
         """成功：201 + 完整响应；字段原样回显（skill_ids 引用真实 skill 目录）；DB 落库。"""
-        await _seed_skill(
-            skills_root, name="web-research", description="网络调研方法论"
-        )
-        await _seed_skill(
-            skills_root, name="revision-methodology", description="修订打磨方法论"
-        )
+        await _seed_skill(skills_root, name="web-research", description="网络调研方法论")
+        await _seed_skill(skills_root, name="revision-methodology", description="修订打磨方法论")
         payload = {
             **FULL_AGENT_PAYLOAD,
             "skill_ids": ["web-research", "revision-methodology"],
@@ -441,17 +429,13 @@ class TestCreateAgent:
             "temp_below_min",
         ],
     )
-    async def test_create_validation_422(
-        self, client, db_session, override_get_db, body
-    ):
+    async def test_create_validation_422(self, client, db_session, override_get_db, body):
         """name 缺失/空白、温度越界 → 422（Pydantic 校验错误列表，#8）。"""
         resp = await client.post(ENDPOINT, json=body)
         assert resp.status_code == 422
         assert isinstance(resp.json()["detail"], list)
 
-    async def test_create_extra_fields_ignored(
-        self, client, db_session, override_get_db
-    ):
+    async def test_create_extra_fields_ignored(self, client, db_session, override_get_db):
         """多余字段忽略（不 422）→ 201（#8：Pydantic v2 默认行为）。"""
         resp = await client.post(
             ENDPOINT,
@@ -469,9 +453,7 @@ class TestCreateAgent:
         assert resp2.status_code == 422
         assert resp2.json()["detail"], "同名 422 detail 应为非空消息（#9）"
 
-    async def test_create_tool_ids_unknown_422(
-        self, client, db_session, override_get_db
-    ):
+    async def test_create_tool_ids_unknown_422(self, client, db_session, override_get_db):
         """tool_ids 含目录外工具名 → 422（ToolReferenceError，#9）。"""
         resp = await client.post(
             ENDPOINT, json={"name": "白名单错配", "tool_ids": ["no_such_tool"]}
@@ -479,25 +461,19 @@ class TestCreateAgent:
         assert resp.status_code == 422
         assert resp.json()["detail"], "目录外工具名 422 detail 应为非空消息（#9）"
 
-    async def test_create_skill_ids_missing_422(
-        self, client, db_session, override_get_db
-    ):
+    async def test_create_skill_ids_missing_422(self, client, db_session, override_get_db):
         """skill_ids 含不存在 skill 目录名 → 422（SkillReferenceError，#9）。"""
         resp = await client.post(
             ENDPOINT, json={"name": "skill 错配", "skill_ids": ["no-such-skill"]}
         )
         assert resp.status_code == 422
-        assert resp.json()[
-            "detail"
-        ], "不存在 skill 目录名 422 detail 应为非空消息（#9）"
+        assert resp.json()["detail"], "不存在 skill 目录名 422 detail 应为非空消息（#9）"
 
     async def test_create_with_seeded_skill_201(
         self, client, db_session, override_get_db, skills_root
     ):
         """skill_ids 引用真实预插 skill 目录 → 201 且回显（#14 确定性造数）。"""
-        await _seed_skill(
-            skills_root, name="web-research", description="世界观一致性方法论"
-        )
+        await _seed_skill(skills_root, name="web-research", description="世界观一致性方法论")
 
         resp = await client.post(
             ENDPOINT, json={"name": "世界观顾问", "skill_ids": ["web-research"]}
@@ -607,9 +583,9 @@ class TestUpdateAgent:
         resp = await client.patch(f"{ENDPOINT}/{row.id}", json={"name": "改名"})
         assert resp.status_code == 409
         detail = resp.json()["detail"]
-        assert (
-            isinstance(detail, str) and "内置" in detail
-        ), f"409 detail 应含「内置」语义: {detail!r}"
+        assert isinstance(detail, str) and "内置" in detail, (
+            f"409 detail 应含「内置」语义: {detail!r}"
+        )
 
         # 409 后记录未被修改
         resp2 = await client.get(f"{ENDPOINT}/{row.id}")
@@ -644,9 +620,7 @@ class TestUpdateAgent:
         ],
         ids=["name_blank", "temp_out_of_range"],
     )
-    async def test_patch_validation_422(
-        self, client, db_session, override_get_db, body
-    ):
+    async def test_patch_validation_422(self, client, db_session, override_get_db, body):
         """PATCH 提供即校验：name 空白 / 温度越界 → 422（#8）。"""
         row = await _seed_agent(db_session, name="my-agent")
         resp = await client.patch(f"{ENDPOINT}/{row.id}", json=body)
@@ -693,9 +667,9 @@ class TestDeleteAgent:
         resp = await client.delete(f"{ENDPOINT}/{row.id}")
         assert resp.status_code == 409
         detail = resp.json()["detail"]
-        assert (
-            isinstance(detail, str) and "内置" in detail
-        ), f"409 detail 应含「内置」语义: {detail!r}"
+        assert isinstance(detail, str) and "内置" in detail, (
+            f"409 detail 应含「内置」语义: {detail!r}"
+        )
 
         # 409 后记录未被删除
         resp2 = await client.get(f"{ENDPOINT}/{row.id}")

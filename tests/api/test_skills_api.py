@@ -136,14 +136,7 @@ SKILL_MD = (
 )
 """合法 SKILL.md 样例（frontmatter name=web-research 满足 N2，契约 #4）。"""
 
-SKILL_MD_2 = (
-    "---\n"
-    "name: outline-arch\n"
-    "description: 大纲架构方法论\n"
-    "---\n"
-    "# 大纲\n"
-    "- 三幕结构\n"
-)
+SKILL_MD_2 = "---\nname: outline-arch\ndescription: 大纲架构方法论\n---\n# 大纲\n- 三幕结构\n"
 """第二个合法 SKILL.md 样例（列表排序/多 skill 用例用）。"""
 
 
@@ -325,9 +318,7 @@ class TestListSkills:
 class TestCreateSkill:
     """上传/创建端点契约（设计假设 #2/#4）。"""
 
-    async def test_create_201_contract(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_create_201_contract(self, client, db_session, override_get_db, skills_root):
         """Create 201: id==name, content written to SKILL.md."""
         resp = await client.post(ENDPOINT, json={"content": SKILL_MD})
         assert resp.status_code == 201
@@ -352,9 +343,7 @@ class TestCreateSkill:
             "---\nname: Web-Research\ndescription: 大写非法\n---\n正文",  # name 含大写
             "---\nname: web research\ndescription: 含空格非法\n---\n正文",  # name 含空格
             "---\nname: web--research\ndescription: 双连字符非法\n---\n正文",  # N2 单连字符
-            "---\nname: "
-            + "a" * 65
-            + "\ndescription: 超长非法\n---\n正文",  # name 超 64
+            "---\nname: " + "a" * 65 + "\ndescription: 超长非法\n---\n正文",  # name 超 64
         ],
         ids=[
             "missing_name",
@@ -391,9 +380,7 @@ class TestCreateSkill:
 class TestGetSkill:
     """Skill 详情端点契约（设计假设 #1/#2/#3/#8）。"""
 
-    async def test_get_detail_contract(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_get_detail_contract(self, client, db_session, override_get_db, skills_root):
         """成功：200 + id==name；content 与文件逐字一致；无引用 agent_ids=[]（#2/#8）。"""
         _write_skill(skills_root, "web-research", description="网络调研方法论")
         resp = await client.get(f"{ENDPOINT}/web-research")
@@ -408,9 +395,7 @@ class TestGetSkill:
             encoding="utf-8"
         )
 
-    async def test_get_builtin_source(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_get_builtin_source(self, client, db_session, override_get_db, skills_root):
         """内置目录名 → 200 + source=builtin（目录名 ∈ BUILTIN 推导，#3）。"""
         _write_builtin(skills_root)
         resp = await client.get(f"{ENDPOINT}/architecture-methodology")
@@ -419,9 +404,7 @@ class TestGetSkill:
         _assert_detail_contract(data)
         assert data["source"] == "builtin"
 
-    async def test_get_not_found_404(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_get_not_found_404(self, client, db_session, override_get_db, skills_root):
         """不存在的 skill_name → 404 + detail「Skill 不存在」（#1）。"""
         resp = await client.get(f"{ENDPOINT}/no-such-skill")
         assert resp.status_code == 404
@@ -449,14 +432,10 @@ class TestGetSkill:
 class TestPatchSkill:
     """更新端点契约（设计假设 #6）。"""
 
-    async def test_patch_description_200(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_patch_description_200(self, client, db_session, override_get_db, skills_root):
         """user_upload：PATCH description → 200；description 更新；name/id 不变（#6）。"""
         _write_skill(skills_root, "web-research", description="网络调研方法论")
-        resp = await client.patch(
-            f"{ENDPOINT}/web-research", json={"description": "修订后的描述"}
-        )
+        resp = await client.patch(f"{ENDPOINT}/web-research", json={"description": "修订后的描述"})
         assert resp.status_code == 200
         data = resp.json()
         _assert_detail_contract(data)
@@ -507,9 +486,7 @@ class TestPatchSkill:
         names = [a["name"] for a in data["agent_ids"]]
         assert "ReferringAgent" in names, f"agent_ids should include ref agent: {names}"
 
-    async def test_patch_builtin_409(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_patch_builtin_409(self, client, db_session, override_get_db, skills_root):
         """内置目录名 → 409 detail「内置 skill 只读」；文件原样保留（#3/#6）。"""
         d = _write_builtin(skills_root)
         original = (d / "SKILL.md").read_text(encoding="utf-8")
@@ -522,17 +499,11 @@ class TestPatchSkill:
         resp2 = await client.get(f"{ENDPOINT}/architecture-methodology")
         assert resp2.status_code == 200
         assert resp2.json()["source"] == "builtin"
-        assert (d / "SKILL.md").read_text(
-            encoding="utf-8"
-        ) == original, "内置文件不得被改写"
+        assert (d / "SKILL.md").read_text(encoding="utf-8") == original, "内置文件不得被改写"
 
-    async def test_patch_not_found_404(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_patch_not_found_404(self, client, db_session, override_get_db, skills_root):
         """不存在的 skill_name → 404（#1）。"""
-        resp = await client.patch(
-            f"{ENDPOINT}/no-such-skill", json={"description": "x"}
-        )
+        resp = await client.patch(f"{ENDPOINT}/no-such-skill", json={"description": "x"})
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_NOT_FOUND
 
@@ -545,9 +516,7 @@ class TestPatchSkill:
 class TestDeleteSkill:
     """删除端点契约（设计假设 #7；级联清引用见 test_skills_cascade.py）。"""
 
-    async def test_delete_204_and_gone(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_delete_204_and_gone(self, client, db_session, override_get_db, skills_root):
         """成功：204 空响应体；目录被删；GET → 404（#7）。"""
         _write_skill(skills_root, "web-research", description="网络调研方法论")
         resp = await client.delete(f"{ENDPOINT}/web-research")
@@ -559,9 +528,7 @@ class TestDeleteSkill:
         assert resp2.status_code == 404
         assert resp2.json()["detail"] == DETAIL_NOT_FOUND
 
-    async def test_delete_builtin_409(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_delete_builtin_409(self, client, db_session, override_get_db, skills_root):
         """内置目录名 → 409 detail「内置 skill 只读」；目录保留（#3/#7）。"""
         d = _write_builtin(skills_root)
         resp = await client.delete(f"{ENDPOINT}/architecture-methodology")
@@ -573,9 +540,7 @@ class TestDeleteSkill:
         assert resp2.status_code == 200
         assert resp2.json()["source"] == "builtin"
 
-    async def test_delete_not_found_404(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_delete_not_found_404(self, client, db_session, override_get_db, skills_root):
         """不存在的 skill_name → 404（#1）。"""
         resp = await client.delete(f"{ENDPOINT}/no-such-skill")
         assert resp.status_code == 404
@@ -590,14 +555,10 @@ class TestDeleteSkill:
 class TestSkillAgentReferences:
     """agent_ids 反查契约（设计假设 #8）。"""
 
-    async def test_agent_ids_reverse_lookup(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_agent_ids_reverse_lookup(self, client, db_session, override_get_db, skills_root):
         """skill 被 Agent 引用（skill_ids=[目录名]）→ 详情与列表项 agent_ids 含该 agent（#8）。"""
         _write_skill(skills_root, "web-research", description="网络调研方法论")
-        agent = await _seed_agent(
-            db_session, name="引用Agent甲", skill_ids=["web-research"]
-        )
+        agent = await _seed_agent(db_session, name="引用Agent甲", skill_ids=["web-research"])
 
         resp = await client.get(f"{ENDPOINT}/web-research")
         assert resp.status_code == 200

@@ -57,9 +57,9 @@ def test_planner_deps_character_service_injected():
     """get_planner_service 的 _character_service 必须非 None（访谈产出落库 character）。"""
     session_factory = db_session()
     svc = books.get_planner_service(db=session_factory())
-    assert (
-        svc._character_service is not None
-    ), "character_service 未注入（访谈产出不落库 character）"
+    assert svc._character_service is not None, (
+        "character_service 未注入（访谈产出不落库 character）"
+    )
 
 
 def test_planner_deps_all_three():

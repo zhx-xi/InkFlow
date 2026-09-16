@@ -276,10 +276,7 @@ async def _create_legacy_skills_table(db_session, rows: list[dict]) -> None:
         )
     )
     await db_session.execute(
-        text(
-            "INSERT INTO skills (name, description, content, source) "
-            "VALUES (:n, :d, :c, :s)"
-        ),
+        text("INSERT INTO skills (name, description, content, source) VALUES (:n, :d, :c, :s)"),
         [
             {"n": r["name"], "d": r["description"], "c": r["content"], "s": r["source"]}
             for r in rows
@@ -310,9 +307,7 @@ class TestEnsureBuiltinSkills:
         assert n == 6, f"首次写出应返回 6: {n}"
 
         for slug in BUILTIN_SKILL_NAMES:
-            assert (
-                skills_root / slug / "SKILL.md"
-            ).is_file(), f"缺失内置 skill 文件: {slug}"
+            assert (skills_root / slug / "SKILL.md").is_file(), f"缺失内置 skill 文件: {slug}"
         md_files = sorted(p for p in skills_root.rglob("SKILL.md"))
         assert len(md_files) == 6, f"SKILL.md 总数应为 6: {md_files}"
 
@@ -332,9 +327,7 @@ class TestEnsureBuiltinSkills:
 
         n = ensure_builtin_skills(skills_root)
         assert n == 1, f"删 1 个内置后应回补 1: {n}"
-        assert (
-            skills_root / removed / "SKILL.md"
-        ).is_file(), "删除的内置 skill 必须回补"
+        assert (skills_root / removed / "SKILL.md").is_file(), "删除的内置 skill 必须回补"
         assert len(list(skills_root.rglob("SKILL.md"))) == 6
 
         for slug in BUILTIN_SKILL_NAMES:
@@ -354,9 +347,7 @@ class TestMigrateSkillsFromDb:
     表不存在 → 0（不抛错、不重建旧表）；迁移实现与测试均不得依赖 SkillORM。
     """
 
-    async def test_user_upload_rows_migrated_and_table_cleared(
-        self, db_session, skills_root
-    ):
+    async def test_user_upload_rows_migrated_and_table_cleared(self, db_session, skills_root):
         """user_upload 2 行 → 返回 2；content 原样写出为 <name>/SKILL.md；表清空（#4）。"""
         content_a = "---\nname: legacy-a\ndescription: 旧技能 A\n---\n# A\n"
         content_b = "---\nname: legacy-b\ndescription: 旧技能 B\n---\n# B\n"
@@ -386,9 +377,7 @@ class TestMigrateSkillsFromDb:
         assert f_a.read_text(encoding="utf-8") == content_a, "content 必须原样写出"
         assert f_b.read_text(encoding="utf-8") == content_b, "content 必须原样写出"
 
-        assert (
-            await _count_skills_rows(db_session) == 0
-        ), "迁移后旧表必须清空（含 builtin 行）"
+        assert await _count_skills_rows(db_session) == 0, "迁移后旧表必须清空（含 builtin 行）"
 
     async def test_builtin_rows_not_migrated(self, db_session, skills_root):
         """旧表仅 builtin 行 → 返回 0；目录空；表仍清空（清表含 builtin 行，#4）。"""
@@ -426,9 +415,7 @@ class TestMigrateSkillsFromDb:
 
         row = (
             await db_session.execute(
-                text(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'"
-                )
+                text("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'")
             )
         ).scalar_one()
         assert int(row) == 0, "GREEN 迁移实现不得重建旧 skills 表"
@@ -451,9 +438,9 @@ class TestWhitelistSync:
             BUILTIN_SKILL_NAMES as IMPL_NAMES,
         )
 
-        assert (
-            IMPL_NAMES == BUILTIN_SKILL_NAMES
-        ), f"实现侧 BUILTIN_SKILL_NAMES 必须为英文 slug: {IMPL_NAMES}"
+        assert IMPL_NAMES == BUILTIN_SKILL_NAMES, (
+            f"实现侧 BUILTIN_SKILL_NAMES 必须为英文 slug: {IMPL_NAMES}"
+        )
         assert len(BUILTIN_SKILL_NAMES) == 6
         assert len(set(BUILTIN_SKILL_NAMES)) == 6, "slug 必须唯一"
         for slug in BUILTIN_SKILL_NAMES:
@@ -473,12 +460,10 @@ class TestWhitelistSync:
         assert set(by_name) == set(BUILTIN_AGENT_NAMES)
         for name, (tool_ids, slug) in WHITELIST_MAP.items():
             agent = by_name[name]
-            assert (
-                set(agent.tool_ids) == tool_ids
-            ), f"{name} tool_ids 不符: {agent.tool_ids}"
-            assert agent.skill_ids == [
-                slug
-            ], f"{name} skill_ids 必须为 [目录名 slug]: {agent.skill_ids}"
+            assert set(agent.tool_ids) == tool_ids, f"{name} tool_ids 不符: {agent.tool_ids}"
+            assert agent.skill_ids == [slug], (
+                f"{name} skill_ids 必须为 [目录名 slug]: {agent.skill_ids}"
+            )
 
 
 # ── 内置只读 API 409（设计假设 #6，经 tmp skills_root + ensure 后打 API）──
@@ -493,9 +478,7 @@ class TestBuiltinReadonly:
     name 路径语义（_parse_id 404 ≠ 409）同样被本类锁定。
     """
 
-    async def test_patch_builtin_skill_409(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_patch_builtin_skill_409(self, client, db_session, override_get_db, skills_root):
         """PATCH 内置 slug → 409 + detail「内置 skill 只读」；目录与文件原样保留（#6）。"""
         assert ensure_builtin_skills(skills_root) == 6
 
@@ -503,26 +486,20 @@ class TestBuiltinReadonly:
         skill_file = skills_root / slug / "SKILL.md"
         original = skill_file.read_text(encoding="utf-8")
 
-        resp = await client.patch(
-            f"{SKILL_ENDPOINT}/{slug}", json={"description": "篡改"}
-        )
+        resp = await client.patch(f"{SKILL_ENDPOINT}/{slug}", json={"description": "篡改"})
         assert resp.status_code == 409, f"内置 skill PATCH 必须 409: {resp.status_code}"
         assert resp.json()["detail"] == DETAIL_BUILTIN
 
         assert (skills_root / slug).is_dir(), "内置目录不得被删除"
         assert skill_file.read_text(encoding="utf-8") == original, "内置文件不得被改写"
 
-    async def test_delete_builtin_skill_409(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_delete_builtin_skill_409(self, client, db_session, override_get_db, skills_root):
         """DELETE 内置 slug → 409 + detail「内置 skill 只读」；目录保留（#6）。"""
         assert ensure_builtin_skills(skills_root) == 6
 
         slug = BUILTIN_SKILL_NAMES[0]
         resp = await client.delete(f"{SKILL_ENDPOINT}/{slug}")
-        assert (
-            resp.status_code == 409
-        ), f"内置 skill DELETE 必须 409: {resp.status_code}"
+        assert resp.status_code == 409, f"内置 skill DELETE 必须 409: {resp.status_code}"
         assert resp.json()["detail"] == DETAIL_BUILTIN
 
         assert (skills_root / slug).is_dir(), "内置目录不得被删除"
@@ -631,13 +608,11 @@ class TestBuiltinGrants:
         assert set(by_name) == set(BUILTIN_AGENT_NAMES)
         for name, (tool_ids, _slug) in WHITELIST_MAP.items():
             agent = by_name[name]
-            assert (
-                _grants_to_map(agent.grants) == GRANTS_WHITELIST_MAP[name]
-            ), f"{name} grants 与出厂字面值不符: {agent.grants}"
+            assert _grants_to_map(agent.grants) == GRANTS_WHITELIST_MAP[name], (
+                f"{name} grants 与出厂字面值不符: {agent.grants}"
+            )
             # 双写契约【G】：tool_ids 旧集合不变（spec §5.1 tool_ids 保留列）
-            assert (
-                set(agent.tool_ids) == tool_ids
-            ), f"{name} tool_ids 集合被破坏: {agent.tool_ids}"
+            assert set(agent.tool_ids) == tool_ids, f"{name} tool_ids 集合被破坏: {agent.tool_ids}"
 
     async def test_builtin_agent_specs_have_grants(self):
         """BUILTIN_AGENT_SPECS 每项含 'grants' 键且归一值 == GRANTS_WHITELIST_MAP
@@ -652,12 +627,8 @@ class TestBuiltinGrants:
         for name, grants_map in GRANTS_WHITELIST_MAP.items():
             spec = by_name[name]
             assert "grants" in spec, f"{name} BUILTIN_AGENT_SPECS 缺 grants 键"
-            assert isinstance(
-                spec["grants"], list
-            ), f"{name} grants 必须为 list[GrantEntry]"
-            assert all(
-                isinstance(g, GrantEntry) for g in spec["grants"]
-            ), f"{name} grants 元素必须为 GrantEntry"
-            assert (
-                _grants_to_map(spec["grants"]) == grants_map
-            ), f"{name} spec grants 与字面值不符"
+            assert isinstance(spec["grants"], list), f"{name} grants 必须为 list[GrantEntry]"
+            assert all(isinstance(g, GrantEntry) for g in spec["grants"]), (
+                f"{name} grants 元素必须为 GrantEntry"
+            )
+            assert _grants_to_map(spec["grants"]) == grants_map, f"{name} spec grants 与字面值不符"

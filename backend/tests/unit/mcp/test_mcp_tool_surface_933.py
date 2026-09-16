@@ -526,9 +526,7 @@ class TestWriteDraftRouting933:
     @pytest.mark.asyncio
     async def test_draft_list_filters(self, fake_env):
         tool = importlib.import_module("inkflow.mcp.tools.operation_tools").build_write_tool()
-        env = _envelope(
-            await tool.func(action="draft_list", project_id="p1", status="draft")
-        )
+        env = _envelope(await tool.func(action="draft_list", project_id="p1", status="draft"))
         assert env["ok"] is True
         last = _last(fake_env.client)
         assert last["method"] == "GET"
@@ -660,9 +658,7 @@ class TestToolSearchIncludesNew933:
 
     @pytest.mark.asyncio
     async def test_tool_search_lists_new_tools(self, fake_env):
-        tool = importlib.import_module(
-            "inkflow.mcp.tools.session_tools"
-        ).build_tool_search_tool()
+        tool = importlib.import_module("inkflow.mcp.tools.session_tools").build_tool_search_tool()
         env = _envelope(await tool.func(action="list"))
         assert env["ok"] is True
         by_name = {item["name"]: item for item in env["data"]}
@@ -671,6 +667,7 @@ class TestToolSearchIncludesNew933:
             assert by_name[name]["actions"], f"{name} 无 action 枚举"
         assert "confirm_draft" in by_name["write"]["actions"]
 
+
 class TestCoverageBranches933:
     """#933 新工具内部防御/循环分支覆盖（覆盖率门禁）。"""
 
@@ -678,9 +675,7 @@ class TestCoverageBranches933:
     async def test_plan_auto_missing_session_id(self, fake_env):
         """planner start 响应无 session_id → INTERNAL_ERROR（零额外 HTTP）。"""
         fake_env.client.response = {"round": 1}  # 无 session_id
-        env = _envelope(
-            await _book().func(action="plan_auto", project_id="p1", one_liner="自动")
-        )
+        env = _envelope(await _book().func(action="plan_auto", project_id="p1", one_liner="自动"))
         assert env["ok"] is False
         assert env["error"]["code"] == "INTERNAL_ERROR"
         assert len(fake_env.client.calls) == 1

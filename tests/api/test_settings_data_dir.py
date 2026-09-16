@@ -137,9 +137,7 @@ class TestSettingsDataDir:
         绑定名（GREEN 后 handler 模块全局查找命中）。
         """
         anchor = tmp_path / "InkFlow" / "instance.env"
-        monkeypatch.setattr(
-            settings, "get_instance_env_path", lambda: anchor, raising=False
-        )
+        monkeypatch.setattr(settings, "get_instance_env_path", lambda: anchor, raising=False)
         from inkflow.core.config import config
 
         resp = client.get(ENDPOINT_DATA_DIR)

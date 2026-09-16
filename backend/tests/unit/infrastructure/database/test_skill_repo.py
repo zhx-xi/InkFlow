@@ -222,7 +222,7 @@ class TestUpdate:
             await service.update(
                 "architecture-methodology",
                 SkillUpdate(
-                    content=("---\nname: architecture-methodology\n" "description: 篡改\n---\n"),
+                    content=("---\nname: architecture-methodology\ndescription: 篡改\n---\n"),
                 ),
             )
 

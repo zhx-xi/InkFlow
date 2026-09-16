@@ -215,9 +215,7 @@ class TestConfigDataDir:
         from inkflow.cli.commands.config_cmd import app
 
         anchor = tmp_path / "InkFlow" / "instance.env"
-        monkeypatch.setattr(
-            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
-        )
+        monkeypatch.setattr(core_config_mod, "get_instance_env_path", lambda: anchor, raising=False)
         result = cli_runner.invoke(
             app,
             ["set", "data-dir", str(tmp_path / "custom-data")],
@@ -235,9 +233,7 @@ class TestConfigDataDir:
         from inkflow.cli.commands.config_cmd import app
 
         anchor = tmp_path / "InkFlow" / "instance.env"
-        monkeypatch.setattr(
-            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
-        )
+        monkeypatch.setattr(core_config_mod, "get_instance_env_path", lambda: anchor, raising=False)
         result = cli_runner.invoke(
             app,
             ["set", "data-dir", str(tmp_path / "custom-data")],
@@ -255,9 +251,7 @@ class TestConfigDataDir:
         from inkflow.cli.commands.config_cmd import app
 
         anchor = tmp_path / "InkFlow" / "instance.env"
-        monkeypatch.setattr(
-            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
-        )
+        monkeypatch.setattr(core_config_mod, "get_instance_env_path", lambda: anchor, raising=False)
         result = cli_runner.invoke(
             app,
             ["set", "data-dir", "   "],
@@ -273,16 +267,12 @@ class TestConfigDataDir:
         from inkflow.cli.commands.config_cmd import app
 
         anchor = tmp_path / "InkFlow" / "instance.env"
-        monkeypatch.setattr(
-            core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
-        )
+        monkeypatch.setattr(core_config_mod, "get_instance_env_path", lambda: anchor, raising=False)
 
         def _raise_oserror(_path):
             raise OSError("disk full")
 
-        monkeypatch.setattr(
-            core_config_mod, "save_instance_env", _raise_oserror, raising=False
-        )
+        monkeypatch.setattr(core_config_mod, "save_instance_env", _raise_oserror, raising=False)
         result = cli_runner.invoke(
             app,
             ["set", "data-dir", str(tmp_path / "x")],

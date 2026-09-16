@@ -75,9 +75,7 @@ def test_skips_docstring_line() -> None:
 def test_no_docstring_unaffected() -> None:
     """无 docstring 的函数首行 = body[0]（跳过逻辑不得误跳）。"""
     tree = ast.parse(_SRC)
-    node = next(
-        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "no_docstring"
-    )
+    node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "no_docstring")
     assert body_first_lines(tree)["no_docstring"] == node.body[0].lineno
 
 

@@ -67,8 +67,7 @@ def test_character_group_rebuild_restores_non_group_index_and_fk(tmp_path: Path)
             conn.execute(text("INSERT INTO character_groups (id) VALUES (1)"))
             conn.execute(
                 text(
-                    "INSERT INTO characters (id, project_id, name, group_id) "
-                    "VALUES (1, 7, 'A', 1)"
+                    "INSERT INTO characters (id, project_id, name, group_id) VALUES (1, 7, 'A', 1)"
                 )
             )
 
@@ -119,8 +118,7 @@ def test_character_group_migration_rejects_foreign_keys_on_in_transaction(
             conn.execute(text("INSERT INTO character_groups (id) VALUES (1)"))
             conn.execute(
                 text(
-                    "INSERT INTO characters (id, project_id, name, group_id) "
-                    "VALUES (1, 7, 'A', 1)"
+                    "INSERT INTO characters (id, project_id, name, group_id) VALUES (1, 7, 'A', 1)"
                 )
             )
             with pytest.raises(RuntimeError, match="foreign_keys"):
@@ -163,8 +161,7 @@ def test_character_group_migration_restores_fk_after_inner_failure(tmp_path: Pat
             conn.execute(text("INSERT INTO character_groups (id) VALUES (1)"))
             conn.execute(
                 text(
-                    "INSERT INTO characters (id, project_id, name, group_id) "
-                    "VALUES (1, 7, 'A', 1)"
+                    "INSERT INTO characters (id, project_id, name, group_id) VALUES (1, 7, 'A', 1)"
                 )
             )
 
@@ -203,9 +200,7 @@ def test_load_or_create_secret_key_non_windows_branch(tmp_path: Path, monkeypatc
     assert (tmp_path / "keys" / ".secret_key").read_text(encoding="utf-8") == key
 
 
-def test_instance_env_source_case_sensitive_returns_raw_keys(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_instance_env_source_case_sensitive_returns_raw_keys(tmp_path: Path, monkeypatch) -> None:
     """Case-sensitive config source preserves instance.env key casing."""
     config_mod = importlib.import_module("inkflow.core.config")
     instance_env = tmp_path / "instance.env"
