@@ -19,7 +19,9 @@ from sqlalchemy import select
 
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.infrastructure.database.models.outline import OutlineORM
-from inkflow.infrastructure.database.repositories.project_repo import SQLiteProjectRepository
+from inkflow.infrastructure.database.repositories.project_repo import (
+    SQLiteProjectRepository,
+)
 
 
 @pytest.mark.asyncio
@@ -32,9 +34,7 @@ async def test_normalize_all_titles_arabic(db_session, sample_project):
     await svc.create_chapter(pid, "第1章 起点")
     await svc.create_chapter(pid, "第三章 转折")
     await svc.create_chapter(pid, "一叶落")
-    db_session.add(
-        OutlineORM(project_id=pid, name="第一百章 终", level="chapter", volume_id=None)
-    )
+    db_session.add(OutlineORM(project_id=pid, name="第一百章 终", level="chapter", volume_id=None))
     await db_session.commit()
 
     result = await svc.normalize_all_titles(pid, "arabic")
@@ -116,17 +116,11 @@ async def test_normalize_all_titles_project_missing_returns_none(db_session):
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_normalize_all_titles_skips_non_chapter_and_unchanged(
-    db_session, sample_project
-):
+async def test_normalize_all_titles_skips_non_chapter_and_unchanged(db_session, sample_project):
     """契约 §4：level≠chapter 大纲不参与归一；归一后不变的章级大纲不计数。"""
     pid = sample_project.id
-    db_session.add(
-        OutlineORM(project_id=pid, name="第1卷 风起", level="volume", volume_id=None)
-    )
-    db_session.add(
-        OutlineORM(project_id=pid, name="第一章 已中", level="chapter", volume_id=None)
-    )
+    db_session.add(OutlineORM(project_id=pid, name="第1卷 风起", level="volume", volume_id=None))
+    db_session.add(OutlineORM(project_id=pid, name="第一章 已中", level="chapter", volume_id=None))
     await db_session.commit()
 
     svc = ChapterService(db_session)
@@ -134,9 +128,7 @@ async def test_normalize_all_titles_skips_non_chapter_and_unchanged(
     # 卷纲「第1卷」不动（非章轨）；章纲已是中文 → 无变化不计数
     assert result == {"chapters_replaced": 0, "outlines_replaced": 0}
     rows = (
-        await db_session.execute(
-            select(OutlineORM).where(OutlineORM.project_id == pid)
-        )
+        await db_session.execute(select(OutlineORM).where(OutlineORM.project_id == pid))
     ).scalars()
     assert {o.name for o in rows} == {"第1卷 风起", "第一章 已中"}
 
@@ -146,12 +138,8 @@ async def test_normalize_all_titles_skips_non_chapter_and_unchanged(
 async def test_normalize_all_titles_dup_name_skipped(db_session, sample_project):
     """契约 §4：章纲归一后撞 uq_outlines_active_name 重名 → 跳过不计数不抛。"""
     pid = sample_project.id
-    db_session.add(
-        OutlineORM(project_id=pid, name="第1章 a", level="chapter", volume_id=None)
-    )
-    db_session.add(
-        OutlineORM(project_id=pid, name="第一章 a", level="chapter", volume_id=None)
-    )
+    db_session.add(OutlineORM(project_id=pid, name="第1章 a", level="chapter", volume_id=None))
+    db_session.add(OutlineORM(project_id=pid, name="第一章 a", level="chapter", volume_id=None))
     await db_session.commit()
 
     svc = ChapterService(db_session)

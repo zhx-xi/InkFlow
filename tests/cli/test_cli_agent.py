@@ -120,9 +120,7 @@ def _http_err(status_code: int, detail: str, code: str | None = None):
 
 def _run_result(*extra_args):
     """agent run 调用（--project-id 自动补合法 UUID）。"""
-    return runner.invoke(
-        app, ["agent", "run", "--project-id", str(uuid.uuid4()), *extra_args]
-    )
+    return runner.invoke(app, ["agent", "run", "--project-id", str(uuid.uuid4()), *extra_args])
 
 
 class TestAgentRunExecution:
@@ -189,9 +187,7 @@ class TestAgentRunExecution:
         assert "⚠️ 忽略无效覆盖: writer.temperature=abc" in result.stderr
         # 无效值均未生效（temperature=abc 在 float 前已建空 RoleOverride 条目——
         # 源码行为：提示忽略但条目残留，字段保持 None）
-        req = PipelineExecuteRequest.model_validate(
-            fake_http_client.post.await_args.kwargs["json"]
-        )
+        req = PipelineExecuteRequest.model_validate(fake_http_client.post.await_args.kwargs["json"])
         ro = req.role_overrides["writer"]
         assert ro.temperature is None
         assert ro.model is None
@@ -231,9 +227,7 @@ class TestAgentRunExecution:
             f"{AGENT_MOD}.ensure_kernel",
             AsyncMock(side_effect=KernelStartupError("启动超时")),
         ):
-            result = runner.invoke(
-                app, ["agent", "run", "--project-id", str(uuid.uuid4())]
-            )
+            result = runner.invoke(app, ["agent", "run", "--project-id", str(uuid.uuid4())])
         assert result.exit_code == 1
         assert "❌ 内核启动失败: 启动超时" in result.stderr
 
@@ -243,9 +237,7 @@ class TestAgentRunExecution:
         fake_http_client.post.return_value = self._EXEC_RESULT
         result = _run_result("--var", "novalue")
         assert result.exit_code == 0
-        req = PipelineExecuteRequest.model_validate(
-            fake_http_client.post.await_args.kwargs["json"]
-        )
+        req = PipelineExecuteRequest.model_validate(fake_http_client.post.await_args.kwargs["json"])
         assert req.variables == {}
 
     @pytest.mark.agent
@@ -254,9 +246,7 @@ class TestAgentRunExecution:
         fake_http_client.post.return_value = self._EXEC_RESULT
         result = _run_result("--override", "writer.custom=1")
         assert result.exit_code == 0
-        req = PipelineExecuteRequest.model_validate(
-            fake_http_client.post.await_args.kwargs["json"]
-        )
+        req = PipelineExecuteRequest.model_validate(fake_http_client.post.await_args.kwargs["json"])
         ro = req.role_overrides["writer"]
         assert ro.temperature is None
         assert ro.model is None
@@ -288,9 +278,7 @@ class TestAgentStatusExecution:
         assert "状态: running" in result.stdout
         assert "耗时: 1500ms" in result.stdout
         assert "错误:" not in result.stdout
-        fake_http_client.get.assert_awaited_once_with(
-            "/agent/pipelines/executions/exec-9"
-        )
+        fake_http_client.get.assert_awaited_once_with("/agent/pipelines/executions/exec-9")
 
     @pytest.mark.agent
     def test_status_error_line(self, fake_http_client):
@@ -406,9 +394,7 @@ class TestAgentValidateExecution:
         yaml_file = tmp_path / "pipeline.yaml"
         yaml_file.write_text("name: x\nstages: []\n", encoding="utf-8")
         fake_http_client.post.return_value = {"valid": True, "errors": []}
-        result = runner.invoke(
-            app, ["--json", "agent", "validate", "--file", str(yaml_file)]
-        )
+        result = runner.invoke(app, ["--json", "agent", "validate", "--file", str(yaml_file)])
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
@@ -424,9 +410,7 @@ class TestAgentValidateExecution:
         from inkflow.cli.commands import agent_cmd as _agent_cmd
 
         monkeypatch.setattr(_agent_cmd, "print_error", lambda *a, **k: None)
-        result = runner.invoke(
-            app, ["--json", "agent", "validate", "--file", "nonexistent.yaml"]
-        )
+        result = runner.invoke(app, ["--json", "agent", "validate", "--file", "nonexistent.yaml"])
         assert result.exit_code == 1
         fake_http_client.post.assert_not_awaited()
 

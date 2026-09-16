@@ -263,9 +263,7 @@ class TestAgentStageResultORM:
         await db_session.commit()
 
         result = await db_session.execute(
-            select(AgentStageResultORM).where(
-                AgentStageResultORM.execution_id == execution.id
-            )
+            select(AgentStageResultORM).where(AgentStageResultORM.execution_id == execution.id)
         )
         loaded = result.scalar_one()
         assert loaded.id == stage_result.id
@@ -335,12 +333,8 @@ class TestExecutionStore:
         project_id = str(uuid.uuid4())
         other_project_id = str(uuid.uuid4())
         for _ in range(3):
-            await store.create_execution(
-                pipeline="builtin:write_chapter", project_id=project_id
-            )
-        await store.create_execution(
-            pipeline="builtin:write_chapter", project_id=other_project_id
-        )
+            await store.create_execution(pipeline="builtin:write_chapter", project_id=project_id)
+        await store.create_execution(pipeline="builtin:write_chapter", project_id=other_project_id)
 
         executions, total = await store.list_executions(project_id=project_id, limit=2)
 

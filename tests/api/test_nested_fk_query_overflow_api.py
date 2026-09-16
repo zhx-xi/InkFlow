@@ -86,12 +86,12 @@ class TestNestedFkOverflowNoServerError:
         """存活项目 + 超范围 FK → 200 且列表为空（修复前 = 500）。"""
         url = template.format(pid=api_project["id"])
         resp = await client.get(url, params={param: str(_overflow_uuid())})
-        assert (
-            resp.status_code != 500
-        ), f"GET {url}?{param}=<uuid4> 不得 500，实际 {resp.status_code}: {resp.text[:200]}"
-        assert (
-            resp.status_code == 200
-        ), f"GET {url}?{param}=<uuid4> 应为 200（过滤值不匹配任何行），实际 {resp.status_code}"
+        assert resp.status_code != 500, (
+            f"GET {url}?{param}=<uuid4> 不得 500，实际 {resp.status_code}: {resp.text[:200]}"
+        )
+        assert resp.status_code == 200, (
+            f"GET {url}?{param}=<uuid4> 应为 200（过滤值不匹配任何行），实际 {resp.status_code}"
+        )
         assert resp.json()[list_key] == [], "超范围过滤值不得命中任何行"
 
     async def test_in_range_missing_fk_returns_empty(
@@ -107,9 +107,9 @@ class TestNestedFkOverflowNoServerError:
         """合法 int64 范围但不存在的 FK → 200 + 空列表（范围校验不得误伤）。"""
         url = template.format(pid=api_project["id"])
         resp = await client.get(url, params={param: str(uuid.UUID(int=987654321))})
-        assert (
-            resp.status_code == 200
-        ), f"GET {url}?{param}=<small> 应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 200, (
+            f"GET {url}?{param}=<small> 应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        )
         assert resp.json()[list_key] == []
 
 
@@ -226,7 +226,5 @@ class TestMapPinsLocationFilterControl:
         resp = await client.get(
             f"/api/v1/maps/{map_id}/pins", params={"location_id": str(_overflow_uuid())}
         )
-        assert (
-            resp.status_code != 500
-        ), f"不得 500，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code != 500, f"不得 500，实际 {resp.status_code}: {resp.text[:200]}"
         assert resp.status_code == 200

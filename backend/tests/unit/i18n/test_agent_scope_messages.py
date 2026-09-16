@@ -7,6 +7,7 @@ json 直读（无 FastAPI、无 resolver），覆盖两条契约：
 
 RED 预期：当前 messages 未登记 agent.scope.domain.*（GREEN 补 8 键后转绿）。
 """
+
 import json
 from pathlib import Path
 

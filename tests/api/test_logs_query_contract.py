@@ -142,12 +142,15 @@ class TestB2MultiValueFilter:
             ("DEBUG", "tool"),
         ):
             _seed(
-                client, level=level, caller_type=ctype,
-                event=f"evt_{level.lower()}", marker=marker,
+                client,
+                level=level,
+                caller_type=ctype,
+                event=f"evt_{level.lower()}",
+                marker=marker,
             )
-        data = client.get(
-            "/api/v1/logs", params={"level": "INFO,WARN,ERROR", "q": marker}
-        ).json()["data"]
+        data = client.get("/api/v1/logs", params={"level": "INFO,WARN,ERROR", "q": marker}).json()[
+            "data"
+        ]
         assert data["total"] == 3, f"level=INFO,WARN,ERROR 应命中 3 行，实得 {data['total']}"
         assert {item["level"] for item in data["items"]} == {"INFO", "WARN", "ERROR"}
 
@@ -156,12 +159,15 @@ class TestB2MultiValueFilter:
         marker = "b2-level-ci"
         for level, ctype in (("INFO", "api"), ("WARN", "agent"), ("ERROR", "llm")):
             _seed(
-                client, level=level, caller_type=ctype,
-                event=f"evt_{level.lower()}", marker=marker,
+                client,
+                level=level,
+                caller_type=ctype,
+                event=f"evt_{level.lower()}",
+                marker=marker,
             )
-        data = client.get(
-            "/api/v1/logs", params={"level": "info,error", "q": marker}
-        ).json()["data"]
+        data = client.get("/api/v1/logs", params={"level": "info,error", "q": marker}).json()[
+            "data"
+        ]
         assert data["total"] == 2
         assert {item["level"] for item in data["items"]} == {"INFO", "ERROR"}
 

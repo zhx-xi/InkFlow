@@ -538,8 +538,7 @@ class AuditService:
                         dimension=AuditDimension.FORESHADOWING,
                         severity=AuditSeverity.ERROR,
                         message=(
-                            f"伏笔「{f.title}」状态为 open 但存在 resolved_at"
-                            "（状态与时间戳矛盾）"
+                            f"伏笔「{f.title}」状态为 open 但存在 resolved_at（状态与时间戳矛盾）"
                         ),
                         entity_type="foreshadowing",
                         entity_id=f.id,

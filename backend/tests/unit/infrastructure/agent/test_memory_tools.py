@@ -7,6 +7,7 @@
 3. expected_project_id 绑定。
 4. 写类成功/失败均落审计（audit_service.record），审计异常静默。
 """
+
 from __future__ import annotations
 
 import json
@@ -62,9 +63,7 @@ class TestBuildMemoryTools:
     @pytest.mark.asyncio
     async def test_memory_add_success_envelope(self) -> None:
         deps = _make_deps()
-        deps.memory_service.create_preference = AsyncMock(
-            return_value=SimpleNamespace(id="pref-1")
-        )
+        deps.memory_service.create_preference = AsyncMock(return_value=SimpleNamespace(id="pref-1"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         result = json.loads(await tools["memory_add"].func(category="style", pattern="短句"))
         assert result["ok"] is True
@@ -73,9 +72,7 @@ class TestBuildMemoryTools:
     @pytest.mark.asyncio
     async def test_memory_add_failure_envelope(self) -> None:
         deps = _make_deps()
-        deps.memory_service.create_preference = AsyncMock(
-            side_effect=ValueError("分类非法")
-        )
+        deps.memory_service.create_preference = AsyncMock(side_effect=ValueError("分类非法"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         result = json.loads(await tools["memory_add"].func(category="style", pattern="短句"))
         assert result["ok"] is False
@@ -84,9 +81,7 @@ class TestBuildMemoryTools:
     @pytest.mark.asyncio
     async def test_memory_update_success_envelope(self) -> None:
         deps = _make_deps()
-        deps.memory_service.update_preference = AsyncMock(
-            return_value=SimpleNamespace(id="pref-1")
-        )
+        deps.memory_service.update_preference = AsyncMock(return_value=SimpleNamespace(id="pref-1"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         result = json.loads(
             await tools["memory_update"].func(preference_id="pref-1", pattern="长句")
@@ -98,9 +93,7 @@ class TestBuildMemoryTools:
     async def test_expected_project_id_binding(self) -> None:
         """memory_add 恒用绑定 project_id（LLM 不自报）。"""
         deps = _make_deps()
-        deps.memory_service.create_preference = AsyncMock(
-            return_value=SimpleNamespace(id="pref-1")
-        )
+        deps.memory_service.create_preference = AsyncMock(return_value=SimpleNamespace(id="pref-1"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         await tools["memory_add"].func(
             category="style", pattern="短句", project_id="00000000-0000-0000-0000-000000000000"
@@ -109,13 +102,10 @@ class TestBuildMemoryTools:
         used_project_id = kwargs.get("project_id") or (args[0] if args else None)
         assert str(used_project_id) == str(PROJECT_ID)
 
-
     @pytest.mark.asyncio
     async def test_memory_update_failure_envelope(self) -> None:
         deps = _make_deps()
-        deps.memory_service.update_preference = AsyncMock(
-            side_effect=ValueError("偏好不存在")
-        )
+        deps.memory_service.update_preference = AsyncMock(side_effect=ValueError("偏好不存在"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         result = json.loads(
             await tools["memory_update"].func(preference_id="pref-1", pattern="长句")
@@ -141,9 +131,7 @@ class TestMemoryToolAudit:
     @pytest.mark.asyncio
     async def test_success_records_audit(self) -> None:
         deps = _make_deps()
-        deps.memory_service.create_preference = AsyncMock(
-            return_value=SimpleNamespace(id="pref-1")
-        )
+        deps.memory_service.create_preference = AsyncMock(return_value=SimpleNamespace(id="pref-1"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         await tools["memory_add"].func(category="style", pattern="短句")
         assert deps.audit_service.record.await_count >= 1
@@ -151,9 +139,7 @@ class TestMemoryToolAudit:
     @pytest.mark.asyncio
     async def test_failure_records_audit(self) -> None:
         deps = _make_deps()
-        deps.memory_service.create_preference = AsyncMock(
-            side_effect=ValueError("boom")
-        )
+        deps.memory_service.create_preference = AsyncMock(side_effect=ValueError("boom"))
         tools = {t.spec.name: t for t in build_memory_tools(deps)}
         await tools["memory_add"].func(category="style", pattern="短句")
         assert deps.audit_service.record.await_count >= 1

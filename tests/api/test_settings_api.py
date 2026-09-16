@@ -520,9 +520,7 @@ class TestLLMTestProbe:
             patch("inkflow.api.routers.settings._get_key_manager") as mock_get_km,
             patch(
                 "inkflow.api.routers.settings._get_llm_client",
-                return_value=FakeLLMClient(
-                    response=ChatResponse(content="ok", model=TEST_MODEL)
-                ),
+                return_value=FakeLLMClient(response=ChatResponse(content="ok", model=TEST_MODEL)),
             ) as mock_factory,
         ):
             resp = client.post(ENDPOINT_TEST, json=_probe_payload())
@@ -541,9 +539,7 @@ class TestLLMTestProbe:
         收到非空 model、响应 model 回显与之一致（不契约回退链精确值——
         依赖注册表查询 seam 与数据状态，只约束「回退结果非空且可消费」）。
         """
-        fake = FakeLLMClient(
-            response=ChatResponse(content="ok", model="resolved/model")
-        )
+        fake = FakeLLMClient(response=ChatResponse(content="ok", model="resolved/model"))
         with patch(
             "inkflow.api.routers.settings._get_llm_client", return_value=fake
         ) as mock_factory:
@@ -556,9 +552,9 @@ class TestLLMTestProbe:
         mock_factory.assert_called_once()
         call = mock_factory.call_args
         resolved_model = call.args[1] if call.args else call.kwargs.get("model")
-        assert (
-            isinstance(resolved_model, str) and resolved_model.strip()
-        ), "回退解析的 model 不得为空（注册表 default_model → config.llm_default_model）"
+        assert isinstance(resolved_model, str) and resolved_model.strip(), (
+            "回退解析的 model 不得为空（注册表 default_model → config.llm_default_model）"
+        )
         assert body["model"] == resolved_model, "响应 model 回显必须等于实际解析值"
         assert fake.messages, "探测消息列表不得为空"
 
@@ -809,9 +805,7 @@ class TestSettingsPatch:
             yield db_session
 
         app.dependency_overrides[get_db] = _get_db_override
-        monkeypatch.setattr(
-            db_session, "commit", AsyncMock(side_effect=OSError("disk full"))
-        )
+        monkeypatch.setattr(db_session, "commit", AsyncMock(side_effect=OSError("disk full")))
         try:
             resp = client.patch(ENDPOINT_SETTINGS, json={"theme": "night"})
         finally:

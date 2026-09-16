@@ -127,9 +127,7 @@ def real_kernel(tmp_path_factory):
     try:
         # spawn_cmd=None → F30 默认命令：sys.executable -m inkflow serve
         # --port 0 --port-file <state_file>（端口交付 JSON 写 state_file 本身）
-        handle = asyncio.run(
-            ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT)
-        )
+        handle = asyncio.run(ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT))
         yield SimpleNamespace(handle=handle, state_file=state_file)
     finally:
         if handle is not None:
@@ -200,9 +198,7 @@ class TestNoSpawn:
         assert result.exit_code == 0
         assert not (tmp_path / "kernel.json").exists()
 
-    def test_kernel_status_and_config_show_do_not_spawn(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_kernel_status_and_config_show_do_not_spawn(self, cli_runner, tmp_path, monkeypatch):
         """kernel status / config show 豁免：纯查询，不 spawn 子进程、不生成 kernel.json。"""
         monkeypatch.setattr(core_config_mod.config, "data_dir", tmp_path)
         with patch("subprocess.Popen") as mock_popen:

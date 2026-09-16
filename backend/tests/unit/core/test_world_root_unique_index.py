@@ -9,6 +9,7 @@
 依据: issue #849 + specs/f10-world-settings/spec.md §7（并发双建根行）+
 specs/f35-world-tree/spec.md §2.1 规则 6（DB 兜底）.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -20,11 +21,8 @@ ROOT_INDEX = "uq_world_settings_root_per_project"
 
 
 def _index_names(conn) -> set[str]:
-    """返回 world_settings 当前索引名集合. """
-    return {
-        row[1]
-        for row in conn.execute(text("PRAGMA index_list(world_settings)")).fetchall()
-    }
+    """返回 world_settings 当前索引名集合."""
+    return {row[1] for row in conn.execute(text("PRAGMA index_list(world_settings)")).fetchall()}
 
 
 def test_world_root_unique_index_rejects_double_root() -> None:

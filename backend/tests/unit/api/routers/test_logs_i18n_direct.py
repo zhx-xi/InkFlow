@@ -99,8 +99,16 @@ class TestQueryLogsDirect:
         store = MagicMock()
         store.query = MagicMock(return_value=([], 0))
         await logs.query_logs(
-            level="WARN", caller_type="api", project_id=123, from_=None, to=None,
-            q="x", correlation_id="c", page=1, limit=10, store=store,
+            level="WARN",
+            caller_type="api",
+            project_id=123,
+            from_=None,
+            to=None,
+            q="x",
+            correlation_id="c",
+            page=1,
+            limit=10,
+            store=store,
         )
         kwargs = store.query.call_args.kwargs
         assert kwargs["level"] == "WARN"

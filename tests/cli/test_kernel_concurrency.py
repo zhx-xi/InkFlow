@@ -11,6 +11,7 @@ M2 门禁：两个真实 SQLite 连接（各自独立进程/连接，均带 busy
 ⚠️ CI 环境跳过：GitHub Actions Windows runner 沙箱（Session 0）拉起内核秒退
 （先例 tests/cli/test_cli_mcp.py）；本机 Windows 11 正常。E2E 不计入覆盖。
 """
+
 from __future__ import annotations
 
 import contextlib

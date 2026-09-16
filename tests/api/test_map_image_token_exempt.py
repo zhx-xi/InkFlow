@@ -165,9 +165,9 @@ class TestExemptionSurfaceNoOverflow:
         - ``/api/v1/maps/image``：id 段缺失
         """
         resp = client.get(path)
-        assert (
-            resp.status_code == 401
-        ), f"{path} 是近似路径，不应命中豁免正则，实际 {resp.status_code}"
+        assert resp.status_code == 401, (
+            f"{path} 是近似路径，不应命中豁免正则，实际 {resp.status_code}"
+        )
 
     @pytest.mark.parametrize(
         "suffix,label",
@@ -179,9 +179,7 @@ class TestExemptionSurfaceNoOverflow:
             ("%00", "尾随 NUL"),
         ],
     )
-    def test_trailing_whitespace_encoding_still_401(
-        self, client, set_token_env, suffix, label
-    ):
+    def test_trailing_whitespace_encoding_still_401(self, client, set_token_env, suffix, label):
         """尾随控制字符/空白编码不得被豁免（正则锚点必须严格到串尾）。
 
         回归守护：Python ``re`` 的 ``$`` **也匹配「串尾单个换行之前」**——
@@ -211,9 +209,7 @@ class TestExemptionSurfaceNoOverflow:
 
         豁免只针对浏览器原生 GET 渲染通道；写路径继续受 token 保护。
         """
-        resp = client.put(
-            f"/api/v1/maps/{MAP_ID}/image", files={"file": ("a.png", b"x")}
-        )
+        resp = client.put(f"/api/v1/maps/{MAP_ID}/image", files={"file": ("a.png", b"x")})
         assert resp.status_code == 401
 
 

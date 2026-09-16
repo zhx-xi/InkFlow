@@ -110,9 +110,7 @@ def split_blocks(src: str):
 
 def main() -> None:
     counter = Counter()
-    weak_only_blocks: list[
-        tuple[str, str, str]
-    ] = []  # (file, test_name, weak_matchers)
+    weak_only_blocks: list[tuple[str, str, str]] = []  # (file, test_name, weak_matchers)
     guard_blocks: list[tuple[str, str, str]] = []
     strong_blocks: list[tuple[str, str, str]] = []
     by_file: Counter = Counter()
@@ -128,26 +126,19 @@ def main() -> None:
                 guard_m = GUARD.findall(body)
                 weak_m = WEAK.findall(body)
                 if strong_m:
-                    strong_blocks.append(
-                        (rel, name, ", ".join(str(m) for m in strong_m[:3]))
-                    )
+                    strong_blocks.append((rel, name, ", ".join(str(m) for m in strong_m[:3])))
                     continue
                 if guard_m:
                     # 仅守卫 + 无强断言：有效（类型 4），单列不计弱
-                    guard_blocks.append(
-                        (rel, name, ", ".join(str(m) for m in guard_m[:3]))
-                    )
+                    guard_blocks.append((rel, name, ", ".join(str(m) for m in guard_m[:3])))
                     continue
                 if weak_m:
                     counter["weak-only-block"] += 1
                     by_file[ts.name] += 1
-                    weak_only_blocks.append(
-                        (rel, name, ", ".join(str(m) for m in weak_m[:4]))
-                    )
+                    weak_only_blocks.append((rel, name, ", ".join(str(m) for m in weak_m[:4])))
     print(f"=== 弱断言候选块（无强断言、无守卫）：{counter['weak-only-block']} ===")
     print(
-        "=== 守卫块（not.toHaveBeenCalled 否定路径，类型 4 有效，不计弱）："
-        f"{len(guard_blocks)} ==="
+        f"=== 守卫块（not.toHaveBeenCalled 否定路径，类型 4 有效，不计弱）：{len(guard_blocks)} ==="
     )
     print("\n=== 按文件分布（弱候选）===")
     for f, v in by_file.most_common():

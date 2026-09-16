@@ -72,9 +72,7 @@ def fake_http_client():
             "inkflow.cli.commands.extract.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.extract.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.extract.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -135,9 +133,7 @@ class TestExtractRegistration:
 class TestExtractRun:
     def test_run_character_text_json(self, cli_runner, fake_http_client):
         """run --type character --text --json → 成功信封 + ExtractionRequest body 透传."""
-        fake_http_client.post.return_value = _make_result(
-            type="character", indexed=False
-        )
+        fake_http_client.post.return_value = _make_result(type="character", indexed=False)
         result = cli_runner.invoke(
             app,
             [
@@ -240,9 +236,7 @@ class TestExtractRun:
 
     def test_run_timeline_auto_extract(self, cli_runner, fake_http_client):
         """--auto-extract 显式开启 timeline 设置项覆盖."""
-        fake_http_client.post.return_value = _make_result(
-            type="timeline", indexed=False
-        )
+        fake_http_client.post.return_value = _make_result(type="timeline", indexed=False)
         result = cli_runner.invoke(
             app,
             [
@@ -263,9 +257,7 @@ class TestExtractRun:
 
     def test_run_timeline_no_auto_extract(self, cli_runner, fake_http_client):
         """--no-auto-extract 显式关闭 timeline 设置项覆盖."""
-        fake_http_client.post.return_value = _make_result(
-            type="timeline", indexed=False
-        )
+        fake_http_client.post.return_value = _make_result(type="timeline", indexed=False)
         result = cli_runner.invoke(
             app,
             [
@@ -419,10 +411,7 @@ class TestExtractRun:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert (
-            "✅ 提取完成: style 处理 1 个源（跳过 0），新增 0 更新 0，警告 1 条"
-            in result.output
-        )
+        assert "✅ 提取完成: style 处理 1 个源（跳过 0），新增 0 更新 0，警告 1 条" in result.output
         body: dict = fake_http_client.post.await_args.kwargs["json"]
         assert body["type"] == "style"
         assert body["text"] == "林晚"
@@ -499,9 +488,7 @@ class TestExtractRun:
         """管线解析失败（HTTP 500 无错误码头）→ INTERNAL_ERROR 错误信封 + 退出码 1."""
         from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
 
-        fake_http_client.post.side_effect = HttpApiError(
-            500, "3 次尝试后仍无法解析为合法 JSON"
-        )
+        fake_http_client.post.side_effect = HttpApiError(500, "3 次尝试后仍无法解析为合法 JSON")
         result = cli_runner.invoke(
             app,
             [
@@ -646,8 +633,7 @@ class TestExtractStatus:
         )
         assert "  [setting] manual — ⏭ skipped (内容未变更)" in result.output
         assert (
-            "  [foreshadowing] manual — ❌ error (3 次尝试后仍无法解析为合法 JSON)"
-            in result.output
+            "  [foreshadowing] manual — ❌ error (3 次尝试后仍无法解析为合法 JSON)" in result.output
         )
 
     def test_status_human_empty(self, cli_runner, fake_http_client):

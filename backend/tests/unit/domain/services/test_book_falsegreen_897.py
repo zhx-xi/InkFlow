@@ -154,9 +154,7 @@ async def test_write_book_all_chapters_failed_not_completed():
 
     result = await svc.write_book(plan.id, limits=BookLimits())
 
-    assert result["status"] == "failed", (
-        f"#897 假绿：全章 failed 顶层仍 {result['status']}"
-    )
+    assert result["status"] == "failed", f"#897 假绿：全章 failed 顶层仍 {result['status']}"
     assert plan.status == "failed"
     assert set(plan.progress.values()) == {"failed"}
     # 全失败零 token：委托未成功，execution_refs 为空
@@ -553,9 +551,7 @@ def test_migration_new_db_and_missing_table_noop(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
     with engine.connect() as conn:
         ensure_writing_plan_progress_reason_column(conn)
-        tables = conn.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table'")
-        ).fetchall()
+        tables = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
         assert tables == []
 
     engine2 = create_engine(f"sqlite:///{tmp_path / 'new.db'}")

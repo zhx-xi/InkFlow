@@ -40,9 +40,7 @@ class TestExecutionStoreDefensive:
         store = ExecutionStore(db_session)
         execution_id = str(uuid.uuid4())
 
-        await store.update_status(
-            execution_id, "waiting_hitl", {"question": "确认继续下一卷？"}
-        )
+        await store.update_status(execution_id, "waiting_hitl", {"question": "确认继续下一卷？"})
 
         assert await store.get_execution(execution_id) is None
 

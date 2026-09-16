@@ -89,11 +89,14 @@ def _sse(frames: list[dict]):
     调用即返回 async generator（与真实 client.stream_sse 行为一致），同时保留调用
     记录供 call_args / assert_called_once_with 断言 path/body。帧列表参数化 helper。
     """
+
     def _factory(*args, **kwargs):
         async def _gen():
             for frame in frames:
                 yield frame
+
         return _gen()
+
     return _factory
 
 
@@ -134,9 +137,7 @@ def fake_http_client():
             "inkflow.cli.commands.chat_cmd.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.chat_cmd.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.chat_cmd.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -156,16 +157,30 @@ class TestChat981:
         tool_calls 展平计数；stream_sse path==/chat/agent/stream、body 断言。
         """
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "delta", "delta": "你好", "done": False},
-            {"type": "delta", "delta": "世界", "done": False},
-            {"type": "tool_call", "id": "tc1", "name": "search_knowledge",
-             "args": {}, "done": False},
-            {"type": "tool_result", "id": "tc1", "name": "search_knowledge",
-             "result": "...", "done": False},
-            {"type": "done", "done": True, "run_id": "R1"},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "delta", "delta": "你好", "done": False},
+                    {"type": "delta", "delta": "世界", "done": False},
+                    {
+                        "type": "tool_call",
+                        "id": "tc1",
+                        "name": "search_knowledge",
+                        "args": {},
+                        "done": False,
+                    },
+                    {
+                        "type": "tool_result",
+                        "id": "tc1",
+                        "name": "search_knowledge",
+                        "result": "...",
+                        "done": False,
+                    },
+                    {"type": "done", "done": True, "run_id": "R1"},
+                ]
+            )
+        )
         result = cli_runner.invoke(
             app,
             ["chat", "你好", "--project", str(pid), "--json"],
@@ -190,12 +205,16 @@ class TestChat981:
     def test_agent_human_delta(self, cli_runner, fake_http_client):
         """用例2：agent 成功人类模式——exit 0，stdout 含 delta 拼接（nl=False 连续）。"""
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "delta", "delta": "清晨", "done": False},
-            {"type": "delta", "delta": "薄雾", "done": False},
-            {"type": "done", "done": True, "run_id": "R1"},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "delta", "delta": "清晨", "done": False},
+                    {"type": "delta", "delta": "薄雾", "done": False},
+                    {"type": "done", "done": True, "run_id": "R1"},
+                ]
+            )
+        )
         result = cli_runner.invoke(
             app,
             ["chat", "你好", "--project", str(pid)],
@@ -207,11 +226,15 @@ class TestChat981:
         """用例3：plain 成功 --json——path==/chat/stream（legacy 无 type 键）、
         data.content==delta 拼接、get 未被调（不查 run）。"""
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"delta": "你", "done": False},
-            {"delta": "好", "done": False},
-            {"done": True},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"delta": "你", "done": False},
+                    {"delta": "好", "done": False},
+                    {"done": True},
+                ]
+            )
+        )
         result = cli_runner.invoke(
             app,
             ["chat", "你好", "--project", str(pid), "--plain", "--json"],
@@ -228,11 +251,15 @@ class TestChat981:
     def test_frame_error_json(self, cli_runner, fake_http_client):
         """用例4a：帧 error --json 信封 → exit 1 + code==LLM_ERROR。"""
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "delta", "delta": "半句", "done": False},
-            {"type": "error", "error": "内部错误", "done": True},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "delta", "delta": "半句", "done": False},
+                    {"type": "error", "error": "内部错误", "done": True},
+                ]
+            )
+        )
         result = cli_runner.invoke(
             app,
             ["chat", "你好", "--project", str(pid), "--json"],
@@ -245,10 +272,14 @@ class TestChat981:
     def test_frame_error_human(self, cli_runner, fake_http_client):
         """用例4b：帧 error 人类模式 → exit 1，stderr 含错误消息。"""
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "error", "error": "内部错误", "done": True},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "error", "error": "内部错误", "done": True},
+                ]
+            )
+        )
         result = cli_runner.invoke(
             app,
             ["chat", "你好", "--project", str(pid)],
@@ -261,23 +292,39 @@ class TestChat981:
         pid = uuid.uuid4()
         cid = uuid.uuid4()
         conv = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "done", "done": True, "run_id": "R1"},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "done", "done": True, "run_id": "R1"},
+                ]
+            )
+        )
         cli_runner.invoke(
             app,
-            ["chat", "你好", "--project", str(pid),
-             "--chapter", str(cid), "--conversation", str(conv)],
+            [
+                "chat",
+                "你好",
+                "--project",
+                str(pid),
+                "--chapter",
+                str(cid),
+                "--conversation",
+                str(conv),
+            ],
         )
         body = fake_http_client.stream_sse.call_args.kwargs["json"]
         assert body["chapter_id"] == str(cid)
         assert body["conversation_id"] == str(conv)
         # 缺省：不含该两键
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "done", "done": True, "run_id": "R1"},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "done", "done": True, "run_id": "R1"},
+                ]
+            )
+        )
         cli_runner.invoke(app, ["chat", "你好", "--project", str(pid)])
         body2 = fake_http_client.stream_sse.call_args.kwargs["json"]
         assert "chapter_id" not in body2
@@ -299,10 +346,14 @@ class TestChat981:
     def test_timeout_kwarg(self, cli_runner, fake_http_client):
         """用例7：--timeout 5 → stream_sse 调用 kwargs["timeout"] == 5.0。"""
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R1", "done": False},
-            {"type": "done", "done": True, "run_id": "R1"},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R1", "done": False},
+                    {"type": "done", "done": True, "run_id": "R1"},
+                ]
+            )
+        )
         cli_runner.invoke(
             app,
             ["chat", "你好", "--project", str(pid), "--timeout", "5"],
@@ -336,11 +387,15 @@ class TestChat981:
         """用例9：回读 404 降级——get 抛 HttpApiError(404) → 信封仍 ok=true，
         run_id 来自 done 帧、final_content==delta 拼接、steps/tool_calls 空。"""
         pid = uuid.uuid4()
-        fake_http_client.stream_sse = MagicMock(side_effect=_sse([
-            {"type": "run_started", "id": "R2", "done": False},
-            {"type": "delta", "delta": "兜底", "done": False},
-            {"type": "done", "done": True, "run_id": "R2"},
-        ]))
+        fake_http_client.stream_sse = MagicMock(
+            side_effect=_sse(
+                [
+                    {"type": "run_started", "id": "R2", "done": False},
+                    {"type": "delta", "delta": "兜底", "done": False},
+                    {"type": "done", "done": True, "run_id": "R2"},
+                ]
+            )
+        )
         fake_http_client.get.side_effect = _http_err(404, "not found", "NOT_FOUND")
         result = cli_runner.invoke(
             app,

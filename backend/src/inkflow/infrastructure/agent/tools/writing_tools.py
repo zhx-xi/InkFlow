@@ -139,9 +139,7 @@ def build_writing_tools(deps: WritingToolDeps) -> list[Tool]:
         temperature: float | None = None,
     ) -> str:
         if deps.expected_chapter_id is None:
-            return json.dumps(
-                {"ok": False, "error": "需要章节上下文"}, ensure_ascii=False
-            )
+            return json.dumps({"ok": False, "error": "需要章节上下文"}, ensure_ascii=False)
         _project_id = _bind_project_id(deps.expected_project_id, project_id)
         try:
             _chapter_id = (
@@ -202,9 +200,7 @@ def build_writing_tools(deps: WritingToolDeps) -> list[Tool]:
         temperature: float | None = None,
     ) -> str:
         if deps.expected_chapter_id is None:
-            return json.dumps(
-                {"ok": False, "error": "需要章节上下文"}, ensure_ascii=False
-            )
+            return json.dumps({"ok": False, "error": "需要章节上下文"}, ensure_ascii=False)
         _project_id = _bind_project_id(deps.expected_project_id, project_id)
         try:
             _chapter_id = (
@@ -261,9 +257,7 @@ def build_writing_tools(deps: WritingToolDeps) -> list[Tool]:
         temperature: float | None = None,
     ) -> str:
         if deps.expected_chapter_id is None:
-            return json.dumps(
-                {"ok": False, "error": "需要章节上下文"}, ensure_ascii=False
-            )
+            return json.dumps({"ok": False, "error": "需要章节上下文"}, ensure_ascii=False)
         _project_id = _bind_project_id(deps.expected_project_id, project_id)
         try:
             _chapter_id = (

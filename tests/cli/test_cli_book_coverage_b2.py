@@ -40,9 +40,7 @@ def fake_http_client():
             "inkflow.cli.commands.book_cmd.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.book_cmd.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.book_cmd.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -51,9 +49,7 @@ def fake_http_client():
         yield mock_instance
 
 
-def test_plan_confirm_incomplete_renders_questions(
-    cli_runner, fake_http_client
-) -> None:
+def test_plan_confirm_incomplete_renders_questions(cli_runner, fake_http_client) -> None:
     """plan confirm 未完成 -> 渲染剩余问题（257）。"""
     fake_http_client.post.return_value = {
         "completed": False,
@@ -82,9 +78,7 @@ def test_run_limits_skips_item_without_key(cli_runner, fake_http_client) -> None
     assert body == {"writing_plan_id": "plan-1"}
 
 
-def test_intervene_edit_without_diff_skips_before_after(
-    cli_runner, fake_http_client
-) -> None:
+def test_intervene_edit_without_diff_skips_before_after(cli_runner, fake_http_client) -> None:
     """intervene --action edit 无 diff -> 只输出编辑行（439->441 / 441->exit）。"""
     fake_http_client.post.return_value = {"run_id": "r1"}
 

@@ -21,10 +21,10 @@ def _now() -> datetime:
 
 
 class TestCharacterBrief:
-    """角色领域实体的 brief 字段. """
+    """角色领域实体的 brief 字段."""
 
     def test_brief_defaults_empty_string(self) -> None:
-        """不传 brief → 默认空串（不破坏既有构造）. """
+        """不传 brief → 默认空串（不破坏既有构造）."""
         char = Character(
             id=uuid.UUID(int=1),
             project_id=uuid.UUID(int=1),
@@ -35,7 +35,7 @@ class TestCharacterBrief:
         assert char.brief == ""
 
     def test_brief_accepts_value(self) -> None:
-        """传 brief → 被接纳. """
+        """传 brief → 被接纳."""
         char = Character(
             id=uuid.UUID(int=2),
             project_id=uuid.UUID(int=1),
@@ -47,7 +47,7 @@ class TestCharacterBrief:
         assert char.brief == "废柴癌变体"
 
     def test_brief_whitespace_not_stripped_in_entity(self) -> None:
-        """实体层不强制去空白（与 personality 等字段一致，DST 层负责校验）. """
+        """实体层不强制去空白（与 personality 等字段一致，DST 层负责校验）."""
         char = Character(
             id=uuid.UUID(int=3),
             project_id=uuid.UUID(int=1),
@@ -60,7 +60,7 @@ class TestCharacterBrief:
 
 
 class TestCharacterCreateBrief:
-    """创建 DTO 的 brief 字段. """
+    """创建 DTO 的 brief 字段."""
 
     def test_create_brief_defaults_empty(self) -> None:
         dto = CharacterCreate(
@@ -78,13 +78,13 @@ class TestCharacterCreateBrief:
         assert dto.brief == "冷傲大小姐"
 
     def test_create_brief_over_length_raises(self) -> None:
-        """brief 超过 500 字符 → ValidationError. """
+        """brief 超过 500 字符 → ValidationError."""
         with pytest.raises(ValueError):
             CharacterCreate(project_id=uuid.UUID(int=1), name="林晚", brief="x" * 501)
 
 
 class TestCharacterUpdateBrief:
-    """更新 DTO 的 brief 字段（exclude_unset 语义）. """
+    """更新 DTO 的 brief 字段（exclude_unset 语义）."""
 
     def test_update_brief_accepts_value(self) -> None:
         dto = CharacterUpdate(brief="新简介")

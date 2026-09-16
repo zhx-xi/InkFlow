@@ -61,9 +61,7 @@ def fake_http_client():
             "inkflow.cli.commands.chat_cmd.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.chat_cmd.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.chat_cmd.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -143,13 +141,9 @@ def test_done_frame_without_run_id_falls_back(cli_runner, fake_http_client) -> N
 def test_plain_error_frame_maps_llm_error(cli_runner, fake_http_client) -> None:
     """plain 端点 error 帧 -> LLM_ERROR + exit 1（130-131）。"""
     pid = uuid.uuid4()
-    fake_http_client.stream_sse = MagicMock(
-        side_effect=_sse([{"error": "流式失败"}])
-    )
+    fake_http_client.stream_sse = MagicMock(side_effect=_sse([{"error": "流式失败"}]))
 
-    result = cli_runner.invoke(
-        app, ["chat", "hi", "--project", str(pid), "--plain", "--json"]
-    )
+    result = cli_runner.invoke(app, ["chat", "hi", "--project", str(pid), "--plain", "--json"])
 
     assert result.exit_code == 1
     assert json.loads(result.stdout)["error"]["code"] == "LLM_ERROR"
@@ -168,9 +162,7 @@ def test_plain_delta_human_prints_content(cli_runner, fake_http_client) -> None:
     assert "清晨薄雾" in result.stdout
 
 
-def test_kernel_startup_error_maps_to_kernel_error(
-    cli_runner, fake_http_client
-) -> None:
+def test_kernel_startup_error_maps_to_kernel_error(cli_runner, fake_http_client) -> None:
     """ensure_kernel 抛 KernelStartupError -> KERNEL_ERROR + exit 1（45-46）。"""
     pid = uuid.uuid4()
     with patch(
@@ -190,17 +182,13 @@ def test_typer_exit_propagates_unchanged(cli_runner, fake_http_client) -> None:
         "inkflow.cli.commands.chat_cmd.ensure_kernel",
         AsyncMock(side_effect=typer.Exit(code=3)),
     ):
-        result = cli_runner.invoke(
-            app, ["chat", "hi", "--project", str(pid), "--json"]
-        )
+        result = cli_runner.invoke(app, ["chat", "hi", "--project", str(pid), "--json"])
 
     assert result.exit_code == 3
     assert result.stdout.strip() == ""
 
 
-def test_validation_error_maps_to_validation_error(
-    cli_runner, fake_http_client
-) -> None:
+def test_validation_error_maps_to_validation_error(cli_runner, fake_http_client) -> None:
     """协程内 pydantic ValidationError -> VALIDATION_ERROR 信封（47-49）。"""
 
     class _Model(BaseModel):
@@ -216,9 +204,7 @@ def test_validation_error_maps_to_validation_error(
         "inkflow.cli.commands.chat_cmd.ensure_kernel",
         AsyncMock(side_effect=raised),
     ):
-        result = cli_runner.invoke(
-            app, ["chat", "hi", "--project", str(pid), "--json"]
-        )
+        result = cli_runner.invoke(app, ["chat", "hi", "--project", str(pid), "--json"])
 
     assert result.exit_code == 1
     assert json.loads(result.stdout)["error"]["code"] == "VALIDATION_ERROR"
@@ -229,9 +215,7 @@ def test_generic_exception_maps_to_db_error(cli_runner, fake_http_client) -> Non
     pid = uuid.uuid4()
     fake_http_client.stream_sse = MagicMock(side_effect=RuntimeError("boom"))
 
-    result = cli_runner.invoke(
-        app, ["chat", "hi", "--project", str(pid), "--json"]
-    )
+    result = cli_runner.invoke(app, ["chat", "hi", "--project", str(pid), "--json"])
 
     assert result.exit_code == 1
     assert json.loads(result.stdout)["error"]["code"] == "DB_ERROR"

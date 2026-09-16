@@ -154,10 +154,12 @@ async def _add_location(db_session, project, name: str) -> WorldSettingORM:
     """
     root = (
         await db_session.execute(
-            select(WorldSettingORM).where(
+            select(WorldSettingORM)
+            .where(
                 WorldSettingORM.project_id == project.id,
                 WorldSettingORM.parent_id.is_(None),
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
     loc = WorldSettingORM(

@@ -149,9 +149,7 @@ async def test_runs_start_completed_fast_path_no_task(client, override_services)
     _, book = override_services
     book.prepare_run.return_value = {"run_id": "run-done", "status": "completed"}
 
-    resp = await client.post(
-        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
-    )
+    resp = await client.post(f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())})
 
     assert resp.status_code == 202
     body = resp.json()
@@ -178,15 +176,11 @@ async def test_intervene_while_running_200(client, override_services):
     run_id = "run-x"
     book.prepare_run.return_value = {"run_id": run_id, "status": "running"}
 
-    resp = await client.post(
-        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
-    )
+    resp = await client.post(f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())})
     assert resp.status_code == 202
 
     book.intervene.return_value = {"run_id": run_id, "status": "paused"}
-    resp = await client.post(
-        f"{BASE}/runs/{run_id}/intervene", json={"action": "pause"}
-    )
+    resp = await client.post(f"{BASE}/runs/{run_id}/intervene", json={"action": "pause"})
 
     assert resp.status_code == 200
     body = resp.json()

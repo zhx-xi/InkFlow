@@ -102,9 +102,7 @@ class TestProviderList:
             "items": [_make_provider()],
             "total": 1,
         }
-        result = cli_runner.invoke(
-            app, ["provider", "list"], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["provider", "list"], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
@@ -120,9 +118,7 @@ class TestProviderList:
             "items": [_make_provider()],
             "total": 1,
         }
-        result = cli_runner.invoke(
-            app, ["provider", "list"], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["provider", "list"], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "deepseek" in result.output
 
@@ -131,9 +127,7 @@ class TestProviderList:
         from inkflow.cli.commands.llm import app
 
         fake_http_client.get.return_value = {"items": [], "total": 0}
-        result = cli_runner.invoke(
-            app, ["provider", "list"], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["provider", "list"], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "暂无" in result.output or "📭" in result.output
 
@@ -449,9 +443,7 @@ class TestProviderModels:
         """--add 新模型 → GET 现有后 PATCH 全量 models（含新模型）."""
         from inkflow.cli.commands.llm import app
 
-        fake_http_client.get.return_value = _make_provider(
-            models=list(self._EXISTING_MODELS)
-        )
+        fake_http_client.get.return_value = _make_provider(models=list(self._EXISTING_MODELS))
         fake_http_client.patch.return_value = _make_provider(
             models=[
                 *self._EXISTING_MODELS,
@@ -483,12 +475,8 @@ class TestProviderModels:
         """--remove 模型 id → PATCH 全量 models（不含被删）."""
         from inkflow.cli.commands.llm import app
 
-        fake_http_client.get.return_value = _make_provider(
-            models=list(self._EXISTING_MODELS)
-        )
-        fake_http_client.patch.return_value = _make_provider(
-            models=[self._EXISTING_MODELS[0]]
-        )
+        fake_http_client.get.return_value = _make_provider(models=list(self._EXISTING_MODELS))
+        fake_http_client.patch.return_value = _make_provider(models=[self._EXISTING_MODELS[0]])
         result = cli_runner.invoke(
             app,
             ["provider", "models", "--id", "1", "--remove", "deepseek-reasoner"],

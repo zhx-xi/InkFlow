@@ -234,9 +234,7 @@ class TestModelDiscoverySuccess:
             200, json_body={"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
         )
         with _patch_upstream(mock_resp) as mock_client:
-            resp = await client.post(
-                ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY}
-            )
+            resp = await client.post(ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -244,9 +242,7 @@ class TestModelDiscoverySuccess:
         assert body["models"] == ["gpt-4o", "gpt-4o-mini"]
         _assert_upstream_request(mock_client, UPSTREAM_URL, auth=f"Bearer {API_KEY}")
 
-    async def test_ollama_tags_format_normalized(
-        self, client, db_session, override_get_db
-    ):
+    async def test_ollama_tags_format_normalized(self, client, db_session, override_get_db):
         """Ollama /api/tags 风格归一化：{"models": [{"name": ...}]} → models ID 列表。
 
         base_url 带尾斜杠 'http://localhost:11434/' → 上游 URL 必须
@@ -277,33 +273,24 @@ class TestModelDiscoverySuccess:
 
         provider 必须作为 get_key 入参锚点传递（fake.calls 断言）。
         """
-        mock_resp = _upstream_response(
-            200, json_body={"data": [{"id": "deepseek-chat"}]}
-        )
-        with _patch_upstream(mock_resp) as mock_client, _patch_keychain(
-            KEYCHAIN_KEY
-        ) as km:
+        mock_resp = _upstream_response(200, json_body={"data": [{"id": "deepseek-chat"}]})
+        with (
+            _patch_upstream(mock_resp) as mock_client,
+            _patch_keychain(KEYCHAIN_KEY) as km,
+        ):
             resp = await client.post(
                 ENDPOINT, json={"base_url": UPSTREAM_BASE, "provider": "deepseek"}
             )
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-        assert km.calls == [
-            "deepseek"
-        ], f"get_key 应以 provider 为锚点，实际调用 {km.calls}"
-        _assert_upstream_request(
-            mock_client, UPSTREAM_URL, auth=f"Bearer {KEYCHAIN_KEY}"
-        )
+        assert km.calls == ["deepseek"], f"get_key 应以 provider 为锚点，实际调用 {km.calls}"
+        _assert_upstream_request(mock_client, UPSTREAM_URL, auth=f"Bearer {KEYCHAIN_KEY}")
 
-    async def test_no_key_no_auth_header_still_proxies(
-        self, client, db_session, override_get_db
-    ):
+    async def test_no_key_no_auth_header_still_proxies(self, client, db_session, override_get_db):
         """api_key 与 keychain 均无（get_key 返回 None）→ 仍发上游请求、无
         Authorization 头（兼容本地 Ollama），上游成功 → ok:true（设计假设 #4）。"""
-        mock_resp = _upstream_response(
-            200, json_body={"models": [{"name": "llama3.1"}]}
-        )
+        mock_resp = _upstream_response(200, json_body={"models": [{"name": "llama3.1"}]})
         with _patch_upstream(mock_resp) as mock_client, _patch_keychain(None) as km:
             resp = await client.post(
                 ENDPOINT, json={"base_url": UPSTREAM_BASE, "provider": "ollama"}
@@ -345,34 +332,24 @@ class TestModelDiscoveryValidation:
 class TestModelDiscoveryUpstreamFailure:
     """上游异常归一化（设计假设 #3）：一律 HTTP 200 + ok:false + message，不抛 502/500。"""
 
-    async def test_upstream_401_ok_false_message_api_key(
-        self, client, db_session, override_get_db
-    ):
+    async def test_upstream_401_ok_false_message_api_key(self, client, db_session, override_get_db):
         """上游 401 → 200 {ok:false, message 含 'API Key' 字样}（镜像 llm/test 语义）。"""
         mock_resp = _upstream_response(
             401, json_body={"error": {"message": "Invalid API Key provided"}}
         )
         with _patch_upstream(mock_resp) as mock_client:
-            resp = await client.post(
-                ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY}
-            )
+            resp = await client.post(ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY})
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is False
-        assert (
-            "API Key" in body["message"]
-        ), f"message 应含 'API Key'，实际 {body['message']!r}"
+        assert "API Key" in body["message"], f"message 应含 'API Key'，实际 {body['message']!r}"
         assert mock_client.get.await_count == 1
 
-    async def test_upstream_connect_error_ok_false(
-        self, client, db_session, override_get_db
-    ):
+    async def test_upstream_connect_error_ok_false(self, client, db_session, override_get_db):
         """上游网络不可达（httpx.ConnectError）→ 200 {ok:false, message 非空}。"""
         with _patch_upstream(side_effect=httpx.ConnectError("connection refused")):
-            resp = await client.post(
-                ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY}
-            )
+            resp = await client.post(ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -382,44 +359,32 @@ class TestModelDiscoveryUpstreamFailure:
     async def test_upstream_timeout_ok_false(self, client, db_session, override_get_db):
         """上游超时（httpx.TimeoutException）→ 200 {ok:false, message 非空}。"""
         with _patch_upstream(side_effect=httpx.TimeoutException("request timed out")):
-            resp = await client.post(
-                ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY}
-            )
+            resp = await client.post(ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY})
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is False
         assert body["message"], "失败 message 不得为空"
 
-    async def test_upstream_non_json_ok_false(
-        self, client, db_session, override_get_db
-    ):
+    async def test_upstream_non_json_ok_false(self, client, db_session, override_get_db):
         """上游返回非 JSON（text/html）→ 200 {ok:false, message 非空}。
 
         格式解析失败归入业务失败。
         """
-        mock_resp = _upstream_response(
-            200, text="<html><body>Gateway Error</body></html>"
-        )
+        mock_resp = _upstream_response(200, text="<html><body>Gateway Error</body></html>")
         with _patch_upstream(mock_resp):
-            resp = await client.post(
-                ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY}
-            )
+            resp = await client.post(ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY})
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is False
         assert body["message"], "失败 message 不得为空"
 
-    async def test_response_never_echoes_api_key(
-        self, client, db_session, override_get_db
-    ):
+    async def test_response_never_echoes_api_key(self, client, db_session, override_get_db):
         """安全红线（设计假设 #6）：任何响应（含 ok:false message）不得回显明文 api_key。"""
         mock_resp = _upstream_response(200, json_body={"data": [{"id": "gpt-4o"}]})
         with _patch_upstream(mock_resp):
-            resp = await client.post(
-                ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY}
-            )
+            resp = await client.post(ENDPOINT, json={"base_url": UPSTREAM_BASE, "api_key": API_KEY})
 
         assert resp.status_code == 200
         assert API_KEY not in resp.text, "响应体不得回显明文 api_key"

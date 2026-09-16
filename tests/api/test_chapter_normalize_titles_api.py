@@ -54,9 +54,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
 async def _create_chapters(client: AsyncClient, project_id: int, titles: list[str]) -> None:
     """经真实 API 种章节行（title 原样落库——DTO 尚未归一时为 RED 前状态）。"""
     for title in titles:
-        resp = await client.post(
-            f"/api/v1/projects/{project_id}/chapters", json={"title": title}
-        )
+        resp = await client.post(f"/api/v1/projects/{project_id}/chapters", json={"title": title})
         assert resp.status_code == 201
 
 
@@ -161,9 +159,7 @@ async def test_normalize_titles_invalid_format_422(client, sample_project):
 async def test_normalize_titles_missing_format_422(client, sample_project):
     """缺 format → 422。"""
     pid = sample_project.id
-    resp = await client.post(
-        f"/api/v1/projects/{pid}/chapters/normalize-titles", json={}
-    )
+    resp = await client.post(f"/api/v1/projects/{pid}/chapters/normalize-titles", json={})
     assert resp.status_code == 422
 
 
@@ -190,12 +186,8 @@ async def test_normalize_titles_outline_sync(client, sample_project, db_session)
     （chinese 下变化）。见交付报告「契约偏离/歧义」。
     """
     pid = sample_project.id
-    db_session.add(
-        OutlineORM(project_id=pid, name="第5章 风起", level="chapter", volume_id=None)
-    )
-    db_session.add(
-        OutlineORM(project_id=pid, name="第100章 终", level="chapter", volume_id=None)
-    )
+    db_session.add(OutlineORM(project_id=pid, name="第5章 风起", level="chapter", volume_id=None))
+    db_session.add(OutlineORM(project_id=pid, name="第100章 终", level="chapter", volume_id=None))
     await db_session.commit()
 
     resp = await client.post(
@@ -212,9 +204,7 @@ async def test_normalize_titles_outline_sync(client, sample_project, db_session)
 
 @pytest.mark.asyncio
 @pytest.mark.chapter
-async def test_normalize_titles_outline_dup_name_skipped(
-    client, sample_project, db_session
-):
+async def test_normalize_titles_outline_dup_name_skipped(client, sample_project, db_session):
     """归一后与既有活动大纲重名（uq_outlines_active_name）→ 跳过该条不计入 replaced，
     库中无 IntegrityError。
 
@@ -222,12 +212,8 @@ async def test_normalize_titles_outline_dup_name_skipped(
     '第一章 a' → 跳过；'第一章 a' 本身不变。outlines_replaced==0，两条原样留存。
     """
     pid = sample_project.id
-    db_session.add(
-        OutlineORM(project_id=pid, name="第1章 a", level="chapter", volume_id=None)
-    )
-    db_session.add(
-        OutlineORM(project_id=pid, name="第一章 a", level="chapter", volume_id=None)
-    )
+    db_session.add(OutlineORM(project_id=pid, name="第1章 a", level="chapter", volume_id=None))
+    db_session.add(OutlineORM(project_id=pid, name="第一章 a", level="chapter", volume_id=None))
     await db_session.commit()
 
     resp = await client.post(

@@ -94,9 +94,7 @@ def _extract_result(**overrides: object) -> dict:
 
 def _assert_no_api_v1_prefix(path: str) -> None:
     """#458 load-bearing: 请求路径必须相对 base_url（不含 /api/v1 双前缀）。"""
-    assert (
-        "/api/v1" not in path
-    ), f"请求路径 {path!r} 含 /api/v1 双前缀（base_url 已含 /api/v1）"
+    assert "/api/v1" not in path, f"请求路径 {path!r} 含 /api/v1 双前缀（base_url 已含 /api/v1）"
 
 
 @pytest.fixture
@@ -157,9 +155,7 @@ class TestKnowledgeExtractCmd:
         assert body["project_id"] == str(PID)
         assert body["method"] == "ai"
 
-    def test_extract_json_default_method_no_method_key(
-        self, cli_runner, fake_http_client
-    ):
+    def test_extract_json_default_method_no_method_key(self, cli_runner, fake_http_client):
         """--method 缺省 → body 不含 method 键（跟随 settings 由端点读）。"""
         fake_http_client.post.return_value = _extract_result()
         result = cli_runner.invoke(
@@ -175,9 +171,7 @@ class TestKnowledgeExtractCmd:
     def test_extract_llm_not_configured_422(self, cli_runner, fake_http_client):
         """服务端 422（未配置模型，LLMNotConfiguredError 映射）→ VALIDATION_ERROR
         信封 + 退出码 1。"""
-        fake_http_client.post.side_effect = _http_error(
-            422, "未配置大模型，无法进行 AI 提取"
-        )
+        fake_http_client.post.side_effect = _http_error(422, "未配置大模型，无法进行 AI 提取")
         result = cli_runner.invoke(
             _kg().app,
             ["extract", "--project", str(PID), "--method", "ai"],

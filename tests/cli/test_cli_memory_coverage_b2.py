@@ -39,9 +39,7 @@ def fake_http_client():
             "inkflow.cli.commands.memory_cmd.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.memory_cmd.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.memory_cmd.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -50,9 +48,7 @@ def fake_http_client():
         yield mock_instance
 
 
-def test_summarize_reports_unchanged_project_and_user_anchors(
-    cli_runner, fake_http_client
-) -> None:
+def test_summarize_reports_unchanged_project_and_user_anchors(cli_runner, fake_http_client) -> None:
     """summarized=True 但无 project/user 载荷 -> 两级「锚点未变化」提示（266-273）。"""
     fake_http_client.post.return_value = {"summarized": True}
 

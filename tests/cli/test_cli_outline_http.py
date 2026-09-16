@@ -66,9 +66,7 @@ def fake_http_client():
             "inkflow.cli.commands.outline.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.outline.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.outline.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
@@ -280,9 +278,7 @@ class TestGenerate:
         assert result.exit_code == 0
         fake_http_client.post.assert_awaited()
 
-    def test_generate_prompt_and_prompt_file_exclusive(
-        self, cli_runner, fake_http_client
-    ):
+    def test_generate_prompt_and_prompt_file_exclusive(self, cli_runner, fake_http_client):
         """--prompt 与 --prompt-file 同时传入 → 用法错误退出码 2."""
         result = cli_runner.invoke(
             app,
@@ -400,9 +396,7 @@ class TestOutlineErrorMapping:
         assert data["error"]["code"] == "DB_ERROR"
         assert "boom" in data["error"]["message"]
 
-    def test_point_update_internal_arc_id_parse_fail(
-        self, cli_runner, fake_http_client
-    ):
+    def test_point_update_internal_arc_id_parse_fail(self, cli_runner, fake_http_client):
         """_impl 内部 arc_id UUID 解析失败 → typer.Exit 原样重抛（退出码 1 + NOT_FOUND）."""
         result = cli_runner.invoke(
             app,

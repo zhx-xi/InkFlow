@@ -333,9 +333,7 @@ class WritingService:
             token_usage=token_usage,
         )
 
-    async def stream_generate(
-        self, request: WritingRequest
-    ) -> AsyncGenerator[WritingStreamEvent]:
+    async def stream_generate(self, request: WritingRequest) -> AsyncGenerator[WritingStreamEvent]:
         """流式生成章节 — 校验 → 构建 prompt → chat_stream 逐事件 yield → done 帧（spec §5.1）."""
         project = await self._stream_validate(request.project_id, request.chapter_id)
 
@@ -418,9 +416,7 @@ class WritingService:
             token_usage=token_usage,
         )
 
-    async def stream_revise(
-        self, request: RevisionRequest
-    ) -> AsyncGenerator[WritingStreamEvent]:
+    async def stream_revise(self, request: RevisionRequest) -> AsyncGenerator[WritingStreamEvent]:
         """流式修订 — 语义镜像 revise_content；无 FormatValidator（spec §5.1 注）."""
         project = await self._stream_validate(request.project_id, request.chapter_id)
 

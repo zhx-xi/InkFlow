@@ -34,8 +34,7 @@ from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
 
 # 长 prompt 全文（用于断言不外泄）；含敏感形态
 _PROMPT_TEXT = (
-    "请把以下机密写进故事：api_key=sk-" + "A" * 32
-    + " 以及这段足够长的提示词原文摘要测试" * 3
+    "请把以下机密写进故事：api_key=sk-" + "A" * 32 + " 以及这段足够长的提示词原文摘要测试" * 3
 )
 
 
@@ -116,8 +115,7 @@ class TestLLMDebugDigest:
         calls = [
             r
             for r in records
-            if r["extra"].get("message_key") == "log.call.chat"
-            and r["level"].name == "DEBUG"
+            if r["extra"].get("message_key") == "log.call.chat" and r["level"].name == "DEBUG"
         ]
         assert calls, "装饰器 log.call.chat DEBUG 入口记录须存在"
         assert calls[0]["extra"]["caller_type"] == "llm"

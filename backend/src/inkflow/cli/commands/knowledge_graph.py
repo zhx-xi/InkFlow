@@ -135,9 +135,7 @@ def extract_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
-            return await client.post(
-                "/knowledge/extract", json=body, timeout=LLM_TASK_TIMEOUT
-            )
+            return await client.post("/knowledge/extract", json=body, timeout=LLM_TASK_TIMEOUT)
 
     data = _run(cli_ctx, _impl)
     if cli_ctx.json_output:

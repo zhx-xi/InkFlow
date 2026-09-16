@@ -103,8 +103,7 @@ async def test_retrieve_retry_chain_within_873_scale(
         f"读侧重试步长出现 >0.25s（现值 {sleeps}）——M2 义务：恢复 #873 原口径"
     )
     assert sum(sleeps) <= 1.5 + 1e-9, (
-        f"单类型重试累计 sleep {sum(sleeps):.2f}s >1.5s——M2 义务：自愈链总延迟"
-        "守在 30s 客户端超时内"
+        f"单类型重试累计 sleep {sum(sleeps):.2f}s >1.5s——M2 义务：自愈链总延迟守在 30s 客户端超时内"
     )
 
 
@@ -149,8 +148,7 @@ async def test_flush_self_check_wait_budget_capped(
         f"自检出现 >1s 单条 sleep（现值 {sleeps}）——m1 义务：小额封顶退避"
     )
     assert sum(sleeps) <= 4.0 + 1e-9, (
-        f"自检等待累计 {sum(sleeps):.2f}s >4s/类型——m1 义务：reindex 最坏延迟"
-        "配合自愈仍守客户端超时"
+        f"自检等待累计 {sum(sleeps):.2f}s >4s/类型——m1 义务：reindex 最坏延迟配合自愈仍守客户端超时"
     )
     # 预算耗尽不得上抛（写已成功，禁硬失败）——本调用能返回即隐含该契约，
     # m2 契约（test_vector_write_flush_1011.py）另有独立异常类型锁。

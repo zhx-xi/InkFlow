@@ -97,6 +97,7 @@ pytestmark = pytest.mark.asyncio
 # Fakes / helpers（GREEN 契约参考；RED 期仅顶层 import 触发收集失败）
 # ---------------------------------------------------------------------------
 
+
 def _make_chapters(n: int) -> list[dict]:
     """n 个章 dict（ChapterDict 形态）。"""
     return [
@@ -192,6 +193,7 @@ class FakeDraftService:
 # ---------------------------------------------------------------------------
 # 编排核心契约用例（RED 期：模块不存在 → 收集失败，全部不执行）
 # ---------------------------------------------------------------------------
+
 
 class TestBookAgenticPipeline:
     @pytest.mark.asyncio
@@ -301,7 +303,9 @@ class TestBookAgenticPipeline:
             llm, writer_factory=writer, draft_service=drafts, audit_callable=llm.chat
         )
         result = await pipeline.execute(
-            plan, chapters, _make_limits(max_chapters=5, max_agent_calls=50),
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
             config=_make_config(max_chapter_cycles=2),
         )
         # 超循环上限 → 强制 mark_done（不再无限 revise），状态可达 completed
@@ -325,7 +329,9 @@ class TestBookAgenticPipeline:
             llm, writer_factory=writer, draft_service=drafts, audit_callable=llm.chat
         )
         await pipeline.execute(
-            plan, chapters, _make_limits(max_chapters=5, max_agent_calls=50),
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
             config=_make_config(audit_required=True),
         )
         # audit_required → 跳审被强制 audit：LLM 调用 ≥ 决策 + 强制审校（≥2）
@@ -350,7 +356,9 @@ class TestBookAgenticPipeline:
             llm, writer_factory=writer, draft_service=drafts, audit_callable=llm.chat
         )
         result = await pipeline.execute(
-            plan, chapters, _make_limits(max_chapters=5, max_agent_calls=50),
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
             config=_make_config(max_consecutive=3),
         )
         assert result["status"] in ("completed", "aborted")
@@ -367,7 +375,9 @@ class TestBookAgenticPipeline:
             llm, writer_factory=writer, draft_service=drafts, audit_callable=llm.chat
         )
         result = await pipeline.execute(
-            plan, chapters, _make_limits(max_chapters=5, max_agent_calls=50),
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
             config=_make_config(max_steps=2),
         )
         assert result["status"] in ("completed", "aborted")
@@ -391,7 +401,9 @@ class TestBookAgenticPipeline:
         )
         with pytest.raises(BookAgenticHITLInterrupt) as ei:
             await pipeline.execute(
-                plan, chapters, _make_limits(max_chapters=5, max_agent_calls=50),
+                plan,
+                chapters,
+                _make_limits(max_chapters=5, max_agent_calls=50),
                 config=_make_config(hitl_points=["book_start"]),
             )
         assert isinstance(ei.value.payload, dict)
@@ -412,7 +424,9 @@ class TestBookAgenticPipeline:
         )
         with pytest.raises(BookAgenticHITLInterrupt) as ei:
             await pipeline.execute(
-                plan, chapters, _make_limits(max_chapters=5, max_agent_calls=50),
+                plan,
+                chapters,
+                _make_limits(max_chapters=5, max_agent_calls=50),
                 config=_make_config(hitl_points=["book_start"]),
             )
         result = await pipeline.resume(
@@ -450,7 +464,9 @@ class TestBookAgenticPipeline:
             )
             with pytest.raises(BookAgenticHITLInterrupt) as ei:
                 await p1.execute(
-                    plan, chapters, BookLimits(max_chapters=5, max_agent_calls=50),
+                    plan,
+                    chapters,
+                    BookLimits(max_chapters=5, max_agent_calls=50),
                     config=_make_config(hitl_points=["book_start"]),
                     thread_id=str(plan.id),
                 )

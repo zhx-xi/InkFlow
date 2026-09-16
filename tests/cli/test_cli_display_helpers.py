@@ -102,9 +102,7 @@ class TestVectorDisplay:
 
     def test_reindex_summary(self):
         """重建索引摘要：类型列表 + 数量。"""
-        label = vector_mod._reindex_summary(
-            {"entity_types": ["character", "world"], "indexed": 5}
-        )
+        label = vector_mod._reindex_summary({"entity_types": ["character", "world"], "indexed": 5})
         assert "character/world" in label
         assert "5" in label
 
@@ -207,9 +205,7 @@ class TestTimelineDisplay:
     def test_time_label_display_priority(self):
         """time_display 优先。"""
         assert (
-            timeline_mod._time_label(
-                {"time_display": "青元历 317 年秋", "time_value": 317.5}
-            )
+            timeline_mod._time_label({"time_display": "青元历 317 年秋", "time_value": 317.5})
             == "青元历 317 年秋"
         )
 
@@ -222,9 +218,7 @@ class TestStyleDisplay:
     """style._top_words_line 展示分支。"""
 
     def test_top_words_line_normal(self):
-        label = style_mod._top_words_line(
-            [{"word": "剑", "count": 12}, {"word": "云", "count": 5}]
-        )
+        label = style_mod._top_words_line([{"word": "剑", "count": 12}, {"word": "云", "count": 5}])
         assert "剑(12)" in label
         assert "云(5)" in label
 
@@ -285,8 +279,6 @@ class TestAuditDisplay:
         assert audit_mod._dimension_label({"dimension": "weird"}) == "weird"
 
     def test_counts_line(self):
-        line = audit_mod._counts_line(
-            {"summary": {"counts": {"character": 3, "world": 2}}}
-        )
+        line = audit_mod._counts_line({"summary": {"counts": {"character": 3, "world": 2}}})
         assert "3" in line
         assert "2" in line

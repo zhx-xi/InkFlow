@@ -104,9 +104,7 @@ def fake_http_client():
             "inkflow.cli.commands.write.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.write.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.write.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -175,9 +173,7 @@ class TestWriteNext:
 
     def test_next_count_param(self, cli_runner):
         """write next --count / --show-context 参数出现在 help."""
-        result = cli_runner.invoke(
-            app, ["next", "--help"], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["next", "--help"], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "--count" in result.output
         assert "--show-context" in result.output
@@ -244,9 +240,7 @@ class TestWriteNext:
 
     def test_generate_renamed_to_next(self, cli_runner):
         """generate 命令已移除（重命名为 next）."""
-        result = cli_runner.invoke(
-            app, ["generate", "--help"], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["generate", "--help"], obj=CliContext(json_output=False))
         assert result.exit_code == 2
         assert "No such command" in result.stderr
 

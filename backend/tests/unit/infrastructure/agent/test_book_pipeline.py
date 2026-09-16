@@ -614,6 +614,7 @@ class TestCoverageGapPipeline2:
         assert _parse_supervisor_decision("```json\n{action: continue}```") == "continue"
         assert _parse_supervisor_decision('```json\n{"action": }```') == "continue"
 
+
 class TestDraftGuard975:
     """#975 唯一草稿守卫（book_pipeline 轨）：agent 已 save_draft -> 服务层兜底 create 跳过。
 
@@ -649,7 +650,7 @@ class TestDraftGuard975:
                 {
                     "type": "tool",
                     "content": '{"ok": true, "draft_id": "saved-d-1", "status": "draft", '
-                               '"word_count": 12}',
+                    '"word_count": 12}',
                 },
                 {"type": "ai", "content": "草稿已保存（draft_id: saved-d-1）"},
             ],

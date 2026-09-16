@@ -103,7 +103,10 @@ python -m pytest ..\tests\integration\ ..\tests\api\ ..\tests\cli\ -q  # 集成�
 规范见 `constitution §四 4.5`（`from __future__ import annotations` / `StrEnum`（Ruff UP042）/ async 全栈 / 中文 docstring）。
 
 ### 6.2 Ruff 规则
-规则集与行宽见 `backend/pyproject.toml`。
+规则集与行宽见 `backend/pyproject.toml`。格式化标准 = `ruff format`（#1148 起为 CI 硬门禁：
+`lint-backend` job 跑 `ruff format --check src/ tests/unit/ ../tests/ ../ci_cd/`）；
+pre-commit 钩子版本必须与 CI 实际版本一致（当前钉 v0.16.1，随 uv.lock 升级需同步改
+`backend/.pre-commit-config.yaml` 的 `rev`，否则格式结论互逆、钩子会重排 CI 已认可的代码）。
 
 ### 6.3 Pydantic v2 模式
 规范见 `constitution §四`：`model_config = {"from_attributes": True}`（非 `class Config`）；类型注解用 `str | None` / `list[X]`。

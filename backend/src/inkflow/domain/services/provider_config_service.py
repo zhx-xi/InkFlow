@@ -97,8 +97,7 @@ class ProviderConfigService:
         """构造探测失败异常——含模型 id + 摘要，绝不回显 api_key（ADR-012）。"""
         if not api_key:
             message = (
-                f"模型 {provider}/{model.id} 缺少 API Key，无法探测；"
-                "如需强制保存请使用 force=true"
+                f"模型 {provider}/{model.id} 缺少 API Key，无法探测；如需强制保存请使用 force=true"
             )
         elif model.type == "embedding":
             message = (

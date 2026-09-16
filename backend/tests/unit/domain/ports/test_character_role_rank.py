@@ -186,7 +186,7 @@ class TestCharacterApiRoleRank:
 
     @staticmethod
     def _char(name: str = "林尘") -> Character:
-        """构造可序列化 Character 实体（供 service mock 返回 201 用）. """
+        """构造可序列化 Character 实体（供 service mock 返回 201 用）."""
         return Character(
             id=uuid.uuid4(),
             project_id=PID,
@@ -196,11 +196,9 @@ class TestCharacterApiRoleRank:
         )
 
     def test_api_create_missing_role_rank_422(self) -> None:
-        """POST body 缺 extra.role_rank → 422 «角色等级必填»（语义锁定：缺失 → 必填）. """
+        """POST body 缺 extra.role_rank → 422 «角色等级必填»（语义锁定：缺失 → 必填）."""
         with _patch_get_service():
-            response = client.post(
-                f"/api/v1/projects/{PID}/characters", json={"name": "林尘"}
-            )
+            response = client.post(f"/api/v1/projects/{PID}/characters", json={"name": "林尘"})
         assert response.status_code == 422
         msgs = [d["msg"] for d in response.json()["detail"]]
         assert any("角色等级必填" in m for m in msgs), f"缺失应报「必填」，实际 {msgs}"
@@ -220,11 +218,9 @@ class TestCharacterApiRoleRank:
         assert any("角色等级非法" in m for m in msgs), f"非法应报「角色等级非法」，实际 {msgs}"
 
     def test_api_create_valid_role_rank_201(self) -> None:
-        """POST body 带合法 extra.role_rank → 201（happy-path 对照）. """
+        """POST body 带合法 extra.role_rank → 201（happy-path 对照）."""
         with _patch_get_service() as mock_get_svc:
-            mock_get_svc.return_value.create_character = AsyncMock(
-                return_value=self._char()
-            )
+            mock_get_svc.return_value.create_character = AsyncMock(return_value=self._char())
             response = client.post(
                 f"/api/v1/projects/{PID}/characters",
                 json={"name": "林尘", "extra": {"role_rank": "major"}},
@@ -234,16 +230,18 @@ class TestCharacterApiRoleRank:
 
 @contextlib.contextmanager
 def _patch_get_service():
-    """patch get_character_service；默认 service.* 为 AsyncMock，返回 Character 兜底. """
+    """patch get_character_service；默认 service.* 为 AsyncMock，返回 Character 兜底."""
     from unittest.mock import patch
 
     with patch("inkflow.api.routers.characters.get_character_service") as mock_get_svc:
         svc = mock_get_svc.return_value
-        svc.create_character = AsyncMock(return_value=Character(
-            id=uuid.uuid4(),
-            project_id=PID,
-            name="林尘",
-            created_at=datetime(2026, 8, 1, 10, 0, 0),
-            updated_at=datetime(2026, 8, 1, 10, 0, 0),
-        ))
+        svc.create_character = AsyncMock(
+            return_value=Character(
+                id=uuid.uuid4(),
+                project_id=PID,
+                name="林尘",
+                created_at=datetime(2026, 8, 1, 10, 0, 0),
+                updated_at=datetime(2026, 8, 1, 10, 0, 0),
+            )
+        )
         yield mock_get_svc

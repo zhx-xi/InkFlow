@@ -53,9 +53,7 @@ def service(mock_agent_repo: MagicMock, tmp_path: Path) -> AgentEntityService:
 
 
 @pytest.mark.asyncio
-async def test_create_rejects_duplicate_grant_domain(
-    service, mock_agent_repo
-) -> None:
+async def test_create_rejects_duplicate_grant_domain(service, mock_agent_repo) -> None:
     """同一 domain 重复授予 -> GrantValidationError，不落库（222-223）。"""
     grants = [_grant(ToolDomain.OUTLINE), _grant(ToolDomain.OUTLINE)]
 
@@ -66,9 +64,7 @@ async def test_create_rejects_duplicate_grant_domain(
 
 
 @pytest.mark.asyncio
-async def test_create_rejects_grants_and_tool_ids_together(
-    service, mock_agent_repo
-) -> None:
+async def test_create_rejects_grants_and_tool_ids_together(service, mock_agent_repo) -> None:
     """grants 与 tool_ids 同时传入 -> GrantValidationError（253-254）。"""
     with pytest.raises(GrantValidationError):
         await service.create(
@@ -95,9 +91,7 @@ async def test_create_with_grants_clears_tool_ids(service, mock_agent_repo) -> N
 
 
 @pytest.mark.asyncio
-async def test_update_rejects_grants_and_tool_ids_together(
-    service, mock_agent_repo
-) -> None:
+async def test_update_rejects_grants_and_tool_ids_together(service, mock_agent_repo) -> None:
     """update 同时传 grants 与 tool_ids -> GrantValidationError（319-320）。"""
     mock_agent_repo.get.return_value = _agent(7, "旧名")
 

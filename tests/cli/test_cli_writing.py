@@ -221,9 +221,7 @@ class TestWriteCLI:
     @pytest.mark.writing
     def test_write_next_llm_error(self, fake_http_client):
         """LLM 调用失败 → 退出码 1，stderr 输出错误信息（F38: 流前 500 + LLM_ERROR 头）."""
-        fake_http_client.stream_error = _http_err(
-            500, "LLM 调用失败，请稍后重试", code="LLM_ERROR"
-        )
+        fake_http_client.stream_error = _http_err(500, "LLM 调用失败，请稍后重试", code="LLM_ERROR")
         result = runner.invoke(
             app,
             [

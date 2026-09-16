@@ -79,9 +79,7 @@ class TestConfigShowModelReadiness:
         """全局默认非空 → model_ready=True + hint=None。"""
         from inkflow.cli.commands import config_cmd
 
-        monkeypatch.setattr(
-            config_cmd.config, "llm_default_model", "deepseek/deepseek-chat"
-        )
+        monkeypatch.setattr(config_cmd.config, "llm_default_model", "deepseek/deepseek-chat")
         result = cli_runner.invoke(config_cmd.app, ["show"], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         payload = _json_payload(result.output)
@@ -101,9 +99,7 @@ class TestConfigShowModelReadiness:
         """人类模式：就绪 → 不输出提示行（零打扰）。"""
         from inkflow.cli.commands import config_cmd
 
-        monkeypatch.setattr(
-            config_cmd.config, "llm_default_model", "deepseek/deepseek-chat"
-        )
+        monkeypatch.setattr(config_cmd.config, "llm_default_model", "deepseek/deepseek-chat")
         result = cli_runner.invoke(config_cmd.app, ["show"], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert HINT_ANCHOR not in result.output

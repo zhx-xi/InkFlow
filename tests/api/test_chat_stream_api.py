@@ -141,7 +141,10 @@ class TestChatStreamSuccess:
             content_type = sse.response.headers["content-type"]
         assert content_type.startswith("text/event-stream")
         assert len(frames) == 3
-        assert frames[0] == {"delta": "你", "done": False}  # 非 done 帧只有 delta + done 键
+        assert frames[0] == {
+            "delta": "你",
+            "done": False,
+        }  # 非 done 帧只有 delta + done 键
         assert frames[1] == {"delta": "好", "done": False}
         assert frames[2] == {"done": True}  # 终帧只有 done 键
         assert "".join(f["delta"] for f in frames[:2]) == "你好"
@@ -170,9 +173,7 @@ class TestChatStreamSuccess:
         )
 
     @pytest.mark.asyncio
-    async def test_stream_without_chapter_context(
-        self, override_chat_service, mock_chat_service
-    ):
+    async def test_stream_without_chapter_context(self, override_chat_service, mock_chat_service):
         """chapter_context 缺省 → stream(chapter_context=None)。"""
         body = _payload()
         async with (

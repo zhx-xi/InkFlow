@@ -127,7 +127,7 @@ class UserPreference(BaseModel):
 
 ```python
 class SummaryScope(StrEnum):
-    """语义总结的归属范围（M2 两层归属落地）. """
+    """语义总结的归属范围（M2 两层归属落地）."""
     PROJECT = "project"      # 项目级风格偏好（称谓规则/结构习惯/文风）
     USER = "user"            # 用户级通用风格（句长/冗余/叙述对话比例）
 

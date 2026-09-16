@@ -32,6 +32,7 @@ body 无这些键 → `.get(...)` 断言失败；export description / 非 txt �
 KeyError）。装配缝镜像 `tests/unit/mcp/test_mcp_tools.py`：MCP 工具在函数体内 lazy import
 源头模块，故 patch 命名空间 `http_mod` 的属性 `InkFlowHTTPClient`（恒返回同一记录 client）。
 """
+
 from __future__ import annotations
 
 import importlib

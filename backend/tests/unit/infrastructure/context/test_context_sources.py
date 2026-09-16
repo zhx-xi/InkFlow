@@ -26,7 +26,7 @@ from inkflow.infrastructure.context.sources import (
 
 
 def _uuid(n: int) -> uuid.UUID:
-    """构造确定性 UUID（UUID.int = n）. """
+    """构造确定性 UUID（UUID.int = n）."""
     return uuid.UUID(int=n)
 
 
@@ -39,7 +39,7 @@ def _make_character(
     background: str = "",
     goals: str = "",
 ) -> Character:
-    """构造测试用 Character. """
+    """构造测试用 Character."""
     return Character(
         id=_uuid(cid),
         project_id=_uuid(pid),
@@ -60,7 +60,7 @@ def _make_world(
     category: str = "",
     content: str = "",
 ) -> WorldSetting:
-    """构造测试用 WorldSetting. """
+    """构造测试用 WorldSetting."""
     return WorldSetting(
         id=_uuid(wid),
         project_id=_uuid(pid),
@@ -80,7 +80,7 @@ def _make_outline(
     description: str = "",
     sort_order: int = 0,
 ) -> Outline:
-    """构造测试用 Outline. """
+    """构造测试用 Outline."""
     return Outline(
         id=_uuid(oid),
         project_id=_uuid(pid),
@@ -94,7 +94,7 @@ def _make_outline(
 
 
 class TestCharacterSettingSource:
-    """角色设定数据源 — 从 characters 表读角色（D5=A：名 + brief 轻量化注入）. """
+    """角色设定数据源 — 从 characters 表读角色（D5=A：名 + brief 轻量化注入）."""
 
     async def test_returns_character_item_with_name_and_brief(self) -> None:
         """brief 非空 → content = 角色名 + brief，source=character_setting."""
@@ -116,7 +116,7 @@ class TestCharacterSettingSource:
         repo.list.assert_awaited_once_with(_uuid(1).int)
 
     async def test_falls_back_to_personality_when_brief_empty(self) -> None:
-        """brief 未填 → 降级截 personality（D5-a1 降级逻辑）. """
+        """brief 未填 → 降级截 personality（D5-a1 降级逻辑）."""
         char = _make_character(pid=1, cid=11, name="萧炎", brief="", personality="坚韧隐忍")
         repo = AsyncMock()
         repo.list.return_value = ([char], 1)
@@ -127,7 +127,7 @@ class TestCharacterSettingSource:
         assert items[0].content == "萧炎：坚韧隐忍"
 
     async def test_returns_multiple_characters(self) -> None:
-        """多角色 → 每角色一条 ContextItem. """
+        """多角色 → 每角色一条 ContextItem."""
         chars = [
             _make_character(pid=1, cid=12, name="林尘", brief="废柴觉醒者"),
             _make_character(pid=1, cid=13, name="青云真人", brief="元婴老祖"),
@@ -142,7 +142,7 @@ class TestCharacterSettingSource:
         assert {i.metadata["character_id"] for i in items} == {str(c.id) for c in chars}
 
     async def test_returns_empty_when_no_characters(self) -> None:
-        """项目无角色 → 空列表（跳过，不报错）. """
+        """项目无角色 → 空列表（跳过，不报错）."""
         repo = AsyncMock()
         repo.list.return_value = ([], 0)
         source = CharacterSettingSource(repo)
@@ -151,12 +151,13 @@ class TestCharacterSettingSource:
 
 
 class TestWorldSettingSource:
-    """世界设定数据源 — 从 world_settings 表读条目. """
+    """世界设定数据源 — 从 world_settings 表读条目."""
 
     async def test_returns_world_item(self) -> None:
-        """世界设定非空 → source=world_setting 的 ContextItem. """
-        world = _make_world(pid=1, wid=20, name="灵气复苏", category="设定",
-                       content="公元2048年灵气浓度回升")
+        """世界设定非空 → source=world_setting 的 ContextItem."""
+        world = _make_world(
+            pid=1, wid=20, name="灵气复苏", category="设定", content="公元2048年灵气浓度回升"
+        )
         repo = AsyncMock()
         repo.list.return_value = ([world], 1)
         source = WorldSettingSource(repo)
@@ -173,7 +174,7 @@ class TestWorldSettingSource:
         repo.list.assert_awaited_once_with(_uuid(1).int)
 
     async def test_returns_empty_when_no_world_settings(self) -> None:
-        """项目无世界设定 → 空列表（跳过，不报错）. """
+        """项目无世界设定 → 空列表（跳过，不报错）."""
         repo = AsyncMock()
         repo.list.return_value = ([], 0)
         source = WorldSettingSource(repo)
@@ -182,10 +183,10 @@ class TestWorldSettingSource:
 
 
 class TestOutlineSource:
-    """大纲数据源 — 从 outlines 表读大纲（overall→volume→chapter 三级，缺级降级）. """
+    """大纲数据源 — 从 outlines 表读大纲（overall→volume→chapter 三级，缺级降级）."""
 
     async def test_renders_overall_volume_chapter(self) -> None:
-        """三级齐全 → 按 总体→卷→章 顺序渲染. """
+        """三级齐全 → 按 总体→卷→章 顺序渲染."""
         outlines = [
             _make_outline(1, 30, "主线", "overall", "全书主线", sort_order=0),
             _make_outline(1, 31, "第一卷", "volume", "青云宗", sort_order=0),
@@ -208,7 +209,7 @@ class TestOutlineSource:
         repo.list.assert_awaited_once_with(_uuid(1).int)
 
     async def test_degrades_when_level_missing(self) -> None:
-        """缺 overall/volume（孤立章）→ 降级只输出章级，不报错. """
+        """缺 overall/volume（孤立章）→ 降级只输出章级，不报错."""
         outlines = [_make_outline(1, 33, "孤儿章", "chapter", "无父级")]
         repo = AsyncMock()
         repo.list.return_value = (outlines, 1)
@@ -220,7 +221,7 @@ class TestOutlineSource:
         assert items[0].content == "章：孤儿章 —— 无父级"
 
     async def test_returns_empty_when_no_outlines(self) -> None:
-        """项目无大纲 → 空列表（跳过，不报错）. """
+        """项目无大纲 → 空列表（跳过，不报错）."""
         repo = AsyncMock()
         repo.list.return_value = ([], 0)
         source = OutlineSource(repo)

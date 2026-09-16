@@ -118,9 +118,7 @@ async def _seed_tree(session: AsyncSession, *, link_chapter: bool = False):
 
     repo = SQLiteOutlineRepository(session)
     overall = await repo.add(_outline("整本大纲", project_id=pid, level="overall"))
-    volume = await repo.add(
-        _outline("卷一", project_id=pid, level="volume", parent_id=overall.id)
-    )
+    volume = await repo.add(_outline("卷一", project_id=pid, level="volume", parent_id=overall.id))
     chap = await repo.add(
         _outline(
             "第一章 试剑大典",
@@ -171,7 +169,7 @@ def test_outline_update_coerces_valid_uuid_strings() -> None:
 
 @pytest.mark.integration
 class TestOutline862Service:
-    """Service 层契约（真 in-memory SQLite，镜像 test_outline_p3.py Repo 轨）. """
+    """Service 层契约（真 in-memory SQLite，镜像 test_outline_p3.py Repo 轨）."""
 
     async def test_update_outline_chapter_id_survives_str_uuid(self, db_session) -> None:
         """UUID 对象（模型层直通形态）经真 repo 链路 update → 落库且读回相等。
@@ -183,9 +181,7 @@ class TestOutline862Service:
         repo = SQLiteOutlineRepository(db_session)
         svc = OutlineService(repository=repo)  # 不注入 chapter_repo，跳过存在性校验
 
-        result = await svc.update_outline(
-            chap.id, OutlineUpdate(chapter_id=chapter_uuid)
-        )
+        result = await svc.update_outline(chap.id, OutlineUpdate(chapter_id=chapter_uuid))
         assert result is not None
         assert result.chapter_id == chapter_uuid
 
@@ -196,7 +192,7 @@ class TestOutline862Service:
 
 @pytest.mark.integration
 class TestOutline862HttpLink:
-    """HTTP 全链路契约：真实 get_outline_service + 真 session（PATCH → GET 读回）. """
+    """HTTP 全链路契约：真实 get_outline_service + 真 session（PATCH → GET 读回）."""
 
     async def test_patch_outline_chapter_id_via_http_json(self, db_session) -> None:
         """#862 核心 RED：PATCH body chapter_id=合法 UUID 字符串 → 200 且落库读回相等。

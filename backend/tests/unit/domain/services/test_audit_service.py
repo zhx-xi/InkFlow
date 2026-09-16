@@ -371,10 +371,7 @@ async def test_rc1_from_end_missing_error():
 
 
 async def test_rc1_empty_relations_no_finding():
-    (
-        "空关系列表 → 无 finding；#211 删除为真删，仓储层不返回已删关系，"
-        "审计只扫描返回的活动关系。"
-    )
+    "空关系列表 → 无 finding；#211 删除为真删，仓储层不返回已删关系，审计只扫描返回的活动关系。"
     deps = _Deps(_project())
     deps.character_repo.list = AsyncMock(return_value=([_char(C_A, "林晚")], 1))
     deps.character_repo.list_relations = AsyncMock(return_value=[])
@@ -539,10 +536,8 @@ async def test_rt1_checked_zero_skipped_n_no_finding():
 
 
 async def test_rt1_delegation_args_and_nested_passthrough():
-    (
-        "委托调用断言：check_consistency 收到 project_id 且 "
-        "include_flashbacks 生效（True/默认 True）；嵌套报告原样透传。"
-    )
+    """委托调用断言：check_consistency 收到 project_id 且 include_flashbacks
+    生效（True/默认 True）；嵌套报告原样透传。"""
     deps = _Deps(_project())
 
     audit_report = await deps.service().run_audit(PID)

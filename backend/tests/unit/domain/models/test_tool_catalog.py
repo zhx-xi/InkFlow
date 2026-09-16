@@ -48,6 +48,7 @@ RED 预期（当前实现形态，migrate 后因新目录未实现而部分 FAIL
   RED 阶段即 PASS（刻意，防父侧误判）。
 - 预期总结形态: 目标用例 FAILED（AssertionError），无收集 ERROR；守护用例 PASSED。
 """
+
 from __future__ import annotations
 
 from dataclasses import fields
@@ -116,7 +117,7 @@ EXPECTED_CATALOG_NAMES = [
 ]
 
 # #955 迁移: −create_outline/update_outline + 10 新大纲工具
-#（outline 读 3=retrieval、写 7=writing；world_rw 8 / memory 3 / writing 3 不变）
+# （outline 读 3=retrieval、写 7=writing；world_rw 8 / memory 3 / writing 3 不变）
 EXPECTED_GROUPS = {
     "search_characters": "retrieval",
     "get_character": "retrieval",
@@ -245,7 +246,7 @@ class TestToolRegistryCatalog:
 
 
 class TestToolGroupMapping:
-    """39 工具分组映射契约（#838：retrieval×14 / audit×2 / writing×23）. """
+    """39 工具分组映射契约（#838：retrieval×14 / audit×2 / writing×23）."""
 
     def test_group_mapping(self):
         """每工具 group 与契约表一致."""

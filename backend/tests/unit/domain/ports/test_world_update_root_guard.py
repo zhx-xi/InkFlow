@@ -8,6 +8,7 @@
 依据: issue #847 + specs/f10-world-settings/spec.md §7（更新守卫行）+
 specs/f35-world-tree/spec.md §2.1 规则 6（根世界单例）.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -35,7 +36,7 @@ def _setting(
     project_id: uuid.UUID = PID,
     parent_id: uuid.UUID | None = None,
 ) -> WorldSetting:
-    """构造测试用世界观条目实体（固定时间戳，parent_id 可置顶/置子）. """
+    """构造测试用世界观条目实体（固定时间戳，parent_id 可置顶/置子）."""
     return WorldSetting(
         id=uuid.uuid4(),
         project_id=project_id,
@@ -50,7 +51,7 @@ def _setting(
 
 @pytest.fixture
 def mock_repo() -> MagicMock:
-    """Mock WorldRepositoryProtocol — 默认无根、无父、无冲突（显式 AsyncMock 防假绿）. """
+    """Mock WorldRepositoryProtocol — 默认无根、无父、无冲突（显式 AsyncMock 防假绿）."""
     repo = MagicMock(spec=WorldRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))  # 默认无根
@@ -62,12 +63,12 @@ def mock_repo() -> MagicMock:
 
 @pytest.fixture
 def service(mock_repo: MagicMock) -> WorldService:
-    """被测服务实例（全 Mock 依赖注入）. """
+    """被测服务实例（全 Mock 依赖注入）."""
     return WorldService(repository=mock_repo)
 
 
 class TestUpdateRootGuard:
-    """#847 更新设置根守卫（update_setting 无根校验的旁路封堵）. """
+    """#847 更新设置根守卫（update_setting 无根校验的旁路封堵）."""
 
     async def test_update_non_root_to_top_when_root_exists_raises_conflict(
         self, service: WorldService, mock_repo: MagicMock

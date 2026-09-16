@@ -200,9 +200,7 @@ class TestTriggerAudit:
         svc.audit.assert_awaited_once_with(PID, CID, include_static=True)
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_include_static_false_passthrough(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_trigger_audit_include_static_false_passthrough(self, mock_get_svc: MagicMock) -> None:
         """include_static=False 请求体透传（spec §2.4 AuditTriggerRequest）。"""
         svc = _mock_svc(mock_get_svc)
         svc.audit = AsyncMock(return_value=_report())
@@ -238,32 +236,24 @@ class TestTriggerAudit:
         assert response.json()["detail"] == "章节不存在"
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_invalid_project_uuid_404(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_trigger_audit_invalid_project_uuid_404(self, mock_get_svc: MagicMock) -> None:
         """无效 project_id → 404「项目不存在」（不进服务，spec §3.3 无效 UUID 语义）。"""
         svc = _mock_svc(mock_get_svc)
         svc.audit = AsyncMock(return_value=_report())
 
-        response = client.post(
-            f"/api/v1/projects/not-a-uuid/chapters/{CID}/audit", json={}
-        )
+        response = client.post(f"/api/v1/projects/not-a-uuid/chapters/{CID}/audit", json={})
 
         assert response.status_code == 404
         assert response.json()["detail"] == "项目不存在"
         svc.audit.assert_not_awaited()
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_invalid_chapter_uuid_404(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_trigger_audit_invalid_chapter_uuid_404(self, mock_get_svc: MagicMock) -> None:
         """无效 chapter_id → 404「章节不存在」（路径两段独立解析）。"""
         svc = _mock_svc(mock_get_svc)
         svc.audit = AsyncMock(return_value=_report())
 
-        response = client.post(
-            f"/api/v1/projects/{PID}/chapters/not-a-uuid/audit", json={}
-        )
+        response = client.post(f"/api/v1/projects/{PID}/chapters/not-a-uuid/audit", json={})
 
         assert response.status_code == 404
         assert response.json()["detail"] == "章节不存在"
@@ -288,9 +278,7 @@ class TestConfirmAudit:
     def test_confirm_accept_200(self, mock_get_svc: MagicMock) -> None:
         """accept → 200 {status: accepted, confirmed_at}（spec §3.2）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.confirm = AsyncMock(
-            return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS)
-        )
+        svc.confirm = AsyncMock(return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS))
 
         response = client.post(
             f"/api/v1/projects/{PID}/chapters/{CID}/audit/confirm",
@@ -308,9 +296,7 @@ class TestConfirmAudit:
         """reject + note → 200 {status: rejected}，note 透传落库（spec §2.4）。"""
         svc = _mock_svc(mock_get_svc)
         svc.confirm = AsyncMock(
-            return_value=_log(
-                status="rejected", confirmed_at=CONFIRMED_TS, note="人设需再打磨"
-            )
+            return_value=_log(status="rejected", confirmed_at=CONFIRMED_TS, note="人设需再打磨")
         )
 
         response = client.post(
@@ -320,9 +306,7 @@ class TestConfirmAudit:
 
         assert response.status_code == 200
         assert response.json()["status"] == "rejected"
-        svc.confirm.assert_awaited_once_with(
-            PID, CID, action="reject", note="人设需再打磨"
-        )
+        svc.confirm.assert_awaited_once_with(PID, CID, action="reject", note="人设需再打磨")
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
     def test_confirm_no_pending_422(self, mock_get_svc: MagicMock) -> None:
@@ -342,9 +326,7 @@ class TestConfirmAudit:
     def test_confirm_invalid_action_422(self, mock_get_svc: MagicMock) -> None:
         """action 非法（非 accept/reject）→ 422 Pydantic 校验（spec §3.3 DTO 层）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.confirm = AsyncMock(
-            return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS)
-        )
+        svc.confirm = AsyncMock(return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS))
 
         response = client.post(
             f"/api/v1/projects/{PID}/chapters/{CID}/audit/confirm",
@@ -359,13 +341,9 @@ class TestConfirmAudit:
     def test_confirm_missing_action_422(self, mock_get_svc: MagicMock) -> None:
         """action 缺失（必填）→ 422 Pydantic 校验（spec §2.4 AuditConfirmRequest）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.confirm = AsyncMock(
-            return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS)
-        )
+        svc.confirm = AsyncMock(return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS))
 
-        response = client.post(
-            f"/api/v1/projects/{PID}/chapters/{CID}/audit/confirm", json={}
-        )
+        response = client.post(f"/api/v1/projects/{PID}/chapters/{CID}/audit/confirm", json={})
 
         assert response.status_code == 422
         assert "action" in str(response.json()["detail"])
@@ -375,9 +353,7 @@ class TestConfirmAudit:
     def test_confirm_invalid_project_uuid_404(self, mock_get_svc: MagicMock) -> None:
         """无效 project_id → 404「项目不存在」（不进服务）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.confirm = AsyncMock(
-            return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS)
-        )
+        svc.confirm = AsyncMock(return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS))
 
         response = client.post(
             f"/api/v1/projects/not-a-uuid/chapters/{CID}/audit/confirm",
@@ -392,9 +368,7 @@ class TestConfirmAudit:
     def test_confirm_invalid_chapter_uuid_404(self, mock_get_svc: MagicMock) -> None:
         """无效 chapter_id → 404「章节不存在」（路径两段独立解析）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.confirm = AsyncMock(
-            return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS)
-        )
+        svc.confirm = AsyncMock(return_value=_log(status="accepted", confirmed_at=CONFIRMED_TS))
 
         response = client.post(
             f"/api/v1/projects/{PID}/chapters/not-a-uuid/audit/confirm",
@@ -453,9 +427,7 @@ class TestAuditLogs:
         svc = _mock_svc(mock_get_svc)
         svc.list_logs = AsyncMock(return_value=([], 0))
 
-        response = client.get(
-            f"/api/v1/projects/{PID}/audit-logs", params={"limit": 101}
-        )
+        response = client.get(f"/api/v1/projects/{PID}/audit-logs", params={"limit": 101})
 
         assert response.status_code == 422
         # 🔒 强化（#524）：Pydantic 422 detail 为 list（区分参数校验与业务 422）
@@ -468,9 +440,7 @@ class TestAuditLogs:
         svc = _mock_svc(mock_get_svc)
         svc.list_logs = AsyncMock(return_value=([], 0))
 
-        response = client.get(
-            f"/api/v1/projects/{PID}/audit-logs", params={"limit": -1}
-        )
+        response = client.get(f"/api/v1/projects/{PID}/audit-logs", params={"limit": -1})
 
         assert response.status_code == 422
         assert isinstance(response.json()["detail"], list)
@@ -482,18 +452,14 @@ class TestAuditLogs:
         svc = _mock_svc(mock_get_svc)
         svc.list_logs = AsyncMock(return_value=([], 0))
 
-        response = client.get(
-            f"/api/v1/projects/{PID}/audit-logs", params={"offset": -1}
-        )
+        response = client.get(f"/api/v1/projects/{PID}/audit-logs", params={"offset": -1})
 
         assert response.status_code == 422
         assert isinstance(response.json()["detail"], list)
         svc.list_logs.assert_not_awaited()
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_list_audit_logs_invalid_project_uuid_404(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_list_audit_logs_invalid_project_uuid_404(self, mock_get_svc: MagicMock) -> None:
         """无效 project_id → 404「项目不存在」（不进服务）。"""
         svc = _mock_svc(mock_get_svc)
         svc.list_logs = AsyncMock(return_value=([], 0))
@@ -505,9 +471,7 @@ class TestAuditLogs:
         svc.list_logs.assert_not_awaited()
 
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_list_audit_logs_project_not_found_404(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_list_audit_logs_project_not_found_404(self, mock_get_svc: MagicMock) -> None:
         """项目不存在 → 404「项目不存在」（spec §3.3）。"""
         svc = _mock_svc(mock_get_svc)
         svc.list_logs = AsyncMock(side_effect=ProjectNotFoundError())

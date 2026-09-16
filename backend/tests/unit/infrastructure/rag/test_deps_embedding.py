@@ -267,9 +267,9 @@ async def test_get_vector_store_maps_embedding_id_to_openai_compat() -> None:
     call = mock_vs.call_args
     embeddings = call.kwargs.get("embeddings") or call.args[1]
     assert isinstance(embeddings, LiteLLMEmbeddings)
-    assert (
-        embeddings.model == "openai/embedding-3"
-    ), f"LiteLLMEmbeddings.model 应为 'openai/embedding-3'（#428），实际 {embeddings.model!r}"
+    assert embeddings.model == "openai/embedding-3", (
+        f"LiteLLMEmbeddings.model 应为 'openai/embedding-3'（#428），实际 {embeddings.model!r}"
+    )
     assert embeddings.api_base == "https://open.bigmodel.cn/api/paas/v4/"
 
 

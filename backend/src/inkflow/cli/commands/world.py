@@ -220,9 +220,7 @@ def add_category_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     name: str = typer.Option(..., "--name", "-n", help="分类名"),
-    kind: Literal["geo", "abstract"] = typer.Option(
-        "geo", "--kind", help="分类类型 geo|abstract"
-    ),
+    kind: Literal["geo", "abstract"] = typer.Option("geo", "--kind", help="分类类型 geo|abstract"),
 ) -> None:
     """注册自定义世界观分类（#389；同名 → 422 VALIDATION_ERROR 透传）"""
     cli_ctx: CliContext = ctx.obj
@@ -531,8 +529,7 @@ def extract_settings_cmd(
         n_updated = len(result["updated"])
         n_warnings = len(result["warnings"])
         typer.echo(
-            f"✅ 提取完成: 新增 {n_created} 个条目, 更新 {n_updated} 个条目, "
-            f"警告 {n_warnings} 条"
+            f"✅ 提取完成: 新增 {n_created} 个条目, 更新 {n_updated} 个条目, 警告 {n_warnings} 条"
         )
         if n_warnings:
             typer.echo(f"⚠️ 提取完成但有警告: {'; '.join(result['warnings'][:3])}")

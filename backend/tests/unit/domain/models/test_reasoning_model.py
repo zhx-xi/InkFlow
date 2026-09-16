@@ -144,7 +144,7 @@ class TestResolveReasoningEffort:
         )
 
     def test_explicit_none_level_overrides_project(self) -> None:
-        """"none"（显式关闭）同样是值：区别于 None（未配置=跟随上级）。"""
+        """ "none"（显式关闭）同样是值：区别于 None（未配置=跟随上级）。"""
         assert (
             resolve_reasoning_effort(
                 request_effort="none", project_effort="high", global_effort=None

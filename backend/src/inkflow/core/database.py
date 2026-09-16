@@ -27,6 +27,7 @@ __all__ = [
 ]
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
 
+
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
@@ -449,8 +450,7 @@ def ensure_preference_superseded_column(conn: Connection) -> None:
     if "superseded_by" not in names:
         conn.execute(
             text(
-                "ALTER TABLE project_preferences ADD COLUMN superseded_by "
-                "TEXT NOT NULL DEFAULT ''"
+                "ALTER TABLE project_preferences ADD COLUMN superseded_by TEXT NOT NULL DEFAULT ''"
             )
         )
 
@@ -464,9 +464,7 @@ def ensure_user_preference_superseded_column(conn: Connection) -> None:
         return
     if "superseded_by" not in names:
         conn.execute(
-            text(
-                "ALTER TABLE user_preferences ADD COLUMN superseded_by " "TEXT NOT NULL DEFAULT ''"
-            )
+            text("ALTER TABLE user_preferences ADD COLUMN superseded_by TEXT NOT NULL DEFAULT ''")
         )
 
 
@@ -549,9 +547,7 @@ def ensure_world_categories_kind_column(conn: Connection) -> None:
         return
     if "kind" not in names:
         conn.execute(
-            text(
-                "ALTER TABLE world_categories " "ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'geo'"
-            )
+            text("ALTER TABLE world_categories ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'geo'")
         )
 
 

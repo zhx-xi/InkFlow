@@ -33,9 +33,7 @@ def extract_limits_from_interview(
         无章数声明时保守返回 {"max_chapters": 1, "max_agent_calls": 1}.
     """
     texts = [text for text in answers.values() if isinstance(text, str)]
-    texts.extend(
-        value for item in confirmed_items if isinstance(value := item.get("value"), str)
-    )
+    texts.extend(value for item in confirmed_items if isinstance(value := item.get("value"), str))
     max_chapters = 0
     for text in texts:
         stripped = _CHAPTER_SEQUENCE_RE.sub("", text)

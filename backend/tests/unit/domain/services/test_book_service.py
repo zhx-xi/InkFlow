@@ -829,6 +829,7 @@ async def test_extract_final_content_variants():
     # 无 content → ""
     assert _extract_final_content({"messages": [{"role": "user"}]}) == ""
 
+
 @pytest.mark.asyncio
 async def test_delegate_chapter_skips_fallback_when_agent_saved_975():
     """【R】#975 守卫（book_service 轨）：agent 含 save_draft tool_call -> 兜底 create 跳过。
@@ -857,7 +858,7 @@ async def test_delegate_chapter_skips_fallback_when_agent_saved_975():
             {
                 "type": "tool",
                 "content": '{"ok": true, "draft_id": "saved-d-1", "status": "draft", '
-                           '"word_count": 12}',
+                '"word_count": 12}',
             },
             {"type": "ai", "content": "草稿已保存（draft_id: saved-d-1）"},
         ],

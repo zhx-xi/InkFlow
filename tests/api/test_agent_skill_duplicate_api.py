@@ -281,9 +281,7 @@ class TestDuplicateSkill:
         #485 核心验收：内置复制转用户态；副本名 = f"{slug}-copy"。
         """
         _write_builtin(skills_root)  # architecture-methodology
-        resp = await client.post(
-            f"{ENDPOINT_SKILLS}/architecture-methodology/duplicate"
-        )
+        resp = await client.post(f"{ENDPOINT_SKILLS}/architecture-methodology/duplicate")
         assert resp.status_code == 201
         data = resp.json()
         _assert_skill_response_contract(data)
@@ -306,9 +304,7 @@ class TestDuplicateSkill:
         assert resp.status_code == 422
         assert resp.json()["detail"] == DETAIL_CONFLICT
 
-    async def test_duplicate_not_found_404(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_duplicate_not_found_404(self, client, db_session, override_get_db, skills_root):
         """源目录不存在 → 404「Skill 不存在」（守护用例，旧实现同返 404）。"""
         resp = await client.post(f"{ENDPOINT_SKILLS}/no-such-skill/duplicate")
         assert resp.status_code == 404
@@ -348,9 +344,7 @@ class TestDuplicateAgent:
         assert data["role_key"] != "architect", "副本不得继承源 role_key"
         assert data["skill_ids"] == []
 
-    async def test_duplicate_custom_source_201(
-        self, client, db_session, override_get_db
-    ):
+    async def test_duplicate_custom_source_201(self, client, db_session, override_get_db):
         """自定义源（builtin=False）也可复制 → 201 + 副本 builtin=False。"""
         src = await _seed_agent(
             db_session,
@@ -370,13 +364,9 @@ class TestDuplicateAgent:
         assert data["builtin"] is False
         assert data["skill_ids"] == []
 
-    async def test_duplicate_name_conflict_422(
-        self, client, db_session, override_get_db
-    ):
+    async def test_duplicate_name_conflict_422(self, client, db_session, override_get_db):
         """副本名冲突 → 422（预插 name="架构师 副本" 的自定义 Agent）。"""
-        src = await _seed_agent(
-            db_session, name="架构师", builtin=True, role_key="architect"
-        )
+        src = await _seed_agent(db_session, name="架构师", builtin=True, role_key="architect")
         await _seed_agent(db_session, name="架构师 副本")
 
         resp = await client.post(f"{ENDPOINT_AGENTS}/{src.id}/duplicate")

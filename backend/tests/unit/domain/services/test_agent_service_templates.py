@@ -145,9 +145,9 @@ class TestTemperatureChain:
         merged = await _merge(service, ProjectConfig())
 
         for sid in ("architect", "writer", "auditor", "reviser"):
-            assert (
-                merged[sid].agent.model == BUILTIN_MODEL
-            ), f"#520 未配置项目应回退全局默认模型，实际 {sid}={merged[sid].agent.model}"
+            assert merged[sid].agent.model == BUILTIN_MODEL, (
+                f"#520 未配置项目应回退全局默认模型，实际 {sid}={merged[sid].agent.model}"
+            )
 
     async def test_m3_old_project_equivalence(self):
         """M3 旧项目等价（无 template_id、无每角色温度字段）：

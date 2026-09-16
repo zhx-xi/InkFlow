@@ -230,9 +230,7 @@ class TestVolumeUnifyService:
             )
 
     @pytest.mark.asyncio
-    async def test_r6_service_volume_outline_without_volume_id_creates_ok(
-        self, mock_repo
-    ) -> None:
+    async def test_r6_service_volume_outline_without_volume_id_creates_ok(self, mock_repo) -> None:
         """R6 service：卷纲未设 volume_id（暂不关联写作分组卷）→ 合法创建.
 
         RED 预期: create_outline 无 volume_id kwarg → TypeError（service 层失败形态）。
@@ -244,9 +242,7 @@ class TestVolumeUnifyService:
         mock_repo.get = AsyncMock(return_value=parent)
         mock_repo.add = AsyncMock(return_value=saved)
         svc = _make_service(mock_repo)
-        result = await svc.create_outline(
-            PID, "独立卷纲", level="volume", parent_id=parent.id
-        )
+        result = await svc.create_outline(PID, "独立卷纲", level="volume", parent_id=parent.id)
         assert result.model_dump()["level"] == "volume"
         assert result.model_dump()["volume_id"] is None
 
@@ -276,9 +272,7 @@ class TestVolumeUnifyAPI:
     """R8: 大纲端点 volume_id 透传 + by-volume 解析端点（Mock Service 层）."""
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
-    def test_r8_api_create_and_patch_passthrough_volume_id(
-        self, mock_get_svc: MagicMock
-    ) -> None:
+    def test_r8_api_create_and_patch_passthrough_volume_id(self, mock_get_svc: MagicMock) -> None:
         """R8 api：POST 透传 volume_id；PATCH 透传 "" 清除语义.
 
         RED 预期: ① POST 断言 create_outline 收到 volume_id kwarg → 当前 router 只传
@@ -299,7 +293,10 @@ class TestVolumeUnifyAPI:
         )
         assert response.status_code == 201
         svc.create_outline.assert_awaited_once_with(
-            PID, "卷纲", "", 0,
+            PID,
+            "卷纲",
+            "",
+            0,
             level="volume",
             parent_id=None,
             chapter_id=None,
@@ -389,9 +386,7 @@ class TestVolumeUnifyRepo:
         )
 
         parent = await repo.add(
-            _outline(
-                "整体大纲", project_id=uuid.UUID(int=project.id), level="overall"
-            )
+            _outline("整体大纲", project_id=uuid.UUID(int=project.id), level="overall")
         )
         gang = await repo.add(
             _outline(

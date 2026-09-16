@@ -56,9 +56,7 @@ def fake_http_client():
             "inkflow.cli.commands.world.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.world.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.world.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_cls.return_value = mock_instance
@@ -101,18 +99,13 @@ class TestWorldTreeQuery:
             "items": [_make_setting(name="清河县城")],
             "total": 1,
         }
-        result = cli_runner.invoke(
-            app, ["ancestors", str(sid)], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["ancestors", str(sid)], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["items"][0]["name"] == "清河县城"
         fake_http_client.get.assert_awaited()
-        assert (
-            fake_http_client.get.await_args.args[0]
-            == f"/world-settings/{sid}/ancestors"
-        )
+        assert fake_http_client.get.await_args.args[0] == f"/world-settings/{sid}/ancestors"
 
     def test_descendants_json(self, cli_runner, fake_http_client):
         """descendants <id> --json → 成功信封 + GET /world-settings/{id}/descendants.
@@ -124,18 +117,13 @@ class TestWorldTreeQuery:
             "items": [_make_setting(name="清河县城")],
             "total": 1,
         }
-        result = cli_runner.invoke(
-            app, ["descendants", str(sid)], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["descendants", str(sid)], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["items"][0]["name"] == "清河县城"
         fake_http_client.get.assert_awaited()
-        assert (
-            fake_http_client.get.await_args.args[0]
-            == f"/world-settings/{sid}/descendants"
-        )
+        assert fake_http_client.get.await_args.args[0] == f"/world-settings/{sid}/descendants"
 
 
 class TestWorldTreeParentOption:
@@ -281,23 +269,16 @@ class TestWorldTreeHumanOutput:
             ],
             "total": 3,
         }
-        result = cli_runner.invoke(
-            app, ["ancestors", str(sid)], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["ancestors", str(sid)], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "清河县城 → 青州 → 大越国" in result.stdout
-        assert (
-            fake_http_client.get.await_args.args[0]
-            == f"/world-settings/{sid}/ancestors"
-        )
+        assert fake_http_client.get.await_args.args[0] == f"/world-settings/{sid}/ancestors"
 
     def test_ancestors_human_empty(self, cli_runner, fake_http_client):
         """ancestors 空列表 → stdout「📭 暂无祖先链」（L256，emoji 码点精确）."""
         sid = uuid.uuid4()
         fake_http_client.get.return_value = {"items": [], "total": 0}
-        result = cli_runner.invoke(
-            app, ["ancestors", str(sid)], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["ancestors", str(sid)], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "\U0001f4ed 暂无祖先链" in result.stdout
 
@@ -319,10 +300,7 @@ class TestWorldTreeHumanOutput:
         assert "- 大越国" in result.stdout
         assert "  - 青州" in result.stdout
         assert "    - 清河县城" in result.stdout
-        assert (
-            fake_http_client.get.await_args.args[0]
-            == f"/world-settings/{sid}/descendants"
-        )
+        assert fake_http_client.get.await_args.args[0] == f"/world-settings/{sid}/descendants"
 
     def test_descendants_human_empty(self, cli_runner, fake_http_client):
         """descendants 空列表 → stdout「📭 暂无子地点」（L286，emoji 码点精确）."""

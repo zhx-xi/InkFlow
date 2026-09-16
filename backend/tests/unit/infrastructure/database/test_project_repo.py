@@ -154,9 +154,7 @@ class TestProjectRepositoryCoverageGaps:
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("旧名"))
 
-        updated = await repo.update(
-            created.model_copy(update={"name": "新名", "tags": ["科幻"]})
-        )
+        updated = await repo.update(created.model_copy(update={"name": "新名", "tags": ["科幻"]}))
         assert updated.id == created.id
         assert updated.name == "新名"
         assert updated.tags == ["科幻"]

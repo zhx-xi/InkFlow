@@ -75,9 +75,7 @@ def fake_http_client():
             "inkflow.cli.commands.session.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.session.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.session.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -188,9 +186,7 @@ class TestCoverageGapFill:
         assert data["ok"] is True
         assert data["data"]["session"]["context"]["tags"] == ["a", "b"]
 
-    def test_create_context_json_invalid_exit_code_2(
-        self, cli_runner, fake_http_client
-    ):
+    def test_create_context_json_invalid_exit_code_2(self, cli_runner, fake_http_client):
         """--context-json 非法 JSON → JSONDecodeError → 退出码 2."""
         result = cli_runner.invoke(
             app,
@@ -208,9 +204,7 @@ class TestCoverageGapFill:
         assert result.exit_code == 2
         fake_http_client.post.assert_not_awaited()
 
-    def test_create_context_json_not_object_exit_code_2(
-        self, cli_runner, fake_http_client
-    ):
+    def test_create_context_json_not_object_exit_code_2(self, cli_runner, fake_http_client):
         """--context-json 为 JSON 数组（非对象）→ 退出码 2."""
         result = cli_runner.invoke(
             app,
@@ -228,9 +222,7 @@ class TestCoverageGapFill:
         assert result.exit_code == 2
         fake_http_client.post.assert_not_awaited()
 
-    def test_create_context_file_missing_exit_code_2(
-        self, cli_runner, fake_http_client
-    ):
+    def test_create_context_file_missing_exit_code_2(self, cli_runner, fake_http_client):
         """--context-file 指向不存在文件 → 读取 OSError → 退出码 2."""
         result = cli_runner.invoke(
             app,
@@ -288,9 +280,7 @@ class TestCoverageGapFill:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        upd = SessionUpdate.model_validate(
-            fake_http_client.patch.await_args.kwargs["json"]
-        )
+        upd = SessionUpdate.model_validate(fake_http_client.patch.await_args.kwargs["json"])
         assert upd.description == "新描述"
         assert "title" not in upd.model_fields_set
 

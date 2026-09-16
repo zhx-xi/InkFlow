@@ -45,9 +45,7 @@ def loguru_records():
     from loguru import logger
 
     records: list[dict] = []
-    sink_id = logger.add(
-        lambda m: records.append(m.record), level="WARNING", format="{message}"
-    )
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING", format="{message}")
     yield records
     logger.remove(sink_id)
 
@@ -119,9 +117,7 @@ class TestProviderParamsFallback:
         )
         assert supports_reasoning_for_model("some/model") is True
 
-    def test_provider_params_contains_thinking(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_provider_params_contains_thinking(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import litellm
 
         monkeypatch.setattr(litellm, "supports_reasoning", lambda *_a, **_k: False)
@@ -132,9 +128,7 @@ class TestProviderParamsFallback:
         )
         assert supports_reasoning_for_model("some/model") is True
 
-    def test_provider_params_without_keys_false(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_provider_params_without_keys_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import litellm
 
         monkeypatch.setattr(litellm, "supports_reasoning", lambda *_a, **_k: False)
@@ -234,9 +228,7 @@ class TestApplyReasoningEffort:
         assert "reasoning_effort" not in out
         assert not _warn_records(loguru_records)
 
-    def test_none_still_injected_when_translator_supports(
-        self, loguru_records: list[dict]
-    ) -> None:
+    def test_none_still_injected_when_translator_supports(self, loguru_records: list[dict]) -> None:
         """反护栏：deepseek 翻译器含该参数 → none 照常注入（显式关闭语义保留）。"""
         out = apply_reasoning_effort(
             {"model": "deepseek/deepseek-v4-flash"},
@@ -246,9 +238,7 @@ class TestApplyReasoningEffort:
         assert out["reasoning_effort"] == "none"
         assert not _warn_records(loguru_records)
 
-    def test_manual_false_none_stripped_silently(
-        self, loguru_records: list[dict]
-    ) -> None:
+    def test_manual_false_none_stripped_silently(self, loguru_records: list[dict]) -> None:
         """手动强制不支持 + none → 同样剥离不告警（能力面与传输面一致）。"""
         out = apply_reasoning_effort(
             {"model": "brandnew/x1"},
@@ -259,9 +249,7 @@ class TestApplyReasoningEffort:
         assert "reasoning_effort" not in out
         assert not _warn_records(loguru_records)
 
-    def test_manual_true_rescues_injection(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_manual_true_rescues_injection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """注册表手动覆盖 True → 未知模型照常注入（§7 边界 #2 新模型通道）。"""
         out = apply_reasoning_effort(
             {"model": "brandnew/x1"},
@@ -393,13 +381,9 @@ class TestTranslatorGateDecision:
         assert "reasoning_effort" not in out
         warns = _warn_records(loguru_records)
         assert warns
-        assert (warns[-1]["extra"].get("params") or {}).get("reason") == (
-            "translator_unsupported"
-        )
+        assert (warns[-1]["extra"].get("params") or {}).get("reason") == ("translator_unsupported")
 
-    def test_manual_override_exempt_from_translator_gate(
-        self, loguru_records: list[dict]
-    ) -> None:
+    def test_manual_override_exempt_from_translator_gate(self, loguru_records: list[dict]) -> None:
         """§7 边界 #2 新模型通道：manual=True 是用户显式断言，不受翻译器门禁约束。
 
         生产两构造点不传 manual（仅注册表回显用），故 D4 主链路仍受门禁保护。

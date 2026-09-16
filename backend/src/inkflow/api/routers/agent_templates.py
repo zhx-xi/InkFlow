@@ -59,6 +59,7 @@ DEFAULT_DELETE_DETAIL = "默认模板不可删除"
 """删除默认模板的 409 detail（API 测试契约 #12 定稿；service 侧 BuiltinError
 消息为「内置模板不可删除」，路由层映射为本契约文案）."""
 
+
 def _builtin_default_model() -> str:
     """内置默认模型（与 pipeline_templates.py 四角色默认一致）.
 

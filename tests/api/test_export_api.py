@@ -292,9 +292,7 @@ class TestExportDownload:
         assert resp.status_code == 200
         assert TITLE in resp.text
 
-    def test_export_include_settings_true_passed_to_service(
-        self, client, patched_export_service
-    ):
+    def test_export_include_settings_true_passed_to_service(self, client, patched_export_service):
         """`include_settings=true` → 200 且 True 透传到 service（spec §3.1）。
 
         Q3=C 拍板：参数切换附录（默认不含）；断言 mock export 收到
@@ -361,9 +359,7 @@ class TestExportErrors:
 
     def test_422_invalid_include_settings(self, client, patched_export_service):
         """`include_settings=notabool`（非法 bool）→ 422（spec §3.3）。"""
-        resp = client.get(
-            f"{ENDPOINT}/{PROJECT_ID_INT}/export?include_settings=notabool"
-        )
+        resp = client.get(f"{ENDPOINT}/{PROJECT_ID_INT}/export?include_settings=notabool")
         assert resp.status_code == 422
         detail = resp.json()["detail"]
         assert isinstance(detail, list)

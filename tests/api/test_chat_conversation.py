@@ -31,7 +31,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from inkflow.api.app import app  # 必须先于 stub 行（GREEN 时真模块已注册进 sys.modules）
+from inkflow.api.app import (
+    app,  # 必须先于 stub 行（GREEN 时真模块已注册进 sys.modules）
+)
 
 # RED 逃生门不变：chat_messages 模块缺失时注入同路径 stub（GREEN 后 setdefault 不覆盖真模块）
 _stub_chat_router = ModuleType("inkflow.api.routers.chat_messages")
@@ -234,9 +236,9 @@ class TestChatConversationAssembly:
     def test_chat_rename_conversation_route_registered_in_app(self):
         """PATCH 改名路由须在真实 app 注册（按方法区分，防 DELETE 误配）。"""
         routes = _chat_routes()
-        assert "PATCH" in routes.get(
-            "/api/v1/chat/conversations/{conversation_id}", set()
-        ), f"缺 PATCH chat rename conversation 路由: {routes}"
+        assert "PATCH" in routes.get("/api/v1/chat/conversations/{conversation_id}", set()), (
+            f"缺 PATCH chat rename conversation 路由: {routes}"
+        )
 
 
 class TestListConversationsTitleField:

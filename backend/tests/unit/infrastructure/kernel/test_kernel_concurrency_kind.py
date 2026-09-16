@@ -341,9 +341,9 @@ async def test_lifetime_busy_waits_full_timeout_window(tmp_path, mocks):
     )
 
     assert handle.reused is True, "对端就绪后应复用，而非报既有实例冲突"
-    assert (
-        mocks.poll.call_args.kwargs["timeout"] == 60.0
-    ), "等待窗口须等于调用方 timeout（存活期互斥分支与 Bootstrap 互斥分支口径统一）"
+    assert mocks.poll.call_args.kwargs["timeout"] == 60.0, (
+        "等待窗口须等于调用方 timeout（存活期互斥分支与 Bootstrap 互斥分支口径统一）"
+    )
 
 
 async def test_lifetime_busy_still_rejects_when_never_ready(tmp_path, mocks):

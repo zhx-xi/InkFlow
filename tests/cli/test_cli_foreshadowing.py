@@ -67,9 +67,7 @@ def fake_http_client():
             "inkflow.cli.commands.foreshadowing.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.foreshadowing.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.foreshadowing.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -260,11 +258,7 @@ class TestForeshadowingList:
     def test_list_human_resolved(self, cli_runner, fake_http_client):
         """已回收伏笔人类模式 → 🔍 摘要（含回收日期，#1000 本地时区日期）."""
         fake_http_client.get.return_value = {
-            "items": [
-                _make_foreshadowing(
-                    status="resolved", resolved_at="2026-08-10T20:00:00"
-                )
-            ],
+            "items": [_make_foreshadowing(status="resolved", resolved_at="2026-08-10T20:00:00")],
             "total": 1,
             "offset": 0,
             "limit": 50,
@@ -585,9 +579,7 @@ class TestForeshadowingReopen:
     def test_reopen_json(self, cli_runner, fake_http_client):
         """reopen --json → 成功信封 + 完整对象（status=open, resolved_at=None）."""
         eid = uuid.uuid4()
-        fake_http_client.post.return_value = _make_foreshadowing(
-            status="open", resolved_at=None
-        )
+        fake_http_client.post.return_value = _make_foreshadowing(status="open", resolved_at=None)
         result = cli_runner.invoke(
             app,
             ["reopen", "--id", str(eid)],
@@ -651,9 +643,7 @@ class TestForeshadowingErrorMapping:
         """API 422（参数校验）→ VALIDATION_ERROR 信封."""
         from inkflow.infrastructure.http import HttpApiError  # RED 期惰性导入
 
-        fake_http_client.post.side_effect = HttpApiError(
-            422, "Input should be a valid string"
-        )
+        fake_http_client.post.side_effect = HttpApiError(422, "Input should be a valid string")
         result = cli_runner.invoke(
             app,
             ["create", "--project-id", str(PID), "--title", "林晚的身世"],

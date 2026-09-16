@@ -107,9 +107,7 @@ async def test_start_branch_outline_service_without_id_raises() -> None:
     )
 
     with pytest.raises(ValueError, match="未返回 id"):
-        await svc.start(
-            project_id, "写一本武侠小说", mode="branch", source_outline_id=root.id
-        )
+        await svc.start(project_id, "写一本武侠小说", mode="branch", source_outline_id=root.id)
 
     repo.add_planner_session.assert_not_awaited()
 

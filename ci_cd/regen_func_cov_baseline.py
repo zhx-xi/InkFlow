@@ -2,6 +2,7 @@
 
 用法: python ci_cd/regen_func_cov_baseline.py <called.json> <exempt.json> <baseline.json> <out.json>
 """
+
 from __future__ import annotations
 
 import json

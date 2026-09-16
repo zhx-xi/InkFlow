@@ -138,9 +138,7 @@ class AsgiStreamProbe:
         try:
             await asyncio.wait_for(self._enough_frames.wait(), timeout)
         except TimeoutError as exc:
-            raise AssertionError(
-                f"等待 {count} 帧超时（已收 {len(self.frames)} 帧）"
-            ) from exc
+            raise AssertionError(f"等待 {count} 帧超时（已收 {len(self.frames)} 帧）") from exc
 
     async def disconnect(self, *, timeout: float = 3.0) -> None:
         """注入客户端断连并等待 app 收尾（Starlette 取消流任务 → 生成器 aclose）。"""
@@ -240,9 +238,7 @@ async def test_stream_project_filter_keeps_project_and_global_events():
         await _wait_for(lambda: bus.subscriber_count == 1)
         await publish_change("map", "create", 1, PROJECT_A, source="cli")
         await publish_change("map", "create", 2, PROJECT_B, source="cli")  # 被过滤
-        await publish_change(
-            "agent_template", "update", 3, None, source="gui"
-        )  # 全局域
+        await publish_change("agent_template", "update", 3, None, source="gui")  # 全局域
         await probe.wait_frames(2)
 
         assert [f["resource_id"] for f in probe.frames] == ["1", "3"]
@@ -345,9 +341,7 @@ async def test_write_endpoint_still_201_without_subscribers(override_get_db):
     bus = get_event_bus()
     assert bus.subscriber_count == 0
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/projects",
             json={"name": f"无订阅写入-{uuid.uuid4().hex[:8]}", "tags": ["玄幻"]},

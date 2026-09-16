@@ -122,35 +122,25 @@ class TestNonPrimaryKeyUuidOverflow:
     - 静默 200 型 → 200 + 空数组 ≠ 404 → FAIL
     """
 
-    async def test_random_uuid_returns_404(
-        self, client, db_session, override_get_db, template
-    ):
+    async def test_random_uuid_returns_404(self, client, db_session, override_get_db, template):
         """随机 uuid4（128 位溢出）→ 404（不得 500 / 不得静默 200）。"""
         url = template.format(id=_overflow_uuid())
-        method = (
-            "DELETE"
-            if url in {t.format(id="x") for t in DELETE_OVERFLOW_ENDPOINTS}
-            else "GET"
-        )
+        method = "DELETE" if url in {t.format(id="x") for t in DELETE_OVERFLOW_ENDPOINTS} else "GET"
         resp = await client.request(method, url)
-        assert (
-            resp.status_code == 404
-        ), f"{method} {url} 应为 404（父资源不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, (
+            f"{method} {url} 应为 404（父资源不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        )
 
     async def test_small_int_uuid_not_found_returns_404(
         self, client, db_session, override_get_db, template
     ):
         """合法小整数 UUID（int64 范围内但不存在）→ 404（范围校验不得误伤）。"""
         url = template.format(id=uuid.UUID(int=987654321))
-        method = (
-            "DELETE"
-            if url in {t.format(id="x") for t in DELETE_OVERFLOW_ENDPOINTS}
-            else "GET"
-        )
+        method = "DELETE" if url in {t.format(id="x") for t in DELETE_OVERFLOW_ENDPOINTS} else "GET"
         resp = await client.request(method, url)
-        assert (
-            resp.status_code == 404
-        ), f"{method} {url} 应为 404（资源不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, (
+            f"{method} {url} 应为 404（资源不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        )
 
 
 @pytest.mark.api
@@ -158,15 +148,13 @@ class TestNonPrimaryKeyUuidOverflow:
 class TestControlEndpointsNoRegression:
     """对照 5 端点：随机 UUID → 仍 404（防回归；这些路径本就正确）。"""
 
-    async def test_random_uuid_returns_404(
-        self, client, db_session, override_get_db, template
-    ):
+    async def test_random_uuid_returns_404(self, client, db_session, override_get_db, template):
         """对照组随机 uuid4 → 404（修复不得使已正确路径退化）。"""
         url = template.format(id=_overflow_uuid())
         resp = await client.get(url)
-        assert (
-            resp.status_code == 404
-        ), f"{url} 应为 404（资源不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, (
+            f"{url} 应为 404（资源不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        )
 
 
 @pytest.mark.api
@@ -186,9 +174,9 @@ class TestEmptyChildListNotMisjudged:
         map_id = created.json()["id"]
 
         resp = await client.get(f"/api/v1/maps/{map_id}/pins")
-        assert (
-            resp.status_code == 200
-        ), f"合法地图应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 200, (
+            f"合法地图应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        )
         assert resp.json() == {"items": [], "total": 0}
 
     async def test_existing_map_with_no_children_returns_200_empty(
@@ -204,9 +192,9 @@ class TestEmptyChildListNotMisjudged:
         map_id = created.json()["id"]
 
         resp = await client.get(f"/api/v1/maps/{map_id}/children")
-        assert (
-            resp.status_code == 200
-        ), f"合法地图应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 200, (
+            f"合法地图应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        )
         assert resp.json() == {"items": [], "total": 0}
 
     async def test_existing_outline_with_no_points_returns_200_empty(
@@ -221,9 +209,9 @@ class TestEmptyChildListNotMisjudged:
         outline_id = created.json()["id"]
 
         resp = await client.get(f"/api/v1/outlines/{outline_id}/plot-points")
-        assert (
-            resp.status_code == 200
-        ), f"合法大纲应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 200, (
+            f"合法大纲应为 200，实际 {resp.status_code}: {resp.text[:200]}"
+        )
         assert resp.json() == {"items": [], "total": 0}
 
 
@@ -281,10 +269,8 @@ class TestCreateRequiresExistingProject:
         url = template.format(pid=_overflow_uuid())
         resp = await client.post(url, json=body)
 
-        assert (
-            resp.status_code == 404
-        ), f"POST {url} 项目不存在应为 404，实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, (
+            f"POST {url} 项目不存在应为 404，实际 {resp.status_code}: {resp.text[:200]}"
+        )
         after = await _count()
-        assert (
-            after == 0
-        ), f"POST {url} 不得写入孤儿行：{table} 由 {before} → {after} 行"
+        assert after == 0, f"POST {url} 不得写入孤儿行：{table} 由 {before} → {after} 行"

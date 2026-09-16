@@ -7,6 +7,7 @@
 
 依据: issue #850 + specs/f10-world-settings/spec.md §7（工具路径与 router 层一致）.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,7 @@ TS = datetime(2026, 8, 1, 10, 0, 0)
 
 
 def _make_tool_deps() -> SettingWriteToolDeps:
-    """构造工具依赖（world_service.create_setting 默认成功返回实体）. """
+    """构造工具依赖（world_service.create_setting 默认成功返回实体）."""
     audit = MagicMock()
     audit.record = AsyncMock(return_value=None)
     return SettingWriteToolDeps(

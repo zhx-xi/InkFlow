@@ -175,9 +175,7 @@ async def _seed_provider(
 
     types = model_types or []
     ids = model_ids or [f"m{i}" for i in range(len(types))]
-    entries = [
-        {"id": mid, "type": t, "roles": []} for mid, t in zip(ids, types, strict=False)
-    ]
+    entries = [{"id": mid, "type": t, "roles": []} for mid, t in zip(ids, types, strict=False)]
     row = ProviderConfigORM(
         name=name,
         base_url="",
@@ -210,9 +208,7 @@ class TestModelReadinessEndpoint:
     """GET /api/v1/settings/model-readiness 契约（#934 §3.1/§3.3）。"""
 
     @pytest.mark.asyncio
-    async def test_empty_registry_no_provider(
-        self, client, override_get_db, patch_keys
-    ) -> None:
+    async def test_empty_registry_no_provider(self, client, override_get_db, patch_keys) -> None:
         """空注册表 → 200 + ready=False, reason='no_provider'。"""
         with patch_keys(set()):
             resp = await client.get(ENDPOINT)

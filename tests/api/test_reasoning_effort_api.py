@@ -71,8 +71,15 @@ def override_agent_service():
 
     async def _stream_events(prompt, project_id=None, chapter_context=None, cancel_event=None):
         yield MagicMock(
-            type="done", delta="", done=True, error=None, id=None, name=None, args=None,
-            result=None, payload=None,
+            type="done",
+            delta="",
+            done=True,
+            error=None,
+            id=None,
+            name=None,
+            args=None,
+            result=None,
+            payload=None,
         )
 
     svc = MagicMock()
@@ -225,9 +232,7 @@ class TestProjectReasoningRoundtrip:
         assert created.status_code in (200, 201), created.text
         url = f"/api/v1/projects/{created.json()['id']}"
 
-        resp = await client.patch(
-            url, json={"config": {"reasoning_effort": "high"}}
-        )
+        resp = await client.patch(url, json={"config": {"reasoning_effort": "high"}})
         assert resp.status_code == 200, resp.text
         assert resp.json()["config"]["reasoning_effort"] == "high"
 
@@ -305,7 +310,9 @@ class TestSettingsReasoningSync:
 @pytest.mark.asyncio
 class TestProviderConfigsSupportsReasoningEcho:
     async def _seed(self, client, db_session):
-        from inkflow.infrastructure.database.models.provider_config import ProviderConfigORM
+        from inkflow.infrastructure.database.models.provider_config import (
+            ProviderConfigORM,
+        )
 
         row = ProviderConfigORM(
             name="probe-test",
@@ -323,6 +330,7 @@ class TestProviderConfigsSupportsReasoningEcho:
     async def test_models_carry_bool(self, client, db_session, monkeypatch) -> None:
         """每条 chat 模型带 supports_reasoning bool：null→探测填充；手动值原样。"""
         await self._seed(client, db_session)
+
         # patch 探测链：m1（无手动值）恒 False —— 防 litellm 表版本漂移
         def _probe(model_full, provider=None, manual=None):
             return bool(manual) if manual is not None else False

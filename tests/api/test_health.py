@@ -62,17 +62,17 @@ class TestLifespan:
         fake_seed = AsyncMock()
         fake_svc = AsyncMock()
         fake_svc.seed_builtin_providers = fake_seed
-        with patch("inkflow.api.app.setup_logging") as mock_setup_logging, patch(
-            "inkflow.api.app.create_tables", new=AsyncMock()
-        ) as mock_create_tables, patch(
-            "inkflow.api.app.get_provider_config_service", return_value=fake_svc
-        ) as mock_svc_factory, patch(
-            "inkflow.api.app.seed_builtin_agents", new=AsyncMock()
-        ) as mock_seed_agents, patch(
-            "inkflow.api.app.ensure_builtin_skills", new=AsyncMock()
-        ) as mock_ensure_skills, patch(
-            "inkflow.api.app.migrate_skills_from_db", new=AsyncMock()
-        ) as mock_migrate_skills, TestClient(app) as lifespan_client:
+        with (
+            patch("inkflow.api.app.setup_logging") as mock_setup_logging,
+            patch("inkflow.api.app.create_tables", new=AsyncMock()) as mock_create_tables,
+            patch(
+                "inkflow.api.app.get_provider_config_service", return_value=fake_svc
+            ) as mock_svc_factory,
+            patch("inkflow.api.app.seed_builtin_agents", new=AsyncMock()) as mock_seed_agents,
+            patch("inkflow.api.app.ensure_builtin_skills", new=AsyncMock()) as mock_ensure_skills,
+            patch("inkflow.api.app.migrate_skills_from_db", new=AsyncMock()) as mock_migrate_skills,
+            TestClient(app) as lifespan_client,
+        ):
             resp = lifespan_client.get("/health")
             assert resp.status_code == 200
         mock_setup_logging.assert_called_once()

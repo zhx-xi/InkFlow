@@ -8,6 +8,7 @@ RED：chat_stream.py 尚无 `_register_inflight_run` / `abort_chat_run` /
 `_inflight_runs` 注册表，也不含 `POST /agent/stream/{run_id}/abort` 路由 →
 本文件全部用例 FAILED（ImportError 或 404/断言失败），符合 M1 门禁。
 """
+
 import asyncio
 
 from fastapi import FastAPI

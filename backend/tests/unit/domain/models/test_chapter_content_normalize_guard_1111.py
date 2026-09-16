@@ -122,9 +122,9 @@ class TestSingleLineWhitespacePreserved:
         ],
     )
     def test_guard_clean_single_line_returned_verbatim(self, name: str, content: str) -> None:
-        assert (
-            chapter_content_needs_normalize(content, TITLE) is False
-        ), f"[{name}] 前置：守卫应判单行（含前导空白）为干净"
+        assert chapter_content_needs_normalize(content, TITLE) is False, (
+            f"[{name}] 前置：守卫应判单行（含前导空白）为干净"
+        )
         assert normalize_chapter_content(content, TITLE) == content, (
             f"[{name}] 守卫判干净但纯函数改写了单行正文\n"
             f"  输入: {content!r}\n"
@@ -183,7 +183,7 @@ class TestNoDeleteRegression:
     ) -> None:
         out = normalize_chapter_content(content, TITLE)
         for frag in fragments:
-            assert (
-                frag in out
-            ), f"[{name}] 归一删除了正文片段 {frag!r}\n  输入: {content!r}\n  输出: {out!r}"
+            assert frag in out, (
+                f"[{name}] 归一删除了正文片段 {frag!r}\n  输入: {content!r}\n  输出: {out!r}"
+            )
         assert out == expected, f"[{name}] 归一结果变化\n  实际: {out!r}\n  期望: {expected!r}"

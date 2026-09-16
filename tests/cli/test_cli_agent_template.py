@@ -144,9 +144,7 @@ class TestTemplateList:
         from inkflow.cli.commands.agent_cmd import app
 
         fake_http_client.get.return_value = {"items": [_make_template()], "total": 1}
-        result = cli_runner.invoke(
-            app, ["template", "list"], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["template", "list"], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
@@ -159,9 +157,7 @@ class TestTemplateList:
         from inkflow.cli.commands.agent_cmd import app
 
         fake_http_client.get.return_value = {"items": [], "total": 0}
-        result = cli_runner.invoke(
-            app, ["template", "list"], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["template", "list"], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "暂无" in result.output or "📭" in result.output
 
@@ -458,9 +454,7 @@ class TestTemplateDuplicate:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
-        assert (
-            fake_http_client.post.await_args.args[0] == "/agent-templates/1/duplicate"
-        )
+        assert fake_http_client.post.await_args.args[0] == "/agent-templates/1/duplicate"
 
     def test_duplicate_not_found(self, cli_runner, fake_http_client):
         """源模板不存在 → NOT_FOUND."""
@@ -530,9 +524,7 @@ class TestTemplateGetDefault:
         """有默认模板 → 完整响应."""
         from inkflow.cli.commands.agent_cmd import app
 
-        fake_http_client.get.return_value = {
-            "template": _make_template(is_default=True)
-        }
+        fake_http_client.get.return_value = {"template": _make_template(is_default=True)}
         result = cli_runner.invoke(
             app,
             ["template", "get-default"],
@@ -559,9 +551,7 @@ class TestTemplateGetDefault:
         """人类模式有默认模板 → ⭐ 输出模板名."""
         from inkflow.cli.commands.agent_cmd import app
 
-        fake_http_client.get.return_value = {
-            "template": _make_template(is_default=True)
-        }
+        fake_http_client.get.return_value = {"template": _make_template(is_default=True)}
         result = cli_runner.invoke(
             app,
             ["template", "get-default"],
@@ -577,13 +567,9 @@ class TestTemplatePipelines:
         from inkflow.cli.commands.agent_cmd import app
 
         fake_http_client.get.return_value = {
-            "items": [
-                {"id": "builtin:write_chapter", "name": "写章", "stages": ["architect"]}
-            ]
+            "items": [{"id": "builtin:write_chapter", "name": "写章", "stages": ["architect"]}]
         }
-        result = cli_runner.invoke(
-            app, ["template", "pipelines"], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["template", "pipelines"], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
@@ -595,9 +581,7 @@ class TestTemplatePipelines:
         from inkflow.cli.commands.agent_cmd import app
 
         fake_http_client.get.return_value = {
-            "items": [
-                {"id": "builtin:write_chapter", "name": "写章", "stages": ["architect"]}
-            ]
+            "items": [{"id": "builtin:write_chapter", "name": "写章", "stages": ["architect"]}]
         }
         result = cli_runner.invoke(
             app, ["template", "pipelines"], obj=CliContext(json_output=False)

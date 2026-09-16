@@ -63,12 +63,7 @@ DETAIL_CONFLICT = "同名 skill 已存在"
 DETAIL_FRONTMATTER = "frontmatter 不合法"
 
 VALID_SKILL_MD = (
-    "---\n"
-    "name: web-research\n"
-    "description: 网络调研方法论\n"
-    "---\n"
-    "# 调研流程\n"
-    "1. 确定关键词\n"
+    "---\nname: web-research\ndescription: 网络调研方法论\n---\n# 调研流程\n1. 确定关键词\n"
 )
 """合法 SKILL.md 样例（frontmatter name=web-research 满足 N2）。"""
 
@@ -200,9 +195,7 @@ def _assert_detail_contract(data: dict) -> None:
 class TestUploadSkillZip:
     """upload-zip 端点契约（multipart file，内存解压复用 create 流程）。"""
 
-    async def test_upload_zip_201_contract(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_upload_zip_201_contract(self, client, db_session, override_get_db, skills_root):
         """zip 根目录 SKILL.md → 201 + 实体契约 + content 逐字 + 落盘 SKILL.md。"""
         resp = await client.post(
             f"{ENDPOINT}/upload-zip",
@@ -307,15 +300,11 @@ class TestUploadSkillZip:
         assert resp.status_code == 422
         assert resp.json()["detail"] == DETAIL_CONFLICT
 
-    async def test_upload_non_zip_file_422(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_upload_non_zip_file_422(self, client, db_session, override_get_db, skills_root):
         """非 .zip 文件 → 422「仅支持 zip 包」。"""
         resp = await client.post(
             f"{ENDPOINT}/upload-zip",
-            files={
-                "file": ("SKILL.md", VALID_SKILL_MD.encode("utf-8"), "text/markdown")
-            },
+            files={"file": ("SKILL.md", VALID_SKILL_MD.encode("utf-8"), "text/markdown")},
         )
         assert resp.status_code == 422
         assert resp.json()["detail"] == DETAIL_ZIP_ONLY
@@ -333,9 +322,7 @@ class TestUploadSkillZip:
         assert resp.json()["detail"] == DETAIL_ZIP_TOO_LARGE
         assert list(skills_root.iterdir()) == []
 
-    async def test_upload_zip_bad_zip_422(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_upload_zip_bad_zip_422(self, client, db_session, override_get_db, skills_root):
         """损坏的 zip 字节 → 422「zip 包解析失败」。"""
         resp = await client.post(
             f"{ENDPOINT}/upload-zip",

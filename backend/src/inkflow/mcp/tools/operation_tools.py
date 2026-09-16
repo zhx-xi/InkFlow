@@ -88,9 +88,7 @@ def _compact(mapping: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in mapping.items() if value is not None}
 
 
-async def _route_write(
-    client: _HTTPClient, params: WriteParams, timeout: float | None
-) -> object:
+async def _route_write(client: _HTTPClient, params: WriteParams, timeout: float | None) -> object:
     """write action 路由：非流式端点同步返回 + 草稿确认（Q3=A，#933）。"""
     if params.action == "generate":
         return await client.post(
@@ -155,9 +153,7 @@ async def _route_write(
     )
 
 
-async def _route_audit(
-    client: _HTTPClient, params: AuditParams, timeout: float | None
-) -> object:
+async def _route_audit(client: _HTTPClient, params: AuditParams, timeout: float | None) -> object:
     """audit action 路由：项目级四维审计 / 单章一致性审计。"""
     if params.action == "project":
         return await client.get(f"/projects/{params.project_id}/audit")

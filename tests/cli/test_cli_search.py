@@ -142,9 +142,7 @@ def fake_http_client():
             "inkflow.cli.commands.search.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.search.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.search.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -294,9 +292,7 @@ class TestSearchQuery:
         assert data["error"]["code"] == "NOT_FOUND"
         assert "项目不存在" in data["error"]["message"]
 
-    def test_search_multi_project_multi_type_passthrough(
-        self, cli_runner, fake_http_client
-    ):
+    def test_search_multi_project_multi_type_passthrough(self, cli_runner, fake_http_client):
         """多 -p 多 -t + --limit/--offset 透传 GET params（Q3 选择器 + M2）。
 
         设计假设 #3：project_ids / types 逗号连接成单参数。
@@ -362,9 +358,9 @@ class TestSearchQuery:
         )
         assert result.exit_code == 0
         calls = fake_http_client.get.await_args_list
-        assert any(
-            c.args and c.args[0] == "/projects" for c in calls
-        ), "GET /projects 未被调用（项目名解析）"
+        assert any(c.args and c.args[0] == "/projects" for c in calls), (
+            "GET /projects 未被调用（项目名解析）"
+        )
         params = _params(_search_call(fake_http_client))
         assert params["project_ids"] == str(PID)
 
@@ -378,9 +374,7 @@ class TestSearchRebuild:
     def test_rebuild_human_post_called(self, cli_runner, fake_http_client):
         """--rebuild 缺省项目 → POST /search/rebuild（无 project_ids），退出 0。"""
         fake_http_client.post.return_value = {"rebuilt_at": TS, "project_ids": None}
-        result = cli_runner.invoke(
-            app, ["--rebuild"], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["--rebuild"], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         call = fake_http_client.post.await_args
         assert call is not None, "POST /search/rebuild 未被调用"
@@ -390,17 +384,13 @@ class TestSearchRebuild:
     def test_rebuild_json_envelope(self, cli_runner, fake_http_client):
         """--rebuild --json → 成功信封 data = {"rebuilt_at", "project_ids"}。"""
         fake_http_client.post.return_value = {"rebuilt_at": TS, "project_ids": None}
-        result = cli_runner.invoke(
-            app, ["--rebuild", "--json"], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["--rebuild", "--json"], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"] == {"rebuilt_at": TS, "project_ids": None}
 
-    def test_rebuild_with_project_passes_project_ids(
-        self, cli_runner, fake_http_client
-    ):
+    def test_rebuild_with_project_passes_project_ids(self, cli_runner, fake_http_client):
         """--rebuild -p X → POST params project_ids=str(X)（单项目重建）。"""
         fake_http_client.post.return_value = {
             "rebuilt_at": TS,
@@ -415,9 +405,7 @@ class TestSearchRebuild:
         assert call.args[0] == "/search/rebuild"
         assert _params(call)["project_ids"] == str(PID)
 
-    def test_rebuild_multi_project_passes_project_ids(
-        self, cli_runner, fake_http_client
-    ):
+    def test_rebuild_multi_project_passes_project_ids(self, cli_runner, fake_http_client):
         """--rebuild -p X -p Y → POST params project_ids=X,Y + 人类输出计数（#251 P3）。"""
         fake_http_client.post.return_value = {
             "rebuilt_at": TS,
@@ -468,9 +456,7 @@ class TestSearchErrorBranches:
         """pydantic ValidationError → VALIDATION_ERROR 信封 + 退出码 1（F38 模式）。"""
         from pydantic import ValidationError
 
-        fake_http_client.get.side_effect = ValidationError.from_exception_data(
-            "SearchResponse", []
-        )
+        fake_http_client.get.side_effect = ValidationError.from_exception_data("SearchResponse", [])
         result = cli_runner.invoke(
             app, ["龙", "-p", str(PID), "--json"], obj=CliContext(json_output=True)
         )
@@ -505,8 +491,6 @@ class TestSearchErrorBranches:
     def test_empty_result_human_output(self, cli_runner, fake_http_client):
         """空结果 → 人类输出「📭 无结果」（spec E5 无命中语义）。"""
         fake_http_client.get.return_value = _search_response(total=0, hits=[])
-        result = cli_runner.invoke(
-            app, ["龙", "-p", str(PID)], obj=CliContext(json_output=False)
-        )
+        result = cli_runner.invoke(app, ["龙", "-p", str(PID)], obj=CliContext(json_output=False))
         assert result.exit_code == 0
         assert "无结果" in result.output

@@ -49,6 +49,7 @@ RED 预期（当前实现形态，migrate 后因新契约未实现而整体 FAIL
 - CORE_NAMES 集缺 delete_plot_point，TOOL_REGISTRY 现为 26: ==34 → AssertionError FAILED。
 - 预期形态: 目标用例 FAILED（TypeError/AssertionError 混合），无收集 ERROR。
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

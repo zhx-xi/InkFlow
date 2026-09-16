@@ -98,9 +98,7 @@ async def test_create_map_rejects_unknown_bg_source(service, mock_repo) -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_map_cycle_check_handles_duplicate_child_entries(
-    service, mock_repo
-) -> None:
+async def test_update_map_cycle_check_handles_duplicate_child_entries(service, mock_repo) -> None:
     """父图校验：重复子项被去重，目标父图命中子树 -> MapParentCycleError（74-75）。"""
     existing = _map(map_id=uuid.UUID(int=1))
     parent_id = uuid.UUID(int=2)

@@ -594,6 +594,8 @@ async def test_get_status_counters_keys_unchanged():
     }
     assert counters["prompt_tokens"] == 7_407
     assert counters["completion_tokens"] == 4_938
+
+
 # ════ F44 阶段3 coverage-gap 补测（规则 1j，2026-08-17：代码已存在直接通过）════
 # CI coverage-backend TOTAL 98% < 98.5%（book_service.py 93% miss）——补防御分支。
 
@@ -691,6 +693,8 @@ class TestCoverageGapService:
         with pytest.raises(ChapterAlreadyWrittenError, match="该章已有内容，拒绝重跑"):
             await svc.write_book_volume(plan.id)
         content_checker.assert_awaited_once_with(chapter.chapter_id)
+
+
 class TestCoverageGapService2:
     """book_service.py 二轮补测：write_book_volume 防御分支。"""
 

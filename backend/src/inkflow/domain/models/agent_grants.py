@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 
 class ToolDomain(StrEnum):
-    """工具授权域（spec §2.1 逐字，枚举序即声明序）. """
+    """工具授权域（spec §2.1 逐字，枚举序即声明序）."""
 
     OUTLINE = "outline"
     CHARACTER = "character"
@@ -29,7 +29,7 @@ class ToolDomain(StrEnum):
 
 
 class ToolOp(StrEnum):
-    """授权操作（spec §2.1 逐字，枚举序 read < write < delete）. """
+    """授权操作（spec §2.1 逐字，枚举序 read < write < delete）."""
 
     READ = "read"
     WRITE = "write"

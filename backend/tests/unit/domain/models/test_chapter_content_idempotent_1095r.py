@@ -94,7 +94,7 @@ class TestI2GuardFixedPoint:
     def test_guard_is_fixed_point_after_normalize(self, name: str, content: str) -> None:
         once = normalize_chapter_content(content, TITLE)
         assert chapter_content_needs_normalize(once, TITLE) is False, (
-            f"[{name}] 守卫非不动点：归一产物仍被判为脏 → 会触发二次归一\n" f"  归一产物: {once!r}"
+            f"[{name}] 守卫非不动点：归一产物仍被判为脏 → 会触发二次归一\n  归一产物: {once!r}"
         )
 
 
@@ -121,9 +121,9 @@ class TestI4NoBodyParagraphDeleted:
         content = f"\n\n{TITLE}\n\n正文第一段。"
         once = normalize_chapter_content(content, TITLE)
         twice = normalize_chapter_content(once, TITLE)
-        assert (
-            TITLE in twice
-        ), f"二次归一删除了正文首段 {TITLE!r}\n  一次: {once!r}\n  二次: {twice!r}"
+        assert TITLE in twice, (
+            f"二次归一删除了正文首段 {TITLE!r}\n  一次: {once!r}\n  二次: {twice!r}"
+        )
         assert "正文第一段。" in twice
 
     def test_body_titles_survive_even_when_equal_to_title(self) -> None:
@@ -180,6 +180,6 @@ class TestI4LivePathNoDataLoss:
             f"  落库: {created!r}\n  更新后: {updated.content!r}"
         )
         for para in ("正文第一段。",):
-            assert para in (
-                updated.content or ""
-            ), f"update 后丢失正文段落 {para!r}: {updated.content!r}"
+            assert para in (updated.content or ""), (
+                f"update 后丢失正文段落 {para!r}: {updated.content!r}"
+            )

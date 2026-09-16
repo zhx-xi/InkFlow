@@ -99,9 +99,9 @@ async def test_index_batch_invokes_ensure_hnsw_flushed(store, monkeypatch):
 
     await store.index_batch([make_entity("c1", EntityType.CHARACTER, "p1", "苹果")])
 
-    assert (
-        len(calls) >= 1
-    ), "index_batch 写后未调用 _ensure_hnsw_flushed（RED：方法不存在/无调用点）"
+    assert len(calls) >= 1, (
+        "index_batch 写后未调用 _ensure_hnsw_flushed（RED：方法不存在/无调用点）"
+    )
 
 
 async def test_index_sync_invokes_ensure_hnsw_flushed(store, monkeypatch):

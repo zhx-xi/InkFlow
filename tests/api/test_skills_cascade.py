@@ -150,9 +150,7 @@ class TestSkillDeleteCascade:
     ):
         """被引用 user_upload skill 删除 → 204；Agent.skill_ids 移除该目录名（真实 DB 断言）。"""
         _write_skill(skills_root, "web-research", description="网络调研方法论")
-        agent = await _seed_agent(
-            db_session, name="引用Agent甲", skill_ids=["web-research"]
-        )
+        agent = await _seed_agent(db_session, name="引用Agent甲", skill_ids=["web-research"])
 
         # 引用确认：Agent.skill_ids 含目录名
         assert await _agent_skill_ids(db_session, agent.id) == ["web-research"]
@@ -209,9 +207,7 @@ class TestSkillDeleteCascade:
         assert resp2.status_code == 200
         assert resp2.json()["source"] == "builtin"
 
-    async def test_delete_not_found_404(
-        self, client, db_session, override_get_db, skills_root
-    ):
+    async def test_delete_not_found_404(self, client, db_session, override_get_db, skills_root):
         """不存在的 skill_name → 404「Skill 不存在」（守护用例，旧实现同返 404）。"""
         resp = await client.delete(f"{ENDPOINT}/no-such-skill")
         assert resp.status_code == 404

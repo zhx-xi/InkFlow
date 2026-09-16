@@ -39,9 +39,7 @@ class TestChapterService:
         ch = await svc.create_chapter(sample_project.id, "st", content="x")
         assert ch.status == ChapterStatus.DRAFT
 
-        updated = await svc.update_chapter(
-            ch.id, ChapterUpdate(status=ChapterStatus.WRITING)
-        )
+        updated = await svc.update_chapter(ch.id, ChapterUpdate(status=ChapterStatus.WRITING))
         assert updated is not None
         assert updated.status == ChapterStatus.WRITING
         assert len(updated.status_history) == 1
@@ -53,9 +51,7 @@ class TestChapterService:
         svc = ChapterService(db_session)
         v1 = await svc.create_volume(sample_project.id, "V1")
         v2 = await svc.create_volume(sample_project.id, "V2")
-        ch = await svc.create_chapter(
-            sample_project.id, "移动", volume_id=v1.id, content="x"
-        )
+        ch = await svc.create_chapter(sample_project.id, "移动", volume_id=v1.id, content="x")
 
         moved = await svc.move_chapter(ch.id, v2.id)
         assert moved is not None
@@ -71,9 +67,7 @@ class TestChapterService:
 
         svc = ChapterService(db_session)
         v = await svc.create_volume(sample_project.id, "临时")
-        ch = await svc.create_chapter(
-            sample_project.id, "孤儿", volume_id=v.id, content="x"
-        )
+        ch = await svc.create_chapter(sample_project.id, "孤儿", volume_id=v.id, content="x")
 
         with pytest.raises(VolumeNotEmptyError):
             await svc.delete_volume(v.id)
@@ -90,9 +84,7 @@ class TestChapterService:
         c1 = await svc.create_chapter(sample_project.id, "c1", content="x")
         await svc.update_chapter(c1.id, ChapterUpdate(status=ChapterStatus.FINAL))
 
-        items, total = await svc.list_chapters(
-            sample_project.id, status=ChapterStatus.FINAL
-        )
+        items, total = await svc.list_chapters(sample_project.id, status=ChapterStatus.FINAL)
         assert total == 1
         assert items[0].status == ChapterStatus.FINAL
 

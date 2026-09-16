@@ -457,9 +457,7 @@ async def test_draft_confirm_auto_create_title_from_content_when_summary_empty()
     content = "  第一章草稿正文内容。够长足够验证标题。  "
     creator = _make_chapter_creator_976()
     svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=AsyncMock())
-    deps["repo"].get.return_value = _make_draft_976(
-        chapter_id=None, summary="", content=content
-    )
+    deps["repo"].get.return_value = _make_draft_976(chapter_id=None, summary="", content=content)
     deps["repo"].update_status.return_value = _make_draft_976(
         status="confirmed", confirmed_at=_utcnow()
     )
@@ -474,9 +472,7 @@ async def test_draft_confirm_auto_create_title_truncated_to_30():
     long_summary = "超" * 40
     creator = _make_chapter_creator_976()
     svc, deps = _make_draft_service(chapter_creator=creator, outline_bindder=AsyncMock())
-    deps["repo"].get.return_value = _make_draft_976(
-        chapter_id=None, summary=long_summary
-    )
+    deps["repo"].get.return_value = _make_draft_976(chapter_id=None, summary=long_summary)
     deps["repo"].update_status.return_value = _make_draft_976(
         status="confirmed", confirmed_at=_utcnow()
     )

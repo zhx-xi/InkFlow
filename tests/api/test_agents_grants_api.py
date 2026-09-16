@@ -144,9 +144,7 @@ class TestCreateAgentGrants:
         data = resp.json()
         _assert_grants_shape(data)
         assert data["grants"] == [{"domain": "writing", "ops": ["read", "write"]}]
-        assert data["resolved_tool_names"] == (
-            WRITING_READ_TOOLS + WRITING_WRITE_TOOLS
-        )
+        assert data["resolved_tool_names"] == (WRITING_READ_TOOLS + WRITING_WRITE_TOOLS)
 
     async def test_create_tool_ids_alias_201_grant_inference(
         self, client, db_session, override_get_db, skills_root
@@ -162,9 +160,7 @@ class TestCreateAgentGrants:
         assert data["grants"] == [{"domain": "writing", "ops": ["read"]}]
         assert data["resolved_tool_names"] == WRITING_READ_TOOLS
 
-    async def test_create_grants_and_tool_ids_422(
-        self, client, db_session, override_get_db
-    ):
+    async def test_create_grants_and_tool_ids_422(self, client, db_session, override_get_db):
         """【R】同传 grants+tool_ids → 422；detail 为 str 业务消息，
         内容含 'grants' 或 'tool_ids'（contract §3 create 同传判定）。"""
         resp = await client.post(
@@ -180,9 +176,7 @@ class TestCreateAgentGrants:
         assert isinstance(detail, str), "同传 422 detail 应为 str 业务消息"
         assert "grants" in detail or "tool_ids" in detail, detail
 
-    async def test_create_invalid_domain_422(
-        self, client, db_session, override_get_db
-    ):
+    async def test_create_invalid_domain_422(self, client, db_session, override_get_db):
         """【R】grants domain 非法（'nope'）→ 422；Pydantic 校验，detail 为
         list（枚举拒绝，contract §1 GrantEntry）。"""
         resp = await client.post(
@@ -196,7 +190,10 @@ class TestCreateAgentGrants:
         """【R】grants ops 非法（'nuke'）→ 422；Pydantic 校验，detail 为 list。"""
         resp = await client.post(
             ENDPOINT,
-            json={"name": "非法操作", "grants": [{"domain": "writing", "ops": ["nuke"]}]},
+            json={
+                "name": "非法操作",
+                "grants": [{"domain": "writing", "ops": ["nuke"]}],
+            },
         )
         assert resp.status_code == 422
         assert isinstance(resp.json()["detail"], list)
@@ -240,9 +237,7 @@ class TestGetAgentGrantsLegacy:
 class TestUpdateAgentGrants:
     """PATCH grants 更新契约（contract §3 update：grants 提供 → tool_ids 清 []）。"""
 
-    async def test_patch_grants_200_clears_tool_ids(
-        self, client, db_session, override_get_db
-    ):
+    async def test_patch_grants_200_clears_tool_ids(self, client, db_session, override_get_db):
         """【R】PATCH 带 grants → 200；响应 grants 新值 + tool_ids==[]
         （清幽灵，contract §3 update）。"""
         row = await _seed_agent_row(db_session, name="待更配权", tool_ids=["save_draft"])
@@ -256,9 +251,7 @@ class TestUpdateAgentGrants:
         assert data["grants"] == [{"domain": "writing", "ops": ["read"]}]
         assert data["tool_ids"] == []
 
-    async def test_patch_grants_and_tool_ids_422(
-        self, client, db_session, override_get_db
-    ):
+    async def test_patch_grants_and_tool_ids_422(self, client, db_session, override_get_db):
         """【R】PATCH 同传 grants+tool_ids → 422（业务 str 消息，同 create 判定）。"""
         row = await _seed_agent_row(db_session, name="待更双传", tool_ids=["save_draft"])
         resp = await client.patch(
@@ -282,9 +275,7 @@ class TestUpdateAgentGrants:
 class TestGetBuiltinAgentGrants:
     """内置 Agent grants 非空回显契约（spec §4 内置卡片 + guard)."""
 
-    async def test_get_builtin_grants_nonempty(
-        self, client, db_session, override_get_db
-    ):
+    async def test_get_builtin_grants_nonempty(self, client, db_session, override_get_db):
         """【R】直插 builtin=True 行带 grants → GET 200；grants 非空回显。
 
         ⚠️ RED 期 AgentORM（agent_entity.py）无 grants kwarg → 函数内构造

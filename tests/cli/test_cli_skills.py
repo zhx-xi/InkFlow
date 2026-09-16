@@ -50,9 +50,7 @@ def make_skill_package(root: Path, name: str = "web-research") -> Path:
         f"---\nname: {name}\ndescription: 网络调研技能\n---\n# {name} 正文\n",
         encoding="utf-8",
     )
-    (pkg / "helper.py").write_text(
-        "def helper() -> int:\n    return 1\n", encoding="utf-8"
-    )
+    (pkg / "helper.py").write_text("def helper() -> int:\n    return 1\n", encoding="utf-8")
     refs = pkg / "references"
     refs.mkdir(exist_ok=True)
     (refs / "guide.md").write_text("# Guide\n", encoding="utf-8")
@@ -100,9 +98,7 @@ class TestInstall:
         """frontmatter 缺 name → exit 1 + SKILLS_INVALID_FRONTMATTER。"""
         pkg = tmp_path / "bad-skill"
         pkg.mkdir()
-        (pkg / "SKILL.md").write_text(
-            "---\ndescription: 没有名字\n---\n", encoding="utf-8"
-        )
+        (pkg / "SKILL.md").write_text("---\ndescription: 没有名字\n---\n", encoding="utf-8")
         result = _invoke(["install", str(pkg)])
         assert result.exit_code == 1
         envelope = json.loads(result.stdout)
@@ -152,9 +148,7 @@ class TestInstall:
         envelope = json.loads(result.stdout)
         assert envelope["error"]["code"] == "SKILLS_SOURCE_INVALID"
 
-    def test_install_builtin_flag_imports_official_skill(
-        self, tmp_path, skills_dir, monkeypatch
-    ):
+    def test_install_builtin_flag_imports_official_skill(self, tmp_path, skills_dir, monkeypatch):
         """#342: install --builtin 从随包资源目录导入官方 inkflow skill（三通道②）.
 
         --builtin 免 SOURCE：定位打包资源目录（frozen: resources/skills/inkflow；
@@ -249,9 +243,7 @@ class TestList:
         """预置坏 frontmatter 的 skill → list status=invalid 附错误信息。"""
         bad = skills_dir / "bad-skill"
         bad.mkdir(parents=True)
-        (bad / "SKILL.md").write_text(
-            "---\ndescription: 缺名字\n---\n", encoding="utf-8"
-        )
+        (bad / "SKILL.md").write_text("---\ndescription: 缺名字\n---\n", encoding="utf-8")
         result = _invoke(["list"])
         assert result.exit_code == 0
         entry = json.loads(result.stdout)["data"]["skills"][0]
@@ -298,9 +290,7 @@ class TestVerify:
         """坏 frontmatter 的已导入 skill → exit 1 + SKILLS_INVALID_FRONTMATTER。"""
         bad = skills_dir / "bad-skill"
         bad.mkdir(parents=True)
-        (bad / "SKILL.md").write_text(
-            "---\ndescription: 缺名字\n---\n", encoding="utf-8"
-        )
+        (bad / "SKILL.md").write_text("---\ndescription: 缺名字\n---\n", encoding="utf-8")
         result = _invoke(["verify"])
         assert result.exit_code == 1
         envelope = json.loads(result.stdout)
@@ -443,9 +433,7 @@ class TestCoverageGaps:
         result = _invoke(["install", str(pkg)])
         assert result.exit_code == 0
 
-    def test_install_read_oserror_dead_return(
-        self, tmp_path, monkeypatch, _noop_print_error
-    ):
+    def test_install_read_oserror_dead_return(self, tmp_path, monkeypatch, _noop_print_error):
         """SKILL.md 读取 OSError → print_error 后 return（覆盖 L95）。"""
         pkg = make_skill_package(tmp_path)
         import pathlib
@@ -461,15 +449,11 @@ class TestCoverageGaps:
         """frontmatter 非法 → print_error 后 return（覆盖 L101）。"""
         pkg = tmp_path / "bad-skill"
         pkg.mkdir()
-        (pkg / "SKILL.md").write_text(
-            "---\ndescription: 没有名字\n---\n", encoding="utf-8"
-        )
+        (pkg / "SKILL.md").write_text("---\ndescription: 没有名字\n---\n", encoding="utf-8")
         result = _invoke(["install", str(pkg)])
         assert result.exit_code == 0
 
-    def test_install_already_exists_dead_return(
-        self, tmp_path, skills_dir, _noop_print_error
-    ):
+    def test_install_already_exists_dead_return(self, tmp_path, skills_dir, _noop_print_error):
         """同名已存在 → print_error 后 return（覆盖 L110）。"""
         pkg = make_skill_package(tmp_path)
         assert _invoke(["install", str(pkg)]).exit_code == 0
@@ -489,9 +473,7 @@ class TestCoverageGaps:
         result = _invoke(["verify"])
         assert result.exit_code == 0
 
-    def test_verify_missing_skill_md_dead_return(
-        self, tmp_path, skills_dir, _noop_print_error
-    ):
+    def test_verify_missing_skill_md_dead_return(self, tmp_path, skills_dir, _noop_print_error):
         """verify --name 指向缺 SKILL.md 的目录 → print_error 后 return（覆盖 L188）。"""
         (skills_dir / "weird").mkdir(parents=True)
         result = _invoke(["verify", "--name", "weird"])
@@ -501,9 +483,7 @@ class TestCoverageGaps:
         """verify 遇非法 frontmatter → print_error 后 return（覆盖 L193）。"""
         bad = skills_dir / "bad-skill"
         bad.mkdir(parents=True)
-        (bad / "SKILL.md").write_text(
-            "---\ndescription: 缺名字\n---\n", encoding="utf-8"
-        )
+        (bad / "SKILL.md").write_text("---\ndescription: 缺名字\n---\n", encoding="utf-8")
         result = _invoke(["verify"])
         assert result.exit_code == 0
 
@@ -512,9 +492,7 @@ class TestCoverageGaps:
         result = _invoke(["remove", "no-such-skill"])
         assert result.exit_code == 0
 
-    def test_remove_oserror_dead_return(
-        self, tmp_path, skills_dir, monkeypatch, _noop_print_error
-    ):
+    def test_remove_oserror_dead_return(self, tmp_path, skills_dir, monkeypatch, _noop_print_error):
         """remove 删除失败 → print_error 后 return（覆盖 L222）。"""
         pkg = make_skill_package(tmp_path)
         assert _invoke(["install", str(pkg)]).exit_code == 0

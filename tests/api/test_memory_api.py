@@ -201,9 +201,7 @@ def memory_svc():
     svc.list_preferences = AsyncMock(return_value=([], 0))
     svc.remove_preference = AsyncMock(return_value=None)
     svc.stats = AsyncMock(return_value=_stats_payload())
-    svc.remove_summaries = AsyncMock(
-        return_value={"project_id": str(PROJECT_ID), "deleted": True}
-    )
+    svc.remove_summaries = AsyncMock(return_value={"project_id": str(PROJECT_ID), "deleted": True})
     return svc
 
 
@@ -265,9 +263,7 @@ class TestPatchDraftEndpoint:
     async def test_patch_draft_422_empty_content(self, override_draft_svc):
         """PATCH 422: content 空串（Pydantic 校验，不触达服务）。"""
         async with _client() as client:
-            resp = await client.patch(
-                f"/api/v1/agent/drafts/{DRAFT_ID}", json={"content": ""}
-            )
+            resp = await client.patch(f"/api/v1/agent/drafts/{DRAFT_ID}", json={"content": ""})
         assert resp.status_code == 422
         # 🔒 强化（#524）：Pydantic 422 detail 为 list（区分参数校验与业务 422）
         assert isinstance(resp.json()["detail"], list)
@@ -319,9 +315,7 @@ class TestPreferencesEndpoint:
         # service 收到 project_id
         assert memory_svc.list_preferences.await_args.kwargs["project_id"] == PROJECT_ID
 
-    async def test_preferences_list_200_domain_object(
-        self, memory_svc, clean_overrides
-    ):
+    async def test_preferences_list_200_domain_object(self, memory_svc, clean_overrides):
         """GET preferences 返回真实领域对象 → _dump model_dump 分支（QA 补测 2026-08-11）.
 
         覆盖 router _dump 的 model_dump 路径（dict 透传之外的领域对象形态）。
@@ -377,9 +371,7 @@ class TestPreferencesEndpoint:
         data = resp.json()
         assert data["preference_id"] == PREFERENCE_ID
         assert data["deleted"] is True
-        assert (
-            _call_arg(memory_svc.remove_preference, "preference_id", 0) == PREFERENCE_ID
-        )
+        assert _call_arg(memory_svc.remove_preference, "preference_id", 0) == PREFERENCE_ID
 
     async def test_preferences_delete_404(self, memory_svc, clean_overrides):
         """DELETE 404: 偏好不存在（PreferenceNotFoundError 映射）。"""
@@ -434,19 +426,17 @@ class TestMemoryAssembly:
         paths = _memory_route_paths()
         assert "/api/v1/agent/preferences" in paths, f"缺 preferences 列表路由: {paths}"
         assert "/api/v1/agent/memory/stats" in paths, f"缺 memory/stats 路由: {paths}"
-        assert any(
-            p.startswith("/api/v1/agent/preferences/") for p in paths
-        ), f"缺 preferences 删除路由: {paths}"
+        assert any(p.startswith("/api/v1/agent/preferences/") for p in paths), (
+            f"缺 preferences 删除路由: {paths}"
+        )
 
     def test_user_preferences_routes_registered_in_app(self):
         """M1 装配: user-preferences 列表/删除端点必须在真实 app 注册（spec §3.1）。"""
         paths = _memory_route_paths()
-        assert (
-            "/api/v1/agent/user-preferences" in paths
-        ), f"缺 user-preferences 列表路由: {paths}"
-        assert any(
-            p.startswith("/api/v1/agent/user-preferences/") for p in paths
-        ), f"缺 user-preferences 删除路由: {paths}"
+        assert "/api/v1/agent/user-preferences" in paths, f"缺 user-preferences 列表路由: {paths}"
+        assert any(p.startswith("/api/v1/agent/user-preferences/") for p in paths), (
+            f"缺 user-preferences 删除路由: {paths}"
+        )
 
 
 # ═══ F45 M1 追加段（2026-08-17，spec §3.1/§3.2 用户级偏好端点）═══
@@ -481,9 +471,7 @@ class TestUserPreferencesEndpoint:
 
     async def test_user_preferences_list_200(self, memory_svc, clean_overrides):
         """GET user-preferences → 200: {"items", "total"} + 字段口径."""
-        memory_svc.list_user_preferences = AsyncMock(
-            return_value=([_user_pref_dict()], 1)
-        )
+        memory_svc.list_user_preferences = AsyncMock(return_value=([_user_pref_dict()], 1))
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.get("/api/v1/agent/user-preferences")
@@ -510,9 +498,7 @@ class TestUserPreferencesEndpoint:
         assert item["category"] == "style_word"
         assert memory_svc.list_user_preferences.await_args.kwargs["category"] is None
 
-    async def test_user_preferences_list_category_filter(
-        self, memory_svc, clean_overrides
-    ):
+    async def test_user_preferences_list_category_filter(self, memory_svc, clean_overrides):
         """GET user-preferences?category=style_word → category 透传 service."""
         memory_svc.list_user_preferences = AsyncMock(return_value=([], 0))
         _override_memory_service(memory_svc)
@@ -521,27 +507,19 @@ class TestUserPreferencesEndpoint:
                 "/api/v1/agent/user-preferences", params={"category": "style_word"}
             )
         assert resp.status_code == 200
-        assert (
-            memory_svc.list_user_preferences.await_args.kwargs["category"]
-            == "style_word"
-        )
+        assert memory_svc.list_user_preferences.await_args.kwargs["category"] == "style_word"
 
     async def test_user_preferences_delete_200(self, memory_svc, clean_overrides):
         """DELETE user-preferences/{id} → 200: {"preference_id", "deleted": true}."""
         memory_svc.remove_user_preference = AsyncMock(return_value=None)
         _override_memory_service(memory_svc)
         async with _client() as client:
-            resp = await client.delete(
-                f"/api/v1/agent/user-preferences/{PREFERENCE_ID}"
-            )
+            resp = await client.delete(f"/api/v1/agent/user-preferences/{PREFERENCE_ID}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["preference_id"] == PREFERENCE_ID
         assert data["deleted"] is True
-        assert (
-            _call_arg(memory_svc.remove_user_preference, "preference_id", 0)
-            == PREFERENCE_ID
-        )
+        assert _call_arg(memory_svc.remove_user_preference, "preference_id", 0) == PREFERENCE_ID
 
     async def test_user_preferences_delete_404(self, memory_svc, clean_overrides):
         """DELETE 404: 用户级偏好不存在（PreferenceNotFoundError 映射）."""
@@ -552,9 +530,7 @@ class TestUserPreferencesEndpoint:
         )
         _override_memory_service(memory_svc)
         async with _client() as client:
-            resp = await client.delete(
-                f"/api/v1/agent/user-preferences/{PREFERENCE_ID}"
-            )
+            resp = await client.delete(f"/api/v1/agent/user-preferences/{PREFERENCE_ID}")
         assert resp.status_code == 404
         assert resp.json()["detail"] == "偏好不存在"
 
@@ -703,9 +679,7 @@ class TestMemorySummarizeEndpoint:
         """summarize 502: SemanticSummaryError → 502 + detail 为异常消息。"""
         from inkflow.domain.services.semantic_summarizer import SemanticSummaryError
 
-        memory_svc.summarize = AsyncMock(
-            side_effect=SemanticSummaryError("LLM 总结失败")
-        )
+        memory_svc.summarize = AsyncMock(side_effect=SemanticSummaryError("LLM 总结失败"))
         _override_memory_service(memory_svc)
         async with _client() as client:
             resp = await client.post(
@@ -714,7 +688,6 @@ class TestMemorySummarizeEndpoint:
             )
         assert resp.status_code == 502
         assert resp.json()["detail"] == "LLM 总结失败"
-
 
 
 # ═══ F49 ③ 追加段（#619，DELETE /api/v1/agent/memory/summaries 删除端点）═══

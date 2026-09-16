@@ -113,7 +113,12 @@ class TestPostLogs:
 
 class TestGetLogs:
     def _seed(self, client, *, level="INFO", caller_type="frontend", event="create_chapter"):
-        body = {**_VALID_BODY, "level": level, "caller_type": caller_type, "event": event}
+        body = {
+            **_VALID_BODY,
+            "level": level,
+            "caller_type": caller_type,
+            "event": event,
+        }
         assert client.post("/api/v1/logs", json=body).status_code == 200
 
     def test_get_returns_envelope(self, client):
@@ -176,9 +181,7 @@ class TestGetLogs:
             params={"from": "2000-01-01T00:00:00Z", "to": "2100-01-01T00:00:00Z"},
         ).json()["data"]
         assert within["total"] >= 1
-        future = client.get(
-            "/api/v1/logs", params={"from": "2100-01-01T00:00:00Z"}
-        ).json()["data"]
+        future = client.get("/api/v1/logs", params={"from": "2100-01-01T00:00:00Z"}).json()["data"]
         assert future["total"] == 0
 
     def test_get_pagination(self, client):
@@ -212,6 +215,8 @@ class TestLogsAuth:
         resp = client.get("/api/v1/logs", headers={TOKEN_HEADER: TEST_TOKEN})
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+
+
 # #932: GET /logs limit upper bound (Query ge=1 le=200) + trace_id filter
 # RED contract tests appended on top of the existing suite (TDD red phase).
 

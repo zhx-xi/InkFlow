@@ -113,9 +113,7 @@ def build_agent_chain_tools(deps: AgentChainToolDeps) -> list[Tool]:
             chapter_uuid = None
             if chapter_id is not None:
                 chapter_uuid = (
-                    chapter_id
-                    if isinstance(chapter_id, uuid.UUID)
-                    else _coerce_uuid(chapter_id)
+                    chapter_id if isinstance(chapter_id, uuid.UUID) else _coerce_uuid(chapter_id)
                 )
             request = PipelineExecuteRequest.model_construct(
                 project_id=deps.expected_project_id,

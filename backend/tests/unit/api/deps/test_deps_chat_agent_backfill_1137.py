@@ -97,9 +97,7 @@ def _patch_assembly(monkeypatch, db: AsyncSession, agent: _FakeAgent) -> tuple[M
         "inkflow.api._llm_resolver.resolve_llm_credentials",
         MagicMock(return_value=("model", "key", "url")),
     )
-    monkeypatch.setattr(
-        "inkflow.api.deps_chat_agent.resolve_grants", MagicMock(return_value=None)
-    )
+    monkeypatch.setattr("inkflow.api.deps_chat_agent.resolve_grants", MagicMock(return_value=None))
     monkeypatch.setattr(
         "inkflow.api.deps_chat_agent.build_tools_by_grants", MagicMock(return_value=[])
     )
@@ -171,9 +169,7 @@ async def test_stream_events_injects_project_context_and_history(test_engine, mo
         svc = await get_chat_agent_service(data=data, db=session)
         events = [
             event
-            async for event in svc.stream_events(
-                "这一轮提问", project_id=str(SEED_PROJECT_ID)
-            )
+            async for event in svc.stream_events("这一轮提问", project_id=str(SEED_PROJECT_ID))
         ]
 
         assert [event.type for event in events] == ["done"]
@@ -258,9 +254,7 @@ async def test_save_draft_tool_resolves_volume_from_chapter(test_engine, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_save_draft_tool_volume_lookup_failure_stays_silent(
-    test_engine, monkeypatch
-):
+async def test_save_draft_tool_volume_lookup_failure_stays_silent(test_engine, monkeypatch):
     """#976 D3：卷解析异常静默 → 草稿仍落库（volume_id=None），不阻断工具路径。"""
     async with await _make_session(test_engine) as session:
         await _seed_project(session)

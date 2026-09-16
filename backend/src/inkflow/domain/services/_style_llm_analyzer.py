@@ -171,9 +171,7 @@ class StyleLLMAnalyzer:
         if not text.strip():
             return None
 
-        resolved_model = (
-            resolve_model(model, project.config.model, self._llm_default_model) or ""
-        )
+        resolved_model = resolve_model(model, project.config.model, self._llm_default_model) or ""
 
         # ② 渲染模板（变量: text）
         template = self._prompts.load(_TEMPLATE_NAME)

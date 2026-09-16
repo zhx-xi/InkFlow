@@ -208,9 +208,7 @@ def test_book_intervene_redirect_skip(fake_http_client):
         "diff": {"target": "c1", "from": "in_progress", "to": "skipped"},
     }
 
-    result = _invoke(
-        "intervene", "run-1", "--action", "redirect", "--target", "c1", "--to", "skip"
-    )
+    result = _invoke("intervene", "run-1", "--action", "redirect", "--target", "c1", "--to", "skip")
 
     assert result.exit_code == 0
     out = _strip_ansi(result.stdout)

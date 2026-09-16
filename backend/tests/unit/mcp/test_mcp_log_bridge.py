@@ -335,9 +335,7 @@ class TestDispatcherAudit:
 
         monkeypatch.setattr(http_mod, "InkFlowHTTPClient", FailingClient)
         with mcp_log_sink():
-            result = await call_tool_result(
-                build_mcp_tools(), "manage_project", {"action": "list"}
-            )
+            result = await call_tool_result(build_mcp_tools(), "manage_project", {"action": "list"})
         assert result.is_error is True
         body = _last_body(fake_log.client)
         assert body["level"] == "WARN"

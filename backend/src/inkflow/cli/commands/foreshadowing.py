@@ -249,9 +249,7 @@ def get_foreshadowing_cmd(
         typer.echo(f"状态:         {foreshadowing['status']}（{_status_label(foreshadowing)}）")
         typer.echo(f"埋设位置:     {foreshadowing['location'] or '（未记录）'}")
         typer.echo(f"事件锚点:     {foreshadowing['event_id'] or '（未挂接）'}")
-        typer.echo(
-            f"回收时间:     {format_local(foreshadowing['resolved_at']) or '（未回收）'}"
-        )
+        typer.echo(f"回收时间:     {format_local(foreshadowing['resolved_at']) or '（未回收）'}")
         typer.echo(f"创建时间:     {format_local(foreshadowing['created_at'])}")
         typer.echo(f"更新时间:     {format_local(foreshadowing['updated_at'])}")
 

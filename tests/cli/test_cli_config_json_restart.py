@@ -23,9 +23,7 @@ config_cmd_mod = importlib.import_module("inkflow.cli.commands.config_cmd")
 
 
 def _patch_anchor(monkeypatch, anchor) -> None:
-    monkeypatch.setattr(
-        core_config_mod, "get_instance_env_path", lambda: anchor, raising=False
-    )
+    monkeypatch.setattr(core_config_mod, "get_instance_env_path", lambda: anchor, raising=False)
 
 
 def test_config_show_reads_config_json_after_restart(monkeypatch, tmp_path) -> None:
@@ -54,9 +52,7 @@ def test_config_show_reads_config_json_after_restart(monkeypatch, tmp_path) -> N
     restarted = core_config_mod.InkFlowConfig(data_dir=data_dir)
     monkeypatch.setattr(config_cmd_mod, "config", restarted)
 
-    result = runner.invoke(
-        app, ["show"], obj=CliContext(json_output=True)
-    )
+    result = runner.invoke(app, ["show"], obj=CliContext(json_output=True))
 
     assert result.exit_code == 0
     data = json.loads(result.stdout)

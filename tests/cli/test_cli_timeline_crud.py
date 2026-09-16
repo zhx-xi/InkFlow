@@ -67,9 +67,7 @@ def fake_http_client():
             "inkflow.cli.commands.timeline.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.timeline.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.timeline.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -331,9 +329,7 @@ class TestTimelineList:
 class TestTimelineView:
     def test_view_json(self, cli_runner, fake_http_client):
         """view --json → 双线视图完整信封."""
-        ev1 = _make_event(
-            title="林尘拜入青云宗", time_value=315.0, narrative_position=1
-        )
+        ev1 = _make_event(title="林尘拜入青云宗", time_value=315.0, narrative_position=1)
         ev2 = _make_event(title="宗门大比夺冠", time_value=319.0, narrative_position=4)
         fake_http_client.get.return_value = _make_view(
             total=2, event_timeline=[ev1, ev2], narrative_order=[ev1, ev2]
@@ -353,9 +349,7 @@ class TestTimelineView:
 
     def test_view_human(self, cli_runner, fake_http_client):
         """view 人类模式 → 双线总览摘要（两种视图标题）."""
-        ev1 = _make_event(
-            title="林尘拜入青云宗", time_value=315.0, narrative_position=1
-        )
+        ev1 = _make_event(title="林尘拜入青云宗", time_value=315.0, narrative_position=1)
         ev2 = _make_event(title="宗门大比夺冠", time_value=319.0, narrative_position=4)
         fake_http_client.get.return_value = _make_view(
             total=2, event_timeline=[ev1, ev2], narrative_order=[ev1, ev2]
@@ -421,9 +415,7 @@ class TestTimelineCheck:
 
     def test_check_human_consistent(self, cli_runner, fake_http_client):
         """check 人类模式一致 → ✅ 摘要（含跳过计数）."""
-        fake_http_client.get.return_value = _make_report(
-            checked=4, skipped=1, consistent=True
-        )
+        fake_http_client.get.return_value = _make_report(checked=4, skipped=1, consistent=True)
         result = cli_runner.invoke(
             app,
             ["check", "--project-id", str(PID)],

@@ -146,15 +146,15 @@ class TestChatDeleteAssembly:
 
     def test_chat_delete_route_registered_in_app(self):
         paths = _chat_route_paths()
-        assert any(
-            p.endswith("/chat/messages/{message_id}") for p in paths
-        ), f"缺 chat delete 路由: {sorted(paths)}"
+        assert any(p.endswith("/chat/messages/{message_id}") for p in paths), (
+            f"缺 chat delete 路由: {sorted(paths)}"
+        )
 
     def test_chat_restore_route_registered_in_app(self):
         paths = _chat_route_paths()
-        assert any(
-            p.endswith("/chat/messages/{message_id}/restore") for p in paths
-        ), f"缺 chat restore 路由: {sorted(paths)}"
+        assert any(p.endswith("/chat/messages/{message_id}/restore") for p in paths), (
+            f"缺 chat restore 路由: {sorted(paths)}"
+        )
 
 
 class TestDeleteConversationEndpoint:
@@ -239,7 +239,10 @@ class TestDirectRouterCoverage:
     """直接调用 router handler 覆盖（#177：ASGI 盲区）。"""
 
     async def test_post_message_direct(self, patch_direct_svc):
-        from inkflow.api.routers.chat_messages import ChatMessagePostRequest, post_message
+        from inkflow.api.routers.chat_messages import (
+            ChatMessagePostRequest,
+            post_message,
+        )
 
         data = ChatMessagePostRequest(
             project_id=PROJECT_ID, conversation_id=CONV_ID, role="user", content="你好"
@@ -250,12 +253,18 @@ class TestDirectRouterCoverage:
     async def test_post_message_blank_content_422_direct(self, patch_direct_svc):
         from fastapi import HTTPException
 
-        from inkflow.api.routers.chat_messages import ChatMessagePostRequest, post_message
+        from inkflow.api.routers.chat_messages import (
+            ChatMessagePostRequest,
+            post_message,
+        )
 
         with pytest.raises(HTTPException) as ei:
             await post_message(
                 ChatMessagePostRequest(
-                    project_id=PROJECT_ID, conversation_id=CONV_ID, role="user", content="   "
+                    project_id=PROJECT_ID,
+                    conversation_id=CONV_ID,
+                    role="user",
+                    content="   ",
                 ),
                 db=None,
             )

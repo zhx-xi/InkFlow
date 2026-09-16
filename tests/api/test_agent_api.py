@@ -46,9 +46,7 @@ def mock_agent_service():
     # validate_pipeline / list_templates 是同步方法 — 用 MagicMock 而非 AsyncMock
     svc.validate_pipeline = MagicMock(return_value={"valid": True, "errors": []})
     svc.list_templates = MagicMock(
-        return_value={
-            "items": [{"id": "builtin:write_chapter", "name": "章节写作 (4 阶段)"}]
-        }
+        return_value={"items": [{"id": "builtin:write_chapter", "name": "章节写作 (4 阶段)"}]}
     )
     return svc
 
@@ -73,9 +71,7 @@ class TestAgentAPI:
         assert data["execution_id"] == "abc-123"
         assert data["status"] == "pending"
         mock_agent_service.execute.assert_awaited_once()
-        assert mock_agent_service.execute.await_args.args[0].project_id == uuid.UUID(
-            req_id
-        )
+        assert mock_agent_service.execute.await_args.args[0].project_id == uuid.UUID(req_id)
 
     async def test_execute_missing_project_id(self, client):
         """缺 project_id → 422（Pydantic 验证）。"""
@@ -97,9 +93,7 @@ class TestAgentAPI:
         mock_agent_service.get_status.return_value = None
         resp = await client.get("/api/v1/agent/pipelines/executions/nonexistent-1")
         assert resp.status_code == 404
-        assert (
-            resp.json()["detail"] == "执行记录不存在"
-        )  # 防「任何 404 来源」假绿（#524）
+        assert resp.json()["detail"] == "执行记录不存在"  # 防「任何 404 来源」假绿（#524）
         mock_agent_service.get_status.assert_awaited_once_with("nonexistent-1")
 
     async def test_list_executions(self, client, patch_svc, mock_agent_service):
@@ -185,9 +179,7 @@ class TestAgentAPICoverageGaps:
 
         db = MagicMock()
         with (
-            patch(
-                "inkflow.api.routers.agent.LangGraphAgentPipeline"
-            ) as mock_pipeline_cls,
+            patch("inkflow.api.routers.agent.LangGraphAgentPipeline") as mock_pipeline_cls,
             patch("inkflow.api.routers.agent.LangChainLLMClient") as mock_llm_cls,
         ):
             svc = _svc(db)
@@ -226,15 +218,11 @@ class TestAgentAPICoverageGaps:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "章节不存在"
 
-    async def test_execute_pipeline_other_error_422(
-        self, client, patch_svc, mock_agent_service
-    ):
+    async def test_execute_pipeline_other_error_422(self, client, patch_svc, mock_agent_service):
         """execute 抛其他 AgentServiceError → 422 + 原始消息。"""
         from inkflow.domain.services.agent_service import AgentServiceError
 
-        mock_agent_service.execute.side_effect = AgentServiceError(
-            "配置错误: 非法 stage 引用"
-        )
+        mock_agent_service.execute.side_effect = AgentServiceError("配置错误: 非法 stage 引用")
         resp = await client.post(
             "/api/v1/agent/pipelines/execute",
             json={"project_id": str(uuid.uuid4())},

@@ -156,14 +156,18 @@ class WorldCopyService:
                     src.name,
                 )
                 continue
-            if src.category and await self._repo.get_category_by_name(
-                uuid.UUID(int=target_int), src.category
-            ) is None:
+            if (
+                src.category
+                and await self._repo.get_category_by_name(uuid.UUID(int=target_int), src.category)
+                is None
+            ):
                 skipped.append(src.name)
                 warnings.append(f"目标项目未创建分类「{src.category}」，条目「{src.name}」已跳过")
                 logger.warning(
                     "复制跳过未建分类条目: target=%s name=%s category=%s",
-                    target_project_id, src.name, src.category,
+                    target_project_id,
+                    src.name,
+                    src.category,
                 )
                 continue
             # ④ 同级同名冲突预筛（target, 映射后父 id, name；父先落库再预筛子）
@@ -262,8 +266,7 @@ class WorldCopyService:
                     pins_created += 1
                 if note_count:
                     warnings.append(
-                        f"地图「{m.name}」的 {note_count} 个 pin 关联地点"
-                        "不在复制集合，已转为纯注释"
+                        f"地图「{m.name}」的 {note_count} 个 pin 关联地点不在复制集合，已转为纯注释"
                     )
 
         logger.info(

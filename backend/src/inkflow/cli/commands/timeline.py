@@ -269,7 +269,7 @@ def check_consistency_cmd(
                 typer.echo(f"   [冲突] {conflict['message']}")
         if report["flashbacks"]:
             typer.echo(
-                f"📊 一致性检查: 💡 {len(report['flashbacks'])} 个已声明倒叙/插叙" "（不视为冲突）"
+                f"📊 一致性检查: 💡 {len(report['flashbacks'])} 个已声明倒叙/插叙（不视为冲突）"
             )
             for fb in report["flashbacks"]:
                 typer.echo(f"   [倒叙] {fb['message']}")

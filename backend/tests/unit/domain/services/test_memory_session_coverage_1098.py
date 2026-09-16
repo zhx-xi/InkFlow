@@ -308,9 +308,7 @@ async def test_stats_counts_writing_session_completion(db_session) -> None:
     view = await svc.create(
         SessionCreate(session_type=SessionType.WRITING, project_id=pid, title="第二章写作会话")
     )
-    await svc.add_log(
-        view.session.id, SessionLogCreate(message="写作会话日志。" + CONCLUSION_TEXT)
-    )
+    await svc.add_log(view.session.id, SessionLogCreate(message="写作会话日志。" + CONCLUSION_TEXT))
     await svc.complete(view.session.id, SessionComplete(result={"summary": CONCLUSION_TEXT}))
 
     stats = await _memory_service(db_session, FakeSummarizer()).stats(pid)
@@ -479,9 +477,7 @@ async def test_global_session_without_project_writes_no_event(db_session) -> Non
 
     svc = get_session_service(db_session)
     view = await svc.create(SessionCreate(session_type=SessionType.TASK, title="全局任务会话"))
-    await svc.complete(
-        view.session.id, SessionComplete(result={"summary": CONCLUSION_TEXT})
-    )
+    await svc.complete(view.session.id, SessionComplete(result={"summary": CONCLUSION_TEXT}))
 
     total = (
         await db_session.execute(select(func.count()).select_from(MemoryEventORM))

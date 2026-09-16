@@ -73,9 +73,7 @@ class TestRoleKeyExposure:
             ("审校员", "auditor"),
             ("修订师", "reviser"),
         ):
-            assert (
-                by_name[name].get("role_key") == role_key
-            ), f"{name} role_key 映射错误"
+            assert by_name[name].get("role_key") == role_key, f"{name} role_key 映射错误"
 
     async def test_list_non_chain_builtin_role_key_exposed_v15(
         self, client, db_session, override_get_db
@@ -96,9 +94,7 @@ class TestRoleKeyExposure:
         assert by_name["世界观顾问"].get("role_key", "MISSING") == "worldview"
         assert by_name["润色师"].get("role_key", "MISSING") == "polisher"
 
-    async def test_list_custom_agent_role_key_none(
-        self, client, db_session, override_get_db
-    ):
+    async def test_list_custom_agent_role_key_none(self, client, db_session, override_get_db):
         """自定义 Agent → role_key 为 None（非内置无链映射）。"""
         await _seed_agent(db_session, name="自定义甲")
 

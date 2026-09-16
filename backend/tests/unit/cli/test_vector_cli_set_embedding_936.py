@@ -56,8 +56,9 @@ def fake_http_client():
         patch("inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
-        mock_instance.put = AsyncMock(return_value={"ok": True, "provider": "zhipu",
-                                                    "model_id": "embedding-3"})
+        mock_instance.put = AsyncMock(
+            return_value={"ok": True, "provider": "zhipu", "model_id": "embedding-3"}
+        )
         mock_cls.return_value = mock_instance
         yield mock_instance
 
@@ -99,8 +100,15 @@ class TestSetEmbeddingCommand:
         """【R】`--force` → 请求带 force=true（门禁逃生门透传）。"""
         cli_runner.invoke(
             app,
-            ["vector", "set-embedding", "--provider", "zhipu", "--model-id", "embedding-3",
-             "--force"],
+            [
+                "vector",
+                "set-embedding",
+                "--provider",
+                "zhipu",
+                "--model-id",
+                "embedding-3",
+                "--force",
+            ],
         )
 
         call_repr = repr(fake_http_client.put.await_args)
@@ -122,8 +130,15 @@ class TestSetEmbeddingCommand:
         """【R】`--json` → F7 信封 {"ok": true, "data": {...}}。"""
         result = cli_runner.invoke(
             app,
-            ["--json", "vector", "set-embedding", "--provider", "zhipu",
-             "--model-id", "embedding-3"],
+            [
+                "--json",
+                "vector",
+                "set-embedding",
+                "--provider",
+                "zhipu",
+                "--model-id",
+                "embedding-3",
+            ],
         )
 
         assert result.exit_code == 0
@@ -139,22 +154,27 @@ class TestSetEmbeddingCommand:
 
     def test_r6_404_maps_to_not_found(self, cli_runner) -> None:
         """【R】HTTP 404 → F7 错误码 NOT_FOUND + 退出码 1。"""
-        fake_handle = SimpleNamespace(port=38291, token="t", pid=1, version="0.1.0",
-                                      started_at="", reused=True)
+        fake_handle = SimpleNamespace(
+            port=38291, token="t", pid=1, version="0.1.0", started_at="", reused=True
+        )
         with (
-            patch("inkflow.cli.commands.vector.ensure_kernel",
-                  AsyncMock(return_value=fake_handle)),
+            patch("inkflow.cli.commands.vector.ensure_kernel", AsyncMock(return_value=fake_handle)),
             patch("inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True) as mock_cls,
         ):
             mock_instance = AsyncMock()
-            mock_instance.put = AsyncMock(
-                side_effect=HttpApiError(404, "Provider 不存在", None)
-            )
+            mock_instance.put = AsyncMock(side_effect=HttpApiError(404, "Provider 不存在", None))
             mock_cls.return_value = mock_instance
             result = cli_runner.invoke(
                 app,
-                ["--json", "vector", "set-embedding", "--provider", "ghost",
-                 "--model-id", "embedding-3"],
+                [
+                    "--json",
+                    "vector",
+                    "set-embedding",
+                    "--provider",
+                    "ghost",
+                    "--model-id",
+                    "embedding-3",
+                ],
             )
 
         assert result.exit_code == 1
@@ -162,11 +182,11 @@ class TestSetEmbeddingCommand:
 
     def test_r7_422_maps_to_validation_error(self, cli_runner) -> None:
         """【R】HTTP 422（门禁拒绝）→ F7 错误码 VALIDATION_ERROR。"""
-        fake_handle = SimpleNamespace(port=38291, token="t", pid=1, version="0.1.0",
-                                      started_at="", reused=True)
+        fake_handle = SimpleNamespace(
+            port=38291, token="t", pid=1, version="0.1.0", started_at="", reused=True
+        )
         with (
-            patch("inkflow.cli.commands.vector.ensure_kernel",
-                  AsyncMock(return_value=fake_handle)),
+            patch("inkflow.cli.commands.vector.ensure_kernel", AsyncMock(return_value=fake_handle)),
             patch("inkflow.cli.commands.vector.InkFlowHTTPClient", autospec=True) as mock_cls,
         ):
             mock_instance = AsyncMock()
@@ -176,8 +196,15 @@ class TestSetEmbeddingCommand:
             mock_cls.return_value = mock_instance
             result = cli_runner.invoke(
                 app,
-                ["--json", "vector", "set-embedding", "--provider", "zhipu",
-                 "--model-id", "embedding-3"],
+                [
+                    "--json",
+                    "vector",
+                    "set-embedding",
+                    "--provider",
+                    "zhipu",
+                    "--model-id",
+                    "embedding-3",
+                ],
             )
 
         assert result.exit_code == 1

@@ -44,9 +44,7 @@ def fake_http_client():
             "inkflow.cli.commands.write.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.write.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.write.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__.return_value = mock_instance
@@ -64,9 +62,7 @@ def _sse(*events: dict) -> AsyncMock:
     return MagicMock(return_value=_gen())
 
 
-def test_next_without_obj_defaults_human_mode(
-    cli_runner, fake_http_client
-) -> None:
+def test_next_without_obj_defaults_human_mode(cli_runner, fake_http_client) -> None:
     """无 ctx.obj → CliContext() 兜底，人类模式输出（43 行）。"""
     fake_http_client.stream_sse = _sse(
         {"done": False, "delta": "正文"},
@@ -97,9 +93,7 @@ def test_next_without_obj_defaults_human_mode(
     assert "章节生成成功" in result.output
 
 
-def test_stream_without_done_frame_falls_back(
-    cli_runner, fake_http_client
-) -> None:
+def test_stream_without_done_frame_falls_back(cli_runner, fake_http_client) -> None:
     """流仅 delta 无 done 帧 → 空结果兜底（101->99 弧）。"""
     fake_http_client.stream_sse = _sse({"done": False, "delta": "正文"})
 
@@ -124,9 +118,7 @@ def test_stream_without_done_frame_falls_back(
     assert data["warnings"] == ["生成内容为空"]
 
 
-def test_agentic_without_draft_prints_not_generated(
-    cli_runner, fake_http_client
-) -> None:
+def test_agentic_without_draft_prints_not_generated(cli_runner, fake_http_client) -> None:
     """--mode agentic 响应无 draft_id/status → 「未生成草稿」（211 行）。"""
     fake_http_client.post = AsyncMock(
         return_value={
@@ -156,9 +148,7 @@ def test_agentic_without_draft_prints_not_generated(
     assert "未生成草稿" in result.output
 
 
-def test_continue_error_frame_maps_llm_error(
-    cli_runner, fake_http_client
-) -> None:
+def test_continue_error_frame_maps_llm_error(cli_runner, fake_http_client) -> None:
     """continue 流内 error 帧 → LLM_ERROR + exit 1（271 行）。"""
     fake_http_client.get = AsyncMock(return_value={"content": "已有内容"})
     fake_http_client.stream_sse = _sse({"done": True, "error": "LLM 调用失败"})
@@ -231,9 +221,7 @@ def test_kernel_startup_error_maps_to_kernel_error(
     assert "内核启动失败" in result.output
 
 
-def test_agentic_tool_sequence_dedupes_and_skips_empty(
-    cli_runner, fake_http_client
-) -> None:
+def test_agentic_tool_sequence_dedupes_and_skips_empty(cli_runner, fake_http_client) -> None:
     """agentic steps 中重复/空 tool_name → 工具序列去重跳过（101->99 弧）。"""
     fake_http_client.post = AsyncMock(
         return_value={

@@ -208,9 +208,9 @@ class TestSettingInjectionIntoBrief:
 
         brief = _brief(_plan(character_ids=[uuid.uuid4()]), _outline(), context=rendered)
 
-        assert (
-            REAL_CHARACTER_NAME in brief
-        ), "ContextService 产出必须被 book brief 消费（盲区 5 消费面）"
+        assert REAL_CHARACTER_NAME in brief, (
+            "ContextService 产出必须被 book brief 消费（盲区 5 消费面）"
+        )
 
     def test_brief_has_no_placeholder_when_character_ids_present(self):
         """plan.character_ids 非空 → brief 不含两种占位符串（#1175 占位符消除）。

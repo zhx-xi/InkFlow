@@ -111,9 +111,9 @@ def _project_uuid(sample_project) -> uuid.UUID:
 
 def _assert_empty_page(resp, url: str) -> None:
     """契约：200 + 空列表（不得 500，不得误报 404）。"""
-    assert (
-        resp.status_code == 200
-    ), f"GET {url} 应为 200 + 空列表，实际 {resp.status_code}: {resp.text[:200]}"
+    assert resp.status_code == 200, (
+        f"GET {url} 应为 200 + 空列表，实际 {resp.status_code}: {resp.text[:200]}"
+    )
     body = resp.json()
     assert body["items"] == [], f"GET {url} items 应为空，实际 {body['items']!r}"
     assert body["total"] == 0, f"GET {url} total 应为 0，实际 {body['total']!r}"
@@ -132,9 +132,7 @@ FILTER_QUERY_FACES = [
 
 
 @pytest.mark.api
-@pytest.mark.parametrize(
-    "label,url_template,param", FILTER_QUERY_FACES, ids=lambda v: str(v)
-)
+@pytest.mark.parametrize("label,url_template,param", FILTER_QUERY_FACES, ids=lambda v: str(v))
 class TestFilterQueryParamOverflow:
     """#1162 面 ①-④ 逐面：过滤用查询参数溢出 → 200 空列表（不得 500）。
 
@@ -183,9 +181,7 @@ class TestFilterStillWorksWithRealFk:
     ):
         """真实卷 + 该卷下 1 章 → ?volume_id= 只返回该章（过滤功能不得修坏）。"""
         pid = sample_project.id
-        vol = await client.post(
-            f"/api/v1/projects/{pid}/volumes", json={"title": "过滤卷"}
-        )
+        vol = await client.post(f"/api/v1/projects/{pid}/volumes", json={"title": "过滤卷"})
         assert vol.status_code == 201, vol.text[:200]
         vol_id = vol.json()["id"]
         ch = await client.post(
@@ -248,9 +244,7 @@ class TestFilterStillWorksWithRealFk:
         assert mp.status_code == 201, mp.text[:200]
         map_id = mp.json()["id"]
 
-        resp = await client.get(
-            f"/api/v1/projects/{pid}/maps?root_location_id={loc_id}"
-        )
+        resp = await client.get(f"/api/v1/projects/{pid}/maps?root_location_id={loc_id}")
         assert resp.status_code == 200, resp.text[:200]
         body = resp.json()
         assert body["total"] == 1, f"应只命中 1 图，实际 {body['total']}"
@@ -274,9 +268,7 @@ class TestFilterStillWorksWithRealFk:
         assert child.status_code == 201, child.text[:200]
         child_id = child.json()["id"]
 
-        resp = await client.get(
-            f"/api/v1/projects/{pid}/world-settings?parent_id={root_id}"
-        )
+        resp = await client.get(f"/api/v1/projects/{pid}/world-settings?parent_id={root_id}")
         assert resp.status_code == 200, resp.text[:200]
         body = resp.json()
         assert body["total"] == 1, f"应只命中 1 条目，实际 {body['total']}"
@@ -290,9 +282,7 @@ class TestFilterStillWorksWithRealFk:
 class TestSessionsProjectIdQueryOverflow:
     """#1162 面 ⑤：sessions 的 project_id 是**过滤条件**（非路径父资源）→ 200 空。"""
 
-    async def test_overflow_uuid_returns_200_empty(
-        self, client, db_session, override_get_db
-    ):
+    async def test_overflow_uuid_returns_200_empty(self, client, db_session, override_get_db):
         """溢出 project_id → 200 + 空列表（修复前 500 {"detail":"数据库错误"}）。"""
         url = f"/api/v1/sessions?project_id={_overflow_uuid()}"
         _assert_empty_page(await client.get(url), url)
@@ -336,9 +326,7 @@ class TestChatMessagesConversationIdQueryOverflow:
     故落「线程不存在 → 无消息可读 → 200 空」而非 404（未引入新语义）。
     """
 
-    async def test_overflow_uuid_returns_200_empty(
-        self, client, db_session, override_get_db
-    ):
+    async def test_overflow_uuid_returns_200_empty(self, client, db_session, override_get_db):
         """溢出 conversation_id → 200 + {items: [], total: 0}（修复前 500）。"""
         url = f"/api/v1/chat/messages?conversation_id={_overflow_uuid()}"
         _assert_empty_page(await client.get(url), url)
@@ -372,9 +360,7 @@ class TestChatMessagesConversationIdQueryOverflow:
 async def _chapter_volume_id_in_db(db_session, chapter_uuid: str) -> uuid.UUID | None:
     """DB 真相：直读 chapters.volume_id（int）→ 领域 UUID（None = 未挂卷）。"""
     orm_id = uuid.UUID(chapter_uuid).int
-    result = await db_session.execute(
-        select(ChapterORM.volume_id).where(ChapterORM.id == orm_id)
-    )
+    result = await db_session.execute(select(ChapterORM.volume_id).where(ChapterORM.id == orm_id))
     raw = result.scalar_one()
     return None if raw is None else uuid.UUID(int=raw)
 
@@ -389,16 +375,12 @@ class TestMoveChapterTargetVolumeMustExist:
       （先 UPDATE 后无存在性校验；同 service delete_volume(move_to) 先例已有校验）
     """
 
-    async def _setup_chapter_in_v1(
-        self, client, sample_project
-    ) -> tuple[str, str, str]:
+    async def _setup_chapter_in_v1(self, client, sample_project) -> tuple[str, str, str]:
         """建 V1/V2 + V1 下一章 → (ch_id, v1_id, v2_id)。"""
         pid = sample_project.id
         v1 = await client.post(f"/api/v1/projects/{pid}/volumes", json={"title": "V1"})
         v2 = await client.post(f"/api/v1/projects/{pid}/volumes", json={"title": "V2"})
-        assert (
-            v1.status_code == 201 and v2.status_code == 201
-        ), f"{v1.text[:120]}{v2.text[:120]}"
+        assert v1.status_code == 201 and v2.status_code == 201, f"{v1.text[:120]}{v2.text[:120]}"
         v1_id, v2_id = v1.json()["id"], v2.json()["id"]
         ch = await client.post(
             f"/api/v1/projects/{pid}/chapters",
@@ -416,9 +398,9 @@ class TestMoveChapterTargetVolumeMustExist:
         resp = await client.post(
             f"/api/v1/chapters/{ch_id}/move?target_volume_id={_overflow_uuid()}"
         )
-        assert (
-            resp.status_code == 422
-        ), f"溢出目标卷应为 422（目标卷不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 422, (
+            f"溢出目标卷应为 422（目标卷不存在），实际 {resp.status_code}: {resp.text[:200]}"
+        )
         assert await _chapter_volume_id_in_db(db_session, ch_id) == uuid.UUID(v1_id)
 
     async def test_in_range_absent_target_returns_422_and_volume_unchanged(
@@ -442,9 +424,7 @@ class TestMoveChapterTargetVolumeMustExist:
         """反例守护：真实存在的目标卷 → 200 且移动生效（DB 真相 volume_id 已变）。"""
         ch_id, _, v2_id = await self._setup_chapter_in_v1(client, sample_project)
 
-        resp = await client.post(
-            f"/api/v1/chapters/{ch_id}/move?target_volume_id={v2_id}"
-        )
+        resp = await client.post(f"/api/v1/chapters/{ch_id}/move?target_volume_id={v2_id}")
         assert resp.status_code == 200, resp.text[:200]
         assert resp.json()["volume_id"] == v2_id
         assert await _chapter_volume_id_in_db(db_session, ch_id) == uuid.UUID(v2_id)

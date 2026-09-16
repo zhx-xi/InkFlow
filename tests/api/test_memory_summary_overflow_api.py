@@ -54,14 +54,10 @@ async def client(monkeypatch):
 class TestMemorySummaryOverflowDelete:
     """#631 随机 UUID DELETE summaries → 404「项目不存在」（真实 DB 轨）。"""
 
-    async def test_delete_summaries_random_uuid_404(
-        self, client, db_session, override_get_db
-    ):
+    async def test_delete_summaries_random_uuid_404(self, client, db_session, override_get_db):
         """DELETE summaries 随机 UUID project_id → 404「项目不存在」。"""
         project_id = uuid.uuid4()
-        resp = await client.delete(
-            f"/api/v1/agent/memory/summaries?project_id={project_id}"
-        )
+        resp = await client.delete(f"/api/v1/agent/memory/summaries?project_id={project_id}")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_PROJECT_NOT_FOUND
 
@@ -75,9 +71,7 @@ class TestMemorySummaryOverflowGet:
     ):
         """GET summaries 随机 UUID project_id → 200 空结构（project/user=None）。"""
         project_id = uuid.uuid4()
-        resp = await client.get(
-            f"/api/v1/agent/memory/summaries?project_id={project_id}"
-        )
+        resp = await client.get(f"/api/v1/agent/memory/summaries?project_id={project_id}")
         assert resp.status_code == 200
         assert resp.json() == {
             "project_id": str(project_id),
@@ -100,7 +94,5 @@ class TestExistingProjectControl:
     ):
         """预置有效项目（sample_project fixture）→ GET summaries → 200 空结构。"""
         project_id = uuid.UUID(int=sample_project.id)
-        resp = await client.get(
-            f"/api/v1/agent/memory/summaries?project_id={project_id}"
-        )
+        resp = await client.get(f"/api/v1/agent/memory/summaries?project_id={project_id}")
         assert resp.status_code == 200

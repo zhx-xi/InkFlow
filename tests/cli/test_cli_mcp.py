@@ -86,9 +86,7 @@ def mcp_env(tmp_path_factory):
     os.environ["INKFLOW_DATA_DIR"] = str(child_data_dir)
     handle = None
     try:
-        handle = asyncio.run(
-            ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT)
-        )
+        handle = asyncio.run(ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT))
         yield SimpleNamespace(
             handle=handle,
             state_file=state_file,
@@ -120,9 +118,7 @@ def _server_params(env: SimpleNamespace) -> StdioServerParameters:
     )
 
 
-@pytest.mark.skipif(
-    _skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证"
-)
+@pytest.mark.skipif(_skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证")
 class TestMcpStdioRealKernel:
     """真实内核 stdio 协议端到端（M4，spec §9.2）。"""
 
@@ -159,9 +155,7 @@ class TestMcpStdioRealKernel:
             assert "items" in env["data"]
 
 
-@pytest.mark.skipif(
-    _skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证"
-)
+@pytest.mark.skipif(_skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证")
 class TestColdStart:
     """冷启动链路（spec §5.2/§7 #1）：无内核 → tools/call 自动拉起。"""
 
@@ -211,9 +205,7 @@ class TestColdStart:
 # CI 沙箱无法拉起真实内核（同 module-scope 先例）→ skipif；本地黑盒验证。
 
 
-@pytest.mark.skipif(
-    _skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证"
-)
+@pytest.mark.skipif(_skip_ci(), reason="GitHub Actions 沙箱无法拉起真实内核（秒退）；本机 M4 验证")
 class TestMcpStdioErrorSelfHeal:
     """真实 stdio 轨：错误自愈契约（unknown tool / invalid args → 结构化 error）。"""
 

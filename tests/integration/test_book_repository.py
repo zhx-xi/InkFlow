@@ -257,12 +257,8 @@ async def test_orm_default_utcnow(db_session):
     from inkflow.infrastructure.database.models.planner_session import PlannerSessionORM
     from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
 
-    wp = WritingPlanORM(
-        id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), title="默认时间"
-    )
-    ps = PlannerSessionORM(
-        id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), one_liner="默认时间"
-    )
+    wp = WritingPlanORM(id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), title="默认时间")
+    ps = PlannerSessionORM(id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), one_liner="默认时间")
     db_session.add_all([wp, ps])
     await db_session.flush()
 

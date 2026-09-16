@@ -239,9 +239,7 @@ async def test_c4_migration_idempotent_across_restart(tmp_path: Path) -> None:
             created = await service.create_project(
                 name="重启后新书", tags=["仙侠"], language="zh-CN"
             )
-            assert (
-                await SQLiteProjectRepository(session).get(created.id.int)
-            ) is not None
+            assert (await SQLiteProjectRepository(session).get(created.id.int)) is not None
 
 
 # ── C5：反例守护（全新库不受影响 + 列已不存在时 no-op） ──
@@ -261,9 +259,7 @@ async def test_c5_fresh_db_unaffected_and_helper_is_noop(tmp_path: Path) -> None
                 name="全新库新书", tags=["都市"], language="zh-CN"
             )
             # 域 id 为 UUID(int=orm.id)（见 _orm_to_domain）→ 反解回 int 主键查回
-            assert (
-                await SQLiteProjectRepository(session).get(created.id.int)
-            ) is not None
+            assert (await SQLiteProjectRepository(session).get(created.id.int)) is not None
 
 
 # ── C2b：遗留库经修复后不得再残留 genre 列（迁移真实生效，非「绕过写入」） ──

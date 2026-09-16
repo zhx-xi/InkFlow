@@ -186,9 +186,7 @@ class TestBuildDeepAgent:
     def test_empty_api_key_and_base_url_omitted(self, harness_patches):
         """api_key/base_url 为空 → 不传 api_key/api_base（空串分支）。"""
         chat_cls, _ = harness_patches
-        build_deep_agent(
-            model="glm-4.5", api_key="", base_url="", tools=[], system_prompt="p"
-        )
+        build_deep_agent(model="glm-4.5", api_key="", base_url="", tools=[], system_prompt="p")
         chat_cls.assert_called_once_with(model="glm-4.5", temperature=0.2)
 
     def test_checkpointer_is_in_memory_saver(self, harness_patches):

@@ -62,9 +62,7 @@ class SQLiteSemanticSummaryRepository:
         Returns:
             落库后的 SemanticSummary（updated_at 由 ORM onupdate 自动刷新）.
         """
-        stmt = select(SemanticSummaryORM).where(
-            SemanticSummaryORM.scope == summary.scope.value
-        )
+        stmt = select(SemanticSummaryORM).where(SemanticSummaryORM.scope == summary.scope.value)
         if summary.scope == SummaryScope.USER:
             stmt = stmt.where(SemanticSummaryORM.project_id.is_(None))
         else:
@@ -107,9 +105,7 @@ class SQLiteSemanticSummaryRepository:
         Returns:
             匹配的 SemanticSummary；无记录 → None.
         """
-        stmt = select(SemanticSummaryORM).where(
-            SemanticSummaryORM.scope == scope.value
-        )
+        stmt = select(SemanticSummaryORM).where(SemanticSummaryORM.scope == scope.value)
         if project_id is None:
             stmt = stmt.where(SemanticSummaryORM.project_id.is_(None))
         else:

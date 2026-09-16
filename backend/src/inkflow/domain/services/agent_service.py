@@ -459,9 +459,13 @@ class AgentService(AgentServiceStreamMixin):
 
         Returns: {"execution_id", "pipeline", "project_id", "status", "created_at"} 初始 pending。
         """
-        stages, context, pipeline_impl, conditional_edges, agent_relations = (
-            await self._build_pipeline_context(request)
-        )
+        (
+            stages,
+            context,
+            pipeline_impl,
+            conditional_edges,
+            agent_relations,
+        ) = await self._build_pipeline_context(request)
         supervisor_config = request.supervisor if request.mode == "supervisor" else None
 
         # 5. 创建执行记录
@@ -654,9 +658,9 @@ class AgentService(AgentServiceStreamMixin):
             # 项目配置覆盖 model（Q1=A 项目优先；#367 sentinel=跟随默认 → 回退项目 model）
             project_model = project_role_models.get(stage.id)
             if project_model == AGENT_DEFAULT_SENTINEL:
-                new_agent.model = resolve_model(
-                    None, project_config.model, config.llm_default_model
-                ) or ""
+                new_agent.model = (
+                    resolve_model(None, project_config.model, config.llm_default_model) or ""
+                )
             elif project_model:
                 if "/" not in project_model:
                     logger.warning(
@@ -669,9 +673,9 @@ class AgentService(AgentServiceStreamMixin):
             elif project_model is None and project_config.template_id is None:
                 # #373（方案 B）：未配置角色且无模板引用 → 回退项目 model 驱动路由
                 # （template_id 存在时保持既有模板装配语义，spec §9.2.5）
-                new_agent.model = resolve_model(
-                    None, project_config.model, config.llm_default_model
-                ) or ""
+                new_agent.model = (
+                    resolve_model(None, project_config.model, config.llm_default_model) or ""
+                )
 
             # prompt 覆盖（F42 #295，spec §5.3.4）：模板 roles 定义 prompt 时
             # 覆盖 system_prompt（role_overrides 仍为最高优先级，在下方覆盖）

@@ -64,9 +64,7 @@ def bridge_env(tmp_path_factory):
     os.environ["INKFLOW_DATA_DIR"] = str(child_data_dir)
     handle = None
     try:
-        handle = asyncio.run(
-            ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT)
-        )
+        handle = asyncio.run(ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT))
         yield SimpleNamespace(handle=handle, state_file=state_file, data_dir=child_data_dir)
     finally:
         if handle is not None:

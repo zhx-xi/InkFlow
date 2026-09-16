@@ -98,7 +98,7 @@ class SQLiteKnowledgeRelationRepository:
 
     async def get(self, relation_id: int) -> KnowledgeRelation | None:
         """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if relation_id < -2**63 or relation_id >= 2**63:
+        if relation_id < -(2**63) or relation_id >= 2**63:
             return None
         stmt = select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == relation_id)
         result = await self._session.execute(stmt)

@@ -75,9 +75,9 @@ class TestDraftLayerNormalization:
     async def test_create_normalizes_content(self, repo: AsyncMock) -> None:
         """P2-c：create 落库前正文已归一（草稿层 GUI 预览与落章一致）。"""
         # 前置：脏数据确实会被归一改写（防「恒真断言」——闸口对干净单行是豁免的）
-        assert (
-            _expected_normalized(DIRTY_CONTENT) != DIRTY_CONTENT
-        ), "选定样本未被闸口改写，用例无意义"
+        assert _expected_normalized(DIRTY_CONTENT) != DIRTY_CONTENT, (
+            "选定样本未被闸口改写，用例无意义"
+        )
 
         service = DraftService(draft_repo=repo)
         await service.create(
@@ -107,9 +107,9 @@ class TestDraftLayerNormalization:
 
         assert repo.update_content.await_count == 1
         args = repo.update_content.await_args.args
-        assert args[1] == _expected_normalized(
-            DIRTY_CONTENT
-        ), f"replace_content 未归一草稿正文：{args[1]!r}"
+        assert args[1] == _expected_normalized(DIRTY_CONTENT), (
+            f"replace_content 未归一草稿正文：{args[1]!r}"
+        )
 
     async def test_clean_single_line_content_untouched(self, repo: AsyncMock) -> None:
         """P2-c 反例守护：干净单行正文不得被改写（闸口单行豁免——防过度归一）。"""

@@ -32,9 +32,7 @@ def main() -> int:
     out_path = sys.argv[-1]
     inputs = sys.argv[1:-1]
     union = merge_called(inputs)
-    Path(out_path).write_text(
-        json.dumps({"callable": sorted(union)}), encoding="utf-8"
-    )
+    Path(out_path).write_text(json.dumps({"callable": sorted(union)}), encoding="utf-8")
     print(
         f"[merge_func_cov] {len(union)} unique called functions from "
         f"{len(inputs)} file(s) -> {out_path}"

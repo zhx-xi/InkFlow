@@ -96,18 +96,16 @@ PROJECT_FILTER_ENDPOINTS = [
 class TestProjectFilterEndpointsRequireExistingProject:
     """#1151：project 不存在 → 404（不得 500，不得静默 200 + []）。"""
 
-    async def test_overflow_uuid_returns_404(
-        self, client, db_session, override_get_db, template
-    ):
+    async def test_overflow_uuid_returns_404(self, client, db_session, override_get_db, template):
         """随机 uuid4（128 位溢出）→ 404。
 
         修复前：repo 直接绑 128 位 int → SQLite OverflowError → 500。
         """
         url = template.format(pid=_overflow_uuid())
         resp = await client.get(url)
-        assert (
-            resp.status_code == 404
-        ), f"GET {url} should be 404 (project missing), got {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, (
+            f"GET {url} should be 404 (project missing), got {resp.status_code}: {resp.text[:200]}"
+        )
 
     async def test_small_int_uuid_not_found_returns_404(
         self, client, db_session, override_get_db, template
@@ -115,9 +113,9 @@ class TestProjectFilterEndpointsRequireExistingProject:
         """合法 int64 范围但不存在 → 404（根因不只是溢出，是缺存在性校验）。"""
         url = template.format(pid=uuid.UUID(int=987654321))
         resp = await client.get(url)
-        assert (
-            resp.status_code == 404
-        ), f"GET {url} should be 404 (project missing), got {resp.status_code}: {resp.text[:200]}"
+        assert resp.status_code == 404, (
+            f"GET {url} should be 404 (project missing), got {resp.status_code}: {resp.text[:200]}"
+        )
 
 
 @pytest.mark.api
@@ -129,9 +127,7 @@ class TestExistingProjectEmptyListNotMisjudged:
     ):
         """存活项目 + 无章节 → 200 且 items 空、total=0。"""
         resp = await client.get(f"/api/v1/projects/{api_project['id']}/chapters")
-        assert (
-            resp.status_code == 200
-        ), f"live project should be 200, got {resp.status_code}"
+        assert resp.status_code == 200, f"live project should be 200, got {resp.status_code}"
         body = resp.json()
         assert body["items"] == []
         assert body["total"] == 0
@@ -141,9 +137,7 @@ class TestExistingProjectEmptyListNotMisjudged:
     ):
         """存活项目 + 无卷 → 200 且 items 空。"""
         resp = await client.get(f"/api/v1/projects/{api_project['id']}/volumes")
-        assert (
-            resp.status_code == 200
-        ), f"live project should be 200, got {resp.status_code}"
+        assert resp.status_code == 200, f"live project should be 200, got {resp.status_code}"
         assert resp.json()["items"] == []
 
     async def test_empty_characters_returns_200_empty(
@@ -151,9 +145,7 @@ class TestExistingProjectEmptyListNotMisjudged:
     ):
         """存活项目 + 无角色 → 200 且 items 空、total=0。"""
         resp = await client.get(f"/api/v1/projects/{api_project['id']}/characters")
-        assert (
-            resp.status_code == 200
-        ), f"live project should be 200, got {resp.status_code}"
+        assert resp.status_code == 200, f"live project should be 200, got {resp.status_code}"
         body = resp.json()
         assert body["items"] == []
         assert body["total"] == 0
@@ -163,9 +155,7 @@ class TestExistingProjectEmptyListNotMisjudged:
     ):
         """存活项目 + 无大纲 → 200 且 items 空、total=0。"""
         resp = await client.get(f"/api/v1/projects/{api_project['id']}/outlines")
-        assert (
-            resp.status_code == 200
-        ), f"live project should be 200, got {resp.status_code}"
+        assert resp.status_code == 200, f"live project should be 200, got {resp.status_code}"
         body = resp.json()
         assert body["items"] == []
         assert body["total"] == 0
@@ -175,21 +165,15 @@ class TestExistingProjectEmptyListNotMisjudged:
     ):
         """存活项目 + 无弧线 → 200 且 items 空。"""
         resp = await client.get(f"/api/v1/projects/{api_project['id']}/story-arcs")
-        assert (
-            resp.status_code == 200
-        ), f"live project should be 200, got {resp.status_code}"
+        assert resp.status_code == 200, f"live project should be 200, got {resp.status_code}"
         assert resp.json()["items"] == []
 
     async def test_empty_character_groups_returns_200_empty(
         self, client, db_session, override_get_db, api_project
     ):
         """存活项目 + 无分组 → 200 且 items 空。"""
-        resp = await client.get(
-            f"/api/v1/projects/{api_project['id']}/character-groups"
-        )
-        assert (
-            resp.status_code == 200
-        ), f"live project should be 200, got {resp.status_code}"
+        resp = await client.get(f"/api/v1/projects/{api_project['id']}/character-groups")
+        assert resp.status_code == 200, f"live project should be 200, got {resp.status_code}"
         assert resp.json()["items"] == []
 
 
@@ -272,8 +256,6 @@ class TestExistingProjectWithDataReturnsData:
         )
         assert ch.status_code == 201, ch.text[:200]
 
-        scoped = await client.get(
-            f"/api/v1/projects/{pid}/chapters", params={"volume_id": vol_id}
-        )
+        scoped = await client.get(f"/api/v1/projects/{pid}/chapters", params={"volume_id": vol_id})
         assert scoped.status_code == 200
         assert scoped.json()["total"] == 1

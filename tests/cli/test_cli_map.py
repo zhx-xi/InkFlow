@@ -206,9 +206,7 @@ class TestMapCreate:
         assert call.kwargs["data"]["description"] == "主世界地图"
         assert "root_location_id" not in call.kwargs["data"]
 
-    def test_create_root_location_adds_key(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_create_root_location_adds_key(self, cli_runner, fake_http_client, tmp_path):
         """create 提供 --root-location → data 加 'root_location_id' 键.
 
         RED 预期: 命令模块未实现 → 收集期 ModuleNotFoundError → FAIL。
@@ -237,9 +235,7 @@ class TestMapCreate:
         call = fake_http_client.post_file.await_args
         assert call.kwargs["data"]["root_location_id"] == str(root_loc)
 
-    def test_create_extension_not_whitelisted(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_create_extension_not_whitelisted(self, cli_runner, fake_http_client, tmp_path):
         """create --image .gif（非白名单）→ exit 1 + VALIDATION_ERROR.
 
         白名单: png/jpg/jpeg/webp —— 本地校验，不发请求。
@@ -314,9 +310,7 @@ class TestMapList:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        assert fake_http_client.get.await_args.kwargs["params"] == {
-            "root_location_id": "none"
-        }
+        assert fake_http_client.get.await_args.kwargs["params"] == {"root_location_id": "none"}
         # <uuid> → params={'root_location_id': str}
         fake_http_client.get.reset_mock()
         root_loc = uuid.uuid4()
@@ -352,9 +346,7 @@ class TestMapGet:
         """
         mid = uuid.uuid4()
         fake_http_client.get.return_value = _make_map(name="世界地图")
-        result = cli_runner.invoke(
-            app, ["get", str(mid)], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["get", str(mid)], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
@@ -424,9 +416,7 @@ class TestMapImage:
         img = tmp_path / "new.png"
         img_bytes = PNG_MAGIC + b"\x00" * 8
         img.write_bytes(img_bytes)
-        fake_http_client.put_file.return_value = _make_map(
-            image_path="/uploads/maps/new.png"
-        )
+        fake_http_client.put_file.return_value = _make_map(image_path="/uploads/maps/new.png")
         result = cli_runner.invoke(
             app,
             ["image", str(mid), "--image", str(img)],
@@ -443,9 +433,7 @@ class TestMapImage:
 class TestMapDelete:
     """map delete — 二次确认 + --force/--cascade/--reparent-to + 错误映射."""
 
-    def test_delete_json_without_force_validation_error(
-        self, cli_runner, fake_http_client
-    ):
+    def test_delete_json_without_force_validation_error(self, cli_runner, fake_http_client):
         """--json 无 --force → VALIDATION_ERROR（'删除需 --force 或交互确认'）.
 
         RED 预期: 命令模块未实现 → 收集期 ModuleNotFoundError → FAIL。
@@ -593,9 +581,7 @@ class TestMapPin:
             "items": [_make_pin()],
             "total": 1,
         }
-        result = cli_runner.invoke(
-            app, ["pin", "list", str(mid)], obj=CliContext(json_output=True)
-        )
+        result = cli_runner.invoke(app, ["pin", "list", str(mid)], obj=CliContext(json_output=True))
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
@@ -697,9 +683,7 @@ class TestMapCreateParentMap:
         call = fake_http_client.post_file.await_args
         assert call.kwargs["data"]["parent_map_id"] == str(parent)
 
-    def test_create_without_parent_map_omits_key(
-        self, cli_runner, fake_http_client, tmp_path
-    ):
+    def test_create_without_parent_map_omits_key(self, cli_runner, fake_http_client, tmp_path):
         """【G 守护】create 缺省 → data 不含 parent_map_id 键（None=根图）.
 
         RED 预期: 现实现已通过 → 保持绿（回归护栏）。

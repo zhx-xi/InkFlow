@@ -251,9 +251,7 @@ class TestSearchGet:
 
     def test_get_200_empty(self, client, mock_svc):
         """200 空结果：total 0 + hits []（spec E5；假设 #5）。"""
-        mock_svc.search.return_value = _search_response(
-            total=0, hits=[], query="不存在的词"
-        )
+        mock_svc.search.return_value = _search_response(total=0, hits=[], query="不存在的词")
         resp = client.get(
             ENDPOINT_SEARCH,
             params={"q": "不存在的词", "project_id": str(PROJECT_A)},
@@ -266,12 +264,8 @@ class TestSearchGet:
 
     def test_get_404_project_not_found(self, client, mock_svc):
         """任一项目不存在 → 404 {"detail": "Project not found: <id>"}（假设 #6）。"""
-        mock_svc.search.side_effect = ProjectNotFoundError(
-            f"Project not found: {PROJECT_A}"
-        )
-        resp = client.get(
-            ENDPOINT_SEARCH, params={"q": "龙", "project_id": str(PROJECT_A)}
-        )
+        mock_svc.search.side_effect = ProjectNotFoundError(f"Project not found: {PROJECT_A}")
+        resp = client.get(ENDPOINT_SEARCH, params={"q": "龙", "project_id": str(PROJECT_A)})
         assert resp.status_code == 404
         assert resp.json() == {"detail": f"Project not found: {PROJECT_A}"}
 
@@ -331,9 +325,7 @@ class TestSearchGet:
     def test_get_project_id_single_value(self, client, mock_svc):
         """project_id 单值 → service 收到 project_ids=[该 UUID]（Q3 单项目语义）。"""
         mock_svc.search.return_value = _search_response()
-        resp = client.get(
-            ENDPOINT_SEARCH, params={"q": "龙", "project_id": str(PROJECT_A)}
-        )
+        resp = client.get(ENDPOINT_SEARCH, params={"q": "龙", "project_id": str(PROJECT_A)})
         assert resp.status_code == 200
         query = _query_arg(mock_svc)
         assert query.project_ids == [PROJECT_A]
@@ -355,9 +347,7 @@ class TestSearchGet:
     def test_get_500_internal_error(self, client, mock_svc):
         """service 抛 RuntimeError → 500 通用 detail，内部消息不泄漏（假设 #8）。"""
         mock_svc.search.side_effect = RuntimeError("boom")
-        resp = client.get(
-            ENDPOINT_SEARCH, params={"q": "龙", "project_id": str(PROJECT_A)}
-        )
+        resp = client.get(ENDPOINT_SEARCH, params={"q": "龙", "project_id": str(PROJECT_A)})
         assert resp.status_code == 500
         assert resp.json()["detail"] == "Internal server error"
         assert "boom" not in resp.text
@@ -410,9 +400,7 @@ class TestSearchRebuild:
 
     def test_rebuild_404_project_not_found(self, client, mock_svc):
         """project_id 不存在 → 404（映射同 GET，假设 #6/#9）。"""
-        mock_svc.rebuild.side_effect = ProjectNotFoundError(
-            f"Project not found: {PROJECT_A}"
-        )
+        mock_svc.rebuild.side_effect = ProjectNotFoundError(f"Project not found: {PROJECT_A}")
         resp = client.post(ENDPOINT_REBUILD, params={"project_id": str(PROJECT_A)})
         assert resp.status_code == 404
         assert resp.json() == {"detail": f"Project not found: {PROJECT_A}"}

@@ -80,9 +80,6 @@ async def test_zhipu_reasoning_effort_soft_degrade(
     matched = [
         record
         for record in loguru_records
-        if _record_level_name(record) == "WARNING"
-        and WARN_ANCHOR in str(record.get("message", ""))
+        if _record_level_name(record) == "WARNING" and WARN_ANCHOR in str(record.get("message", ""))
     ]
-    assert matched, (
-        f"软降级必须留下 WARNING（锚文本 {WARN_ANCHOR!r} 未出现在 loguru 输出）"
-    )
+    assert matched, f"软降级必须留下 WARNING（锚文本 {WARN_ANCHOR!r} 未出现在 loguru 输出）"

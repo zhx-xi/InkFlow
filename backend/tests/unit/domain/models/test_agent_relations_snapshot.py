@@ -124,9 +124,7 @@ class MockExecutionStore:
     async def get_execution(self, execution_id: str) -> FakeExecution | None:
         return self.executions.get(execution_id)
 
-    async def update_status(
-        self, execution_id: str, status: str, hitl_payload=None
-    ) -> None:
+    async def update_status(self, execution_id: str, status: str, hitl_payload=None) -> None:
         execution = self.executions.get(execution_id)
         if execution is None:
             return

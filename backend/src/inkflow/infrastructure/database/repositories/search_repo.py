@@ -58,7 +58,7 @@ class SQLiteSearchRepository:
             )
         )
         await self._session.execute(
-            text("CREATE TABLE IF NOT EXISTS search_meta " "(key TEXT PRIMARY KEY, value TEXT)")
+            text("CREATE TABLE IF NOT EXISTS search_meta (key TEXT PRIMARY KEY, value TEXT)")
         )
         await self._session.commit()
 
@@ -114,8 +114,7 @@ class SQLiteSearchRepository:
         先处理 deleted 清旧行，后插入 documents 新行，保证净效果为替换。
         """
         delete_sql = text(
-            "DELETE FROM search_index "
-            "WHERE entity_type = :entity_type AND entity_id = :entity_id"
+            "DELETE FROM search_index WHERE entity_type = :entity_type AND entity_id = :entity_id"
         )
         for entity_type, entity_id in deleted:
             await self._session.execute(

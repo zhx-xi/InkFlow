@@ -51,9 +51,9 @@ class TestHistoryPreservesReasoningContent:
 
         assert result[0].content == "继续"
         blob = _flatten_message(result[0])
-        assert (
-            "reasoning_content" not in blob
-        ), "无 reasoning 的消息不得凭空出现 reasoning_content 字段"
+        assert "reasoning_content" not in blob, (
+            "无 reasoning 的消息不得凭空出现 reasoning_content 字段"
+        )
 
     def test_system_message_role_map_still_enforced(self):
         """回归：非法角色仍抛 ValueError（不得因加字段而放宽角色校验）。"""

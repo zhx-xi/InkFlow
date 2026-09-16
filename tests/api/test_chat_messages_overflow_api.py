@@ -63,36 +63,28 @@ class TestChatMessageOverflowNotFound:
     500 ≠ 404 → 全部 FAIL（RED 成立）。
     """
 
-    async def test_delete_message_random_uuid_404(
-        self, client, db_session, override_get_db
-    ):
+    async def test_delete_message_random_uuid_404(self, client, db_session, override_get_db):
         """DELETE 消息（默认归档）随机 UUID → 404「chat 消息不存在」。"""
         message_id = uuid.uuid4()
         resp = await client.delete(f"/api/v1/chat/messages/{message_id}")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_MESSAGE_NOT_FOUND
 
-    async def test_delete_message_force_random_uuid_404(
-        self, client, db_session, override_get_db
-    ):
+    async def test_delete_message_force_random_uuid_404(self, client, db_session, override_get_db):
         """DELETE 消息 ?force=true 随机 UUID → 404「chat 消息不存在」。"""
         message_id = uuid.uuid4()
         resp = await client.delete(f"/api/v1/chat/messages/{message_id}?force=true")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_MESSAGE_NOT_FOUND
 
-    async def test_restore_message_random_uuid_404(
-        self, client, db_session, override_get_db
-    ):
+    async def test_restore_message_random_uuid_404(self, client, db_session, override_get_db):
         """POST restore 随机 UUID → 404「chat 消息不存在」。"""
         message_id = uuid.uuid4()
         resp = await client.post(f"/api/v1/chat/messages/{message_id}/restore")
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_MESSAGE_NOT_FOUND
 
-    async def test_delete_conversation_random_uuid_404(
-        self, client, db_session, override_get_db
-    ):
+    async def test_delete_conversation_random_uuid_404(self, client, db_session, override_get_db):
         """DELETE 会话（默认归档）随机 UUID project_id → 404「chat 会话不存在」。"""
         project_id = uuid.uuid4()
         resp = await client.delete(f"/api/v1/chat/conversations/{project_id}")
@@ -117,9 +109,7 @@ class TestExistingMessageControl:
     的 128 位 int 绑定溢出（修复前后本用例均 PASS）。
     """
 
-    async def test_delete_existing_message_204(
-        self, client, db_session, override_get_db
-    ):
+    async def test_delete_existing_message_204(self, client, db_session, override_get_db):
         """预置一条 chat 消息（project_id 小 int）→ DELETE → 204。"""
         row = ChatMessageORM(project_id=1, role="user", content="你好")
         db_session.add(row)

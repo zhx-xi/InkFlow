@@ -196,6 +196,7 @@ class TestManageToolsCoverage:
         obj = _M()
         assert _manage_serialize(obj) is obj
 
+
 # ── #933 新模块覆盖率补测（book_tools / inspect_tools）──────────────
 # 两新模块沿用既有骨架（各自 `_HTTPClient` Protocol + `_serialize_data`），
 # 与 manage/operation/session 同形 → 需补 Protocol 存根 + serialize 分支。

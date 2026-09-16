@@ -183,9 +183,9 @@ def test_takes_over_immediately_when_mutex_becomes_available(tmp_path, monkeypat
     elapsed = time.monotonic() - start
 
     assert calls["n"] >= 2, "轮询间隙未重探互斥（未与互斥状态联动）"
-    assert (
-        spawned
-    ), f"互斥已可接管却未自行拉起（spawn 未被调用）；耗时 {elapsed:.2f}s / timeout={timeout}s"
+    assert spawned, (
+        f"互斥已可接管却未自行拉起（spawn 未被调用）；耗时 {elapsed:.2f}s / timeout={timeout}s"
+    )
 
 
 def test_waits_while_mutex_holder_produces_state(tmp_path, monkeypatch):

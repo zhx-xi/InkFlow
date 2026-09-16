@@ -99,9 +99,7 @@ def loguru_records():
     from loguru import logger
 
     records: list[dict] = []
-    sink_id = logger.add(
-        lambda m: records.append(m.record), level="WARNING", format="{message}"
-    )
+    sink_id = logger.add(lambda m: records.append(m.record), level="WARNING", format="{message}")
     yield records
     logger.remove(sink_id)
 
@@ -154,9 +152,7 @@ class TestWireInjection:
         )
         assert "reasoning_effort" not in body, "litellm 应翻译为方言，不残留原始参数键"
 
-    async def test_deepseek_none_reaches_wire_as_thinking_disabled(
-        self, echo_base: str
-    ) -> None:
+    async def test_deepseek_none_reaches_wire_as_thinking_disabled(self, echo_base: str) -> None:
         """none 档 → wire ``thinking={"type": "disabled"}``（显式关闭语义）。"""
         body = await _invoke_via_client(
             echo_base, provider="deepseek", model_name="deepseek-v4-flash", effort="none"
@@ -208,9 +204,7 @@ class TestTranslatorGateWire:
         assert not leaked
         warns = _warns(loguru_records)
         assert warns, "超能力档位必须软降级留痕（WARNING）"
-        assert (warns[-1]["extra"].get("params") or {}).get("reason") == (
-            "capability_unsupported"
-        )
+        assert (warns[-1]["extra"].get("params") or {}).get("reason") == ("capability_unsupported")
 
     async def test_zai_none_reaches_wire_clean_without_warning(
         self, echo_base: str, loguru_records: list[dict]
@@ -232,9 +226,7 @@ class TestTranslatorGateWire:
 class TestHarnessWireContract:
     """构造点 2：build_deep_agent 直传的 ChatLiteLLM 实例同 wire 契约。"""
 
-    async def test_harness_deepseek_high_wire_thinking_enabled(
-        self, echo_base: str
-    ) -> None:
+    async def test_harness_deepseek_high_wire_thinking_enabled(self, echo_base: str) -> None:
         from unittest import mock
 
         from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent

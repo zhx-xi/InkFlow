@@ -164,7 +164,9 @@ from datetime import datetime
 
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient  # noqa: F401  # lifespan 用例预留（镜像 #106）
+from fastapi.testclient import (
+    TestClient,  # noqa: F401  # lifespan 用例预留（镜像 #106）
+)
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -348,9 +350,7 @@ def _assert_response_contract(data: dict, *, detail: bool = False) -> None:
 class TestListAgentTemplates:
     """模板列表端点契约（设计假设 #6）。"""
 
-    async def test_list_empty_when_no_templates(
-        self, client, db_session, override_get_db
-    ):
+    async def test_list_empty_when_no_templates(self, client, db_session, override_get_db):
         """无模板 → 200 + {items: [], total: 0}（不隐式造数，#6）。"""
         resp = await client.get(ENDPOINT)
         assert resp.status_code == 200
@@ -358,9 +358,7 @@ class TestListAgentTemplates:
         assert body["items"] == []
         assert body["total"] == 0
 
-    async def test_list_returns_seeded_templates(
-        self, client, db_session, override_get_db
-    ):
+    async def test_list_returns_seeded_templates(self, client, db_session, override_get_db):
         """seed 2 条 → 200 + {items, total}；每项满足基础响应契约（#6）。"""
         row_a = await _seed_template(db_session, name="模板甲")
         row_b = await _seed_template(
@@ -402,9 +400,7 @@ class TestCreateAgentTemplate:
         assert data["name"] == FULL_TEMPLATE_PAYLOAD["name"]
         assert data["description"] == FULL_TEMPLATE_PAYLOAD["description"]
         assert data["main_model"] == FULL_TEMPLATE_PAYLOAD["main_model"]
-        assert (
-            data["default_temperature"] == FULL_TEMPLATE_PAYLOAD["default_temperature"]
-        )
+        assert data["default_temperature"] == FULL_TEMPLATE_PAYLOAD["default_temperature"]
         assert data["roles"] == ROLES_PAYLOAD
         assert data["default_words"] == FULL_TEMPLATE_PAYLOAD["default_words"]
         assert data["is_default"] is False  # 新建不自动成为默认（#10）
@@ -453,17 +449,13 @@ class TestCreateAgentTemplate:
             "role_temp_out_of_range",
         ],
     )
-    async def test_create_validation_422(
-        self, client, db_session, override_get_db, body
-    ):
+    async def test_create_validation_422(self, client, db_session, override_get_db, body):
         """name 缺失/空白、温度越界 → 422（#8）。"""
         resp = await client.post(ENDPOINT, json=body)
         assert resp.status_code == 422
         assert isinstance(resp.json()["detail"], list)
 
-    async def test_create_extra_fields_ignored(
-        self, client, db_session, override_get_db
-    ):
+    async def test_create_extra_fields_ignored(self, client, db_session, override_get_db):
         """多余字段忽略（不 422）→ 201（#8：Pydantic v2 默认行为）。"""
         resp = await client.post(
             ENDPOINT,
@@ -564,9 +556,7 @@ class TestUpdateAgentTemplate:
         _assert_response_contract(data)
         assert data["name"] == "my-template"
 
-    async def test_patch_roles_replaced_whole(
-        self, client, db_session, override_get_db
-    ):
+    async def test_patch_roles_replaced_whole(self, client, db_session, override_get_db):
         """roles 提供则整体替换（不深合并，#11）。"""
         row = await _seed_template(db_session, name="my-template", roles=ROLES_PAYLOAD)
 
@@ -618,9 +608,7 @@ class TestUpdateAgentTemplate:
         ],
         ids=["name_blank", "default_temp_out_of_range"],
     )
-    async def test_patch_validation_422(
-        self, client, db_session, override_get_db, body
-    ):
+    async def test_patch_validation_422(self, client, db_session, override_get_db, body):
         """PATCH 提供即校验：name 空白 / 温度越界 → 422（#8）。"""
         row = await _seed_template(db_session, name="my-template")
         resp = await client.patch(f"{ENDPOINT}/{row.id}", json=body)
@@ -660,9 +648,7 @@ class TestDeleteAgentTemplate:
         assert resp.status_code == 404
         assert resp.json()["detail"] == DETAIL_NOT_FOUND
 
-    async def test_delete_default_template_409(
-        self, client, db_session, override_get_db
-    ):
+    async def test_delete_default_template_409(self, client, db_session, override_get_db):
         """删除 is_default=True 的模板 → 409 + 保护 detail；记录仍存在（#12）。"""
         row = await _seed_template(db_session, name="默认模板")
 
@@ -688,9 +674,7 @@ class TestDeleteAgentTemplate:
 class TestDefaultTemplate:
     """默认模板端点契约（设计假设 #13，本契约定稿）。"""
 
-    async def test_get_default_null_when_none(
-        self, client, db_session, override_get_db
-    ):
+    async def test_get_default_null_when_none(self, client, db_session, override_get_db):
         """无默认模板 → 200 + {"template": null}（不 404，#13）。"""
         await _seed_template(db_session, name="普通模板")
 
@@ -745,9 +729,7 @@ class TestDefaultTemplate:
         [uuid.uuid4(), "not-a-uuid"],
         ids=["nonexistent", "invalid_format"],
     )
-    async def test_set_default_404(
-        self, client, db_session, override_get_db, target_id
-    ):
+    async def test_set_default_404(self, client, db_session, override_get_db, target_id):
         """PATCH /default：id 不存在/非法格式 → 404（#13/#9）。"""
         resp = await client.patch(f"{ENDPOINT}/default", json={"id": str(target_id)})
         assert resp.status_code == 404
@@ -773,9 +755,7 @@ class TestDefaultTemplate:
 class TestDuplicateAgentTemplate:
     """复制端点契约（设计假设 #14，本契约定稿）。"""
 
-    async def test_duplicate_201_copies_fields(
-        self, client, db_session, override_get_db
-    ):
+    async def test_duplicate_201_copies_fields(self, client, db_session, override_get_db):
         """复制：201 + 新 id ≠ 旧 id + name 加「副本」后缀 + 字段拷贝（#14）。"""
         row = await _seed_template(
             db_session,

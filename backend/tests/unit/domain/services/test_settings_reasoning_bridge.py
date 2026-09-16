@@ -62,9 +62,7 @@ class TestDefaultReasoningField:
 
 class TestUpdateToConfigBridge:
     @pytest.mark.asyncio
-    async def test_update_syncs_config_singleton(
-        self, service, restore_config: None
-    ) -> None:
+    async def test_update_syncs_config_singleton(self, service, restore_config: None) -> None:
         await service.update_settings(AppSettingsUpdate(default_reasoning_effort="high"))
         assert config.llm_reasoning_effort == "high", (
             "D-1 方案 A：PATCH settings 必须即时回灌 config 内存单例（装配读点收口）"

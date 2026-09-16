@@ -58,9 +58,7 @@ from inkflow.infrastructure.database.repositories.audit_log_repo import (
 )
 
 run_summary_background_refresh = summary_background_refresh.run_summary_background_refresh
-schedule_summary_background_refresh = (
-    summary_background_refresh.schedule_summary_background_refresh
-)
+schedule_summary_background_refresh = summary_background_refresh.schedule_summary_background_refresh
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 
@@ -68,10 +66,9 @@ PROJECT_ID = uuid.UUID(int=100)
 
 
 def _summary(
-    content, *, scope="project", project_id=None, anchor_hash="anchor-hash",
-    anchor_count=3, **kw
+    content, *, scope="project", project_id=None, anchor_hash="anchor-hash", anchor_count=3, **kw
 ):
-    """构造语义总结领域实体（模块已实现，直接构造）. """
+    """构造语义总结领域实体（模块已实现，直接构造）."""
     values = {
         "id": str(uuid.uuid4()),
         "scope": SummaryScope.PROJECT if scope == "project" else SummaryScope.USER,
@@ -162,9 +159,14 @@ class TestRunSummaryBackgroundRefresh:
         anchors = [SimpleNamespace(value="林晚")]
 
         ok = await run_summary_background_refresh(
-            anchors, scope=SummaryScope.PROJECT, project_id=PROJECT_ID,
-            anchor_hash="hash-1", session_factory=factory,
-            summarizer=summarizer, summary_repo=summary_repo, audit=audit,
+            anchors,
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=factory,
+            summarizer=summarizer,
+            summary_repo=summary_repo,
+            audit=audit,
         )
 
         assert ok is True  # RED: 模块不存在 → 收集期 ModuleNotFoundError
@@ -176,8 +178,10 @@ class TestRunSummaryBackgroundRefresh:
         assert factory.enters >= 1  # 自持 session（async with 进入）
         summary_repo.upsert.assert_awaited_once_with(new_summary)
         audit.record.assert_awaited_once_with(
-            project_id=PROJECT_ID, severity_summary="semantic_summary_generated",
-            degraded=True, actor="memory",
+            project_id=PROJECT_ID,
+            severity_summary="semantic_summary_generated",
+            degraded=True,
+            actor="memory",
         )
 
     async def test_dropped_no_upsert_audits_failed(self):
@@ -191,9 +195,14 @@ class TestRunSummaryBackgroundRefresh:
         audit = AsyncMock()
 
         ok = await run_summary_background_refresh(
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1", session_factory=factory,
-            summarizer=summarizer, summary_repo=summary_repo, audit=audit,
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=factory,
+            summarizer=summarizer,
+            summary_repo=summary_repo,
+            audit=audit,
         )
 
         assert ok is False  # RED: 模块不存在 → 收集期 ModuleNotFoundError
@@ -215,9 +224,14 @@ class TestRunSummaryBackgroundRefresh:
         audit = AsyncMock()
 
         ok = await run_summary_background_refresh(  # 不抛（若抛出本用例 ERROR）
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1", session_factory=factory,
-            summarizer=summarizer, summary_repo=summary_repo, audit=audit,
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=factory,
+            summarizer=summarizer,
+            summary_repo=summary_repo,
+            audit=audit,
         )
 
         assert ok is False  # RED: 模块不存在 → 收集期 ModuleNotFoundError
@@ -235,9 +249,14 @@ class TestRunSummaryBackgroundRefresh:
         audit = AsyncMock()
 
         ok = await run_summary_background_refresh(
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1", session_factory=factory,
-            summarizer=summarizer, summary_repo=summary_repo, audit=audit,
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=factory,
+            summarizer=summarizer,
+            summary_repo=summary_repo,
+            audit=audit,
         )
 
         assert ok is False  # RED: 模块不存在 → 收集期 ModuleNotFoundError
@@ -252,12 +271,18 @@ class TestRunSummaryBackgroundRefresh:
         summarizer 装配）+ L100-107（真实 repo/audit 装配）+ L124→132（dropped falsy
         跳过审计直接 False）。"""
         ok = await run_summary_background_refresh(
-            [], scope=SummaryScope.PROJECT, project_id=PROJECT_ID, anchor_hash="h",
+            [],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="h",
         )
         assert ok is False  # 默认 session_factory=async_session_factory（callable 归一）
 
         ok = await run_summary_background_refresh(
-            [], scope=SummaryScope.PROJECT, project_id=PROJECT_ID, anchor_hash="h",
+            [],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="h",
             session_factory=real_sqlite_factory,
         )
         assert ok is False  # 真实 in-memory cm（非 callable → else 分支）
@@ -274,9 +299,12 @@ class TestRunSummaryBackgroundRefresh:
         summarizer.summarize.side_effect = SemanticSummaryError("boom")
 
         ok = await run_summary_background_refresh(
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1",
-            session_factory=real_sqlite_factory, summarizer=summarizer,
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=real_sqlite_factory,
+            summarizer=summarizer,
         )
 
         assert ok is False  # 不抛（若抛出本用例 ERROR）
@@ -293,9 +321,12 @@ class TestRunSummaryBackgroundRefresh:
         broken_audit = AsyncMock()
         broken_audit.record.side_effect = RuntimeError("审计写失败")
         ok = await run_summary_background_refresh(
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1",
-            session_factory=real_sqlite_factory, summarizer=summarizer,
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=real_sqlite_factory,
+            summarizer=summarizer,
             audit=broken_audit,
         )
         assert ok is False
@@ -310,9 +341,14 @@ class TestRunSummaryBackgroundRefresh:
         audit = AsyncMock()
 
         ok = await run_summary_background_refresh(
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1", session_factory=factory,
-            summarizer=summarizer, summary_repo=summary_repo, audit=audit,
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
+            session_factory=factory,
+            summarizer=summarizer,
+            summary_repo=summary_repo,
+            audit=audit,
         )
 
         assert ok is False
@@ -339,8 +375,10 @@ class TestScheduleSummaryBackgroundRefresh:
         monkeypatch.setattr(background_tasks, "spawn_background_task", _fake_spawn)
 
         result = await schedule_summary_background_refresh(
-            [SimpleNamespace(value="林晚")], scope=SummaryScope.PROJECT,
-            project_id=PROJECT_ID, anchor_hash="hash-1",
+            [SimpleNamespace(value="林晚")],
+            scope=SummaryScope.PROJECT,
+            project_id=PROJECT_ID,
+            anchor_hash="hash-1",
         )
 
         assert result is None  # RED: 模块不存在 → 收集期 ModuleNotFoundError

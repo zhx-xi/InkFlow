@@ -146,9 +146,7 @@ def create_app(dim: int = 8) -> FastAPI:
             return JSONResponse(
                 status_code=400,
                 content={
-                    "error": {
-                        "message": "input 缺失或类型非法（须为 str | list[int] | 混合批量）"
-                    }
+                    "error": {"message": "input 缺失或类型非法（须为 str | list[int] | 混合批量）"}
                 },
             )
         dim = app.state.embedding_dim

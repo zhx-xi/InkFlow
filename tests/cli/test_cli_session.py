@@ -101,9 +101,7 @@ def fake_http_client():
             "inkflow.cli.commands.session.ensure_kernel",
             AsyncMock(return_value=fake_handle),
         ),
-        patch(
-            "inkflow.cli.commands.session.InkFlowHTTPClient", autospec=True
-        ) as mock_cls,
+        patch("inkflow.cli.commands.session.InkFlowHTTPClient", autospec=True) as mock_cls,
     ):
         mock_instance = AsyncMock()
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -243,9 +241,7 @@ class TestSessionCreate:
     def test_create_context_file(self, cli_runner, fake_http_client, tmp_path):
         """--context-file 读取 JSON 文件内容（长 context 双通道）."""
         context_file = tmp_path / "context.json"
-        context_file.write_text(
-            '{"schedule": "daily", "target": 800}', encoding="utf-8"
-        )
+        context_file.write_text('{"schedule": "daily", "target": 800}', encoding="utf-8")
         fake_http_client.post.return_value = _view_json()
 
         result = cli_runner.invoke(
@@ -262,14 +258,10 @@ class TestSessionCreate:
             obj=CliContext(json_output=True),
         )
         assert result.exit_code == 0
-        create_data = SessionCreate.model_validate(
-            fake_http_client.post.await_args.kwargs["json"]
-        )
+        create_data = SessionCreate.model_validate(fake_http_client.post.await_args.kwargs["json"])
         assert create_data.context == {"schedule": "daily", "target": 800}
 
-    def test_create_context_json_and_file_mutually_exclusive(
-        self, cli_runner, fake_http_client
-    ):
+    def test_create_context_json_and_file_mutually_exclusive(self, cli_runner, fake_http_client):
         """--context-json 与 --context-file 互斥 → 退出码 2（同 F9 双通道约定）."""
         result = cli_runner.invoke(
             app,
@@ -453,9 +445,7 @@ class TestSessionGet:
         """get 人类模式 → spec §4.2 示例首行「会话: {title} ({type}/{status})」+
         「日志: N 条」."""
         fake_http_client.get.return_value = _view_json(
-            session=_make_session(
-                session_type=SessionType.TASK, status=SessionStatus.ACTIVE
-            ),
+            session=_make_session(session_type=SessionType.TASK, status=SessionStatus.ACTIVE),
             log_count=5,
         )
         result = cli_runner.invoke(
@@ -598,9 +588,7 @@ class TestSessionStateActions:
 
     def test_transition_error_validation(self, cli_runner, fake_http_client):
         """非法迁移（HTTP 422，状态机错误）→ VALIDATION_ERROR 信封 + 退出码 1."""
-        fake_http_client.post.side_effect = _http_err(
-            422, "会话当前状态 paused 不允许 pause"
-        )
+        fake_http_client.post.side_effect = _http_err(422, "会话当前状态 paused 不允许 pause")
         result = cli_runner.invoke(
             app,
             ["pause", "--id", str(uuid.uuid4())],
@@ -771,9 +759,7 @@ class TestSessionDeleteRestore:
         )
         assert result.exit_code == 0
         assert json.loads(result.stdout)["data"]["deleted"] is True
-        fake_http_client.delete.assert_awaited_once_with(
-            f"/sessions/{eid}", params={"force": True}
-        )
+        fake_http_client.delete.assert_awaited_once_with(f"/sessions/{eid}", params={"force": True})
 
     def test_delete_not_found(self, cli_runner, fake_http_client):
         """会话不存在（HTTP 404）→ NOT_FOUND 错误信封."""

@@ -88,9 +88,7 @@ def retest_env(tmp_path_factory):
     os.environ["INKFLOW_DATA_DIR"] = str(child_data_dir)
     handle = None
     try:
-        handle = asyncio.run(
-            ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT)
-        )
+        handle = asyncio.run(ensure_kernel(state_file=state_file, timeout=_KERNEL_TIMEOUT))
         base = f"http://127.0.0.1:{handle.port}"
         headers = {"X-InkFlow-Token": handle.token}
         with httpx.Client(base_url=base, headers=headers, timeout=30.0) as client:
@@ -230,21 +228,31 @@ def _tool_call_matrix(env: SimpleNamespace) -> list[tuple[str, dict]]:
         ("manage_session", {"action": "list"}),
         ("audit", {"action": "project", "project_id": pid}),
         ("extract", {"action": "retrieve", "project_id": pid, "query": "山门"}),
-        ("export", {"action": "export", "project_id": pid, "format": "txt",
-                    "output_path": export_out}),
+        (
+            "export",
+            {
+                "action": "export",
+                "project_id": pid,
+                "format": "txt",
+                "output_path": export_out,
+            },
+        ),
         ("search", {"action": "search", "project_id": pid, "query": "夜色"}),
         ("tool_search", {"action": "list"}),
         # write.generate 无 key 环境=业务性失败信封（只记录不失败，见模块 docstring）
         (
             "write",
-            {"action": "generate", "project_id": pid, "chapter_id": env.chapter_id,
-             "outline": "复测占位大纲"},
+            {
+                "action": "generate",
+                "project_id": pid,
+                "chapter_id": env.chapter_id,
+                "outline": "复测占位大纲",
+            },
         ),
         # #933 新工具：manage_book 用不存在 run_id → NOT_FOUND 业务信封（非 rc3 指纹）
         (
             "manage_book",
-            {"action": "status",
-             "run_id": "00000000-0000-0000-0000-000000000000"},
+            {"action": "status", "run_id": "00000000-0000-0000-0000-000000000000"},
         ),
         ("manage_config", {"action": "provider_list"}),
         ("manage_log", {"action": "query", "limit": 5}),
@@ -282,9 +290,7 @@ class TestMcpToolSurfaceRetest866:
                 _assert_rc3_signature_free(envelope, tool, params | {"attempt": attempt})
 
     @pytest.mark.asyncio
-    async def test_manage_project_list_stress_rc3_free(
-        self, retest_env: SimpleNamespace
-    ) -> None:
+    async def test_manage_project_list_stress_rc3_free(self, retest_env: SimpleNamespace) -> None:
         """rc3 缺陷动作直接复现锚点：manage_project list 连发 10 次全不命中空 INTERNAL_ERROR。"""
         params = {"action": "list"}
         for _ in range(_STRESS_CALLS):

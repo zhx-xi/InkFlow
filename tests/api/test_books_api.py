@@ -186,9 +186,7 @@ async def test_planner_respond_next_round_200(client, override_services):
     """回复 → 200 + 下一轮（completed=false + questions）。"""
     planner, _ = override_services
     result = _respond_result(completed=False, plan=None)
-    result.questions = [
-        {"id": "q4", "text": "配角：需要几个主要配角？", "template": "___ 个"}
-    ]
+    result.questions = [{"id": "q4", "text": "配角：需要几个主要配角？", "template": "___ 个"}]
     planner.respond.return_value = result
 
     resp = await client.post(
@@ -213,9 +211,7 @@ async def test_planner_respond_next_round_200(client, override_services):
 
 @pytest.mark.asyncio
 @pytest.mark.api
-async def test_planner_respond_completed_returns_writing_plan(
-    client, override_services
-):
+async def test_planner_respond_completed_returns_writing_plan(client, override_services):
     """回复完成 → 200 + completed=true + writing_plan 非空。"""
     planner, _ = override_services
     plan = WritingPlan(
@@ -371,9 +367,7 @@ async def test_runs_start_plan_missing_404(client, override_services):
     _, book = override_services
     book.prepare_run.side_effect = ValueError("计划不存在")
 
-    resp = await client.post(
-        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
-    )
+    resp = await client.post(f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())})
 
     assert resp.status_code == 404
     # 🔒 强化（#524）：锁 detail 含「不存在」（prepare_run ValueError 消息透传）
@@ -536,9 +530,7 @@ async def test_runs_start_chapter_already_written_409(client, override_services)
     _, book = override_services
     book.prepare_run.side_effect = ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
 
-    resp = await client.post(
-        f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())}
-    )
+    resp = await client.post(f"{BASE}/runs", json={"writing_plan_id": str(uuid.uuid4())})
 
     assert resp.status_code == 409
     assert "已有内容" in resp.json()["detail"]
@@ -575,9 +567,7 @@ async def test_runs_start_limits_passed_to_service(client, override_services):
         plan_id, BookLimits(max_chapters=2, max_agent_calls=2), mode="static"
     )
     await asyncio.sleep(0)
-    book.write_book.assert_awaited_once_with(
-        plan_id, BookLimits(max_chapters=2, max_agent_calls=2)
-    )
+    book.write_book.assert_awaited_once_with(plan_id, BookLimits(max_chapters=2, max_agent_calls=2))
 
 
 @pytest.mark.asyncio
@@ -749,9 +739,7 @@ async def test_confirm_run_200(client, override_services):
     assert body["run_id"] == run_id
     assert body["status"] == "running"
     assert body["next_checkpoint"] == "卷 2"
-    book.confirm_run.assert_awaited_once_with(
-        run_id, approved=True, decision="继续下一卷"
-    )
+    book.confirm_run.assert_awaited_once_with(run_id, approved=True, decision="继续下一卷")
 
 
 @pytest.mark.asyncio

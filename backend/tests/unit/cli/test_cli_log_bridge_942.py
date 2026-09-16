@@ -304,7 +304,8 @@ class TestCliCheckpoint:
         _patch_kernel(monkeypatch, chapter_mod)
         monkeypatch.setattr(chapter_mod, "InkFlowHTTPClient", Boom)
         result = cli_runner.invoke(
-            root_app, ["chapter", "list", "-p", _UUID_P]  # ValueError → 崩溃路径
+            root_app,
+            ["chapter", "list", "-p", _UUID_P],  # ValueError → 崩溃路径
         )
         assert result.exit_code != 0
         body = _last_body(fake_cli_env.client)
@@ -462,9 +463,7 @@ class TestBridgeLifecycle:
         )
         with bridge_mod.log_sink(get_cli_forwarder()):
             get_cli_forwarder().attach(1, _FAKE_TOKEN)  # flush 需 client（工厂=fixture fake）
-            cli_bridge_mod._emit_checkpoint(
-                ctx, outcome=typer.Exit(0), duration_ms=1.5
-            )
+            cli_bridge_mod._emit_checkpoint(ctx, outcome=typer.Exit(0), duration_ms=1.5)
         get_cli_forwarder().flush()
         body = _last_body(fake_cli_env.client)
         assert body["level"] == "INFO"
@@ -481,9 +480,7 @@ class TestBridgeLifecycle:
         )
         with bridge_mod.log_sink(get_cli_forwarder()):
             get_cli_forwarder().attach(1, _FAKE_TOKEN)  # flush 需 client（工厂=fixture fake）
-            cli_bridge_mod._emit_checkpoint(
-                ctx, outcome=RuntimeError("crash-942"), duration_ms=2.0
-            )
+            cli_bridge_mod._emit_checkpoint(ctx, outcome=RuntimeError("crash-942"), duration_ms=2.0)
         get_cli_forwarder().flush()
         body = _last_body(fake_cli_env.client)
         assert body["level"] == "WARN"

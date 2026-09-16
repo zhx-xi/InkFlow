@@ -36,9 +36,7 @@ def build_kg_relation_messages(text: str) -> list[ChatMessage]:
 def build_fix_prompt(error: str) -> str:
     """构建修复重试提示（附上次解析错误信息）。"""
     return (
-        "上次输出无法解析为合法 JSON 数组：\n"
-        f"{error}\n"
-        "请只输出 JSON 数组，不要包含任何其他文字。"
+        f"上次输出无法解析为合法 JSON 数组：\n{error}\n请只输出 JSON 数组，不要包含任何其他文字。"
     )
 
 

@@ -114,12 +114,8 @@ def test_rebuild_scope_invalid_422(client, mock_svc):
 
 def test_rebuild_project_not_found_404(client, mock_svc):
     """project 不存在 → 404（ProjectNotFoundError 消息即 detail）。"""
-    mock_svc.start_rebuild.side_effect = ProjectNotFoundError(
-        f"Project not found: {PROJECT_B}"
-    )
-    resp = client.post(
-        "/api/v1/index/rebuild", json=_rebuild_body(project_ids=[str(PROJECT_B)])
-    )
+    mock_svc.start_rebuild.side_effect = ProjectNotFoundError(f"Project not found: {PROJECT_B}")
+    resp = client.post("/api/v1/index/rebuild", json=_rebuild_body(project_ids=[str(PROJECT_B)]))
     assert resp.status_code == 404
     assert "Project not found" in resp.json()["detail"]
 
@@ -215,15 +211,14 @@ async def test_get_svc_returns_singleton():
 
     project_repo = AsyncMock()
     project_repo.get = AsyncMock(return_value=AsyncMock())
-    with patch(
-        "inkflow.api.deps.SQLiteProjectRepository", return_value=project_repo
-    ), patch(
-        "inkflow.api.deps.get_vector_store_optional", AsyncMock(return_value=None)
-    ), patch("inkflow.api.deps.get_search_service", AsyncMock()), patch(
-        "inkflow.api.deps.get_extraction_service", AsyncMock()
-    ), patch(
-        "inkflow.api.routers.index.async_session_factory", return_value=AsyncMock()
-    ), patch("inkflow.api.deps._index_rebuild_service_instance", None, create=True):
+    with (
+        patch("inkflow.api.deps.SQLiteProjectRepository", return_value=project_repo),
+        patch("inkflow.api.deps.get_vector_store_optional", AsyncMock(return_value=None)),
+        patch("inkflow.api.deps.get_search_service", AsyncMock()),
+        patch("inkflow.api.deps.get_extraction_service", AsyncMock()),
+        patch("inkflow.api.routers.index.async_session_factory", return_value=AsyncMock()),
+        patch("inkflow.api.deps._index_rebuild_service_instance", None, create=True),
+    ):
         svc1 = await idx._get_svc()
         svc2 = await idx._get_svc()
     assert svc1 is svc2
@@ -241,16 +236,14 @@ async def test_rebuild_then_status_not_404():
     project_repo = AsyncMock()
     project_repo.get = AsyncMock(return_value=AsyncMock())
     project_repo.list_all = AsyncMock(return_value=([], 0))
-    with patch(
-        "inkflow.api.deps.SQLiteProjectRepository", return_value=project_repo
-    ), patch(
-        "inkflow.api.deps.get_vector_store_optional", AsyncMock(return_value=None)
-    ), patch("inkflow.api.deps.get_search_service", AsyncMock()), patch(
-        "inkflow.api.deps.get_extraction_service", AsyncMock()
-    ), patch(
-        "inkflow.api.routers.index.async_session_factory", return_value=AsyncMock()
-    ), patch.object(irs, "spawn_background_task", AsyncMock()), patch(
-        "inkflow.api.deps._index_rebuild_service_instance", None, create=True
+    with (
+        patch("inkflow.api.deps.SQLiteProjectRepository", return_value=project_repo),
+        patch("inkflow.api.deps.get_vector_store_optional", AsyncMock(return_value=None)),
+        patch("inkflow.api.deps.get_search_service", AsyncMock()),
+        patch("inkflow.api.deps.get_extraction_service", AsyncMock()),
+        patch("inkflow.api.routers.index.async_session_factory", return_value=AsyncMock()),
+        patch.object(irs, "spawn_background_task", AsyncMock()),
+        patch("inkflow.api.deps._index_rebuild_service_instance", None, create=True),
     ):
         svc1 = await idx._get_svc()
         task = await svc1.start_rebuild(project_ids=[PROJECT_A], scope="fulltext")

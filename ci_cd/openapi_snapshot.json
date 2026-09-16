@@ -5234,7 +5234,7 @@
         "type": "object"
       },
       "ToolDomain": {
-        "description": "工具授权域（spec §2.1 逐字，枚举序即声明序）. ",
+        "description": "工具授权域（spec §2.1 逐字，枚举序即声明序）.",
         "enum": [
           "outline",
           "character",
@@ -5249,7 +5249,7 @@
         "type": "string"
       },
       "ToolOp": {
-        "description": "授权操作（spec §2.1 逐字，枚举序 read < write < delete）. ",
+        "description": "授权操作（spec §2.1 逐字，枚举序 read < write < delete）.",
         "enum": [
           "read",
           "write",

@@ -9,6 +9,7 @@
 3. expected_project_id 绑定。
 4. 成功/失败均落审计（audit_service.record），审计异常静默。
 """
+
 from __future__ import annotations
 
 import json
@@ -43,16 +44,18 @@ class TestBuildWorldRwTools:
 
     def test_registers_eight_tools(self) -> None:
         tools = build_world_rw_tools(_make_deps())
-        assert sorted(t.spec.name for t in tools) == sorted([
-            "list_maps",
-            "create_map",
-            "update_map",
-            "list_timeline_events",
-            "create_timeline_event",
-            "update_timeline_event",
-            "create_foreshadowing",
-            "update_foreshadowing",
-        ])
+        assert sorted(t.spec.name for t in tools) == sorted(
+            [
+                "list_maps",
+                "create_map",
+                "update_map",
+                "list_timeline_events",
+                "create_timeline_event",
+                "update_timeline_event",
+                "create_foreshadowing",
+                "update_foreshadowing",
+            ]
+        )
 
     def test_tool_specs_have_input_schema(self) -> None:
         for t in build_world_rw_tools(_make_deps()):
@@ -137,9 +140,7 @@ class TestBuildWorldRwTools:
     @pytest.mark.asyncio
     async def test_create_foreshadowing_success_envelope(self) -> None:
         deps = _make_deps()
-        deps.foreshadowing_service.create = AsyncMock(
-            return_value=SimpleNamespace(id="fsh-1")
-        )
+        deps.foreshadowing_service.create = AsyncMock(return_value=SimpleNamespace(id="fsh-1"))
         tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
         result = json.loads(await tools["create_foreshadowing"].func(title="玉佩"))
         assert result["ok"] is True
@@ -148,16 +149,13 @@ class TestBuildWorldRwTools:
     @pytest.mark.asyncio
     async def test_update_foreshadowing_success_envelope(self) -> None:
         deps = _make_deps()
-        deps.foreshadowing_service.update = AsyncMock(
-            return_value=SimpleNamespace(id="fsh-1")
-        )
+        deps.foreshadowing_service.update = AsyncMock(return_value=SimpleNamespace(id="fsh-1"))
         tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
         result = json.loads(
             await tools["update_foreshadowing"].func(foreshadowing_id="fsh-1", title="新标题")
         )
         assert result["ok"] is True
         assert result["foreshadowing_id"] == "fsh-1"
-
 
     @pytest.mark.asyncio
     async def test_update_map_failure_envelope(self) -> None:
@@ -339,9 +337,7 @@ class TestWorldRwToolOptionalFieldPassThrough:
         deps.map_service.update_map = AsyncMock(return_value=SimpleNamespace(id="map-1"))
         tools = {t.spec.name: t for t in build_world_rw_tools(deps)}
 
-        result = json.loads(
-            await tools["update_map"].func(map_id="map-1", description="仅改说明")
-        )
+        result = json.loads(await tools["update_map"].func(map_id="map-1", description="仅改说明"))
 
         assert result == {"ok": True, "map_id": "map-1"}
         update = deps.map_service.update_map.await_args.args[1]

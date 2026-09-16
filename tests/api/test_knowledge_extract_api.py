@@ -157,9 +157,7 @@ class TestKnowledgeExtractAPI:
     统一契约: svc.extract_for_project(project_id=UUID(...), method=<str>)。
     """
 
-    def test_extract_success_default_method_follows_settings(
-        self, override_extract_deps
-    ) -> None:
+    def test_extract_success_default_method_follows_settings(self, override_extract_deps) -> None:
         """method 缺省 → 端点读 settings.kg_extract_method（mock='rule'）透传给 svc。
 
         200 + ExtractionResult.model_dump() 形态；svc.extract_for_project 收到
@@ -299,9 +297,7 @@ class TestKnowledgeGraphGuardian:
     """守护用例（当前 PASS）——既有 F48 端点冒烟，验证测试夹具可用。"""
 
     @patch("inkflow.api.routers.knowledge_graph.get_knowledge_graph_service")
-    def test_get_graph_smoke_guardian(
-        self, mock_get_svc: MagicMock, override_get_db
-    ) -> None:
+    def test_get_graph_smoke_guardian(self, mock_get_svc: MagicMock, override_get_db) -> None:
         """知识图谱聚合端点冒烟（F48 已交付，RED 期即 PASS）。"""
         from inkflow.domain.models.knowledge_graph import KnowledgeGraphView
 

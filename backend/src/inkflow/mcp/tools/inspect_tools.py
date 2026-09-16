@@ -173,8 +173,7 @@ def build_manage_config_tool() -> MCPTool:
         spec=ToolSpec(
             name="manage_config",
             description=(
-                "环境自检（只读）：Provider 注册表 + "
-                "key_saved/embedding 注册态/向量状态摘要"
+                "环境自检（只读）：Provider 注册表 + key_saved/embedding 注册态/向量状态摘要"
             ),
             input_schema=ManageConfigParams.model_json_schema(),
         ),
@@ -219,8 +218,7 @@ def build_manage_log_tool() -> MCPTool:
         spec=ToolSpec(
             name="manage_log",
             description=(
-                "日志巡检（只读）：结构化日志查询"
-                "（level/caller_type/correlation/trace 过滤）"
+                "日志巡检（只读）：结构化日志查询（level/caller_type/correlation/trace 过滤）"
             ),
             input_schema=ManageLogParams.model_json_schema(),
         ),

@@ -21,9 +21,7 @@ from inkflow.logging import log_structured
 _REASONING_PARAM_KEYS: frozenset[str] = frozenset({"thinking", "reasoning_effort"})
 
 
-def _provider_supported_params(
-    model_full: str, provider: str | None = None
-) -> list[str] | None:
+def _provider_supported_params(model_full: str, provider: str | None = None) -> list[str] | None:
     """litellm 参数翻译器声明的可传参数（去 provider 前缀查询表）；空/异常 → None。"""
     try:
         segments = model_full.split("/", 1)

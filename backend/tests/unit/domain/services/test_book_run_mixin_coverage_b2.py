@@ -69,9 +69,7 @@ async def test_write_book_agentic_non_completed_status_skips_finalize() -> None:
     repo.get_writing_plan.return_value = plan
     outline_repo = AsyncMock()
     outline_repo.list.return_value = ([chapter], 1)
-    agentic_pipeline = SimpleNamespace(
-        execute=AsyncMock(return_value={"status": "failed"})
-    )
+    agentic_pipeline = SimpleNamespace(execute=AsyncMock(return_value={"status": "failed"}))
     svc = BookService(
         repo=repo,
         outline_repo=outline_repo,

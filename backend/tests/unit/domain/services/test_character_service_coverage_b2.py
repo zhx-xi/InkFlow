@@ -73,9 +73,7 @@ def service(mock_repo: MagicMock) -> CharacterService:
 
 
 @pytest.mark.asyncio
-async def test_update_character_validates_present_role_rank(
-    service, mock_repo
-) -> None:
+async def test_update_character_validates_present_role_rank(service, mock_repo) -> None:
     """update 携带 extra -> 服务层校验 present 的 role_rank（230-232）。"""
     existing = _char("林尘")
     mock_repo.get = AsyncMock(return_value=existing)
@@ -96,9 +94,7 @@ async def test_update_character_repo_returns_none(service, mock_repo) -> None:
     mock_repo.get = AsyncMock(return_value=existing)
     mock_repo.update = AsyncMock(return_value=None)
 
-    assert await service.update_character(
-        existing.id, CharacterUpdate(personality="坚韧")
-    ) is None
+    assert await service.update_character(existing.id, CharacterUpdate(personality="坚韧")) is None
 
 
 @pytest.mark.asyncio

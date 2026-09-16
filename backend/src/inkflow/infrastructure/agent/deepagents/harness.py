@@ -133,11 +133,7 @@ def build_deep_agent(
     if base_url:
         chat_kwargs["api_base"] = base_url
     # #1039：档位可行动时才查注册表手动覆盖（None/"default" 不查——构造点在每条链上）
-    manual = (
-        resolve_reasoning_manual(model)
-        if reasoning_effort not in (None, "default")
-        else None
-    )
+    manual = resolve_reasoning_manual(model) if reasoning_effort not in (None, "default") else None
     decision = apply_reasoning_effort(
         chat_kwargs,
         model_full=mapped_model,
