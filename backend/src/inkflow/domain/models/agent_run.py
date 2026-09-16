@@ -122,7 +122,9 @@ class AgenticWriteRequest(BaseModel):
         outline: 本章大纲（必填）.
         context: 上下文文本（默认空）.
         min_words: 目标最低字数（默认 2000）.
-        style_hint: 风格提示（可选）.
+        style_hint: 风格提示（可选；空 = 回退项目 ``config.writing_style``，#1231）.
+        writing_requirements: 章级写作要求（可选；装配层未提供列值时作兜底，
+            ``chapters.writing_requirements`` 列值优先，#1232）.
         max_steps: 最大工具步数（None = 读设置/默认 12）.
         token_budget: token 预算（None = 读设置/默认 32K）.
         max_total_tool_calls: 会话总工具调用上限（None = 读设置/默认 20）.
@@ -135,6 +137,7 @@ class AgenticWriteRequest(BaseModel):
     context: str = ""
     min_words: int = 2000
     style_hint: str | None = None
+    writing_requirements: str | None = None  # #1232: 章级要求兜底（列值优先）
     max_steps: int | None = Field(default=None, ge=1)  # None = 读设置/默认 12
     token_budget: int | None = Field(default=None, ge=1)  # None = 读设置/默认 32K
     max_total_tool_calls: int | None = Field(default=None, ge=1)  # None = 读设置/默认 20

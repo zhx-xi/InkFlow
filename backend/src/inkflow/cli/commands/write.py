@@ -118,6 +118,21 @@ def _agentic_tool_sequence(steps: list[dict]) -> str:
     return " → ".join(names)
 
 
+async def _fetch_chapter_requirements(client: object, chapter_id: str) -> str:
+    """取 `chapters.writing_requirements` 列真实值（#1232 真数据源；失败 → 空串）.
+
+    列不可达 / 章不存在 / 列为空 → 空串（调用方回退旗标值 / 占位）。
+    """
+    try:
+        chapter = await client.get(f"/chapters/{uuid.UUID(chapter_id)}")  # type: ignore[attr-defined]  # InkFlowHTTPClient 鸭子类型 get
+    except Exception:  # 观测失败绝不阻断写作主路径
+        return ""
+    if not isinstance(chapter, dict):
+        return ""
+    value = chapter.get("writing_requirements")
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _echo_agentic_result(cli_ctx: CliContext, result: dict) -> None:
     """agentic 模式输出：草稿确认指引/护栏提示 + 轨迹摘要（--json 走信封）."""
     if cli_ctx.json_output:
@@ -159,6 +174,9 @@ def next(
     context: str = typer.Option("", "--context", help="额外上下文"),
     min_words: int = typer.Option(2000, "--min-words", help="最少字数"),
     style: str = typer.Option("", "--style", help="写作风格"),
+    writing_requirements: str = typer.Option(
+        "", "--writing-requirements", help="章级写作要求（默认取 chapters 列值）"
+    ),
     count: int = typer.Option(1, "--count", help="生成章节数"),
     show_context: bool = typer.Option(False, "--show-context", help="显示注入的上下文"),
     mode: Literal["deterministic", "agentic"] = typer.Option(
@@ -186,19 +204,23 @@ def next(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            # #1232：章级要求解析一次，双路径复用——显式旗标优先，未传则取
+            # `chapters.writing_requirements` 列真实值（不再用 --outline 冒充）。
+            resolved_requirements = (
+                writing_requirements.strip()
+                or await _fetch_chapter_requirements(client, chapter_id)
+            )
             if show_context:
                 # #1186 P2-b：--show-context 调既有 HTTP 端点（Issue #169 CLI 恒经 HTTP，
-                # 不在 CLI 本地 build_context）；writing_requirements 用 --outline 语义，
-                # model 留空 = 服务端按兜底窗口计预算（命令无 --model 参数）
-                assembly = await client.post(
-                    "/context/assemble",
-                    json={
-                        "project_id": project_id,
-                        "chapter_id": chapter_id,
-                        "model": "",
-                        "writing_requirements": outline,
-                    },
-                )
+                # 不在 CLI 本地 build_context）；model 留空 = 服务端按兜底窗口计预算
+                assembly_body: dict = {
+                    "project_id": project_id,
+                    "chapter_id": chapter_id,
+                    "model": "",
+                    # 端点要求必填（min_length=1）；无来源时传语义中性占位（不冒充章级要求）
+                    "writing_requirements": resolved_requirements or "（未配置章级写作要求）",
+                }
+                assembly = await client.post("/context/assemble", json=assembly_body)
             if mode == "agentic":
                 request = AgenticWriteRequest(
                     project_id=uuid.UUID(project_id),
@@ -207,6 +229,7 @@ def next(
                     context=context,
                     min_words=min_words,
                     style_hint=style or None,
+                    writing_requirements=resolved_requirements or None,
                     max_steps=max_steps,
                     token_budget=token_budget,
                     memory_learning=memory_learning,

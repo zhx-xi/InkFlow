@@ -17,12 +17,19 @@ AgenticWriterService 是 agentic 写入闭环的领域编排层（spec §5.1/§5
 - audit_service: AuditLogService（record）
 - run_repo: AgentRunRepository（create/save）
 - chapter_service: 确认流预留（本批 run() 不使用）
+- project_config_getter: Callable[[uuid.UUID], Awaitable[object | None]]——按 project_id 取
+  **已解析**项目配置（ProjectConfig 或同形 dict/namespace）；None = 未接线（无项目级回退，
+  与 `BookService.project_config_getter` 同形同义，#1231）
+- chapter_requirements_getter: Callable[[uuid.UUID], Awaitable[str | None]]——按 chapter_id 取
+  `chapters.writing_requirements` 列值（GUI 章级栏写入的真实数据源）；None = 未接线
+  （回退 `request.writing_requirements`；与 `BookService.chapter_requirements_getter`
+  同形同义，#1232）
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.domain.models.agent_run import (
@@ -36,6 +43,25 @@ from inkflow.domain.services._word_count import count_words
 
 # 空 content 重试提示（必须含「请输出正文」——测试契约码点断言）
 _EMPTY_RETRY_PROMPT = "工具结果已回填。请基于以上工具结果直接输出章节正文（Markdown），请输出正文。"
+
+
+def _text(value: object) -> str:
+    """取配置项文本（None / 非 str → 空串；与 chapter_brief._text 同语义，#1231）."""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _config_value(project_config: object | None, key: str) -> object | None:
+    """从已解析项目配置取键值（支持 ``.config.<key>`` / 直接属性 / dict 三形态）.
+
+    与 ``chapter_brief._config_value`` 同语义（book 轨 W1-A 建立的唯一配置读取形态），
+    此处复用同构判定而非 import：单章轨的配置对象来自同一装配层 getter。
+    """
+    if project_config is None:
+        return None
+    config = getattr(project_config, "config", project_config)
+    if isinstance(config, dict):
+        return config.get(key)
+    return getattr(config, key, None)
 
 
 def _utcnow() -> datetime:
@@ -111,6 +137,8 @@ class AgenticWriterService:
         audit_service,  # AuditLogService（鸭子类型）
         run_repo,  # AgentRunRepository（鸭子类型，有 create/save）
         chapter_service: object | None = None,  # 确认流用（可空）
+        project_config_getter: Callable[[uuid.UUID], Awaitable[object | None]] | None = None,
+        chapter_requirements_getter: Callable[[uuid.UUID], Awaitable[str | None]] | None = None,
         max_steps_default: int = 12,
         token_budget_default: int = 32000,
         max_total_tool_calls: int = 20,
@@ -121,6 +149,8 @@ class AgenticWriterService:
         self._audit_service = audit_service
         self._run_repo = run_repo
         self._chapter_service = chapter_service
+        self._project_config_getter = project_config_getter
+        self._chapter_requirements_getter = chapter_requirements_getter
         self._max_steps_default = max_steps_default
         self._token_budget_default = token_budget_default
         self._max_total_tool_calls = max_total_tool_calls
@@ -161,10 +191,11 @@ class AgenticWriterService:
 
         agent = self._agent_factory(request)
         history: list[object] = []
+        # #1231/#1232：异步取真实数据源（列值 / 项目配置）后拼首条 user 消息——
+        # 取值失败绝不炸编排（降级为「不注入」，与 book 轨 getter 同语义）
+        initial_message = await self._build_initial_message(request)
         try:
-            history = await self._invoke_agent(
-                agent, [self._build_initial_message(request)], thread_id=run_id
-            )
+            history = await self._invoke_agent(agent, [initial_message], thread_id=run_id)
             # 空 content 重试循环（保留完整历史，追加用户消息再次 invoke）
             retries = 0
             while self._is_empty_final(history) and retries < self._empty_content_retries:
@@ -253,15 +284,49 @@ class AgenticWriterService:
             return list(history)
         return []
 
-    def _build_initial_message(self, request: AgenticWriteRequest) -> dict[str, str]:
-        """装配初始用户消息（outline/context/min_words/style_hint 拼入，必须含 outline 文本）."""
+    async def _build_initial_message(self, request: AgenticWriteRequest) -> dict[str, str]:
+        """装配初始用户消息（outline/context/min_words/style/requirements，必须含 outline 文本）.
+
+        #1231：风格取 `request.style_hint`，空则回退 `project.config.writing_style`
+        （与 F3 轨 `writing_service.py` 同语义）；两者皆空 → **不注入风格段**.
+        #1232：章级要求取装配层 `chapter_requirements_getter`（`chapters.writing_requirements`
+        列值，真实数据源），列值优先；未装配/列空 → 回退 `request.writing_requirements`.
+        """
         parts = ["请为当前章节撰写正文。", "", "## 本章大纲", request.outline]
         if request.context:
             parts.extend(["", "## 前文上下文", request.context])
         parts.extend(["", "## 写作要求", f"- 目标字数：{request.min_words} 字"])
-        if request.style_hint:
-            parts.append(f"- 风格提示：{request.style_hint}")
+        style = _text(request.style_hint) or _text(
+            _config_value(await self._resolve_project_config(request), "writing_style")
+        )
+        if style:
+            parts.append(f"- 风格提示：{style}")
+        requirement = await self._resolve_chapter_requirements(request)
+        if requirement:
+            parts.append(f"- 章级写作要求：{requirement}")
         return {"type": "user", "content": "\n".join(parts)}
+
+    async def _resolve_project_config(self, request: AgenticWriteRequest) -> object | None:
+        """按 project_id 取已解析项目配置（getter 未装配/取值失败 → None，不抛错）."""
+        getter = self._project_config_getter
+        if getter is None:
+            return None
+        try:
+            return await getter(request.project_id)
+        except Exception:  # 配置不可达绝不炸编排（镜像 book 轨 getter 兜底）
+            return None
+
+    async def _resolve_chapter_requirements(self, request: AgenticWriteRequest) -> str:
+        """章级写作要求：#1232 列值（真实数据源）优先，回退请求入参值."""
+        getter = self._chapter_requirements_getter
+        if getter is not None and request.chapter_id is not None:
+            try:
+                column_value = await getter(request.chapter_id)
+            except Exception:  # 列不可达 → 回退入参（降级不抛错）
+                column_value = None
+            if isinstance(column_value, str) and column_value.strip():
+                return column_value.strip()
+        return _text(request.writing_requirements)
 
     def _is_empty_final(self, history: list[object]) -> bool:
         """空 content 判定：最终 AI 消息 content 为空且无 tool_calls."""

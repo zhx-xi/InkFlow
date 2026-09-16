@@ -439,7 +439,7 @@
         "type": "object"
       },
       "AgenticWriteRequest": {
-        "description": "agentic 写作请求 DTO（GUI/CLI 共用，spec §5.1）.\n\nAttributes:\n    project_id: 所属项目 UUID.\n    chapter_id: 目标章节 UUID（None = 未绑定）.\n    outline: 本章大纲（必填）.\n    context: 上下文文本（默认空）.\n    min_words: 目标最低字数（默认 2000）.\n    style_hint: 风格提示（可选）.\n    max_steps: 最大工具步数（None = 读设置/默认 12）.\n    token_budget: token 预算（None = 读设置/默认 32K）.\n    max_total_tool_calls: 会话总工具调用上限（None = 读设置/默认 20）.\n    memory_learning: F28 记忆学习显式覆盖（None = 读项目配置，F13 同构）.",
+        "description": "agentic 写作请求 DTO（GUI/CLI 共用，spec §5.1）.\n\nAttributes:\n    project_id: 所属项目 UUID.\n    chapter_id: 目标章节 UUID（None = 未绑定）.\n    outline: 本章大纲（必填）.\n    context: 上下文文本（默认空）.\n    min_words: 目标最低字数（默认 2000）.\n    style_hint: 风格提示（可选；空 = 回退项目 ``config.writing_style``，#1231）.\n    writing_requirements: 章级写作要求（可选；装配层未提供列值时作兜底，\n        ``chapters.writing_requirements`` 列值优先，#1232）.\n    max_steps: 最大工具步数（None = 读设置/默认 12）.\n    token_budget: token 预算（None = 读设置/默认 32K）.\n    max_total_tool_calls: 会话总工具调用上限（None = 读设置/默认 20）.\n    memory_learning: F28 记忆学习显式覆盖（None = 读项目配置，F13 同构）.",
         "properties": {
           "chapter_id": {
             "anyOf": [
@@ -529,6 +529,17 @@
               }
             ],
             "title": "Token Budget"
+          },
+          "writing_requirements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writing Requirements"
           }
         },
         "required": [
