@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 
 import typer
@@ -11,6 +12,30 @@ from inkflow.cli.context import CliContext
 from inkflow.cli.log_bridge import cli_log_sink
 
 _JSON_GLOBAL_HINT = "--json 是全局选项，请放在子命令前（如 inkflow --json config show）"
+
+
+def _force_utf8_stdio() -> None:
+    """#1240: 强制 stdout/stderr 为 UTF-8，使 CLI 输出与环境无关。
+
+    Windows 控制台代码页 936 时 Python 默认把 stdout 编码设为 gbk（实测：
+    `PYTHONUTF8=0` 下 `sys.flags.utf8_mode=0`、`sys.stdout.encoding='gbk'`）；
+    冻结版更甚——PyInstaller 引导器忽略 PYTHONUTF8/PYTHONIOENCODING，直接回落
+    cp936（issue #1240 四层取证）。后果：`inkflow ... > out.json`、管道、MCP
+    消费方按 UTF-8 读即乱码。
+
+    🔴 必须在**模块导入期**调用（见文件末尾），不能放在 `_JsonHintGroup.main()`：
+    `--help` 与参数解析错误由 Click 在 `main()` 之外输出（实测：放在 main() 里
+    时 `--help` 仍为 GBK，3649B），只有导入期生效才覆盖全部输出路径。
+
+    `errors="replace"`：不可编码字符（emoji 等）优雅降级而非 UnicodeEncodeError
+    （沿用 spec runtime hook 既有兜底语义）。幂等——已是 utf-8 时为空操作；
+    不支持的流（StringIO、已 close）跳过。
+    """
+    for _stream in (sys.stdout, sys.stderr):
+        if not hasattr(_stream, "reconfigure"):  # mypy 类型窄化：TextIO 无 reconfigure
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def _has_misplaced_json(args: list[str]) -> bool:
@@ -173,3 +198,6 @@ app.command(name="serve")(_serve_fn)
 app.command(name="search")(search.search_cmd)
 # chat 同款：单命令组压平，command() 直接注册避免 inkflow chat chat 嵌套
 app.command(name="chat")(chat_cmd.chat_cmd)
+
+# #1240: 归一 stdio 编码 —— **模块导入期**即生效，覆盖全部输出路径。
+_force_utf8_stdio()
