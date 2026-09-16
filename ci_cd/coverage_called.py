@@ -72,38 +72,74 @@ def _first_executable_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> in
     return None
 
 
+def _relpath(filename: str, src_root: Path) -> str | None:
+    """coverage 数据里的文件名 → `inkflow/...` posix 相对路径，否则 None。
+
+    **必须在 windows 与 ubuntu 两种 runner 上都成立**：数据由 windows job 产出，
+    里面的路径是 `src\\inkflow\\a.py`（反斜杠 + 相对 cwd）；在 ubuntu 上
+    `Path("src\\inkflow\\a.py").resolve()` 会把整串当成**单个文件名**，
+    于是相对 src_root 解析失败 → 导出 0 条（本 issue CI 实测踩中）。
+    故一律先把反斜杠归一为 `/`，再用纯字符串前缀匹配，不依赖平台 Path 语义。
+    """
+    normalized = filename.replace("\\", "/")
+    # 绝对路径（含盘符或前导 /）→ 截取 src_root 之后的片段
+    root = src_root.as_posix().replace("\\", "/").rstrip("/")
+    if normalized.lower().startswith(root.lower() + "/"):
+        return normalized[len(root) + 1 :]
+    # 相对路径（如 `src/inkflow/a.py`）→ 去掉前导 `src/` 一类前缀
+    for marker in ("inkflow/",):
+        idx = normalized.rfind(marker)
+        if idx >= 0:
+            return normalized[idx:]
+    return None
+
+
 def called_from_coverage_data(data_files: list[str], src_root: str) -> set[str]:
     """多份 coverage 数据文件取并集 → called-set（仅 src_root/inkflow 下）。"""
-    src = Path(src_root).resolve()
+    src = Path(src_root)
     union: set[str] = set()
     for data_file in data_files:
         cov = coverage.Coverage(data_file=data_file)
         cov.load()
         data = cov.get_data()
         for filename in data.measured_files():
-            try:
-                rel = Path(filename).resolve().relative_to(src).as_posix()
-            except ValueError:
-                continue
-            if not rel.startswith("inkflow/"):
+            rel = _relpath(filename, src)
+            if rel is None or not rel.startswith("inkflow/"):
                 continue
             lines = set(data.lines(filename) or [])
             if lines:
-                union |= _keys_for_file(filename, rel, lines)
+                union |= _keys_for_file(filename, rel, lines, src)
     return union
 
 
-def _keys_for_file(filename: str, rel: str, exec_lines: set[int]) -> set[str]:
+def _keys_for_file(filename: str, rel: str, exec_lines: set[int], src_root: Path) -> set[str]:
+    source = _read_source(filename, rel, src_root)
+    if source is None:
+        return set()
     try:
-        source = Path(filename).read_bytes()
         tree = ast.parse(source)
-    except (OSError, SyntaxError, ValueError):
+    except (SyntaxError, ValueError):
         return set()
     return {
         f"{rel}:{qualname}"
         for qualname, first in body_first_lines(tree).items()
         if first in exec_lines
     }
+
+
+def _read_source(filename: str, rel: str, src_root: Path) -> bytes | None:
+    """读函数所在源文件。
+
+    先用数据里的原始路径（本机 / 同平台回放有效）；失败则用 src_root + rel 重组
+    （数据由 windows job 产出、在 ubuntu runner 分析时的必经路径——原始串是
+    `src\\inkflow\\...` 反斜杠相对路径，ubuntu 上读不到）。
+    """
+    for candidate in (Path(filename), src_root / rel, Path(rel)):
+        try:
+            return candidate.read_bytes()
+        except OSError:
+            continue
+    return None
 
 
 def verify_expected_tracks(files: list[Path], expected: list[str]) -> None:

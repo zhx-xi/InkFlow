@@ -1165,11 +1165,13 @@ jobs:
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
+    env:
+      TZ: "XXX-5"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1206,41 +1208,35 @@ jobs:
         with:
           name: coverage-integration-backend
           path: cov/integration
-      # 缺轨校验：缺一轨会静默算出偏低但合法的百分比（假绿）→ 必须硬失败
-      - name: Verify all four tracks present
-        shell: bash
-        working-directory: ${{ github.workspace }}
+      # 缺轨校验 + 归位：缺一轨会静默算出偏低但合法的百分比（假绿）→ 必须硬失败。
+      # 本 job 跑 windows（与数据生产端同平台，规避 coverage 数据里的 windows 相对路径
+      # 在 ubuntu 上解析失败——#1206 首轮 CI 实测即 0 条导出、门禁假红）。
+      - name: Stage coverage data (verify all four tracks present)
+        shell: pwsh
         run: |
-          set -euo pipefail
-          missing=0
-          for d in unit api cli integration; do
-            if [ -f "cov/$d/coverage.dat" ]; then
-              echo "OK   cov/$d/coverage.dat"
-            elif [ -f "cov/$d/backend/coverage.dat" ]; then
-              echo "OK   cov/$d/backend/coverage.dat"
-            else
-              echo "MISSING coverage.dat for track: $d"
-              find "cov/$d" -type f 2>/dev/null || true
-              missing=1
-            fi
-          done
-          [ "$missing" -eq 0 ]
-      - name: Merge coverage data + export called-set
-        # artifact 落在 $GITHUB_WORKSPACE/cov/，但 working-directory=backend → 用绝对路径
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          for d in unit api cli integration; do
-            if [ -f "cov/$d/coverage.dat" ]; then
-              cp "cov/$d/coverage.dat" "backend/coverage-$d.dat"
-            else
-              cp "cov/$d/backend/coverage.dat" "backend/coverage-$d.dat"
-            fi
-          done
-          cd backend
-          uv run python ../ci_cd/coverage_called.py src func_cov_called.json \
-            coverage-unit.dat coverage-api.dat coverage-cli.dat coverage-integration.dat
+          $missing = @()
+          foreach ($t in @('unit', 'api', 'cli', 'integration')) {
+            $flat = "..\cov\$t\coverage.dat"
+            $nested = "..\cov\$t\backend\coverage.dat"
+            if (Test-Path $flat) {
+              Copy-Item $flat "coverage-$t.dat" -Force
+              Write-Host "OK   $flat"
+            } elseif (Test-Path $nested) {
+              Copy-Item $nested "coverage-$t.dat" -Force
+              Write-Host "OK   $nested"
+            } else {
+              Write-Host "MISSING coverage.dat for track: $t"
+              Get-ChildItem -Recurse "..\cov\$t" -File -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "     found: $($_.FullName)" }
+              $missing += $t
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Error "missing coverage tracks: $($missing -join ', ')"
+            exit 1
+          }
+      - name: Export called-set from coverage data
+        run: uv run python ../ci_cd/coverage_called.py src func_cov_called.json coverage-unit.dat coverage-api.dat coverage-cli.dat coverage-integration.dat
       - name: Function-coverage gate
         run: uv run python ../ci_cd/check_func_coverage.py src func_cov_called.json ../ci_cd/func_coverage_exempt.json ../ci_cd/func_coverage_baseline.json --delta 1.0
 
