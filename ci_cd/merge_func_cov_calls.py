@@ -1,10 +1,10 @@
-"""合并多个 function-coverage called-set JSON（并集）。
+"""合并多个 coverage-function called-set JSON（并集）。
 
 用法: python ci_cd/merge_func_cov_calls.py <in1.json> [<in2.json> ...] <out.json>
 每个输入文件为 func_cov_plugin.py 产出的 {"callable": [keys...]}（或裸数组）。
 输出 <out.json> 为所有输入的并集。
 
-独立 function-coverage job 将 4 个测试轨（unit/api/cli/integration）各自收集的 called-set
+独立 coverage-function job 将 4 个测试轨（unit/api/cli/integration）各自收集的 called-set
 合并后再交 ci_cd/check_func_coverage.py 门禁——双 tests/ 目录不能同一进程运行（同 #685 分轨）。
 """
 

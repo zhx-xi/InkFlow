@@ -2,7 +2,7 @@
 
 为何单列：契约测试 `test_book_agentic_audit_contract.py` 用 **无 findings** 的
 鸭子报告驱动 F34 注入路径（断言的是「服务被调用」），未触达 findings→契约字段
-的映射分支 → 4 个函数在 function-coverage gate 中计入 new_uncalled：
+的映射分支 → 4 个函数在 coverage-function gate 中计入 new_uncalled：
 
   - `report_to_audit_dict` 内的 `_drift_messages`（人设/设定漂移消息提取）
   - `score_from_findings`（严重级别扣分）
