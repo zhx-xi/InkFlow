@@ -21,6 +21,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -89,6 +90,14 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   const kernel = await waitKernelInfo(app);
   // F60 #934：隔离数据目录 = 全新安装态 → 预置「已配置模型」则门控放行
   await ensureModelConfigured(kernel);
+  // #1212：renderer readiness 查询是一次性的（App.tsx useEffect [booted]，无轮询无重试）——
+  // 查询落在预置完成之前则 SetupGuide 永久盖住主 UI → 首个裸 click 30s 超时。
+  // 镜像 #1194/#1198 修法（PR #1211 / e2e-shell.spec.ts:124-126）：预置落库后 reload →
+  // 重查 readiness=ready → 门控放行；再复用全仓就绪握手（e2e-app-ready.ts，#1125）
+  // 条件等待 app-nav 可见后才返回（延迟挂载只延长等待，不固定时序）。
+  await window.reload();
+  await expect(window).toHaveTitle(/InkFlow/);
+  await awaitAppReady(window, expect);
   return { app, window, kernel };
 }
 
