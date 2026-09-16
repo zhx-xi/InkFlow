@@ -96,15 +96,20 @@ for _pkg in ("litellm", "langchain_litellm", "tokenizers"):
 # 运行时钩子（冒烟 2 实测）：冻结版 PyInstaller 引导器在 Windows 上重定向
 # stdout/stderr 时忽略 PYTHONUTF8/PYTHONIOENCODING，退化为区域编码（本机 cp936），
 # serve 打印 emoji 等字符直接 UnicodeEncodeError（Electron 内核以管道捕获 stdout
-# 时同样触发）。构建期生成钩子文件（写入 %TEMP%，非仓库文件），启动时将 stdout/stderr
-# 的 errors 改为 replace 优雅降级，不改动编码本身。
+# 时同样触发）。构建期生成钩子文件（写入 %TEMP%，非仓库文件）。
+#
+# #1240：原钩子只改 errors="replace"（注释「不改动编码本身」）→ 编码仍跟随
+#   控制台代码页，打包版 CLI 输出中文为 GBK 字节，重定向/管道/MCP 消费方按
+#   UTF-8 读即乱码。现**连编码一并钉为 UTF-8**（与源码侧 cli/app.py
+#   _force_utf8_stdio 同语义；hook 让冻结版在**解释器启动期**即归一，
+#   src 侧兜住源码运行与启动期之后的任何输出路径）。
 _runtime_hook = Path(os.environ.get("TEMP", ".")) / "inkflow_runtime_encoding_hook.py"
 _runtime_hook.write_text(
     "# -*- coding: utf-8 -*-\n"
     "import sys\n"
     "for _stream in (sys.stdout, sys.stderr):\n"
     "    try:\n"
-    "        _stream.reconfigure(errors=\"replace\")\n"
+    "        _stream.reconfigure(encoding='utf-8', errors='replace')\n"
     "    except (AttributeError, ValueError, OSError):\n"
     "        pass\n",
     encoding="utf-8",
