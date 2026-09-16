@@ -3651,7 +3651,9 @@ export interface components {
          *         outline: 本章大纲（必填）.
          *         context: 上下文文本（默认空）.
          *         min_words: 目标最低字数（默认 2000）.
-         *         style_hint: 风格提示（可选）.
+         *         style_hint: 风格提示（可选；空 = 回退项目 ``config.writing_style``，#1231）.
+         *         writing_requirements: 章级写作要求（可选；装配层未提供列值时作兜底，
+         *             ``chapters.writing_requirements`` 列值优先，#1232）.
          *         max_steps: 最大工具步数（None = 读设置/默认 12）.
          *         token_budget: token 预算（None = 读设置/默认 32K）.
          *         max_total_tool_calls: 会话总工具调用上限（None = 读设置/默认 20）.
@@ -3687,6 +3689,8 @@ export interface components {
             style_hint?: string | null;
             /** Token Budget */
             token_budget?: number | null;
+            /** Writing Requirements */
+            writing_requirements?: string | null;
         };
         /**
          * AppSettings
