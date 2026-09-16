@@ -255,6 +255,9 @@ function resolveKernelCommandForSpawn(): { command: string; args: string[] } {
         : undefined,
     // #1153：dev 绝对路径（#187 同款；REPO_ROOT 上溯 → worktree 覆盖成立）
     devKernelPath: app.isPackaged ? undefined : path.join(REPO_ROOT, 'backend', '.venv', 'Scripts', 'python.exe'),
+    // #1237：注入 --port-file，与 CLI 侧 _default_spawn_cmd 同源 —— GUI 内核也写
+    // kernel.json，CLI/MCP/探针才能发现并复用（单例语义）。null（测试 mock 无 app）时不注入。
+    stateFile: kernelStatePath ?? undefined,
   });
   if (app.isPackaged || path.isAbsolute(resolved.command)) {
     return resolved;

@@ -77,6 +77,12 @@ export interface ResolveKernelCommandOptions {
   packagedKernelPath?: string;
   /** dev 内核 python 绝对路径（#1153 worktree ENOENT 修复）；缺省回落相对路径兼容旧调用/测试 */
   devKernelPath?: string;
+  /**
+   * kernel.json 状态文件绝对路径（#1237）。提供时注入 `--port-file`，与 CLI
+   * （`ensure_kernel` → `_default_spawn_cmd`）**同源**，使 GUI 内核也写 kernel.json，
+   * 从而被 CLI/MCP/探针发现并复用（单例语义）。缺省不注入（兼容旧调用/测试）。
+   */
+  stateFile?: string;
   env?: Record<string, string | undefined>;
 }
 
@@ -89,18 +95,39 @@ export interface KernelCommand {
  * 内核命令定位三分支（spec §3.2.1）：
  * ① env.INKFLOW_KERNEL_CMD 存在 → trim 后按空白 split，首段 command 其余 args（优先级最高）；
  * ② isPackaged=true → resources/kernel/inkflow.exe serve --port 0；packagedKernelPath 提供时用绝对路径（#187 任意 cwd 启动）；
- * ③ 默认 dev → backend\.venv\Scripts\python.exe -m inkflow serve --port 0。
+ * ③ 默认 dev → backend\\.venv\\Scripts\\python.exe -m inkflow serve --port 0。
+ *
+ * #1237：分支②③（我方自有的 serve 调用形态）在返回前统一追加 `--port-file <stateFile>`
+ * （opts.stateFile 提供时），与 CLI 侧 `_default_spawn_cmd` 同源 —— 避免同族路径分叉（用户偏好）。
+ *
+ * 分支①（env.INKFLOW_KERNEL_CMD）**不注入**：该逃逸口是操作者给定的**任意可执行文件 + 任意参数**
+ * （既有契约测试用 `notepad.exe --help` 锁定），其语义不是「inkflow serve」，追加 serve 专属参数
+ * 会把 `--help` 变成「`--help` 带一个值」→ 真实场景未定义行为。
+ * 该分支下 GUI 不写 kernel.json 属于**逃逸口自身的已知边界**（操作者已接管内核启动），
+ * 并在启动时打 warning 以便归因；如需发现通道请勿使用该逃逸口。
  */
 export function resolveKernelCommand(opts: ResolveKernelCommandOptions): KernelCommand {
+  const { isEscapeHatch, ...base } = resolveKernelCommandBase(opts);
+  // 逃逸口：操作者已接管内核启动，参数逐字保留（不追加 serve 专属参数）
+  if (isEscapeHatch || opts.stateFile === undefined || opts.stateFile === '') {
+    return base;
+  }
+  return { command: base.command, args: [...base.args, '--port-file', opts.stateFile] };
+}
+
+function resolveKernelCommandBase(
+  opts: ResolveKernelCommandOptions,
+): KernelCommand & { isEscapeHatch: boolean } {
   const envCmd = opts.env?.INKFLOW_KERNEL_CMD;
   if (envCmd !== undefined && envCmd.trim() !== '') {
     const [command, ...args] = envCmd.trim().split(/\s+/);
-    return { command, args };
+    return { command, args, isEscapeHatch: true };
   }
   if (opts.isPackaged) {
     return {
       command: opts.packagedKernelPath ?? 'resources/kernel/inkflow.exe',
       args: ['serve', '--port', '0'],
+      isEscapeHatch: false,
     };
   }
   return {
@@ -108,6 +135,7 @@ export function resolveKernelCommand(opts: ResolveKernelCommandOptions): KernelC
       opts.devKernelPath ??
       'backend\\.venv\\Scripts\\python.exe',
     args: ['-m', 'inkflow', 'serve', '--port', '0'],
+    isEscapeHatch: false,
   };
 }
 
