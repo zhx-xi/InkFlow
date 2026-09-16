@@ -200,6 +200,4 @@ app.command(name="search")(search.search_cmd)
 app.command(name="chat")(chat_cmd.chat_cmd)
 
 # #1240: 归一 stdio 编码 —— **模块导入期**即生效，覆盖全部输出路径。
-# 不能放在 _JsonHintGroup.main()：`--help` 与参数解析错误由 Click 在 main() 之外
-# 输出（实测放 main() 里 `--help` 仍 GBK）。置文件末尾保证 app 已装配完毕。
 _force_utf8_stdio()
