@@ -27,6 +27,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
+import { awaitAppReady } from './e2e-app-ready';
 import { rmDirWithRetry, USER_DATA_RM_BUDGET } from './e2e-isolation';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
@@ -83,8 +84,15 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page; ke
   return { app, window, kernel };
 }
 
-/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置；NavLink 与 Agent 快捷 Link 均为 role=link） */
+/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置；NavLink 与 Agent 快捷 Link 均为 role=link）
+ *
+ * #1227：先等渲染层出 boot gate（`awaitAppReady` 幂等，已就绪立即返回）——
+ * `launchApp()` 只等到「内核就绪 + 模型预置」（主进程/后端层信号），**不等于**主 UI 已挂载；
+ * AppLayout 在 `!booted`/readiness 未就绪时不渲染 `app-nav`（App.tsx:74/80）。
+ * 门下沉到本函数 = 一处修、12 个调用点全覆盖，不再靠每个用例自己记得加。
+ */
 async function gotoNav(window: Page, name: string): Promise<void> {
+  await awaitAppReady(window, expect);
   await window.getByRole('link', { name }).click();
 }
 
@@ -209,7 +217,7 @@ test('顶栏：主题/语言 Select 展开全选项可见 + 选择直达生效�
     // 避免上次运行残留影响断言（Radix 选项文案按当前语言渲染）
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(window, expect);
 
     // ── 主题 Select（Radix combobox，testid=header-theme-select，aria-label=主题）──
     const themeSelect = window.getByTestId('header-theme-select');
@@ -361,7 +369,7 @@ test('设置页：Agent 链四角色开关逐个切换（无项目纯 UI 状态�
     // 清空持久化 UI 偏好（inkflow.ui）并重载：保证语言/主题初始确定性（zh）
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(window, expect);
 
     // 设置页 → Agent 分类 → AgentChainCard
     await gotoNav(window, '设置');
@@ -395,7 +403,7 @@ test('设置页：默认模型下拉选 deepseek/deepseek-v4-flash → 直调内
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(window, expect);
 
     // 前置：UI 创建唯一项目（persist 契约「无当前项目不保存」）
     const name = `E2E-AgentModel-${Date.now()}`;
@@ -470,7 +478,7 @@ test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(window, expect);
 
     // 前置：UI 创建唯一项目
     const name = `E2E-AgentSwitch-${Date.now()}`;
@@ -540,7 +548,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
   try {
     await first.window.evaluate(() => localStorage.clear());
     await first.window.reload();
-    await expect(first.window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(first.window, expect);
 
     const name = `E2E-225-Persist-${Date.now()}`;
     await createProjectViaUi(first.window, name);
@@ -582,7 +590,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
   try {
     await second.window.evaluate(() => localStorage.clear());
     await second.window.reload();
-    await expect(second.window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(second.window, expect);
 
     // ① 后端权威（不依赖 UI 导航，#232 未合时 currentProjectId 无法经卡片设置）：
     //    重启后内核读同一 DB → config.agent_writer 仍为 null（关闭）
@@ -616,7 +624,7 @@ test('设置页：快捷键面板渲染（五组快捷键标签与组合键）',
   try {
     await window.evaluate(() => localStorage.clear());
     await window.reload();
-    await expect(window.getByTestId('app-nav')).toBeVisible({ timeout: 60_000 });
+    await awaitAppReady(window, expect);
 
     await gotoNav(window, '设置');
     await expect(window.getByTestId('settings-panel')).toBeVisible();
