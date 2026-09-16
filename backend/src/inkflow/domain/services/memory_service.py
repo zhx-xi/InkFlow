@@ -25,6 +25,7 @@ from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.domain.models.user_preference import UserPreference
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.services import preference_learner
+from inkflow.domain.services._data_change import publish_change
 from inkflow.domain.services.memory_session_mixin import MemorySessionMixin
 from inkflow.domain.services.memory_supersede_mixin import MemorySupersedeMixin
 from inkflow.domain.services.preference_learner import (
@@ -335,6 +336,7 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         if preference is None:
             raise PreferenceNotFoundError()
         await self._preference_repo.delete(preference_id)  # type: ignore[attr-defined]  # 鸭子类型：preference_repo 按契约提供 delete
+        await publish_change("memory", "delete", preference_id, preference.project_id)
         if self._audit_service is not None:
             await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
                 project_id=preference.project_id,
@@ -480,6 +482,7 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         if preference is None:
             raise PreferenceNotFoundError()
         await self._user_preference_repo.delete(preference_id)  # type: ignore[attr-defined]  # 鸭子类型：user_preference_repo 按契约提供 delete
+        await publish_change("memory", "delete", preference_id, None)
         if self._audit_service is not None:
             await self._audit_service.record(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按契约提供 record
                 project_id=None,  # 用户级偏好跨项目无 project_id；F34 record 签名必填 → None
@@ -512,6 +515,7 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
             count=count if count is not None else 1,
             source_events=[],
         )
+        await publish_change("memory", "create", created.id, project_id)
         return created
 
     async def create_user_preference(
@@ -539,6 +543,7 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
             source_projects=[],
             source_events=[],
         )
+        await publish_change("memory", "create", created.id, None)
         return created
 
     async def update_preference(
@@ -567,6 +572,7 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
             pattern=pattern,
             value=value,
         )
+        await publish_change("memory", "update", preference_id, pref.project_id)
         return updated
 
     async def update_user_preference(
@@ -599,6 +605,7 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
             pattern=pattern,
             value=value,
         )
+        await publish_change("memory", "update", preference_id, None)
         return updated
 
     async def get_user_preferences_for_injection(
@@ -709,8 +716,12 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         Returns: {"project_id", "summarized", "project"|None, "user"|None}.
         """
         if project_id.int > 2**63 - 1:
-            return {"project_id": str(project_id), "summarized": False,
-                    "project": None, "user": None}
+            return {
+                "project_id": str(project_id),
+                "summarized": False,
+                "project": None,
+                "user": None,
+            }
         project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
             project_id.int
         )
@@ -829,6 +840,8 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
                 else:
                     user_result = None
 
+        if project_llm_called or user_llm_called:
+            await publish_change("memory", "update", str(project_id), project_id)
         return {
             "project_id": str(project_id),
             "summarized": project_llm_called or user_llm_called,
@@ -852,4 +865,5 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
             raise ProjectNotFoundError()
         if self._summary_repo is not None:
             await self._summary_repo.delete_by_project(project_id)  # type: ignore[attr-defined]  # 鸭子类型：summary_repo 按契约提供 delete_by_project
+        await publish_change("memory", "delete", str(project_id), project_id)
         return {"project_id": str(project_id), "deleted": True}

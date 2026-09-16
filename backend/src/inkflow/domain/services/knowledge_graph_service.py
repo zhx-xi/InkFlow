@@ -55,6 +55,7 @@ from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 
 
 def _utcnow() -> datetime:
@@ -263,7 +264,9 @@ class KnowledgeGraphService:
             dto.target_type.value,
             dto.target_id,
         )
-        return await self._relation_repo.add(relation)
+        created: KnowledgeRelation = await self._relation_repo.add(relation)
+        await publish_change("knowledge_relation", "create", created.id, created.project_id)
+        return created
 
     async def get_relation(self, relation_id: uuid.UUID) -> KnowledgeRelation:
         """按主键获取关系；不存在 → KnowledgeRelationNotFoundError（404）."""
@@ -373,14 +376,18 @@ class KnowledgeGraphService:
             raise KnowledgeRelationConflictError()
         merged = merged.model_copy(update={"updated_at": _utcnow()})
         logger.info("更新图谱关系: relation_id=%s", relation_id)
-        updated = await self._relation_repo.update(merged)
+        updated: KnowledgeRelation | None = await self._relation_repo.update(merged)
+        await publish_change("knowledge_relation", "update", relation_id, existing.project_id)
         return updated if updated is not None else merged
 
     async def delete_relation(self, relation_id: uuid.UUID) -> bool:
         """真删关系；不存在 → KnowledgeRelationNotFoundError（404）."""
-        await self.get_relation(relation_id)
+        relation: KnowledgeRelation = await self.get_relation(relation_id)
         logger.info("真删图谱关系: relation_id=%s", relation_id)
-        return await self._relation_repo.delete(_to_int_id(relation_id))
+        deleted: bool = await self._relation_repo.delete(_to_int_id(relation_id))
+        if deleted:
+            await publish_change("knowledge_relation", "delete", relation_id, relation.project_id)
+        return deleted
 
     async def list_relations(
         self,
@@ -564,13 +571,20 @@ class KnowledgeGraphService:
             删除行数.
         """
         type_str = entity_type.value if isinstance(entity_type, EntityType) else entity_type
-        deleted = await self._relation_repo.cleanup_for_entity(type_str, _to_int_id(entity_id))
+        deleted: int = await self._relation_repo.cleanup_for_entity(type_str, _to_int_id(entity_id))
         logger.info(
             "图谱关系清理回调: entity_type=%s entity_id=%s deleted=%s",
             type_str,
             entity_id,
             deleted,
         )
+        if deleted:
+            logger.warning(
+                "knowledge_relation 删除事件缺 project_id"
+                "（cleanup_for_entity 签名无 project_id，spec §15.3.2）: id=%s",
+                entity_id,
+            )
+            await publish_change("knowledge_relation", "delete", str(entity_id), None)
         return deleted
 
     # ── #479 预留端口（spec §5.5）──────────────────────────────────────
@@ -633,6 +647,8 @@ class KnowledgeGraphService:
                 updated_at=now,
             )
             created.append(await self._relation_repo.add(relation))
+        if created:
+            await publish_change("knowledge_relation", "create", str(project_id), project_id)
         return created
 
 

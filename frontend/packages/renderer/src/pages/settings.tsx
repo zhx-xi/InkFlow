@@ -29,6 +29,7 @@ import { useAgentsStore } from '../stores/agents';
 import { useModelReadinessStore } from '../stores/modelReadiness';
 import { selectChatModelOptions, useModelsStore } from '../stores/models';
 import { useProjectStore } from '../stores/project';
+import { useSkillsStore } from '../stores/skills';
 import type { AgentTemplate, AgentTemplateInput } from '../stores/templates';
 import { useTemplatesStore } from '../stores/templates';
 import { useThemeStore } from '../stores/theme';
@@ -47,6 +48,7 @@ const SETTINGS_DATA_CHANGE_DOMAINS = [
   'settings',
   'provider_config',
   'agent',
+  'skill',
 ] as const;
 
 /** #189：页面顶部保存指示状态（隐藏 / 保存中 / 已保存，参考 Notion/Google Docs 顶部指示模式） */
@@ -767,6 +769,12 @@ export function SettingsPage() {
     }
     if (domain === null || domain === 'agent') {
       void useAgentsStore.getState().loadAgents();
+    }
+    if (domain === null || domain === 'skill') {
+      // #1090 批 B：skill 全局域——SkillList 用 useSkillsStore、AgentList 用 useAgentsStore
+      // （两个 store 各自持有 skills 副本，保守双刷防漏失效，§15.6.2 skill 行）
+      void useSkillsStore.getState().loadSkills();
+      void useAgentsStore.getState().loadSkills();
     }
     if (domain === null || domain === 'settings') {
       void useThemeStore.getState().initFromBackend();
