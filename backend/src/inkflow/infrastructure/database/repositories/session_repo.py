@@ -41,6 +41,7 @@ from inkflow.domain.models.session import (
     SessionType,
 )
 from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -161,12 +162,13 @@ class SQLiteSessionRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, session_id: int) -> Session | None:
+    async def get(self, session_id: int | uuid.UUID) -> Session | None:
         """按主键查询会话（不含已归档）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if session_id < -(2**63) or session_id >= 2**63:
+        sid = uuid_to_pk_or_none(session_id)
+        if sid is None:
             return None
         stmt = select(SessionORM).where(
-            SessionORM.id == session_id,
+            SessionORM.id == sid,
             ~SessionORM.is_deleted,
         )
         result = await self._session.execute(stmt)
@@ -177,7 +179,7 @@ class SQLiteSessionRepository:
         self,
         session_type: str | None = None,
         status: str | None = None,
-        project_id: int | None = None,
+        project_id: int | uuid.UUID | None = None,
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -202,7 +204,8 @@ class SQLiteSessionRepository:
         """
         # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int / 不存在的项目）→ 空结果，
         # 防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500
-        if project_id is not None and (project_id < -(2**63) or project_id >= 2**63):
+        pid = uuid_to_pk_or_none(project_id)
+        if project_id is not None and pid is None:
             return [], 0
         base = select(SessionORM)
         if not include_deleted:
@@ -216,9 +219,8 @@ class SQLiteSessionRepository:
             # #1162: 过滤值超 int64 → 不匹配任何行 → 空结果（128 位 int 绑定会抛
             # OverflowError → 500）。「不传 = 全部」与此处「溢出 = 不匹配任何行」
             # 语义分开：溢出不得回落为 None 走全量；范围内不存在仍走正常查询路径.
-            if project_id < -(2**63) or project_id >= 2**63:
-                return [], 0
-            base = base.where(SessionORM.project_id == project_id)
+            # #1230: pid 已在方法开头归一（越界/异常类型已早退为空结果）
+            base = base.where(SessionORM.project_id == pid)
         if search:
             base = base.where(SessionORM.title.ilike(f"%{search}%"))
 
@@ -233,14 +235,15 @@ class SQLiteSessionRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms], total
 
-    async def list_include_deleted(self, session_id: int) -> Session | None:
+    async def list_include_deleted(self, session_id: int | uuid.UUID) -> Session | None:
         """按主键查询会话（含已归档；详情可追档，归档也可读）.
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
         """
-        if session_id < -(2**63) or session_id >= 2**63:
+        sid = uuid_to_pk_or_none(session_id)
+        if sid is None:
             return None
-        stmt = select(SessionORM).where(SessionORM.id == session_id)
+        stmt = select(SessionORM).where(SessionORM.id == sid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None

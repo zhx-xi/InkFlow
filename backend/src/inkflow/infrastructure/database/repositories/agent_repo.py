@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import builtins
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -90,8 +91,12 @@ class SQLiteAgentRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, agent_id: int) -> Agent | None:
+    async def get(self, agent_id: int | uuid.UUID) -> Agent | None:
         """按主键查询 Agent."""
+        # #1230: 主键语义为 int（Agent.id），UUID 等非 int 入参无合法调用路径 →
+        # 早退返 None（禁止 UUID → int 折算：UUID(int=1) 会静默误命中 id=1 的他人记录）。
+        if not isinstance(agent_id, int):
+            return None
         stmt = select(AgentORM).where(AgentORM.id == agent_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

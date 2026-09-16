@@ -31,6 +31,7 @@ from inkflow.domain.models.knowledge_graph import (
     RelationSource,
 )
 from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -96,11 +97,12 @@ class SQLiteKnowledgeRelationRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, relation_id: int) -> KnowledgeRelation | None:
+    async def get(self, relation_id: int | uuid.UUID) -> KnowledgeRelation | None:
         """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if relation_id < -(2**63) or relation_id >= 2**63:
+        rid = uuid_to_pk_or_none(relation_id)
+        if rid is None:
             return None
-        stmt = select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == relation_id)
+        stmt = select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None

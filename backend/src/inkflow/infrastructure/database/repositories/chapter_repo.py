@@ -23,6 +23,7 @@ from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
 from inkflow.infrastructure.database.models.outline import OutlineORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -74,11 +75,12 @@ class SQLiteChapterRepository:
         await self._session.refresh(orm)
         return _volume_orm_to_domain(orm)
 
-    async def get_volume(self, volume_id: int) -> Volume | None:
+    async def get_volume(self, volume_id: int | uuid.UUID) -> Volume | None:
         """按主键查询卷。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if volume_id < -(2**63) or volume_id >= 2**63:
+        vid = uuid_to_pk_or_none(volume_id)
+        if vid is None:
             return None
-        stmt = select(VolumeORM).where(VolumeORM.id == volume_id)
+        stmt = select(VolumeORM).where(VolumeORM.id == vid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _volume_orm_to_domain(orm) if orm else None
@@ -165,11 +167,12 @@ class SQLiteChapterRepository:
         await self._session.refresh(orm)
         return _chapter_orm_to_domain(orm)
 
-    async def get_chapter(self, chapter_id: int) -> Chapter | None:
+    async def get_chapter(self, chapter_id: int | uuid.UUID) -> Chapter | None:
         """按主键查询章节。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if chapter_id < -(2**63) or chapter_id >= 2**63:
+        cid = uuid_to_pk_or_none(chapter_id)
+        if cid is None:
             return None
-        stmt = select(ChapterORM).where(ChapterORM.id == chapter_id)
+        stmt = select(ChapterORM).where(ChapterORM.id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _chapter_orm_to_domain(orm) if orm else None
@@ -177,18 +180,19 @@ class SQLiteChapterRepository:
     async def list_chapters(
         self,
         project_id: int,
-        volume_id: int | None = None,
+        volume_id: int | uuid.UUID | None = None,
         status: ChapterStatus | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[Chapter], int]:
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        if volume_id is not None and (volume_id < -(2**63) or volume_id >= 2**63):
+        vid = uuid_to_pk_or_none(volume_id)
+        if volume_id is not None and vid is None:
             return [], 0
         base = select(ChapterORM).where(ChapterORM.project_id == project_id)
-        if volume_id is not None:
-            base = base.where(ChapterORM.volume_id == volume_id)
+        if vid is not None:
+            base = base.where(ChapterORM.volume_id == vid)
         if status is not None:
             base = base.where(ChapterORM.status == status.value)
 

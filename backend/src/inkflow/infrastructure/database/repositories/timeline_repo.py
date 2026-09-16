@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -108,11 +109,12 @@ class SQLiteTimelineRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, event_id: int) -> TimelineEvent | None:
+    async def get(self, event_id: int | uuid.UUID) -> TimelineEvent | None:
         """按主键查询事件。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if event_id < -(2**63) or event_id >= 2**63:
+        eid = uuid_to_pk_or_none(event_id)
+        if eid is None:
             return None
-        stmt = select(TimelineEventORM).where(TimelineEventORM.id == event_id)
+        stmt = select(TimelineEventORM).where(TimelineEventORM.id == eid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None

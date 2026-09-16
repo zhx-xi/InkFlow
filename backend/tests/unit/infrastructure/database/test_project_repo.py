@@ -242,3 +242,37 @@ class TestInt64RangeGuard1106:
 
         assert await repo.get(2**63) is None  # 上界外
         assert await repo.get(-(2**63) - 1) is None  # 下界外
+
+
+# #1230: repo 层 get 的 UUID 类型早退（domain 层天然传 UUID，守卫须先归一类型）
+
+
+@pytest.mark.integration
+class TestRepoGetAcceptsUUID1230:
+    """#1230: `project_repo.get` 接受 UUID 入参（F3 确定性写作轨 P0 根因）。
+
+    根因：`writing_service` 传 `request.project_id`（恒 `uuid.UUID`），而
+    `get(project_id: int)` 的 int64 守卫用**比较运算符** → `UUID < int` 抛
+    `TypeError`（连「返 None」都做不到）→ 四条写作入口全 500。
+
+    完整契约（同族 13 repo + Service 链 + 可证伪性）见
+    `test_repo_get_uuid_guard_1230.py`；此处锁定本 repo 的最小判据。
+    """
+
+    async def test_get_by_uuid_hits_existing_project(self, db_session):
+        """已存在项目的 UUID → 返回同一 Project（UUID→int 归一后正确命中）。"""
+        repo = SQLiteProjectRepository(db_session)
+        created = await repo.add(_project("UUID 主键项目"))
+
+        got = await repo.get(created.id)  # type: ignore[arg-type]  # 本用例核心（传 UUID）
+
+        assert got is not None
+        assert got.id == created.id
+
+    async def test_get_by_uuid_does_not_raise(self, db_session):
+        """随机 uuid4（.int 超 int64）与确定性 UUID(int=1) → 均不抛 TypeError。"""
+        repo = SQLiteProjectRepository(db_session)
+        assert uuid.uuid4().int > 2**63 - 1, "前提：随机 uuid4 的 .int 超 int64"
+
+        assert await repo.get(uuid.uuid4()) is None  # type: ignore[arg-type]  # 传 UUID
+        assert await repo.get(uuid.UUID(int=1)) is None  # type: ignore[arg-type]  # 传 UUID
