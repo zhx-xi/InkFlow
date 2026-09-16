@@ -175,6 +175,7 @@ jobs:
           $ruffExit = $LASTEXITCODE
           if ($ruffOutput) {
             $fixed = $ruffOutput `
+              -replace '\\', '/' `
               -replace '^src/', 'backend/src/' `
               -replace '^tests/', 'backend/tests/' `
               -replace '^\.\./tests/', 'tests/' `
