@@ -246,15 +246,15 @@ function resolveKernelCommandForSpawn(): { command: string; args: string[] } {
     isPackaged: app.isPackaged,
     env: process.env,
     // #187 任意 cwd 启动：打包版传绝对路径（process.resourcesPath 定位 resources/kernel/inkflow.exe）；
-    // #192：app.getAppPath() 打包版返回 app.asar 路径是错误基准（join 出不存在路径 → ENOENT）；
-    // process.resourcesPath 是 Electron 标准 resources 定位（打包版 = <app>/resources，kernel 目录与其同级）；
-    // truthy 守卫兼容测试 mock 缺失 resourcesPath（Node 测试进程无此属性，与 resolveKernelStatePath/requestSingleInstanceLock 同款防御）
+    // #192：app.getAppPath() 打包版返回 app.asar 是错误基准（join 出不存在路径 → ENOENT），
+    // process.resourcesPath 是标准定位；truthy 守卫兼容测试 mock 缺失该属性（同款防御）
     packagedKernelPath:
       app.isPackaged && process.resourcesPath
         ? path.join(process.resourcesPath, 'kernel', 'inkflow.exe')
         : undefined,
     // #1153：dev 绝对路径（#187 同款；REPO_ROOT 上溯 → worktree 覆盖成立）
     devKernelPath: app.isPackaged ? undefined : path.join(REPO_ROOT, 'backend', '.venv', 'Scripts', 'python.exe'),
+    stateFile: kernelStatePath ?? undefined, // #1237：注入 --port-file，与 CLI 同源（恢复单例语义）
   });
   if (app.isPackaged || path.isAbsolute(resolved.command)) {
     return resolved;
