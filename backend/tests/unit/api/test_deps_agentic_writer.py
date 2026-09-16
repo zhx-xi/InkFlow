@@ -13,6 +13,9 @@
 
 from __future__ import annotations
 
+import uuid
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -42,3 +45,99 @@ def test_get_agentic_writer_service_reexported_identity() -> None:
     assert deps_module.get_agentic_writer_service is module.get_agentic_writer_service, (
         "deps.py 必须 re-export deps_agentic_writer 的同一函数（非复制体）"
     )
+
+
+def test_style_and_requirements_getters_are_wired() -> None:
+    """#1231/#1232 装配缝：两个 getter 必须注入且可调用（func-coverage 门禁 + 防回退）。
+
+    桩住凭据缝（keyless CI 下 resolve_llm_credentials 抛 422，镜像
+    test_book_deps_assembly.py 先例），断言 service 持有两个非 None 回调。
+    """
+    import asyncio
+    from unittest.mock import patch
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from inkflow.api.deps_agentic_writer import get_agentic_writer_service
+    from inkflow.core.database import Base
+
+    async def _setup():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return async_sessionmaker(engine, expire_on_commit=False), engine
+
+    factory, engine = asyncio.run(_setup())
+    try:
+        with patch(
+            "inkflow.api._llm_resolver.resolve_llm_credentials",
+            return_value=("deepseek/deepseek-chat", "test-key", "https://example.test/v1"),
+        ):
+            svc = get_agentic_writer_service(db=factory())
+    finally:
+        asyncio.run(engine.dispose())
+
+    assert callable(svc._project_config_getter), (
+        "project_config_getter 未装配（#1231 风格回退必须可用）"
+    )
+    assert callable(svc._chapter_requirements_getter), (
+        "chapter_requirements_getter 未装配（#1232 列值必须可用）"
+    )
+
+
+async def test_wired_getters_delegate_to_real_services(monkeypatch) -> None:
+    """#1231/#1232 装配缝执行：getter 委派 `deps_module` 服务的真实取值路径.
+
+    覆盖 getter 函数体（func-coverage 门禁），并锁委派语义：
+    - `_chapter_requirements_getter` → `get_chapter_service(db).get_chapter(cid)` → 列值
+    - `_project_config_getter`      → `get_project_service(db).get(pid)` → `.config`
+    异常路径：服务抛错 → 返回 None（降级不炸编排）。
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import inkflow.api.deps as deps_module
+    from inkflow.api.deps_agentic_writer import get_agentic_writer_service
+    from inkflow.core.database import Base
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    chapter_svc = AsyncMock()
+    chapter_svc.get_chapter.return_value = SimpleNamespace(writing_requirements="列值探针")
+    project_svc = AsyncMock()
+    project_svc.get.return_value = SimpleNamespace(config=SimpleNamespace(writing_style="风格探针"))
+
+    monkeypatch.setattr(deps_module, "get_chapter_service", lambda db: chapter_svc)
+    monkeypatch.setattr(deps_module, "get_project_service", lambda db: project_svc)
+
+    session = factory()
+    with patch(
+        "inkflow.api._llm_resolver.resolve_llm_credentials",
+        return_value=("deepseek/deepseek-chat", "test-key", "https://example.test/v1"),
+    ):
+        svc = get_agentic_writer_service(db=session)
+
+    assert await svc._chapter_requirements_getter(uuid.UUID(int=55502)) == "列值探针"
+    config = await svc._project_config_getter(uuid.UUID(int=55501))
+    assert config is not None and config.writing_style == "风格探针"
+
+    # 降级：服务抛错 → None（不炸编排）
+    chapter_svc.get_chapter.side_effect = RuntimeError("列不可达")
+    project_svc.get.side_effect = RuntimeError("项目不可达")
+    assert await svc._chapter_requirements_getter(uuid.UUID(int=55502)) is None
+    assert await svc._project_config_getter(uuid.UUID(int=55501)) is None
+
+    # 空列 / 项目不存在 → None（回退语义）
+    chapter_svc.get_chapter.side_effect = None
+    chapter_svc.get_chapter.return_value = None
+    project_svc.get.side_effect = None
+    project_svc.get.return_value = None
+    assert await svc._chapter_requirements_getter(uuid.UUID(int=55502)) is None
+    assert await svc._project_config_getter(uuid.UUID(int=55501)) is None
+
+    await session.close()
+    await engine.dispose()
