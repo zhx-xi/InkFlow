@@ -50,8 +50,9 @@ on:
 # 无 timeout 时 GitHub 默认 360min：挂死 job 占 required check 最多 6 小时且
 # 不响应 cancel（PR #1082 实测 unit-backend 卡 22min vs 基线 4m48s）。
 # 数值 = 近期 main 成功 run 的实测最大耗时 × 3-5 倍余量（跨 run 取 max，防
-# 「首次采样的 run 恰好 skipped」踩坑：function-coverage 首采 skipped 曾误设 15min，
-# 实测 max 17.1min → 已被 15min 超时真取消，修正为 55min）。
+# 「首次采样的 run 恰好 skipped」踩坑：coverage-function 首采 skipped 曾误设 15min，
+# 实测 max 17.1min → 已被 15min 超时真取消，修正为 55min。该 job 于 #1206 改为
+# 「只下载 + 导出 + 门禁」（不跑测试）后耗时降至 ~0.3min，timeout 随之下调为 15min。
 
 jobs:
   # ── 变更检测元 job：分层触发决策（dorny/paths-filter）──
@@ -1159,7 +1160,7 @@ jobs:
   # 会把从未调用的函数误判为已调用）。本 job 只「下载 + 导出 + 合并 + 门禁」，对齐
   # coverage-backend 形态。原 settrace 形态（跑全量测试第二遍，实测 19.5min）已废弃。
   # 门禁 = A 规则「≥基线−Δ 且 0 新增未调用（豁免清单内除外）」；基线固化于 func_coverage_baseline.json。
-  function-coverage:
+  coverage-function:
     # 第二批：needs 四个 coverage artifact 产出 job（同 coverage-backend）
     needs: [changes, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'

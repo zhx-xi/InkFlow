@@ -1,7 +1,7 @@
 """函数覆盖门禁 —— #1206 契约测试（RED 阶段）。
 
 issue: https://github.com/zhx-xi/InkFlow/issues/1206
-目标形态：各测试 job 顺带产出 called-set，`function-coverage` job 只「下载 + 合并 + 门禁」。
+目标形态：各测试 job 顺带产出 called-set，`coverage-function` job 只「下载 + 合并 + 门禁」。
 本文件只契约 **B1 方案**（从现有 `--cov` 数据导出 called-set）所需的新能力。
 
 契约对象（尚不存在 → 本文件 RED：ImportError / AttributeError）：

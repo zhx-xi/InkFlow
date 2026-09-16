@@ -444,11 +444,11 @@ def _async_none():
 
 
 class TestHttpClientPutCoverage:
-    """`InkFlowHTTPClient.put` 直调覆盖（CI function-coverage 抓 new uncalled）。
+    """`InkFlowHTTPClient.put` 直调覆盖（CI coverage-function 抓 new uncalled）。
 
     背景：`put` 是 #936 为 `vector set-embedding` CLI 新增的便捷方法
     （`client.py:97`）；CLI 测试用 mock HTTP 客户端 → 真实 `put` 在 CI 轨从未
-    被调用 → function-coverage 判 `new uncalled` 阻断。本用例同线程直调。
+    被调用 → coverage-function 判 `new uncalled` 阻断。本用例同线程直调。
 
     ⚠️ 复用既有 test_http_client.py 的 mock 轨道（httpx.MockTransport + patch
     源头模块命名空间），此处以最小内联实现镜像其语义（避免跨模块 fixture 依赖）。

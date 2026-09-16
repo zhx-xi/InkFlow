@@ -1,6 +1,6 @@
 """从 coverage 数据文件导出 function called-set（#1206 方案 B1）。
 
-背景：`function-coverage` job 原先独立跑全量测试第二遍（`sys.settrace` 插件），与
+背景：`coverage-function` job 原先独立跑全量测试第二遍（`sys.settrace` 插件），与
 `unit/api/cli/integration` 四个 job 的 `--cov` 重复执行（实测 19.5min/job）。
 
 本模块改从**已有的 coverage 数据**反推 called-set，零额外测试开销：

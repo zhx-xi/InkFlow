@@ -278,7 +278,7 @@ class TestReplaceConfirmAPI:
 
 class TestConfirmReplaceHandlerDirect:
     """D1【G｜supp】直接调用 router 函数（非 HTTP 层）：#177 先例盲区——TestClient 在 worker 线程
-    跑 handler，function-coverage 采集（主线程 trace）不计；本用例主线程直调补触达。"""
+    跑 handler，coverage-function 采集（主线程 trace）不计；本用例主线程直调补触达。"""
 
     @patch("inkflow.api.routers.outlines.get_outline_service")
     async def test_confirm_replace_handler_direct_serializes_payload(

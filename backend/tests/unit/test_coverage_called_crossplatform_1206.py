@@ -2,7 +2,7 @@
 
 **这是 CI 实测踩到的真 bug**（PR #1207 run 35074319620：`[coverage_called] 0 called
 functions`，门禁 0.00% 红）：数据里的文件名是 `src\\inkflow\\api\\deps.py`
-（Windows 反斜杠 + 相对 cwd），而 function-coverage job 跑在 **ubuntu** 上——
+（Windows 反斜杠 + 相对 cwd），而 coverage-function job 跑在 **ubuntu** 上——
 `Path("src\\inkflow\\api\\deps.py").resolve()` 会把整串当成**单个文件名**，
 相对 src_root 解析必然失败 → 导出 0 条 → 门禁假红。
 
