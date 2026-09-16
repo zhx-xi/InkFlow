@@ -45,6 +45,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from inkflow.domain.models.context import (
     ContextAssemblyResult,
@@ -458,3 +460,122 @@ def test_word_deviation_without_target_does_not_record(caplog):
 
     assert deviation is None
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+# ── A11′：章级写作要求**同源**断言（#1200 补强）────────────────────────
+#
+# 与 A4 的差别：A4 用**手工构造** `extra={"writing_requirements": ...}` 驱动，
+# 断言的是 `outline.extra` 通道 —— 而真实写入位置是 `chapters.writing_requirements`
+# **表列**（GUI 章级栏 → PATCH /api/v1/chapters/{id}）。两者不同源：
+# 把真实数据通道断掉，A4 照样 PASS（同源假绿，W2-E 报告已证）。
+#
+# 本组用**真实 repo 造列值**驱动装配点，改坏装配（getter 传 None）必 FAIL。
+
+REAL_COLUMN_REQUIREMENT = "本章需写主角第一次独立出诊（GUI 章级栏写入）"
+
+#: InkFlow 主键惯例：DB int64 ↔ uuid.UUID(int=...)。**禁用 uuid4()** ——
+#: uuid4().int 溢出 SQLite INTEGER（ai-traps 已知族），故用递增小整数造 id。
+_ID_SEQ = iter(range(10_000, 20_000))
+
+
+def _db_uid() -> uuid.UUID:
+    """递增小整数 UUID（可安全往返 SQLite INTEGER 主键）。"""
+    return uuid.UUID(int=next(_ID_SEQ))
+
+
+@pytest.fixture
+async def db_session():
+    """独立 in-memory SQLite（启用 FK）——镜像既有同层 fixture 形态。"""
+    import inkflow.infrastructure.database.models  # noqa: F401  # 注册全部 ORM
+    from inkflow.core.database import Base
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+async def _seed_chapter_column(session_factory, project_id: uuid.UUID, value: str):
+    """真实落一行 chapters（writing_requirements 列 = value）；返回落库实体。"""
+    from inkflow.domain.models.chapter import Chapter
+    from inkflow.infrastructure.database.repositories.chapter_repo import (
+        SQLiteChapterRepository,
+    )
+
+    repo = SQLiteChapterRepository(session_factory)
+    return await repo.add_chapter(
+        Chapter(id=_db_uid(), project_id=project_id, title="第一章", writing_requirements=value)
+    )
+
+
+async def test_chapter_column_value_reaches_brief_via_assembly(db_session):
+    """#1200 同源断言：`chapters` 列表值经装配层 → 章 dict → brief（真实 repo 造数据）.
+
+    可证伪性：`BookService(chapter_requirements_getter=None)` → getter 未装配
+    → 列值取不到 → `REAL_COLUMN_REQUIREMENT not in brief` → 必 FAIL。
+    """
+    from inkflow.infrastructure.database.models.project import ProjectORM
+    from inkflow.infrastructure.database.repositories.chapter_repo import (
+        SQLiteChapterRepository,
+    )
+
+    pid = _db_uid()
+    db_session.add(ProjectORM(id=pid.int, name="项目"))
+    await db_session.commit()
+
+    created = await _seed_chapter_column(db_session, pid, REAL_COLUMN_REQUIREMENT)
+
+    repo = SQLiteChapterRepository(db_session)
+
+    async def _getter(cid: uuid.UUID) -> str | None:
+        chapter = await repo.get_chapter(cid.int)
+        value = getattr(chapter, "writing_requirements", None) if chapter else None
+        return value if isinstance(value, str) and value else None
+
+    outline = _outline(project_id=pid, chapter_id=created.id)
+
+    # 正向：装配 getter → 列值进章 dict → 进 brief
+    wired = _service(chapter_requirements_getter=_getter)
+    chapter_dict = (await wired._to_chapter_dicts([outline]))[0]
+    assert chapter_dict["writing_requirements"] == REAL_COLUMN_REQUIREMENT
+    assert REAL_COLUMN_REQUIREMENT in _brief(_plan(project_id=pid), chapter_dict)
+
+    # 反向（可证伪）：不装配 getter → 列值取不到（证明上一条断言来自真实列）
+    unwired = _service(chapter_requirements_getter=None)
+    chapter_dict_none = (await unwired._to_chapter_dicts([outline]))[0]
+    assert chapter_dict_none["writing_requirements"] is None
+    assert REAL_COLUMN_REQUIREMENT not in _brief(_plan(project_id=pid), chapter_dict_none)
+
+
+async def test_chapter_column_absent_falls_back_to_outline_extra(db_session):
+    """回退语义：章无关联 / 列值为空 → 不破 `outline.extra` 既有通道（W1 断言不回归）。"""
+    from inkflow.infrastructure.database.models.project import ProjectORM
+
+    pid = _db_uid()
+    db_session.add(ProjectORM(id=pid.int, name="项目"))
+    await db_session.commit()
+
+    async def _empty_getter(cid: uuid.UUID) -> str | None:
+        return None
+
+    service = _service(chapter_requirements_getter=_empty_getter)
+
+    # 列值为空 → 回退 extra
+    outline = _outline(project_id=pid, extra={"writing_requirements": "来自 extra 通道"})
+    chapter_dict = (await service._to_chapter_dicts([outline]))[0]
+    assert chapter_dict["writing_requirements"] == "来自 extra 通道"
+
+    # chapter_id 为 None → 不走 getter，直接回退（降级不抛错）
+    orphan = _outline(project_id=pid, chapter_id=None, extra={"writing_requirements": "孤儿章"})
+    orphan_dict = (await service._to_chapter_dicts([orphan]))[0]
+    assert orphan_dict["writing_requirements"] == "孤儿章"
