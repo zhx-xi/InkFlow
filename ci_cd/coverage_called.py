@@ -28,26 +28,40 @@ from pathlib import Path
 import coverage
 
 
-def body_first_lines(tree: ast.AST) -> dict[str, int]:
-    """AST 遍历 → {qualname: 函数体首个**可执行**语句行号}，qualname 口径同 `co_qualname`。
+def body_first_lines(tree: ast.AST, exec_lines: set[int] | None = None) -> dict[str, int]:
+    """AST 遍历 → {qualname: 函数体首个**可记录**语句行号}，qualname 口径同 `co_qualname`。
 
     嵌套函数插 `<locals>`、类插类名（与 `check_func_coverage.py` 的
     `_collect_functions` 同算法，确保键能对上）。
 
-    **必须跳过 docstring / 纯常量表达式**：coverage 不记录无字节码的行，
-    docstring 行永远不在 measured lines 里（本机实测 `core/config.py`：
-    用 `body[0].lineno` 只命中 1/13，跳过 docstring 后 12/13）。
+    **必须跳过无 line event 的语句**：coverage 不记录这些行，函数会被永久
+    误判为未调用。已覆盖 4 类（#1206 docstring / #1208 其余三种）：
+
+    - docstring / 纯常量表达式（本机实测 `core/config.py`：用 `body[0].lineno`
+      只命中 1/13，跳过 docstring 后 12/13）；
+    - `global X` / `nonlocal X` —— 编译期语义，不发射 line event；
+    - 裸注解 `x: T`（无值）—— 同上；
+    - 多行括号表达式的续行（仅当传入 `exec_lines` 时回退处理）。
+
     装饰器不影响（`body` 不含装饰器，且装饰器行由外层负责）。
 
-    无任何可执行语句（`...` / `pass` / 仅 docstring）→ 不入表，与
+    无任何可记录语句（`...` / `pass` / 仅 docstring）→ 不入表，与
     `_is_abstract_body` 的豁免口径天然一致。
+
+    Args:
+        exec_lines: 该文件的 measured lines。传入时启用「续行回退」（多行条件
+            的首个 line event 落在续行）；不传则取首个可记录语句的起始行。
     """
     out: dict[str, int] = {}
 
     def walk(node: ast.AST, qualname: str) -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             name = f"{qualname}.{node.name}" if qualname else node.name
-            lineno = _first_executable_lineno(node)
+            if exec_lines is None:
+                stmt = _first_recordable_stmt(node)
+                lineno = stmt.lineno if stmt is not None else None
+            else:
+                lineno = _recordable_lineno(node, exec_lines)
             if lineno is not None:
                 out[name] = lineno
             child = f"{name}.<locals>"
@@ -63,13 +77,44 @@ def body_first_lines(tree: ast.AST) -> dict[str, int]:
     return out
 
 
-def _first_executable_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int | None:
-    """函数体内首个会产生字节码的语句行号（跳过 docstring 与纯常量表达式）。"""
+def _first_recordable_stmt(node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.stmt | None:
+    """首个可能被 coverage 记录行命中的函数体语句（None = 全为不可记录语句）。
+
+    跳过三类**不产生字节码行事件**的语句——否则 coverage 永不记录该行，
+    函数会被**永久误判为未调用**（#1208 实测 18 条假阳性）：
+
+    - docstring / 纯常量表达式：无字节码；
+    - `global X` / `nonlocal X`：编译期语义，**不发射任何 line event**
+      （实测：函数体为 `global G` + `G = 1` 时，coverage 只记录 `G = 1` 行）；
+    - 裸注解 `x: T`（无值）：同样不发射 line event。
+    """
     for stmt in node.body:
         if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
             continue  # docstring / 纯常量：coverage 不记录该行
-        return stmt.lineno
+        if isinstance(stmt, (ast.Global, ast.Nonlocal)):
+            continue  # #1208：编译期语句，不发射 line event
+        if isinstance(stmt, ast.AnnAssign) and stmt.value is None:
+            continue  # #1208：裸注解 `x: T`，不发射 line event
+        return stmt
     return None
+
+
+def _recordable_lineno(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, exec_lines: set[int]
+) -> int | None:
+    """该函数在 exec_lines 中**真正被记录**的任一函数体行号（无则 None）。
+
+    常规情况即首语句行；多行语句（括号条件等）的首个 line event 落在续行，
+    故回退到语句自身行范围内的第一个命中行。
+    """
+    stmt = _first_recordable_stmt(node)
+    if stmt is None:
+        return None
+    if stmt.lineno in exec_lines:
+        return stmt.lineno
+    end = getattr(stmt, "end_lineno", stmt.lineno) or stmt.lineno
+    hits = sorted(set(range(stmt.lineno, end + 1)) & exec_lines)
+    return hits[0] if hits else None
 
 
 def _relpath(filename: str, src_root: Path) -> str | None:
@@ -122,7 +167,7 @@ def _keys_for_file(filename: str, rel: str, exec_lines: set[int], src_root: Path
         return set()
     return {
         f"{rel}:{qualname}"
-        for qualname, first in body_first_lines(tree).items()
+        for qualname, first in body_first_lines(tree, exec_lines).items()
         if first in exec_lines
     }
 
