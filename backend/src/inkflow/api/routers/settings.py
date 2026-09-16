@@ -28,6 +28,7 @@ from inkflow.core.config import config, get_instance_env_path, save_instance_env
 from inkflow.domain.models.model_readiness import ModelReadiness
 from inkflow.domain.models.settings import AppSettings, AppSettingsUpdate
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
+from inkflow.domain.services._data_change import publish_change
 from inkflow.domain.services.model_readiness import compute_model_readiness
 from inkflow.domain.services.settings_service import SettingsService
 from inkflow.infrastructure.llm.key_manager import APIKeyManager
@@ -177,6 +178,12 @@ async def store_llm_key(data: LLMKeyStoreRequest) -> dict:
     except Exception as exc:
         logger.exception("API Key 存储失败: provider=%s", data.provider)
         raise HTTPException(status_code=500, detail="API Key 存储失败，请稍后重试") from exc
+    # #1226：keychain 变更影响模型就绪判据（model_readiness 依赖「provider ∈ 已存 key 集合」），
+    # 但 keychain 不是 provider_configs 表行 → 注册表写路径不发布事件，故此处显式补发。
+    # 域镜像 provider_config_service 的既有选择（前端 #1218 已订阅该域）；resource_id 用
+    # provider 名（keychain 无 DB id，名即其唯一标识，镜像 settings 域 SETTINGS_RESOURCE_ID
+    # 的固定标识裁决）；写成功才发布（spec §15.3.3）；全局域 project_id=None（§15.2.3）。
+    await publish_change("provider_config", "update", data.provider, None)
     return {"provider": data.provider, "status": "saved"}
 
 
