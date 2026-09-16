@@ -420,6 +420,18 @@ def _build_book_service(db: AsyncSession) -> BookService:
             project_config_getter=_project_config_getter,
         )
 
+    async def _chapter_requirements_getter(chapter_id: uuid.UUID) -> str | None:
+        """章级写作要求取值（#1200）：`chapters.writing_requirements` 列（GUI 章级栏写入）.
+
+        章不存在 / 列为空 / uuid 溢出等异常 → None（调用方回退 `outline.extra`）。
+        """
+        try:
+            chapter: object | None = await chapter_svc.get_chapter(chapter_id)
+        except Exception:  # 列不可达绝不炸编排
+            return None
+        value = getattr(chapter, "writing_requirements", None) if chapter is not None else None
+        return value if isinstance(value, str) and value else None
+
     return BookService(
         repo=repo,
         outline_repo=outline_repo,
@@ -432,6 +444,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         agentic_pipeline=_book_agentic_pipeline,
         volume_lookup=_volume_lookup,
         context_builder=_context_builder,
+        chapter_requirements_getter=_chapter_requirements_getter,
     )
 
 

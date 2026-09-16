@@ -39,6 +39,7 @@ from inkflow.domain.models.writing_plan import (
     merge_book_limits,
     validate_at_least_one_hard_limit,
 )
+from inkflow.domain.services.book_outline_mixin import BookOutlineMixin
 from inkflow.domain.services.book_run_mixin import BookRunMixin
 from inkflow.domain.services.chapter_brief import (
     build_chapter_brief,
@@ -62,10 +63,18 @@ class ChapterAlreadyWrittenError(Exception):
 
 
 def _outline_to_chapter_dict(
-    o: Outline, *, volume_outline_id: uuid.UUID | None = None
+    o: Outline,
+    *,
+    volume_outline_id: uuid.UUID | None = None,
+    writing_requirements: str | None = None,
 ) -> ChapterDict:
-    """Outline 章节点 → 卷级编排图章 dict（#976 D5 卷 outline id + #1182 F8 章级写作要求）."""
-    requirement = o.extra.get("writing_requirements")
+    """Outline 章节点 → 卷级编排图章 dict（#976 D5 卷 outline id + #1182 F8 章级写作要求）.
+
+    #1200：`writing_requirements` 由**调用方（装配层）**按 `chapter_id` 取
+    `chapters.writing_requirements` 列值传入；未传 → 回退 `outline.extra` 通道
+    （该键无生产者，恒缺席；保留以不破既有断言）。
+    """
+    requirement = writing_requirements or o.extra.get("writing_requirements")
     return {
         "outline_id": o.id,
         "chapter_id": o.chapter_id,
@@ -96,7 +105,7 @@ class VolumeGroup(TypedDict):
     chapters: list[ChapterDict]
 
 
-class BookService(BookRunMixin):
+class BookService(BookOutlineMixin, BookRunMixin):
     """书级运行服务.
 
     Args:
@@ -143,6 +152,7 @@ class BookService(BookRunMixin):
         agentic_pipeline: object | None = None,  # 新增：book-level 自主编排引擎（鸭子类型）
         volume_lookup: Callable[..., Awaitable[str | None]] | None = None,
         context_builder: Callable[[uuid.UUID, object], Awaitable[str]] | None = None,
+        chapter_requirements_getter: Callable[[uuid.UUID], Awaitable[str | None]] | None = None,
     ) -> None:
         self._repo = repo
         self._writer_factory = writer_factory
@@ -157,6 +167,7 @@ class BookService(BookRunMixin):
         self._agentic_pipeline = agentic_pipeline
         self._volume_lookup = volume_lookup
         self._context_builder = context_builder
+        self._chapter_requirements_getter = chapter_requirements_getter
         self._brief_configs: dict[uuid.UUID, object] = {}  # #1185：已解析项目配置复用
 
     async def write_book(
@@ -644,75 +655,6 @@ class BookService(BookRunMixin):
             "steps": steps,
             "next": next_dict,
         }
-
-    async def _find_chapters(self, plan: WritingPlan) -> list[Outline]:
-        """取全部 level=chapter 节点，按 sort_order 升序（阶段 2 顺序派发，§5.2）.
-        无 outline_repo → 空列表.
-        """
-        if self._outline_repo is None:
-            return []
-        outlines_raw, _ = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：outline_repo 按 OutlineRepositoryProtocol 提供 list
-            plan.project_id
-        )
-        outlines: list[Outline] = cast(list[Outline], outlines_raw)
-        chapters = [o for o in outlines if o.level == "chapter"]
-        return sorted(chapters, key=lambda o: (o.sort_order, str(o.id)))
-
-    async def _find_volumes(self, plan: WritingPlan) -> list[VolumeGroup]:
-        """卷 planner 拆章：level=volume 节点 + 其下 chapter 子节点按卷分组
-        （volume_outline_id 透传卷节点 id）；无卷节点 → 整本书一卷（root）."""
-        if self._outline_repo is None:
-            return []
-        outlines_raw, _ = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：outline_repo 按 OutlineRepositoryProtocol 提供 list
-            plan.project_id
-        )
-        outlines: list[Outline] = cast(list[Outline], outlines_raw)
-        volume_nodes = sorted(
-            (o for o in outlines if o.level == "volume"),
-            key=lambda o: (o.sort_order, str(o.id)),
-        )
-        if volume_nodes:
-            return [
-                {
-                    "volume_id": volume.id,
-                    "chapters": [
-                        _outline_to_chapter_dict(o, volume_outline_id=volume.id)
-                        for o in sorted(
-                            (
-                                o
-                                for o in outlines
-                                if o.level == "chapter" and o.parent_id == volume.id
-                            ),
-                            key=lambda o: (o.sort_order, str(o.id)),
-                        )
-                    ],
-                }
-                for volume in volume_nodes
-            ]
-        chapters = sorted(
-            (o for o in outlines if o.level == "chapter"),
-            key=lambda o: (o.sort_order, str(o.id)),
-        )
-        return [
-            {
-                "volume_id": plan.root_outline_id,
-                "chapters": [_outline_to_chapter_dict(o) for o in chapters],
-            }
-        ]
-
-    async def _find_outline_node(self, plan: WritingPlan, target: str) -> Outline | None:
-        """按 outline_id 查大纲节点（无 outline_repo/非法 UUID/缺失 → None）."""
-        if self._outline_repo is None:
-            return None
-        outlines_raw, _ = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：outline_repo 按 OutlineRepositoryProtocol 提供 list
-            plan.project_id
-        )
-        outlines: list[Outline] = cast(list[Outline], outlines_raw)
-        try:
-            target_uuid = uuid.UUID(target)
-        except ValueError:
-            return None
-        return next((o for o in outlines if o.id == target_uuid), None)
 
     async def _resolve_merged_limits(
         self, plan: WritingPlan, limits: BookLimits | None

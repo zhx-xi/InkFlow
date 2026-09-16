@@ -151,3 +151,56 @@ def test_writer_factory_uses_global_when_cfg_missing():
         )
     finally:
         config.llm_reasoning_effort = original
+
+
+# ── #1200：章级写作要求取值 getter（chapters.writing_requirements 列）─────
+
+
+def test_chapter_requirements_getter_reads_column():
+    """装配层 `_chapter_requirements_getter` 读 `chapters.writing_requirements` 列（#1200）.
+
+    真实形态：GUI 章级栏 → PATCH /api/v1/chapters/{id} → 该列；book 三轨经
+    `BookService._to_chapter_dicts` 用它把列值搬进章 dict → brief。
+    """
+    import uuid
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    svc = _get_book_service()
+    getter = svc._chapter_requirements_getter
+    assert getter is not None, "chapter_requirements_getter 未装配（#1200 回归）"
+
+    cid = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
+    with patch(
+        "inkflow.infrastructure.database.repositories.chapter_repo."
+        "SQLiteChapterRepository.get_chapter",
+        new=AsyncMock(return_value=SimpleNamespace(writing_requirements="本章需写主角独立出诊")),
+    ):
+        assert asyncio.run(getter(cid)) == "本章需写主角独立出诊"
+
+
+def test_chapter_requirements_getter_degrades_to_none():
+    """章不存在 / 列为空 / 异常 → None（调用方回退 `outline.extra`，绝不炸编排）。"""
+    import uuid
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    svc = _get_book_service()
+    getter = svc._chapter_requirements_getter
+    cid = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
+    repo_path = (
+        "inkflow.infrastructure.database.repositories.chapter_repo."
+        "SQLiteChapterRepository.get_chapter"
+    )
+
+    # 章不存在
+    with patch(repo_path, new=AsyncMock(return_value=None)):
+        assert asyncio.run(getter(cid)) is None
+
+    # 列值为空串
+    with patch(repo_path, new=AsyncMock(return_value=SimpleNamespace(writing_requirements=""))):
+        assert asyncio.run(getter(cid)) is None
+
+    # 仓储抛异常（uuid 溢出等）→ 吞掉返 None
+    with patch(repo_path, new=AsyncMock(side_effect=OverflowError("int too large"))):
+        assert asyncio.run(getter(cid)) is None
