@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -107,11 +108,12 @@ class SQLiteForeshadowingRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, foreshadowing_id: int) -> Foreshadowing | None:
+    async def get(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
         """按主键查询伏笔。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if foreshadowing_id < -(2**63) or foreshadowing_id >= 2**63:
+        fid = uuid_to_pk_or_none(foreshadowing_id)
+        if fid is None:
             return None
-        stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == foreshadowing_id)
+        stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == fid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
@@ -131,7 +133,7 @@ class SQLiteForeshadowingRepository:
 
     async def list(
         self,
-        project_id: int,
+        project_id: int | uuid.UUID,
         search: str | None = None,
         status: str | None = None,
         sort_by: str = "priority",
@@ -157,9 +159,10 @@ class SQLiteForeshadowingRepository:
         """
         # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int / 不存在的项目）→ 空结果，
         # 防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500
-        if project_id < -(2**63) or project_id >= 2**63:
+        pid = uuid_to_pk_or_none(project_id)
+        if pid is None:
             return [], 0
-        base = select(ForeshadowingORM).where(ForeshadowingORM.project_id == project_id)
+        base = select(ForeshadowingORM).where(ForeshadowingORM.project_id == pid)
 
         # 搜索: title icontains
         if search:

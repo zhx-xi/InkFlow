@@ -102,8 +102,12 @@ class SQLiteAgentTemplateRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, template_id: int) -> AgentTemplate | None:
+    async def get(self, template_id: int | uuid.UUID) -> AgentTemplate | None:
         """按主键查询模板."""
+        # #1230: 主键语义为 int（AgentTemplate.id），UUID 等非 int 入参无合法调用路径 →
+        # 早退返 None（禁止 UUID → int 折算：会静默误命中 id=N 的他人记录）。
+        if not isinstance(template_id, int):
+            return None
         stmt = select(AgentTemplateORM).where(AgentTemplateORM.id == template_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

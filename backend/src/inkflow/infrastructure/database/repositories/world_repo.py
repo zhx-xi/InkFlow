@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.world import WorldCategory, WorldSetting
 from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -109,11 +110,12 @@ class SQLiteWorldRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, setting_id: int) -> WorldSetting | None:
+    async def get(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
         """按主键查询条目。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if setting_id < -(2**63) or setting_id >= 2**63:
+        pk = uuid_to_pk_or_none(setting_id)
+        if pk is None:
             return None
-        stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
+        stmt = select(WorldSettingORM).where(WorldSettingORM.id == pk)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
@@ -138,14 +140,14 @@ class SQLiteWorldRepository:
 
     async def list(
         self,
-        project_id: int,
+        project_id: int | uuid.UUID,
         search: str | None = None,
         category: str | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
-        parent_id: int | None = None,
+        parent_id: int | uuid.UUID | None = None,
         top_level_only: bool = False,
     ) -> tuple[builtins.list[WorldSetting], int]:
         """分页查询项目内条目列表，支持搜索、类别与 parent_id 过滤.
@@ -167,13 +169,15 @@ class SQLiteWorldRepository:
         超 int64 范围的项目 id 视为不存在（SQLite 整数溢出防御，#1139：过滤
         条件型方法的 128 位 int 绑定会抛 OverflowError → 500）.
         """
-        if project_id < -(2**63) or project_id >= 2**63:
+        pid = uuid_to_pk_or_none(project_id)
+        if pid is None:
             return [], 0
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        if parent_id is not None and (parent_id < -(2**63) or parent_id >= 2**63):
+        par_id = uuid_to_pk_or_none(parent_id)
+        if parent_id is not None and par_id is None:
             return [], 0
-        base = select(WorldSettingORM).where(WorldSettingORM.project_id == project_id)
+        base = select(WorldSettingORM).where(WorldSettingORM.project_id == pid)
 
         # 搜索: name icontains
         if search:
@@ -186,7 +190,7 @@ class SQLiteWorldRepository:
         if top_level_only:
             base = base.where(WorldSettingORM.parent_id.is_(None))
         if parent_id is not None:
-            base = base.where(WorldSettingORM.parent_id == parent_id)
+            base = base.where(WorldSettingORM.parent_id == par_id)
 
         # 总数（分页前）
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -310,7 +314,7 @@ class SQLiteWorldRepository:
         result = await self._session.execute(sql, {"sid": setting_id})
         return [row[0] for row in result.fetchall()]
 
-    async def list_descendants(self, setting_id: int) -> builtins.list[WorldSetting]:
+    async def list_descendants(self, setting_id: int | uuid.UUID) -> builtins.list[WorldSetting]:
         """子树（**含自身**），层序（父先子后，同层 created_at ASC）.
 
         两段式：CTE 取层序 id 集合（depth 升序 + created_at ASC），再按 id 批量查 ORM
@@ -319,7 +323,8 @@ class SQLiteWorldRepository:
         超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法的
         128 位 int 绑定会抛 OverflowError → 500）；不存在 id → 空列表。
         """
-        if setting_id < -(2**63) or setting_id >= 2**63:
+        pk = uuid_to_pk_or_none(setting_id)
+        if pk is None:
             return []
         sql = text(
             """
@@ -333,7 +338,7 @@ class SQLiteWorldRepository:
             ORDER BY depth ASC, created_at ASC
             """
         )
-        result = await self._session.execute(sql, {"sid": setting_id})
+        result = await self._session.execute(sql, {"sid": pk})
         ordered_ids = [row[0] for row in result.fetchall()]
         if not ordered_ids:
             return []

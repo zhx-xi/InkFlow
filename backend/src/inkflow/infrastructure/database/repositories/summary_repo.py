@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.context import ChapterSummary
 from inkflow.infrastructure.database.models.chapter import ChapterORM
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -35,8 +36,12 @@ class SQLiteSummaryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get(self, chapter_id: int) -> ChapterSummary | None:
-        stmt = select(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == chapter_id)
+    async def get(self, chapter_id: int | uuid.UUID) -> ChapterSummary | None:
+        # #1230: 入参先归一为 int 再比较（domain 层天然传 UUID）
+        cid = uuid_to_pk_or_none(chapter_id)
+        if cid is None:
+            return None
+        stmt = select(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _summary_orm_to_domain(orm) if orm else None

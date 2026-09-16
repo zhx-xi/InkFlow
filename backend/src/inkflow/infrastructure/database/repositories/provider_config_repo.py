@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import builtins
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -84,8 +85,12 @@ class SQLiteProviderConfigRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, provider_config_id: int) -> ProviderConfig | None:
+    async def get(self, provider_config_id: int | uuid.UUID) -> ProviderConfig | None:
         """按主键查询 Provider."""
+        # #1230: 主键语义为 int（ProviderConfig.id），UUID 等非 int 入参无合法调用路径 →
+        # 早退返 None（禁止 UUID → int 折算：会静默误命中 id=N 的他人记录）。
+        if not isinstance(provider_config_id, int):
+            return None
         stmt = select(ProviderConfigORM).where(ProviderConfigORM.id == provider_config_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

@@ -30,6 +30,7 @@ from inkflow.infrastructure.database.models.outline import (
     PlotPointORM,
     StoryArcORM,
 )
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -150,11 +151,12 @@ class SQLiteOutlineRepository:
         await self._session.refresh(orm)
         return _outline_orm_to_domain(orm)
 
-    async def get(self, outline_id: int) -> Outline | None:
+    async def get(self, outline_id: int | uuid.UUID) -> Outline | None:
         """按主键查询大纲。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if outline_id < -(2**63) or outline_id >= 2**63:
+        oid = uuid_to_pk_or_none(outline_id)
+        if oid is None:
             return None
-        stmt = select(OutlineORM).where(OutlineORM.id == outline_id)
+        stmt = select(OutlineORM).where(OutlineORM.id == oid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _outline_orm_to_domain(orm) if orm else None
@@ -414,11 +416,12 @@ class SQLiteOutlineRepository:
         await self._session.refresh(orm)
         return _arc_orm_to_domain(orm)
 
-    async def get_arc(self, arc_id: int) -> StoryArc | None:
+    async def get_arc(self, arc_id: int | uuid.UUID) -> StoryArc | None:
         """按主键查询故事弧线。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if arc_id < -(2**63) or arc_id >= 2**63:
+        aid = uuid_to_pk_or_none(arc_id)
+        if aid is None:
             return None
-        stmt = select(StoryArcORM).where(StoryArcORM.id == arc_id)
+        stmt = select(StoryArcORM).where(StoryArcORM.id == aid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _arc_orm_to_domain(orm) if orm else None

@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # 触发 ORM 注册到 Base.metadata（否则 create_all 不建这些表 —— agent_entity /
 # provider_config 等模块不 import 就不会注册）。
 import inkflow.infrastructure.database.models.agent_entity
-import inkflow.infrastructure.database.models.provider_config  # noqa: F401
+import inkflow.infrastructure.database.models.provider_config  # noqa: F401  # 触发 ORM 注册到 Base.metadata（create_all 需要）
 from inkflow.core.database import Base
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.models.writing import WritingRequest
@@ -103,30 +103,29 @@ class TestRepoGetAcceptsUUID1230:
         ghost = uuid.uuid4()
         assert ghost.int > 2**63 - 1, "前提：随机 uuid4 的 .int 超 int64（本契约的意义所在）"
 
-        assert await repo.get(ghost) is None  # type: ignore[arg-type]
+        assert await repo.get(ghost) is None  # type: ignore[arg-type]  # 本契约核心：传 UUID
 
     async def test_get_by_uuid_deterministic_small_int(self, db_session) -> None:
-        """确定性 UUID(int=1)（rc1 复现命令形态）→ 不抛 TypeError。
+        """确定性 UUID（其 .int 落在 int64 内）→ 与 `.int` 调用返回同一行。
 
-        与随机 uuid4 的区别：其 .int 落在 int64 范围内 → 会真正走到 SQL 查询。
+        与随机 uuid4 的区别：.int 在范围内 → 会真正走到 SQL 查询并可能命中。
+        本用例锁定「UUID 与 .int 两种入参等价」。
         """
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("确定性主键项目"))
 
-        assert created.id.int > 2**63 - 1  # add 分配的是 UUID(int=雪花/自增)，此处仅示意
-        # 用真实落库行（int 主键在范围内）反查：UUID 形态必须等价于 .int 形态
         by_int = await repo.get(created.id.int)
-        by_uuid = await repo.get(created.id)  # type: ignore[arg-type]
+        by_uuid = await repo.get(created.id)  # type: ignore[arg-type]  # 本契约核心：传 UUID
         assert by_int is not None
         assert by_uuid is not None
-        assert by_uuid.id == by_int.id
+        assert by_uuid.id == by_int.id == created.id
 
     async def test_get_by_uuid_does_not_raise_type_error(self, db_session) -> None:
         """反向断言：显式锁定「不抛 TypeError」这一事实（而非仅「有返回」）。"""
         repo = SQLiteProjectRepository(db_session)
         for candidate in (uuid.uuid4(), uuid.UUID(int=0), uuid.UUID(int=1)):
             try:
-                await repo.get(candidate)  # type: ignore[arg-type]
+                await repo.get(candidate)  # type: ignore[arg-type]  # 反向断言：故意传 UUID 不抛
             except TypeError as exc:  # pragma: no cover - 修复前必现
                 pytest.fail(f"repo.get({candidate!r}) 抛 TypeError：{exc}")
 
@@ -139,7 +138,7 @@ class TestRepoGetAcceptsUUID1230:
 class TestWritingServiceUUIDChain1230:
     """#1230 ②：真实 WritingService + 真实 repo，UUID 入参不崩在 project_repo.get。"""
 
-    async def _service(self, db_session):
+    async def _service(self, db_session, project_id):
         from inkflow.domain.services.writing_service import WritingService
 
         class _RecordingLLM:
@@ -177,12 +176,36 @@ class TestWritingServiceUUIDChain1230:
                     messages=[{"role": "user", "content": "probe"}], token_estimate=10
                 )
 
+        class _StubChapterRepo:
+            """`_validate_chapter` 需要 `get_chapter` —— 返回归属该项目的章节。"""
+
+            def __init__(self, project_id) -> None:
+                self._project_id = project_id
+
+            async def get_chapter(self, chapter_id):
+                from inkflow.domain.models.chapter import Chapter, ChapterStatus
+
+                return Chapter(
+                    id=chapter_id,
+                    project_id=self._project_id,
+                    volume_id=None,
+                    title="第一章",
+                    content="",
+                    status=ChapterStatus.DRAFT,
+                    word_count=0,
+                    order_index=1.0,
+                    status_history=[],
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+
         llm = _RecordingLLM()
+        repo = SQLiteProjectRepository(db_session)
         svc = WritingService(
-            llm_client=llm,  # type: ignore[arg-type]
-            prompt_manager=_StubPrompt(),  # type: ignore[arg-type]
-            project_repo=SQLiteProjectRepository(db_session),
-            chapter_repo=None,  # type: ignore[arg-type]
+            llm_client=llm,  # type: ignore[arg-type]  # 测试替身仅实现 chat，非完整 LLMClientProtocol
+            prompt_manager=_StubPrompt(),  # type: ignore[arg-type]  # 同上，仅实现 load/render
+            project_repo=repo,
+            chapter_repo=_StubChapterRepo(project_id=project_id),  # type: ignore[arg-type]  # 同上，仅实现 get_chapter
         )
         return svc, llm
 
@@ -194,7 +217,7 @@ class TestWritingServiceUUIDChain1230:
         """
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("写作链项目", config=ProjectConfig(model="probe/model")))
-        svc, llm = await self._service(db_session)
+        svc, llm = await self._service(db_session, project_id=created.id)
 
         result = await svc.generate_chapter(
             WritingRequest(
@@ -214,7 +237,7 @@ class TestWritingServiceUUIDChain1230:
 
         反向断言：把「类型错误」与「业务上的项目不存在」区分开。
         """
-        svc, _ = await self._service(db_session)
+        svc, _ = await self._service(db_session, project_id=uuid.uuid4())
         try:
             await svc.generate_chapter(
                 WritingRequest(
@@ -411,7 +434,7 @@ class TestRepoFamilyUUIDSemantics1230:
         # UUID 入参：不抛 + 不误命中
         for candidate in (uuid.uuid4(), uuid.UUID(int=1), uuid.UUID(int=saved.id)):
             try:
-                hit = await repo.get(candidate)  # type: ignore[arg-type]
+                hit = await repo.get(candidate)  # type: ignore[arg-type]  # 反向断言：故意传 UUID 不抛  # 本契约核心：故意传 UUID
             except TypeError as exc:
                 pytest.fail(f"{cls_name}.get(UUID) 抛 TypeError：{exc}")
             assert hit is None, f"{cls_name}.get({candidate}) 返回了记录 —— UUID 被静默折算后误命中"
@@ -430,7 +453,7 @@ class TestGuardFalsifiability1230:
         pid: object = uuid.uuid4()
         with pytest.raises(TypeError, match="not supported between instances"):
             # 旧形态：守卫前无类型归一
-            _ = pid < -(2**63) or pid >= 2**63  # type: ignore[operator]
+            _ = pid < -(2**63) or pid >= 2**63  # type: ignore[operator]  # 故意以 object 类型喂 UUID，复现旧守卫 TypeError
 
     async def test_new_guard_shape_accepts_uuid(self) -> None:
         """新形态：类型早退后再比较 → 不抛（与实现契约一致）。"""

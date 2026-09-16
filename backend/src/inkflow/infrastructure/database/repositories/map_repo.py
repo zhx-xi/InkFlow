@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.map import MapPin, WorldMap
 from inkflow.infrastructure.database.models.map import MapORM, MapPinORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -134,14 +135,15 @@ class SQLiteMapRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, map_id: int) -> WorldMap | None:
+    async def get(self, map_id: int | uuid.UUID) -> WorldMap | None:
         """按主键查询地图（无软删过滤——真删语义）.
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
         """
-        if map_id < -(2**63) or map_id >= 2**63:
+        mid = uuid_to_pk_or_none(map_id)
+        if mid is None:
             return None
-        stmt = select(MapORM).where(MapORM.id == map_id)
+        stmt = select(MapORM).where(MapORM.id == mid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
@@ -156,7 +158,7 @@ class SQLiteMapRepository:
     async def list(
         self,
         project_id: int,
-        root_location_id: int | None = None,
+        root_location_id: int | uuid.UUID | None = None,
         top_level_only: bool = False,
         offset: int = 0,
         limit: int = 50,
@@ -170,15 +172,14 @@ class SQLiteMapRepository:
         """
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        if root_location_id is not None and (
-            root_location_id < -(2**63) or root_location_id >= 2**63
-        ):
+        rlid = uuid_to_pk_or_none(root_location_id)
+        if root_location_id is not None and rlid is None:
             return [], 0
         base = select(MapORM).where(MapORM.project_id == project_id)
         if top_level_only:
             base = base.where(MapORM.root_location_id.is_(None))
-        elif root_location_id is not None:
-            base = base.where(MapORM.root_location_id == root_location_id)
+        elif rlid is not None:
+            base = base.where(MapORM.root_location_id == rlid)
 
         # 总数（分页前，同条件）
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -242,17 +243,16 @@ class SQLiteMapRepository:
 
     # ── pins CRUD ──
 
-    async def list_pins(self, map_id: int) -> builtins.list[MapPin]:
+    async def list_pins(self, map_id: int | uuid.UUID) -> builtins.list[MapPin]:
         """列出地图全部 pin（created_at ASC）.
 
         超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法
         的 128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）.
         """
-        if map_id < -(2**63) or map_id >= 2**63:
+        mid = uuid_to_pk_or_none(map_id)
+        if mid is None:
             return []
-        stmt = (
-            select(MapPinORM).where(MapPinORM.map_id == map_id).order_by(MapPinORM.created_at.asc())
-        )
+        stmt = select(MapPinORM).where(MapPinORM.map_id == mid).order_by(MapPinORM.created_at.asc())
         result = await self._session.execute(stmt)
         return [_pin_orm_to_domain(o) for o in result.scalars().all()]
 
@@ -264,11 +264,12 @@ class SQLiteMapRepository:
         await self._session.refresh(orm)
         return _pin_orm_to_domain(orm)
 
-    async def get_pin(self, pin_id: int) -> MapPin | None:
+    async def get_pin(self, pin_id: int | uuid.UUID) -> MapPin | None:
         """按主键查询 pin（不存在返回 None）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if pin_id < -(2**63) or pin_id >= 2**63:
+        pid = uuid_to_pk_or_none(pin_id)
+        if pid is None:
             return None
-        stmt = select(MapPinORM).where(MapPinORM.id == pin_id)
+        stmt = select(MapPinORM).where(MapPinORM.id == pid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _pin_orm_to_domain(orm) if orm else None
@@ -300,7 +301,7 @@ class SQLiteMapRepository:
 
     # ── children（drill-down JOIN，评审 F2）──
 
-    async def children(self, map_id: int) -> builtins.list[WorldMap]:
+    async def children(self, map_id: int | uuid.UUID) -> builtins.list[WorldMap]:
         """查询本图 pin 关联地点的子地图（drill-down，Q1=B）.
 
         单 SQL: JOIN map_pins p（p.map_id=:id AND p.location_id IS NOT NULL）
@@ -311,14 +312,15 @@ class SQLiteMapRepository:
         超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法
         的 128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）.
         """
-        if map_id < -(2**63) or map_id >= 2**63:
+        mid = uuid_to_pk_or_none(map_id)
+        if mid is None:
             return []
         stmt = (
             select(MapORM)
             .join(
                 MapPinORM,
                 and_(
-                    MapPinORM.map_id == map_id,
+                    MapPinORM.map_id == mid,
                     MapPinORM.location_id.isnot(None),
                 ),
             )
@@ -360,13 +362,14 @@ class SQLiteMapRepository:
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]
 
-    async def list_maps_by_project(self, project_id: int) -> builtins.list[WorldMap]:
+    async def list_maps_by_project(self, project_id: int | uuid.UUID) -> builtins.list[WorldMap]:
         """收集项目全部地图（项目硬删钩子 cleanup 用，全量不分页）."""
         # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int）→ 空结果，防 128 位 int
         # 绑定 SQLite INTEGER 抛 OverflowError → 500（规则扫描链 R3 走此查询）
-        if project_id < -(2**63) or project_id >= 2**63:
+        pid = uuid_to_pk_or_none(project_id)
+        if pid is None:
             return []
-        stmt = select(MapORM).where(MapORM.project_id == project_id)
+        stmt = select(MapORM).where(MapORM.project_id == pid)
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]
 

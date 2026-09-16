@@ -264,7 +264,7 @@ class TestRepoGetAcceptsUUID1230:
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("UUID 主键项目"))
 
-        got = await repo.get(created.id)  # type: ignore[arg-type]  # 本用例核心
+        got = await repo.get(created.id)  # type: ignore[arg-type]  # 本用例核心（传 UUID）
 
         assert got is not None
         assert got.id == created.id
@@ -274,5 +274,5 @@ class TestRepoGetAcceptsUUID1230:
         repo = SQLiteProjectRepository(db_session)
         assert uuid.uuid4().int > 2**63 - 1, "前提：随机 uuid4 的 .int 超 int64"
 
-        assert await repo.get(uuid.uuid4()) is None  # type: ignore[arg-type]
-        assert await repo.get(uuid.UUID(int=1)) is None  # type: ignore[arg-type]
+        assert await repo.get(uuid.uuid4()) is None  # type: ignore[arg-type]  # 传 UUID
+        assert await repo.get(uuid.UUID(int=1)) is None  # type: ignore[arg-type]  # 传 UUID

@@ -31,6 +31,7 @@ from inkflow.infrastructure.database.models.character import (
     CharacterORM,
     CharacterRelationORM,
 )
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -169,17 +170,18 @@ class SQLiteCharacterRepository:
             await self._session.commit()
         return _char_orm_to_domain(orm, list(character.group_ids))
 
-    async def get(self, character_id: int) -> Character | None:
+    async def get(self, character_id: int | uuid.UUID) -> Character | None:
         """按主键查询角色。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if character_id < -(2**63) or character_id >= 2**63:
+        cid = uuid_to_pk_or_none(character_id)
+        if cid is None:
             return None
-        stmt = select(CharacterORM).where(CharacterORM.id == character_id)
+        stmt = select(CharacterORM).where(CharacterORM.id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return None
-        group_ids = await self._list_group_ids([character_id])
-        return _char_orm_to_domain(orm, group_ids.get(character_id, []))
+        group_ids = await self._list_group_ids([cid])
+        return _char_orm_to_domain(orm, group_ids.get(cid, []))
 
     async def get_by_name(self, project_id: int, name: str) -> Character | None:
         """按项目内角色名查询角色."""
@@ -198,7 +200,7 @@ class SQLiteCharacterRepository:
         self,
         project_id: int,
         search: str | None = None,
-        group_id: int | None = None,
+        group_id: int | uuid.UUID | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
         offset: int = 0,
@@ -211,7 +213,8 @@ class SQLiteCharacterRepository:
         """
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        if group_id is not None and (group_id < -(2**63) or group_id >= 2**63):
+        gid = uuid_to_pk_or_none(group_id)
+        if group_id is not None and gid is None:
             return [], 0
         base = select(CharacterORM).where(CharacterORM.project_id == project_id)
 
@@ -223,7 +226,7 @@ class SQLiteCharacterRepository:
             base = base.join(
                 CharacterGroupMemberORM,
                 CharacterGroupMemberORM.character_id == CharacterORM.id,
-            ).where(CharacterGroupMemberORM.group_id == group_id)
+            ).where(CharacterGroupMemberORM.group_id == gid)
 
         # 总数（分页前）
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -374,11 +377,12 @@ class SQLiteCharacterRepository:
         await self._session.refresh(orm)
         return _group_orm_to_domain(orm)
 
-    async def get_group(self, group_id: int) -> CharacterGroup | None:
+    async def get_group(self, group_id: int | uuid.UUID) -> CharacterGroup | None:
         """按主键查询分组。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if group_id < -(2**63) or group_id >= 2**63:
+        gid = uuid_to_pk_or_none(group_id)
+        if gid is None:
             return None
-        stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
+        stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == gid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _group_orm_to_domain(orm) if orm else None
@@ -443,11 +447,12 @@ class SQLiteCharacterRepository:
         await self._session.refresh(orm)
         return _relation_orm_to_domain(orm)
 
-    async def get_relation(self, relation_id: int) -> CharacterRelation | None:
+    async def get_relation(self, relation_id: int | uuid.UUID) -> CharacterRelation | None:
         """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if relation_id < -(2**63) or relation_id >= 2**63:
+        rid = uuid_to_pk_or_none(relation_id)
+        if rid is None:
             return None
-        stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == relation_id)
+        stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == rid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _relation_orm_to_domain(orm) if orm else None

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
 
 
 def _utcnow() -> datetime:
@@ -75,12 +76,14 @@ class SQLiteProjectRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, project_id: int) -> Project | None:
+    async def get(self, project_id: int | uuid.UUID) -> Project | None:
         """按 ID 查询项目（排除软删除记录）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        if project_id < -(2**63) or project_id >= 2**63:
+        # #1230: 入参先归一为 int 再比较（domain 层天然传 UUID；UUID < int 会抛 TypeError）
+        pid = uuid_to_pk_or_none(project_id)
+        if pid is None:
             return None
         stmt = select(ProjectORM).where(
-            ProjectORM.id == project_id,
+            ProjectORM.id == pid,
             ~ProjectORM.is_deleted,
         )
         result = await self._session.execute(stmt)
