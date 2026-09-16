@@ -1070,7 +1070,6 @@ jobs:
   coverage-backend:
     # 第二批：needs 第一批的 4 个 coverage artifact 产出 job
     needs: [changes, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -1167,7 +1166,6 @@ jobs:
   coverage-function:
     # 第二批：needs 四个 coverage artifact 产出 job（同 coverage-backend）
     needs: [changes, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend]
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
@@ -1249,7 +1247,6 @@ jobs:
   coverage-frontend:
     # 第三批：needs unit-frontend（artifact 产出者）
     needs: [changes, unit-frontend]
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
