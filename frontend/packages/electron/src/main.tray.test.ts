@@ -42,6 +42,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import path from 'node:path';
 import { app, ipcMain, Tray, nativeImage, Menu, BrowserWindow } from 'electron';
+import { resetMainInstance } from './__testutils__/main-boot';
 import './main';
 
 type AnyHandler = (...args: unknown[]) => void;
@@ -234,13 +235,18 @@ let setCloseBehaviorHandler: IpcHandleHandler;
 const flushMicrotasks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** 新模块实例（状态归零：closeBehavior/quitInProgress/mainWindow/trayHintDismissed）。
- *  ⚠️ fakeChild 的 emitter 是 hoisted 单例：必须先 removeAllListeners 清旧实例回调。 */
+ *  ⚠️ 清理职责全部下沉到 `__testutils__/main-boot.ts`（#1219 根治：旧实例的
+ *  interval / globalThis 钩子 / logger 端点 / child emitter 回调都必须显式清，
+ *  resetModules 本身不回收副作用——三文件共用同一实现，拒绝同族分叉）。 */
 const freshInstance = async (): Promise<void> => {
-  fakeChild.removeAllListeners();
-  fakeChild.stdout.removeAllListeners();
-  fakeChild.stderr.removeAllListeners();
-  vi.resetModules();
-  await import('./main');
+  // 旧 logger 模块引用必须在 resetModules 之前取（清的是旧实例持有的那份 endpoint）
+  const { setMainLogEndpoint } = await import('./logger');
+  await resetMainInstance({
+    vi,
+    fakeChild,
+    importMain: () => import('./main'),
+    resetLogEndpoint: setMainLogEndpoint,
+  });
 };
 
 beforeAll(() => {
@@ -504,19 +510,16 @@ describe('window-all-closed 条件退出（spec §5.2 / §5.6 / D5）', () => {
 //  formatKernelMenuLabel 契约 + window-controls.test.ts 的 ready 链 + rc 装机复验 M1' 组成。
 describe('回归防护：内核路径来源（#187/#192 F1）', () => {
   it('#192 F1 packagedKernelPath 来源：process.resourcesPath 存在 → spawn command 为 resources/kernel 绝对路径', async () => {
-    fakeChild.removeAllListeners();
-    fakeChild.stdout.removeAllListeners();
-    fakeChild.stderr.removeAllListeners();
     const prev = (process as { resourcesPath?: string }).resourcesPath;
     Object.defineProperty(process, 'resourcesPath', {
       value: 'C:/app/resources',
       configurable: true,
     });
     try {
-      vi.resetModules();
-      spawnMock.mockClear(); // import 前清旧实例累计——之后 calls[0] 即本实例生产 spawn
+      spawnMock.mockClear(); // 换实例前清旧实例累计——之后 calls[0] 即本实例生产 spawn
       appMock.isPackaged = true; // 先设再 import → boot 即走生产分支
-      await import('./main');
+      // #1219：统一走 freshInstance（内含旧 interval/钩子/端点/回调清理）
+      await freshInstance();
       // boot 完成标志：spawn 已调用（生产模式 kernelStatePath=null → 无 fs/http 挂起）
       await vi.waitFor(() => {
         expect(spawnMock.mock.calls.length).toBeGreaterThan(0);
