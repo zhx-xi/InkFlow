@@ -1153,21 +1153,23 @@ jobs:
           path: backend/coverage.xml
 
   # ── Function coverage: 后端函数覆盖（标准定义：每函数被调用≥1次，#869 S1，ADR-027 修订）──
-  # 独立 job（不 --cov）：trace 插件用 sys.settrace，与 coverage 的 C tracer 同进程互斥；
-  # 单独跑全量测试收集 called-set（双 tests/ 目录不能同一进程，同 #685 分轨）→ 合并 → 门禁。
+  # #1206 方案 B1：不再独立跑测试。called-set 从 unit/api/cli/integration 四个 job 已有的
+  # `--cov` 数据反推（ci_cd/coverage_called.py：函数体首语句被执行 ⇒ 函数被调用过；首行必须
+  # 取自 AST body[0].lineno，不能取 code.co_lines() 首个 span——那是 def 行，模块导入即执行，
+  # 会把从未调用的函数误判为已调用）。本 job 只「下载 + 导出 + 合并 + 门禁」，对齐
+  # coverage-backend 形态。原 settrace 形态（跑全量测试第二遍，实测 19.5min）已废弃。
   # 门禁 = A 规则「≥基线−Δ 且 0 新增未调用（豁免清单内除外）」；基线固化于 func_coverage_baseline.json。
   function-coverage:
-    needs: [changes]
+    # 第二批：needs 四个 coverage artifact 产出 job（同 coverage-backend）
+    needs: [changes, unit-backend, unit-api-backend, unit-cli-backend, unit-integration-backend]
     if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
     permissions:
       contents: read
-    runs-on: windows-latest
-    timeout-minutes: 55
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
-    env:
-      TZ: "XXX-5"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1183,39 +1185,62 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install dependencies
         run: uv sync --frozen --extra dev
-      - name: Collect func-cov (unit)
-        env:
-          INKFLOW_FUNC_COV: "1"
-          INKFLOW_FUNC_COV_SRC: src
-          INKFLOW_FUNC_COV_REPORT: func_cov_unit.json
-          PYTHONPATH: ../ci_cd
-        # --reruns 2：chromadb 1.5.9 Windows CI hnsw 偶发竞态（#409/#873 家族；S3f 收尾批
-        # 内 function-coverage 连续两次实锤——#884 首红 rerun 即绿、#885 dispatch run 同签名），
-        # 与 unit/api/cli/integration 四个常规 job 对齐。
-        run: uv run pytest tests/unit/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
-      - name: Collect func-cov (api)
-        env:
-          INKFLOW_FUNC_COV: "1"
-          INKFLOW_FUNC_COV_SRC: src
-          INKFLOW_FUNC_COV_REPORT: func_cov_api.json
-          PYTHONPATH: ../ci_cd
-        run: uv run pytest ../tests/api/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
-      - name: Collect func-cov (cli)
-        env:
-          INKFLOW_FUNC_COV: "1"
-          INKFLOW_FUNC_COV_SRC: src
-          INKFLOW_FUNC_COV_REPORT: func_cov_cli.json
-          PYTHONPATH: ../ci_cd
-        run: uv run pytest ../tests/cli/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
-      - name: Collect func-cov (integration)
-        env:
-          INKFLOW_FUNC_COV: "1"
-          INKFLOW_FUNC_COV_SRC: src
-          INKFLOW_FUNC_COV_REPORT: func_cov_integration.json
-          PYTHONPATH: ../ci_cd
-        run: uv run pytest ../tests/integration/ -q -p func_cov_plugin --reruns 2 --reruns-delay 1
-      - name: Merge called-sets
-        run: uv run python ../ci_cd/merge_func_cov_calls.py func_cov_unit.json func_cov_api.json func_cov_cli.json func_cov_integration.json func_cov_called.json
+      # 四个 job 的 coverage.dat 复用同一批 artifact（download-artifact 可多 job 重复下载）
+      - name: Download unit coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-unit-backend
+          path: cov/unit
+      - name: Download API coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-api-backend
+          path: cov/api
+      - name: Download CLI coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-cli-backend
+          path: cov/cli
+      - name: Download integration coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-integration-backend
+          path: cov/integration
+      # 缺轨校验：缺一轨会静默算出偏低但合法的百分比（假绿）→ 必须硬失败
+      - name: Verify all four tracks present
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for d in unit api cli integration; do
+            if [ -f "cov/$d/coverage.dat" ]; then
+              echo "OK   cov/$d/coverage.dat"
+            elif [ -f "cov/$d/backend/coverage.dat" ]; then
+              echo "OK   cov/$d/backend/coverage.dat"
+            else
+              echo "MISSING coverage.dat for track: $d"
+              find "cov/$d" -type f 2>/dev/null || true
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+      - name: Merge coverage data + export called-set
+        # artifact 落在 $GITHUB_WORKSPACE/cov/，但 working-directory=backend → 用绝对路径
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          for d in unit api cli integration; do
+            if [ -f "cov/$d/coverage.dat" ]; then
+              cp "cov/$d/coverage.dat" "backend/coverage-$d.dat"
+            else
+              cp "cov/$d/backend/coverage.dat" "backend/coverage-$d.dat"
+            fi
+          done
+          cd backend
+          uv run python ../ci_cd/coverage_called.py src func_cov_called.json \
+            coverage-unit.dat coverage-api.dat coverage-cli.dat coverage-integration.dat
       - name: Function-coverage gate
         run: uv run python ../ci_cd/check_func_coverage.py src func_cov_called.json ../ci_cd/func_coverage_exempt.json ../ci_cd/func_coverage_baseline.json --delta 1.0
 
