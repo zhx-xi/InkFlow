@@ -395,7 +395,10 @@ CLI/集成测试（显式加 ci.yml integration-cli-backend，真实内核轨）
 ## 11. 依赖关系
 
 ```text
-F20 依赖（全部 ✅ 已实现）:
+F20 依赖（全部 ✅ 已实现；承载证据 `tests/cli/test_cli_mcp.py`）:
+  · 下列各项均为既有复用 —— F30/F38/F26/F7 各见其模块 spec（F7 信封/退出码见
+    specs/f7-cli/spec.md §5/§7），内核 REST 端点 = F1/F2 等既有端点（§2.2 映射表），
+    ADR-022 为文档联动（非代码）。
   F30（kernel）           — ensure_kernel / KernelHandle / kernel.json 冷启动协议（复用，零改动）
   F38（http）             — InkFlowHTTPClient / HttpApiError / map_http_error 传输层（复用，零改动）
   F26（agent_tools）      — ToolSpec 契约（domain/models/agent_tools.py，复用，零改动）

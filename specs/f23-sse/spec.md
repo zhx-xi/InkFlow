@@ -520,9 +520,9 @@ async def test_stream_generate_deltas(override_writing_service):
 
 | 依赖 | 状态 | 说明 |
 |------|------|------|
-| F3 WritingService / DTO / FormatValidator | ✅ 已实现 | 流式方法复用其校验与 prompt 组装（§5.1）；DTO 继承追加 mode（§2.2） |
-| F5 LLMClientProtocol.chat_stream | ✅ 已实现 | `AsyncGenerator[StreamEvent]` 逐 token（langchain_client.py） |
-| F1 项目仓储 / F2 章节仓储 | ✅ 已实现 | 校验复用（deps.py 既有装配） |
+| F3 WritingService / DTO / FormatValidator | ✅ 已实现（PR #21；`test_writing_service.py`） | 流式方法复用其校验与 prompt 组装（§5.1）；DTO 继承追加 mode（§2.2） |
+| F5 LLMClientProtocol.chat_stream | ✅ 已实现（PR #10 Protocol / #16 实现；`test_llm_client.py::test_chat_stream_yields_events`） | `AsyncGenerator[StreamEvent]` 逐 token（langchain_client.py） |
+| F1 项目仓储 / F2 章节仓储 | ✅ 已实现（PR #8 / #9；`test_project_repo.py` / `test_chapter_repo.py`） | 校验复用（deps.py 既有装配） |
 | httpx-sse ≥ 0.4 | ✅ 已锁定 | 测试侧（pyproject.toml L23） |
 | F19 GUI | ⬜ 未开始 | 反向依赖：F23 端点先行，F19 落地后消费 |
 | 服务端新增依赖 | ❌ 无 | StreamingResponse 零新增（ADR-025 零触发） |

@@ -350,7 +350,7 @@ inkflow skills remove <NAME> [--json]
 | 依赖 | 交付 | 用途 |
 |------|------|------|
 | ADR-022 | ✅ 已接受 | 形态决策（官方包单一真相 + 三通道分发基线 + CLI 契约；本任务按用户拍板演进为双轨） |
-| F7 CLI 全局约定 | ✅ 已实现 | 信封/退出码/错误码契约（§4 全部命令） |
+| F7 CLI 全局约定 | ✅ 已实现（`test_cli_output.py::TestPrintResult::test_json_envelope`、`::TestPrintError::test_json_envelope`；`specs/f7-cli/spec.md` §5/§7） | 信封/退出码/错误码契约（§4 全部命令） |
 | f19-packaging | ✅ PR #144 | PyInstaller 链 + release.yml（§5.4 背景：本任务不消费） |
 | f33-cli-dist | ✅ PR #181 | CLI zip 产物（§5.5 背景：本任务不消费） |
 | f38-cli-http | ✅ PR #213 | 本地命令豁免先例（§4.1 执行模型依据） |
