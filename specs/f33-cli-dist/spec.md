@@ -21,7 +21,7 @@
 
 ### 1.1 本章定位
 
-**打包/发布基建增量专项型（非业务模块变体）**：不新建业务实体、不新增业务 API 端点、不新增业务 CLI 命令，为 0.4.0 已建立的 Windows 打包分发链（f19-packaging，✅ 已实现）增加**第 4 个发布产物**与 NSIS 安装器增强：
+**打包/发布基建增量专项型（非业务模块变体）**：不新建业务实体、不新增业务 API 端点、不新增业务 CLI 命令，为 0.4.0 已建立的 Windows 打包分发链（f19-packaging，✅ 已实现，见 PR #144）增加**第 4 个发布产物**与 NSIS 安装器增强：
 
 | 产物 | 工具 | 形态 | 用户路径 | 来源 |
 |------|------|------|----------|------|
@@ -36,7 +36,7 @@
 
 ### 1.2 与 f19-packaging 的关系（复用 vs 增量）
 
-| 维度 | f19-packaging（0.4.0，✅ 已实现） | 本任务（0.5.0） | 动作 |
+| 维度 | f19-packaging（0.4.0，✅ 已实现，见 PR #144） | 本任务（0.5.0） | 动作 |
 |------|----------------------------------|-----------------|------|
 | PyInstaller 构建 | `backend/pyinstaller/inkflow.spec` → `backend/dist/inkflow/`（onedir） | **同一构建产物**，GUI 嵌入 + CLI 打 zip 两种消费 | 零改动（inkflow.spec 不动） |
 | 版本注入 | tag → pyproject.toml → `copy_metadata('inkflow')` → INKFLOW_READY.version | **复用**；CLI zip 命名版本同样从 `github.ref_name` 派生 | 零新机制 |
