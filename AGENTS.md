@@ -14,6 +14,7 @@
 | `adr/README.md` | ADR 索引 + 编号规则 + 当前有效决策速览（改代码前先查） |
 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff / mypy / pytest） |
 | `CONTRIBUTING.md` | 人类贡献者指南 |
+| `agents/` | **给开发 agent 的文档目录**：派轨任务书模板 + 公共约定 + 专题手册（`CONVENTION.md` 每轨必读） |
 
 本文件只保留**指针 + 无法从代码推导的纪律**；规范细节一律以权威源为准，不在此复制（复制体必然漂移，见 #1190）。Hermes 上下文 first-match-wins 只自动加载本文件，`.specify/constitution.md` 不在自动上下文中，需主动读取。
 
