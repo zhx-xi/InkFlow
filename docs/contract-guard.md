@@ -102,7 +102,9 @@
 
 > 背景：审计发现 `specs/f44-book-orchestrator/spec.md` 的 F6 上下文注入链与 F39 能力白名单
 > 标 `✅ 已实现` 而源码零实现/未装配（#1175/#1181），同类另见 `specs/f6-context/spec.md` §11、
-> `specs/f3-writing/spec.md` §11。修正排期 0.15.0 W3（#1184b）。
+> `specs/f3-writing/spec.md` §11。上述 4 处已随 W1/W2 实现修复并于 #1184b（2026-09-16）补齐
+> 可验证证据后闭环；本节证据要求自 #1184a 起对**所有新增/修改的 spec** 长期生效。
+> 已知存量缺口（f19/f20/f23/f33 共 7 行历史无证据标记）另立 issue 跟踪，不在 #1184b 范围。
 
 ## 改表 PR checklist（机械引用）
 

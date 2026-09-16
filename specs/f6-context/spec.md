@@ -455,12 +455,17 @@ F6 依赖:
 
 F6 被依赖:
   F3 (writing_service) — 写作前调用 build_context 组装上下文注入 Prompt
+                          ✅ 已实现（#1176 / PR #1189；F3 经 ContextProviderProtocol 适配
+                          `ContextService.get_context` → 内部 `build_context`，装配点
+                          `api/deps.py:205`；`tests/api/test_writer_factory_authorization.py::
+                          test_get_writing_service_injects_real_context_provider` 绿）
   F7 (CLI)             — write 命令的 --show-context 调试输出
 ```
 
-> ⚠️ **状态标记待复核（2026-09-15，审计发现）**：上方 `F3 (writing_service) — 写作前调用 build_context`
-> 与源码不符——F6 上下文注入链**三轨零调用**（#1175），产线运行的是 `NullContextProvider`（#1176）。
-> 修正排期见 0.15.0 W3（#1184b）。同类另见 `specs/f44-book-orchestrator/spec.md` §11 L691-692。
+> ✅ **状态标记已复核并修正（2026-09-16，#1184b）**：上方 `F3 (writing_service) — 写作前调用 build_context`
+> 原为**无证据谎报**（#1184 审计发现：F6 注入链三轨零调用 #1175，产线运行 `NullContextProvider` #1176）。
+> W1-B 已在 F3 轨注入真实 `context_provider`（PR #1189），现附可验证证据。原审计发现 #1184 的 b 部分**已闭环**。
+> 同类另见 `specs/f44-book-orchestrator/spec.md` §11（同批修正）、`specs/f3-writing/spec.md` §11。
 
 ---
 

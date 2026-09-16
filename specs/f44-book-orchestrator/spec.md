@@ -685,22 +685,25 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 
 | 依赖 | 说明 | 状态 |
 |------|------|------|
-| F42 管线（write_auto/write_continue） | Executor 执行体（阶段 2 顺序派发、阶段 3 Send 分支复用） | ✅ 已实现 |
-| F27 writer-agent | agent 工厂复用（build_agentic_writer 换 system prompt）、save_draft 回收、agent_run 轨迹 | ✅ 已实现 |
-| F29 Supervisor | 书级主 agent 决策（卷规划/卷间推进/失败补救）+ 护栏（steps/consecutive/fallback）+ UntrackedValue llm_client 模式 | ✅ 已实现 |
-| F39 Agent 实体 | 能力白名单（tool_ids/skill_ids）供章 writer 装配 | ✅ 已实现（0.9.0） |
-| F6 context | 上下文注入链（章 brief 变量） | ✅ 已实现 |
-| outline/character 实体（F11/F9 + F43 P3/P4 三级结构） | planner 产出落库（level/parent_id/chapter_id） | ✅ 已实现 |
+| F42 管线（write_auto/write_continue） | Executor 执行体（阶段 2 顺序派发、阶段 3 Send 分支复用） | ✅ 已实现（`test_agent_service.py` / `test_planner_service.py`） |
+| F27 writer-agent | agent 工厂复用（build_agentic_writer 换 system prompt）、save_draft 回收、agent_run 轨迹 | ✅ 已实现（`test_agentic_writer_service.py`） |
+| F29 Supervisor | 书级主 agent 决策（卷规划/卷间推进/失败补救）+ 护栏（steps/consecutive/fallback）+ UntrackedValue llm_client 模式 | ✅ 已实现（`test_supervisor_pipeline.py`） |
+| F39 Agent 实体 | 能力白名单（tool_ids/skill_ids）供章 writer 装配 | ✅ 已实现（实体 0.9.0 #258；writer 装配接入 #1181 / PR #1202；`test_agentic_whitelist.py` 24 用例绿，装配点 `agentic_writer.py:173-227`） |
+| F6 context | 上下文注入链（章 brief 变量） | ✅ 已实现（#1175 / PR #1189；`test_book_service_brief_injection.py` 15 用例绿） |
+| outline/character 实体（F11/F9 + F43 P3/P4 三级结构） | planner 产出落库（level/parent_id/chapter_id） | ✅ 已实现（`test_outline_p3.py` / `test_outline_tree_guard.py`） |
 | F32 settings | 多维上限默认键 —— **不 MODIFY**（Q2=C 拍板，v1.1：上限默认载体改为 ProjectConfig.extra 项目级默认，见 §2.4/§12 D11） | —（仅引用，零改动） |
 | **langgraph-checkpoint-sqlite** | AsyncSqliteSaver（阶段 4） | ⏳ 新增依赖（Spike ⑤ 实证缺失） |
 | LLM 客户端（llm_client 注入链，F27/F29 模式） | 访谈 LLM 动态提问引擎（v1.2 #475：问题生成/确定项提取/冲突检测）；模型未配置前置校验（#474 已合入） | ✅ 已实现（#498） |
 | #486 会话/记忆 UI | 下游消费方：访谈确定项落会话（confirmed_items/conflicts）→ 会话列表/归档/删除/记忆提取（#486 依赖本模块，§10 第 8 行） | ⏳ 下游 issue（0.10.1） |
 | 被依赖 | 无（0.10.0 首批模块，F45 M2 依赖本模块阶段 4 证据）；#486 为 0.10.1 下游消费方（v1.2 #475） | — |
 
-> ⚠️ **状态标记待复核（2026-09-15，审计发现）**：上表中 `F6 context` 与 `F39 Agent 实体`
-> 两行的 `✅ 已实现` 与源码不符——F6 上下文注入链**三轨零调用**（#1175）、
-> F39 白名单**两条 factory 均未装配**（#1181）。修正排期见 0.15.0 W3（#1184b）。
-> 同类问题另见 `specs/f6-context/spec.md` §11 L457、`specs/f3-writing/spec.md` §11 L506-507。
+> ✅ **状态标记已复核并修正（2026-09-16，#1184b）**：上表 `F6 context` / `F39 Agent 实体` 两行
+> 的 `✅ 已实现` 原为**无证据谎报**（#1184 审计发现：F6 上下文注入链三轨零调用 #1175、
+> F39 白名单两条 factory 均未装配 #1181）。W1/W2 已修复实现，本表两行现附可验证证据
+> （测试文件 + PR 号 + 装配点行号），同表其余 `✅ 已实现` 行亦补齐承载测试。
+> 原审计发现 #1184 的 b 部分**已闭环**；a 部分（证据门禁）见 PR #1189
+> （`docs/contract-guard.md` §「spec 状态标记证据要求」+ `ci.yml` contract filter）。
+> 同类另见 `specs/f6-context/spec.md` §11、`specs/f3-writing/spec.md` §11（同批修正）。
 
 **编号口径声明**：本模块为「长任务编排型」**第 20 变体**（F38=18 最新无冲突基线；F20/F46 双占第 19 变体，冲突以 ADR-019 v6+ 为准，F46 spec 笔记 2026-08-16 实录）。
 

@@ -503,14 +503,20 @@ F3 依赖:
   F1 (project_service) ✅ — project.config 读取（model / temperature / writing_style）
   F2 (chapter_service) ✅ — 章节存在性与归属校验（count_words 复用）
   F5 (llm_service)     ✅ — LLMClientProtocol + PromptTemplateProtocol（ADR-015 隔离）
-  F6 (context_service) ⏳ — ContextProviderProtocol 上下文注入（F3 提供 Null 实现先行开发，
-                             F6 就绪后替换为真实实现，零改动）
+  F6 (context_service) ✅ — ContextProviderProtocol 上下文注入（F3 曾以 Null 实现先行开发，
+                             F6 就绪后替换为真实实现，零改动——替换已发生：#1176 / PR #1189，
+                             `api/deps.py:205` 注入 `ContextService`；
+                             `tests/api/test_writer_factory_authorization.py::
+                             test_get_writing_service_injects_real_context_provider` 绿）
 ```
 
-> ⚠️ **状态标记待复核（2026-09-15，审计发现）**：上方「F6 就绪后替换为真实实现，零改动」
-> 与源码不符——替换**从未发生**，产线仍运行 `NullContextProvider`（#1176 / #1175）。
-> 修正排期见 0.15.0 W3（#1184b）。同类另见 `specs/f44-book-orchestrator/spec.md` §11 L691-692。
+> ✅ **状态标记已复核并修正（2026-09-16，#1184b）**：上方「F6 就绪后替换为真实实现，零改动」
+> 原为**无证据谎报**（#1184 审计发现：替换从未发生，产线仍运行 `NullContextProvider`，#1176 / #1175）。
+> W1-B 已完成替换且 F3 领域层**确实零改动**（仅装配层 `api/deps.py` 注入），现附可验证证据。
+> 原审计发现 #1184 的 b 部分**已闭环**。同类另见 `specs/f44-book-orchestrator/spec.md` §11（同批修正）、
+> `specs/f6-context/spec.md` §11。
 
+```text
 F3 被依赖:
   F4 (agent_service) — Writer/Reviser 环节调用 generate_chapter / continue_writing / revise_content
   F7 (CLI)           — write 子命令
