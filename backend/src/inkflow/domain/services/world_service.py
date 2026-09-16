@@ -48,6 +48,7 @@ from inkflow.domain.ports.world_errors import (
     WorldServiceError,
 )
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.model_resolution import resolve_model
 
@@ -198,7 +199,9 @@ class WorldService:
             updated_at=now,
         )
         logger.info("创建世界观条目: project=%s name=%s parent_id=%s", project_id, name, parent_id)
-        return await self._repo.add(setting)
+        created: WorldSetting = await self._repo.add(setting)
+        await publish_change("world_setting", "create", created.id, created.project_id)
+        return created
 
     async def get_setting(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
         """按主键获取条目；不存在返回 None（router 转 404）."""
@@ -365,7 +368,10 @@ class WorldService:
                 raise WorldNameConflictError()
         merged = existing.model_copy(update=updates)
         logger.info("更新世界观条目: setting_id=%s", setting_id)
-        return await self._repo.update(merged)
+        updated: WorldSetting | None = await self._repo.update(merged)
+        if updated is not None:
+            await publish_change("world_setting", "update", updated.id, existing.project_id)
+        return updated
 
     async def delete_setting(
         self,
@@ -402,6 +408,10 @@ class WorldService:
         # 测试契约要求 cascade/reparent 路径不做存在性闸门）
         existing = await self._repo.get(sid)
         project_int = _to_int_id(existing.project_id) if existing is not None else 0
+        existing_project_id: uuid.UUID | None = (
+            existing.project_id if existing is not None else None
+        )
+        deleted: bool
         # 判断是否有直接子地点（repo.list parent_id 过滤）
         children, _ = await self._repo.list(project_int, parent_id=sid, limit=1)
         if cascade:
@@ -410,6 +420,13 @@ class WorldService:
             ids = [s.id.int for s in subtree] if subtree else [sid]
             await self._repo.hard_delete_many(ids)
             await self._notify_location_cleanup(ids)
+            if existing_project_id is None:
+                logger.warning(
+                    "world_setting 删除事件缺 project_id"
+                    "（delete_setting 未加载实体，spec §15.3.2）: id=%s",
+                    setting_id,
+                )
+            await publish_change("world_setting", "delete", setting_id, existing_project_id)
             return True
         if reparent_to is not None:
             target_int = _to_int_id(reparent_to)
@@ -430,13 +447,29 @@ class WorldService:
                 raise WorldReparentTargetError()
             logger.info("reparent 真删世界观条目: setting_id=%s → %s", setting_id, reparent_to)
             await self._notify_location_cleanup([sid])
-            return await self._repo.delete_with_reparent(sid, target_int)
+            deleted = await self._repo.delete_with_reparent(sid, target_int)
+            if deleted:
+                if existing_project_id is None:
+                    logger.warning(
+                        "world_setting 删除事件缺 project_id"
+                        "（delete_setting 未加载实体，spec §15.3.2）: id=%s",
+                        setting_id,
+                    )
+                await publish_change("world_setting", "delete", setting_id, existing_project_id)
+            return deleted
         if children:
             raise WorldChildrenActionRequiredError()
         logger.info("真删世界观条目: setting_id=%s", setting_id)
         deleted = await self._repo.hard_delete(sid)
         if deleted:
             await self._notify_location_cleanup([sid])
+            if existing_project_id is None:
+                logger.warning(
+                    "world_setting 删除事件缺 project_id"
+                    "（delete_setting 未加载实体，spec §15.3.2）: id=%s",
+                    setting_id,
+                )
+            await publish_change("world_setting", "delete", setting_id, existing_project_id)
         return deleted
 
     async def _notify_location_cleanup(self, ids: list[int]) -> None:
@@ -472,7 +505,9 @@ class WorldService:
         if existing is not None:
             raise WorldCategoryNameConflictError()
         logger.info("创建世界观分类: project=%s name=%s", project_id, name)
-        return await self._repo.create_category(project_id, name, kind)
+        created: WorldCategory = await self._repo.create_category(project_id, name, kind)
+        await publish_change("world_category", "create", created.id, project_id)
+        return created
 
     async def list_world_categories(self, project_id: uuid.UUID) -> list[tuple[WorldCategory, int]]:
         """分类实体列表 + 每个分类名匹配的条目计数（spec §3.1/§6.1）."""
@@ -504,7 +539,10 @@ class WorldService:
         if dup is not None and dup.id != existing.id:
             raise WorldCategoryNameConflictError()
         logger.info("重命名世界观分类: category_id=%s → %s", category_id, name)
-        return await self._repo.rename_category(category_id, name)
+        renamed: WorldCategory | None = await self._repo.rename_category(category_id, name)
+        if renamed is not None:
+            await publish_change("world_category", "update", category_id, existing.project_id)
+        return renamed
 
     async def delete_category(self, category_id: uuid.UUID) -> bool:
         """删除分类（反向清空条目 category，spec §6.1 D2=A）.
@@ -515,7 +553,15 @@ class WorldService:
         Returns:
             True 表示删除成功；False 表示未找到记录（router 转 404）.
         """
-        return await self._repo.delete_category(category_id)
+        deleted: bool = await self._repo.delete_category(category_id)
+        if deleted:
+            logger.warning(
+                "world_category 删除事件缺 project_id"
+                "（delete_category 未加载实体，spec §15.3.2）: id=%s",
+                category_id,
+            )
+            await publish_change("world_category", "delete", category_id, None)
+        return deleted
 
     # ── F35 树查询（spec §5.3）────────────────────────────────────
 

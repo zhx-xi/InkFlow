@@ -47,6 +47,7 @@ from inkflow.domain.ports.foreshadowing_errors import (
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,9 @@ class ForeshadowingService:
             updated_at=now,
         )
         logger.info("创建伏笔: project=%s title=%s", data.project_id, data.title)
-        return await self._repo.add(foreshadowing)
+        created: Foreshadowing = await self._repo.add(foreshadowing)
+        await publish_change("foreshadowing", "create", created.id, created.project_id)
+        return created
 
     async def get(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
         """按主键获取伏笔；不存在返回 None（router 转 404）."""
@@ -249,7 +252,10 @@ class ForeshadowingService:
                 raise ForeshadowingNameConflictError()
         merged = existing.model_copy(update=updates)
         logger.info("更新伏笔: foreshadowing_id=%s", foreshadowing_id)
-        return await self._repo.update(merged)
+        updated: Foreshadowing | None = await self._repo.update(merged)
+        if updated is not None:
+            await publish_change("foreshadowing", "update", updated.id, existing.project_id)
+        return updated
 
     async def resolve(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
         """标记回收（spec §2.4: open→resolved，自动设置 resolved_at=now(UTC)）.
@@ -271,7 +277,9 @@ class ForeshadowingService:
             update={"status": ForeshadowingStatus.RESOLVED, "resolved_at": _utcnow()}
         )
         logger.info("伏笔已回收: foreshadowing_id=%s", foreshadowing_id)
-        return await self._repo.update(merged)
+        resolved: Foreshadowing = await self._repo.update(merged)
+        await publish_change("foreshadowing", "update", foreshadowing_id, existing.project_id)
+        return resolved
 
     async def reopen(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
         """重新开启（spec §2.4: resolved→open，清空 resolved_at）.
@@ -293,7 +301,9 @@ class ForeshadowingService:
             update={"status": ForeshadowingStatus.OPEN, "resolved_at": None}
         )
         logger.info("伏笔已重新开启: foreshadowing_id=%s", foreshadowing_id)
-        return await self._repo.update(merged)
+        reopened: Foreshadowing = await self._repo.update(merged)
+        await publish_change("foreshadowing", "update", foreshadowing_id, existing.project_id)
+        return reopened
 
     async def delete(self, foreshadowing_id: int | uuid.UUID) -> bool:
         """删除伏笔（v1.1 默认真删，不可恢复；spec §7: 不存在 → False，router 转 404）.
@@ -306,4 +316,11 @@ class ForeshadowingService:
         """
         fid = _to_int_id(foreshadowing_id)
         logger.info("真删伏笔: foreshadowing_id=%s", foreshadowing_id)
-        return await self._repo.hard_delete(fid)
+        deleted: bool = await self._repo.hard_delete(fid)
+        if deleted:
+            logger.warning(
+                "foreshadowing 删除事件缺 project_id（delete 未加载实体，spec §15.3.2）: id=%s",
+                foreshadowing_id,
+            )
+            await publish_change("foreshadowing", "delete", foreshadowing_id, None)
+        return deleted

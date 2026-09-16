@@ -29,11 +29,15 @@ import { StatusBar } from '../components/StatusBar';
 import { StyleAnalyzeDialog } from '../components/StyleAnalyzeDialog';
 import { Skeleton } from '../components/ui/skeleton';
 import { usePipeline } from '../hooks/usePipeline';
+import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
 import { ensureModelReady } from '../stores/models';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
+
+/** F23 §15.6.2（#1090 批 B）：本页关心的项目域——chapter/volume 事件 → 卷章树 FR（「仅当前项目」由 hook affectsCurrent 保证）。 */
+const WRITING_DATA_CHANGE_DOMAINS = ['chapter', 'volume'] as const;
 
 /** 无项目引导态（仅挂载于无项目分支，避免无 Router 上下文的测试报错） */
 function WritingEmptyState() {
@@ -274,6 +278,12 @@ export function WritingPage() {
       void loadChapterTree(pid);
     }
   }, [currentProjectId, projects, selectProject, loadChapterTree]);
+
+  // F23 §15.6.2（#1090 批 B）：chapter/volume 事件 → 章节树 FR（hook 层已过滤仅当前项目，
+  // chapter 高频域「仅当前项目失效」语义由 affectsCurrent 保证）
+  useDataChangeSubscription(WRITING_DATA_CHANGE_DOMAINS, () => {
+    if (currentProjectId) void loadChapterTree(currentProjectId);
+  });
 
   // #724：拉取全局默认模型（配置无项目级 model 时，上下文注入等回退到它；失败静默）
   useEffect(() => {

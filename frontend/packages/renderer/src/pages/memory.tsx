@@ -25,6 +25,7 @@ import {
   type UserPreferenceDto,
 } from '../api/memory';
 import { errorMessage } from '../api/client';
+import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useProjectStore } from '../stores/project';
 import { useI18n } from '../i18n/useI18n';
 import { formatTimestamp } from '../lib/log-format';
@@ -36,6 +37,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+
+/** F23 §15.6.2（#1090 批 B）：本页关心的域——memory 事件（双作用域）→ 三路记忆数据面 FR。 */
+const MEMORY_DATA_CHANGE_DOMAINS = ['memory'] as const;
 
 /** 项目级偏好 category 文案映射（未知分类原样展示） */
 const CATEGORY_LABEL: Record<string, string> = {
@@ -119,9 +123,15 @@ export function MemoryPage() {
   const [addCategory, setAddCategory] = useState('addressing');
   const [addPattern, setAddPattern] = useState('');
   const [addValue, setAddValue] = useState('');
+  // F23 §15.6.2（#1090 批 B）：数据面变更失效计数器（事件到达 → 自增 → 加载 effect 重拉）
+  const [reloadKey, setReloadKey] = useState(0);
 
   /** 无项目态：projects 为空或 currentProjectId 为 null 时不出任何请求 */
   const hasProject = projects.length > 0 && currentProjectId !== null && pid !== null;
+
+  // F23 §15.6.2（#1090 批 B）：memory 双作用域——项目偏好事件带 project_id（hook 过滤仅当前
+  // 项目）；用户偏好事件 project_id=null 全局生效（affectsCurrent 天然放行）→ 统一 bump reloadKey
+  useDataChangeSubscription(MEMORY_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
 
   // 加载 effect（依赖 pid）：并行拉项目级总结/偏好 + 用户级偏好
   useEffect(() => {
@@ -152,7 +162,7 @@ export function MemoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [pid, pushToast]);
+  }, [pid, pushToast, reloadKey]);
 
   const handleExtract = async (): Promise<void> => {
     if (!pid || extracting) return;

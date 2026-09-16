@@ -45,6 +45,7 @@ from inkflow.domain.ports.timeline_errors import (
     TimelineServiceError,
 )
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,9 @@ class TimelineService:
             title,
             narrative_position,
         )
-        return await self._repo.add(event)
+        created: TimelineEvent = await self._repo.add(event)
+        await publish_change("timeline_event", "create", created.id, created.project_id)
+        return created
 
     async def get_event(self, event_id: int | uuid.UUID) -> TimelineEvent | None:
         """按主键获取事件；不存在返回 None（router 转 404）."""
@@ -315,7 +318,10 @@ class TimelineService:
             updates["time_value"] = None  # "" = 清除世界内时间（置为未知）
         merged = existing.model_copy(update=updates)
         logger.info("更新时间线事件: event_id=%s", event_id)
-        return await self._repo.update(merged)
+        updated: TimelineEvent | None = await self._repo.update(merged)
+        if updated is not None:
+            await publish_change("timeline_event", "update", updated.id, existing.project_id)
+        return updated
 
     async def delete_event(self, event_id: int | uuid.UUID) -> bool:
         """真删事件（v1.1，spec §7: 事件不存在 → False，router 转 404）.
@@ -330,9 +336,16 @@ class TimelineService:
         """
         eid = _to_int_id(event_id)
         logger.info("真删时间线事件: event_id=%s", event_id)
-        deleted = await self._repo.hard_delete(eid)
+        deleted: bool = await self._repo.hard_delete(eid)
         if deleted and self._map_cleanup is not None:
             await self._map_cleanup(eid)
+        if deleted:
+            logger.warning(
+                "timeline_event 删除事件缺 project_id"
+                "（delete_event 未加载实体，spec §15.3.2）: id=%s",
+                event_id,
+            )
+            await publish_change("timeline_event", "delete", event_id, None)
         return deleted
 
     # ── 双线视图与一致性检查（spec §5）──────────────────────────

@@ -2,9 +2,10 @@
  * 设定库页数据面变更订阅接线（F23 §15.6.2 / #1088 批 A3）
  *
  * 契约：LibraryPage 登记 map / map_pin / character(+group/relation) / outline(+plot_point/story_arc)
- * 八个项目域；事件到达（含重连兜底 event=null）→ 复用既有 reloadKey 全量重拉（FR 粒度裁决，
- * 不新增 store 局部更新路径）。self-originated（source=gui）与非当前项目事件不触发重拉
- * （过滤在 useDataChangeSubscription 内，本文件验证页面消费面）。
+ * 八个项目域（批 A3）+ 批次 B（#1090）追加 world_setting / world_category / foreshadowing /
+ * timeline_event / knowledge_relation 五域；事件到达（含重连兜底 event=null）→ 复用既有 reloadKey
+ * 全量重拉（FR 粒度裁决，不新增 store 局部更新路径）。self-originated（source=gui）与非当前项目
+ * 事件不触发重拉（过滤在 useDataChangeSubscription 内，本文件验证页面消费面）。
  *
  * mock：src/api/event-stream（捕获帧回调手动驱动，同 hooks/useDataChangeSubscription.test.ts）
  * + src/api/client 的 apiFetch（断言端点重拉次数）；订阅调度层自带 300ms 防抖 → 以真实
@@ -208,5 +209,71 @@ describe('设定库页 — 数据面变更订阅（F23 §15.6.2 / #1088 A3）', 
     await emitAndSettle(ev({ domain: 'map', project_id: 'p2' }));
 
     expect(fetchCount('/api/v1/projects/p1/maps')).toBe(before);
+  });
+});
+
+/**
+ * F23 #1090 批次 B：library 页扩 5 域（world_setting / world_category / foreshadowing /
+ * timeline_event / knowledge_relation，设计裁定表 §3）。失效动作 = 既有 reloadKey 自增（零改动），
+ * 分类端点 effect / 分类 chips effect / kg graph effect 均已依赖 reloadKey。
+ * RED：5 域当前未注册进 LIBRARY_DATA_CHANGE_DOMAINS → 事件被调度层丢弃 → 端点计数不增 → FAIL。
+ */
+describe('设定库页 — 批次 B 新增 5 域接线（F23 #1090）', () => {
+  it('world_setting 事件 → 世界观条目端点全量重拉（cat=world）', async () => {
+    await renderAndSubscribe('/library?cat=world');
+    await waitFor(() =>
+      expect(fetchCount('/api/v1/projects/p1/world-settings')).toBeGreaterThan(0),
+    );
+    const before = fetchCount('/api/v1/projects/p1/world-settings');
+
+    await emitAndSettle(ev({ domain: 'world_setting', op: 'create', resource_id: 'ws9' }));
+
+    expect(fetchCount('/api/v1/projects/p1/world-settings')).toBeGreaterThan(before);
+  });
+
+  it('world_category 事件 → 世界观分类 chips 端点全量重拉（cat=world）', async () => {
+    await renderAndSubscribe('/library?cat=world');
+    await waitFor(() =>
+      expect(fetchCount('/api/v1/projects/p1/world-categories')).toBeGreaterThan(0),
+    );
+    const before = fetchCount('/api/v1/projects/p1/world-categories');
+
+    await emitAndSettle(ev({ domain: 'world_category', op: 'update', resource_id: 'wc1' }));
+
+    expect(fetchCount('/api/v1/projects/p1/world-categories')).toBeGreaterThan(before);
+  });
+
+  it('foreshadowing 事件 → 伏笔端点全量重拉（cat=foreshadow）', async () => {
+    await renderAndSubscribe('/library?cat=foreshadow');
+    await waitFor(() =>
+      expect(fetchCount('/api/v1/projects/p1/foreshadowings')).toBeGreaterThan(0),
+    );
+    const before = fetchCount('/api/v1/projects/p1/foreshadowings');
+
+    await emitAndSettle(ev({ domain: 'foreshadowing', op: 'create', resource_id: 'f9' }));
+
+    expect(fetchCount('/api/v1/projects/p1/foreshadowings')).toBeGreaterThan(before);
+  });
+
+  it('timeline_event 事件 → 时间线端点全量重拉（cat=timeline）', async () => {
+    await renderAndSubscribe('/library?cat=timeline');
+    await waitFor(() => expect(fetchCount('/api/v1/projects/p1/timeline')).toBeGreaterThan(0));
+    const before = fetchCount('/api/v1/projects/p1/timeline');
+
+    await emitAndSettle(ev({ domain: 'timeline_event', op: 'delete', resource_id: 't1' }));
+
+    expect(fetchCount('/api/v1/projects/p1/timeline')).toBeGreaterThan(before);
+  });
+
+  it('knowledge_relation 事件 → 图谱聚合端点全量重拉（cat=knowledge）', async () => {
+    await renderAndSubscribe('/library?cat=knowledge');
+    await waitFor(() =>
+      expect(fetchCount('/api/v1/projects/p1/knowledge-graph')).toBeGreaterThan(0),
+    );
+    const before = fetchCount('/api/v1/projects/p1/knowledge-graph');
+
+    await emitAndSettle(ev({ domain: 'knowledge_relation', op: 'create', resource_id: 'kr1' }));
+
+    expect(fetchCount('/api/v1/projects/p1/knowledge-graph')).toBeGreaterThan(before);
   });
 });

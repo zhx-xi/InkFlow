@@ -42,6 +42,7 @@ type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | '
 const LIBRARY_DATA_CHANGE_DOMAINS = [
   'map', 'map_pin', 'character', 'character_group',
   'character_relation', 'outline', 'plot_point', 'story_arc',
+  'world_setting', 'world_category', 'foreshadowing', 'timeline_event', 'knowledge_relation',
 ] as const;
 interface ListResponse {
   items: LibraryItemDTO[];

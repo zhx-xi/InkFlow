@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from inkflow.domain.models.chapter import (
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.project import Project
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
+from inkflow.domain.services._data_change import publish_change
 from inkflow.infrastructure.database.repositories.chapter_repo import (
     SQLiteChapterRepository,
 )
@@ -29,6 +31,8 @@ from inkflow.infrastructure.database.repositories.project_repo import (
     SQLiteProjectRepository,
 )
 from inkflow.logging import log_structured
+
+logger = logging.getLogger(__name__)
 
 
 class VolumeNotEmptyError(Exception):
@@ -101,7 +105,9 @@ class ChapterService:
             title=title,
             order_index=order_index,
         )
-        return await self._repo.add_volume(vol)
+        created: Volume = await self._repo.add_volume(vol)
+        await publish_change("volume", "create", created.id, created.project_id)
+        return created
 
     async def get_volume(self, volume_id: int | uuid.UUID) -> Volume | None:
         return await self._repo.get_volume(_to_int(volume_id))
@@ -126,7 +132,10 @@ class ChapterService:
         if existing is None:
             return None
         updated = existing.model_copy(update=dto.model_dump(exclude_unset=True))
-        return await self._repo.update_volume(updated)
+        saved: Volume | None = await self._repo.update_volume(updated)
+        if saved is not None:
+            await publish_change("volume", "update", saved.id, existing.project_id)
+        return saved
 
     async def delete_volume(
         self,
@@ -158,7 +167,10 @@ class ChapterService:
                 await self._repo.move_chapters_to_volume(vid, target)
             else:
                 raise VolumeNotEmptyError("卷下存在章节，请选择级联删除或移动到其他卷")
-        return await self._repo.delete_volume(vid)
+        deleted: bool = await self._repo.delete_volume(vid)
+        if deleted:
+            await publish_change("volume", "delete", existing.id, existing.project_id)
+        return deleted
 
     # ---- Chapter ----
 
@@ -208,6 +220,7 @@ class ChapterService:
             message=f"创建章节：{title}",
             params={"title": title},
         )
+        await publish_change("chapter", "create", created.id, created.project_id)
         return created
 
     async def get_chapter(self, chapter_id: int | uuid.UUID) -> Chapter | None:
@@ -263,6 +276,7 @@ class ChapterService:
             )
         saved = await self._repo.update_chapter(updated)
         await self._auto_link_outline(saved, existing)
+        await publish_change("chapter", "update", saved.id, saved.project_id)
         return saved
 
     async def _auto_link_outline(self, saved: Chapter, before: Chapter | None = None) -> None:
@@ -284,7 +298,14 @@ class ChapterService:
             return
 
     async def delete_chapter(self, chapter_id: int | uuid.UUID) -> bool:
-        return await self._repo.delete_chapter(_to_int(chapter_id))
+        deleted: bool = await self._repo.delete_chapter(_to_int(chapter_id))
+        if deleted:
+            logger.warning(
+                "chapter 删除事件缺 project_id（delete_chapter 未加载实体，spec §15.3.2）: id=%s",
+                chapter_id,
+            )
+            await publish_change("chapter", "delete", chapter_id, None)
+        return deleted
 
     async def normalize_all_titles(
         self, project_id: int | uuid.UUID, fmt: str
@@ -360,6 +381,9 @@ class ChapterService:
         config = project.config.model_copy(update={"chapter_title_format": fmt})
         updated_project = project.model_copy(update={"config": config})
         await self._project_repo.update(updated_project)
+        if chapters_replaced or outlines_replaced:
+            await publish_change("chapter", "update", str(pid), pid)
+            await publish_change("outline", "update", str(pid), pid)
         return {"chapters_replaced": chapters_replaced, "outlines_replaced": outlines_replaced}
 
     async def move_chapter(
@@ -376,10 +400,13 @@ class ChapterService:
         # #1166: 收敛到 _ensure_target_volume（与 update_chapter 改挂卷共用同一校验）
         if target_volume_id is not None:
             await self._ensure_target_volume(target_volume_id)
-        return await self._repo.move_chapter(
+        moved: Chapter | None = await self._repo.move_chapter(
             _to_int(chapter_id),
             _to_int(target_volume_id) if target_volume_id is not None else None,
         )
+        if moved is not None:
+            await publish_change("chapter", "update", moved.id, moved.project_id)
+        return moved
 
     async def _ensure_target_volume(self, volume_id: int | uuid.UUID) -> None:
         """改挂目标卷必须存在（#1166；同 delete_volume(move_to=) 口径）.

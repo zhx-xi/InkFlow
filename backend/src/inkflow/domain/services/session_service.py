@@ -56,6 +56,7 @@ from inkflow.domain.ports.session_errors import (
     SessionTransitionError,
 )
 from inkflow.domain.ports.session_repository import SessionRepositoryProtocol
+from inkflow.domain.services._data_change import publish_change
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,8 @@ class SessionService:
             created_at=now,
             updated_at=now,
         )
-        created = await self._repo.add(session)
+        created: Session = await self._repo.add(session)
+        await publish_change("session", "create", created.id, created.project_id)
         return SessionView(session=created, log_count=0, last_log=None)
 
     async def get(self, session_id: uuid.UUID) -> SessionView | None:
@@ -229,7 +231,10 @@ class SessionService:
             return None
         updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
         merged = existing.model_copy(update=updates)
-        return await self._repo.update(merged)
+        updated: Session | None = await self._repo.update(merged)
+        if updated is not None:
+            await publish_change("session", "update", session_id, existing.project_id)
+        return updated
 
     # ── 状态机动作 ─────────────────────────────────────
 
@@ -253,7 +258,9 @@ class SessionService:
         if existing.status not in allowed:
             raise SessionTransitionError(f"会话当前状态 {existing.status.value} 不允许 {action}")
         merged = existing.model_copy(update=updates)
-        return await self._repo.update(merged)
+        transitioned: Session = await self._repo.update(merged)
+        await publish_change("session", "update", session_id, existing.project_id)
+        return transitioned
 
     async def pause(self, session_id: uuid.UUID) -> Session:
         """暂停会话（active→paused；写 paused_at=now，spec §5.2）."""
@@ -352,14 +359,27 @@ class SessionService:
             （router 层转 404）.
         """
         sid = _to_int_id(session_id)
+        deleted: bool
         if force:
-            return await self._repo.hard_delete(sid)
+            deleted = await self._repo.hard_delete(sid)
+            if deleted:
+                logger.warning(
+                    "session 删除事件缺 project_id"
+                    "（delete force=True 未加载实体，spec §15.3.2）: id=%s",
+                    session_id,
+                )
+                await publish_change("session", "delete", session_id, None)
+            return deleted
         existing = await self._repo.list_include_deleted(sid)
         if existing is None:
             return False
         if existing.is_deleted:
-            return await self._repo.hard_delete(sid)
-        return await self._repo.soft_delete(sid)
+            deleted = await self._repo.hard_delete(sid)
+        else:
+            deleted = await self._repo.soft_delete(sid)
+        if deleted:
+            await publish_change("session", "delete", session_id, existing.project_id)
+        return deleted
 
     async def restore(self, session_id: uuid.UUID) -> Session | None:
         """解除归档（spec §2.5；未归档幂等返回原对象）.
@@ -377,7 +397,10 @@ class SessionService:
             return None
         if not existing.is_deleted:
             return existing  # 幂等: 不调 repo.restore，原对象原样返回
-        return await self._repo.restore(sid)
+        restored: Session | None = await self._repo.restore(sid)
+        if restored is not None:
+            await publish_change("session", "update", session_id, existing.project_id)
+        return restored
 
     # ── 履历日志 ───────────────────────────────────────
 

@@ -32,10 +32,14 @@ import {
 } from '../components/SessionDetailDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
+import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { formatTimestamp } from '../lib/log-format';
 import { useChapterStore } from '../stores/chapter';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
+
+/** F23 §15.6.2（#1090 批 B）：本页关心的域——session 事件 → 三路列表 FR。 */
+const SESSIONS_DATA_CHANGE_DOMAINS = ['session'] as const;
 
 type SessionFilter = 'all' | 'active' | 'archived';
 
@@ -105,6 +109,9 @@ export function SessionsPage() {
   const projectDefaulted = useRef(false);
   // 三类数据全部落定后才渲染目录卡片（避免异步竞态导致部分卡片闪现）
   const allLoaded = plannerLoaded && sessionsLoaded && conversationsLoaded;
+
+  // F23 §15.6.2（#1090 批 B）：session 事件 → 三路列表 FR（外部 agent 建会话常见）
+  useDataChangeSubscription(SESSIONS_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
 
   // 项目列表：项目选择器 + 按项目过滤的目录数据源
   useEffect(() => {

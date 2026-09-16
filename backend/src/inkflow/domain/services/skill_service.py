@@ -43,6 +43,7 @@ from inkflow.domain.ports.skill_errors import (
     SkillNameConflictError,
     SkillNotFoundError,
 )
+from inkflow.domain.services._data_change import publish_change
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +364,7 @@ class SkillService:
         skill_file = target_dir / "SKILL.md"
         skill_file.write_text(data.content, encoding="utf-8")
         logger.info("创建 Skill: name=%s", name)
-        return Skill(
+        created: Skill = Skill(
             name=name,
             description=meta.description,
             content=data.content,
@@ -371,6 +372,8 @@ class SkillService:
             created_at=_mtime_iso(skill_file),
             updated_at=_mtime_iso(skill_file),
         )
+        await publish_change("skill", "create", name, None)
+        return created
 
     async def get(self, name: str) -> Skill:
         """按目录名读 skills_root/<name>/SKILL.md → Skill；缺失 → SkillNotFoundError（404）."""
@@ -440,6 +443,7 @@ class SkillService:
             skill_file = self._skills_root / name / "SKILL.md"
             skill_file.write_text(content, encoding="utf-8")
             logger.info("更新 Skill: name=%s", name)
+            await publish_change("skill", "update", name, None)
             return await self.get(name)
         if not updates:
             return existing
@@ -464,6 +468,7 @@ class SkillService:
         if target_dir.is_dir():
             shutil.rmtree(target_dir)
         logger.info("删除 Skill: name=%s", name)
+        await publish_change("skill", "delete", name, None)
 
     async def duplicate(self, name: str, *, new_name: str | None = None) -> Skill:
         """复制 Skill（#485 语义延续 + #522 文件系统真源）.
@@ -480,7 +485,7 @@ class SkillService:
         src_dir = self._skills_root / name
         shutil.copytree(src_dir, target_dir)
         logger.info("复制 Skill: name=%s → %s", name, target_name)
-        return Skill(
+        duplicated: Skill = Skill(
             name=target_name,
             description=existing.description,
             content=existing.content,
@@ -488,6 +493,8 @@ class SkillService:
             created_at=_mtime_iso(target_dir / "SKILL.md"),
             updated_at=_mtime_iso(target_dir / "SKILL.md"),
         )
+        await publish_change("skill", "create", target_name, None)
+        return duplicated
 
 
 def ensure_builtin_skills(skills_root: Path) -> int:
