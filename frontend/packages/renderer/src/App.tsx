@@ -76,14 +76,12 @@ function AppLayout() {
     return () => useModelReadinessStore.getState().stopPolling();
   }, [booted]);
 
-  // #1218：窗口 focus → 立即重查（未就绪时；轮询是兜底，focus 让"切回 GUI 即放行"零等待）。
-  // 已就绪时不查——门控已放行，再查纯属空打后端。
+  // #1218：窗口 focus → 重查（轮询是兜底，focus 让"切回 GUI 即放行"零等待）。
+  // 不按 ready 早退：就绪后若外部又改配置（换 provider/删 key）仍需纠偏；单次 GET 代价可忽略。
   useEffect(() => {
     const onFocus = () => {
       if (!useKernelStore.getState().booted) return;
-      const store = useModelReadinessStore.getState();
-      if (store.readiness?.ready === true) return;
-      void store.load();
+      void useModelReadinessStore.getState().load();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -93,9 +91,7 @@ function AppLayout() {
   // 外部（CLI/API/另一窗口）完成配置后事件即时到达 → 立即重查，无需等轮询周期。
   // 复用既有单例订阅（不新造抽象）；自产写入（source=gui）被 hook 内部过滤。
   useDataChangeSubscription(READINESS_DOMAINS, () => {
-    const store = useModelReadinessStore.getState();
-    if (store.readiness?.ready === true) return; // 就绪即不再查
-    void store.load();
+    void useModelReadinessStore.getState().load();
   });
 
   // 门控：启动期（!booted）渲染封面，不渲染主 UI

@@ -168,15 +168,14 @@ describe('AppLayout 就绪查询自愈（#1218）', () => {
     await waitFor(() => expect(readinessCalls()).toBe(2));
   });
 
-  it('N1218-4：已就绪 → focus 不产生查询（零打扰，不空打后端）', async () => {
+  it('N1218-4：已就绪 → focus 仍重查（外部改配置后纠偏；单次 GET 代价可忽略）', async () => {
     mockEndpoints(async () => READY);
     render(<App />);
     await screen.findByTestId('app-nav');
     const settled = readinessCalls();
 
     fireEvent.focus(window);
-    await flushMicrotasks();
-    expect(readinessCalls()).toBe(settled);
+    await waitFor(() => expect(readinessCalls()).toBe(settled + 1));
   });
 
   it('N1218-5【G】：卸载后不再查询（无定时器/监听器泄漏）', async () => {
