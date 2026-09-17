@@ -126,6 +126,13 @@ class TestMachineIdPersistence:
         bad = tmp_path / "x" / "y"
         assert load_or_create_machine_id(bad) == load_or_create_machine_id(bad)
 
+    def test_none_uses_config_data_dir(self, monkeypatch, tmp_path: Path) -> None:
+        """data_dir=None → 走 InkFlowConfig().data_dir（延迟导入分支）。"""
+        monkeypatch.setenv("INKFLOW_DATA_DIR", str(tmp_path / "cfg-data"))
+        mid = load_or_create_machine_id(None)
+        assert len(mid) == 32
+        assert (tmp_path / "cfg-data" / MACHINE_ID_FILENAME).exists()
+
 
 class TestLocalIntDerivation:
     """uuid_from_local_id: 旧 int PK → 可逆 UUID（int64 内），供批 3 前过渡期使用。"""

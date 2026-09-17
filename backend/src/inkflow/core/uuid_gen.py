@@ -33,7 +33,10 @@ def load_or_create_machine_id(data_dir: Path | None = None) -> str:
         32 位十六进制标识串。
     """
     if data_dir is None:
-        data_dir = _default_data_dir()
+        # 延迟导入：config 顶层引 pydantic-settings，避免 core 包内循环
+        from inkflow.core.config import InkFlowConfig
+
+        data_dir = InkFlowConfig().data_dir
     path = data_dir / MACHINE_ID_FILENAME
     try:
         if path.exists():
@@ -47,13 +50,6 @@ def load_or_create_machine_id(data_dir: Path | None = None) -> str:
         return hashlib.sha256(socket.gethostname().encode("utf-8")).hexdigest()[:32]
     else:
         return generated
-
-
-def _default_data_dir() -> Path:
-    """延迟导入避免 config ↔ uuid_gen 循环。"""
-    from inkflow.core.config import InkFlowConfig
-
-    return InkFlowConfig().data_dir
 
 
 def new_uuid(machine_id: str | None = None) -> uuid.UUID:
