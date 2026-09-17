@@ -542,14 +542,25 @@ async def test_d1_world_legacy_multi_root_upgrade(tmp_path: Path) -> None:
 
 
 def _registered_ensure_fns() -> set[str]:
-    """core/database.py 模块级公开 ensure_* 注册集合（迁移助手单一事实源）。"""
-    return {
-        name
-        for name, obj in vars(db_module).items()
-        if name.startswith("ensure_")
-        and callable(obj)
-        and getattr(obj, "__module__", "") == db_module.__name__
-    }
+    """迁移助手注册集合（单一事实源）：core/database.py 自定义 + 从
+    core/migrations_*.py re-export 进来的 ``ensure_*``。
+
+    🔴 900 行护栏把 ensure_chapters_writing_requirements_column /
+    ensure_projects_drop_legacy_genre_column / #495 的
+    ensure_character_relations_merged_into_knowledge 拆到 ``migrations_*.py`` 再
+    re-export 回 database。仅按 ``__module__ == database`` 过滤会漏掉这些拆分出去的
+    助手 → D3 wiring 门禁对它们**不设防**（拆分即门禁变弱，本批实证：漏锁 merge helper
+    接线）。故纳入 ``inkflow.core.migrations`` 前缀模块的 re-export，使注册集重新覆盖
+    全部 lifespan 应接线的 ``ensure_*``。
+    """
+    names: set[str] = set()
+    for name, obj in vars(db_module).items():
+        if not (name.startswith("ensure_") and callable(obj)):
+            continue
+        module = getattr(obj, "__module__", "")
+        if module == db_module.__name__ or module.startswith("inkflow.core.migrations"):
+            names.add(name)
+    return names
 
 
 def _lifespan_called_names() -> set[str]:
