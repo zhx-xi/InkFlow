@@ -507,14 +507,19 @@ class TestKnowledgeRelationRepository:
         assert rows[0].id == keep.id
 
     async def test_cleanup_for_entity_is_alias_of_delete_by_entity(self, db_session, project):
-        """cleanup_for_entity 与 delete_by_entity 行为一致（§5.3 回调端口别名）."""
+        """cleanup_for_entity 与 delete_by_entity 行为一致（§5.3 回调端口别名）.
+
+        #495 语义升级：delete_by_entity 加 type 过滤（各实体 int id 空间重叠，
+        不过滤会误删他类实体关系行）——故调用侧改为与 _rel 默认
+        source_type='character' 一致的类型，两种实现行为一致。
+        """
         repo = SQLiteKnowledgeRelationRepository(db_session)
         ent = uuid.UUID(int=145)
         await repo.add(
             _rel(project, source_id=ent, target_id=uuid.UUID(int=146), relation_type="属于")
         )
 
-        deleted = await repo.cleanup_for_entity("world", ent.int)
+        deleted = await repo.cleanup_for_entity("character", ent.int)
         assert deleted == 1
         _, total = await repo.list(project.id)
         assert total == 0
@@ -709,3 +714,103 @@ class TestInt64RangeGuard1106:
 
         assert await repo.get(2**63) is None  # 上界外
         assert await repo.get(-(2**63) - 1) is None  # 下界外
+
+
+# ══ #495 角色关系数据面统一：delete_by_entity / cleanup_for_entity type 过滤 ══
+#
+# 语义升级（设计定稿 §1 既有缺口 / §4）：原实现只按 entity_id 匹配 source_id/target_id，
+# 注释自称「实体 UUID 全局唯一」但实际存 int 主键，各实体类型 id 空间重叠
+# （character.id=3 与 world.id=3 是不同实体）。F9 角色关系清理改走 kr 表后该路径被
+# 激活，不过滤 type 会误删他类实体关系行（数据安全）。
+#
+# RED：当前实现无 type 过滤 → 以下用例 FAIL；L509 既有别名用例（改用 "character" 调用）
+# 则在两种实现下行为一致（锁定 GREEN 后的新语义）。
+
+
+@pytest.mark.integration
+class TestDeleteByEntityTypeFilter495:
+    """#495：delete_by_entity / cleanup_for_entity 必须带 source_type/target_type 过滤。"""
+
+    async def test_delete_by_entity_filters_type_on_source_and_target(self, db_session, project):
+        """同 int id 的 character 行与 world 行：delete_by_entity("character", id)
+        只删 character 行（source 命中 + target 命中各 1），返回 2，world 行保留。"""
+        repo = SQLiteKnowledgeRelationRepository(db_session)
+        ent = uuid.UUID(int=300)
+        await repo.add(
+            _rel(
+                project,
+                source_type="character",
+                source_id=ent,
+                target_type="character",
+                target_id=uuid.UUID(int=301),
+                relation_type="属于",
+            )
+        )
+        await repo.add(
+            _rel(
+                project,
+                source_type="world",
+                source_id=ent,
+                target_type="world",
+                target_id=uuid.UUID(int=302),
+                relation_type="位于",
+            )
+        )
+        await repo.add(
+            _rel(
+                project,
+                source_type="character",
+                source_id=uuid.UUID(int=303),
+                target_type="character",
+                target_id=ent,
+                relation_type="参与",
+            )
+        )
+        await repo.add(
+            _rel(
+                project,
+                source_type="world",
+                source_id=uuid.UUID(int=303),
+                target_type="world",
+                target_id=ent,
+                relation_type="隶属",
+            )
+        )
+
+        deleted = await repo.delete_by_entity("character", ent.int)
+
+        assert deleted == 2, "只应删 character 类型的两行（source + target 各一）"
+        rows, total = await repo.list(project.id)
+        assert total == 2
+        assert {r.source_type for r in rows} == {EntityType.WORLD}
+        assert {r.source_id.int for r in rows} == {300, 303}
+
+    async def test_cleanup_for_entity_alias_inherits_type_filter(self, db_session, project):
+        """cleanup_for_entity（别名）继承 type 过滤：同 int id 的 world 行保留。"""
+        repo = SQLiteKnowledgeRelationRepository(db_session)
+        ent = uuid.UUID(int=310)
+        await repo.add(
+            _rel(
+                project,
+                source_id=ent,
+                target_id=uuid.UUID(int=311),
+                relation_type="属于",
+            )
+        )
+        await repo.add(
+            _rel(
+                project,
+                source_type="world",
+                source_id=ent,
+                target_type="world",
+                target_id=uuid.UUID(int=312),
+                relation_type="位于",
+            )
+        )
+
+        deleted = await repo.cleanup_for_entity("character", ent.int)
+
+        assert deleted == 1
+        rows, total = await repo.list(project.id)
+        assert total == 1
+        assert rows[0].source_type == EntityType.WORLD

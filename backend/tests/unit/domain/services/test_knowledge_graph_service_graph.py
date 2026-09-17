@@ -350,49 +350,59 @@ class TestGraph:
         mock_map_repo.list_maps_by_project.assert_awaited_once_with(PID.int)
         mock_map_repo.list_pins.assert_awaited_once_with(wm.id.int)
 
-    async def test_edges_merge_knowledge_and_character_relations(
+    async def test_edges_single_table_knowledge_relations_only(
         self,
         service,
         mock_character_repo,
         mock_world_repo,
         mock_relation_repo,
     ):
-        """edges 合并 knowledge_relations ∪ character_relations，
-        source_table 正确（§5.2/§9 场景 4）."""
+        """单表化（#495）：edges 只由 knowledge_relations 生成——角色↔角色边同样是 kr 行
+        （source_table 恒 knowledge_relations、id 恒 kr: 前缀）；双轨合并段删除后图谱聚合
+        不再调 character_repo.list_relations（port 方法保留，图谱侧不再使用）。"""
         char_a, char_b = _char("林尘"), _char("阿澈")
         world_w = _world("清河县")
         mock_character_repo.list = AsyncMock(return_value=([char_a, char_b], 2))
         mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
-        kr = _kr(source_id=char_a.id, target_id=world_w.id, relation_type="属于")
-        cr = _cr(char_a, char_b, relation_type="师徒")
-        mock_relation_repo.list_by_project = AsyncMock(return_value=[kr])
-        mock_character_repo.list_relations = AsyncMock(return_value=[cr])
+        kr_pair = _kr(
+            source_type="character",
+            source_id=char_a.id,
+            target_type="character",
+            target_id=char_b.id,
+            relation_type="师徒",
+            description="授业恩师",
+        )
+        kr_world = _kr(source_id=char_a.id, target_id=world_w.id, relation_type="属于")
+        mock_relation_repo.list_by_project = AsyncMock(return_value=[kr_world, kr_pair])
+        # 旧 F9 数据源仍装配（夹具形态不变）——但聚合必须不再触碰它
+        mock_character_repo.list_relations = AsyncMock(
+            return_value=[_cr(char_b, char_a, relation_type="宿敌")]
+        )
 
         view = await service.graph(PID)
 
         assert len(view.edges) == 2
-        kr_edge = next(e for e in view.edges if e.source_table == "knowledge_relations")
-        cr_edge = next(e for e in view.edges if e.source_table == "character_relations")
-        assert kr_edge.id == f"kr:{kr.id}"
-        assert kr_edge.source == f"character:{char_a.id}"
-        assert kr_edge.target == f"world:{world_w.id}"
-        assert kr_edge.label == "属于"
-        assert kr_edge.description == ""
-        assert cr_edge.id == f"cr:{cr.id}"
-        assert cr_edge.source == f"character:{char_a.id}"
-        assert cr_edge.target == f"character:{char_b.id}"
-        assert cr_edge.label == "师徒"
+        assert {e.source_table for e in view.edges} == {"knowledge_relations"}
+        assert all(e.id.startswith("kr:") for e in view.edges)
+        pair_edge = next(
+            e
+            for e in view.edges
+            if e.source == f"character:{char_a.id}" and e.target == f"character:{char_b.id}"
+        )
+        assert pair_edge.id == f"kr:{kr_pair.id}"
+        assert pair_edge.label == "师徒"
+        assert pair_edge.description == "授业恩师"
         mock_relation_repo.list_by_project.assert_awaited_once_with(PID.int)
-        mock_character_repo.list_relations.assert_awaited_once_with(PID.int)
+        mock_character_repo.list_relations.assert_not_awaited()
 
-    async def test_edges_dedup_knowledge_priority(
+    async def test_edges_no_duplicate_for_same_key_single_table(
         self,
         service,
         mock_character_repo,
         mock_relation_repo,
     ):
-        """同键（source+target+label）两表都出现 → 只显示 knowledge_relations 行，cr
-        行折叠（§5.2/Q1=A）."""
+        """单表化（#495）后同键双行不可能再出现（kr 六元组唯一索引）→ 聚合层去重逻辑删除。
+        本用例锁定：旧 F9 数据源即使返回同键行，也不得产生第二条边。"""
         char_a, char_b = _char("林尘"), _char("阿澈")
         mock_character_repo.list = AsyncMock(return_value=([char_a, char_b], 2))
         kr = _kr(
@@ -411,7 +421,7 @@ class TestGraph:
         assert len(view.edges) == 1
         assert view.edges[0].id == f"kr:{kr.id}"
         assert view.edges[0].source_table == "knowledge_relations"
-        assert not any(e.id.startswith("cr:") for e in view.edges)
+        mock_character_repo.list_relations.assert_not_awaited()
 
     async def test_orphan_edges_skipped_no_error(
         self,
@@ -441,24 +451,31 @@ class TestGraph:
 
         assert [e.id for e in view.edges] == [f"kr:{valid_kr.id}"]
 
-    async def test_edges_ordered_kr_before_cr_created_at_asc(
+    async def test_edges_ordered_created_at_asc(
         self,
         service,
         mock_character_repo,
         mock_world_repo,
         mock_relation_repo,
     ):
-        """边排序：knowledge 段在前、character 段在后，组内 created_at ASC（§5.6；mock
-        注入乱序验证）."""
+        """边排序：单表全量按 created_at ASC（#495 双轨分段排序删除；mock 注入乱序验证）."""
         char_a, char_b = _char("林尘"), _char("阿澈")
         world_w = _world("清河县")
         mock_character_repo.list = AsyncMock(return_value=([char_a, char_b], 2))
         mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
         kr_early = _kr(
+            source_type="character",
+            source_id=char_a.id,
+            target_type="character",
+            target_id=char_b.id,
+            relation_type="师徒",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        kr_mid = _kr(
             source_id=char_a.id,
             target_id=world_w.id,
             relation_type="属于",
-            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            created_at=datetime(2026, 2, 1, tzinfo=UTC),
         )
         kr_late = _kr(
             source_type="world",
@@ -466,25 +483,19 @@ class TestGraph:
             target_type="character",
             target_id=char_a.id,
             relation_type="位于",
-            created_at=datetime(2026, 2, 1, tzinfo=UTC),
-        )
-        cr = _cr(
-            char_a,
-            char_b,
-            relation_type="师徒",
             created_at=datetime(2026, 3, 1, tzinfo=UTC),
         )
-        # 注入乱序（服务层需按 created_at ASC 组内重排）
-        mock_relation_repo.list_by_project = AsyncMock(return_value=[kr_late, kr_early])
-        mock_character_repo.list_relations = AsyncMock(return_value=[cr])
+        # 注入乱序（服务层需按 created_at ASC 重排）
+        mock_relation_repo.list_by_project = AsyncMock(return_value=[kr_late, kr_early, kr_mid])
 
         view = await service.graph(PID)
 
         assert [e.id for e in view.edges] == [
             f"kr:{kr_early.id}",
+            f"kr:{kr_mid.id}",
             f"kr:{kr_late.id}",
-            f"cr:{cr.id}",
         ]
+        mock_character_repo.list_relations.assert_not_awaited()
 
 
 class TestCleanup:
