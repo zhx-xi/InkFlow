@@ -31,6 +31,18 @@
 > 精确匹配仍工作）。端点契约不变（`ContextRequest.chapter_id` 本就存在，此前被 OutlineSource 忽略）。
 > 契约测试 `tests/unit/infrastructure/context/test_outline_source_chunking_1234.py`。
 
+> **Spec 变更（v1.4，2026-09-17，issue #1253）— SummarySource 接线，chapter_summary 通道打通**：
+> v1.2 标注的「唯一缺口」已补齐：新增 `SummarySource`（`infrastructure/context/sources.py`）
+> 并注册进 `api/deps.py`（注册表 6 源，CHAPTER_SUMMARY 槽位）。
+> 行为：**只读** `chapter_summaries` 缓存（经 `SummaryService.list_recent`，最近 ≤
+> `summary_max_chapters` 条，章节序号倒序），**不触发 LLM 生成**——生成职责仍在 agentic 轨
+> （`agent_service.ensure_summary`）与调试端点，两轨共用同一缓存表、无重复生成。
+> 失败策略按 §4.6：读缓存失败 → WARNING + 空列表（不阻断组装）；无缓存 = 正常空路径。
+> 条目标题「第 N 章摘要」与 priority（= 章节序号，越新越优先）来自 `chapters.order_index`
+> 轻读（`domain/services/summary_index.py`，不为显示字段新增 ORM 列/Protocol 方法）。
+> 契约测试 `tests/unit/infrastructure/context/test_summary_source_1253.py`；
+> #1236 哨兵测试按设计翻转为「已注册」正向断言。
+
 ---
 
 ## 1. 概述
@@ -87,7 +99,7 @@ class ContextLayer(StrEnum):
 | `outline` | protected | 大纲 | `outlines` 表（F11；#1234：按 level 分块——overall 始终注入 / volume+chapter 仅当前章匹配项；每块摘要 ≤60 字截断） |
 | `character_setting` | compressible | 角色设定 | `characters` 表（F9；名+brief 轻量化，D5=A） |
 | `world_setting` | compressible | 世界设定 | `world_settings` 表（F10） |
-| `chapter_summary` | dynamic | 前文摘要 | ⚠️ 未实现（#1236）：SummarySource 适配器缺位，注册表无此槽位；SummaryService/缓存表已就位，摘要当前经 agentic 轨与调试端点消费 |
+| `chapter_summary` | dynamic | 前文摘要 | `chapter_summaries` 表（#1253 已接线：`SummarySource` 只读缓存，经 `SummaryService.list_recent` 取最近 ≤ `summary_max_chapters` 条，按章节序号倒序；不触发 LLM 生成） |
 | `foreshadowing` | dynamic | 未解决伏笔提醒 | `foreshadowings` 表（F13） |
 
 ### 3.3 ContextItem / ContextBlock / ContextRequest / ContextAssemblyResult
@@ -202,7 +214,7 @@ class TokenBudgetConfig(BaseModel):
 ```
 1. 收集: writing_requirements（请求必填） + OutlineSource + CharacterSource
          + WorldSource + SummarySource + ForeshadowingSource 各自产出 ContextItem
-   （⚠️ #1236：SummarySource 未实现，当前实际注册 5 源；chapter_summary 见 §3.2 标注）
+   （#1253：SummarySource 已接线，注册表 6 源；chapter_summary 见 §3.2）
    （v1.1 #593：override.character_ids/foreshadowing_ids 非空时，仅保留勾选命中的
     character_setting / foreshadowing item，未勾选不注入；不影响其他来源）
 2. 预算: budget = get_budget(model, max_tokens)；layer_cap = ...
