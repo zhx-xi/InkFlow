@@ -151,6 +151,9 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   // #745：提交/加载历史后强制滚底标记（effect 消费后复位）
   const pendingScrollRef = useRef(false);
+  // #1248：在途 id 回填延迟定时器（handleSend save 后 100ms setTimeout）；
+  // unmount cleanup 逐个 clearTimeout，防卸载后 setState（window is not defined）
+  const backfillTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
 
   // #964：model 已知但注册表未加载 → 静默拉取能力数据（失败不 toast，capability 保持 null）
   useEffect(() => {
@@ -447,13 +450,16 @@ export function ChatPanel({
         .then((saved) => {
           const savedId = saved?.id;
           if (!savedId) return;
-          setTimeout(() => {
+          // #1248：句柄入 ref 集合，unmount cleanup 统一 clearTimeout（防卸载后 setState）
+          const timer = setTimeout(() => {
+            backfillTimersRef.current.delete(timer);
             setMessages((prev) =>
               prev.map((m) =>
                 m.kind === 'user' && m.seq === userSeq && !m.id ? { ...m, id: savedId } : m,
               ),
             );
           }, 100);
+          backfillTimersRef.current.add(timer);
         })
         .catch(() => {});
     }
@@ -518,6 +524,9 @@ export function ChatPanel({
     return () => {
       if (runIdRef.current) void abortChatRun(runIdRef.current);
       abortRef.current?.();
+      // #1248：清理在途 id 回填定时器（防卸载后 setState → window is not defined）
+      for (const timer of backfillTimersRef.current) clearTimeout(timer);
+      backfillTimersRef.current.clear();
     };
   }, []);
 
