@@ -131,6 +131,10 @@ async function findProjectId(kernel: KernelInfo, name: string): Promise<string> 
 async function openWorldTabPlain(window: Page): Promise<void> {
   await window.getByRole('tab', { name: '世界观' }).click();
   await expect(window.getByTestId('library-list')).toBeVisible({ timeout: 15_000 });
+  // #1239: skeleton 加载态也有 data-testid="library-list"（library.tsx:612）→ 上面一行
+  // 可能在数据 fetch 完成前就通过。world-copy-all 仅在 WorldCategoryToolbar 渲染时出现
+  // （= items 已从 API 加载完毕），是「非 skeleton 态」的确定性信号（与 e2e-library-f43 同款）。
+  await expect(window.getByTestId('world-copy-all')).toBeVisible({ timeout: 15_000 });
 }
 
 /** 预置世界观节点（parent 用名称引用，顺序保证父先建）；返回 name → id（内核 UUID） */

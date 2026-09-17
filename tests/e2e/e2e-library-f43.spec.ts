@@ -230,6 +230,10 @@ async function presetTimelineEvent(
 async function openWorldTabPlain(window: Page): Promise<void> {
   await window.getByRole('tab', { name: '世界观' }).click();
   await expect(window.getByTestId('library-list')).toBeVisible({ timeout: 15_000 });
+  // #1239: skeleton 加载态也有 data-testid="library-list"（library.tsx:612）→ 上面一行
+  // 可能在数据 fetch 完成前就通过。world-copy-all 仅在 WorldCategoryToolbar 渲染时出现
+  // （= items 已从 API 加载完毕），是「非 skeleton 态」的确定性信号；对齐 :436 的 15s 先例。
+  await expect(window.getByTestId('world-copy-all')).toBeVisible({ timeout: 15_000 });
 }
 
 /** F43 P4：时间线事件行序 = tl-check-one-<id> 的 DOM 顺序 → 事件 id 序列（契约：每行一个检查按钮） */
@@ -415,8 +419,11 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     await expect(window.getByTestId('library-page')).toBeVisible({ timeout: 15_000 });
     await openWorldTabPlain(window);
     // #389：chips = 分类实体（无「地图」——地图归地图工作台）
+    // #1239：chips 来自独立的 /world-categories fetch（useWorldCategories），与条目列表
+    // 两个请求先后不定 → 同族等待预算统一为显式 15s（对齐本文件 :436 先例），
+    // 不用默认 5s（CI 慢轮下第二个 fetch 未落地 → element(s) not found）。
     for (const cat of ['势力', '组织', '门派']) {
-      await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible();
+      await expect(window.getByTestId(`world-cat-filter-${cat}`)).toBeVisible({ timeout: 15_000 });
     }
     await expect(window.getByTestId('world-cat-filter-地图')).toHaveCount(0);
     await expect(window.getByTestId('world-cat-filter-全部')).toHaveCount(0);
