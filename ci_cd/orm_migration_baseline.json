@@ -377,40 +377,6 @@
         "nullable": false
       }
     },
-    "character_relations": {
-      "created_at": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "description": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "from_character_id": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "id": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "project_id": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "relation_type": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "to_character_id": {
-        "has_server_default": false,
-        "nullable": false
-      },
-      "updated_at": {
-        "has_server_default": false,
-        "nullable": false
-      }
-    },
     "characters": {
       "background": {
         "has_server_default": false,
