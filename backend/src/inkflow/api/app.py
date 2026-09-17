@@ -69,6 +69,7 @@ from inkflow.core.database import (
     ensure_agents_grants_column,
     ensure_chapters_writing_requirements_column,
     ensure_character_drop_is_deleted,
+    ensure_character_relations_merged_into_knowledge,
     ensure_characters_brief_column,
     ensure_chat_messages_conversation_id_column,
     ensure_chat_messages_is_deleted_column,
@@ -140,6 +141,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_world_drop_is_deleted)
         await conn.run_sync(ensure_world_root_unique_index)
         await conn.run_sync(ensure_character_drop_is_deleted)
+        await conn.run_sync(ensure_character_relations_merged_into_knowledge)
         await conn.run_sync(ensure_characters_brief_column)
         await conn.run_sync(ensure_chapters_writing_requirements_column)
         await conn.run_sync(ensure_outline_drop_is_deleted)

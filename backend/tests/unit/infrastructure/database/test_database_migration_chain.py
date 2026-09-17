@@ -9,6 +9,10 @@ D1 完整迁移链：v0.11 / v1.1 / v1.2 三版本旧库 → ``app.lifespan`` �
    链内交互（#831/#856 分组重建与 is_deleted 真删链式执行、chat_messages 回填依赖
    create_all 先建的 conversations 表）单测锁不住。用真实 SQLite 文件库（非
    :memory:，文件级迁移动作 + WAL/FK pragma 语义）。
+   #495 升级：D1 的「character_relations 行数」断言改为「专表已 DROP +
+   连入 knowledge_relations 的 character↔character 子空间行数」；v0.11 建造器补齐
+   description/created_at/updated_at 列（merge helper 的 INSERT..SELECT 列面），
+   v1.2 建造器补 character_relations 表 + 1 行种子（真实 v1.2 库必有该表）。
 D2 迁移中途失败回滚：_rebuild_characters_without_group_id 的 DROP→RENAME 窗口注入
    崩溃（before_cursor_execute 事件）→ 断言不留 _characters_new / 空 characters、
    characters 数据完好、新连接 FK=ON、重启整段重试成功（#856 WARN-1 语义的
@@ -101,7 +105,8 @@ def _create_v011(db: Path) -> dict[str, int]:
                 "CREATE TABLE character_relations ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, "
                 "from_character_id INTEGER NOT NULL, to_character_id INTEGER NOT NULL, "
-                "relation_type TEXT NOT NULL, "
+                "relation_type TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', "
+                "created_at DATETIME, updated_at DATETIME, "
                 "FOREIGN KEY(from_character_id) REFERENCES characters(id) ON DELETE CASCADE, "
                 "FOREIGN KEY(to_character_id) REFERENCES characters(id) ON DELETE CASCADE)"
             )
@@ -143,8 +148,10 @@ def _create_v011(db: Path) -> dict[str, int]:
         conn.execute(
             text(
                 "INSERT INTO character_relations "
-                "(project_id, from_character_id, to_character_id, relation_type) "
-                "VALUES (1, 1, 2, '师妹')"
+                "(project_id, from_character_id, to_character_id, relation_type, description, "
+                " created_at, updated_at) "
+                "VALUES (1, 1, 2, '师妹', '同门师妹', '2026-01-01 00:00:00', "
+                "'2026-01-01 00:00:00')"
             )
         )
         conn.execute(
@@ -209,7 +216,14 @@ def _create_v11(db: Path) -> dict[str, int]:
 
 
 def _create_v12(db: Path) -> dict[str, int]:
-    """v1.2（#701 后）：characters 已无 group_id，world_categories 缺 kind，会话缺 title。"""
+    """v1.2（#701 后）：characters 已无 group_id，world_categories 缺 kind，会话缺 title。
+
+    #495 补齐：真实 v1.2 库必有 ``character_relations`` 表（角色关系专表在 v1.3 才废弃）
+    → 补表 + 1 行种子，供全链升级断言「迁入 kr 子空间 + 专表消失」；第二次角色行
+    用于承载该关系（原建造器仅 1 行角色）。同时补 ``projects`` 表 + 行（fixture 保真：
+    真实库有关系必有项目；且 create_all 建出的 knowledge_relations.project_id 有 FK，
+    缺父行会让 merge 的 INSERT..SELECT 撞 FOREIGN KEY constraint failed）。
+    """
     engine = create_engine(f"sqlite:///{db}")
     with engine.begin() as conn:
         conn.execute(
@@ -240,13 +254,36 @@ def _create_v12(db: Path) -> dict[str, int]:
                 "created_at DATETIME NOT NULL, is_deleted BOOLEAN NOT NULL DEFAULT 0)"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE character_relations ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, "
+                "from_character_id INTEGER NOT NULL, to_character_id INTEGER NOT NULL, "
+                "relation_type TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', "
+                "created_at DATETIME, updated_at DATETIME)"
+            )
+        )
+        conn.execute(
+            text("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+        )
+        conn.execute(text("INSERT INTO projects (id, name) VALUES (1, '蜀山')"))
         conn.execute(text("INSERT INTO characters (id, project_id, name) VALUES (1, 1, '玄明')"))
+        conn.execute(text("INSERT INTO characters (id, project_id, name) VALUES (2, 1, '宁晚')"))
         conn.execute(
             text("INSERT INTO character_group_members (character_id, group_id) VALUES (1, 1)")
         )
+        conn.execute(
+            text(
+                "INSERT INTO character_relations "
+                "(project_id, from_character_id, to_character_id, relation_type, description, "
+                " created_at, updated_at) "
+                "VALUES (1, 1, 2, '师妹', '同门师妹', '2026-01-01 00:00:00', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
         conn.execute(text("INSERT INTO world_categories (project_id, name) VALUES (1, 'geo')"))
     engine.dispose()
-    return {"characters": 1, "relations": 0, "members": 1, "world": 0, "messages": 0}
+    return {"characters": 2, "relations": 1, "members": 1, "world": 0, "messages": 0}
 
 
 BUILDERS = {"v0.11": _create_v011, "v1.1": _create_v11, "v1.2": _create_v12}
@@ -360,8 +397,15 @@ async def test_d1_full_lifespan_migration_chain(tmp_path: Path, version: str) ->
                 await conn.run_sync(_scalar, "SELECT COUNT(*) FROM characters")
                 == (expect["characters"])
             )
+            # #495：character_relations 专表全链后必须已迁入 kr 的 character↔character
+            # 子空间并被 DROP（迁移 helper 接线在 ensure_character_drop_is_deleted 之后）
+            assert "character_relations" not in tables
             assert (
-                await conn.run_sync(_scalar, "SELECT COUNT(*) FROM character_relations")
+                await conn.run_sync(
+                    _scalar,
+                    "SELECT COUNT(*) FROM knowledge_relations "
+                    "WHERE source_type = 'character' AND target_type = 'character'",
+                )
                 == (expect["relations"])
             )
             assert (
@@ -498,14 +542,25 @@ async def test_d1_world_legacy_multi_root_upgrade(tmp_path: Path) -> None:
 
 
 def _registered_ensure_fns() -> set[str]:
-    """core/database.py 模块级公开 ensure_* 注册集合（迁移助手单一事实源）。"""
-    return {
-        name
-        for name, obj in vars(db_module).items()
-        if name.startswith("ensure_")
-        and callable(obj)
-        and getattr(obj, "__module__", "") == db_module.__name__
-    }
+    """迁移助手注册集合（单一事实源）：core/database.py 自定义 + 从
+    core/migrations_*.py re-export 进来的 ``ensure_*``。
+
+    🔴 900 行护栏把 ensure_chapters_writing_requirements_column /
+    ensure_projects_drop_legacy_genre_column / #495 的
+    ensure_character_relations_merged_into_knowledge 拆到 ``migrations_*.py`` 再
+    re-export 回 database。仅按 ``__module__ == database`` 过滤会漏掉这些拆分出去的
+    助手 → D3 wiring 门禁对它们**不设防**（拆分即门禁变弱，本批实证：漏锁 merge helper
+    接线）。故纳入 ``inkflow.core.migrations`` 前缀模块的 re-export，使注册集重新覆盖
+    全部 lifespan 应接线的 ``ensure_*``。
+    """
+    names: set[str] = set()
+    for name, obj in vars(db_module).items():
+        if not (name.startswith("ensure_") and callable(obj)):
+            continue
+        module = getattr(obj, "__module__", "")
+        if module == db_module.__name__ or module.startswith("inkflow.core.migrations"):
+            names.add(name)
+    return names
 
 
 def _lifespan_called_names() -> set[str]:

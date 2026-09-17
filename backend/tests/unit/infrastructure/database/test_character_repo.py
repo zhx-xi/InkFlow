@@ -28,8 +28,8 @@ from inkflow.domain.models.character import Character, CharacterGroup, Character
 from inkflow.infrastructure.database.models.character import (
     CharacterGroupORM,
     CharacterORM,
-    CharacterRelationORM,
 )
+from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.repositories.character_repo import SQLiteCharacterRepository
 
@@ -410,7 +410,7 @@ class TestCharacterRepository:
         r = await repo.add_relation(_relation(project, a, b, "师徒"))
 
         assert await repo.hard_delete_relation(r.id.int) is True
-        count = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
+        count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
         assert await repo.hard_delete_relation(r.id.int) is False
 
@@ -426,7 +426,7 @@ class TestCharacterRepository:
 
         assert await repo.hard_delete(a.id.int) is True
 
-        count = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
+        count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
 
     async def test_project_hard_delete_cascades_characters_and_groups(self, db_session, project):
@@ -442,7 +442,7 @@ class TestCharacterRepository:
 
         count_c = await db_session.execute(select(func.count()).select_from(CharacterORM))
         count_g = await db_session.execute(select(func.count()).select_from(CharacterGroupORM))
-        count_r = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
+        count_r = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count_c.scalar_one() == 0
         assert count_g.scalar_one() == 0
         assert count_r.scalar_one() == 0
@@ -559,13 +559,15 @@ class TestCharacterRepositoryCoverageGaps:
     # ── ORM __repr__ ──
 
     def test_orm_repr(self):
-        """三个 ORM 模型的 __repr__ 输出（无需落库）."""
+        """角色/分组 ORM 的 __repr__ 输出（无需落库）.
+
+        #495：CharacterRelationORM 已删除（character_relations 并入 knowledge_relations）
+        → 关系 repr 契约由 test_knowledge_relation_repo.py::test_repr_contains_id_and_key 承载。
+        """
         c = CharacterORM(id=1, name="林尘")
         assert repr(c) == "<CharacterORM id=1 name='林尘'>"
         g = CharacterGroupORM(id=2, name="主角团")
         assert repr(g) == "<CharacterGroupORM id=2 name='主角团'>"
-        r = CharacterRelationORM(id=3, from_character_id=1, to_character_id=2, relation_type="师徒")
-        assert repr(r) == "<CharacterRelationORM id=3 1->2 '师徒'>"
 
 
 # ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
@@ -608,7 +610,7 @@ class TestP5HardDeleteCleansRelations:
         assert await repo.hard_delete(a.id.int) is True
 
         count = await db_session_off_fk.execute(
-            select(func.count()).select_from(CharacterRelationORM)
+            select(func.count()).select_from(KnowledgeRelationORM)
         )
         assert count.scalar_one() == 0
 
@@ -640,3 +642,204 @@ class TestInt64RangeGuard1106:
 
         assert await repo.get_relation(2**63) is None  # 上界外
         assert await repo.get_relation(-(2**63) - 1) is None  # 下界外
+
+
+# ══ #495 角色关系数据面统一：F9 关系底层存储切换 ══
+#
+# 契约（设计定稿 .hermes/plans/w9d3-design.md §4）：API/CLI/GUI 契约零变更，仅 repo
+# 底层存储从 F9 专表 character_relations 切到 knowledge_relations 的
+# character↔character 子空间；CharacterRelationORM 删除（create_all 不再建专表）。
+#
+# RED：当前实现仍读写 character_relations 专表 → 以下断言全 FAIL。
+
+_KR_TS = "2026-01-01 00:00:00"
+
+
+async def _table_names(session) -> set[str]:
+    """sqlite_master 表名集合（不依赖 FK/ORM 元数据）。"""
+    from sqlalchemy import text
+
+    rows = await session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+    return {row[0] for row in rows}
+
+
+async def _kr_rows(session) -> list[tuple]:
+    """kr 表全部行摘要（source_type/source_id/target_type/target_id/type/description）。"""
+    from sqlalchemy import text
+
+    rows = await session.execute(
+        text(
+            "SELECT source_type, source_id, target_type, target_id, relation_type, description "
+            "FROM knowledge_relations ORDER BY id"
+        )
+    )
+    return [tuple(row) for row in rows]
+
+
+async def _insert_kr(session, **kw) -> int:
+    """直写 kr 表（绕过 repo），返回自增主键——构造迁移行 / 图谱页跨实体行."""
+    from sqlalchemy import text
+
+    result = await session.execute(
+        text(
+            "INSERT INTO knowledge_relations "
+            "(project_id, source_type, source_id, target_type, target_id, relation_type, "
+            " description, source, created_at, updated_at) "
+            "VALUES (:project_id, :source_type, :source_id, :target_type, :target_id, "
+            " :relation_type, :description, 'manual', :ts, :ts)"
+        ),
+        {**kw, "ts": _KR_TS},
+    )
+    await session.commit()
+    return int(result.lastrowid or 0)
+
+
+@pytest.mark.integration
+class TestRelationStorageUnification495:
+    """#495：F9 角色关系改走 knowledge_relations 子空间（专表废弃）。"""
+
+    async def test_add_relation_writes_knowledge_relations_subspace(self, db_session, project):
+        """add_relation 落 kr 表（source/target_type='character'）；create_all 后已无
+        character_relations 专表（CharacterRelationORM 删除）。"""
+        tables = await _table_names(db_session)
+        assert "character_relations" not in tables, (
+            "#495: CharacterRelationORM 已废除——create_all 不应再建 F9 专表"
+        )
+
+        repo = SQLiteCharacterRepository(db_session)
+        a = await repo.add(_char(project, "林尘"))
+        b = await repo.add(_char(project, "阿澈"))
+        rel = await repo.add_relation(_relation(project, a, b, "师徒", description="旧说明"))
+
+        assert await _kr_rows(db_session) == [
+            ("character", a.id.int, "character", b.id.int, "师徒", "旧说明")
+        ]
+        # 域对象映射不变（int 主键 ↔ UUID）
+        assert rel.id == uuid.UUID(int=rel.id.int)
+        assert rel.from_character_id == a.id and rel.to_character_id == b.id
+
+    async def test_relation_roundtrip_through_knowledge_relations(self, db_session, project):
+        """get/get_by_key/list（双向）/update（updated_at 刷新）/hard_delete 经 kr 子空间往返."""
+        repo = SQLiteCharacterRepository(db_session)
+        a = await repo.add(_char(project, "林尘"))
+        b = await repo.add(_char(project, "阿澈"))
+        c = await repo.add(_char(project, "青云真人"))
+        r1 = await repo.add_relation(_relation(project, a, b, "师徒"))
+        r2 = await repo.add_relation(_relation(project, c, a, "宿敌"))
+        assert len(await _kr_rows(db_session)) == 2, "F9 写入必须落在 kr 表"
+
+        got = await repo.get_relation(r1.id.int)
+        assert got is not None
+        assert got.id == r1.id
+        assert got.from_character_id == a.id and got.to_character_id == b.id
+        assert got.relation_type == "师徒"
+
+        by_key = await repo.get_relation_by_key(a.id.int, b.id.int, "师徒")
+        assert by_key is not None and by_key.id == r1.id
+
+        assert {r.id for r in await repo.list_relations(project.id, character_id=a.id.int)} == {
+            r1.id,
+            r2.id,
+        }
+        assert len(await repo.list_relations(project.id)) == 2
+
+        before = (await repo.get_relation(r1.id.int)).updated_at
+        updated = await repo.update_relation(
+            r1.model_copy(update={"description": "新说明", "relation_type": "亦师亦友"})
+        )
+        assert updated.description == "新说明"
+        assert updated.relation_type == "亦师亦友"
+        assert updated.updated_at >= before
+
+        assert await repo.hard_delete_relation(r1.id.int) is True
+        assert await repo.get_relation(r1.id.int) is None
+        assert await repo.hard_delete_relation(r1.id.int) is False
+        assert await _kr_rows(db_session) == [
+            ("character", c.id.int, "character", a.id.int, "宿敌", "")
+        ]
+
+    async def test_cross_entity_rows_not_visible_to_character_repo(self, db_session, project):
+        """子空间隔离：kr 表里 character↔world 行（图谱页建的跨实体关系）不得透出
+        F9 契约（只覆盖角色↔角色子空间）；而迁移来的角色↔角色 kr 行必须可读。"""
+        repo = SQLiteCharacterRepository(db_session)
+        a = await repo.add(_char(project, "林尘"))
+        b = await repo.add(_char(project, "阿澈"))
+        pair_id = await _insert_kr(
+            db_session,
+            project_id=project.id,
+            source_type="character",
+            source_id=a.id.int,
+            target_type="character",
+            target_id=b.id.int,
+            relation_type="师徒",
+            description="迁移来的角色关系",
+        )
+        world_id = await _insert_kr(
+            db_session,
+            project_id=project.id,
+            source_type="character",
+            source_id=a.id.int,
+            target_type="world",
+            target_id=9001,
+            relation_type="属于",
+            description="图谱页跨实体关系",
+        )
+
+        rels = await repo.list_relations(project.id)
+        assert [(r.from_character_id, r.to_character_id, r.relation_type) for r in rels] == [
+            (a.id, b.id, "师徒")
+        ]
+
+        got = await repo.get_relation(pair_id)
+        assert got is not None and got.relation_type == "师徒"
+        assert got.from_character_id == a.id  # int → UUID 映射
+        assert await repo.get_relation(world_id) is None, "跨实体行不属于 F9 契约"
+
+    async def test_hard_delete_type_filtered_keeps_same_int_id_other_entity(
+        self, db_session, project
+    ):
+        """hard_delete 的 type 过滤（数据安全核心）：同 int id 的 world 行必须保留
+        （各实体 int id 空间重叠，不过滤会误删他类实体关系行）。"""
+        repo = SQLiteCharacterRepository(db_session)
+        cid = 42
+        db_session.add(
+            CharacterORM(
+                id=cid,
+                project_id=project.id,
+                name="林尘",
+                personality="",
+                background="",
+                goals="",
+                brief="",
+                extra={},
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+        await db_session.commit()
+        await _insert_kr(
+            db_session,
+            project_id=project.id,
+            source_type="character",
+            source_id=cid,
+            target_type="character",
+            target_id=43,
+            relation_type="师徒",
+            description="角色关系",
+        )
+        await _insert_kr(
+            db_session,
+            project_id=project.id,
+            source_type="world",
+            source_id=cid,
+            target_type="world",
+            target_id=43,
+            relation_type="位于",
+            description="世界观关系（同 int id）",
+        )
+
+        assert await repo.hard_delete(cid) is True
+
+        assert await _kr_rows(db_session) == [
+            ("world", cid, "world", 43, "位于", "世界观关系（同 int id）")
+        ]

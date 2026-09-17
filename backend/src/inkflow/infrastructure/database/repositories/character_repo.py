@@ -18,8 +18,8 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,9 +29,11 @@ from inkflow.infrastructure.database.models.character import (
     CharacterGroupMemberORM,
     CharacterGroupORM,
     CharacterORM,
-    CharacterRelationORM,
 )
+from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
 from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+
+_CHARACTER = "character"
 
 
 def _utcnow() -> datetime:
@@ -105,13 +107,13 @@ def _group_domain_to_orm(domain: CharacterGroup) -> CharacterGroupORM:
     )
 
 
-def _relation_orm_to_domain(orm: CharacterRelationORM) -> CharacterRelation:
-    """关系 ORM 行 → 领域实体（int PK → UUID）."""
+def _relation_orm_to_domain(orm: KnowledgeRelationORM) -> CharacterRelation:
+    """角色关系 kr 行 → 领域实体（int PK → UUID）."""
     return CharacterRelation(
         id=uuid.UUID(int=orm.id),
         project_id=uuid.UUID(int=orm.project_id),
-        from_character_id=uuid.UUID(int=orm.from_character_id),
-        to_character_id=uuid.UUID(int=orm.to_character_id),
+        from_character_id=uuid.UUID(int=orm.source_id),
+        to_character_id=uuid.UUID(int=orm.target_id),
         relation_type=orm.relation_type,
         description=orm.description,
         created_at=orm.created_at,
@@ -119,14 +121,17 @@ def _relation_orm_to_domain(orm: CharacterRelationORM) -> CharacterRelation:
     )
 
 
-def _relation_domain_to_orm(domain: CharacterRelation) -> CharacterRelationORM:
-    """关系领域实体 → ORM 行（UUID → int；id 由 DB 自增分配）."""
-    return CharacterRelationORM(
+def _relation_domain_to_orm(domain: CharacterRelation) -> KnowledgeRelationORM:
+    """角色关系领域实体 → kr 行（UUID → int；id 由 DB 自增分配）."""
+    return KnowledgeRelationORM(
         project_id=_uuid_to_int(domain.project_id),
-        from_character_id=_uuid_to_int(domain.from_character_id),
-        to_character_id=_uuid_to_int(domain.to_character_id),
+        source_type=_CHARACTER,
+        source_id=_uuid_to_int(domain.from_character_id),
+        target_type=_CHARACTER,
+        target_id=_uuid_to_int(domain.to_character_id),
         relation_type=domain.relation_type,
         description=domain.description,
+        source="manual",
     )
 
 
@@ -290,8 +295,8 @@ class SQLiteCharacterRepository:
         """物理删除角色（先显式删除其双向关系与关联表行，foreign_keys=OFF 下不依赖 FK）.
 
         F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
-        DELETE character_relations（from/to 双向）+ character_group_members
-        与主删除同一事务（兼 FK CASCADE）。
+        DELETE knowledge_relations 的 character↔character 子空间（from/to 双向）
+        + character_group_members，与主删除同一事务（兼 FK CASCADE）。
         """
         stmt = select(CharacterORM).where(CharacterORM.id == character_id)
         result = await self._session.execute(stmt)
@@ -299,10 +304,16 @@ class SQLiteCharacterRepository:
         if orm is None:
             return False
         await self._session.execute(
-            sa_delete(CharacterRelationORM).where(
+            sa_delete(KnowledgeRelationORM).where(
                 or_(
-                    CharacterRelationORM.from_character_id == character_id,
-                    CharacterRelationORM.to_character_id == character_id,
+                    and_(
+                        KnowledgeRelationORM.source_type == _CHARACTER,
+                        KnowledgeRelationORM.source_id == character_id,
+                    ),
+                    and_(
+                        KnowledgeRelationORM.target_type == _CHARACTER,
+                        KnowledgeRelationORM.target_id == character_id,
+                    ),
                 )
             )
         )
@@ -452,7 +463,11 @@ class SQLiteCharacterRepository:
         rid = uuid_to_pk_or_none(relation_id)
         if rid is None:
             return None
-        stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == rid)
+        stmt = select(KnowledgeRelationORM).where(
+            KnowledgeRelationORM.id == rid,
+            KnowledgeRelationORM.source_type == _CHARACTER,
+            KnowledgeRelationORM.target_type == _CHARACTER,
+        )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _relation_orm_to_domain(orm) if orm else None
@@ -461,10 +476,12 @@ class SQLiteCharacterRepository:
         self, from_id: int, to_id: int, relation_type: str
     ) -> CharacterRelation | None:
         """按 (from, to, relation_type) 唯一键查询关系."""
-        stmt = select(CharacterRelationORM).where(
-            CharacterRelationORM.from_character_id == from_id,
-            CharacterRelationORM.to_character_id == to_id,
-            CharacterRelationORM.relation_type == relation_type,
+        stmt = select(KnowledgeRelationORM).where(
+            KnowledgeRelationORM.source_type == _CHARACTER,
+            KnowledgeRelationORM.source_id == from_id,
+            KnowledgeRelationORM.target_type == _CHARACTER,
+            KnowledgeRelationORM.target_id == to_id,
+            KnowledgeRelationORM.relation_type == relation_type,
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -477,15 +494,19 @@ class SQLiteCharacterRepository:
 
         提供 character_id 时返回该角色作为起点或终点的全部关系。
         """
-        stmt = select(CharacterRelationORM).where(CharacterRelationORM.project_id == project_id)
+        stmt = select(KnowledgeRelationORM).where(
+            KnowledgeRelationORM.source_type == _CHARACTER,
+            KnowledgeRelationORM.target_type == _CHARACTER,
+            KnowledgeRelationORM.project_id == project_id,
+        )
         if character_id is not None:
             stmt = stmt.where(
                 or_(
-                    CharacterRelationORM.from_character_id == character_id,
-                    CharacterRelationORM.to_character_id == character_id,
+                    KnowledgeRelationORM.source_id == character_id,
+                    KnowledgeRelationORM.target_id == character_id,
                 )
             )
-        stmt = stmt.order_by(CharacterRelationORM.id.asc())
+        stmt = stmt.order_by(KnowledgeRelationORM.id.asc())
         result = await self._session.execute(stmt)
         orms = result.scalars().all()
         return [_relation_orm_to_domain(o) for o in orms]
@@ -494,11 +515,15 @@ class SQLiteCharacterRepository:
         """更新关系（按 id 定位，updated_at 自动刷新）."""
         rel_id = _uuid_to_int(relation.id)
         stmt = (
-            sa_update(CharacterRelationORM)
-            .where(CharacterRelationORM.id == rel_id)
+            sa_update(KnowledgeRelationORM)
+            .where(
+                KnowledgeRelationORM.id == rel_id,
+                KnowledgeRelationORM.source_type == _CHARACTER,
+                KnowledgeRelationORM.target_type == _CHARACTER,
+            )
             .values(
-                from_character_id=_uuid_to_int(relation.from_character_id),
-                to_character_id=_uuid_to_int(relation.to_character_id),
+                source_id=_uuid_to_int(relation.from_character_id),
+                target_id=_uuid_to_int(relation.to_character_id),
                 relation_type=relation.relation_type,
                 description=relation.description,
                 updated_at=_utcnow(),
@@ -509,7 +534,11 @@ class SQLiteCharacterRepository:
         if result.rowcount == 0:  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
             raise ValueError(f"CharacterRelation {rel_id} not found")
 
-        stmt2 = select(CharacterRelationORM).where(CharacterRelationORM.id == rel_id)
+        stmt2 = select(KnowledgeRelationORM).where(
+            KnowledgeRelationORM.id == rel_id,
+            KnowledgeRelationORM.source_type == _CHARACTER,
+            KnowledgeRelationORM.target_type == _CHARACTER,
+        )
         result2 = await self._session.execute(stmt2)
         orm = result2.scalar_one_or_none()
         if orm is None:
@@ -518,7 +547,11 @@ class SQLiteCharacterRepository:
 
     async def hard_delete_relation(self, relation_id: int) -> bool:
         """物理删除关系（v1.1 默认真删语义）."""
-        stmt = select(CharacterRelationORM).where(CharacterRelationORM.id == relation_id)
+        stmt = select(KnowledgeRelationORM).where(
+            KnowledgeRelationORM.id == relation_id,
+            KnowledgeRelationORM.source_type == _CHARACTER,
+            KnowledgeRelationORM.target_type == _CHARACTER,
+        )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
