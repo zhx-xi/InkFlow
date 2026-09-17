@@ -1,7 +1,7 @@
 # F6: 上下文管理 (context_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
+> **Spec 版本**: 1.2 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
 > **所属阶段**: Phase 1 — 核心引擎（v1.1 数据源补齐）
 > **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6), [#593](https://github.com/zhx-xi/InkFlow/issues/593)
 > **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service), F9 (character_service ✅), F10 (world_service ✅), F11 (outline_service ✅), F13 (foreshadowing_service ✅)
@@ -12,6 +12,12 @@
 
 > **Spec 变更（v1.1，2026-08-23，issue #593）— F6 上下文数据源补齐**：
 > ① CharacterSettingSource / WorldSettingSource 从 Phase 1 空实现改为**接真表**（characters / world_settings）；② OutlineSource 从读 `project.config.extra["outline"]` 改为**读 outlines 表**（overall→volume→chapter 三级，缺级降级）；③ 新增 `ContextRequest.override` 通道（`character_ids` / `foreshadowing_ids`，勾选时才注入，未勾选不注入）；④ 依赖 F9/F10/F11/F13 数据源（§10 已从「不在范围」移除对应项）。**角色注入轻量化 D5=A（名 + brief）**，`Character` 新增 `brief` 字段（D5-a1，见 f9 v1.1）。
+
+> **Spec 变更（v1.2，2026-09-17，issue #1236）— chapter_summary 状态如实标注**：
+> §3.2 表行与 §4.1 流程标注 `chapter_summary` 为「规划项、SummarySource 适配器未实现」
+> （原「本模块 LLM 生成 + 缓存表」文案失真：SummaryService/缓存表/注入点均就位，
+> 唯独生产者未接线，注册表 5 源无此槽位）。枚举保留，契约测试
+> `tests/unit/domain/models/test_context_source_registry_1236.py` 钉住现状。
 
 ---
 
@@ -69,7 +75,7 @@ class ContextLayer(StrEnum):
 | `outline` | protected | 大纲 | `outlines` 表（F11；overall→volume→chapter 三级，缺级降级） |
 | `character_setting` | compressible | 角色设定 | `characters` 表（F9；名+brief 轻量化，D5=A） |
 | `world_setting` | compressible | 世界设定 | `world_settings` 表（F10） |
-| `chapter_summary` | dynamic | 前文摘要 | 本模块 LLM 生成 + 缓存表 |
+| `chapter_summary` | dynamic | 前文摘要 | ⚠️ 未实现（#1236）：SummarySource 适配器缺位，注册表无此槽位；SummaryService/缓存表已就位，摘要当前经 agentic 轨与调试端点消费 |
 | `foreshadowing` | dynamic | 未解决伏笔提醒 | `foreshadowings` 表（F13） |
 
 ### 3.3 ContextItem / ContextBlock / ContextRequest / ContextAssemblyResult
@@ -181,6 +187,7 @@ class TokenBudgetConfig(BaseModel):
 ```
 1. 收集: writing_requirements（请求必填） + OutlineSource + CharacterSource
          + WorldSource + SummarySource + ForeshadowingSource 各自产出 ContextItem
+   （⚠️ #1236：SummarySource 未实现，当前实际注册 5 源；chapter_summary 见 §3.2 标注）
    （v1.1 #593：override.character_ids/foreshadowing_ids 非空时，仅保留勾选命中的
     character_setting / foreshadowing item，未勾选不注入；不影响其他来源）
 2. 预算: budget = get_budget(model, max_tokens)；layer_cap = ...

@@ -310,6 +310,9 @@ def get_context_service(
         )
 
     pref_source._audit = _preference_pending_audit
+    # 注：枚举 7 项，此处只注册 5 个生产者（#1236）——WRITING_REQUIREMENTS 由
+    # build_context 直接构造；CHAPTER_SUMMARY（#1236）为 spec §3.2 规划项，
+    # SummarySource 适配器未实现（设施已就位，见 domain/models/context.py docstring）。
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
         ContextSourceType.OUTLINE: OutlineSource(SQLiteOutlineRepository(db)),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(SQLiteCharacterRepository(db)),
