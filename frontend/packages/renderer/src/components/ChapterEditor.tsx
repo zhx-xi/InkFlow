@@ -1,4 +1,4 @@
-/** 章节编辑器（spec §4.2.1 Q1 拍板 A）：段落化纯文本 textarea，16px/行高 1.85/首行缩进 2em */
+/** 章节编辑器（spec §4.2.1 Q1 拍板 A）：段落化纯文本 textarea，16px/行高 1.85/首行缩进由内容层 U+3000×2 承担（#1238：移除 CSS text-indent，它只作用于全文首行导致首行双倍缩进） */
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
@@ -28,7 +28,7 @@ export function ChapterEditor({ onEditorKeyDown, onContentChange }: ChapterEdito
       <div className="min-h-0 flex-1">
         <textarea
           data-testid="chapter-editor"
-          className="h-full w-full resize-none overflow-y-auto bg-transparent px-8 py-6 text-[16px] leading-[1.85] text-ink outline-none [text-indent:2em]"
+          className="h-full w-full resize-none overflow-y-auto bg-transparent px-8 py-6 text-[16px] leading-[1.85] text-ink outline-none"
           value={content}
           onChange={(e) => onContentChange(e.target.value)}
           placeholder={currentChapter ? '' : t('write.empty.noChapter')}
