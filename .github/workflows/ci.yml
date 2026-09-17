@@ -415,6 +415,140 @@ jobs:
           path: backend/coverage.dat
           retention-days: 1
 
+  # ── 迁移独立门禁（#1006 方案 B①）：迁移/DB 层测试独立可见性 ──
+  # 只跑 tests/unit/infrastructure/database/（迁移链 + repo 集成测试）。
+  # ⚠️ 与 unit-backend 双跑同一批测试（不剥离执行）：unit-backend 的 --cov 口径
+  # 与 coverage-backend 合并链**不变**（本 job 不上传 coverage 数据，避免 combine
+  # 重复源）；本 job 价值 = 迁移面红灯独立归因，不被 900 行/覆盖率重构 churn 牵连。
+  # 不设 required（issue #1006 裁定：新 job 先观察一段再议）。
+  migration-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.unit == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      TZ: "XXX-5"
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run migration + database tests
+        run: |
+          uv run pytest tests/unit/infrastructure/database/ -v --tb=short --reruns 2 --reruns-delay 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # ── 真实发布版 DB 升级回归（#1005）：snapshot fixture → lifespan 全链 → 语义可用 ──
+  # fixture = 已合入正式版的真实落盘 DB（backend/tests/migration/fixtures/<version>/），
+  # 每正式版发布后归档一份（生成流程见 fixtures/README.md）。断言面：sha256 对账 /
+  # 迁移无错 / 行数保全（含 character_relations→knowledge_relations 条件断言）/
+  # repo 层真实 CRUD / ORM 全表 SELECT 探针（缺列即红）/ FK+integrity / 重启幂等。
+  # 不设 required（同 migration-backend 裁定）。
+  migration-upgrade-backend:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      TZ: "XXX-5"
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run released-DB upgrade regression
+        run: |
+          uv run pytest tests/migration/ -v --tb=long
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # ── ORM↔迁移接线静态漂移门禁（#1006 方案 B②）：backend-contract-drift ──
+  # 前端 gen:api 的后端等价物：ORM 新增 NOT NULL 无 SQL DEFAULT 列却无 ensure_*
+  # 补列迁移 → 旧库升级缺列运行时崩（#869 类 3 根因面）。AST/反射对比（禁 substring，
+  # 对齐 D3 wiring 门禁假绿教训），baseline 差分只锁新增列。纯静态，ubuntu 即可。
+  # 门禁边界（不能检测什么）见脚本 docstring。不设 required。
+  backend-contract-drift:
+    needs: [changes]
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.14"
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: ORM migration drift gate
+        run: |
+          uv run python ../ci_cd/check_orm_migration_drift.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify baseline is committed (no local drift)
+        run: |
+          uv run python ../ci_cd/check_orm_migration_drift.py --regen
+          git diff --exit-code ../ci_cd/orm_migration_baseline.json
+
   # ── Frontend unit: Vitest（renderer + electron 双包，第一批恒跑）──
   unit-frontend:
     # 第一批：恒跑（required check）——默认 needs 语义 = changes 成功后必跑

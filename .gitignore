@@ -19,6 +19,8 @@ build/
 *.db
 *.db-shm
 *.db-wal
+# #1005: 发布版 DB snapshot fixture 是版本化回归资产，必须检入（例外于 *.db）
+!backend/tests/migration/fixtures/**/*.db
 .coverage
 .coverage-*
 coverage.xml

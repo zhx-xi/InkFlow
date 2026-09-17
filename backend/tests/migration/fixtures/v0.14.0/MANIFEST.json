@@ -1,0 +1,25 @@
+{
+  "version": "v0.14.0",
+  "generated_by": "D:\\develop\\projects\\InkFlow-ft\\fixture-v0140\\.hermes\\make_fixture_v0140.py",
+  "generated_at": "2026-09-17T09:26:18.585536+00:00",
+  "git_tag": "v0.14.0",
+  "sha256": "a2d297a6f2707269203657c198b87bf80e24a6ccc365776f13993644c2792f74",
+  "size_bytes": 589824,
+  "tables": {
+    "agents": 6,
+    "chapters": 3,
+    "character_group_members": 1,
+    "character_groups": 1,
+    "character_relations": 2,
+    "characters": 4,
+    "foreshadowings": 1,
+    "outlines": 2,
+    "projects": 2,
+    "provider_configs": 4,
+    "timeline_events": 1,
+    "volumes": 1,
+    "world_categories": 2,
+    "world_settings": 2
+  },
+  "journal_mode": "delete"
+}
