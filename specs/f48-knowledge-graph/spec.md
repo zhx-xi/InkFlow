@@ -1,17 +1,19 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-19 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **Spec 版本**: 1.3 | **日期**: 2026-09-17 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
 >
-> **Spec 变更**（1.1 → 1.2，2026-08-19 #479 契约定稿）：§5.5 由占位升级为具体契约——定时任务形态（进程内 asyncio loop + lifespan 启停 + 启动补跑）、设置三键（`kg_extract_enabled`/`kg_extract_interval_hours`/`kg_extract_method`，F32 settings 扩展）、RelationExtractionService（规则三规则集 + AI 模板提取 + 名称解析）、KnowledgeExtractScheduler（run_cycle 可单测 + 每周期重读设置）、extract 端点 + CLI + 设置页 KnowledgeExtractCard 契约、运行记录复用 extraction_runs（ExtractionType 第 7 值 KNOWLEDGE_RELATION，F14 既有 6 值断言同步改 7）。同步：§1.2 边界、§10 不在范围、§12 决策 12。**#479 实现以 §5.5 为唯一真相**；F48（本模块）交付范围不变。
+> **Spec 变更**（1.2 → 1.3，2026-09-17 #495 落地）：**`character_relations` 表已废弃删除，角色关系数据面统一到 `knowledge_relations` 的 character↔character 子空间**（六元组 `source_type='character'` + `target_type='character'`）——§1 核心交付/§1.1、§1.2 边界（双轨写入 → 单轨）、§2.1 规则 3b、§2.4 GraphEdge（`id` 恒 `kr:<uuid>`、`source_table` 恒 `knowledge_relations`）、§2.6 决策论证表、§3.1-§3.2 端点与示例、§5.2 聚合（单表，去重逻辑废止）、§5.5.1、§5.6 排序、§6 deps、§8 文件结构、§9 关键测试场景、§10 归属、§11 依赖、§12 决策 1/4/9/12 状态留痕、§13 验收、§14.1 端点状态流、待澄清 Q1 同步。**F9→F48 契约零变更**（`CharacterRelation` 领域模型 / 四端点 / CLI / GUI 保留，仅底层存储换表）；Q1-C 最终以「反向合并（character_relations → knowledge_relations）+ 契约零变更」形态实施。
+>
+> **Spec 变更**（1.1 → 1.2，2026-08-19 #479 契约定稿）
 >
 > **Spec 变更**（1.0 → 1.1，2026-08-19 拍板）：Q1-Q3 全拍板——**Q1=A**（图谱页允许建角色↔角色关系写 knowledge_relations，聚合去重；C 迁移合并建 #495 挂 1.0.0）；**Q2=A**（图谱渲染定稿 @xyflow/react）；**Q3=A**（提取运行记录不保留；追加需求「统一日志页」建 #496 挂 1.0.0）。同步：§1.2 边界、§2.1 业务规则、§5.2 聚合、§5.4 前端、§8 文件结构、§10 不在范围、§11 依赖、§12 决策表（新增决策 9-11）、§13 验收、待澄清节全标 ✅。
 >
 > **所属阶段**: 0.10.1（UI/产品修复批，D3 前半「知识图谱：关系模型 + 可视化 + 手动修改」，估算 5-8 人天）
 >
-> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 契约（v1.2 定稿），挂靠方**）· #495（character_relations 迁移合并，**Q1-C 后续重构，1.0.0**）· #496（统一日志页，**Q3 追加需求，1.0.0**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
+> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 契约（v1.2 定稿），挂靠方**）· #495（character_relations 迁移合并，**Q1-C 后续重构——✅ 已实施，2026-09-17 落地于 1.0.0**）· #496（统一日志页，**Q3 追加需求，1.0.0**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
 >
-> **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters + character_relations，图谱合并来源 + 实体校验）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
+> **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters 实体校验；**character_relations 已于 #495 并入本模块 knowledge_relations**，角色↔角色边同为 knowledge_relations 子空间）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
 >
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务）
 >
@@ -26,9 +28,10 @@
 **核心交付**：
 
 ```text
-F9 现状:     character_relations 表（角色↔角色有向边）+ 角色 tab 关系管理
+F9 现状:     characters 表 + 角色 tab 关系管理（关系行存 knowledge_relations——
+             character_relations 表已于 #495 删除并入本表，2026-09-17）
 F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source 来源标记）
-             + 图谱聚合查询端点（合并 character_relations，去重显示）
+             + 图谱聚合查询端点（单表读取：edges 全量来自 knowledge_relations）
              + 关系 CRUD（API + CLI + 前端）
              + 前端「知识图谱」tab（图谱画布：拖拽/缩放/点击详情/增删改）
              + 原「知识库 RAG」tab 改造（#480 检索页承接检索）
@@ -37,21 +40,21 @@ F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source �
 
 ### 1.1 模块类型定位（第 21 变体「实体关系图谱型」）
 
-按 AGENTS.md 模块类型谱系计数（F38=第 18 变体为最新无冲突基线；F20/F46 双占第 19；F44/F45 双占第 20），本模块为 **第 21 变体「实体关系图谱型」**：F9 CharacterRelation（单实体对关系表）的**泛化升级**——通用关系表 + 跨实体校验链 + 图谱聚合查询 + 图谱可视化表现层。与 F9 差异：F9 只表达角色↔角色（专用表 + 角色域内 CRUD），本模块表达**六类实体任意对**（通用表 + 图谱域 CRUD）并**只读合并** F9 角色边。
+按 AGENTS.md 模块类型谱系计数（F38=第 18 变体为最新无冲突基线；F20/F46 双占第 19；F44/F45 双占第 20），本模块为 **第 21 变体「实体关系图谱型」**：F9 CharacterRelation（单实体对关系表）的**泛化升级**——通用关系表 + 跨实体校验链 + 图谱聚合查询 + 图谱可视化表现层。与 F9 差异：F9 只表达角色↔角色（专用表 + 角色域内 CRUD），本模块表达**六类实体任意对**（通用表 + 图谱域 CRUD）；F9 角色边原先由图谱侧**只读合并**展示，**#495（2026-09-17）后两表统一**——角色↔角色关系即本表 `character↔character` 子空间，无合并。
 
 | 维度 | 本模块 |
 |------|--------|
 | 新实体表 | ✅ 1 个：`knowledge_relations`（无 is_deleted——真删语义） |
 | 新 API 端点 | ✅ 6 个（关系 CRUD + 图谱聚合查询） |
 | 新 CLI 命令 | ✅ `inkflow knowledge` 组（graph 查询 + relation 子组 CRUD） |
-| 核心机制 | ✅ 跨实体关系校验链（实体存在 + 同项目，服务层显式校验）+ 图谱聚合（合并 character_relations 去重）+ 图谱画布渲染 |
-| 跨模块 MODIFY | ✅ F9 只读合并（character_relations 零改动）；F10-F13/F36 实体校验只读复用（零改动）；前端 library.tsx rag tab 改造 |
+| 核心机制 | ✅ 跨实体关系校验链（实体存在 + 同项目，服务层显式校验）+ 图谱聚合（**单表 `knowledge_relations`**，角色↔角色边同表子空间——原合并去重逻辑已随 #495 删除，2026-09-17）+ 图谱画布渲染 |
+| 跨模块 MODIFY | ✅ F9 契约零改动（#495 后 F9 关系读写改用 knowledge_relations `character↔character` 子空间，API/CLI/GUI 契约不变）；F10-F13/F36 实体校验只读复用（零改动）；前端 library.tsx rag tab 改造 |
 | 错误面 | KnowledgeGraphServiceError 子类 422 / KnowledgeRelationNotFoundError 404 |
 
 ### 1.2 边界声明
 
-- **不做 entity_relations 之外的冗余**：关系只存 `knowledge_relations`（+ 既有 `character_relations` 只读合并），不在角色/世界观等实体表加关系字段（避免「JSON 嵌入 + 关系表」双份真相——F9 §1 同款原则）
-- **character_relations 保留不动，双轨写入（Q1=A 拍板）**：角色页关系管理继续写 character_relations；图谱页也可建角色↔角色关系（写 knowledge_relations）；图谱聚合合并两表 + 同键去重（§5.2）；长期迁移合并建 #495（1.0.0，Q1-C 后续重构）
+- **不做 entity_relations 之外的冗余**：关系只存 `knowledge_relations`（**#495 后角色↔角色关系亦在本表 `character↔character` 子空间**——原「+ 既有 `character_relations` 只读合并」括注已废止），不在角色/世界观等实体表加关系字段（避免「JSON 嵌入 + 关系表」双份真相——F9 §1 同款原则）
+- **角色关系数据面单轨（#495，2026-09-17；原 Q1=A「双轨写入」已演进）**：角色页关系管理（F9 `character_repo`）与图谱页角色↔角色关系**同写 `knowledge_relations` 的 `source_type='character' AND target_type='character'` 子空间**；图谱聚合 edges **单表读取**，无跨表合并/去重（§5.2）。演进留痕：Q1=A（2026-08-19）当时拍板「character_relations 保留不动 + 双轨写入 + 聚合去重」，长期迁移合并建 #495；**Q1-C 已按「反向合并（character_relations → knowledge_relations）+ F9 契约零变更」形态实施**（表已删除，六元组子空间承接）
 - **不做定时/自动提取（本模块）**：#479 另 issue——v1.2 已在 §5.5 定稿具体契约（定时任务 + 规则/AI 提取 + 设置页）；F48 只实现其数据面 + 写入端口（`bulk_create_relations`），不实现提取逻辑
 - **不做检索页**：#480 另 issue（RAG 语义检索/向量检索 UI 承接）
 - **不做图谱布局算法自研**：渲染选型 @xyflow/react（Q2=A 拍板，§5.4/§12 决策 7）
@@ -83,7 +86,7 @@ F48 增量:    新表 knowledge_relations（通用跨实体关系，含 source �
 1. **实体类型枚举**（EntityType）：`character`（characters 表）/ `world`（world_settings 表）/ `outline`（outlines 表）/ `timeline`（timeline_events 表）/ `foreshadow`（foreshadowings 表）/ `map_pin`（map_pins 表）——与六分类 tab 对齐（rag 除外，rag 是检索面非实体）
 2. **跨实体无 DB FK（D2）**：source_id/target_id 无 ForeignKey 约束（跨 6 张表无法单列 FK）——实体存在性 + 同项目校验由**服务层显式执行**（§5.1 校验链），ORM FK 仅 project_id
 3. **禁止自环**：`source_type == target_type AND source_id == target_id` → 422「关系两端不能是同一实体」（自环在图谱无意义且徒增噪音——F9 §2.3 同款规则）
-3b. **允许角色↔角色（Q1=A 拍板）**：`character→character` 是合法关系（图谱页可建，写 knowledge_relations）——与 F9 character_relations 并存为双轨写入，图谱聚合去重收敛（§5.2）；长期迁移合并见 #495
+3b. **允许角色↔角色（Q1=A 拍板；#495 后单轨）**：`character→character` 是合法关系（图谱页可建，写 knowledge_relations；**角色页 F9 关系管理 #495 起同写本表子空间**，原「与 F9 character_relations 并存为双轨写入 + 聚合去重收敛」已随表删除废止，2026-09-17）
 4. **唯一约束**：`(project_id, source_type, source_id, target_type, target_id, relation_type)` 全唯一索引（v1.0 手动创建防重复；同键重复创建 → 422「该关系已存在」；#479 AI 提取将按此键做幂等去重）
 5. **source 字段（#479 预留）**：v1.0 手动创建恒为 `manual`；`ai` 值保留给 #479 定时提取写入（§5.5）——v1.0 不限制读取（图谱聚合查询含全部 source）
 6. **实体硬删 → 关系级联删除（D3）**：各实体真删（#211 语义）后，其作为 source/target 的 knowledge_relations 行须删除——服务层/项目删除钩子显式清理（生产连接 FK 不生效，D10=b 先例，§5.3）
@@ -215,15 +218,15 @@ class GraphNode(BaseModel):
 
 
 class GraphEdge(BaseModel):
-    """图谱边 — knowledge_relations + character_relations 合并去重后视图.
+    """图谱边 — `knowledge_relations` 单表视图（#495 后 character_relations 已并入，无合并去重）.
 
     Attributes:
-        id: 边 ID（"kr:<relation_uuid>" 或 "cr:<relation_uuid>"，来源区分）.
+        id: 边 ID（恒 `"kr:<relation_uuid>"`；`"cr:"` 前缀形态随 #495 废止）.
         source: 起点节点 ID（GraphNode.id 格式）.
         target: 终点节点 ID.
         label: 关系类型（relation_type）.
         description: 关系说明.
-        source_table: "knowledge_relations" | "character_relations"（合并来源）.
+        source_table: 恒 `"knowledge_relations"`（单一来源，#495 起）.
     """
     id: str
     source: str
@@ -245,7 +248,7 @@ class KnowledgeGraphView(BaseModel):
 class KnowledgeRelationORM(Base):
     """图谱关系 ORM — 映射到 knowledge_relations 表（无 is_deleted，真删语义）.
 
-    设计约定（同 F9 character_relations 先例）:
+    设计约定（同 F9 角色关系表先例——该独立表 #495 已并入本表，2026-09-17）:
     - DB 主键 int 自增；领域层 UUID 映射: domain_id = uuid.UUID(int=orm.id)
     - 全唯一索引 (project_id, source_type, source_id, target_type, target_id,
       relation_type) 保证「项目内同键关系唯一」
@@ -289,11 +292,11 @@ class KnowledgeRelationORM(Base):
 
 | 备选方案 | 优点 | 缺点 | 结论 |
 |----------|------|------|------|
-| **新建通用表 knowledge_relations（选定）** | 表达六类实体任意对；与 F9 character_relations 并存零破坏；图谱聚合单一查询面 | 跨实体无 DB FK，校验在服务层（既定成本，F35/F36 同款） | ✅ 本模块 |
+| **新建通用表 knowledge_relations（选定）** | 表达六类实体任意对；与 F9 character_relations 并存零破坏（**#495 后 F9 独立表已并入本表，本表成为关系数据面唯一表**，2026-09-17）；图谱聚合单一查询面 | 跨实体无 DB FK，校验在服务层（既定成本，F35/F36 同款） | ✅ 本模块（#495 结论成立：并入方向反向——character_relations → knowledge_relations，F9 契约零变更） |
 | 扩展 character_relations 加 entity_type 列 | 复用既有表 | 破坏 F9 角色关系语义（角色 tab 契约全变）；混合两种粒度混乱 | ❌ 否决 |
 | 每对实体类型一张关系表（6×5=30 张） | 强类型 | 表爆炸；图谱查询 N 次 JOIN | ❌ 否决 |
 | 实体表加 relations JSON 列 | 实现简单 | JSON 嵌入 + 关系表双份真相（F9 §1 教训）；无法索引/级联 | ❌ 否决 |
-| 关系迁移合并进 character_relations | 单一数据面 | 破坏 F9 已交付 API/CLI/GUI；迁移成本高 | ❌ 否决（Q1 备选 C） |
+| 关系迁移合并进 character_relations | 单一数据面 | 破坏 F9 已交付 API/CLI/GUI；迁移成本高 | ❌ 否决（Q1 备选 C）——**状态演进**：Q1-C 最终以**反向合并（character_relations → knowledge_relations）+ F9 契约零变更**形态实施（#495，2026-09-17），故本行「破坏契约」的否决理由未成立（原否决针对「并入 character_relations」方向） |
 
 ---
 
@@ -305,13 +308,13 @@ class KnowledgeRelationORM(Base):
 |------|------|------|
 | POST | `/api/v1/projects/{project_id}/knowledge-relations` | 创建图谱关系 → 201 |
 | GET | `/api/v1/projects/{project_id}/knowledge-relations` | 关系列表（分页 + 过滤：`?source_type=&target_type=&relation_type=`；`?source=ai` 过滤 #479 预留） |
-| GET | `/api/v1/projects/{project_id}/knowledge-graph` | **图谱聚合查询**（nodes + edges 合并 knowledge_relations + character_relations，去重） |
+| GET | `/api/v1/projects/{project_id}/knowledge-graph` | **图谱聚合查询**（nodes + edges **单表 `knowledge_relations`**；#495 后不再合并 character_relations） |
 | GET | `/api/v1/knowledge-relations/{relation_id}` | 关系详情 |
 | PATCH | `/api/v1/knowledge-relations/{relation_id}` | 更新关系（六元组可改 + description） |
 | DELETE | `/api/v1/knowledge-relations/{relation_id}` | 真删关系（无 restore） |
 
 > **⚠️ 无 restore 端点（D7 拍板）**：关系真删不可恢复——与 F9/F36 删除语义一致（#211 统一登记）。
-> **图谱聚合 vs 关系列表职责分离**：`knowledge-graph` 供画布渲染（节点+边，合并 character_relations）；`knowledge-relations` 供关系管理（列表/筛选/编辑——只含 knowledge_relations 本表，不含 character_relations 行）。
+> **图谱聚合 vs 关系列表职责分离**：`knowledge-graph` 供画布渲染（节点+边，边**单一来源 `knowledge_relations`**）；`knowledge-relations` 供关系管理（列表/筛选/编辑——本表全部行，**#495 后角色↔角色关系亦为本表行**，不再有独立的 character_relations 行）。
 
 ### 3.2 请求/响应示例
 
@@ -341,8 +344,8 @@ GET /api/v1/projects/1/knowledge-graph
   "edges": [
     {"id": "kr:9", "source": "character:c0a8...", "target": "world:5f3e...",
      "label": "属于", "description": "林尘出身清河县", "source_table": "knowledge_relations"},
-    {"id": "cr:3", "source": "character:c0a8...", "target": "character:7b2d...",
-     "label": "师徒", "description": "", "source_table": "character_relations"}
+    {"id": "kr:3", "source": "character:c0a8...", "target": "character:7b2d...",
+     "label": "师徒", "description": "", "source_table": "knowledge_relations"}
   ]
 }
 ```
@@ -423,23 +426,22 @@ list_relations:   过滤（source_type/target_type/relation_type/source）+ 分�
 
 ### 5.2 图谱聚合查询（`graph(project_id)`）
 
-**数据源合并**：
+**数据源（#495 起单表）**：
 
 ```text
 nodes:  = 六类实体全部条目（characters + world_settings + outlines + timeline_events
           + foreshadowings + map_pins，按项目过滤，每表全量返回）
           ——实体条目即使无边也作为节点显示（图谱完整视图，用户可从此建关系）
-edges:  = knowledge_relations（本项目全部，含 source=ai 预留）
-        ∪ character_relations（本项目全部，角色间边只读合并——Q1=A 拍板定稿）
-去重:   同键（source_type+source_id+target_type+target_id+relation_type）在两表都出现时
-        → 显示 knowledge_relations 行（source_table="knowledge_relations"），character_relations 行折叠
-        （Q1=A 定稿：character_relations 键转成 entity 六元组（type 恒 character）后比对去重）
+edges:  = knowledge_relations（本项目全部，含 source=ai 预留；角色↔角色关系即
+          source_type='character' AND target_type='character' 子空间行，同表）
+去重:   —（#495 后单表 + 六元组全唯一索引，已无跨表同键行，原「两表去重、
+        knowledge 优先」逻辑随 cr_edges 段一并删除，2026-09-17）
 ```
 
 **实现要点**：
 
 - 节点 ID 格式 `"<entity_type>:<entity_uuid>"`（跨表唯一）；图谱边引用节点 ID（GraphNode.id）
-- 查询 = 各实体 repo `list_by_project`（F9-F13/F36 既有方法，只读复用）+ knowledge_relations repo `list_by_project` + character_relations repo `list_by_project`（Q1=A 定稿：deps 注入 CharacterRepositoryProtocol 合并读取）；服务层组装 GraphNode/GraphEdge
+- 查询 = 各实体 repo `list_by_project`（F9-F13/F36 既有方法，只读复用）+ knowledge_relations repo `list_by_project`（**单表读取全部边，含角色↔角色子空间行**；#495 后不再注入 CharacterRepositoryProtocol 读关系——2026-09-17）；服务层组装 GraphNode/GraphEdge
 - **性能**：单项目实体量级（本地个人项目，数百~数千条目）——列表查询即可，不做图数据库/缓存（F36 §2.2 同款「本地量级」论证）
 - **孤立边防御**：knowledge_relations 中指向已不存在实体的行（实体硬删清理遗漏）——图谱查询时**跳过该边**（不 500），并记 loguru warning（与 F36 场景 6 同款容错）
 
@@ -485,7 +487,7 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
 - **调度形态**：进程内 asyncio 调度器（`KnowledgeExtractScheduler`），随内核 lifespan 启停——本地单机架构（§1.2），不引入 APScheduler/系统 cron 等外部依赖（可逆性：后续如需跨平台系统级调度，调度器接口不变只换驱动）
 - **触发粒度**：小时级（`interval_hours`），每个周期遍历全部未删除项目各跑一次提取
 - **提取方式**：`rule`（规则，确定性，无需模型）/ `ai`（LLM 模板提取，需已配置模型）/ `both`（先 rule 后 ai）
-- **不做**：分钟级调度、分布式锁（单机无并发调度）、提取结果人工审核队列（ai 行直接落库，靠六元组幂等 + 图谱页手动删除兜底）、对 `character_relations`（F9 双轨）的写入——AI/规则提取**只写 `knowledge_relations`**
+- **不做**：分钟级调度、分布式锁（单机无并发调度）、提取结果人工审核队列（ai 行直接落库，靠六元组幂等 + 图谱页手动删除兜底）、对 F9 角色关系行（**#495 后即本表 `character↔character` 子空间**）的改写——AI/规则提取**只写 `knowledge_relations`**（`source='ai'`，既有手动行靠幂等跳过保护）
 
 #### 5.5.2 设置契约（F32 settings 扩展，三键）
 
@@ -618,14 +620,14 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 
 - 关系列表：`created_at DESC`（新关系在前——F9/F10 同款）
 - 图谱节点：按实体类型分组顺序返回（character → world → outline → timeline → foreshadow → map_pin，组内 `name ASC`）——画布布局稳定，非随机
-- 图谱边：`knowledge_relations` 在前、`character_relations` 在后（去重优先权一致），组内 `created_at ASC`
+- 图谱边：**单一来源 `knowledge_relations`**（#495 后无跨表优先权问题，原「knowledge 在前、character_relations 在后」排列废止），组内 `created_at ASC`
 
 ---
 
 ## 6. 组织规则
 
 - **目录归属**：新模块 `domain/models/knowledge_graph.py` + `domain/ports/knowledge_graph_errors.py` + `domain/ports/knowledge_relation_repository.py` + `domain/services/knowledge_graph_service.py` + `infrastructure/database/models|repositories/knowledge_graph*` + `api/routers/knowledge_graph.py` + `cli/commands/knowledge_graph.py` + 前端 `components/knowledge-graph/`——镜像 F9/F36 骨架（实体 + 仓储 + service + router + CLI + 前端组件）
-- **deps 装配**：`api/deps.py` 新增 `get_knowledge_graph_service(db)`——注入 SQLiteKnowledgeRelationRepository + 六类实体 repo（只读校验）+ ProjectRepositoryProtocol（项目硬删钩子）+ CharacterRepositoryProtocol（character_relations 合并读取，Q1=A 拍板定稿）
+- **deps 装配**：`api/deps.py` 新增 `get_knowledge_graph_service(db)`——注入 SQLiteKnowledgeRelationRepository + 六类实体 repo（只读校验）+ ProjectRepositoryProtocol（项目硬删钩子）；**#495 后不再注入 CharacterRepositoryProtocol 读关系**（角色↔角色边同表，2026-09-17）
 - **跨实体校验复用**：实体 repo 只读调用（`get` 方法），**不 import 各实体 service**（防循环依赖——knowledge_graph_service 只依赖 repository 协议层）
 - **日志**：loguru（创建/删除/孤立边 warning/清理回调均记，F9/F10 风格）
 - **前端组件归属**：`components/knowledge-graph/` 新目录（KnowledgeGraphCanvas/RelationForm/RelationList/EntityPicker）；library.tsx rag tab 改造 MODIFY；i18n 文案 `nav.lib.knowledge` + `lib.knowledge.*`
@@ -672,7 +674,7 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 | `backend/src/inkflow/cli/commands/knowledge_graph.py` | **CREATE** | `inkflow knowledge` 组（§4） |
 | `backend/src/inkflow/cli/app.py` | **MODIFY** | 注册 knowledge 命令组 |
 | `backend/tests/unit/infrastructure/database/test_knowledge_relation_repo.py` | **CREATE** | 仓储层（CRUD/唯一约束/过滤/真删/delete_by_entity） |
-| `backend/tests/unit/domain/services/test_knowledge_graph_service.py` | **CREATE** | 服务层（校验链/聚合合并/去重/清理回调/孤立边防御） |
+| `backend/tests/unit/domain/services/test_knowledge_graph_service.py` | **CREATE** | 服务层（校验链/单表聚合/清理回调/孤立边防御） |
 | `backend/tests/unit/api/routers/test_knowledge_graph_api.py` | **CREATE** | API 契约（CRUD/错误映射/图谱聚合响应形状） |
 | `tests/cli/test_cli_knowledge_graph.py` | **CREATE** | CLI 命令（信封/退出码/graph 输出） |
 | `frontend/packages/renderer/src/components/knowledge-graph/KnowledgeGraphCanvas.tsx` | **CREATE** | 图谱画布（@xyflow/react 节点/边渲染 + 拖拽/缩放/点击交互） |
@@ -696,7 +698,7 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 
 ```text
 单元（repo）:    knowledge_relations CRUD 往返 + 六元组唯一约束 + 过滤 + 真删 + delete_by_entity   ~14 cases
-单元（service）: 校验链（实体不存在/跨项目/自环/同键冲突）+ 图谱聚合合并/去重 + 清理回调
+单元（service）: 校验链（实体不存在/跨项目/自环/同键冲突）+ 图谱聚合（单表全量，含角色↔角色子空间行）+ 清理回调
                 + 孤立边防御 + bulk_create_relations 预留（#479 面）                              ~20 cases
 API（集成）:     CRUD 端点 + 错误映射 + 图谱聚合响应形状                                           ~12 cases
 CLI:             knowledge 组命令 + graph 输出                                                      ~10 cases
@@ -708,8 +710,8 @@ CLI:             knowledge 组命令 + graph 输出                             
 1. **六元组校验闭环**：创建 character→world「属于」→ 201；实体不存在 → 422（detail 指明端）；跨项目实体 → 422
 2. **自环拒绝**：同类型同 id → 422 KnowledgeRelationSelfLoopError
 3. **同键唯一**：相同六元组重复创建 → 422 KnowledgeRelationConflictError
-4. **图谱聚合合并**：knowledge_relations + character_relations 同时存在 → edges 两来源都有，`source_table` 正确
-5. **图谱去重**：同键关系两表都出现 → 只显示 knowledge_relations 行（Q1=A 时）
+4. **图谱聚合（单表）**：knowledge_relations 含跨实体边 + 角色↔角色子空间边 → edges 一次全量返回，`source_table` 恒 `"knowledge_relations"`
+5. **图谱边 ID 形态**：所有边 `id` 恒 `"kr:<uuid>"`（原 `"cr:"` 前缀形态已废止，#495）
 6. **孤立边防御**：关系指向已删实体 → graph 查询跳过该边 + 不 500（mock 实体 repo 返回 None）
 7. **实体硬删清理回调**：mock 实体 service 删除路径 → cleanup_for_entity 被调用（DELETE 相关行）；默认 None 向后兼容
 8. **项目硬删钩子**：project_service hard_delete → knowledge_graph_cleanup 被调用
@@ -731,7 +733,7 @@ CLI:             knowledge 组命令 + graph 输出                             
 |----|------|------|
 | 定时任务 AI/规则提取关系 | 用户拍板 #479 另 issue（本模块仅预留数据面 + 写入端口，§5.5） | #479（0.10.1） |
 | 知识图谱检索页（RAG 语义检索/向量检索 UI） | 用户拍板 #480 另 issue（原 rag tab 检索能力承接） | #480（0.10.1） |
-| character_relations 迁移/合并进 knowledge_relations | Q1=A 拍板先双轨 + 聚合去重；迁移是破坏性重构 | **#495**（1.0.0，Q1-C 后续重构） |
+| character_relations 迁移/合并进 knowledge_relations | Q1=A 拍板先双轨 + 聚合去重（当时判断）；迁移属破坏性重构 | ✅ **已实施**：#495（1.0.0，Q1-C 后续重构），2026-09-17 落地——反向合并 + F9 契约零变更 |
 | 统一日志页（内核/GUI/AI 日志分类展示与查询） | Q3=A 追加需求：提取运行记录不保留在图谱 tab；运行日志统一日志页是独立功能 | **#496**（1.0.0） |
 | 实体详情编辑（图谱内直接改角色/世界观内容） | 各实体编辑在既有页面闭环（图谱节点详情 = 只读摘要 + 跳转） | 后续 |
 | 图谱布局算法自研/力导向自动布局调优 | 选型 @xyflow/react 自带布局；深度调优无场景 | 后续 |
@@ -748,7 +750,7 @@ CLI:             knowledge 组命令 + graph 输出                             
 ```text
 F48 依赖:
   F1（projects 表 + ProjectRepositoryProtocol）— 项目存在性校验 + 项目硬删钩子
-  F9（characters + character_relations）— 实体校验（角色）+ 图谱合并读取（只读复用，零改动）
+  F9（characters）— 实体校验（角色）；角色关系数据面已并入 knowledge_relations（#495，本表 character↔character 子空间，契约零变更）
   F10（world_settings）— 实体校验（世界观条目，只读复用）
   F11（outlines）— 实体校验（大纲，只读复用）
   F12（timeline_events）— 实体校验（时间线事件，只读复用）
@@ -760,7 +762,7 @@ F48 依赖:
 F48 被依赖:
   #479（定时任务 AI/规则提取）— 依赖 knowledge_relations 表结构 + source 列 + bulk 写入端口（§5.5）
   #480（检索页）— 依赖 rag tab 改造后的定位（#480 承接检索 UI）
-  #495（Q1-C 迁移合并）— 依赖 knowledge_relations 表 + 聚合去重逻辑（合入稳定后动 F9 写入面）
+  #495（Q1-C 迁移合并）— ✅ 已实施（2026-09-17）：character_relations 并入 knowledge_relations
   #496（统一日志页）— 可选依赖 F14 extraction_runs 数据（#496 决定是否并入）
 ```
 
@@ -772,18 +774,18 @@ F48 被依赖:
 
 | # | 决策 | 方案 | 理由 | 备选（否决） |
 |---|------|------|------|-------------|
-| 1 | **新建通用关系表 knowledge_relations** | 六元组（source_type+source_id / target_type+target_id）+ relation_type + description + source；project_id 冗余 | 表达六类实体任意对；与 F9 character_relations 并存零破坏；图谱聚合单一查询面 | 扩展 character_relations（破坏 F9）；每对实体一张表（表爆炸）；实体加 JSON 列（双份真相）；迁移合并（破坏已交付） |
+| 1 | **新建通用关系表 knowledge_relations** | 六元组（source_type+source_id / target_type+target_id）+ relation_type + description + source；project_id 冗余 | 表达六类实体任意对；与 F9 character_relations 并存零破坏；图谱聚合单一查询面 | 扩展 character_relations（破坏 F9）；每对实体一张表（表爆炸）；实体加 JSON 列（双份真相）；迁移合并（破坏已交付）——**状态演进**：#495（2026-09-17）已完成 character_relations → knowledge_relations 合并，本决策方向成立（F9 契约零变更） |
 | 2 | **跨实体无 DB FK，服务层显式校验** | source_id/target_id 无 ForeignKey；实体存在 + 同项目由 knowledge_graph_service 分派各实体 repo 校验；各实体错误类转换 KnowledgeEntityNotFoundError | 跨 6 张表无法单列 FK；服务层统一错误面（跨模块调用方只面对图谱契约）；F35/F36 同款 | 每实体对建 FK（不可行）；透传各实体错误类（错误面分散） |
 | 3 | **实体硬删 → 关系清理走可选回调（F36 钩子先例）** | knowledge_graph_service.cleanup_for_entity + deps 注入各实体 service 删除路径 + project hard_delete 钩子 | 不修改各实体 service 公共契约（默认 None 向后兼容）；防悬空边 + 唯一键残留 | 修改各实体 service 硬编码清理（破坏 F9-F13 契约）；依赖 DB FK（跨表无 FK） |
-| 4 | **图谱聚合 = 合并两表 + 去重** | graph 端点 nodes（六类实体全量）+ edges（knowledge_relations ∪ character_relations，同键去重，knowledge 优先） | 图谱显示完整（含 F9 既有角色边）；单一图谱查询面（前端零二次聚合）；角色页与图谱页展示一致 | 图谱只显示 knowledge_relations（既有角色边不可见——信息缺失） |
+| 4 | **图谱聚合 = 合并两表 + 去重**（**#495 后已单表化**） | graph 端点 nodes（六类实体全量）+ edges（knowledge_relations ∪ character_relations，同键去重，knowledge 优先）——**状态演进**：#495（2026-09-17）删除 cr_edges 段，edges 单一来源 knowledge_relations，去重逻辑废止 | 图谱显示完整（含 F9 既有角色边）；单一图谱查询面（前端零二次聚合）；角色页与图谱页展示一致（合并后仍成立：同表读写） | 图谱只显示 knowledge_relations（既有角色边不可见——信息缺失） |
 | 5 | **真删语义（无 is_deleted）** | knowledge_relations 新表无软删列；DELETE 物理删除 | 普通实体删除收敛真删（F36 D1=B/D7、#211 统一登记）；新表零历史包袱 | 带 is_deleted（F10 同款——被否决） |
 | 6 | **source 列预留 #479** | manual/ai 枚举 + 唯一索引 = AI 幂等去重键；bulk_create_relations(project_id, relations, source=ai) 写入端口 | 数据面先行（用户拍板「关系来源：手动创建 + 预留 #479」）；#479 实现零 schema 变更 | #479 时再加列（F48 已发布，加列迁移成本） |
 | 7 | **图谱可视化选型 @xyflow/react** | React Flow v12（37.9K stars，MIT，React 19 兼容）——节点/边渲染 + 拖拽/缩放/自定义节点开箱即用 | 最成熟 React 图可视化库；零布局自研；社区活跃（xyflow 官方维护） | 手写 SVG/Canvas（拖拽/缩放/布局全自研，工作量翻倍）；antv G6（重依赖，非 React 原生）；d3-force（无现成交互） |
 | 8 | **rag tab 改造为知识图谱 tab** | CATS key rag→knowledge；图谱画布 + 关系列表；PATCH/DELETE 继续排除 | 用户拍板 D3-2「知识库 RAG → 知识图谱」；RAG 检索能力 #480 承接 | 新增第 7 个 tab（六分类 + 图谱并存——tab 膨胀，且 rag 检索面与图谱混放） |
-| 9 | **Q1=A 拍板：允许图谱建角色↔角色关系（2026-08-19）** | character→character 合法（写 knowledge_relations）；角色页 F9 保留（写 character_relations）；图谱聚合合并 + 同键去重（§5.2） | 图谱手动编辑闭环完整；F9 零破坏；个人项目可接受双轨 | 方案 B（图谱禁止角色关系——编辑流断裂，**用户否决**）；方案 C（迁移合并——破坏性重构，**用户否决**，建 #495 挂 1.0.0 后续做） |
+| 9 | **Q1=A 拍板：允许图谱建角色↔角色关系（2026-08-19）** | character→character 合法（写 knowledge_relations）；角色页 F9 保留（写 character_relations）；图谱聚合合并 + 同键去重（§5.2）（**状态演进**：#495（2026-09-17）后角色页亦写 knowledge_relations 子空间，聚合单表，无合并去重——本条 2026-08-19 时的双轨结论已演进） | 图谱手动编辑闭环完整；F9 零破坏；个人项目可接受双轨（**留痕**：「双轨」为 2026-08-19 状态，现已单轨） | 方案 B（图谱禁止角色关系——编辑流断裂，**用户否决**）；方案 C（迁移合并——当时判断属破坏性重构，**用户否决**，建 #495 挂 1.0.0 后续做；**#495 实施时以反向合并 + 契约零变更落地，未破坏已交付面**） |
 | 10 | **Q2=A 拍板：图谱渲染定稿 @xyflow/react（2026-08-19）** | React Flow v12（37.9K stars，MIT，React 19 兼容）；拖拽/缩放/自定义节点开箱即用 | 工程化最小；React 生态图可视化事实标准 | 手写 SVG/Canvas（+2-3 人天，**用户否决**）；antv G6/d3-force（**用户否决**） |
 | 11 | **Q3=A 拍板：提取运行记录不保留 + 统一日志页（2026-08-19）** | 图谱 tab 不保留 extractions/runs 展示；运行日志（内核/GUI/AI）统一日志页建 #496 挂 1.0.0 | 图谱 tab 聚焦关系；runs 是过程日志非日常查看对象；日志页独立功能后续排期 | 方案 B（图谱 tab 内嵌提取记录区——三视图拥挤，**用户否决**）；方案 C（等 #480——推迟 D3 落地，**用户否决**） |
-| 12 | **#479 契约定稿（v1.2，2026-08-19）：进程内调度 + 复用 extraction_runs + 幂等跳过** | ① 进程内 asyncio 调度器（lifespan 启停 + 启动补跑 + 每周期重读设置），不引入 APScheduler/系统 cron；② run 记录复用 F14 extraction_runs（ExtractionType 第 7 值），不建自有表；③ 六元组幂等 = 跳过不覆盖（AI 不覆盖手动调整的 description）；④ 规则提取三规则集只读结构化字段（WorldSetting.parent_id / Foreshadowing.event_id / MapPin.location_id+ref_id），零 LLM；⑤ AI/规则提取只写 knowledge_relations（不碰 F9 双轨）；⑥ 未配置模型（provider_config 无 key_saved=True）→ AI 禁用：端点 422 + 前端选项 disabled + both 降级 rule | 本地单机架构进程内调度最简单可逆；复用 run 表面零新表零 GUI 面（Q3=A 已拍 runs 无展示面）；跳过不覆盖保护用户手动编辑；规则集确定性可测试 | 系统 cron/schtasks（跨平台三套 + 内核外生命周期失控）；自建 kg_extraction_runs 表（无展示面纯属冗余）；幂等覆盖更新（破坏用户手动编辑）；AI 提取写 character_relations（破坏 F9 契约 + 双轨污染） |
+| 12 | **#479 契约定稿（v1.2，2026-08-19）：进程内调度 + 复用 extraction_runs + 幂等跳过** | ① 进程内 asyncio 调度器（lifespan 启停 + 启动补跑 + 每周期重读设置），不引入 APScheduler/系统 cron；② run 记录复用 F14 extraction_runs（ExtractionType 第 7 值），不建自有表；③ 六元组幂等 = 跳过不覆盖（AI 不覆盖手动调整的 description）；④ 规则提取三规则集只读结构化字段（WorldSetting.parent_id / Foreshadowing.event_id / MapPin.location_id+ref_id），零 LLM；⑤ AI/规则提取只写 knowledge_relations（不碰 F9 角色关系既有行；**#495 后两者同表 `character↔character` 子空间**）；⑥ 未配置模型（provider_config 无 key_saved=True）→ AI 禁用：端点 422 + 前端选项 disabled + both 降级 rule | 本地单机架构进程内调度最简单可逆；复用 run 表面零新表零 GUI 面（Q3=A 已拍 runs 无展示面）；跳过不覆盖保护用户手动编辑；规则集确定性可测试 | 系统 cron/schtasks（跨平台三套 + 内核外生命周期失控）；自建 kg_extraction_runs 表（无展示面纯属冗余）；幂等覆盖更新（破坏用户手动编辑）；AI 提取写 character_relations（破坏 F9 契约 + 双轨污染） |
 
 ---
 
@@ -792,12 +794,12 @@ F48 被依赖:
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
 | M1 | 数据模型 + 建表（create_all 自动，无 is_deleted） | `pytest backend/tests/unit/infrastructure/database/test_knowledge_relation_repo.py -v` 全绿；新库表存在（PRAGMA table_list）；knowledge_relations 无 is_deleted 列 |
-| M2 | 服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法） | `pytest backend/tests/unit/domain/services/test_knowledge_graph_service.py -v` 全绿（Q1=A 定稿：character→character 合法分支 + 双轨聚合去重用例） |
+| M2 | 服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法） | `pytest backend/tests/unit/domain/services/test_knowledge_graph_service.py -v` 全绿（character→character 合法分支；**#495 后单轨**：角色↔角色行与其它边同为 knowledge_relations 行，无跨表去重用例） |
 | M3 | API 契约（CRUD + 图谱聚合 + 错误映射） | `pytest backend/tests/unit/api/routers/test_knowledge_graph_api.py -v` 全绿 |
-| M4 | 图谱聚合合并 + 去重 + 孤立边防御 + 清理回调 | service 聚合测试全绿（合并 character_relations/去重/孤立边跳过/cleanup_for_entity 回调） |
+| M4 | 图谱聚合（**单表**）+ 孤立边防御 + 清理回调 | service 聚合测试全绿（edges 全量来自 knowledge_relations 含角色↔角色子空间/孤立边跳过/cleanup_for_entity 回调；#495 后合并去重用例废止） |
 | M5 | CLI knowledge 组 | `pytest ../tests/cli/test_cli_knowledge_graph.py -v` 全绿（**且已追加 ci.yml integration-cli-backend job**） |
 | M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest library-kg.test.tsx 全绿（@xyflow/react 渲染，Q2=A 定稿）；手工验证：切到知识图谱 tab → 画布渲染节点/边 → 拖拽/缩放 → 点击边详情 → 新建关系 → 删除 |
-| M7 | 手工验证闭环 | 建角色+世界观 → 图谱建「属于」关系 → 图谱显示 → 角色页建角色关系 → 图谱合并显示 → 删关系 → 删实体 → 关系被清理（无悬空边） |
+| M7 | 手工验证闭环 | 建角色+世界观 → 图谱建「属于」关系 → 图谱显示 → 角色页建角色关系 → 图谱页显示该边（**#495 后同表，无需合并**）→ 删关系 → 删实体 → 关系被清理（无悬空边） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（先跑 coverage-backend 等价命令实测留 buffer）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过；前端 `pnpm lint` + `tsc --noEmit` |
 
 > Issue #478 验收标准映射：关系数据模型 = M1-M2；可视化 = M4/M6；手动增删改 = M3/M6；前端测试全绿 = M6/M8；#479 预留 = §5.5 数据面（M 行不覆盖——由 #479 验收，见 §5.5.9）。
@@ -808,13 +810,13 @@ F48 被依赖:
 
 | # | 问题 | 影响 | 结论 |
 |---|------|------|------|
-| Q1 | **角色↔角色关系的图谱写入归属**：图谱页是否允许创建角色间关系（写 knowledge_relations）？选项 A（推荐）：允许——图谱页建角色间关系写 knowledge_relations，图谱聚合去重显示（与 F9 character_relations 同键时 knowledge 优先），角色页 F9 关系管理保留不变；选项 B：禁止——图谱页角色间关系只读（详情引导去角色页管理），knowledge_relations 校验拒绝 character→character；选项 C：迁移——F9 写入改为 knowledge_relations（破坏性） | API 校验规则 + 图谱聚合去重逻辑 + F9 边界 | ✅ 已确认（2026-08-19 用户拍板：**选项 A**）——§2.1 规则 3b / §5.2 聚合 / §8 deps 已定稿；C 建 **#495**（1.0.0）后续重构 |
+| Q1 | **角色↔角色关系的图谱写入归属**：图谱页是否允许创建角色间关系（写 knowledge_relations）？选项 A（推荐）：允许——图谱页建角色间关系写 knowledge_relations，图谱聚合去重显示（与 F9 character_relations 同键时 knowledge 优先），角色页 F9 关系管理保留不变；选项 B：禁止——图谱页角色间关系只读（详情引导去角色页管理），knowledge_relations 校验拒绝 character→character；选项 C：迁移——F9 写入改为 knowledge_relations（破坏性） | API 校验规则 + 图谱聚合去重逻辑 + F9 边界 | ✅ 已确认（2026-08-19 用户拍板：**选项 A**）——§2.1 规则 3b / §5.2 聚合 / §8 deps 已定稿；C 建 **#495**（1.0.0）后续重构 → **状态演进**：Q1-C 已实施（#495，2026-09-17），落地形态为**反向合并（character_relations → knowledge_relations）+ 契约零变更**（当时选项 A 的「双轨 + 聚合去重」表述已被单轨取代） |
 | Q2 | **图谱前端渲染方案**：选项 A（推荐）：引入 `@xyflow/react`（React Flow v12，37.9K stars，MIT，React 19 兼容）——节点/边渲染 + 拖拽/缩放/自定义节点开箱即用，工作量最小；选项 B：手写 SVG/Canvas 图渲染（零新依赖，但拖拽/缩放/布局全自研，估算 +2-3 人天）；选项 C：antv G6 / d3-force 等其他库 | 依赖面 + 工作量 + 交互完整度 | ✅ 已确认（2026-08-19 用户拍板：**选项 A**）——§5.4 画布 / §8 package.json / §13 M6 已定稿 |
 | Q3 | **原 rag tab 的提取运行记录列表去向**：改造为知识图谱 tab 后，extractions/runs 列表不再有独立展示面。选项 A（推荐）：不保留——提取运行记录仅 CLI/API 可见（#480 检索页承接检索，不承接 runs 列表）；选项 B：图谱 tab 内保留折叠式「提取记录」区（tab 内双视图：图谱/关系列表/提取记录）；选项 C：等 #480 检索页一起决定 | 前端 tab 结构 + 原 rag 数据可见性 | ✅ 已确认（2026-08-19 用户拍板：**选项 A** + 追加「统一日志页」需求）——§5.4 / §10 已定稿；统一日志页（内核/GUI/AI 日志分类展示查询）建 **#496**（1.0.0） |
 
 ---
 
-> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——F48 实现以 v1.1 为唯一真相来源。v1.2（2026-08-19）补定 §5.5 #479 具体契约（决策 12），#479 实现以 §5.5 为唯一真相。
+> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——F48 实现以 v1.1 为唯一真相来源。v1.2（2026-08-19）补定 §5.5 #479 具体契约（决策 12），#479 实现以 §5.5 为唯一真相。v1.3（2026-09-17）同步 #495 落地：`character_relations` 并入 `knowledge_relations`，图谱聚合单表化（去重逻辑废止），F9→F48 契约零变更。
 
 ## 14. 动作确认
 
@@ -825,8 +827,8 @@ F48 被依赖:
 | 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
 |------|---------|--------------|------|------|------|
 | POST /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 校验链（项目存在 → 自环 → 六元组字段 → source/target 实体存在 + 同项目 → 同键唯一）→ 落库（source 恒 manual） | 201 完整实体 | 404（项目不存在）；422（自环/实体不存在/同键冲突/字段非法） | character→character 合法（Q1=A）；六元组唯一索引兜底 |
-| GET /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 过滤（source_type/target_type/relation_type/source）+ 分页（offset/limit，created_at DESC） | 200 {items, total} | 404 | 只含 knowledge_relations 本表（不含 character_relations 行） |
-| GET /api/v1/projects/{project_id}/knowledge-graph | 项目存在 | 聚合：六类实体全量 nodes + knowledge_relations ∪ character_relations edges（同键去重，knowledge 优先） | 200 {nodes, edges} | 404 | 空图谱 → 200 空数组（前端空态引导）；孤立边跳过 + loguru warning（不 500）；节点 ID 格式 entity_type:entity_uuid |
+| GET /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 过滤（source_type/target_type/relation_type/source）+ 分页（offset/limit，created_at DESC） | 200 {items, total} | 404 | 含全部本表行（**#495 后角色↔角色关系亦为本表行**；已无独立的 character_relations 行） |
+| GET /api/v1/projects/{project_id}/knowledge-graph | 项目存在 | 聚合：六类实体全量 nodes + edges **单表 knowledge_relations 全量**（#495 后无跨表合并/去重） | 200 {nodes, edges} | 404 | 空图谱 → 200 空数组（前端空态引导）；孤立边跳过 + loguru warning（不 500）；节点 ID 格式 entity_type:entity_uuid；边 ID 恒 kr:<uuid> |
 | GET /api/v1/knowledge-relations/{relation_id} | 关系存在 | 详情 | 200 完整实体 | 404（关系不存在） | — |
 | PATCH /api/v1/knowledge-relations/{relation_id} | 关系存在 | 变更字段重新校验（自环/实体存在/同项目/同键唯一）→ 落库 | 200 完整实体 | 404；422（改键后冲突/字段非法） | source 字段不可改（#479 写入方才能置 ai）；未传字段不动 |
 | DELETE /api/v1/knowledge-relations/{relation_id} | 关系存在 | 真删单行（无 restore） | 204 | 404 | 与 F9/F36 删除语义一致（#211 统一登记） |
@@ -847,6 +849,6 @@ F48 被依赖:
 - A1：数据模型 + 建表（create_all 自动，无 is_deleted 列）（M1）
 - A2：服务校验链（六元组/实体存在/同项目/自环/同键冲突/角色↔角色合法）（M2）
 - A3：API 契约（CRUD + 图谱聚合 + 错误映射）（M3）
-- A4：图谱聚合合并 + 去重 + 孤立边防御 + 清理回调（M4）
+- A4：图谱聚合（**单表**）+ 孤立边防御 + 清理回调（M4）
 - A5：CLI knowledge 组全绿（含 ci.yml integration-cli-backend 登记）（M5）
 - A6：前端知识图谱 tab（画布/交互/增删改）+ 手工验证闭环（删实体 → 关系被清理无悬空边）（M6/M7）

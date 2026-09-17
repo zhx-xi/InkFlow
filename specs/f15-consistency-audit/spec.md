@@ -1,12 +1,13 @@
 # F15: 一致性审计服务 (audit_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-02 | **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
+> **Spec 版本**: 1.1 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第七个**模块，估算 3-5 人天）
 > **关联 Issues**: [#45](https://github.com/zhx-xi/InkFlow/issues/45)
 > **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——事件 `source_chapter_id` 跨模块引用校验 + 提取缺口对照）；F9 ✅（角色/关系/分组档案读取）；F10 ✅（世界条目读取）；F12 ✅（事件档案读取 + **委托 `TimelineService.check_consistency`** 时间线维度）；F13 ✅（伏笔档案读取 + `event_id` 锚点校验）；F14 ✅（`extraction_runs` 状态读取）；F5 — **不依赖**（F15 无 LLM，见 §1/§5）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #74）
+> **Spec 变更**（1.0 → 1.1，2026-09-17 #495）：§13 M8 手工验证闭环的「悬空引用」造场景同步——角色关系行改插 `knowledge_relations` 的 character↔character 子空间（`source_type='character'` + `target_type='character'`），因 `character_relations` 表已随 #495 废弃删除；R-C1 规则读取路径（`character_repo.list_relations`）与 F15 契约零变更。
 
 >
 > **快速导航**（2026-08-08 #201）：
@@ -1083,7 +1084,7 @@ F15 被依赖:
 | M5 | 服务编排（分页循环全量读取 / 汇总计数 / consistent 语义 / findings 排序 / counts / 项目校验 404 / 失败传播 / 确定性快照断言） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（编排用例） |
 | M6 | API GET /audit（成功路径 / 404 项目不存在 / 无效 UUID / 500 透传 / 幂等） | `pytest backend/tests/unit/api/routers/test_audit_api.py -v` 全绿 |
 | M7 | CLI audit 组（摘要两种形态 / --json 完整报告 / 退出码 0 语义 / NOT_FOUND / DB_ERROR / 缺参退出码 2）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_audit.py`** | `pytest tests/cli/test_cli_audit.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
-| M8 | 手工验证闭环：真实项目全流程 | 手工验证（`inkflow project create` + `chapter create` 建 2+ 章 → `audit check` 见 info（未建档案/未提取章节）→ `character create` 建 2 角色 + `relation add` 建关系 → `world create` 建条目 → `timeline create` 建 3 事件制造逆序（如 5.0/3.0/4.0）→ `foreshadowing create --event-id ...` 建伏笔挂事件 → `audit check` 见：时间线 error（未声明倒叙）+ 其余维度干净 → `timeline update` 修正时间或加 flashback 标记 → `timeline delete` 软删某事件 → `audit check` 见伏笔锚点 warning（事件已软删）+ 时间线 error 消除 → `foreshadowing update --event-id \"\"` 解除挂接 → `audit check` 全维度 error=0（warning/info 可留）→ **悬空场景**：SQLite 直接插入一条 from/to 指向不存在角色的关系（`sqlite3 data.db "INSERT INTO character_relations (...) VALUES (...)"`）→ `audit check` 见 R-C1 error「悬空引用」→ 删除该行 → 恢复一致；`--json` 信封与 summary.consistent 全程可断言） |
+| M8 | 手工验证闭环：真实项目全流程 | 手工验证（`inkflow project create` + `chapter create` 建 2+ 章 → `audit check` 见 info（未建档案/未提取章节）→ `character create` 建 2 角色 + `relation add` 建关系 → `world create` 建条目 → `timeline create` 建 3 事件制造逆序（如 5.0/3.0/4.0）→ `foreshadowing create --event-id ...` 建伏笔挂事件 → `audit check` 见：时间线 error（未声明倒叙）+ 其余维度干净 → `timeline update` 修正时间或加 flashback 标记 → `timeline delete` 软删某事件 → `audit check` 见伏笔锚点 warning（事件已软删）+ 时间线 error 消除 → `foreshadowing update --event-id \"\"` 解除挂接 → `audit check` 全维度 error=0（warning/info 可留）→ **悬空场景**：SQLite 直接插入一条 from/to 指向不存在角色的关系（`sqlite3 data.db "INSERT INTO knowledge_relations (project_id, source_type, source_id, target_type, target_id, relation_type) VALUES (1, 'character', 999, 'character', 998, '师徒')"`）→ `audit check` 见 R-C1 error「悬空引用」→ 删除该行 → 恢复一致；`--json` 信封与 summary.consistent 全程可断言；**#495 备注（2026-09-17）**：悬空行插入目标由 `character_relations` 表改为 `knowledge_relations` 的 character↔character 子空间——前者已随 #495 废弃删除） |
 | M9 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F15 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
 
 > **验收标准 ↔ Issue #45 映射**: ①「4 维度一致性检查（角色/时间线/世界/伏笔）」→ M2/M3/M4（R-C1/R-C2 角色、R-T1 时间线、R-W1/R-W2 世界、R-F1/R-F2 伏笔 + R-X1/R-X2 跨维度联动，§5.2 规则注册表）；②「可生成审计报告」→ M1/M5/M6/M7/M8（AuditReport 模型 + 编排汇总 + API/CLI 输出 + 手工闭环的 summary/findings 断言）。

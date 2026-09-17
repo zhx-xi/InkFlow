@@ -4,13 +4,14 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.2 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
 > **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #56）
 
+> **Spec 变更（v1.2，2026-09-17，#495）**: `character_relations` 表废弃删除，角色关系数据面并入 `knowledge_relations` 的 character↔character 子空间（`source_type='character' AND target_type='character'`）——§2.3/§2.4 加历史快照声明（v1.0 时代 ORM 形态保留不改）、§12 决策表「关系存储」行追加状态演进留痕。**F9 对外契约零变更**：`CharacterRelation` 领域模型、`/characters/{cid}/relations` 四端点、`inkflow character relate/unrelate/relations`、角色详情面板全部保留，仅底层存储换表（`character_repo` 关系方法加子空间过滤）。
 > **Spec 变更（v1.1，2026-08-23，issue #593）**: `Character` 新增 **`brief`** 字段（一句话简介，≤500 字符，默认空串）——F6 上下文注入采用「名 + brief」轻量化（D5=A），未填 brief 时 F6 降级截 `personality`。新增于 §2.1 字段表 / §2.5 领域模型 / CharacterCreate / CharacterUpdate，DB 侧列由 `ensure_characters_brief_column` 幂等迁移补齐（§8）。
 
 >
@@ -63,7 +64,7 @@
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
-> **说明**: 任务上下文中的 `relations` 字段**不作为 Character 的入库字段**——关系由独立的 `CharacterRelation` 表（§2.3）表达，避免「JSON 嵌入 + 关系表」双份真相。角色详情 API 响应中内联只读聚合的 `relations` 列表（§3.4），满足「档案中直接可见关系」的直觉。
+> **说明**: 任务上下文中的 `relations` 字段**不作为 Character 的入库字段**——关系由独立的关系行（`CharacterRelation` 领域模型，§2.3；#495 起持久化统一到 `knowledge_relations` 的 character↔character 子空间）表达，避免「JSON 嵌入 + 关系表」双份真相。角色详情 API 响应中内联只读聚合的 `relations` 列表（§3.4），满足「档案中直接可见关系」的直觉。
 
 ### 2.2 CharacterGroup（角色分组）
 
@@ -78,6 +79,8 @@
 | created_at / updated_at | datetime | NOT NULL, AUTO | 同上 |
 
 ### 2.3 CharacterRelation（角色关系 — 关系图谱的有向边）
+
+> **#495 存储变更说明（2026-09-17）**：`CharacterRelation` **领域模型与 F9 对外契约保留不变**；其持久化自 #495 起落到 `knowledge_relations` 的 character↔character 子空间（六元组 `source_type='character'` + `target_type='character'`），原 `character_relations` 物理表已删除——故下表为**领域模型口径**（列名 from_character_id/to_character_id/is_deleted 等为模型字段，非当前 DB 列面；DB 侧为 `knowledge_relations` 的 source_id/target_id）。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -122,6 +125,8 @@ __table_args__ = (
     ),
 )
 ```
+
+> ⚠️ **历史快照声明**：以上 ORM 代码块为 **v1.0 时代形态**（partial unique + 软删语义，含 `uq_character_relations_active_key`）；#211 已改全唯一索引（`is_deleted` 列移除），**#495（2026-09-17）已删除 `character_relations` 表**——角色关系数据面并入 `knowledge_relations` 的 character↔character 子空间，唯一键为 `uq_knowledge_relations_key`（project_id + 六元组全唯一）。代码块内容作为历史快照保留、不作当前 schema 依据；F9 关系 API/CLI/GUI 契约零变更。
 
 **为什么是 partial index**: 「同名 = 同一角色」是 AI 提取合并策略的锚点（§5.4），活动角色名必须唯一；而**软删除后再创建同名角色**是合法操作（旧档案已废弃），partial index 恰好两者兼得（已删除行不参与唯一性）。服务层再做一次同名检查以给出友好 422 文案。
 
@@ -859,7 +864,7 @@ F9 被依赖:
 
 | 决策 | 方案 | 理由 |
 |------|------|------|
-| 关系存储 | 独立 `character_relations` 表，而非 Character 内嵌 JSON | 关系图谱需要双向边查询与按项目隔离；内嵌 JSON 无法高效查询且产生双份真相。角色详情响应的 `relations` 为 API 层只读聚合 |
+| 关系存储 | 独立 `character_relations` 表，而非 Character 内嵌 JSON | 关系图谱需要双向边查询与按项目隔离；内嵌 JSON 无法高效查询且产生双份真相。角色详情响应的 `relations` 为 API 层只读聚合（**状态演进**：2026-09-17 #495 该独立表已并入通用关系表 `knowledge_relations` 的 character↔character 子空间——「独立关系行 vs 内嵌 JSON」的原决策理由仍成立，关系仍是独立行存储，只是统一到通用关系表；API/CLI/GUI 契约不变） |
 | 同名语义 | 「项目内活动角色 name 唯一」= 同一角色 | 这是 AI 提取合并的锚点（§5.4），也防止手误重复建档 |
 | 唯一约束实现 | SQLite partial unique index（`WHERE is_deleted = 0`） | 软删除后再创建同名角色合法；比「服务层检查 + 全表唯一」更稳（DB 兜底） |
 | 合并策略 | 非空字段覆盖；不隐式恢复软删除档案 | 确定性、幂等、可重跑；隐式恢复会带来「意外复活」的不可预期行为 |
