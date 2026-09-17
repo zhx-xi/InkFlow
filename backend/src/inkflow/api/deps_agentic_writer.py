@@ -17,6 +17,7 @@ re-export，writing.py 与单测仍从 inkflow.api.deps 导入（命名空间不
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
@@ -106,10 +107,41 @@ def get_agentic_writer_service(
     model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
     # F59-M4（B7）：全局思考档位（None 项目级 → 全局兜底；全 None → "default"）
     effort = resolve_reasoning_effort(None, None, config.llm_reasoning_effort)
+
+    # #1231/#1232：单章轨接真实数据源——机制与 book 轨（#1200/#1205）**同名同形**，
+    # 不另造路径（用户偏好：拒绝同族路径分叉）。
+    async def _project_config_getter(project_id: uuid.UUID) -> object | None:
+        """项目配置取值（#1231）：`project.config.writing_style` 的真实来源.
+
+        项目不存在 / 取值异常 → None（服务层降级为「不注入风格段」）。
+        """
+        try:
+            project: object | None = await deps_module.get_project_service(db).get(project_id)
+        except Exception:  # 配置不可达绝不炸编排
+            return None
+        return getattr(project, "config", None) if project is not None else None
+
+    async def _chapter_requirements_getter(chapter_id: uuid.UUID) -> str | None:
+        """章级写作要求取值（#1232）：`chapters.writing_requirements` 列（GUI 章级栏写入）.
+
+        章不存在 / 列为空 / uuid 溢出等异常 → None（服务层回退请求入参值）。
+        实现与 `api/routers/books.py` 的 `_chapter_requirements_getter` 同形。
+        """
+        try:
+            chapter: object | None = await deps_module.get_chapter_service(db).get_chapter(
+                chapter_id
+            )
+        except Exception:  # 列不可达绝不炸编排
+            return None
+        value = getattr(chapter, "writing_requirements", None) if chapter is not None else None
+        return value if isinstance(value, str) and value else None
+
     return AgenticWriterService(
         agent_factory=_build_agent,
         draft_service=draft_service,
         audit_service=audit_service,
         run_repo=deps_module.SQLiteAgentRunRepository(db),
         chapter_service=deps_module.get_chapter_service(db),
+        project_config_getter=_project_config_getter,
+        chapter_requirements_getter=_chapter_requirements_getter,
     )
