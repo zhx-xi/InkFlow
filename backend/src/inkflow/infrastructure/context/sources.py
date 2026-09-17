@@ -15,11 +15,12 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from inkflow.domain.models.chapter import Chapter, normalize_chapter_title
 from inkflow.domain.models.character import Character
-from inkflow.domain.models.context import ContextItem, ContextSourceType
+from inkflow.domain.models.context import ChapterSummary, ContextItem, ContextSourceType
 from inkflow.domain.models.foreshadowing import Foreshadowing
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.world import WorldSetting
@@ -27,7 +28,11 @@ from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
+from inkflow.domain.ports.summary_repository import SummaryRepositoryProtocol
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
+from inkflow.domain.services.summary_index import resolve_chapter_index
+
+logger = logging.getLogger(__name__)
 
 _LEVEL_LABEL = {"overall": "总体", "volume": "卷", "chapter": "章"}
 _LEVEL_PRIORITY = {"overall": 30, "volume": 20, "chapter": 10}
@@ -298,3 +303,83 @@ def _render_reminder(f: Foreshadowing) -> str:
     if f.location:
         parts.append(f"（埋设位置：{f.location}）")
     return "\n".join(parts)
+
+
+class SummarySource:
+    """前文摘要数据源 — 从 chapter_summaries 表读缓存摘要（#1253，spec §3.2 / §4.6）.
+
+    只读已生成的摘要缓存（经 `SummaryRepositoryProtocol.list_recent`，按章节序号
+    倒序），候选上限 `summary_max_chapters`（对应 `TokenBudgetConfig` 同名字段，
+    spec §4.1「最多 N 条候选」）。**不触发 LLM 生成** —— 生成职责在 agentic 轨
+    （`agent_service` 的 `ensure_summary`）与显式调试端点；本源在组装热路径上
+    保持确定性、零 LLM 调用，两轨共用同一缓存表，无重复生成。
+
+    Args:
+        summary_repo: 摘要缓存仓储（list_recent 接受 int 主键，域内 UUID 以
+            project_id.int 转换）.
+        chapter_repo: 章节仓储（可选；用于补齐条目所需的 `chapter_index`，
+            经 `resolve_chapter_index` 轻读）. None = 未接线 → 序号兜底 0.
+        summary_max_chapters: dynamic 层最多注入的摘要条数（spec §4.1）.
+        model: 摘要目录元数据中记录的模型名（仅进 metadata，不参与生成）.
+    """
+
+    def __init__(
+        self,
+        summary_repo: SummaryRepositoryProtocol,
+        chapter_repo: ChapterRepositoryProtocol | None = None,
+        summary_max_chapters: int = 10,
+        model: str = "",
+    ) -> None:
+        self._repo = summary_repo
+        self._chapter_repo = chapter_repo
+        self._max_chapters = summary_max_chapters
+        self._model = model
+
+    async def collect(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID | None,
+    ) -> list[ContextItem]:
+        """收集项目内最近若干章的前文摘要条目（章节序号倒序，最新在前）.
+
+        项目无摘要缓存 / chapter_id 未锁定 → 空列表（正常空路径，不报错）；
+        读缓存失败 → WARNING + 空列表（spec §4.6：单章失败跳过、不阻断写作）。
+        chapter_id 参数不参与过滤（dynamic 层候选为项目级最近 N 章，同既有源惯例）；
+        条目标题/排序键所需的章节序号经 `chapter_repo` 轻读补齐（#1253）。
+        """
+        try:
+            summaries = await self._repo.list_recent(project_id.int, self._max_chapters)
+        except Exception:
+            logger.warning("前文摘要读取失败，跳过该数据源（spec §4.6）", exc_info=True)
+            return []
+        items: list[ContextItem] = []
+        for s in summaries:
+            # ORM → 领域投影以 uuid.UUID(int=orm.id) 背书 int 主键（#1230 归一：
+            # SQLiteSummaryRepository 不 JOIN chapters，摘要实体无序号列）
+            index = await resolve_chapter_index(self._chapter_repo, s.chapter_id)
+            items.append(_render_summary(s, index, self._model))
+        return items
+
+
+def _render_summary(s: ChapterSummary, index: float, model: str) -> ContextItem:
+    """摘要条目 → ContextItem 确定性模板（纯函数，无 LLM）.
+
+    Args:
+        s: 摘要领域实体.
+        index: 所属章节的 `chapter_index`（由 `resolve_chapter_index` 补齐）.
+        model: 摘要目录元数据中的模型名（仅进 metadata）.
+
+    标题「第 N 章摘要」由 chapter_index 派生；priority 取章节序号 =
+    越新越先注入（与 dynamic 层「priority 降序贪心」的排序键一致，spec §4.5）。
+    """
+    return ContextItem(
+        source=ContextSourceType.CHAPTER_SUMMARY,
+        title=f"第 {index:g} 章摘要",
+        content=s.summary,
+        priority=int(index),
+        metadata={
+            "chapter_id": str(s.chapter_id),
+            "chapter_index": index,
+            "summary_model": model,
+        },
+    )

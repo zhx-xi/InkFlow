@@ -81,13 +81,16 @@ def test_get_writing_service_assembles_full_stack(db) -> None:
     assert svc._chapter_repo._session is db
 
 
-def test_get_context_service_registers_five_sources(db) -> None:
-    """get_context_service → ContextService，5 类 ContextSourceType 槽位全注册.
+def test_get_context_service_registers_six_sources(db) -> None:
+    """get_context_service → ContextService，6 类 ContextSourceType 槽位全注册.
 
     F28 变更（2026-08-11）: 追加 ContextSourceType.PREFERENCE（PreferenceSource，
     已学偏好注入，spec f28 §5.4）。
+    #1253 变更（2026-09-17）: 追加 ContextSourceType.CHAPTER_SUMMARY
+    （SummarySource，前文摘要注入 F6 组装通道，spec f6 §3.2 / §4.6）。
     """
     from inkflow.domain.models.context import ContextSourceType
+    from inkflow.infrastructure.context.sources import SummarySource
 
     svc = deps.get_context_service(db)
     assert isinstance(svc, ContextService)
@@ -97,7 +100,9 @@ def test_get_context_service_registers_five_sources(db) -> None:
         ContextSourceType.WORLD_SETTING,
         ContextSourceType.FORESHADOWING,
         ContextSourceType.PREFERENCE,
+        ContextSourceType.CHAPTER_SUMMARY,
     }
+    assert isinstance(svc._sources[ContextSourceType.CHAPTER_SUMMARY], SummarySource)
     assert svc._summary_repo._session is db
 
 

@@ -227,8 +227,7 @@ def get_memory_service(
         user_preference_repo=SQLiteUserPreferenceRepository(db),
         summary_repo=SQLiteSemanticSummaryRepository(db),
         summarizer=SemanticSummarizer(
-            llm_client=LangChainLLMClient(),
-            prompt_manager=LangChainPromptManager(),
+            llm_client=LangChainLLMClient(), prompt_manager=LangChainPromptManager()
         ),
         llm_default_model=config.llm_default_model,
     )
@@ -267,16 +266,15 @@ def get_context_service(
 ) -> ContextService:
     """获取 ContextService 实例（#593：Character/World/Outline 数据源接真实表， Mock count_tokens 生产环境由 F5 ..."""  # noqa: E501  # 中文 docstring 长描述
     from inkflow.core.config import config
-    from inkflow.domain.models.context import ContextSourceType
+    from inkflow.domain.models.context import ContextSourceType, TokenBudgetConfig
+    from inkflow.infrastructure.context import summary_background_refresh as sbr
     from inkflow.infrastructure.context.preference_source import PreferenceSource
-    from inkflow.infrastructure.context.sources import (
+    from inkflow.infrastructure.context.sources import (  # 折行超 100 列
         CharacterSettingSource,
         ForeshadowingSource,
         OutlineSource,
+        SummarySource,
         WorldSettingSource,
-    )
-    from inkflow.infrastructure.context.summary_background_refresh import (
-        schedule_summary_background_refresh,
     )
     from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
         SQLiteForeshadowingRepository,
@@ -291,11 +289,10 @@ def get_context_service(
         user_preference_repo=SQLiteUserPreferenceRepository(db),
         summary_repo=SQLiteSemanticSummaryRepository(db),
         summarizer=SemanticSummarizer(
-            llm_client=LangChainLLMClient(),
-            prompt_manager=LangChainPromptManager(),
+            llm_client=LangChainLLMClient(), prompt_manager=LangChainPromptManager()
         ),
         llm_default_model=config.llm_default_model,
-        background_refresh=schedule_summary_background_refresh,
+        background_refresh=sbr.schedule_summary_background_refresh,
     )
 
     async def _preference_pending_audit(**kw: object) -> None:
@@ -310,17 +307,21 @@ def get_context_service(
         )
 
     pref_source._audit = _preference_pending_audit
-    # 注：枚举 7 项，此处只注册 5 个生产者（#1236）——WRITING_REQUIREMENTS 由
-    # build_context 直接构造；CHAPTER_SUMMARY（#1236）为 spec §3.2 规划项，
-    # SummarySource 适配器未实现（设施已就位，见 domain/models/context.py docstring）。
+    chapter_repo = SQLiteChapterRepository(db)  # #1253: SummarySource 与 OutlineSource 共用
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
         ContextSourceType.OUTLINE: OutlineSource(
-            SQLiteOutlineRepository(db), chapter_repo=SQLiteChapterRepository(db)
+            SQLiteOutlineRepository(db), chapter_repo=chapter_repo
         ),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(SQLiteCharacterRepository(db)),
         ContextSourceType.WORLD_SETTING: WorldSettingSource(SQLiteWorldRepository(db)),
         ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),
         ContextSourceType.PREFERENCE: pref_source,
+        ContextSourceType.CHAPTER_SUMMARY: SummarySource(
+            SQLiteSummaryRepository(db),
+            chapter_repo=chapter_repo,
+            summary_max_chapters=TokenBudgetConfig().summary_max_chapters,
+            model=config.llm_default_model,
+        ),
     }
     return ContextService(
         sources=sources,
