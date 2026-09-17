@@ -1,8 +1,9 @@
 # F43 设定库 GUI 升级（P0+P1+P2+P3+P4+P5 批次）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: v1.5（2026-08-31）
-> **Spec 变更**: v1.5 — issue #835 大纲强制树形结构：决策点 2.A「孤立章合法」移除，`level=chapter` 必须挂 `level=volume` 父大纲（否则 422）；§2.8 数据模型/层级校验表 + §1.3 边界 + §9.7 OB8 + §12 D-20/D-21 + §14 Q7 同步修订；AI 生成器 GeneratedOutline 加 level/parent 建链。
+> **Spec 版本**: v1.6（2026-09-17）
+> **Spec 变更**: v1.6 — #495 角色关系数据面统一（character_relations 并入 knowledge_relations）：删除角色的显式级联清理目标由 `character_relations` 改为 `knowledge_relations` 中 `source_type='character' AND target_type='character'` 的 from/to 双向行（带 type 过滤，`character_repo.hard_delete` 落点不变）；§1.1/§1.2 边界/§2.10 清理矩阵/§3.8 端点行为增强表/§5.18 实现模式/§7 边界场景（E56）/§8 文件结构/§9.9 RED 契约（C1）同步修订。
+> **Spec 变更**: v1.5 — issue #835 大纲强制树形结构
 > **Spec 变更**: v1.4 — P5 批次（issue #284 **最后一批**）：删除后引用残留清理 job——真删语义（#211 已合）落地后，删除设定实体（角色/世界观/大纲/时间线事件/伏笔）**及写作章节**时显式清理引用残留（角色关系、地图 pin 关联、大纲父子/情节点、伏笔事件锚点、章节引用 6 处）；前端删除确认文案对齐真删（移除「30 天后彻底清除」）。P0-P4 交付物已全部合入（PR #301/#306/#311/#319）。**本批完成后 `Closes #284`**。
 > **阶段**: 0.8.0（issue #284 的 P5 最后一批；全部批次完成后关闭 issue）
 > **估算**: 2-3 人天（后端清理 ~1.5-2 + 前端文案对齐 ~0.5 + 测试）
@@ -18,7 +19,7 @@
 
 设定库 GUI（library.tsx 六分类 tab + projects.tsx 项目卡片）通过 issue #284 分 P0-P5 批次升级。P0（PR #301，v1.0）补齐六分类编辑/删除 + 项目重命名/删除 CRUD 闭环；P1（PR #306，v1.1）补齐角色等级必填（D1）+ 分组标签多选（D2）+ 世界观树/分类筛选（D3）+ 世界观复制（F37）；P2（PR #311，v1.2）落地地图工作台（D4-D7）；P3+P4（PR #319，v1.3）落地大纲三级 + 章关联 + 时间线双序 + 两级检查（D8-D10）。本批（P5，v1.4）为**最后一批**，在删除语义方向收尾（决策文档 D11 + §4「删除 30 天清理」→ 事实核查后重定位）：
 
-1. **删除后引用残留清理 job**（#211 真删对齐）：删除设定实体后同步清理引用残留——角色关系（character_relations）、地图 pin 关联（map_pins.ref_id / location_id）、大纲父子（outlines.parent_id）+ 情节点（plot_points）、伏笔事件锚点（foreshadowings.event_id）、章节引用 6 处（outlines.chapter_id / timeline_events.source_chapter_id / audit_logs / chapter_summaries / agent_runs / drafts）。
+1. **删除后引用残留清理 job**（#211 真删对齐）：删除设定实体后同步清理引用残留——角色关系（`knowledge_relations` 中 `source_type='character' AND target_type='character'` 的 from/to 双向行；#495 前为独立 `character_relations` 表，2026-09-17 起该表已并入）、地图 pin 关联（map_pins.ref_id / location_id）、大纲父子（outlines.parent_id）+ 情节点（plot_points）、伏笔事件锚点（foreshadowings.event_id）、章节引用 6 处（outlines.chapter_id / timeline_events.source_chapter_id / audit_logs / chapter_summaries / agent_runs / drafts）。
 2. **前端删除确认文案对齐真删**（D11 → #211 语义）：`lib.delete.confirm` 由「后台逻辑删除，30 天后彻底清除」改为「立即移除，不可恢复」。
 3. **世界观删除补漏**：reparent 路径补 location_cleanup 钩子；`maps.root_location_id` 置空。
 
@@ -30,7 +31,7 @@ P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/�
 
 | # | 交付物 | 来源 |
 |---|--------|------|
-| 1 | **删除角色清理**：character_relations（from/to 双向）显式级联删除；map_pins ref_id(type=role) 置空 | #211 + P5 事实核查 |
+| 1 | **删除角色清理**：`knowledge_relations` 的角色↔角色行（`source_type='character' AND target_type='character'`，from/to 双向）显式级联删除；map_pins ref_id(type=role) 置空 | #211 + P5 事实核查（#495 表合并同步） |
 | 2 | **删除大纲清理**：子大纲 outlines.parent_id 置空（SET NULL）；plot_points 显式级联删除 | #211 + P5 事实核查 |
 | 3 | **删除时间线事件清理**：foreshadowings.event_id 置空；map_pins ref_id(type=event) 置空 | #211 + P5 事实核查 |
 | 4 | **删除世界观条目清理**：reparent 路径补 location_cleanup 钩子；maps.root_location_id 置空；pin location_id 置空（既有） | #211 + P5 事实核查 |
@@ -44,7 +45,7 @@ P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/�
 
 - 本批**覆盖 P5**（删除后引用残留清理 + 文案对齐），为 issue #284 **最后一批**——PR body `Closes #284`（各批全部完成后关闭；spec §11/§13 门禁同步）。
 - **清理时机 = 同步**（Q1=A 拍板）：删除端点调用的 service 方法内，repo 显式清理语句与主删除**同一事务**；**不做异步后台 job、不引入调度器**（项目无 job 基建；删除低频，异步收益低）。
-- **清理语义矩阵**（与 ORM 声明一致，但显式实现）：`CASCADE` 类（character_relations / plot_points / audit_logs / chapter_summaries）→ 显式 DELETE 子行；`SET NULL` 类（outlines.parent_id / outlines.chapter_id / timeline_events.source_chapter_id / foreshadowings.event_id / map_pins.ref_id / map_pins.location_id / maps.root_location_id / agent_runs.chapter_id / drafts.chapter_id）→ 显式 UPDATE 置 NULL。
+- **清理语义矩阵**（与 ORM 声明一致，但显式实现）：`CASCADE` 类（角色↔角色关系行：`knowledge_relations` 中 `source_type='character' AND target_type='character'`，#495 前为 `character_relations` / plot_points / audit_logs / chapter_summaries）→ 显式 DELETE 子行；`SET NULL` 类（outlines.parent_id / outlines.chapter_id / timeline_events.source_chapter_id / foreshadowings.event_id / map_pins.ref_id / map_pins.location_id / maps.root_location_id / agent_runs.chapter_id / drafts.chapter_id）→ 显式 UPDATE 置 NULL。
 - **前端文案对齐真删**（Q2=B 拍板）：`lib.delete.confirm` 由「点击确认后立即移除（后台逻辑删除，30 天后彻底清除）」改为「点击确认后立即移除，不可恢复」。**影响 3 个消费方**（library.tsx 六分类 / projects.tsx 项目删除 / MapWorkbench.tsx pin 删除）——文案是通用删除确认，语义全部适用真删。
 - **范围含写作章节**（Q3=B 拍板）：`chapter_service.delete_chapter` 清理 6 处引用（outlines / timeline_events / audit_logs / chapter_summaries / agent_runs / drafts）。M4 门禁「章关联」= outline.chapter_id 由此覆盖。
 - **不新增删除端点**：清理是既有 DELETE 端点的内部行为增强，API 面零变更（§3 无新端点/新参数）。
@@ -327,7 +328,7 @@ class EventCheckReport(BaseModel):
 
 | 删除对象 | 清理目标表 | 语义 | 实现位置 |
 |---------|-----------|------|---------|
-| 角色 | character_relations（from/to 双向） | CASCADE → DELETE | character_repo.hard_delete |
+| 角色 | knowledge_relations（`source_type='character' AND target_type='character'` 的 from/to 双向行） | CASCADE → DELETE（带 (type,id) 对过滤，#495） | character_repo.hard_delete |
 | 角色 | map_pins.ref_id（type=role） | SET NULL | map_service 钩子（新）或 character 侧 |
 | 大纲 | outlines.parent_id（子大纲） | SET NULL | outline_repo.hard_delete |
 | 大纲 | plot_points.outline_id | CASCADE → DELETE | outline_repo.hard_delete |
@@ -556,7 +557,7 @@ POST /api/v1/projects/p1/outlines
 
 | 端点 | 行为增强（删除成功后） |
 |------|----------------------|
-| `DELETE /api/v1/characters/{id}` | 显式删 character_relations（from/to）；map_pins.ref_id(type=role) 置空 |
+| `DELETE /api/v1/characters/{id}` | 显式删 `knowledge_relations` 的角色↔角色行（from/to 双向，带 type 过滤）；map_pins.ref_id(type=role) 置空 |
 | `DELETE /api/v1/outlines/{id}` | 子大纲 parent_id 置空；plot_points 显式级联删 |
 | `DELETE /api/v1/timeline/events/{id}` | foreshadowings.event_id 置空；map_pins.ref_id(type=event) 置空 |
 | `DELETE /api/v1/world-settings/{id}` | cascade/reparent/单删 三路径均触发 location_cleanup 钩子（pin.location_id + maps.root_location_id 置空） |
@@ -791,7 +792,8 @@ update_map(...):  bg_source/extra 进入 WorldMapUpdate exclude_unset 合并
 ```text
 # CASCADE 类（先删子行）：
 character_repo.hard_delete(cid):
-  ① DELETE character_relations WHERE from_character_id=cid OR to_character_id=cid
+  ① DELETE knowledge_relations WHERE (source_type='character' AND source_id=cid)
+     OR (target_type='character' AND target_id=cid)   # #495：原 character_relations 表已并入
   ② DELETE characters WHERE id=cid
   ③ commit（同一事务）
 
@@ -994,7 +996,7 @@ P5 追加（删除后引用残留清理）：
 
 | # | 场景 | 行为 |
 |---|------|------|
-| E56 | 删除角色（有关系/pin 引用） | character_relations 双向显式删除；map_pins ref_id(type=role) 置 NULL（同一事务） |
+| E56 | 删除角色（有关系/pin 引用） | `knowledge_relations` 角色↔角色行双向显式删除（带 type 过滤）；map_pins ref_id(type=role) 置 NULL（同一事务） |
 | E57 | 删除大纲（有子大纲/情节点） | 子大纲 parent_id 置 NULL；plot_points 显式级联删除（同一事务） |
 | E58 | 删除时间线事件（有伏笔/pin 引用） | foreshadowings.event_id 置 NULL；map_pins ref_id(type=event) 置 NULL |
 | E59 | 删除世界观条目（reparent 路径） | 补 location_cleanup 钩子：pin.location_id + maps.root_location_id 置 NULL（cascade/单删路径同样覆盖） |
@@ -1095,7 +1097,7 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 
 | 操作 | 文件 | 变更 |
 |------|------|------|
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/character_repo.py` | hard_delete 显式删 character_relations（from/to 双向） |
+| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/character_repo.py` | hard_delete 显式删 `knowledge_relations` 角色↔角色行（from/to 双向，带 type 过滤；#495 前为 character_relations） |
 | MODIFY | `backend/src/inkflow/infrastructure/database/repositories/outline_repo.py` | hard_delete 显式置空子大纲 parent_id + 删 plot_points |
 | MODIFY | `backend/src/inkflow/infrastructure/database/repositories/timeline_repo.py` | hard_delete 显式置空 foreshadowings.event_id |
 | MODIFY | `backend/src/inkflow/infrastructure/database/repositories/chapter_repo.py` | delete_chapter 显式清理 6 处引用（§2.10） |
@@ -1283,7 +1285,7 @@ P2 spec §9.5 登记「地图 E2E = P3 前置必补」。本批补 P2 遗留地�
 
 | # | 层 | 契约 | 预期 RED 形态 |
 |---|----|------|-------------|
-| C1 | repo | character_repo.hard_delete(cid) 后 character_relations 无 from/to=cid 行 | 现残留 → 断言 count=0 FAIL |
+| C1 | repo | character_repo.hard_delete(cid) 后 `knowledge_relations` 无 character↔character 的 from/to=cid 行（带 type 过滤） | 现残留 → 断言 count=0 FAIL |
 | C2 | repo | outline_repo.hard_delete(oid) 后子大纲 parent_id=NULL + plot_points 无 outline_id=oid | 现残留 → 断言 FAIL |
 | C3 | repo | timeline_repo.hard_delete(eid) 后 foreshadowings.event_id=NULL | 现残留 → 断言 FAIL |
 | C4 | repo | chapter_repo.delete_chapter(chid) 后 6 处引用清理（outlines/timeline_events/audit_logs/chapter_summaries/agent_runs/drafts） | 现残留 → 断言 FAIL |

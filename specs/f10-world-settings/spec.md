@@ -4,13 +4,14 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
+> **Spec 版本**: 1.3 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
 > **所属阶段**: 0.9.0 里程碑（世界观分类 CRUD，issue #389，估算 2-4 人天）
 > **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
 > **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 > **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
 
+> **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
 > **Spec 变更（v1.1 → v1.2，2026-08-16，issue #389）**: 世界观分类从「条目平铺属性」升级为「独立受控词表实体」（反转 v1.0 §2.2「不建独立分组表」决策）。① 新增 `world_categories` 表 + `WorldCategory` 领域实体（§2.2/§2.6）；② 新增分类 CRUD 四端点（§3.1，10→14 端点）；③ 分类重命名/删除反向同步条目 `category` 字符串——删除置空、重命名改名（§6.1/§7，拍板 D2=A）；④ 前端分类 chips 来源改为分类实体（移除 `DEFAULT_WORLD_CATS=['地图']` 硬编码），世界观 tab 导航修正（进分类列表视图非地图工作台）+「地图视图」独立入口（§14）；⑤ 镜像 F9 CharacterGroup 模式（§12）。
 
 > **Spec 变更（v1.0 → v1.1，2026-08-13，issue #211）**: 删除语义统一——普通实体软删→真删。① WorldSetting 移除 `is_deleted` 字段（§2.1/§2.5）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径），restore 端点/命令移除（§3/§4）；④ 提取合并移除「软删同名→新建+warning」分支（§5.4）；⑤ 跨模块 F9/F11/F12/F13/F14/F15 同步适配（§8.2 全量 MODIFY 清单）；⑥ `is_deleted` 列移除 + 存量软删数据迁移（§8.3）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**（§10）。
@@ -766,6 +767,10 @@ DROP 旧表、RENAME、重建 `uq_characters_active_name` 等索引）。
 > `DROP TABLE characters` 会沿 FK CASCADE 清空 `character_relations` 与回填后的
 > `character_group_members`（数据丢失）。故本迁移由 `run_character_group_members_migration`
 > 在**独立 AUTOCOMMIT 连接 + FK=OFF** 上执行（主迁移事务提交后调用），规避 FK 拒止与级联清空。
+>
+> **#495 备注（2026-09-17）**：`character_relations` 表此后已被并入 `knowledge_relations`（新增幂等迁移
+> `ensure_character_relations_merged_into_knowledge`，链上顺序在本段 helper **之后**）；本段为**旧库升级
+> 路径**的历史语境——新库/已迁移库该表不存在，helper 的 `character_relations` 分支持续 no-op。
 
 ---
 
