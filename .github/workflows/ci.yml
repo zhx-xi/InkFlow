@@ -540,9 +540,8 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: ORM migration drift gate
-        run: |
-          uv run python ../ci_cd/check_orm_migration_drift.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # ubuntu job 默认 bash -e：非零退出自动失败，无需（也不能用）PS 的 $LASTEXITCODE
+        run: uv run python ../ci_cd/check_orm_migration_drift.py
 
       - name: Verify baseline is committed (no local drift)
         run: |
