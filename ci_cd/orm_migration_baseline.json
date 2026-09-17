@@ -1,0 +1,1359 @@
+{
+  "_comment": "ORM 列集冻结 baseline（#1006 漂移门禁）。更新 = 显式跑 check_orm_migration_drift.py --regen 并 review diff；CI 只读。",
+  "columns": {
+    "agent_executions": {
+      "chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "error": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "final_output": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "hitl_payload": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "pipeline": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "relations": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "stages": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "thread_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "total_duration_ms": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "trace": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "agent_runs": {
+      "chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "draft_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "final_content": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "mode": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "model": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "steps": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "terminated_by": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "token_usage_total": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "agent_stage_results": {
+      "duration_ms": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "error": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "execution_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "output": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "retry_count": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "stage_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "agents": {
+      "builtin": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "grants": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "icon": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "model_override": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "role_key": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "skill_ids": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "system_prompt": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "temperature_override": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "tool_ids": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "app_settings": {
+      "key": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "value": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "audit_logs": {
+      "chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "chapter_title": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "confirmed_at": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "degraded": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "note": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "severity_summary": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "summary": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "chapter_summaries": {
+      "chapter_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "model": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "summary": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "chapters": {
+      "content": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "order_index": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status_history": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "volume_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "word_count": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "writing_requirements": {
+        "has_server_default": false,
+        "nullable": true
+      }
+    },
+    "character_group_members": {
+      "character_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "group_id": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "character_groups": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "sort_order": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "character_relations": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "from_character_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "relation_type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "to_character_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "characters": {
+      "background": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "brief": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "goals": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "personality": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "chat_messages": {
+      "content": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "conversation_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "intent": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "is_deleted": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "role": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "conversations": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "delete_permission": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "is_deleted": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "drafts": {
+      "agent_run_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "confirmed_at": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "content": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "source_outline_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "summary": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "volume_id": {
+        "has_server_default": false,
+        "nullable": true
+      }
+    },
+    "extraction_runs": {
+      "content_hash": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_count": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "error": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "indexed": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "model": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "run_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "source_key": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_count": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "warnings_json": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "foreshadowings": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "event_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "location": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "priority": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "resolved_at": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "knowledge_relations": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "relation_type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "source": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "source_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "source_type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "target_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "target_type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "map_pins": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "label": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "location_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "map_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "ref_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "x": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "y": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "maps": {
+      "bg_source": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "image_path": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "parent_map_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "root_location_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "outlines": {
+      "chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "level": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "parent_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "sort_order": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "volume_id": {
+        "has_server_default": false,
+        "nullable": true
+      }
+    },
+    "planner_sessions": {
+      "answers": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "asked_questions": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "authorized": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "confirmed_items": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "confirming": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "conflicts": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "one_liner": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "round": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "writing_plan_id": {
+        "has_server_default": false,
+        "nullable": true
+      }
+    },
+    "plot_points": {
+      "arc_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "outline_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "position": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "projects": {
+      "active_watermark": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "config": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "is_deleted": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "language": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "tags": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "target_words": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "provider_configs": {
+      "base_url": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "builtin_key": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "default_model": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "max_retries": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "models": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "timeout": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "session_logs": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "level": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "message": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "payload": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "seq": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "session_id": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "sessions": {
+      "completed_at": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "context": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "error": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "is_deleted": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "paused_at": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "result": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "session_type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "started_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "story_arcs": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "timeline_events": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "narrative_position": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "source_chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "time_display": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "time_unit": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "time_value": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "timeline_flag": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "volumes": {
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "order_index": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "world_categories": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "kind": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "world_settings": {
+      "category": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "content": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "extra": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "parent_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
+    "writing_plans": {
+      "character_ids": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "execution_refs": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "hitl_payload": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "limits": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "progress": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "progress_reason": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "root_outline_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "status": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "thread_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "title": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    }
+  }
+}
