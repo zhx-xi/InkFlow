@@ -3,6 +3,7 @@
 from inkflow.infrastructure.database.models.agent import AgentExecutionORM, AgentStageResultORM
 from inkflow.infrastructure.database.models.agent_entity import AgentORM
 from inkflow.infrastructure.database.models.agent_run import AgentRunORM, DraftORM
+from inkflow.infrastructure.database.models.agent_template import AgentTemplateORM
 from inkflow.infrastructure.database.models.audit_log import AuditLogORM
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.character import (
@@ -36,6 +37,7 @@ __all__ = [
     "AgentORM",
     "AgentRunORM",
     "AgentStageResultORM",
+    "AgentTemplateORM",
     "AuditLogORM",
     "ChapterORM",
     "ChapterSummaryORM",

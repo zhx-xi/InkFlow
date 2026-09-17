@@ -33,7 +33,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, EntityUuidMixin
 
 
 def _utcnow() -> datetime:
@@ -41,7 +41,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class ExtractionRunORM(Base):
+class ExtractionRunORM(EntityUuidMixin, Base):
     """统一提取增量追踪记录 ORM 模型 — 映射到 extraction_runs 表.
 
     Maps to the ``extraction_runs`` table. Each row records the **latest**

@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, EntityUuidMixin
 
 
 def _utcnow() -> datetime:
@@ -26,7 +26,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class AuditLogORM(Base):
+class AuditLogORM(EntityUuidMixin, Base):
     """审计日志 ORM 模型 —— 映射到 audit_logs 表."""
 
     __tablename__ = "audit_logs"

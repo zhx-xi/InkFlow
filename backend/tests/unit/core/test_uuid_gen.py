@@ -117,14 +117,32 @@ class TestMachineIdPersistence:
         assert load_or_create_machine_id(tmp_path) == "abcd1234"
 
     def test_falls_back_when_dir_not_writable(self, tmp_path: Path) -> None:
-        """目录不可写 → 回退 hostname 哈希，不抛异常。"""
-        missing_parent = tmp_path / "nope" / "deeper"
-        mid = load_or_create_machine_id(missing_parent)
+        """IO 失败 → 回退 hostname 哈希，不抛异常（monkeypatch 强制 OSError）。"""
+        import hashlib
+        import socket
+
+        def _boom(self, *a, **kw):
+            raise OSError("simulated unwritable")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(Path, "mkdir", _boom)
+            mid = load_or_create_machine_id(tmp_path / "nope")
         assert len(mid) == 32
+        # 与 hostname 哈希一致 → 证明走的是回退分支
+        expected = hashlib.sha256(socket.gethostname().encode("utf-8")).hexdigest()[:32]
+        assert mid == expected
 
     def test_fallback_is_stable(self, tmp_path: Path) -> None:
         bad = tmp_path / "x" / "y"
         assert load_or_create_machine_id(bad) == load_or_create_machine_id(bad)
+
+    def test_empty_file_triggers_regeneration(self, tmp_path: Path) -> None:
+        """文件存在但内容为空 → 重新生成（不返回空串）。"""
+        f = tmp_path / MACHINE_ID_FILENAME
+        f.write_text("   \n", encoding="utf-8")
+        mid = load_or_create_machine_id(tmp_path)
+        assert len(mid) == 32
+        assert f.read_text(encoding="utf-8").strip() == mid
 
     def test_none_uses_config_data_dir(self, monkeypatch, tmp_path: Path) -> None:
         """data_dir=None → 走 InkFlowConfig().data_dir（延迟导入分支）。"""

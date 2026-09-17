@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -18,7 +18,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class ProjectORM(Base):
+class ProjectORM(EntityUuidMixin, Base):
     """项目/书籍 ORM 模型.
 
     Maps to the ``projects`` table. Each row corresponds to one

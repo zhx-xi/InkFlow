@@ -19,6 +19,17 @@ import uuid_utils
 MACHINE_ID_FILENAME = ".instance_id"
 _INT64_MAX = 2**63 - 1
 
+# 回填派生命名空间（ADR-060 D8）：固定值，改动会使既有库回填结果变化
+UUID_NAMESPACE = uuid.UUID("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
+
+
+def derive_uuid_for_row(table: str, local_id: int) -> uuid.UUID:
+    """既有行 → 确定性 uuid（回填用，ADR-060 D8）。
+
+    同 (table, local_id) 恒定 → 回滚后再升级不换 id；RFC 合规。
+    """
+    return uuid.uuid5(UUID_NAMESPACE, f"{table}:{local_id}")
+
 
 def load_or_create_machine_id(data_dir: Path | None = None) -> str:
     """读取或创建本实例机器标识（32 hex）。

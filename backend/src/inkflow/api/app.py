@@ -77,6 +77,7 @@ from inkflow.core.database import (
     ensure_conversations_delete_permission_column,
     ensure_drafts_source_outline_id_column,
     ensure_drafts_volume_id_column,
+    ensure_entity_uuid_columns,
     ensure_foreshadowing_drop_is_deleted,
     ensure_map_columns,
     ensure_outline_columns,
@@ -152,6 +153,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_conversation_title_column)
         await conn.run_sync(ensure_conversations_delete_permission_column)
         await conn.run_sync(ensure_writing_plan_progress_reason_column)
+        # #1134/ADR-060 批 2：26 张 int PK 表补 uuid 身份列 + 回填 + 唯一索引
+        await conn.run_sync(ensure_entity_uuid_columns)
     # #831：角色分组 N:M 迁移需重建 characters 表移除旧 group_id 列。旧列被 FK
     # 引用时 SQLite DROP COLUMN 会拒止（#820 残留回归）；且在主迁移事务（FK=ON）
     # 内无法通过 PRAGMA foreign_keys=OFF 切换（事务内 no-op），直接 DROP 会沿 FK

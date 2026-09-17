@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, EntityUuidMixin
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class ChatMessageORM(Base):
+class ChatMessageORM(EntityUuidMixin, Base):
     """chat 消息 ORM — 项目内对话消息落库。"""
 
     __tablename__ = "chat_messages"

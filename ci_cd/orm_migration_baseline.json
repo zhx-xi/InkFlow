@@ -145,6 +145,56 @@
       "status": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
+      }
+    },
+    "agent_templates": {
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "default_temperature": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "default_words": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "description": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "is_default": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "main_model": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "name": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "roles": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "updated_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "agents": {
@@ -203,6 +253,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "app_settings": {
@@ -259,6 +313,10 @@
       "summary": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "chapter_summaries": {
@@ -285,6 +343,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "chapters": {
@@ -323,6 +385,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       },
       "volume_id": {
         "has_server_default": false,
@@ -375,6 +441,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "characters": {
@@ -417,6 +487,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "chat_messages": {
@@ -451,6 +525,10 @@
       "role": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "conversations": {
@@ -477,6 +555,10 @@
       "title": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "drafts": {
@@ -582,6 +664,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "warnings_json": {
         "has_server_default": false,
         "nullable": false
@@ -635,6 +721,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "knowledge_relations": {
@@ -681,6 +771,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "map_pins": {
@@ -715,6 +809,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       },
       "x": {
         "has_server_default": false,
@@ -769,6 +867,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "outlines": {
@@ -815,6 +917,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       },
       "volume_id": {
         "has_server_default": false,
@@ -923,6 +1029,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "projects": {
@@ -965,6 +1075,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "provider_configs": {
@@ -1007,6 +1121,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "session_logs": {
@@ -1037,6 +1155,10 @@
       "session_id": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "sessions": {
@@ -1099,6 +1221,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "story_arcs": {
@@ -1125,6 +1251,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "timeline_events": {
@@ -1179,6 +1309,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "volumes": {
@@ -1197,6 +1331,10 @@
       "title": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "world_categories": {
@@ -1223,6 +1361,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "world_settings": {
@@ -1261,6 +1403,10 @@
       "updated_at": {
         "has_server_default": false,
         "nullable": false
+      },
+      "uuid": {
+        "has_server_default": false,
+        "nullable": true
       }
     },
     "writing_plans": {

@@ -30,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -38,7 +38,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class OutlineORM(Base):
+class OutlineORM(EntityUuidMixin, Base):
     """大纲 ORM 模型 — 映射到 outlines 表.
 
     Maps to the ``outlines`` table. Each row corresponds to one
@@ -155,7 +155,7 @@ class OutlineORM(Base):
         return f"<OutlineORM id={self.id} name={self.name!r}>"
 
 
-class PlotPointORM(Base):
+class PlotPointORM(EntityUuidMixin, Base):
     """情节点 ORM 模型 — 映射到 plot_points 表.
 
     Maps to the ``plot_points`` table. Each row corresponds to one
@@ -249,7 +249,7 @@ class PlotPointORM(Base):
         return f"<PlotPointORM id={self.id} name={self.name!r}>"
 
 
-class StoryArcORM(Base):
+class StoryArcORM(EntityUuidMixin, Base):
     """故事弧线 ORM 模型 — 映射到 story_arcs 表.
 
     Maps to the ``story_arcs`` table. Each row corresponds to one

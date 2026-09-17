@@ -26,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -34,7 +34,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class WorldSettingORM(Base):
+class WorldSettingORM(EntityUuidMixin, Base):
     """世界观条目 ORM 模型 — 映射到 world_settings 表.
 
     Maps to the ``world_settings`` table. Each row corresponds to one
@@ -130,7 +130,7 @@ class WorldSettingORM(Base):
         return f"<WorldSettingORM id={self.id} name={self.name!r}>"
 
 
-class WorldCategoryORM(Base):
+class WorldCategoryORM(EntityUuidMixin, Base):
     """世界观分类 ORM 模型 — 映射到 world_categories 表（受控词表，v1.2）.
 
     Maps to the ``world_categories`` table. Each row is a controlled
