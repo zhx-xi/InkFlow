@@ -314,7 +314,9 @@ def get_context_service(
     # build_context 直接构造；CHAPTER_SUMMARY（#1236）为 spec §3.2 规划项，
     # SummarySource 适配器未实现（设施已就位，见 domain/models/context.py docstring）。
     sources: dict[ContextSourceType, ContextSourceProtocol] = {
-        ContextSourceType.OUTLINE: OutlineSource(SQLiteOutlineRepository(db)),
+        ContextSourceType.OUTLINE: OutlineSource(
+            SQLiteOutlineRepository(db), chapter_repo=SQLiteChapterRepository(db)
+        ),
         ContextSourceType.CHARACTER_SETTING: CharacterSettingSource(SQLiteCharacterRepository(db)),
         ContextSourceType.WORLD_SETTING: WorldSettingSource(SQLiteWorldRepository(db)),
         ContextSourceType.FORESHADOWING: ForeshadowingSource(SQLiteForeshadowingRepository(db)),

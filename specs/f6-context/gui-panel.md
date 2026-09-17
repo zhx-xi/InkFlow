@@ -15,7 +15,7 @@
 写作页右侧「上下文注入」面板（现有 `ContextPanel.tsx` 为静态占位，4 张卡片恒显 `common.empty`）改造为：
 挂载/项目切换/章节切换时调 **`POST /api/v1/context/assemble`** 预览当前上下文组装结果，
 按来源展示真实条目（写作要求/大纲/角色/世界观/章节摘要/伏笔）：
-- **大纲**自动注入三级（总体/卷/章），缺级降级（后端 `OutlineSource` 已合并渲染，前端透传展示）；
+- **大纲**自动注入（#1234：后端 `OutlineSource` 按 level 分块——overall 始终 / volume+chapter 仅当前章匹配，每块摘要 ≤60 字；前端透传展示多块）；
 - **角色/伏笔**条目展示为**可勾选标签**，勾选状态经 `override` 通道反向影响组装结果（白名单语义）；
 - 无数据 / 未选章节 → 空态；折叠条（26px）保留不变。
 
@@ -33,7 +33,7 @@
 | 决策 | 结论 |
 |------|------|
 | D1 override 通道 | ✅ 已由 #593 后端实现（context_service `_apply_override`）——本 spec 只做前端勾选接线 |
-| D3 大纲注入 | A：三级（总体/卷/章）全注入；缺级降级由后端保证，前端透传 content |
+| D3 大纲注入 | ~~A：三级（总体/卷/章）全注入~~ → **#1234 升级**：overall 始终注入 + volume/chapter 仅当前章匹配项；每块摘要 ≤60 字截断（后端 OutlineSource 分块产出，前端透传展示多块） |
 | D4 交互 | A：面板自动注入（挂载/切章即 assemble）+ 角色/伏笔标签可展开勾选 + 点击修改 |
 | **D5 入口常驻（#1017）** | 三组「＋ 选择注入」入口**恒渲染**（空态/错误态/写作要求为空都不没收）——面板信息的可达性不得依赖 assemble 成功 |
 | **D6 写作要求位置（#1017）** | a+b 双入口**同字段不同层**：项目级 = 项目设置页 textarea（写 `config.writing_style`）；章级 = ContextPanel 顶部「写作要求」栏（写 `chapter.writing_requirements`，Tooltip「章级写作要求」）。章级缺省继承项目级 |
@@ -131,7 +131,7 @@ interface ContextPanelProps {
 | `context-empty` | 空态（无 projectId/chapterId/model 或 blocks 为空） |
 | `context-error` | 错误提示（assemble 失败 / 写作要求为空引导）——**#1017**：错误态下三组选择入口仍渲染（D5） |
 | `context-block-<source>` | 每个来源分组容器（source = `writing_requirements`/`outline`/`character_setting`/`world_setting`/`chapter_summary`/`foreshadowing`） |
-| `context-outline` | 大纲块（含三级 content 透传，`whitespace-pre-wrap` 保留换行） |
+| `context-outline` | 大纲块（#1234：每 level 一块，content 摘要透传，`whitespace-pre-wrap` 保留换行） |
 | `context-character-<n>` | 第 n 个角色注入项（勾选标签） |
 | `context-foreshadow-<n>` | 第 n 个伏笔注入项（勾选标签） |
 | `context-item-toggle-<n>` | 角色/伏笔项内勾选开关（checkbox） |

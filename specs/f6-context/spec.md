@@ -1,7 +1,7 @@
 # F6: 上下文管理 (context_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
+> **Spec 版本**: 1.3 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
 > **所属阶段**: Phase 1 — 核心引擎（v1.1 数据源补齐）
 > **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6), [#593](https://github.com/zhx-xi/InkFlow/issues/593)
 > **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service), F9 (character_service ✅), F10 (world_service ✅), F11 (outline_service ✅), F13 (foreshadowing_service ✅)
@@ -18,6 +18,18 @@
 > （原「本模块 LLM 生成 + 缓存表」文案失真：SummaryService/缓存表/注入点均就位，
 > 唯独生产者未接线，注册表 5 源无此槽位）。枚举保留，契约测试
 > `tests/unit/domain/models/test_context_source_registry_1236.py` 钉住现状。
+
+> **Spec 变更（v1.3，2026-09-17，issue #1234）— OutlineSource 分块 + 摘要化 + 卷/章匹配**：
+> 大纲注入从「三级全文拼接单条（实测 2392 字）」改为**按 level 分块**：
+> ① `overall` 每条独立块**始终注入**（不过滤）；② `volume`/`chapter` 仅注入**与当前章节匹配**的块
+> （章匹配 = `outline.chapter_id` 精确命中，未回填时标题兜底——候选集 {原样/arabic/chinese} 归一，
+> 沿用 F11 `auto_link_chapter_by_title` #1001 先例；卷匹配 = `chapter.volume_id` 关联或章纲
+> `parent_id` 上溯），其余卷/章**不注入**；③ 每块 content 摘要化 =
+> `"{level_label}：{name} —— {description 前 60 字}…"`（≤60 字原样，确定性截断、零 LLM、零新字段）；
+> ④ priority：overall=30 / volume=20 / chapter=10；metadata 携带 `level`/`outline_id`/`outline_ids`。
+> `OutlineSource` 构造追加可选 `chapter_repo`（deps 装配注入；None = 标题兜底/卷关联不可用，
+> 精确匹配仍工作）。端点契约不变（`ContextRequest.chapter_id` 本就存在，此前被 OutlineSource 忽略）。
+> 契约测试 `tests/unit/infrastructure/context/test_outline_source_chunking_1234.py`。
 
 ---
 
@@ -72,7 +84,7 @@ class ContextLayer(StrEnum):
 | 值 | 层 | 说明 | Phase 1 数据来源 |
 |----|----|------|-----------------|
 | `writing_requirements` | protected | 本次写作要求（任务指令） | F3 调用时必传入参 |
-| `outline` | protected | 大纲 | `outlines` 表（F11；overall→volume→chapter 三级，缺级降级） |
+| `outline` | protected | 大纲 | `outlines` 表（F11；#1234：按 level 分块——overall 始终注入 / volume+chapter 仅当前章匹配项；每块摘要 ≤60 字截断） |
 | `character_setting` | compressible | 角色设定 | `characters` 表（F9；名+brief 轻量化，D5=A） |
 | `world_setting` | compressible | 世界设定 | `world_settings` 表（F10） |
 | `chapter_summary` | dynamic | 前文摘要 | ⚠️ 未实现（#1236）：SummarySource 适配器缺位，注册表无此槽位；SummaryService/缓存表已就位，摘要当前经 agentic 轨与调试端点消费 |
