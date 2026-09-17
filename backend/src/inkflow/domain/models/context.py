@@ -41,10 +41,17 @@ class ContextSourceType(StrEnum):
     │ outline                 │ protected     │ project.config.extra      │
     │ character_setting       │ compressible  │ 空实现 (F8 Phase 2)       │
     │ world_setting           │ compressible  │ 空实现 (F9 Phase 2)       │
-    │ chapter_summary         │ dynamic       │ LLM 生成 + 缓存表 (本模块) │
+    │ chapter_summary         │ dynamic       │ 未实现 (spec §3.2 规划项, #1236) │
     │ foreshadowing           │ dynamic       │ 空实现 (F14 Phase 2)      │
     │ preference              │ protected     │ F28 已学偏好（memory_learning） │
     └─────────────────────────┴───────────────┴──────────────────────────┘
+
+    chapter_summary 状态说明（#1236）：spec §3.2 规划的前文摘要注入通道。
+    下游设施已就位（ChapterSummary 模型 / chapter_summaries 表 / SummaryService §4.6
+    / ContextService 的 summary_repo 注入点），但 ContextSourceProtocol 的
+    SummarySource 适配器未实现 → 运行时注册表（api/deps.py）无此槽位，
+    组装结果永不产出该 source。摘要功能当前经 agentic 轨
+    （agent_service 直接调 ensure_summary）与调试端点消费，不走本枚举通道。
     """
 
     WRITING_REQUIREMENTS = "writing_requirements"
