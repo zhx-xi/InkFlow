@@ -315,10 +315,13 @@ class TestOutlineOverallAlways:
         chapter_repo.get_chapter.assert_not_awaited()
 
     async def test_overall_injected_when_chapter_missing(self) -> None:
-        """chapter_repo 查无此章 → 仅 overall，不抛错."""
+        """chapter_repo 查无此章（get_chapter → None）→ 标题兜底不可用，仅 overall.
+
+        章纲无 chapter_id 精确关联（否则精确匹配不依赖 chapter 实体，仍会注入）。
+        """
         outlines = [
             _make_outline(10, "总纲", "overall"),
-            _make_outline(12, "第1章", "chapter", chapter_id=CHAPTER_ID),
+            _make_outline(12, "第1章", "chapter"),  # 无 chapter_id 关联
         ]
         source, _ = _make_source(outlines, None)  # get_chapter → None
 
