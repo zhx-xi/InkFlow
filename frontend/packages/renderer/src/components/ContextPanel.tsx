@@ -142,9 +142,9 @@ export function ContextPanel({
     setRequirementsDraft(next);
   }, [chapterWritingRequirements]);
 
-  /** 调 assemble：override 由当前勾选集构建（全注入 = 空数组） */
+  /** 调 assemble：override 由当前勾选集构建（#1235：缺省 undefined = 全注入；显式数组含空 = 白名单，空 = 删空） */
   const runAssemble = useCallback(
-    async (override: ContextOverride) => {
+    async (override: ContextOverride | undefined) => {
       if (!projectId || !chapterId || !model) return;
       setLoading(true);
       setError(null);
@@ -188,7 +188,8 @@ export function ContextPanel({
         setData(null);
         setError(t('write.context.emptyRequired'));
       } else {
-        void runAssemble({ character_ids: [], foreshadowing_ids: [], world_ids: [] });
+        // #1235：初始不传 override（缺省 = 全注入）；显式空数组在新语义下 = 全不注入
+        void runAssemble(undefined);
       }
     } else {
       setData(null);

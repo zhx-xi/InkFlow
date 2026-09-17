@@ -31,7 +31,7 @@ export interface ContextBlock {
   compressed: boolean;
 }
 
-/** override 白名单：character_ids/foreshadowing_ids/world_ids 非空 → 只注入命中项；空 → 注入全部 */
+/** override 白名单（#1235）：显式数组 = 只注入命中项，空数组 = 删空（不注入）；缺省/null = 注入全部 */
 export interface ContextOverride {
   character_ids: string[];
   foreshadowing_ids: string[];

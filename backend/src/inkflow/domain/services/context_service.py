@@ -337,28 +337,31 @@ def _apply_override(
 ) -> list[ContextItem]:
     """override 通道过滤 — 只过滤 character_setting / foreshadowing / world_setting 三类来源.
 
-    - override.character_ids 非空 → 仅保留 metadata.character_id 命中的角色 item
-    - override.foreshadowing_ids 非空 → 仅保留 metadata.foreshadowing_id 命中的伏笔 item
-    - override.world_ids 非空 → 仅保留 metadata.world_setting_id 命中的世界观 item
-    - override 为 None / 列表为空 / 其他来源 → 原样返回（不过滤）
+    - override.character_ids → 仅保留 metadata.character_id 命中的角色 item（空列表 = 全不保留）
+    - override.foreshadowing_ids → 仅保留 metadata.foreshadowing_id 命中的伏笔 item（空 = 全不保留）
+    - override.world_ids → 仅保留 metadata.world_setting_id 命中的世界观 item（空 = 全不保留）
+    - override 为 None / 其他来源 → 原样返回（不过滤）
+
+    #1235 语义升级：显式空列表 = 删空（该类不注入），不再回退全注入；
+    「全注入」仅由 override=None（缺省）表达，保证 GUI 勾选可删到零。
 
     Args:
         items: 数据源产出的上下文条目.
         source_type: 数据源类型.
-        override: 显式勾选通道（v1.1 #593 / #704 追加世界观）.
+        override: 显式勾选通道（v1.1 #593 / #704 追加世界观 / #1235 空列表=不注入）.
 
     Returns:
         过滤后的上下文条目列表.
     """
     if override is None:
         return items
-    if source_type == ContextSourceType.CHARACTER_SETTING and override.character_ids:
+    if source_type == ContextSourceType.CHARACTER_SETTING:
         allowed = {str(i) for i in override.character_ids}
         return [item for item in items if str(item.metadata.get("character_id", "")) in allowed]
-    if source_type == ContextSourceType.FORESHADOWING and override.foreshadowing_ids:
+    if source_type == ContextSourceType.FORESHADOWING:
         allowed = {str(i) for i in override.foreshadowing_ids}
         return [item for item in items if str(item.metadata.get("foreshadowing_id", "")) in allowed]
-    if source_type == ContextSourceType.WORLD_SETTING and override.world_ids:
+    if source_type == ContextSourceType.WORLD_SETTING:
         allowed = {str(i) for i in override.world_ids}
         return [item for item in items if str(item.metadata.get("world_setting_id", "")) in allowed]
     return items
