@@ -28,3 +28,36 @@ def uuid_to_pk_or_none(value: int | uuid.UUID | None) -> int | None:
         return None
     pk = normalize_pk(value)
     return None if out_of_int64(pk) else pk
+
+
+def require_uuid_pk(value: uuid.UUID | str | None) -> int | None:
+    """#1134/ADR-060 D9：**收窄契约**入口 —— 只接受 UUID 形态。
+
+    调用方（domain/API）应传 ``uuid.UUID`` 或合法 uuid 字符串，**不应自行
+    ``.int``**——转换由本函数负责，避免调用点各自持有 int 语义
+    （ADR-060 D2 描述的「每个写入点都持有过一个溢出值」同族）。
+
+    Args:
+        value: ``uuid.UUID`` / 36 字符 uuid 字符串 / None。
+
+    Returns:
+        归一后的 int PK；越界（真 uuid）或 None → None（调用方返 404/不存在）。
+
+    Raises:
+        TypeError: 入参不是 UUID/合法 uuid 字符串（含裸 int）——契约违规。
+    """
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = uuid.UUID(value)
+        except (ValueError, AttributeError) as exc:
+            raise TypeError(f"require_uuid_pk: 非法 uuid 字符串 {value!r}") from exc
+    else:
+        raise TypeError(
+            f"require_uuid_pk: 入参必须是 uuid.UUID 或 uuid 字符串，"
+            f"得到 {type(value).__name__}（调用方不应自行 .int，见 ADR-060 D9）"
+        )
+    return None if out_of_int64(parsed.int) else parsed.int
