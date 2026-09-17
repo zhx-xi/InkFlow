@@ -34,6 +34,8 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from loguru import logger
+
 from inkflow.domain.models.audit import AuditFinding, AuditReport
 from inkflow.domain.models.chapter_audit import (
     AuditCheckType,
@@ -403,8 +405,16 @@ class ChapterAuditService:
         """
         try:
             response = await self._llm.chat(messages, temperature=_TEMPERATURE)
-        except Exception:
+        except Exception as exc:
             # 模型调用异常 → 立即降级，不消耗解析重试（spec §5.3 表格首行）
+            # #1269：降级必须落异常详情——此前静默 `return [], True` 使
+            # 打包产物「恒 degraded（findings 全空）」根因不可见（排查困难之源）。
+            # 语义不变：仍降级（HTTP 200），仅补可诊断性；绝不透传异常。
+            logger.warning(
+                "章节审计 LLM 漂移检查降级（模型调用异常）: {}: {}",
+                type(exc).__name__,
+                exc,
+            )
             return [], True
         parsed = parse_drift_output(response.content)
         if parsed is not None:
@@ -412,11 +422,18 @@ class ChapterAuditService:
         for _ in range(_MAX_PARSE_ATTEMPTS - 1):
             try:
                 response = await self._llm.chat(messages, temperature=_TEMPERATURE)
-            except Exception:
+            except Exception as exc:
+                # #1269：同上，降级路径补异常详情（含解析重试分支）
+                logger.warning(
+                    "章节审计 LLM 漂移检查降级（重试时模型调用异常）: {}: {}",
+                    type(exc).__name__,
+                    exc,
+                )
                 return [], True
             parsed = parse_drift_output(response.content)
             if parsed is not None:
                 return parsed, False
+        logger.warning("章节审计 LLM 漂移检查降级（输出解析失败，已达重试上限）")
         return [], True
 
     def _static_findings(
