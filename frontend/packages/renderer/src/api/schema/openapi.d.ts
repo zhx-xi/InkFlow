@@ -4194,12 +4194,13 @@ export interface components {
         };
         /**
          * ContextOverride
-         * @description 上下文注入的显式勾选通道（v1.1 #593）.
+         * @description 上下文注入的显式勾选通道（v1.1 #593；#1235 空列表语义升级）.
          *
-         *     - character_ids 非空 → 只注入 metadata.character_id 命中的角色 item；空 → 注入全部
-         *     - foreshadowing_ids 非空 → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空 → 注入全部
-         *     - world_ids 非空 → 只注入 metadata.world_setting_id 命中的世界观 item；空 → 注入全部
+         *     - character_ids → 只注入 metadata.character_id 命中的角色 item；空列表 = 不注入任何角色
+         *     - foreshadowing_ids → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空列表 = 不注入
+         *     - world_ids → 只注入 metadata.world_setting_id 命中的世界观 item；空列表 = 不注入
          *     - 只过滤 character_setting / foreshadowing / world_setting 三类来源，不影响 outline/summary 等
+         *     - 「全注入」仅由 override=None（缺省）表达；显式空列表 = 删空（#1235，GUI 勾选可删到零）
          */
         ContextOverride: {
             /** Character Ids */

@@ -135,15 +135,113 @@ class TestContextOverride:
 
         assert len(self._character_blocks(result)) == 2
 
-    async def test_override_empty_lists_injects_all(self) -> None:
-        """override 提供但列表为空 → 视为未勾选，注入全部."""
-        id_a = uuid.uuid4()
-        id_b = uuid.uuid4()
-        svc = _character_svc(id_a, id_b)
+    async def test_override_empty_lists_injects_none(self) -> None:
+        """#1235 语义升级：override 提供但列表为空 → 删空 = 该类不注入.
+
+        旧语义（#593）「空列表 = 注入全部」导致 GUI 勾选永远删不空：
+        取消最后一个勾选 → 发空数组 → 后端回全量 → 勾选复活。
+        #1235 改为：override 缺省(None) = 全注入（默认行为不变）；显式空列表 = 不注入。
+        """
+        svc = _character_svc(uuid.uuid4(), uuid.uuid4())
 
         result = await svc.build_context(_req(override=ContextOverride()))
 
-        assert len(self._character_blocks(result)) == 2
+        assert self._character_blocks(result) == []
+
+    async def test_foreshadowing_empty_list_injects_none(self) -> None:
+        """#1235：foreshadowing_ids=[] → 不注入任何伏笔（可删空）."""
+        id_x = uuid.uuid4()
+        svc = ContextService(
+            sources={
+                ContextSourceType.FORESHADOWING: MockSource(
+                    [
+                        _item(
+                            ContextSourceType.FORESHADOWING,
+                            f"伏笔X-{id_x}",
+                            {"foreshadowing_id": str(id_x)},
+                        )
+                    ]
+                )
+            },
+            count_tokens=_mock_count_tokens,
+        )
+
+        result = await svc.build_context(_req(override=ContextOverride(foreshadowing_ids=[])))
+
+        foreshadowing_items = [
+            b.item for b in result.blocks if b.item.source == ContextSourceType.FORESHADOWING
+        ]
+        assert foreshadowing_items == []
+
+    async def test_world_empty_list_injects_none(self) -> None:
+        """#1235：world_ids=[] → 不注入任何世界观（可删空）."""
+        id_w = uuid.uuid4()
+        svc = ContextService(
+            sources={
+                ContextSourceType.WORLD_SETTING: MockSource(
+                    [
+                        _item(
+                            ContextSourceType.WORLD_SETTING,
+                            f"世界观A-{id_w}",
+                            {"world_setting_id": str(id_w)},
+                        )
+                    ]
+                )
+            },
+            count_tokens=_mock_count_tokens,
+        )
+
+        result = await svc.build_context(_req(override=ContextOverride(world_ids=[])))
+
+        world_items = [
+            b.item for b in result.blocks if b.item.source == ContextSourceType.WORLD_SETTING
+        ]
+        assert world_items == []
+
+    async def test_empty_and_selected_lists_are_independent_per_source(self) -> None:
+        """#1235：角色删空 + 世界观勾选 → 角色 0 条、世界观 1 条（各源独立过滤）."""
+        id_a = uuid.uuid4()
+        id_w = uuid.uuid4()
+        id_v = uuid.uuid4()
+        svc = ContextService(
+            sources={
+                ContextSourceType.CHARACTER_SETTING: MockSource(
+                    [
+                        _item(
+                            ContextSourceType.CHARACTER_SETTING,
+                            f"角色A-{id_a}",
+                            {"character_id": str(id_a)},
+                        )
+                    ]
+                ),
+                ContextSourceType.WORLD_SETTING: MockSource(
+                    [
+                        _item(
+                            ContextSourceType.WORLD_SETTING,
+                            f"世界观A-{id_w}",
+                            {"world_setting_id": str(id_w)},
+                        ),
+                        _item(
+                            ContextSourceType.WORLD_SETTING,
+                            f"世界观B-{id_v}",
+                            {"world_setting_id": str(id_v)},
+                        ),
+                    ]
+                ),
+            },
+            count_tokens=_mock_count_tokens,
+        )
+
+        result = await svc.build_context(
+            _req(override=ContextOverride(character_ids=[], world_ids=[id_w]))
+        )
+
+        assert self._character_blocks(result) == []
+        world_items = [
+            b.item for b in result.blocks if b.item.source == ContextSourceType.WORLD_SETTING
+        ]
+        assert len(world_items) == 1
+        assert world_items[0].metadata["world_setting_id"] == str(id_w)
 
     async def test_override_does_not_affect_other_sources(self) -> None:
         """override 只过滤 character/foreshadowing，不影响 chapter_summary 等其他数据源."""

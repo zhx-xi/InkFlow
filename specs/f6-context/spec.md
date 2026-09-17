@@ -116,14 +116,17 @@ class ContextRequest:
 
 @dataclass
 class ContextOverride:
-    """v1.1（#593）：上下文注入的显式勾选通道（UI「勾选」语义）.
+    """v1.1（#593）：上下文注入的显式勾选通道（UI「勾选」语义；#1235 空列表语义升级）.
 
-    - character_ids 非空 → 只注入 metadata.character_id 命中的角色 item；空 → 注入全部
-    - foreshadowing_ids 非空 → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空 → 注入全部
-    - 只过滤 character_setting / foreshadowing 两类来源，不影响 outline/summary/世界设定等
+    - character_ids → 只注入 metadata.character_id 命中的角色 item；空列表 = 不注入（删空）
+    - foreshadowing_ids → 只注入 metadata.foreshadowing_id 命中的伏笔 item；空列表 = 不注入
+    - world_ids → 只注入 metadata.world_setting_id 命中的世界观 item；空列表 = 不注入
+    - 「全注入」仅由 override=None（缺省）表达
+    - 只过滤 character_setting / foreshadowing / world_setting 三类来源，不影响 outline/summary 等
     """
     character_ids: list[UUID] = field(default_factory=list)
     foreshadowing_ids: list[UUID] = field(default_factory=list)
+    world_ids: list[UUID] = field(default_factory=list)
 
 @dataclass
 class ContextAssemblyResult:

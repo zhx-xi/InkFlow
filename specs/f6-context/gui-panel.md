@@ -54,17 +54,19 @@
   "model": "deepseek/deepseek-v4-flash",
   "writing_requirements": "小说创作",
   "max_tokens": null,
-  "override": { "character_ids": ["<uuid>"], "foreshadowing_ids": [] }
+  "override": { "character_ids": ["<uuid>"], "foreshadowing_ids": ["<uuid>"], "world_ids": [] }
 }
 ```
+
+（示例中 `world_ids: []` = 世界观**删空**不注入，#1235）
 
 - `writing_requirements` **必填**（min_length=1）；GUI 预览用**章级覆盖优先**的合成值：
   `chapter.writing_requirements ?? project.config.writing_style ?? ''`（#1017 D7：删除原 `?? '上下文预览'`
   魔法 fallback——空即走 §3.3 的「未填写写作要求」占位引导，不再把 UI 文案当写作要求发出）。
-- `override` 可缺省/为 null → 后端视为全注入。勾选语义（白名单）：
-  - `character_ids` 非空 → 只注入 `metadata.character_id` 命中的角色；空 → 注入全部
-  - `foreshadowing_ids` 非空 → 只注入 `metadata.foreshadowing_id` 命中的伏笔；空 → 注入全部
-  - 只过滤 `character_setting` / `foreshadowing`，不影响 outline/world/summary 等
+- `override` 可缺省/为 null → 后端视为**全注入**（「全注入」仅由此表达）。勾选语义（白名单，#1235）：
+  - `character_ids` 显式数组 → 只注入 `metadata.character_id` 命中的角色；**空数组 = 不注入任何角色（删空）**
+  - `foreshadowing_ids` / `world_ids` 同理（空数组 = 该类删空）
+  - 只过滤 `character_setting` / `foreshadowing` / `world_setting`，不影响 outline/summary 等
 
 响应（`ContextAssemblyResult`）：
 
@@ -162,12 +164,13 @@ interface ContextPanelProps {
   - 无 `chapterId`（未选章节）→ 栏位渲染但禁用（提示先选章节）。
 - **三级大纲**：`outline` block 的 `content` 原样渲染（后端已合并 `总体/卷/章：name —— desc` 多行，
   `whitespace-pre-wrap` 保留换行）；缺级降级由后端保证，前端透传。
-- **角色/伏笔勾选（override 白名单）**：
-  - 从 blocks 中提取 `character_setting` / `foreshadowing` 来源条目作为「注入项」，每项渲染勾选标签。
-  - 初始勾选状态 = 该项当前在 blocks（即已注入）；全部注入时 override 传空数组（= 全注入）。
-  - 取消某项 → 其 id 从 `override.character_ids` / `foreshadowing_ids` 移除 → 重新 assemble → 结果变化。
+- **角色/世界观/伏笔勾选（override 白名单）**：
+  - 从 blocks 中提取 `character_setting` / `world_setting` / `foreshadowing` 来源条目作为「注入项」，每项渲染勾选标签。
+  - 初始勾选状态 = 该项当前在 blocks（即已注入）；初始 assemble **不传 override**（缺省 = 全注入，#1235）。
+  - 取消某项 → 其 id 从 `override.character_ids` / `world_ids` / `foreshadowing_ids` 移除 → 重新 assemble → 结果变化。
   - 勾选某项 → 其 id 加入对应数组 → 重新 assemble。
-  - **白名单语义**：勾选集 = 被注入集合。`character_ids` 为空 = 注入全部；只勾选部分 = 只注入这些。
+  - **白名单语义（#1235）**：勾选集 = 被注入集合。**可删空**——取消最后一个勾选 → 提交空数组 →
+    后端不注入该类内容（**不回退全量**）；「全注入」仅由 override 缺省/null 表达。
 - **点击修改**：大纲块/角色/伏笔条目可点击 → 展开显示完整 `content`（默认折叠行数超限时）。v1 实现为
   「点击展开/收起条目内容」，不做行内编辑（编辑角色/伏笔本体属 F9/F13 管理页范围外）。
 - **折叠条**：折叠态（26px）→ 仅 `context-expand-bar`；展开态 → 内容区 + `context-collapse`。保留既有实现。

@@ -568,3 +568,95 @@ describe('ContextPanel — #1017 章级写作要求栏', () => {
     expect(req.writing_requirements).toBe('本章偏悬疑');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// #1235 勾选可删空（零选中是合法状态；语义升级：override 缺省=全注入，显式空数组=不注入）
+// ─────────────────────────────────────────────────────────────────────
+
+describe('ContextPanel — #1235 勾选可删空（可添加/可删除/可删空）', () => {
+  /** 模拟修复后的后端语义：override 缺省(undefined) = 全注入；显式数组（含空）= 白名单 */
+  function mockBackendWithClearableSemantics(all: ContextBlock[]) {
+    assembleMock.mockImplementation(async (req: AssembleRequest) => {
+      const ids = req.override?.character_ids;
+      const chars =
+        ids === undefined
+          ? all
+          : all.filter((b) => ids.includes(String(b.item.metadata.character_id)));
+      return result(chars);
+    });
+  }
+
+  it('初始 assemble 不传 override（缺省 = 全注入；空数组在新语义下 = 全不注入）', async () => {
+    assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
+    render(<ContextPanel {...OPTS} />);
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(1));
+    const firstCall = assembleMock.mock.calls[0][0] as AssembleRequest;
+    expect(firstCall.override).toBeUndefined();
+  });
+
+  it('逐个取消所有角色勾选 → 最终 override.character_ids=[] 且面板角色区为空（删空，不复活为全量）', async () => {
+    const all = [characterBlock('c-a', '林晚'), characterBlock('c-b', '顾沉')];
+    mockBackendWithClearableSemantics(all);
+    const user = userEvent.setup();
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-character-1'); // 初始全注入 2 条
+
+    // 取消第一个 → 白名单 [c-b] → 剩 1 条
+    await user.click(screen.getByTestId('context-item-toggle-0'));
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(2));
+    await screen.findByTestId('context-character-0');
+    expect(screen.queryByTestId('context-character-1')).not.toBeInTheDocument();
+
+    // 取消最后一个 → 白名单 [] → 删空
+    await user.click(screen.getByTestId('context-item-toggle-0'));
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(3));
+    const lastCall = assembleMock.mock.calls[2][0] as AssembleRequest;
+    // 显式空数组（非 undefined）：零选中是合法提交
+    expect(lastCall.override?.character_ids).toEqual([]);
+
+    // 面板角色区为空（删空成功）
+    await waitFor(() => {
+      expect(screen.queryByTestId('context-character-0')).not.toBeInTheDocument();
+    });
+    // ⚠️ 反向断言（关键）：删空后 ≠ 全量 —— 无「恢复全量」的第 4 次调用，角色条目不复活
+    expect(assembleMock).toHaveBeenCalledTimes(3);
+    expect(screen.queryByTestId('context-character-1')).not.toBeInTheDocument();
+  });
+
+  it('删空后可经「＋ 选择注入」重新添加一项（可添加）', async () => {
+    const all = [characterBlock('c-a', '林晚'), characterBlock('c-b', '顾沉')];
+    mockBackendWithClearableSemantics(all);
+    vi.mocked(listProjectCharacters).mockResolvedValue({
+      items: [
+        { id: 'c-a', name: '林晚' },
+        { id: 'c-b', name: '顾沉' },
+      ],
+      total: 2,
+      offset: 0,
+      limit: 50,
+    });
+    const user = userEvent.setup();
+    render(<ContextPanel {...OPTS} />);
+    await screen.findByTestId('context-character-1');
+
+    // 删空
+    await user.click(screen.getByTestId('context-item-toggle-0'));
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByTestId('context-item-toggle-0'));
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => {
+      expect(screen.queryByTestId('context-character-0')).not.toBeInTheDocument();
+    });
+
+    // 从空态经 picker 添加 c-b（分组骨架恒在，#743）
+    fireEvent.click(screen.getByTestId('context-pick-character_setting'));
+    await screen.findByTestId('context-picker');
+    await user.click(screen.getByTestId('context-picker-opt-c-b'));
+    await user.click(screen.getByTestId('context-picker-confirm'));
+    await waitFor(() => expect(assembleMock).toHaveBeenCalledTimes(4));
+    const addCall = assembleMock.mock.calls[3][0] as AssembleRequest;
+    expect(addCall.override?.character_ids).toEqual(['c-b']);
+    await screen.findByTestId('context-character-0'); // 重新注入 1 条
+    expect(screen.queryByTestId('context-character-1')).not.toBeInTheDocument();
+  });
+});
