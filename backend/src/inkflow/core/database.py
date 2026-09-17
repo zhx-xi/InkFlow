@@ -7,11 +7,11 @@ from contextlib import suppress
 from typing import Any, TypeVar, overload
 
 from loguru import logger
-from sqlalchemy import Connection, event, text
+from sqlalchemy import Connection, String, event, text
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.engine import Dialect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.type_api import TypeEngineMixin
 from sqlalchemy.types import TypeEngine
 
@@ -23,11 +23,19 @@ from inkflow.core.migrations_character_relation import (
     ensure_character_relations_merged_into_knowledge,
 )
 from inkflow.core.migrations_project import ensure_projects_drop_legacy_genre_column
+from inkflow.core.migrations_uuid import (
+    ENTITY_UUID_TABLES,
+    ensure_entity_uuid_columns,
+    rollback_entity_uuid_columns,
+)
 
 __all__ = [
+    "ENTITY_UUID_TABLES",
     "ensure_chapters_writing_requirements_column",
     "ensure_character_relations_merged_into_knowledge",
+    "ensure_entity_uuid_columns",
     "ensure_projects_drop_legacy_genre_column",
+    "rollback_entity_uuid_columns",
 ]
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
 
@@ -36,6 +44,17 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
     pass
+
+
+class EntityUuidMixin:
+    """#1134/ADR-060：实体 uuid 全局身份键（26 张 int PK 表共用）。
+
+    与本地自增 ``id`` 并存：``id`` 承担 FK/本地查询，``uuid`` 承担跨设备身份。
+    可空（本地阶段渐进回填，ADR-060 D7 不收紧 NOT NULL）。
+    """
+
+    uuid: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    """全局稳定身份键（UUIDv7 字符串）；旧行为 NULL → 由 ensure_entity_uuid_columns 回填。"""
 
 
 class LenientJSON(JSON):

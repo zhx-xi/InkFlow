@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class VolumeORM(Base):
+class VolumeORM(EntityUuidMixin, Base):
     __tablename__ = "volumes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -28,7 +28,7 @@ class VolumeORM(Base):
         return f"<VolumeORM id={self.id} title={self.title!r}>"
 
 
-class ChapterORM(Base):
+class ChapterORM(EntityUuidMixin, Base):
     __tablename__ = "chapters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

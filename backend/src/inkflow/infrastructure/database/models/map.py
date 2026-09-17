@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -18,7 +18,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class MapORM(Base):
+class MapORM(EntityUuidMixin, Base):
     """地图 ORM — 映射到 maps 表（无 is_deleted，真删语义）."""
 
     __tablename__ = "maps"
@@ -73,7 +73,7 @@ class MapORM(Base):
     )
 
 
-class MapPinORM(Base):
+class MapPinORM(EntityUuidMixin, Base):
     """地图 pin ORM — 映射到 map_pins 表（无 is_deleted，真删语义）."""
 
     __tablename__ = "map_pins"

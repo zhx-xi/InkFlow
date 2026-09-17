@@ -27,7 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -35,7 +35,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class CharacterORM(Base):
+class CharacterORM(EntityUuidMixin, Base):
     """角色 ORM 模型 — 映射到 characters 表.
 
     Maps to the ``characters`` table. Each row corresponds to one
@@ -129,7 +129,7 @@ class CharacterORM(Base):
         return f"<CharacterORM id={self.id} name={self.name!r}>"
 
 
-class CharacterGroupORM(Base):
+class CharacterGroupORM(EntityUuidMixin, Base):
     """角色分组 ORM 模型 — 映射到 character_groups 表.
 
     Maps to the ``character_groups`` table. Groups organize characters

@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, EntityUuidMixin
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class ChapterSummaryORM(Base):
+class ChapterSummaryORM(EntityUuidMixin, Base):
     """章节摘要缓存 ORM 模型.
 
     每章一条摘要（chapter_id 唯一约束），updated_at 用于失效检测：

@@ -35,7 +35,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -43,7 +43,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class TimelineEventORM(Base):
+class TimelineEventORM(EntityUuidMixin, Base):
     """时间线事件 ORM 模型 — 映射到 timeline_events 表.
 
     Maps to the ``timeline_events`` table. Each row corresponds to one

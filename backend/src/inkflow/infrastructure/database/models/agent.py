@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 from inkflow.infrastructure.database.models.agent_entity import AgentORM
 
 __all__ = ["AgentExecutionORM", "AgentORM", "AgentStageResultORM"]
@@ -81,7 +81,7 @@ class AgentExecutionORM(Base):
         )
 
 
-class AgentStageResultORM(Base):
+class AgentStageResultORM(EntityUuidMixin, Base):
     """单个管线阶段的执行结果记录 — 映射到 agent_stage_results 表."""
 
     __tablename__ = "agent_stage_results"

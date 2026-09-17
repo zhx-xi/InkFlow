@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -26,7 +26,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class AgentTemplateORM(Base):
+class AgentTemplateORM(EntityUuidMixin, Base):
     """模板表 ORM 模型 — 映射到 agent_templates 表."""
 
     __tablename__ = "agent_templates"

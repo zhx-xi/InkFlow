@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -36,7 +36,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class ForeshadowingORM(Base):
+class ForeshadowingORM(EntityUuidMixin, Base):
     """伏笔档案 ORM 模型 — 映射到 foreshadowings 表.
 
     Maps to the ``foreshadowings`` table. Each row corresponds to one

@@ -31,7 +31,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -39,7 +39,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class SessionORM(Base):
+class SessionORM(EntityUuidMixin, Base):
     """会话 ORM 模型 —— 映射到 sessions 表."""
 
     __tablename__ = "sessions"
@@ -154,7 +154,7 @@ class SessionORM(Base):
         return f"<SessionORM id={self.id} title={self.title!r}>"
 
 
-class SessionLogORM(Base):
+class SessionLogORM(EntityUuidMixin, Base):
     """会话日志 ORM 模型 —— 映射到 session_logs 表."""
 
     __tablename__ = "session_logs"

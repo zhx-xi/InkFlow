@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base
+from inkflow.core.database import Base, EntityUuidMixin
 
 
 def _utcnow() -> datetime:
@@ -27,7 +27,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class KnowledgeRelationORM(Base):
+class KnowledgeRelationORM(EntityUuidMixin, Base):
     """知识图谱关系 ORM 模型 —— 映射到 knowledge_relations 表.
 
     Maps to the ``knowledge_relations`` table. Each row is a directed

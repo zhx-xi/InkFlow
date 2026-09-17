@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, LenientJSON
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -24,7 +24,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class ProviderConfigORM(Base):
+class ProviderConfigORM(EntityUuidMixin, Base):
     """Provider 注册表 ORM 模型 — 映射到 provider_configs 表."""
 
     __tablename__ = "provider_configs"
