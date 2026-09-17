@@ -16,13 +16,17 @@ from sqlalchemy.sql.type_api import TypeEngineMixin
 from sqlalchemy.types import TypeEngine
 
 from inkflow.core.config import config
-
-# 列迁移已抽至 core/migrations_{chapter,project}.py（900 行护栏）。
 from inkflow.core.migrations_chapter import ensure_chapters_writing_requirements_column
+
+# 列/表迁移已抽至 core/migrations_{chapter,project,character_relation}.py（900 行护栏）。
+from inkflow.core.migrations_character_relation import (
+    ensure_character_relations_merged_into_knowledge,
+)
 from inkflow.core.migrations_project import ensure_projects_drop_legacy_genre_column
 
 __all__ = [
     "ensure_chapters_writing_requirements_column",
+    "ensure_character_relations_merged_into_knowledge",
     "ensure_projects_drop_legacy_genre_column",
 ]
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
@@ -89,12 +93,9 @@ def apply_sqlite_pragma(dbapi_connection) -> None:
     """Apply SQLite PRAGMAs on a new DBAPI connection (spec §2.4).
 
     - busy_timeout=<config.db_busy_timeout_ms>（调用时读 config，默认 5000）：
-      多进程写并发锁等待；**必须先于 journal_mode=WAL**——双进程首次并发打开同一
-      文件库时 WAL 转换需独占锁，否则重试方立即抛 database is locked。
-    - journal_mode=WAL（文件级持久）；foreign_keys=ON（#327，使 ORM 声明的
-      ondelete=CASCADE/SET NULL 生效，project 硬删级联清理）。
-    PRAGMA 不支持 ``?`` 占位，busy_timeout 为 config int，f-string 拼接安全。
-    cursor 用完即 close；重复调用幂等；内存库 WAL 不生效但不抛错。
+      多进程锁等待；必须先于 WAL——并发首次打开时 WAL 转换需独占锁。
+    - journal_mode=WAL；foreign_keys=ON（#327，启用 ORM 的 CASCADE/SET NULL）。
+    PRAGMA 不支持占位，busy_timeout 为 config int；调用幂等，cursor 用完即关。
     """
     cursor = dbapi_connection.cursor()
     try:
@@ -605,13 +606,8 @@ def _migrate_drop_is_deleted(
 ) -> None:
     """#211 v1.1：单表 is_deleted 列移除迁移（幂等，spec §8.3 通用步骤）.
 
-    步骤（load-bearing 顺序，SQLite DROP COLUMN 不能删除被索引/partial WHERE
-    引用的列）：
-    ① DELETE 存量软删记录（is_deleted=1 物理清除）；
-    ② DROP 依赖 is_deleted 的索引（partial unique + is_deleted 单列索引，按 sqlite_master 枚举）；
-    ③ CREATE 全唯一索引（无 WHERE 条件，仅 unique_indexes 提供的表）；
-    ④ ALTER TABLE <table> DROP COLUMN is_deleted。
-    表不存在或列已不存在（全新环境/已迁移）→ no-op。
+    顺序 load-bearing（DROP COLUMN 不能删除被索引/partial WHERE 引用的列）：
+    清软删行 → DROP is_deleted 相关索引 → 建全唯一索引 → DROP COLUMN；表/列不存在 no-op。
 
     Args:
         conn: 同步连接（conn.run_sync 传入）.
@@ -720,21 +716,11 @@ def _foreign_keys_enabled(conn: Connection) -> bool:
 
 def _rebuild_characters_without_group_id(conn: Connection) -> None:
     """#831：重建 characters 表以安全移除 group_id 列及引用它的 FK.
-
-    SQLite DROP COLUMN 拒绝删除被 FK 引用的列（旧 schema characters.group_id
-    有 ``FOREIGN KEY ... ON DELETE SET NULL``），且 FK 不存于 sqlite_master
-    索引记录，仅枚举索引无法解阻。本函数走官方重建表路径：
-    ① 从 sqlite_master.sql 取原 CREATE TABLE DDL，剔除 group_id 列定义与引用它的 FK；
-    ② 建临时表 ``_characters_new``（无 group_id），按其余全部列 INSERT ... SELECT 拷贝；
-    ③ DROP 旧表 → RENAME 为 characters → 重建原非 group_id 索引。
-
-    SQLite 的 ``PRAGMA foreign_keys`` 只能在无挂起事务时切换；生产路径由
-    ``run_character_group_members_migration`` 在独立 AUTOCOMMIT 连接上先 FK=OFF
-    再调用本函数（无挂起事务 → pragma 生效），重建体由调用方包 ``BEGIN/COMMIT``
-    原子化——避免 DROP 后 RENAME 前崩溃残留 ``_characters_new``/空 characters（数据丢）。
-    若本函数被直接在事务内连接（FK=ON 无法关闭）调用则抛错，否则 DROP 父表会沿
-    FK CASCADE 清空 character_relations / character_group_members（#831 数据丢失）。
-    重建前先幂等清理遗留 ``_characters_new``（防重试报 already exists）。
+    SQLite 拒绝 DROP 被 FK 引用的列；FK 不在 sqlite_master 索引记录中，故走官方
+    重建路径：从 DDL 剔除 group_id/FK → 建 ``_characters_new`` 拷贝 → DROP/RENAME
+    → 重建索引。生产路径在独立 AUTOCOMMIT 连接上先 FK=OFF，重建体 BEGIN/COMMIT
+    原子化，避免 DROP 后 RENAME 前崩溃残骸或 CASCADE 清空关系/成员（#831）；事务内
+    FK=ON 时拒绝执行，重建前幂等清理遗留临时表。
     """
     create_sql_row = conn.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'characters'")

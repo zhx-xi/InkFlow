@@ -5,9 +5,8 @@
   → 同键唯一 → 落库（source 恒 manual）；各实体 repo 的「不存在」统一转换
   KnowledgeEntityNotFoundError（图谱域统一错误面，不泄漏 F9-F13 错误类）
 - 图谱聚合: nodes = 六类实体全量（组序 character→world→outline→timeline→
-  foreshadow→map_pin，组内 name ASC）；edges = knowledge_relations ∪
-  character_relations，同键 (source,target,label) 去重 knowledge 优先，
-  knowledge 段在前 / character 段在后，组内 created_at ASC；孤立边跳过 + warning
+  foreshadow→map_pin，组内 name ASC）；edges = knowledge_relations 单表全量，
+  created_at ASC；character_relations 已 #495 合并；孤立边跳过 + warning
 - 实体硬删级联清理: cleanup_for_entity 委托 relation_repo（F36 钩子先例，
   默认 None 依赖向后兼容）
 - #479 预留: bulk_create_relations（单事务批量 + 同键幂等跳过）
@@ -76,7 +75,7 @@ class KnowledgeGraphService:
     Args:
         relation_repo: 图谱关系仓储端口（必填）.
         project_repo: 项目仓储（create 入口校验项目存在性；None = 未注入）.
-        character_repo: 角色仓储（实体校验 + 图谱节点 + character_relations 合并）.
+        character_repo: 角色仓储（实体校验 + 图谱节点）.
         world_repo: 世界观仓储（实体校验 + 图谱节点）.
         outline_repo: 大纲仓储（实体校验 + 图谱节点）.
         timeline_repo: 时间线仓储（实体校验 + 图谱节点）.
@@ -424,12 +423,11 @@ class KnowledgeGraphService:
     # ── 图谱聚合（spec §5.2/§5.6）──────────────────────────────────────
 
     async def graph(self, project_id: uuid.UUID) -> KnowledgeGraphView:
-        """图谱聚合查询：六类实体全量节点 + 合并去重边.
+        """图谱聚合查询：六类实体全量节点 + knowledge_relations 单表边.
 
         nodes 组序 character→world→outline→timeline→foreshadow→map_pin，组内
-        name ASC；edges = knowledge_relations ∪ character_relations，同键
-        (source,target,label) 去重 knowledge 优先，knowledge 段在前 / character
-        段在后，组内 created_at ASC。孤立边（端点不在 nodes）跳过 + warning。
+        name ASC；edges 单一来源 knowledge_relations（character↔character 已
+        #495 合并），按 created_at ASC；孤立边（端点不在 nodes）跳过 + warning。
 
         Args:
             project_id: 项目 UUID.
@@ -480,38 +478,7 @@ class KnowledgeGraphService:
             )
         kr_edges.sort(key=lambda pair: pair[0])
 
-        cr_edges: list[tuple[datetime, GraphEdge]] = []
-        if self._character_repo is not None:
-            for cr in await self._character_repo.list_relations(pid_int):
-                src = f"character:{cr.from_character_id}"
-                tgt = f"character:{cr.to_character_id}"
-                if src not in node_ids or tgt not in node_ids:
-                    logger.warning(
-                        "图谱孤立边跳过: character_relation=%s（端点 %s / %s 不在节点集）",
-                        cr.id,
-                        src,
-                        tgt,
-                    )
-                    continue
-                cr_edges.append(
-                    (
-                        cr.created_at,
-                        GraphEdge(
-                            id=f"cr:{cr.id}",
-                            source=src,
-                            target=tgt,
-                            label=cr.relation_type,
-                            description=cr.description,
-                            source_table="character_relations",
-                        ),
-                    )
-                )
-        cr_edges.sort(key=lambda pair: pair[0])
-
-        # 同键 (source,target,label) 去重，knowledge 优先（Q1=A 拍板）
-        known_keys = {(e.source, e.target, e.label) for _, e in kr_edges}
         edges = [e for _, e in kr_edges]
-        edges.extend(e for _, e in cr_edges if (e.source, e.target, e.label) not in known_keys)
         return KnowledgeGraphView(nodes=nodes, edges=edges)
 
     async def _collect_nodes(

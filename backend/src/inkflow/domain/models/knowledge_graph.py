@@ -137,15 +137,15 @@ class GraphNode(BaseModel):
 
 
 class GraphEdge(BaseModel):
-    """图谱边 — knowledge_relations + character_relations 合并去重后视图.
+    """图谱边 — knowledge_relations 单表视图.
 
     Attributes:
-        id: 边 ID，f"kr:<relation_uuid>" 或 "cr:<relation_uuid>"（来源区分）.
+        id: 边 ID，恒为 f"kr:<relation_uuid>".
         source: 起点节点 ID（GraphNode.id 格式）.
         target: 终点节点 ID.
         label: 关系类型（relation_type）.
         description: 关系说明.
-        source_table: "knowledge_relations" | "character_relations"（合并来源）.
+        source_table: 恒为 "knowledge_relations".
     """
 
     id: str

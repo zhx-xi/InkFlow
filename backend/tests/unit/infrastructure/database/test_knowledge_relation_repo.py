@@ -486,7 +486,12 @@ class TestKnowledgeRelationRepository:
     # ── delete_by_entity / cleanup_for_entity（§5.3 实体硬删级联清理）──
 
     async def test_delete_by_entity_source_and_target(self, db_session, project):
-        """delete_by_entity: 实体作为 source 或 target 的行均被删除；无关行保留；返回删除行数."""
+        """delete_by_entity: 实体作为 source 或 target 的行均被删除；无关行保留；返回删除行数.
+
+        #495 语义升级：delete_by_entity 按 (type, id) 对匹配（各实体 int id 空间重叠，
+        不过滤 type 会误删他类实体关系行）→ 本用例的两行都显式落在 character 类型上
+        （原夹具默认 target_type='world' 会靠「跨类型按 id 误删」凑 deleted == 2）。
+        """
         repo = SQLiteKnowledgeRelationRepository(db_session)
         ent = uuid.UUID(int=140)
         other_ent = uuid.UUID(int=141)
@@ -494,7 +499,13 @@ class TestKnowledgeRelationRepository:
             _rel(project, source_id=ent, target_id=uuid.UUID(int=142), relation_type="属于")
         )
         await repo.add(
-            _rel(project, source_id=uuid.UUID(int=143), target_id=ent, relation_type="参与")
+            _rel(
+                project,
+                source_id=uuid.UUID(int=143),
+                target_type="character",
+                target_id=ent,
+                relation_type="参与",
+            )
         )
         keep = await repo.add(
             _rel(project, source_id=other_ent, target_id=uuid.UUID(int=144), relation_type="位于")

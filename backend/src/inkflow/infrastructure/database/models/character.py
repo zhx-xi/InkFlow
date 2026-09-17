@@ -1,6 +1,7 @@
-"""角色/分组/关系 ORM 模型 — 映射到 characters, character_groups, character_relations 表.
+"""角色/分组 ORM 模型 — 映射到 characters, character_groups, character_group_members 表.
 
 使用 SQLAlchemy 2.0 Mapped + mapped_column 新式映射语法（同 F1 project.py）。
+character_relations 已于 #495 合并进 knowledge_relations。
 
 设计约定（同 F1 §12 / F9 spec §2）:
 - DB 主键为 int 自增；领域层 id 为 UUID，映射规则: domain_id = uuid.UUID(int=orm.id)
@@ -228,91 +229,4 @@ class CharacterGroupMemberORM(Base):
     def __repr__(self) -> str:
         return (
             f"<CharacterGroupMemberORM character_id={self.character_id} group_id={self.group_id}>"
-        )
-
-
-class CharacterRelationORM(Base):
-    """角色关系 ORM 模型 — 映射到 character_relations 表（有向边）.
-
-    Maps to the ``character_relations`` table. Each row is a directed
-    edge in the character relationship graph (from → to).
-    """
-
-    __tablename__ = "character_relations"
-
-    __table_args__ = (
-        Index(
-            "uq_character_relations_active_key",
-            "project_id",
-            "from_character_id",
-            "to_character_id",
-            "relation_type",
-            unique=True,
-        ),
-    )
-    """关系中 (project, from, to, relation_type) 唯一（v1.1 全唯一索引，spec §2.4）."""
-
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        autoincrement=True,
-    )
-    """自增主键（领域层映射为 UUID）."""
-
-    project_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    """所属项目（冗余存储，便于按项目查询与隔离；项目删除级联删除，已索引）."""
-
-    from_character_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("characters.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    """关系起点（角色硬删除级联删除，已索引）."""
-
-    to_character_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("characters.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    """关系终点（角色硬删除级联删除，已索引）."""
-
-    relation_type: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-    )
-    """关系类型 (1–20 字符，去空白，自由文本)."""
-
-    description: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        default="",
-    )
-    """关系说明 (≤ 500 字符)."""
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        nullable=False,
-        default=_utcnow,
-    )
-    """记录创建时间（UTC）. """
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        nullable=False,
-        default=_utcnow,
-        onupdate=_utcnow,
-    )
-    """记录最后更新时间（UTC，自动更新）. """
-
-    def __repr__(self) -> str:
-        return (
-            f"<CharacterRelationORM id={self.id} "
-            f"{self.from_character_id}->{self.to_character_id} {self.relation_type!r}>"
         )

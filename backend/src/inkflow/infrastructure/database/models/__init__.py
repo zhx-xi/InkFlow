@@ -9,7 +9,6 @@ from inkflow.infrastructure.database.models.character import (
     CharacterGroupMemberORM,
     CharacterGroupORM,
     CharacterORM,
-    CharacterRelationORM,
 )
 from inkflow.infrastructure.database.models.chat_message import ChatMessageORM
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
@@ -43,7 +42,6 @@ __all__ = [
     "CharacterGroupMemberORM",
     "CharacterGroupORM",
     "CharacterORM",
-    "CharacterRelationORM",
     "ChatMessageORM",
     "ConversationORM",
     "DraftORM",

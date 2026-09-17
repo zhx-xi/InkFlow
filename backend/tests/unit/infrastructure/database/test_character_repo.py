@@ -28,8 +28,8 @@ from inkflow.domain.models.character import Character, CharacterGroup, Character
 from inkflow.infrastructure.database.models.character import (
     CharacterGroupORM,
     CharacterORM,
-    CharacterRelationORM,
 )
+from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.repositories.character_repo import SQLiteCharacterRepository
 
@@ -410,7 +410,7 @@ class TestCharacterRepository:
         r = await repo.add_relation(_relation(project, a, b, "师徒"))
 
         assert await repo.hard_delete_relation(r.id.int) is True
-        count = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
+        count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
         assert await repo.hard_delete_relation(r.id.int) is False
 
@@ -426,7 +426,7 @@ class TestCharacterRepository:
 
         assert await repo.hard_delete(a.id.int) is True
 
-        count = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
+        count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
 
     async def test_project_hard_delete_cascades_characters_and_groups(self, db_session, project):
@@ -442,7 +442,7 @@ class TestCharacterRepository:
 
         count_c = await db_session.execute(select(func.count()).select_from(CharacterORM))
         count_g = await db_session.execute(select(func.count()).select_from(CharacterGroupORM))
-        count_r = await db_session.execute(select(func.count()).select_from(CharacterRelationORM))
+        count_r = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count_c.scalar_one() == 0
         assert count_g.scalar_one() == 0
         assert count_r.scalar_one() == 0
@@ -559,13 +559,15 @@ class TestCharacterRepositoryCoverageGaps:
     # ── ORM __repr__ ──
 
     def test_orm_repr(self):
-        """三个 ORM 模型的 __repr__ 输出（无需落库）."""
+        """角色/分组 ORM 的 __repr__ 输出（无需落库）.
+
+        #495：CharacterRelationORM 已删除（character_relations 并入 knowledge_relations）
+        → 关系 repr 契约由 test_knowledge_relation_repo.py::test_repr_contains_id_and_key 承载。
+        """
         c = CharacterORM(id=1, name="林尘")
         assert repr(c) == "<CharacterORM id=1 name='林尘'>"
         g = CharacterGroupORM(id=2, name="主角团")
         assert repr(g) == "<CharacterGroupORM id=2 name='主角团'>"
-        r = CharacterRelationORM(id=3, from_character_id=1, to_character_id=2, relation_type="师徒")
-        assert repr(r) == "<CharacterRelationORM id=3 1->2 '师徒'>"
 
 
 # ══ P5 删除引用残留清理（#284 最后一批，spec §2.10/§5.18）══
@@ -608,7 +610,7 @@ class TestP5HardDeleteCleansRelations:
         assert await repo.hard_delete(a.id.int) is True
 
         count = await db_session_off_fk.execute(
-            select(func.count()).select_from(CharacterRelationORM)
+            select(func.count()).select_from(KnowledgeRelationORM)
         )
         assert count.scalar_one() == 0
 

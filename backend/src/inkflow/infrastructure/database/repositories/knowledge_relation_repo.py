@@ -20,8 +20,8 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -255,14 +255,19 @@ class SQLiteKnowledgeRelationRepository:
     async def delete_by_entity(self, entity_type: str, entity_id: int) -> int:
         """删除指定实体作为 source 或 target 的全部关系行（真删），返回删除行数.
 
-        实体 UUID 全局唯一（uuid4），故按 entity_id 匹配 source_id/target_id；
-        entity_type 保留以兼容 Protocol 签名（RED 测试契约按 ID 匹配，见
-        tests/unit/test_knowledge_relation_repo.py delete_by_entity/cleanup 用例）。
+        按 (type,id) 对匹配——各实体 int id 空间重叠，不过滤 type 会误删他类
+        实体关系行（#495）。
         """
         stmt = sa_delete(KnowledgeRelationORM).where(
             or_(
-                KnowledgeRelationORM.source_id == entity_id,
-                KnowledgeRelationORM.target_id == entity_id,
+                and_(
+                    KnowledgeRelationORM.source_type == entity_type,
+                    KnowledgeRelationORM.source_id == entity_id,
+                ),
+                and_(
+                    KnowledgeRelationORM.target_type == entity_type,
+                    KnowledgeRelationORM.target_id == entity_id,
+                ),
             )
         )
         result = await self._session.execute(stmt)

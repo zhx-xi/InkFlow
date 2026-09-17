@@ -220,7 +220,9 @@ def _create_v12(db: Path) -> dict[str, int]:
 
     #495 补齐：真实 v1.2 库必有 ``character_relations`` 表（角色关系专表在 v1.3 才废弃）
     → 补表 + 1 行种子，供全链升级断言「迁入 kr 子空间 + 专表消失」；第二次角色行
-    用于承载该关系（原建造器仅 1 行角色）。
+    用于承载该关系（原建造器仅 1 行角色）。同时补 ``projects`` 表 + 行（fixture 保真：
+    真实库有关系必有项目；且 create_all 建出的 knowledge_relations.project_id 有 FK，
+    缺父行会让 merge 的 INSERT..SELECT 撞 FOREIGN KEY constraint failed）。
     """
     engine = create_engine(f"sqlite:///{db}")
     with engine.begin() as conn:
@@ -261,6 +263,10 @@ def _create_v12(db: Path) -> dict[str, int]:
                 "created_at DATETIME, updated_at DATETIME)"
             )
         )
+        conn.execute(
+            text("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+        )
+        conn.execute(text("INSERT INTO projects (id, name) VALUES (1, '蜀山')"))
         conn.execute(text("INSERT INTO characters (id, project_id, name) VALUES (1, 1, '玄明')"))
         conn.execute(text("INSERT INTO characters (id, project_id, name) VALUES (2, 1, '宁晚')"))
         conn.execute(
