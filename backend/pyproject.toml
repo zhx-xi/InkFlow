@@ -15,6 +15,9 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "alembic>=1.13",
+    # 统一 UUID 身份键（#1134/ADR-060）：UUIDv7 生成。已是 langchain-core 传递依赖，
+    # 此处显式声明防传递依赖漂移（uv.lock 仅 +2 行依赖登记，版本/sha256 零变化）。
+    "uuid-utils>=0.17.0,<1.0.0",
     # Data validation
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
