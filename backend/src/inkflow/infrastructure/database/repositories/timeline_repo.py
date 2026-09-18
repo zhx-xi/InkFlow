@@ -36,10 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.timeline import TimelineEvent
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -112,13 +109,12 @@ class SQLiteTimelineRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, event_id: int | uuid.UUID) -> TimelineEvent | None:
-        """按主键查询事件。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(event_id, uuid.UUID):
-            eid = require_uuid_pk(event_id)
-        else:
-            eid = uuid_to_pk_or_none(event_id)
+    async def get(self, event_id: uuid.UUID) -> TimelineEvent | None:
+        """按主键查询事件。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        eid = require_uuid_pk(event_id)
         if eid is None:
             return None
         stmt = select(TimelineEventORM).where(TimelineEventORM.id == eid)
@@ -128,7 +124,7 @@ class SQLiteTimelineRepository:
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "narrative_position",
         sort_desc: bool = False,
@@ -149,7 +145,10 @@ class SQLiteTimelineRepository:
         Returns:
             (当前页事件列表, 符合条件的总记录数).
         """
-        base = select(TimelineEventORM).where(TimelineEventORM.project_id == project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        base = select(TimelineEventORM).where(TimelineEventORM.project_id == pid)
 
         # 搜索: title icontains
         if search:
@@ -181,14 +180,17 @@ class SQLiteTimelineRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms], total
 
-    async def list_all(self, project_id: int) -> builtins.list[TimelineEvent]:
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[TimelineEvent]:
         """列出项目内全部事件，按 (narrative_position ASC, created_at ASC) 稳定排序.
 
         双线视图/一致性检查直接消费此全量结果。
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(TimelineEventORM)
-            .where(TimelineEventORM.project_id == project_id)
+            .where(TimelineEventORM.project_id == pid)
             .order_by(
                 TimelineEventORM.narrative_position.asc(),
                 TimelineEventORM.created_at.asc(),
@@ -199,7 +201,7 @@ class SQLiteTimelineRepository:
         return [_orm_to_domain(o) for o in orms]
 
     async def list_by_chapter(
-        self, project_id: int, chapter_id: int
+        self, project_id: uuid.UUID, chapter_id: uuid.UUID
     ) -> builtins.list[TimelineEvent]:
         """列出项目内事件中 source_chapter_id 等于指定章的事件.
 
@@ -214,11 +216,15 @@ class SQLiteTimelineRepository:
         Returns:
             指定来源章的事件列表.
         """
+        pid = require_uuid_pk(project_id)
+        cid = require_uuid_pk(chapter_id)
+        if pid is None or cid is None:
+            return []
         stmt = (
             select(TimelineEventORM)
             .where(
-                TimelineEventORM.project_id == project_id,
-                TimelineEventORM.source_chapter_id == chapter_id,
+                TimelineEventORM.project_id == pid,
+                TimelineEventORM.source_chapter_id == cid,
             )
             .order_by(
                 TimelineEventORM.narrative_position.asc(),
@@ -229,13 +235,16 @@ class SQLiteTimelineRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms]
 
-    async def next_position(self, project_id: int) -> int:
+    async def next_position(self, project_id: uuid.UUID) -> int:
         """计算项目内下一个叙事位置: max(narrative_position)+1（无事件时 = 1）.
 
         计算 max(narrative_position)+1。
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 0
         stmt = select(func.coalesce(func.max(TimelineEventORM.narrative_position), 0) + 1).where(
-            TimelineEventORM.project_id == project_id,
+            TimelineEventORM.project_id == pid,
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
@@ -279,7 +288,7 @@ class SQLiteTimelineRepository:
             raise ValueError(f"TimelineEvent {event_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def hard_delete(self, event_id: int) -> bool:
+    async def hard_delete(self, event_id: uuid.UUID) -> bool:
         """物理删除事件（先显式置空伏笔 event_id，foreign_keys=OFF 下不依赖 FK，v1.1 默认真删语义）.
 
         F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
@@ -288,14 +297,17 @@ class SQLiteTimelineRepository:
         Returns:
             True 表示删除成功，False 表示不存在.
         """
-        stmt = select(TimelineEventORM).where(TimelineEventORM.id == event_id)
+        eid = require_uuid_pk(event_id)
+        if eid is None:
+            return False
+        stmt = select(TimelineEventORM).where(TimelineEventORM.id == eid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
         await self._session.execute(
             sa_update(ForeshadowingORM)
-            .where(ForeshadowingORM.event_id == event_id)
+            .where(ForeshadowingORM.event_id == eid)
             .values(event_id=None)
         )
         await self._session.delete(orm)

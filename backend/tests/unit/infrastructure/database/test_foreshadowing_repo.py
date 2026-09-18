@@ -144,7 +144,7 @@ class TestForeshadowingRepository:
         )
         assert row.scalar_one().title == "林晚的身世"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.project_id == uuid.UUID(int=project.id)
@@ -156,7 +156,7 @@ class TestForeshadowingRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteForeshadowingRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     # ── get_by_title ──
 
@@ -165,30 +165,30 @@ class TestForeshadowingRepository:
         repo = SQLiteForeshadowingRepository(db_session)
         saved = await repo.add(_foreshadowing(project, "林晚的身世"))
 
-        hit = await repo.get_by_title(project.id, "林晚的身世")
+        hit = await repo.get_by_title(uuid.UUID(int=project.id), "林晚的身世")
         assert hit is not None
         assert hit.id == saved.id
 
         # 未命中
-        assert await repo.get_by_title(project.id, "铜镜的秘密") is None
+        assert await repo.get_by_title(uuid.UUID(int=project.id), "铜镜的秘密") is None
 
         # 真删后同名不可见（同名唯一检查语义：真删后同名可复用）
-        await repo.hard_delete(saved.id.int)
-        assert await repo.get_by_title(project.id, "林晚的身世") is None
+        await repo.hard_delete(saved.id)
+        assert await repo.get_by_title(uuid.UUID(int=project.id), "林晚的身世") is None
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get_by_title(other.id, "林晚的身世") is None
+        assert await repo.get_by_title(uuid.UUID(int=other.id), "林晚的身世") is None
 
     # ── 全唯一索引（spec §2.3）──
 
     async def test_duplicate_title_raises_integrity_error(self, db_session, project):
         """项目内伏笔同名唯一：插入第二个同名 → IntegrityError，回滚后可继续."""
         repo = SQLiteForeshadowingRepository(db_session)
-        project_id = project.id  # rollback 会使 ORM 对象过期，先缓存 int 主键
+        project_id = uuid.UUID(int=project.id)  # rollback 会使 ORM 对象过期，先缓存领域 UUID
         await repo.add(_foreshadowing(project, "林晚的身世"))
 
         with pytest.raises(IntegrityError):
@@ -212,7 +212,7 @@ class TestForeshadowingRepository:
         """真删后同名可重建（v1.1 全唯一索引仅约束现存行）."""
         repo = SQLiteForeshadowingRepository(db_session)
         first = await repo.add(_foreshadowing(project, "林晚的身世"))
-        await repo.hard_delete(first.id.int)
+        await repo.hard_delete(first.id)
 
         await repo.add(_foreshadowing(project, "林晚的身世"))
 
@@ -228,9 +228,9 @@ class TestForeshadowingRepository:
         f1 = await repo.add(_foreshadowing(project, "林晚的身世"))
         f2 = await repo.add(_foreshadowing(project, "铜镜的秘密"))
         f3 = await repo.add(_foreshadowing(project, "古鼎之谜"))
-        await repo.hard_delete(f3.id.int)
+        await repo.hard_delete(f3.id)
 
-        items, total = await repo.list(project.id)
+        items, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 2
         assert {f.id for f in items} == {f1.id, f2.id}
 
@@ -239,7 +239,7 @@ class TestForeshadowingRepository:
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.list(other.id) == ([], 0)
+        assert await repo.list(uuid.UUID(int=other.id)) == ([], 0)
 
     async def test_list_search_icontains(self, db_session, project):
         """search 对 title 不区分大小写子串匹配."""
@@ -248,11 +248,11 @@ class TestForeshadowingRepository:
         await repo.add(_foreshadowing(project, "身世之谜"))
         await repo.add(_foreshadowing(project, "铜镜的秘密"))
 
-        items, total = await repo.list(project.id, search="身世")
+        items, total = await repo.list(uuid.UUID(int=project.id), search="身世")
         assert total == 2
         assert {f.title for f in items} == {"林晚的身世", "身世之谜"}
 
-        items2, total2 = await repo.list(project.id, search="不存在")
+        items2, total2 = await repo.list(uuid.UUID(int=project.id), search="不存在")
         assert total2 == 0
         assert items2 == []
 
@@ -269,16 +269,18 @@ class TestForeshadowingRepository:
             )
         )
 
-        open_items, open_total = await repo.list(project.id, status="open")
+        open_items, open_total = await repo.list(uuid.UUID(int=project.id), status="open")
         assert open_total == 1
         assert [f.id for f in open_items] == [open_f.id]
 
-        resolved_items, resolved_total = await repo.list(project.id, status="resolved")
+        resolved_items, resolved_total = await repo.list(
+            uuid.UUID(int=project.id), status="resolved"
+        )
         assert resolved_total == 1
         assert [f.id for f in resolved_items] == [resolved_f.id]
 
         # 不传 = 全部活动（open + resolved）
-        all_items, all_total = await repo.list(project.id)
+        all_items, all_total = await repo.list(uuid.UUID(int=project.id))
         assert all_total == 2
         assert {f.id for f in all_items} == {open_f.id, resolved_f.id}
 
@@ -289,10 +291,10 @@ class TestForeshadowingRepository:
         await repo.add(_foreshadowing(project, "高优先级", priority=90))
         await repo.add(_foreshadowing(project, "中优先级", priority=50))
 
-        items, _ = await repo.list(project.id)
+        items, _ = await repo.list(uuid.UUID(int=project.id))
         assert [f.title for f in items] == ["高优先级", "中优先级", "低优先级"]
 
-        asc, _ = await repo.list(project.id, sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_desc=False)
         assert [f.title for f in asc] == ["低优先级", "中优先级", "高优先级"]
 
     async def test_list_priority_tie_break_by_updated_at_desc(self, db_session, project):
@@ -314,7 +316,7 @@ class TestForeshadowingRepository:
         )
         await db_session.commit()
 
-        items, _ = await repo.list(project.id)
+        items, _ = await repo.list(uuid.UUID(int=project.id))
         assert [f.id for f in items] == [late.id, early.id]
 
     async def test_list_sort_by_title_and_created_at(self, db_session, project):
@@ -324,13 +326,15 @@ class TestForeshadowingRepository:
         await repo.add(_foreshadowing(project, "alpha"))
         await repo.add(_foreshadowing(project, "bravo"))
 
-        asc, _ = await repo.list(project.id, sort_by="title", sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="title", sort_desc=False)
         assert [f.title for f in asc] == ["alpha", "bravo", "charlie"]
 
-        desc, _ = await repo.list(project.id, sort_by="title", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="title", sort_desc=True)
         assert [f.title for f in desc] == ["charlie", "bravo", "alpha"]
 
-        by_created, _ = await repo.list(project.id, sort_by="created_at", sort_desc=False)
+        by_created, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="created_at", sort_desc=False
+        )
         assert [f.title for f in by_created] == ["charlie", "alpha", "bravo"]
 
     async def test_list_sort_by_status_and_updated_at(self, db_session, project):
@@ -347,7 +351,7 @@ class TestForeshadowingRepository:
         open_f = await repo.add(_foreshadowing(project, "a-open"))
 
         # status 字符串排序（"open" < "resolved"，升序 open 在前）
-        asc, _ = await repo.list(project.id, sort_by="status", sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="status", sort_desc=False)
         assert [f.title for f in asc] == ["a-open", "b-resolved"]
 
         # updated_at 排序（注入受控时间戳）
@@ -363,7 +367,7 @@ class TestForeshadowingRepository:
         )
         await db_session.commit()
 
-        desc, _ = await repo.list(project.id, sort_by="updated_at", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="updated_at", sort_desc=True)
         assert [f.title for f in desc] == ["a-open", "b-resolved"]
 
     async def test_list_pagination(self, db_session, project):
@@ -372,15 +376,15 @@ class TestForeshadowingRepository:
         for i in range(5):
             await repo.add(_foreshadowing(project, f"伏笔{i}", priority=i))
 
-        page1, total = await repo.list(project.id, offset=0, limit=2)
-        page2, _ = await repo.list(project.id, offset=2, limit=2)
+        page1, total = await repo.list(uuid.UUID(int=project.id), offset=0, limit=2)
+        page2, _ = await repo.list(uuid.UUID(int=project.id), offset=2, limit=2)
 
         assert total == 5
         assert len(page1) == 2
         assert len(page2) == 2
         assert {f.id for f in page1}.isdisjoint({f.id for f in page2})
         # 分页越界 → 空列表（同 F1）
-        page3, _ = await repo.list(project.id, offset=99, limit=2)
+        page3, _ = await repo.list(uuid.UUID(int=project.id), offset=99, limit=2)
         assert page3 == []
 
     # ── list_open（F6 注入集合，spec §5.3/§8.1）──
@@ -403,7 +407,7 @@ class TestForeshadowingRepository:
             )
         )
         gone = await repo.add(_foreshadowing(project, "已删", priority=100))
-        await repo.hard_delete(gone.id.int)
+        await repo.hard_delete(gone.id)
 
         # 注入受控 updated_at：同优先级（此处无）与 (priority DESC, updated_at DESC) 断言
         await db_session.execute(
@@ -423,7 +427,7 @@ class TestForeshadowingRepository:
         )
         await db_session.commit()
 
-        items = await repo.list_open(project.id)
+        items = await repo.list_open(uuid.UUID(int=project.id))
         assert [f.id for f in items] == [high.id, mid.id, low.id]
 
         # 项目隔离
@@ -431,7 +435,7 @@ class TestForeshadowingRepository:
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.list_open(other.id) == []
+        assert await repo.list_open(uuid.UUID(int=other.id)) == []
 
     # ── update ──
 
@@ -500,9 +504,9 @@ class TestForeshadowingRepository:
         repo = SQLiteForeshadowingRepository(db_session)
         f = await repo.add(_foreshadowing(project, "林晚的身世"))
 
-        assert await repo.hard_delete(f.id.int) is True
-        assert await repo.get(f.id.int) is None
-        assert await repo.hard_delete(f.id.int) is False
+        assert await repo.hard_delete(f.id) is True
+        assert await repo.get(f.id) is None
+        assert await repo.hard_delete(f.id) is False
 
     # ── FK 语义 ──
 
@@ -521,7 +525,7 @@ class TestForeshadowingRepository:
         await db_session.commit()
 
         # 伏笔仍在，event_id 置 NULL
-        got = await repo.get(f.id.int)
+        got = await repo.get(f.id)
         assert got is not None
         assert got.event_id is None
         row = await db_session.execute(
@@ -554,5 +558,6 @@ class TestInt64RangeGuard1106:
         """foreshadowing_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteForeshadowingRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

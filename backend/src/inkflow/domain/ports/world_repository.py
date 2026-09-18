@@ -50,12 +50,12 @@ class WorldRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> WorldSetting | None:
         """按项目内条目名查询条目；跨层同名多条时返回最早创建
         （created_at ASC）的一条（spec §2.4 确定性声明）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             name: 条目名（已去空白）.
 
         Returns:
@@ -65,20 +65,20 @@ class WorldRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         category: str | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
-        parent_id: int | None = None,
+        parent_id: uuid.UUID | None = None,
         top_level_only: bool = False,
     ) -> tuple[builtins.list[WorldSetting], int]:
         """分页查询项目内条目列表，支持搜索与类别过滤（Q3=A 列表 parent_id 过滤）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             search: 条目名模糊搜索（可选）.
             category: 类别精确过滤（可选，不含已软删除条目）.
             sort_by: 排序字段（updated_at / name / created_at）.
@@ -93,11 +93,11 @@ class WorldRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_categories(self, project_id: int) -> builtins.list[tuple[str, int]]:
+    async def list_categories(self, project_id: uuid.UUID) -> builtins.list[tuple[str, int]]:
         """聚合项目内活动条目的类别计数（排除空类别）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             (类别, 条目数) 列表，按计数降序、类别名升序.
@@ -115,11 +115,11 @@ class WorldRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete(self, setting_id: int) -> bool:
+    async def hard_delete(self, setting_id: uuid.UUID) -> bool:
         """物理删除条目（v1.1 默认真删语义）.
 
         Args:
-            setting_id: 条目主键（int）.
+            setting_id: 条目主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
@@ -127,32 +127,33 @@ class WorldRepositoryProtocol(Protocol):
         ...
 
     async def get_by_parent_and_name(
-        self, project_id: int, parent_id: int | None, name: str
+        self, project_id: uuid.UUID, parent_id: uuid.UUID | None, name: str
     ) -> WorldSetting | None:
         """按 (project_id, parent_id, name) 查询条目（parent_id=None = 顶层）——
         同级唯一校验用（spec §5.1）。"""
         ...
 
-    async def collect_ancestor_ids(self, setting_id: int) -> builtins.list[int]:
-        """祖先链 id 列表，**不含自身**（父链，从近到远 [父, 祖父, ...]；
-        用于循环防护：检查新父的祖先链是否含自身，spec §5.2）。"""
+    async def collect_ancestor_ids(self, setting_id: uuid.UUID) -> builtins.list[int]:
+        """祖先链 **物理 int 主键** 列表，**不含自身**（父链，从近到远 [父, 祖父, ...]；
+        用于循环防护：检查新父的祖先链是否含自身，spec §5.2）。
+        入参为领域 UUID（#1291），返回值为 ORM 物理 int 主键（非领域标识）。"""
         ...
 
-    async def list_descendants(self, setting_id: int) -> builtins.list[WorldSetting]:
+    async def list_descendants(self, setting_id: uuid.UUID) -> builtins.list[WorldSetting]:
         """子树（**含自身**），层序（父先子后，同层 created_at ASC）；
         真删语义下不存在 id → 空列表（spec §5.3）。"""
         ...
 
-    async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
+    async def list_all_active(self, project_id: uuid.UUID) -> builtins.list[WorldSetting]:
         """项目内全部条目，按 created_at ASC 稳定排序（copy 缺省起点用）."""
         ...
 
-    async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:
+    async def hard_delete_many(self, setting_ids: builtins.list[uuid.UUID]) -> int:
         """单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数；
         空列表 → 0 不报错；不存在的 id 不影响计数（spec §5.5 级联真删）。"""
         ...
 
-    async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool:
+    async def delete_with_reparent(self, setting_id: uuid.UUID, reparent_to: uuid.UUID) -> bool:
         """单事务: UPDATE 直接子地点 parent_id=reparent_to WHERE parent_id=setting_id
         + DELETE 自身；返回自身是否被删（不存在 → False，spec §5.5 reparent）。"""
         ...

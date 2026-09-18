@@ -53,7 +53,7 @@ class TimelineRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "narrative_position",
         sort_desc: bool = False,
@@ -63,7 +63,7 @@ class TimelineRepositoryProtocol(Protocol):
         """分页查询项目内事件列表，支持标题模糊搜索与排序.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             search: 事件标题模糊搜索（可选）.
             sort_by: 排序字段（narrative_position / time_value / created_at /
                 updated_at）.
@@ -76,13 +76,13 @@ class TimelineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_all(self, project_id: int) -> builtins.list[TimelineEvent]:
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[TimelineEvent]:
         """列出项目内全部事件，按 (narrative_position ASC, created_at ASC) 稳定排序.
 
         双线视图/一致性检查直接消费此全量结果.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             事件列表.
@@ -90,7 +90,7 @@ class TimelineRepositoryProtocol(Protocol):
         ...
 
     async def list_by_chapter(
-        self, project_id: int, chapter_id: int
+        self, project_id: uuid.UUID, chapter_id: uuid.UUID
     ) -> builtins.list[TimelineEvent]:
         """列出项目内事件中 source_chapter_id 等于指定章的事件.
 
@@ -99,21 +99,21 @@ class TimelineRepositoryProtocol(Protocol):
         created_at ASC) 排序。
 
         Args:
-            project_id: 项目主键（int）.
-            chapter_id: 来源章节主键（int，与 ORM 层一致）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
+            chapter_id: 来源章节主键（领域 UUID，见 #1291）.
 
         Returns:
             指定来源章的事件列表.
         """
         ...
 
-    async def next_position(self, project_id: int) -> int:
+    async def next_position(self, project_id: uuid.UUID) -> int:
         """计算项目内下一个叙事位置：max(narrative_position)+1（无事件时 = 1）.
 
         在 add 前调用（narrative_position=None 时）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             下一个 narrative_position 值.
@@ -131,11 +131,11 @@ class TimelineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete(self, event_id: int) -> bool:
+    async def hard_delete(self, event_id: uuid.UUID) -> bool:
         """物理删除事件（v1.1 默认真删语义）.
 
         Args:
-            event_id: 事件主键（int）.
+            event_id: 事件主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.

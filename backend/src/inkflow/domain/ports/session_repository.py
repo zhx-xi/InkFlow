@@ -2,8 +2,8 @@
 
 SessionRepositoryProtocol 定义 Session 与 SessionLogEntry 的持久化操作
 （CRUD + 过滤列表 + 归档/解除/真实删除 + 日志 seq 分配与查询），基础
-设施层（SQLite / mock / memory）实现本 Protocol。仓储层 `get` 主键入参用
-领域 UUID（#1271 收窄），其余方法沿用 int/uuid 兼容归一。
+设施层（SQLite / mock / memory）实现本 Protocol。仓储层主键入参统一用
+领域 UUID（#1134 批 4 / #1291 收窄收尾）。
 
 依据: specs/f24-session/spec.md §8.2。
 """
@@ -54,7 +54,7 @@ class SessionRepositoryProtocol(Protocol):
         self,
         session_type: str | None = None,
         status: str | None = None,
-        project_id: int | None = None,
+        project_id: uuid.UUID | None = None,
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -65,7 +65,8 @@ class SessionRepositoryProtocol(Protocol):
         Args:
             session_type: 会话类型精确过滤（writing / task；不传 = 全部）.
             status: 状态精确过滤（active / paused / completed / failed；不传 = 全部）.
-            project_id: 项目主键精确过滤（不传 = 全部；含 project_id 为空的全局会话）.
+            project_id: 项目主键（领域 UUID，见 #1291）精确过滤（不传 = 全部；
+                含 project_id 为空的全局会话）.
             search: 标题不区分大小写子串匹配（可选）.
             offset: 分页偏移.
             limit: 分页大小.
@@ -77,11 +78,11 @@ class SessionRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_include_deleted(self, session_id: int) -> Session | None:
+    async def list_include_deleted(self, session_id: uuid.UUID) -> Session | None:
         """按主键查询会话（含已归档；详情可追溯，归档也可读）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             若命中则返回 Session（含已归档），否则返回 None.
@@ -99,33 +100,33 @@ class SessionRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete(self, session_id: int) -> bool:
+    async def soft_delete(self, session_id: uuid.UUID) -> bool:
         """归档会话（is_deleted=True）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             是否归档成功（不存在返回 False）.
         """
         ...
 
-    async def restore(self, session_id: int) -> Session | None:
+    async def restore(self, session_id: uuid.UUID) -> Session | None:
         """解除已归档会话（is_deleted=False）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             解除后的 Session，不存在则返回 None.
         """
         ...
 
-    async def hard_delete(self, session_id: int) -> bool:
+    async def hard_delete(self, session_id: uuid.UUID) -> bool:
         """物理删除会话（日志随 FK CASCADE 级联删除；仅用于已归档再删 / force 场景）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
@@ -145,11 +146,11 @@ class SessionRepositoryProtocol(Protocol):
         """
         ...
 
-    async def next_seq(self, session_id: int) -> int:
+    async def next_seq(self, session_id: uuid.UUID) -> int:
         """计算会话内下一条日志序号（max(seq)+1；无日志时 = 1）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             会话内递增序号.
@@ -158,14 +159,14 @@ class SessionRepositoryProtocol(Protocol):
 
     async def list_logs(
         self,
-        session_id: int,
+        session_id: uuid.UUID,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[SessionLogEntry], int]:
         """分页查询会话日志，按 seq ASC 稳定排序.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
             offset: 分页偏移.
             limit: 分页大小.
 
@@ -174,22 +175,22 @@ class SessionRepositoryProtocol(Protocol):
         """
         ...
 
-    async def count_logs(self, session_id: int) -> int:
+    async def count_logs(self, session_id: uuid.UUID) -> int:
         """统计会话日志条数（SessionView.log_count）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             日志条数.
         """
         ...
 
-    async def last_log(self, session_id: int) -> SessionLogEntry | None:
+    async def last_log(self, session_id: uuid.UUID) -> SessionLogEntry | None:
         """查询会话最新日志条目（SessionView.last_log；无日志时返回 None）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1291）.
 
         Returns:
             最新日志条目（seq 最大者），无日志则返回 None.

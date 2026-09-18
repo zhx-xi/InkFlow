@@ -31,10 +31,7 @@ from inkflow.infrastructure.database.models.character import (
     CharacterORM,
 )
 from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 _CHARACTER = "character"
 
@@ -178,13 +175,12 @@ class SQLiteCharacterRepository:
             await self._session.commit()
         return _char_orm_to_domain(orm, list(character.group_ids))
 
-    async def get(self, character_id: int | uuid.UUID) -> Character | None:
-        """按主键查询角色。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(character_id, uuid.UUID):
-            cid = require_uuid_pk(character_id)
-        else:
-            cid = uuid_to_pk_or_none(character_id)
+    async def get(self, character_id: uuid.UUID) -> Character | None:
+        """按主键查询角色。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        cid = require_uuid_pk(character_id)
         if cid is None:
             return None
         stmt = select(CharacterORM).where(CharacterORM.id == cid)
@@ -195,10 +191,13 @@ class SQLiteCharacterRepository:
         group_ids = await self._list_group_ids([cid])
         return _char_orm_to_domain(orm, group_ids.get(cid, []))
 
-    async def get_by_name(self, project_id: int, name: str) -> Character | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> Character | None:
         """按项目内角色名查询角色."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = select(CharacterORM).where(
-            CharacterORM.project_id == project_id,
+            CharacterORM.project_id == pid,
             CharacterORM.name == name,
         )
         result = await self._session.execute(stmt)
@@ -210,9 +209,9 @@ class SQLiteCharacterRepository:
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
-        group_id: int | uuid.UUID | None = None,
+        group_id: uuid.UUID | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
         offset: int = 0,
@@ -225,10 +224,13 @@ class SQLiteCharacterRepository:
         """
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        gid = uuid_to_pk_or_none(group_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        gid = require_uuid_pk(group_id)
         if group_id is not None and gid is None:
             return [], 0
-        base = select(CharacterORM).where(CharacterORM.project_id == project_id)
+        base = select(CharacterORM).where(CharacterORM.project_id == pid)
 
         # 搜索: name icontains
         if search:
@@ -298,14 +300,17 @@ class SQLiteCharacterRepository:
         group_ids_map = await self._list_group_ids([char_id])
         return _char_orm_to_domain(orm, group_ids_map.get(char_id, []))
 
-    async def hard_delete(self, character_id: int) -> bool:
+    async def hard_delete(self, character_id: uuid.UUID) -> bool:
         """物理删除角色（先显式删除其双向关系与关联表行，foreign_keys=OFF 下不依赖 FK）.
 
         F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
         DELETE knowledge_relations 的 character↔character 子空间（from/to 双向）
         + character_group_members，与主删除同一事务（兼 FK CASCADE）。
         """
-        stmt = select(CharacterORM).where(CharacterORM.id == character_id)
+        cid = require_uuid_pk(character_id)
+        if cid is None:
+            return False
+        stmt = select(CharacterORM).where(CharacterORM.id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
@@ -315,19 +320,17 @@ class SQLiteCharacterRepository:
                 or_(
                     and_(
                         KnowledgeRelationORM.source_type == _CHARACTER,
-                        KnowledgeRelationORM.source_id == character_id,
+                        KnowledgeRelationORM.source_id == cid,
                     ),
                     and_(
                         KnowledgeRelationORM.target_type == _CHARACTER,
-                        KnowledgeRelationORM.target_id == character_id,
+                        KnowledgeRelationORM.target_id == cid,
                     ),
                 )
             )
         )
         await self._session.execute(
-            sa_delete(CharacterGroupMemberORM).where(
-                CharacterGroupMemberORM.character_id == character_id
-            )
+            sa_delete(CharacterGroupMemberORM).where(CharacterGroupMemberORM.character_id == cid)
         )
         await self._session.delete(orm)
         await self._session.commit()
@@ -335,34 +338,45 @@ class SQLiteCharacterRepository:
 
     # ── CharacterGroupMember（N:M #701）────────────────────────
 
-    async def add_group_member(self, character_id: int, group_id: int) -> None:
+    async def add_group_member(self, character_id: uuid.UUID, group_id: uuid.UUID) -> None:
         """插入角色-分组关联行（复合主键幂等，重复插入不报错）."""
+        cid = require_uuid_pk(character_id)
+        gid = require_uuid_pk(group_id)
+        if cid is None or gid is None:
+            return
         stmt = (
             sa_insert(CharacterGroupMemberORM)
-            .values(character_id=character_id, group_id=group_id)
+            .values(character_id=cid, group_id=gid)
             .prefix_with("OR IGNORE")
         )
         await self._session.execute(stmt)
         await self._session.commit()
 
-    async def remove_group_member(self, character_id: int, group_id: int) -> None:
+    async def remove_group_member(self, character_id: uuid.UUID, group_id: uuid.UUID) -> None:
         """移除单条角色-分组关联行（不存在则无操作）."""
+        cid = require_uuid_pk(character_id)
+        gid = require_uuid_pk(group_id)
+        if cid is None or gid is None:
+            return
         stmt = sa_delete(CharacterGroupMemberORM).where(
-            CharacterGroupMemberORM.character_id == character_id,
-            CharacterGroupMemberORM.group_id == group_id,
+            CharacterGroupMemberORM.character_id == cid,
+            CharacterGroupMemberORM.group_id == gid,
         )
         await self._session.execute(stmt)
         await self._session.commit()
 
-    async def list_members_by_group(self, group_id: int) -> builtins.list[Character]:
+    async def list_members_by_group(self, group_id: uuid.UUID) -> builtins.list[Character]:
         """按分组查询角色列表（N 端）."""
+        gid = require_uuid_pk(group_id)
+        if gid is None:
+            return []
         stmt = (
             select(CharacterORM)
             .join(
                 CharacterGroupMemberORM,
                 CharacterGroupMemberORM.character_id == CharacterORM.id,
             )
-            .where(CharacterGroupMemberORM.group_id == group_id)
+            .where(CharacterGroupMemberORM.group_id == gid)
             .order_by(CharacterORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -370,15 +384,20 @@ class SQLiteCharacterRepository:
         group_ids_map = await self._list_group_ids([o.id for o in orms])
         return [_char_orm_to_domain(o, group_ids_map.get(o.id, [])) for o in orms]
 
-    async def list_groups_by_character(self, character_id: int) -> builtins.list[CharacterGroup]:
+    async def list_groups_by_character(
+        self, character_id: uuid.UUID
+    ) -> builtins.list[CharacterGroup]:
         """按角色查询分组列表（M 端，N:M）."""
+        cid = require_uuid_pk(character_id)
+        if cid is None:
+            return []
         stmt = (
             select(CharacterGroupORM)
             .join(
                 CharacterGroupMemberORM,
                 CharacterGroupMemberORM.group_id == CharacterGroupORM.id,
             )
-            .where(CharacterGroupMemberORM.character_id == character_id)
+            .where(CharacterGroupMemberORM.character_id == cid)
             .order_by(CharacterGroupORM.sort_order.asc(), CharacterGroupORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -395,9 +414,9 @@ class SQLiteCharacterRepository:
         await self._session.refresh(orm)
         return _group_orm_to_domain(orm)
 
-    async def get_group(self, group_id: int | uuid.UUID) -> CharacterGroup | None:
+    async def get_group(self, group_id: uuid.UUID) -> CharacterGroup | None:
         """按主键查询分组。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        gid = uuid_to_pk_or_none(group_id)
+        gid = require_uuid_pk(group_id)
         if gid is None:
             return None
         stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == gid)
@@ -405,11 +424,14 @@ class SQLiteCharacterRepository:
         orm = result.scalar_one_or_none()
         return _group_orm_to_domain(orm) if orm else None
 
-    async def list_groups(self, project_id: int) -> builtins.list[CharacterGroup]:
+    async def list_groups(self, project_id: uuid.UUID) -> builtins.list[CharacterGroup]:
         """查询项目内全部分组（按 sort_order 升序）."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(CharacterGroupORM)
-            .where(CharacterGroupORM.project_id == project_id)
+            .where(CharacterGroupORM.project_id == pid)
             .order_by(CharacterGroupORM.sort_order.asc(), CharacterGroupORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -441,15 +463,18 @@ class SQLiteCharacterRepository:
             raise ValueError(f"CharacterGroup {group_id} not found after update")
         return _group_orm_to_domain(orm)
 
-    async def hard_delete_group(self, group_id: int) -> bool:
+    async def hard_delete_group(self, group_id: uuid.UUID) -> bool:
         """物理删除分组，关联表行显式移除（角色本身保留，v1.1 默认真删语义）."""
-        stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == group_id)
+        gid = require_uuid_pk(group_id)
+        if gid is None:
+            return False
+        stmt = select(CharacterGroupORM).where(CharacterGroupORM.id == gid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
         await self._session.execute(
-            sa_delete(CharacterGroupMemberORM).where(CharacterGroupMemberORM.group_id == group_id)
+            sa_delete(CharacterGroupMemberORM).where(CharacterGroupMemberORM.group_id == gid)
         )
         await self._session.delete(orm)
         await self._session.commit()
@@ -465,9 +490,9 @@ class SQLiteCharacterRepository:
         await self._session.refresh(orm)
         return _relation_orm_to_domain(orm)
 
-    async def get_relation(self, relation_id: int | uuid.UUID) -> CharacterRelation | None:
+    async def get_relation(self, relation_id: uuid.UUID) -> CharacterRelation | None:
         """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        rid = uuid_to_pk_or_none(relation_id)
+        rid = require_uuid_pk(relation_id)
         if rid is None:
             return None
         stmt = select(KnowledgeRelationORM).where(
@@ -480,14 +505,18 @@ class SQLiteCharacterRepository:
         return _relation_orm_to_domain(orm) if orm else None
 
     async def get_relation_by_key(
-        self, from_id: int, to_id: int, relation_type: str
+        self, from_id: uuid.UUID, to_id: uuid.UUID, relation_type: str
     ) -> CharacterRelation | None:
         """按 (from, to, relation_type) 唯一键查询关系."""
+        fid = require_uuid_pk(from_id)
+        tid = require_uuid_pk(to_id)
+        if fid is None or tid is None:
+            return None
         stmt = select(KnowledgeRelationORM).where(
             KnowledgeRelationORM.source_type == _CHARACTER,
-            KnowledgeRelationORM.source_id == from_id,
+            KnowledgeRelationORM.source_id == fid,
             KnowledgeRelationORM.target_type == _CHARACTER,
-            KnowledgeRelationORM.target_id == to_id,
+            KnowledgeRelationORM.target_id == tid,
             KnowledgeRelationORM.relation_type == relation_type,
         )
         result = await self._session.execute(stmt)
@@ -495,22 +524,26 @@ class SQLiteCharacterRepository:
         return _relation_orm_to_domain(orm) if orm else None
 
     async def list_relations(
-        self, project_id: int, character_id: int | None = None
+        self, project_id: uuid.UUID, character_id: uuid.UUID | None = None
     ) -> builtins.list[CharacterRelation]:
         """查询项目内关系列表，可按角色过滤（双向）.
 
         提供 character_id 时返回该角色作为起点或终点的全部关系。
         """
+        pid = require_uuid_pk(project_id)
+        cid = require_uuid_pk(character_id)
+        if pid is None or (character_id is not None and cid is None):
+            return []
         stmt = select(KnowledgeRelationORM).where(
             KnowledgeRelationORM.source_type == _CHARACTER,
             KnowledgeRelationORM.target_type == _CHARACTER,
-            KnowledgeRelationORM.project_id == project_id,
+            KnowledgeRelationORM.project_id == pid,
         )
         if character_id is not None:
             stmt = stmt.where(
                 or_(
-                    KnowledgeRelationORM.source_id == character_id,
-                    KnowledgeRelationORM.target_id == character_id,
+                    KnowledgeRelationORM.source_id == cid,
+                    KnowledgeRelationORM.target_id == cid,
                 )
             )
         stmt = stmt.order_by(KnowledgeRelationORM.id.asc())
@@ -552,10 +585,13 @@ class SQLiteCharacterRepository:
             raise ValueError(f"CharacterRelation {rel_id} not found after update")
         return _relation_orm_to_domain(orm)
 
-    async def hard_delete_relation(self, relation_id: int) -> bool:
+    async def hard_delete_relation(self, relation_id: uuid.UUID) -> bool:
         """物理删除关系（v1.1 默认真删语义）."""
+        rid = require_uuid_pk(relation_id)
+        if rid is None:
+            return False
         stmt = select(KnowledgeRelationORM).where(
-            KnowledgeRelationORM.id == relation_id,
+            KnowledgeRelationORM.id == rid,
             KnowledgeRelationORM.source_type == _CHARACTER,
             KnowledgeRelationORM.target_type == _CHARACTER,
         )

@@ -7,9 +7,11 @@ ports 收窄 —— 那些随实现层在后续批次推进（见 issue #1134 �
   - 入参必须是 `uuid.UUID` 或合法 uuid 字符串；**不接受裸 int**
   - 越界真 uuid → 返 None（404 语义，保持 #1106 行为）
   - None 透传
-  - 老入口 `uuid_to_pk_or_none` 行为不变（兼容期）
 
-RED 预期：`_id_guard.require_uuid_pk` 尚不存在 → ImportError。
+⚠️ **契约变更（#1134 批 4 / #1291，2026-09-19）**：老入口 `uuid_to_pk_or_none`
+随 int 兼容面**退役**（零消费者）。原 `TestExistingBehaviourPreserved` 与
+`TestEquivalenceUuidVsIntPath` 两个类（断言「老入口行为不变」「新老入口等价」）
+已随之删除 —— 它们守护的正是本批要退役的形态。
 """
 
 from __future__ import annotations
@@ -27,10 +29,7 @@ from inkflow.domain.ports import map_repository as _map_port
 from inkflow.domain.ports import outline_repository as _outline_port
 from inkflow.domain.ports import project_repository as _project_port
 from inkflow.domain.ports import world_repository as _world_port
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 class TestRequireUuidPk:
@@ -62,24 +61,6 @@ class TestRequireUuidPk:
 
     def test_none_passthrough(self) -> None:
         assert require_uuid_pk(None) is None
-
-
-class TestExistingBehaviourPreserved:
-    """老入口 uuid_to_pk_or_none 行为不变（兼容期）。"""
-
-    def test_still_accepts_int(self) -> None:
-        assert uuid_to_pk_or_none(5) == 5
-
-    def test_still_accepts_uuid(self) -> None:
-        assert uuid_to_pk_or_none(uuid.UUID(int=5)) == 5
-
-    def test_overflow_still_none(self) -> None:
-        assert uuid_to_pk_or_none(uuid.uuid4()) is None
-
-    def test_equivalence_int_vs_uuid(self) -> None:
-        """新老入口对同一逻辑 id 结果一致（迁移等价性）。"""
-        for n in (1, 42, 999999):
-            assert require_uuid_pk(uuid.UUID(int=n)) == uuid_to_pk_or_none(n)
 
 
 # ---------------------------------------------------------------------------
@@ -184,14 +165,6 @@ class TestNoRedundantIntUnwrapAtCallSites:
             pytest.skip("copy_service.py 不存在于本基线")
         text = copy_svc.read_text(encoding="utf-8", errors="ignore")
         assert "id_map" in text, "copy_service 结构已变 —— 请复核本守护用例是否仍适用"
-
-
-class TestEquivalenceUuidVsIntPath:
-    """断言 4b：新老入口对同一逻辑 id 结果一致（迁移等价性）。"""
-
-    @pytest.mark.parametrize("n", [1, 42, 999999])
-    def test_equivalence(self, n: int) -> None:
-        assert require_uuid_pk(uuid.UUID(int=n)) == uuid_to_pk_or_none(n)
 
 
 class TestFalsifiability:

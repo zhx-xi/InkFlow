@@ -38,10 +38,7 @@ from inkflow.domain.models.extraction import (
     ExtractionType,
 )
 from inkflow.infrastructure.database.models.extraction_run import ExtractionRunORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -101,7 +98,7 @@ class SQLExtractionRunRepository:
 
     async def get(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         type: ExtractionType,
         source_key: str,
     ) -> ExtractionRun | None:
@@ -109,12 +106,10 @@ class SQLExtractionRunRepository:
 
         门面增量判定用（spec §5.2 步骤 ①）: 命中 = 该源已有 run 记录，
         比较 content_hash 决定 skip；未命中 = 首次提取。
+
+        #1134 批 4（#1291）：project_id 入参收窄为 ``uuid.UUID``。
         """
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(project_id, uuid.UUID):
-            pid = require_uuid_pk(project_id)
-        else:
-            pid = uuid_to_pk_or_none(project_id)
+        pid = require_uuid_pk(project_id)
         if pid is None:
             return None
         stmt = select(ExtractionRunORM).where(
@@ -177,7 +172,7 @@ class SQLExtractionRunRepository:
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         type: ExtractionType | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -185,7 +180,7 @@ class SQLExtractionRunRepository:
         """分页查询项目内的 run 记录，按 run_at DESC 排序（最新在前）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             type: 提取类型精确过滤（不传 = 全部）.
             offset: 分页偏移.
             limit: 分页大小.
@@ -193,8 +188,11 @@ class SQLExtractionRunRepository:
         Returns:
             (run 列表, 总数) 元组.
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
         base = select(ExtractionRunORM).where(
-            ExtractionRunORM.project_id == project_id,
+            ExtractionRunORM.project_id == pid,
         )
         if type is not None:
             base = base.where(ExtractionRunORM.type == type.value)

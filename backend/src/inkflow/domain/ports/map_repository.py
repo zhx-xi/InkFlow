@@ -43,11 +43,11 @@ class MapRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_by_name(self, project_id: int, name: str) -> WorldMap | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> WorldMap | None:
         """按项目内地图名查询.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             name: 地图名（已去空白）.
 
         Returns:
@@ -57,8 +57,8 @@ class MapRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
-        root_location_id: int | None = None,
+        project_id: uuid.UUID,
+        root_location_id: uuid.UUID | None = None,
         top_level_only: bool = False,
         offset: int = 0,
         limit: int = 50,
@@ -71,7 +71,7 @@ class MapRepositoryProtocol(Protocol):
         - root_location_id 非 None = 精确过滤（忽略 top_level_only）
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             root_location_id: 根地点精确过滤（可选）.
             top_level_only: True 只返回全局图（root_location_id IS NULL）.
             offset: 分页偏移.
@@ -93,36 +93,36 @@ class MapRepositoryProtocol(Protocol):
         """
         ...
 
-    async def delete(self, map_id: int) -> bool:
+    async def delete(self, map_id: uuid.UUID) -> bool:
         """真删地图（单事务显式级联删 pins）.
 
         单事务: DELETE map_pins WHERE map_id=? + DELETE maps WHERE id=?
         （D10=b，显式级联，不依赖 DB FK 动作）.
 
         Args:
-            map_id: 地图主键（int）.
+            map_id: 地图主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
         """
         ...
 
-    async def delete_many(self, map_ids: builtins.list[int]) -> int:
+    async def delete_many(self, map_ids: builtins.list[uuid.UUID]) -> int:
         """单事务按 id 集合真删多张地图（先删 pins 再删 maps 行）.
 
         Args:
-            map_ids: 地图主键列表（int）.
+            map_ids: 地图主键列表（领域 UUID，见 #1291）.
 
         Returns:
             删除的 maps 行数（列表含不存在 id 不影响计数；空列表 = 0）.
         """
         ...
 
-    async def list_pins(self, map_id: int) -> builtins.list[MapPin]:
+    async def list_pins(self, map_id: uuid.UUID) -> builtins.list[MapPin]:
         """列出地图全部 pin.
 
         Args:
-            map_id: 地图主键（int）.
+            map_id: 地图主键（领域 UUID，见 #1291）.
 
         Returns:
             pin 列表，按 created_at ASC 排序.
@@ -140,11 +140,11 @@ class MapRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_pin(self, pin_id: int) -> MapPin | None:
+    async def get_pin(self, pin_id: uuid.UUID) -> MapPin | None:
         """按主键查询 pin（update_pin 前置——service 需现有 pin 合并部分更新）.
 
         Args:
-            pin_id: pin 主键（int）.
+            pin_id: pin 主键（领域 UUID，见 #1291）.
 
         Returns:
             命中返回 MapPin，否则 None.
@@ -162,18 +162,18 @@ class MapRepositoryProtocol(Protocol):
         """
         ...
 
-    async def delete_pin(self, pin_id: int) -> bool:
+    async def delete_pin(self, pin_id: uuid.UUID) -> bool:
         """真删 pin.
 
         Args:
-            pin_id: pin 主键（int）.
+            pin_id: pin 主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
         """
         ...
 
-    async def children(self, map_id: int) -> builtins.list[WorldMap]:
+    async def children(self, map_id: uuid.UUID) -> builtins.list[WorldMap]:
         """查询本图 pin 关联地点的子地图（drill-down，Q1=B）.
 
         单 SQL: JOIN map_pins p（p.map_id=:id AND p.location_id IS NOT NULL）
@@ -182,7 +182,7 @@ class MapRepositoryProtocol(Protocol):
         DISTINCT; ORDER BY created_at ASC.
 
         Args:
-            map_id: 地图主键（int）.
+            map_id: 地图主键（领域 UUID，见 #1291）.
 
         Returns:
             子地图列表，按 created_at ASC 排序.
@@ -191,15 +191,15 @@ class MapRepositoryProtocol(Protocol):
 
     async def list_by_root_locations(
         self,
-        project_id: int,
-        location_ids: builtins.list[int],
+        project_id: uuid.UUID,
+        location_ids: builtins.list[uuid.UUID],
         include_global: bool = True,
     ) -> builtins.list[WorldMap]:
         """按根地点集合查地图（#175 跨书复制共用查询；include_global=True 含全局图）.
 
         Args:
-            project_id: 项目主键（int）.
-            location_ids: 根地点主键列表（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
+            location_ids: 根地点主键列表（领域 UUID，见 #1291）.
             include_global: True 时附加 root_location_id IS NULL 的全局图（Q3=B）.
 
         Returns:
@@ -207,42 +207,42 @@ class MapRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_maps_by_project(self, project_id: int) -> builtins.list[WorldMap]:
+    async def list_maps_by_project(self, project_id: uuid.UUID) -> builtins.list[WorldMap]:
         """收集项目全部地图（项目硬删钩子 cleanup 用）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             项目内全部地图列表.
         """
         ...
 
-    async def delete_by_project(self, project_id: int) -> int:
+    async def delete_by_project(self, project_id: uuid.UUID) -> int:
         """单事务真删项目全部地图（先删 pins 再删 maps 行）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             删除的 maps 行数（D10=b 项目硬删钩子）.
         """
         ...
 
-    async def clear_location_pins(self, location_id: int) -> int:
+    async def clear_location_pins(self, location_id: uuid.UUID) -> int:
         """解除地点关联 pin（UPDATE map_pins SET location_id=NULL）.
 
         pin 保留、label 不变（D10=b 地点硬删钩子，SET NULL 由 service 显式执行）.
 
         Args:
-            location_id: 地点主键（int）.
+            location_id: 地点主键（领域 UUID，见 #1291）.
 
         Returns:
             更新行数.
         """
         ...
 
-    async def clear_ref_pins(self, ref_type: str, ref_ids: builtins.list[int]) -> int:
+    async def clear_ref_pins(self, ref_type: str, ref_ids: builtins.list[uuid.UUID]) -> int:
         """解除角色/事件关联 pin（UPDATE map_pins SET ref_id=NULL
         WHERE type=:t AND ref_id IN :ids）.
 
@@ -251,14 +251,14 @@ class MapRepositoryProtocol(Protocol):
 
         Args:
             ref_type: pin 类型（role/event）.
-            ref_ids: 待解除关联的实体主键列表（int）.
+            ref_ids: 待解除关联的实体主键列表（领域 UUID，见 #1291）.
 
         Returns:
             更新行数.
         """
         ...
 
-    async def clear_map_root_locations(self, location_ids: builtins.list[int]) -> int:
+    async def clear_map_root_locations(self, location_ids: builtins.list[uuid.UUID]) -> int:
         """解除地图根地点关联（UPDATE maps SET root_location_id=NULL
         WHERE root_location_id IN :ids）.
 
@@ -266,7 +266,7 @@ class MapRepositoryProtocol(Protocol):
         （图保留，仅解除根地点关联）.
 
         Args:
-            location_ids: 待解除关联的地点主键列表（int）.
+            location_ids: 待解除关联的地点主键列表（领域 UUID，见 #1291）.
 
         Returns:
             更新行数.

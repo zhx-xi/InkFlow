@@ -1,18 +1,16 @@
-"""#633 溢出守卫补测：memory_service 三个未覆盖分支（2026-08-24）.
+"""#633 溢出守卫补测：memory_service 三个方法对「越界项目 UUID」的降级语义（2026-08-24）.
 
-PR #633（main @ 84e2ee8）为 5 个方法加了 `project_id.int > 2**63 - 1` 早退守卫；
-API 层测试已覆盖 get_summaries / remove_summaries（HTTP 可见路径），CI coverage-backend
-门禁 branch=94.98% < 95% 差在其余 3 个守卫：
+⚠️ **契约变更（#1134 批 4 / #1291，2026-09-19）**：服务层的
+`project_id.int > 2**63 - 1` 早退守卫**已退役** —— 越界判定收敛到 repo 层
+`require_uuid_pk`（返回 None = 不存在）。服务层不再自行 `.int` 预检。
 
-- is_learning_enabled → False；
-- get_preferences_for_injection → []；
-- summarize → {"project_id", "summarized": False, "project": None, "user": None}.
+本文件因此改为断言**可观测语义不变**：越界 UUID ⇒
+- `is_learning_enabled` → False；
+- `get_preferences_for_injection` → []；
+- `summarize` → skipped 结构。
+驱动方式改为「repo.get 返回 None（越界 UUID 在 repo 层的等价结果）」。
 
-本文件用鸭子类型 mock（同 test_memory_service_coverage.py 的 fixture 模式）分别触发
-3 个守卫的 True 分支，并断言 project_repo.get 未被 await（溢出 UUID 不应落到 64 位
-int 背书查询）。注意 get_preferences_for_injection 的内层守卫位于 is_learning_enabled
-之后——同一溢出 UUID 会先被开关短路，故该用例将开关视为已通过（AsyncMock 恒 True），
-直达内层 2**63-1 守卫。
+依据：#1134 批 4（#1291）· ADR-060 D9 收窄契约。原守卫由来见 #633。
 """
 
 from __future__ import annotations
@@ -38,6 +36,9 @@ def _make_service() -> tuple[MemoryService, dict]:
         "audit_service": AsyncMock(),
     }
     deps["preference_repo"].list_by_project.return_value = ([], 0)
+    # #1291：越界 UUID 在 repo 层的等价结果 = 查不到（require_uuid_pk → None）
+    deps["project_repo"].get.return_value = None
+    deps["event_repo"].list_by_project.return_value = ([], 0)
     service = MemoryService(
         preference_repo=deps["preference_repo"],
         event_repo=deps["event_repo"],
@@ -48,25 +49,23 @@ def _make_service() -> tuple[MemoryService, dict]:
 
 
 async def test_is_learning_enabled_overflow_uuid_returns_false() -> None:
-    """#633 守卫①: project_id.int 溢出 → 短路返回 False，不查 project_repo.get."""
+    """越界 project UUID（repo 层查不到）→ False."""
     service, deps = _make_service()
     assert await service.is_learning_enabled(OVERFLOW_ID) is False
-    deps["project_repo"].get.assert_not_awaited()
+    deps["project_repo"].get.assert_awaited()  # #1291：判定权移交 repo 层
 
 
 async def test_get_preferences_for_injection_overflow_uuid_returns_empty() -> None:
-    """#633 守卫②: 开关通过后 project_id.int 溢出 → 短路返回 []，不调 project_repo.get."""
+    """越界 project UUID（repo 层查不到）→ []."""
     service, deps = _make_service()
-    # 内层守卫位于 is_learning_enabled 之后，同一溢出 UUID 会先被开关短路；
-    # 故将开关视为已通过（AsyncMock 恒 True），直达 2**63-1 守卫分支。
+    # 开关短路在前——视为已通过，直达项目读取分支
     service.is_learning_enabled = AsyncMock(return_value=True)
     assert await service.get_preferences_for_injection(OVERFLOW_ID) == []
     deps["preference_repo"].list_by_project.assert_awaited_once_with(OVERFLOW_ID)
-    deps["project_repo"].get.assert_not_awaited()
 
 
 async def test_summarize_overflow_uuid_returns_skipped_structure() -> None:
-    """#633 守卫③: project_id.int 溢出 → 短路返回 skipped 结构，不查 project_repo.get."""
+    """越界 project UUID（repo 层查不到）→ skipped 结构."""
     service, deps = _make_service()
     result = await service.summarize(OVERFLOW_ID)
     assert result == {
@@ -75,4 +74,4 @@ async def test_summarize_overflow_uuid_returns_skipped_structure() -> None:
         "project": None,
         "user": None,
     }
-    deps["project_repo"].get.assert_not_awaited()
+    deps["project_repo"].get.assert_awaited()  # #1291：判定权移交 repo 层

@@ -229,7 +229,7 @@ class TestListByConversation:
         repo = SQLiteChatMessageRepository(db_session)
         m1 = await repo.add(_make_message(content="活动"))
         await repo.add(_make_message(content="待归档"))
-        await repo.archive_message(m1.id.int)
+        await repo.archive_message(m1.id)
         # archive_message 归档的是 m1（第一条）；第二条保持活动
         items, total = await repo.list_by_conversation(CONV_ID)
         assert total == 1
@@ -361,7 +361,7 @@ class TestArchiveDeleteRestoreMessage:
         _items, total = await repo.list_by_conversation(CONV_ID)
         assert total == 1
 
-        ok = await repo.archive_message(created.id.int)
+        ok = await repo.archive_message(created.id)
         assert ok is True
 
         items, total = await repo.list_by_conversation(CONV_ID)
@@ -370,12 +370,12 @@ class TestArchiveDeleteRestoreMessage:
 
     async def test_archive_not_found_false(self, db_session):
         repo = SQLiteChatMessageRepository(db_session)
-        assert await repo.archive_message(999_999) is False
+        assert await repo.archive_message(uuid.uuid4()) is False
 
     async def test_force_delete_removes_row(self, db_session):
         repo = SQLiteChatMessageRepository(db_session)
         created = await repo.add(_make_message(content="待真删"))
-        ok = await repo.force_delete_message(created.id.int)
+        ok = await repo.force_delete_message(created.id)
         assert ok is True
         _items, total = await repo.list_by_conversation(CONV_ID)
         assert total == 0
@@ -383,10 +383,10 @@ class TestArchiveDeleteRestoreMessage:
     async def test_restore_reappears_in_list(self, db_session):
         repo = SQLiteChatMessageRepository(db_session)
         created = await repo.add(_make_message(content="待恢复"))
-        await repo.archive_message(created.id.int)
+        await repo.archive_message(created.id)
         assert (await repo.list_by_conversation(CONV_ID))[1] == 0
 
-        restored = await repo.restore_message(created.id.int)
+        restored = await repo.restore_message(created.id)
         assert restored is not None
         assert restored.id == created.id
         assert restored.is_deleted is False

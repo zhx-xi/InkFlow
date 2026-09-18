@@ -44,10 +44,10 @@ def _coerce_uuid(value: object) -> uuid.UUID:
 
 
 def _coerce_id(value: object) -> object:
-    """尽力规范化实体 id：可解析为 UUID 则转 UUID（服务层再转 int），否则原样透传。
+    """尽力规范化实体 id：可解析为 UUID 则转 UUID（服务层直传领域 UUID），否则原样透传。
 
     #766 RED 契约：测试直传非 UUID 字符串（如 "map-1"）须成功 → 不强制校验；
-    真实调用（LLM 传 UUID 字符串）转 UUID 供服务层 _to_int_id 转换。
+    真实调用（LLM 传 UUID 字符串）转 UUID 供服务层直传仓储（#1291）。
     """
     if isinstance(value, uuid.UUID):
         return value

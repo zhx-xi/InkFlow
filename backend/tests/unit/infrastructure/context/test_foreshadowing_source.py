@@ -136,15 +136,15 @@ class TestForeshadowingSourceCollect:
         assert [i.priority for i in items] == [90, 60, 20]
         assert [i.title for i in items] == ["伏笔：主线", "伏笔：支线", "伏笔：彩蛋"]
 
-    async def test_calls_list_open_with_int_project_id(self) -> None:
-        """UUID → int 主键转换：以 project_id.int 调用 list_open（F1 惯例）."""
+    async def test_calls_list_open_with_domain_uuid(self) -> None:
+        """#1291：list_open 直接收领域 UUID（不再 .int 中转）."""
         repo = AsyncMock()
         repo.list_open.return_value = []
         source = ForeshadowingSource(repo)
 
         await source.collect(uuid.UUID(int=100), uuid.UUID(int=2))
 
-        repo.list_open.assert_awaited_once_with(100)
+        repo.list_open.assert_awaited_once_with(uuid.UUID(int=100))
 
     async def test_returns_empty_when_no_open_foreshadowings(self) -> None:
         """无 open 伏笔 → 空列表（跳过，不报错）."""

@@ -225,7 +225,7 @@ class TestPlotPoint908Service:
         assert result is not None
         assert result.arc_id == arc.id
 
-        got = await repo.get_point(point.id.int)
+        got = await repo.get_point(point.id)
         assert got is not None
         assert got.arc_id == arc.id
 
@@ -240,7 +240,7 @@ class TestPlotPoint908Service:
         assert result is not None
         assert result.arc_id is None
 
-        got = await repo.get_point(point.id.int)
+        got = await repo.get_point(point.id)
         assert got is not None
         assert got.arc_id is None
 

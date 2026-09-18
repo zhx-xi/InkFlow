@@ -2,8 +2,7 @@
 
 CharacterRepositoryProtocol 定义 Character / CharacterGroup /
 CharacterRelation 三组 CRUD 操作，基础设施层（SQLite / mock / memory）
-实现此 Protocol。仓储层 `get` 主键入参用领域 UUID（#1271 收窄），
-其余方法沿用 int/uuid 兼容归一。
+实现此 Protocol。仓储层主键入参统一用领域 UUID（#1134 批 4 / #1291 收窄收尾）。
 
 依据: specs/f9-character/spec.md §8.1。
 """
@@ -56,11 +55,11 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_by_name(self, project_id: int, name: str) -> Character | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> Character | None:
         """按项目内角色名查询角色.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             name: 角色名（已去空白）.
 
         Returns:
@@ -70,9 +69,9 @@ class CharacterRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
-        group_id: int | None = None,
+        group_id: uuid.UUID | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
         offset: int = 0,
@@ -81,7 +80,7 @@ class CharacterRepositoryProtocol(Protocol):
         """分页查询项目内角色列表，支持搜索与分组过滤.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             search: 角色名模糊搜索（可选）.
             group_id: 分组主键过滤（可选）.
             sort_by: 排序字段（updated_at / name / created_at）.
@@ -105,11 +104,11 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete(self, character_id: int) -> bool:
+    async def hard_delete(self, character_id: uuid.UUID) -> bool:
         """物理删除角色（关系由 DB FK CASCADE 级联删除，v1.1 默认真删语义）.
 
         Args:
-            character_id: 角色主键（int）.
+            character_id: 角色主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
@@ -129,22 +128,22 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_group(self, group_id: int) -> CharacterGroup | None:
+    async def get_group(self, group_id: uuid.UUID) -> CharacterGroup | None:
         """按主键查询分组.
 
         Args:
-            group_id: 分组主键（int）.
+            group_id: 分组主键（领域 UUID，见 #1291）.
 
         Returns:
             若命中则返回 CharacterGroup，否则返回 None.
         """
         ...
 
-    async def list_groups(self, project_id: int) -> builtins.list[CharacterGroup]:
+    async def list_groups(self, project_id: uuid.UUID) -> builtins.list[CharacterGroup]:
         """查询项目内全部分组.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             分组列表（按 sort_order 升序）.
@@ -162,11 +161,11 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete_group(self, group_id: int) -> bool:
+    async def hard_delete_group(self, group_id: uuid.UUID) -> bool:
         """物理删除分组（成员角色 group_id 置 NULL，v1.1 默认真删语义）.
 
         Args:
-            group_id: 分组主键（int）.
+            group_id: 分组主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
@@ -186,11 +185,11 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_relation(self, relation_id: int) -> CharacterRelation | None:
+    async def get_relation(self, relation_id: uuid.UUID) -> CharacterRelation | None:
         """按主键查询关系.
 
         Args:
-            relation_id: 关系主键（int）.
+            relation_id: 关系主键（领域 UUID，见 #1291）.
 
         Returns:
             若命中则返回 CharacterRelation，否则返回 None.
@@ -198,13 +197,13 @@ class CharacterRepositoryProtocol(Protocol):
         ...
 
     async def get_relation_by_key(
-        self, from_id: int, to_id: int, relation_type: str
+        self, from_id: uuid.UUID, to_id: uuid.UUID, relation_type: str
     ) -> CharacterRelation | None:
         """按 (from, to, relation_type) 唯一键查询关系.
 
         Args:
-            from_id: 起点角色主键（int）.
-            to_id: 终点角色主键（int）.
+            from_id: 起点角色主键（领域 UUID，见 #1291）.
+            to_id: 终点角色主键（领域 UUID，见 #1291）.
             relation_type: 关系类型.
 
         Returns:
@@ -213,12 +212,12 @@ class CharacterRepositoryProtocol(Protocol):
         ...
 
     async def list_relations(
-        self, project_id: int, character_id: int | None = None
+        self, project_id: uuid.UUID, character_id: uuid.UUID | None = None
     ) -> builtins.list[CharacterRelation]:
         """查询项目内关系列表，可按角色过滤（双向）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             character_id: 角色主键（可选）；提供时返回该角色作为
                 起点或终点的全部关系（双向）.
 
@@ -238,11 +237,11 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete_relation(self, relation_id: int) -> bool:
+    async def hard_delete_relation(self, relation_id: uuid.UUID) -> bool:
         """物理删除关系（v1.1 默认真删语义）.
 
         Args:
-            relation_id: 关系主键（int）.
+            relation_id: 关系主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.

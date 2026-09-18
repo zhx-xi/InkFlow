@@ -82,20 +82,6 @@ _SEVERITY_ORDER: dict[AuditSeverity, int] = {
 }
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1/F14 `_to_int_id` 模式）。
-
-    Args:
-        value: 领域 UUID 或已有 int 主键.
-
-    Returns:
-        仓储层 int 主键（UUID 取其 int 表示）.
-    """
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _finding_sort_key(finding: AuditFinding) -> tuple[int, int, str]:
     """findings 稳定排序键（spec §6.3: dimension 序 → severity 序 → id）.
 
@@ -183,12 +169,8 @@ class AuditService:
 
         # ② 单次全量读取（分页循环取全量，共享同一次快照，§5.1 要点 4/5）
         chars: list[Character] = await self._load_all(self._character_repo.list, project_id)
-        rels: list[CharacterRelation] = await self._character_repo.list_relations(
-            _to_int_id(project_id)
-        )
-        groups: list[CharacterGroup] = await self._character_repo.list_groups(
-            _to_int_id(project_id)
-        )
+        rels: list[CharacterRelation] = await self._character_repo.list_relations(project_id)
+        groups: list[CharacterGroup] = await self._character_repo.list_groups(project_id)
         worlds: list[WorldSetting] = await self._load_all(self._world_repo.list, project_id)
         view = await self._timeline_service.get_timeline_view(project_id)
         events: list[TimelineEvent] = view.narrative_order if view is not None else []
@@ -241,7 +223,7 @@ class AuditService:
         list_all 方法（§5.1 要点 5，YAGNI）。
 
         Args:
-            repo_list: 各模块仓储的分页 list 方法（首参 project_id int，
+            repo_list: 各模块仓储的分页 list 方法（首参 project_id 领域 UUID，
                 支持 offset/limit 关键字）.
             project_id: 所属项目 UUID.
 
@@ -251,7 +233,7 @@ class AuditService:
         items: list[Any] = []
         offset = 0
         while True:
-            page, _total = await repo_list(_to_int_id(project_id), offset=offset, limit=_PAGE_SIZE)
+            page, _total = await repo_list(project_id, offset=offset, limit=_PAGE_SIZE)
             items.extend(page)
             if len(page) < _PAGE_SIZE:
                 break

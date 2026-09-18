@@ -139,7 +139,7 @@ class TestOutlineRepository:
         row = await db_session.execute(select(OutlineORM).where(OutlineORM.id == saved.id.int))
         assert row.scalar_one().name == "第一卷大纲"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.project_id == uuid.UUID(int=project.id)
@@ -149,27 +149,27 @@ class TestOutlineRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteOutlineRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_get_by_name_hit_miss(self, db_session, project):
         """get_by_name 命中大纲；未命中/跨项目/真删后均返回 None."""
         repo = SQLiteOutlineRepository(db_session)
         o = await repo.add(_outline(project, "第一卷大纲"))
 
-        hit = await repo.get_by_name(project.id, "第一卷大纲")
+        hit = await repo.get_by_name(uuid.UUID(int=project.id), "第一卷大纲")
         assert hit is not None and hit.id == o.id
-        assert await repo.get_by_name(project.id, "不存在") is None
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "不存在") is None
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get_by_name(other.id, "第一卷大纲") is None
+        assert await repo.get_by_name(uuid.UUID(int=other.id), "第一卷大纲") is None
 
         # 真删后不再命中
-        await repo.hard_delete(o.id.int)
-        assert await repo.get_by_name(project.id, "第一卷大纲") is None
+        await repo.hard_delete(o.id)
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "第一卷大纲") is None
 
     async def test_list_returns_outlines_with_total(self, db_session, project):
         """list 返回 (列表, 总数)（真删无软删过滤）."""
@@ -178,7 +178,7 @@ class TestOutlineRepository:
         o2 = await repo.add(_outline(project, "第二卷大纲"))
         o3 = await repo.add(_outline(project, "番外大纲"))
 
-        outlines, total = await repo.list(project.id)
+        outlines, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 3
         assert {o.id for o in outlines} == {o1.id, o2.id, o3.id}
 
@@ -189,11 +189,11 @@ class TestOutlineRepository:
         await repo.add(_outline(project, "第二卷大纲"))
         await repo.add(_outline(project, "人物设定"))
 
-        outlines, total = await repo.list(project.id, search="大纲")
+        outlines, total = await repo.list(uuid.UUID(int=project.id), search="大纲")
         assert total == 2
         assert {o.name for o in outlines} == {"第一卷大纲", "第二卷大纲"}
 
-        outlines2, total2 = await repo.list(project.id, search="不存在")
+        outlines2, total2 = await repo.list(uuid.UUID(int=project.id), search="不存在")
         assert total2 == 0
         assert outlines2 == []
 
@@ -204,13 +204,15 @@ class TestOutlineRepository:
         await repo.add(_outline(project, "alpha"))
         await repo.add(_outline(project, "bravo"))
 
-        asc, _ = await repo.list(project.id, sort_by="name", sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=False)
         assert [o.name for o in asc] == ["alpha", "bravo", "charlie"]
 
-        desc, _ = await repo.list(project.id, sort_by="name", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=True)
         assert [o.name for o in desc] == ["charlie", "bravo", "alpha"]
 
-        by_created, _ = await repo.list(project.id, sort_by="created_at", sort_desc=False)
+        by_created, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="created_at", sort_desc=False
+        )
         assert [o.name for o in by_created] == ["charlie", "alpha", "bravo"]
 
     async def test_list_pagination(self, db_session, project):
@@ -220,16 +222,18 @@ class TestOutlineRepository:
             await repo.add(_outline(project, f"大纲{i}"))
 
         page1, total = await repo.list(
-            project.id, sort_by="name", sort_desc=False, offset=0, limit=2
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False, offset=0, limit=2
         )
-        page2, _ = await repo.list(project.id, sort_by="name", sort_desc=False, offset=2, limit=2)
+        page2, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False, offset=2, limit=2
+        )
 
         assert total == 5
         assert len(page1) == 2
         assert len(page2) == 2
         assert {o.id for o in page1}.isdisjoint({o.id for o in page2})
         # 分页越界 → 空列表（同 F1）
-        page3, _ = await repo.list(project.id, offset=99, limit=2)
+        page3, _ = await repo.list(uuid.UUID(int=project.id), offset=99, limit=2)
         assert page3 == []
 
     async def test_update_outline(self, db_session, project):
@@ -246,7 +250,7 @@ class TestOutlineRepository:
         assert updated.sort_order == 5
         assert updated.updated_at >= o.updated_at
 
-        got = await repo.get(o.id.int)
+        got = await repo.get(o.id)
         assert got is not None and got.name == "第一卷·改"
 
     async def test_hard_delete_outline(self, db_session, project):
@@ -254,12 +258,12 @@ class TestOutlineRepository:
         repo = SQLiteOutlineRepository(db_session)
         o = await repo.add(_outline(project, "第一卷大纲"))
 
-        assert await repo.hard_delete(o.id.int) is True
-        assert await repo.get(o.id.int) is None
-        assert await repo.get_by_name(project.id, "第一卷大纲") is None
-        outlines, total = await repo.list(project.id)
+        assert await repo.hard_delete(o.id) is True
+        assert await repo.get(o.id) is None
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "第一卷大纲") is None
+        outlines, total = await repo.list(uuid.UUID(int=project.id))
         assert outlines == [] and total == 0
-        assert await repo.hard_delete(o.id.int) is False
+        assert await repo.hard_delete(o.id) is False
 
     # ── 全唯一索引 ──
 
@@ -276,7 +280,7 @@ class TestOutlineRepository:
         """真删后可重建同名（v1.1 全唯一索引仅约束现存行）."""
         repo = SQLiteOutlineRepository(db_session)
         first = await repo.add(_outline(project, "第一卷大纲"))
-        await repo.hard_delete(first.id.int)
+        await repo.hard_delete(first.id)
 
         # 全唯一索引仅约束现存行 → 同名可复用
         second = await repo.add(_outline(project, "第一卷大纲"))
@@ -292,7 +296,7 @@ class TestOutlineRepository:
             _point(o, project, "主角登场", type="开篇", description="林尘踏入青云宗", position=1)
         )
 
-        got = await repo.get_point(p.id.int)
+        got = await repo.get_point(p.id)
         assert got is not None
         assert got.id == p.id
         assert got.outline_id == o.id
@@ -310,7 +314,7 @@ class TestOutlineRepository:
         assert updated.type == "转折"
         assert updated.position == 2
 
-        assert await repo.get_point(99999) is None
+        assert await repo.get_point(uuid.uuid4()) is None
 
     async def test_next_position_empty_then_append(self, db_session, project):
         """next_position 空大纲 → 1；追加 → max+1；真删的情节点不计入."""
@@ -318,27 +322,27 @@ class TestOutlineRepository:
         o = await repo.add(_outline(project, "第一卷大纲"))
 
         # 空大纲 → 1
-        assert await repo.next_position(o.id.int) == 1
+        assert await repo.next_position(o.id) == 1
 
         await repo.add_point(_point(o, project, "情节点一", position=1))
         p2 = await repo.add_point(_point(o, project, "情节点二", position=2))
 
         # 追加 → max+1
-        assert await repo.next_position(o.id.int) == 3
+        assert await repo.next_position(o.id) == 3
 
         # 显式 position=0 的记录不计入 max
         p0 = await repo.add_point(_point(o, project, "序章", position=0))
-        assert await repo.next_position(o.id.int) == 3
+        assert await repo.next_position(o.id) == 3
 
         # 真删后不再计入 max（max 现存 = 1 → 2）
-        await repo.hard_delete_point(p2.id.int)
-        assert await repo.next_position(o.id.int) == 2
-        await repo.hard_delete_point(p0.id.int)
+        await repo.hard_delete_point(p2.id)
+        assert await repo.next_position(o.id) == 2
+        await repo.hard_delete_point(p0.id)
 
         # 大纲隔离：其他大纲的 position 不影响本大纲
         o2 = await repo.add(_outline(project, "第二卷大纲"))
-        assert await repo.next_position(o2.id.int) == 1
-        assert await repo.next_position(o.id.int) == 2
+        assert await repo.next_position(o2.id) == 1
+        assert await repo.next_position(o.id) == 2
 
     async def test_list_points_sorted_by_position_asc(self, db_session, project):
         """list_points 按 position ASC 稳定排序，排除已删除."""
@@ -348,16 +352,16 @@ class TestOutlineRepository:
         p3 = await repo.add_point(_point(o, project, "情节点三", position=3))
         p2 = await repo.add_point(_point(o, project, "情节点二", position=2))
         pd = await repo.add_point(_point(o, project, "废弃点", position=0))
-        await repo.hard_delete_point(pd.id.int)
+        await repo.hard_delete_point(pd.id)
 
-        points = await repo.list_points(o.id.int)
+        points = await repo.list_points(o.id)
         assert [p.name for p in points] == ["情节点一", "情节点二", "情节点三"]
         assert [p.id for p in points] == [p1.id, p2.id, p3.id]
 
         # 其他大纲的情节点不混入
         o2 = await repo.add(_outline(project, "第二卷大纲"))
         await repo.add_point(_point(o2, project, "另一大纲的点"))
-        assert len(await repo.list_points(o.id.int)) == 3
+        assert len(await repo.list_points(o.id)) == 3
 
     async def test_list_points_by_arc(self, db_session, project):
         """list_points_by_arc 按弧线聚合活动情节点."""
@@ -371,10 +375,10 @@ class TestOutlineRepository:
         await repo.add_point(_point(o, project, "阴谋", arc_id=a2.id))
         await repo.add_point(_point(o, project, "无弧线"))
 
-        arcs_points = await repo.list_points_by_arc(a1.id.int)
+        arcs_points = await repo.list_points_by_arc(a1.id)
         assert {p.id for p in arcs_points} == {pa.id, pb.id}
-        assert len(await repo.list_points_by_arc(a2.id.int)) == 1
-        assert await repo.list_points_by_arc(99999) == []
+        assert len(await repo.list_points_by_arc(a2.id)) == 1
+        assert await repo.list_points_by_arc(uuid.uuid4()) == []
 
     async def test_hard_delete_point(self, db_session, project):
         """情节点硬删后不可见且物理消失."""
@@ -382,14 +386,14 @@ class TestOutlineRepository:
         o = await repo.add(_outline(project, "第一卷大纲"))
         p = await repo.add_point(_point(o, project, "主角登场"))
 
-        assert await repo.hard_delete_point(p.id.int) is True
-        assert await repo.get_point(p.id.int) is None
-        assert await repo.list_points(o.id.int) == []
-        assert await repo.hard_delete_point(99999) is False
+        assert await repo.hard_delete_point(p.id) is True
+        assert await repo.get_point(p.id) is None
+        assert await repo.list_points(o.id) == []
+        assert await repo.hard_delete_point(uuid.uuid4()) is False
 
         count = await db_session.execute(select(func.count()).select_from(PlotPointORM))
         assert count.scalar_one() == 0
-        assert await repo.hard_delete_point(p.id.int) is False
+        assert await repo.hard_delete_point(p.id) is False
 
     # ── 级联硬删（FK CASCADE / SET NULL） ──
 
@@ -402,13 +406,13 @@ class TestOutlineRepository:
         p2 = await repo.add_point(_point(o1, project, "情节点二"))
         p_other = await repo.add_point(_point(o2, project, "另一大纲的点"))
 
-        assert await repo.hard_delete(o1.id.int) is True
-        assert await repo.get_point(p1.id.int) is None
-        assert await repo.get_point(p2.id.int) is None
-        assert await repo.list_points(o1.id.int) == []
+        assert await repo.hard_delete(o1.id) is True
+        assert await repo.get_point(p1.id) is None
+        assert await repo.get_point(p2.id) is None
+        assert await repo.list_points(o1.id) == []
 
         # 未涉及的大纲不受影响
-        assert await repo.get_point(p_other.id.int) is not None
+        assert await repo.get_point(p_other.id) is not None
 
     async def test_outline_hard_delete_cascades_points_physically(self, db_session, project):
         """大纲硬删 → 情节点行物理删除（DB FK CASCADE）."""
@@ -417,7 +421,7 @@ class TestOutlineRepository:
         await repo.add_point(_point(o, project, "情节点一"))
         await repo.add_point(_point(o, project, "情节点二"))
 
-        assert await repo.hard_delete(o.id.int) is True
+        assert await repo.hard_delete(o.id) is True
 
         count = await db_session.execute(select(func.count()).select_from(PlotPointORM))
         assert count.scalar_one() == 0
@@ -430,13 +434,13 @@ class TestOutlineRepository:
         a1 = await repo.add_arc(_arc(project, "主角成长线", description="从弱到强"))
         await repo.add_arc(_arc(project, "反派线"))
 
-        got = await repo.get_arc(a1.id.int)
+        got = await repo.get_arc(a1.id)
         assert got is not None and got.name == "主角成长线"
         assert got.description == "从弱到强"
-        assert await repo.get_arc(99999) is None
+        assert await repo.get_arc(uuid.uuid4()) is None
 
         # name ASC（SQLite BINARY 排序：主 U+4E3B < 反 U+53CD）
-        arcs = await repo.list_arcs(project.id)
+        arcs = await repo.list_arcs(uuid.UUID(int=project.id))
         assert [a.name for a in arcs] == ["主角成长线", "反派线"]
 
         updated = await repo.update_arc(
@@ -444,26 +448,29 @@ class TestOutlineRepository:
         )
         assert updated.name == "主角成长线·改"
         assert updated.description == "新说明"
-        assert [a.name for a in await repo.list_arcs(project.id)] == ["主角成长线·改", "反派线"]
+        assert [a.name for a in await repo.list_arcs(uuid.UUID(int=project.id))] == [
+            "主角成长线·改",
+            "反派线",
+        ]
 
     async def test_get_arc_by_name_hit_miss(self, db_session, project):
         """get_arc_by_name 命中弧线；未命中/跨项目/真删后均返回 None."""
         repo = SQLiteOutlineRepository(db_session)
         a = await repo.add_arc(_arc(project, "主角成长线"))
 
-        hit = await repo.get_arc_by_name(project.id, "主角成长线")
+        hit = await repo.get_arc_by_name(uuid.UUID(int=project.id), "主角成长线")
         assert hit is not None and hit.id == a.id
-        assert await repo.get_arc_by_name(project.id, "不存在") is None
+        assert await repo.get_arc_by_name(uuid.UUID(int=project.id), "不存在") is None
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get_arc_by_name(other.id, "主角成长线") is None
+        assert await repo.get_arc_by_name(uuid.UUID(int=other.id), "主角成长线") is None
 
-        await repo.hard_delete_arc(a.id.int)
-        assert await repo.get_arc_by_name(project.id, "主角成长线") is None
+        await repo.hard_delete_arc(a.id)
+        assert await repo.get_arc_by_name(uuid.UUID(int=project.id), "主角成长线") is None
 
     async def test_hard_delete_arc_clears_member_arc_id(self, db_session, project):
         """弧线真删 → 成员情节点 arc_id 置 NULL（FK SET NULL，情节点保留）."""
@@ -473,12 +480,12 @@ class TestOutlineRepository:
         p1 = await repo.add_point(_point(o, project, "拜师", arc_id=a.id))
         p2 = await repo.add_point(_point(o, project, "无弧线点"))
 
-        assert await repo.hard_delete_arc(a.id.int) is True
-        assert await repo.get_arc(a.id.int) is None
-        assert await repo.hard_delete_arc(a.id.int) is False
+        assert await repo.hard_delete_arc(a.id) is True
+        assert await repo.get_arc(a.id) is None
+        assert await repo.hard_delete_arc(a.id) is False
 
-        got1 = await repo.get_point(p1.id.int)
-        got2 = await repo.get_point(p2.id.int)
+        got1 = await repo.get_point(p1.id)
+        got2 = await repo.get_point(p2.id)
         assert got1 is not None and got1.arc_id is None
         assert got2 is not None and got2.arc_id is None
         # 情节点本身仍存在
@@ -495,7 +502,7 @@ class TestOutlineRepository:
         # rollback 会使 session 内 ORM 实例过期；重新加载 project 以便后续使用
         await db_session.refresh(project)
 
-        await repo.hard_delete_arc(first.id.int)
+        await repo.hard_delete_arc(first.id)
         second = await repo.add_arc(_arc(project, "主角成长线"))
         assert second.name == "主角成长线"
 
@@ -506,15 +513,15 @@ class TestOutlineRepository:
         a = await repo.add_arc(_arc(project, "主角成长线"))
         p = await repo.add_point(_point(o, project, "拜师", arc_id=a.id))
 
-        assert await repo.hard_delete_arc(a.id.int) is True
-        assert await repo.get_arc(a.id.int) is None
+        assert await repo.hard_delete_arc(a.id) is True
+        assert await repo.get_arc(a.id) is None
 
         # FK SET NULL：情节点保留，arc_id 置 NULL
         count = await db_session.execute(select(func.count()).select_from(StoryArcORM))
         assert count.scalar_one() == 0
-        got = await repo.get_point(p.id.int)
+        got = await repo.get_point(p.id)
         assert got is not None and got.arc_id is None
-        assert await repo.hard_delete_arc(a.id.int) is False
+        assert await repo.hard_delete_arc(a.id) is False
 
     # ── FK 级联（项目删除） ──
 
@@ -674,13 +681,13 @@ class TestP5HardDeleteCleansChildrenAndPoints:
         child = await repo.add(_outline(project, "第一卷", level="volume", parent_id=parent.id))
         await repo.add_point(_point(child, project, "主角登场"))
 
-        assert await repo.hard_delete(parent.id.int) is True
+        assert await repo.hard_delete(parent.id) is True
 
-        got = await repo.get(child.id.int)
+        got = await repo.get(child.id)
         assert got is not None
         assert got.parent_id is None
 
-        points = await repo.list_points(child.id.int)
+        points = await repo.list_points(child.id)
         assert points == []
 
 
@@ -698,7 +705,7 @@ class TestOutlineListLevel1002:
         for n in ("chapter_1", "chapter_2"):
             await repo.add(_outline(project, n, level="chapter"))
 
-        outlines, total = await repo.list(project.id, level="overall")
+        outlines, total = await repo.list(uuid.UUID(int=project.id), level="overall")
         assert total == 2
         assert {o.level for o in outlines} == {"overall"}
         assert {o.name for o in outlines} == {"overall_1", "overall_2"}
@@ -709,7 +716,7 @@ class TestOutlineListLevel1002:
         await repo.add(_outline(project, "a", level="overall"))
         await repo.add(_outline(project, "b", level="chapter"))
 
-        outlines, total = await repo.list(project.id, level=None)
+        outlines, total = await repo.list(uuid.UUID(int=project.id), level=None)
         assert total == 2
         assert len(outlines) == 2
 
@@ -718,7 +725,7 @@ class TestOutlineListLevel1002:
         repo = SQLiteOutlineRepository(db_session)
         await repo.add(_outline(project, "a", level="overall"))
 
-        outlines, total = await repo.list(project.id, level="bogus")
+        outlines, total = await repo.list(uuid.UUID(int=project.id), level="bogus")
         assert outlines == []
         assert total == 0
 
@@ -729,7 +736,9 @@ class TestOutlineListLevel1002:
         await repo.add(_outline(project, "beta_overall", level="overall"))
         await repo.add(_outline(project, "alpha_volume", level="volume"))
 
-        outlines, total = await repo.list(project.id, level="overall", search="alpha")
+        outlines, total = await repo.list(
+            uuid.UUID(int=project.id), level="overall", search="alpha"
+        )
         assert total == 1
         assert [o.name for o in outlines] == ["alpha_overall"]
 
@@ -741,7 +750,7 @@ class TestOutlineListLevel1002:
         await repo.add(_outline(project, "volume", level="volume"))
 
         outlines, total = await repo.list(
-            project.id,
+            uuid.UUID(int=project.id),
             level="overall",
             sort_by="sort_order",
             sort_desc=False,
@@ -759,7 +768,9 @@ class TestOutlineListLevel1002:
         await repo.add(_outline(project, "b", sort_order=2))
         await repo.add(_outline(project, "d", sort_order=2))  # tie with b
 
-        outlines, _ = await repo.list(project.id, sort_by="sort_order", sort_desc=False)
+        outlines, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="sort_order", sort_desc=False
+        )
         assert [o.name for o in outlines] == ["a", "b", "d", "c"]
         tie = [o.name for o in outlines if o.sort_order == 2]
         assert tie == ["b", "d"]  # 次级 id ASC，插入序
@@ -772,7 +783,9 @@ class TestOutlineListLevel1002:
         await repo.add(_outline(project, "b", sort_order=2))
         await repo.add(_outline(project, "d", sort_order=2))
 
-        outlines, _ = await repo.list(project.id, sort_by="sort_order", sort_desc=True)
+        outlines, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="sort_order", sort_desc=True
+        )
         assert [o.name for o in outlines] == ["c", "b", "d", "a"]
 
     async def test_list_sort_order_pagination(self, db_session, project):
@@ -782,7 +795,7 @@ class TestOutlineListLevel1002:
             await repo.add(_outline(project, f"n{so}", sort_order=so))
 
         page, total = await repo.list(
-            project.id, sort_by="sort_order", sort_desc=False, offset=2, limit=2
+            uuid.UUID(int=project.id), sort_by="sort_order", sort_desc=False, offset=2, limit=2
         )
         assert total == 5
         assert [o.name for o in page] == ["n3", "n4"]
@@ -794,7 +807,7 @@ class TestOutlineListLevel1002:
         await repo.add(_outline(project, "alpha"))
         await repo.add(_outline(project, "bravo"))
 
-        by_name, total = await repo.list(project.id, sort_by="name", sort_desc=False)
+        by_name, total = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=False)
         assert total == 3
         assert [o.name for o in by_name] == ["alpha", "bravo", "charlie"]
 
@@ -810,12 +823,14 @@ class TestInt64RangeGuard1106:
         """outline_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteOutlineRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
     async def test_get_arc_returns_none_for_out_of_range_id(self, db_session):
         """outline_repo.get_arc 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteOutlineRepository(db_session)
 
-        assert await repo.get_arc(2**63) is None  # 上界外
-        assert await repo.get_arc(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get_arc(uuid.uuid4()) is None
+        assert await repo.get_arc(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

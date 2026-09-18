@@ -26,10 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.world import WorldCategory, WorldSetting
 from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -113,13 +110,12 @@ class SQLiteWorldRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
-        """按主键查询条目。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(setting_id, uuid.UUID):
-            pk = require_uuid_pk(setting_id)
-        else:
-            pk = uuid_to_pk_or_none(setting_id)
+    async def get(self, setting_id: uuid.UUID) -> WorldSetting | None:
+        """按主键查询条目。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        pk = require_uuid_pk(setting_id)
         if pk is None:
             return None
         stmt = select(WorldSettingORM).where(WorldSettingORM.id == pk)
@@ -127,15 +123,18 @@ class SQLiteWorldRepository:
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
-    async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> WorldSetting | None:
         """按项目内条目名查询条目.
 
         跨层同名多条时返回最早创建（created_at ASC）的一条（spec §2.4 确定性）。
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = (
             select(WorldSettingORM)
             .where(
-                WorldSettingORM.project_id == project_id,
+                WorldSettingORM.project_id == pid,
                 WorldSettingORM.name == name,
             )
             .order_by(WorldSettingORM.created_at.asc())
@@ -147,14 +146,14 @@ class SQLiteWorldRepository:
 
     async def list(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         search: str | None = None,
         category: str | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
-        parent_id: int | uuid.UUID | None = None,
+        parent_id: uuid.UUID | None = None,
         top_level_only: bool = False,
     ) -> tuple[builtins.list[WorldSetting], int]:
         """分页查询项目内条目列表，支持搜索、类别与 parent_id 过滤.
@@ -176,12 +175,12 @@ class SQLiteWorldRepository:
         超 int64 范围的项目 id 视为不存在（SQLite 整数溢出防御，#1139：过滤
         条件型方法的 128 位 int 绑定会抛 OverflowError → 500）.
         """
-        pid = uuid_to_pk_or_none(project_id)
+        pid = require_uuid_pk(project_id)
         if pid is None:
             return [], 0
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        par_id = uuid_to_pk_or_none(parent_id)
+        par_id = require_uuid_pk(parent_id)
         if parent_id is not None and par_id is None:
             return [], 0
         base = select(WorldSettingORM).where(WorldSettingORM.project_id == pid)
@@ -213,7 +212,7 @@ class SQLiteWorldRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms], total
 
-    async def list_categories(self, project_id: int) -> builtins.list[tuple[str, int]]:
+    async def list_categories(self, project_id: uuid.UUID) -> builtins.list[tuple[str, int]]:
         """聚合项目内条目的类别计数（排除空类别 = 未分类）.
 
         按 spec §6.1/§6.2: 空类别视为未分类，不参与类别汇总（未分类条目
@@ -226,10 +225,13 @@ class SQLiteWorldRepository:
         Returns:
             (类别, 条目数) 列表，按计数降序、类别名升序.
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(WorldSettingORM.category, func.count())
             .where(
-                WorldSettingORM.project_id == project_id,
+                WorldSettingORM.project_id == pid,
                 WorldSettingORM.category != "",
             )
             .group_by(WorldSettingORM.category)
@@ -270,13 +272,16 @@ class SQLiteWorldRepository:
             raise ValueError(f"WorldSetting {setting_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def hard_delete(self, setting_id: int) -> bool:
+    async def hard_delete(self, setting_id: uuid.UUID) -> bool:
         """物理删除条目（v1.1 默认真删语义）.
 
         Returns:
             True 表示删除成功，False 表示不存在.
         """
-        stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
+        pk = require_uuid_pk(setting_id)
+        if pk is None:
+            return False
+        stmt = select(WorldSettingORM).where(WorldSettingORM.id == pk)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
@@ -286,26 +291,34 @@ class SQLiteWorldRepository:
         return True
 
     async def get_by_parent_and_name(
-        self, project_id: int, parent_id: int | None, name: str
+        self, project_id: uuid.UUID, parent_id: uuid.UUID | None, name: str
     ) -> WorldSetting | None:
         """按 (project_id, parent_id, name) 查询条目（parent_id=None = 顶层）."""
+        pid = require_uuid_pk(project_id)
+        par_id = require_uuid_pk(parent_id)
+        if pid is None or (parent_id is not None and par_id is None):
+            return None
         stmt = select(WorldSettingORM).where(
-            WorldSettingORM.project_id == project_id,
+            WorldSettingORM.project_id == pid,
             WorldSettingORM.name == name,
         )
         if parent_id is None:
             stmt = stmt.where(WorldSettingORM.parent_id.is_(None))
         else:
-            stmt = stmt.where(WorldSettingORM.parent_id == parent_id)
+            stmt = stmt.where(WorldSettingORM.parent_id == par_id)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
-    async def collect_ancestor_ids(self, setting_id: int) -> builtins.list[int]:
-        """祖先链 id 列表，**不含自身**（父链 [父, 祖父, ...]，spec §5.2 循环防护用）.
+    async def collect_ancestor_ids(self, setting_id: uuid.UUID) -> builtins.list[int]:
+        """祖先链 **物理 int 主键** 列表，**不含自身**（父链，spec §5.2 循环防护用）.
 
         递归 CTE：起点 = 自身（仅当有父），结果排除自身。
+        入参为领域 UUID（#1291），返回值为 ORM 物理 int 主键（非领域标识）。
         """
+        sid = require_uuid_pk(setting_id)
+        if sid is None:
+            return []
         sql = text(
             """
             WITH RECURSIVE ancestors(id, parent_id) AS (
@@ -318,10 +331,10 @@ class SQLiteWorldRepository:
             SELECT id FROM ancestors WHERE id != :sid
             """
         )
-        result = await self._session.execute(sql, {"sid": setting_id})
+        result = await self._session.execute(sql, {"sid": sid})
         return [row[0] for row in result.fetchall()]
 
-    async def list_descendants(self, setting_id: int | uuid.UUID) -> builtins.list[WorldSetting]:
+    async def list_descendants(self, setting_id: uuid.UUID) -> builtins.list[WorldSetting]:
         """子树（**含自身**），层序（父先子后，同层 created_at ASC）.
 
         两段式：CTE 取层序 id 集合（depth 升序 + created_at ASC），再按 id 批量查 ORM
@@ -330,7 +343,7 @@ class SQLiteWorldRepository:
         超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法的
         128 位 int 绑定会抛 OverflowError → 500）；不存在 id → 空列表。
         """
-        pk = uuid_to_pk_or_none(setting_id)
+        pk = require_uuid_pk(setting_id)
         if pk is None:
             return []
         sql = text(
@@ -354,37 +367,49 @@ class SQLiteWorldRepository:
         by_id = {orm.id: _orm_to_domain(orm) for orm in rows}
         return [by_id[sid] for sid in ordered_ids if sid in by_id]
 
-    async def list_all_active(self, project_id: int) -> builtins.list[WorldSetting]:
+    async def list_all_active(self, project_id: uuid.UUID) -> builtins.list[WorldSetting]:
         """项目内全部条目，按 created_at ASC 稳定排序（copy 缺省起点用）."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(WorldSettingORM)
-            .where(WorldSettingORM.project_id == project_id)
+            .where(WorldSettingORM.project_id == pid)
             .order_by(WorldSettingORM.created_at.asc())
         )
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]
 
-    async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int:
+    async def hard_delete_many(self, setting_ids: builtins.list[uuid.UUID]) -> int:
         """单事务原子物理删除（DELETE WHERE id IN (...)），返回删除行数."""
-        if not setting_ids:
+        pks = [
+            pk
+            for pk in (require_uuid_pk(setting_id) for setting_id in setting_ids)
+            if pk is not None
+        ]
+        if not pks:
             return 0
-        stmt = sa_delete(WorldSettingORM).where(WorldSettingORM.id.in_(setting_ids))
+        stmt = sa_delete(WorldSettingORM).where(WorldSettingORM.id.in_(pks))
         result = await self._session.execute(stmt)
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
 
-    async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool:
+    async def delete_with_reparent(self, setting_id: uuid.UUID, reparent_to: uuid.UUID) -> bool:
         """单事务: UPDATE 直接子地点 parent_id=reparent_to WHERE parent_id=setting_id
         + DELETE 自身；返回自身是否被删（不存在 → False）."""
+        sid = require_uuid_pk(setting_id)
+        rep = require_uuid_pk(reparent_to)
+        if sid is None or rep is None:
+            return False
         # ① 子地点改挂新父
         upd = (
             sa_update(WorldSettingORM)
-            .where(WorldSettingORM.parent_id == setting_id)
-            .values(parent_id=reparent_to, updated_at=_utcnow())
+            .where(WorldSettingORM.parent_id == sid)
+            .values(parent_id=rep, updated_at=_utcnow())
         )
         await self._session.execute(upd)
         # ② 删除自身
-        stmt = select(WorldSettingORM).where(WorldSettingORM.id == setting_id)
+        stmt = select(WorldSettingORM).where(WorldSettingORM.id == sid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
@@ -397,17 +422,19 @@ class SQLiteWorldRepository:
     # ── WorldCategory（v1.2，issue #389）──────────────────────────
 
     async def create_category(
-        self, project_id: int | uuid.UUID, name: str, kind: str = "geo"
+        self, project_id: uuid.UUID, name: str, kind: str = "geo"
     ) -> WorldCategory:
         """创建分类（id 由 DB 自增分配；(project_id, name) 全唯一索引兜底同名冲突）.
 
         返回领域实体 WorldCategory（id 为 UUID，映射惯例同条目 `_orm_to_domain`；
-        读取方法 get_category 以 `.id.int` 传 DB 主键）。
+        读取方法 get_category 以 `.id.int` 传 DB 主键）。#1291：project_id 为领域 UUID。
         """
-        pid = _uuid_to_int(project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            raise ValueError(f"WorldCategory 所属项目主键超出 int64 范围：{project_id}")
         domain = WorldCategory(
             id=uuid.uuid4(),
-            project_id=uuid.UUID(int=pid),
+            project_id=project_id,
             name=name,
             kind=kind,
             created_at=_utcnow(),
@@ -421,17 +448,21 @@ class SQLiteWorldRepository:
 
     async def get_category(self, category_id: uuid.UUID) -> WorldCategory | None:
         """按主键查询分类."""
-        stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == _uuid_to_int(category_id))
+        cid = require_uuid_pk(category_id)
+        if cid is None:
+            return None
+        stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _category_orm_to_domain(orm) if orm else None
 
-    async def get_category_by_name(
-        self, project_id: int | uuid.UUID, name: str
-    ) -> WorldCategory | None:
+    async def get_category_by_name(self, project_id: uuid.UUID, name: str) -> WorldCategory | None:
         """按 (project_id, name) 查询分类."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = select(WorldCategoryORM).where(
-            WorldCategoryORM.project_id == _uuid_to_int(project_id),
+            WorldCategoryORM.project_id == pid,
             WorldCategoryORM.name == name,
         )
         result = await self._session.execute(stmt)
@@ -439,10 +470,12 @@ class SQLiteWorldRepository:
         return _category_orm_to_domain(orm) if orm else None
 
     async def list_world_categories(
-        self, project_id: int | uuid.UUID
+        self, project_id: uuid.UUID
     ) -> builtins.list[tuple[WorldCategory, int]]:
         """分类实体列表 + 每个分类名匹配的条目计数（排除空类别，spec §6.1）."""
-        pid = _uuid_to_int(project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         cats_stmt = (
             select(WorldCategoryORM)
             .where(WorldCategoryORM.project_id == pid)
@@ -465,7 +498,9 @@ class SQLiteWorldRepository:
 
     async def rename_category(self, category_id: uuid.UUID, name: str) -> WorldCategory | None:
         """重命名分类 + 反向同步条目 category（同一事务，spec §6.1 D2=A）."""
-        cid = _uuid_to_int(category_id)
+        cid = require_uuid_pk(category_id)
+        if cid is None:
+            return None
         stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
@@ -488,7 +523,9 @@ class SQLiteWorldRepository:
 
     async def delete_category(self, category_id: uuid.UUID) -> bool:
         """删除分类 + 反向清空条目 category（同一事务，spec §6.1 D2=A）."""
-        cid = _uuid_to_int(category_id)
+        cid = require_uuid_pk(category_id)
+        if cid is None:
+            return False
         stmt = select(WorldCategoryORM).where(WorldCategoryORM.id == cid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()

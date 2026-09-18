@@ -348,7 +348,7 @@ def _req(type_: ExtractionType, **kw: Any) -> ExtractionRequest:
 
 def _chapter_by_id(cid: int) -> Chapter:
     """按仓储层 int id 返回对应测试章节（CH1/CH2 两章批量场景用）。"""
-    return _chapter(CH1, CONTENT_1) if cid == CH1.int else _chapter(CH2, CONTENT_2)
+    return _chapter(CH1, CONTENT_1) if cid == CH1 else _chapter(CH2, CONTENT_2)
 
 
 _NO_VECTOR = object()
@@ -589,7 +589,7 @@ async def test_character_chapter_mode_passes_chapter_text() -> None:
 
     result = await svc.extract(_req(ExtractionType.CHARACTER, chapter_ids=[CH1]))
 
-    deps.chapter_repo.get_chapter.assert_awaited_once_with(CH1.int)
+    deps.chapter_repo.get_chapter.assert_awaited_once_with(CH1)
     req = deps.character_service.extract.await_args.args[0]
     assert req.text == CONTENT_1
     assert result.processed_sources == 1

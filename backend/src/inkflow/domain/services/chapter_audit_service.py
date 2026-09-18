@@ -83,17 +83,10 @@ _SEVERITY_ORDER: dict[AuditSeverity, int] = {
 """严重级别排序序（spec §6: error < warning < info）。"""
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1/F14/F15 `_to_int_id` 模式）。
-
-    Args:
-        value: 领域 UUID 或已有 int 主键.
-
-    Returns:
-        仓储层 int 主键（UUID 取其 int 表示）.
-    """
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -189,7 +182,7 @@ class ChapterAuditService:
             raise ProjectNotFoundError()
 
         # ② 章节校验（含跨项目，F34 语义 404）
-        chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+        chapter = await self._chapter_repo.get_chapter(_to_uuid(chapter_id))
         if chapter is None:
             raise ChapterNotFoundError()
         if chapter.project_id != project_id:
@@ -312,20 +305,20 @@ class ChapterAuditService:
             raise ProjectNotFoundError()
 
         # ② 章节校验（含跨项目，同 audit 步骤 ②）
-        chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+        chapter = await self._chapter_repo.get_chapter(_to_uuid(chapter_id))
         if chapter is None:
             raise ChapterNotFoundError()
         if chapter.project_id != project_id:
             raise ChapterNotFoundError("章节不属于该项目")
 
         # ③ 最新记录须为 pending（已确认/从未审计 → 422）
-        log = await self._audit_log_repo.latest_pending(_to_int_id(chapter_id))
+        log = await self._audit_log_repo.latest_pending(_to_uuid(chapter_id))
         if log is None:
             raise NoPendingAuditError()
 
-        # ④ 委托仓储确认（领域 UUID → int 主键）
+        # ④ 委托仓储确认（领域 UUID 直传，#1291 收窄）
         confirmed = await self._audit_log_repo.confirm(
-            log.id.int,
+            log.id,
             action=action,
             note=note,
             confirmed_at=datetime.now(UTC),
@@ -358,7 +351,7 @@ class ChapterAuditService:
         project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
-        return await self._audit_log_repo.list(_to_int_id(project_id), offset=offset, limit=limit)
+        return await self._audit_log_repo.list(_to_uuid(project_id), offset=offset, limit=limit)
 
     # ──── 内部辅助（确定性 + LLM 降级 + 静态映射）─────────────────────
 
@@ -384,7 +377,7 @@ class ChapterAuditService:
         items: list[Any] = []
         offset = 0
         while True:
-            page, _total = await repo_list(_to_int_id(project_id), offset=offset, limit=_PAGE_SIZE)
+            page, _total = await repo_list(_to_uuid(project_id), offset=offset, limit=_PAGE_SIZE)
             items.extend(page)
             if len(page) < _PAGE_SIZE:
                 break
@@ -619,7 +612,7 @@ class ChapterAuditService:
         offset = 0
         while True:
             page, _total = await self._chapter_repo.list_chapters(
-                _to_int_id(project_id), offset=offset, limit=_PAGE_SIZE
+                _to_uuid(project_id), offset=offset, limit=_PAGE_SIZE
             )
             items.extend(page)
             if len(page) < _PAGE_SIZE:
@@ -641,7 +634,7 @@ class ChapterAuditService:
         """
         if self._outline_repo is None:
             return None
-        page, _total = await self._outline_repo.list(_to_int_id(project_id), limit=_PAGE_SIZE)
+        page, _total = await self._outline_repo.list(_to_uuid(project_id), limit=_PAGE_SIZE)
         for item in page:
             if getattr(item, "chapter_id", None) == chapter_id and item.level == "chapter":
                 return item
@@ -660,7 +653,7 @@ class ChapterAuditService:
         if self._outline_repo is None:
             return ""
         page, _total = await self._outline_repo.list(
-            _to_int_id(project_id), level="chapter", limit=_PAGE_SIZE
+            _to_uuid(project_id), level="chapter", limit=_PAGE_SIZE
         )
         ordered = sorted(
             (o for o in page if getattr(o, "level", None) == "chapter"),

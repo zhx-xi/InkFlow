@@ -2,7 +2,7 @@
 
 职责（spec §5/§6/§7）:
 - 事件 CRUD 编排：委托 TimelineRepositoryProtocol，负责领域层
-  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_int_id` 模式）
+  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_uuid` 模式）
 - 业务校验（422 语义，抛 TimelineServiceError 子类）: 本模块无冲突类
   校验（timeline_events 无唯一约束，见 spec §2.4）；配置错误（项目仓储
   未注入）同样抛 TimelineServiceError
@@ -55,10 +55,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -169,7 +169,7 @@ class TimelineService:
         *,
         repository: TimelineRepositoryProtocol,
         project_repo: ProjectRepositoryProtocol | None = None,
-        map_cleanup: Callable[[int], Awaitable[None]] | None = None,
+        map_cleanup: Callable[[uuid.UUID], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repository
         self._project_repo = project_repo
@@ -225,7 +225,7 @@ class TimelineService:
         """
         await self._ensure_project(project_id)
         if narrative_position is None:
-            narrative_position = await self._repo.next_position(_to_int_id(project_id))
+            narrative_position = await self._repo.next_position(project_id)
         now = _utcnow()
         event = TimelineEvent(
             id=uuid.uuid4(),
@@ -277,14 +277,13 @@ class TimelineService:
         Returns:
             (当前页事件列表, 符合条件的总记录数).
         """
-        pid_int = _to_int_id(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
         if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list(
-            project_id=pid_int,
+            project_id=project_id,
             search=search,
             sort_by=sort_by,
             sort_desc=sort_desc,
@@ -333,7 +332,7 @@ class TimelineService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        eid = _to_int_id(event_id)
+        eid = _to_uuid(event_id)
         logger.info("真删时间线事件: event_id=%s", event_id)
         deleted: bool = await self._repo.hard_delete(eid)
         if deleted and self._map_cleanup is not None:
@@ -363,7 +362,7 @@ class TimelineService:
             TimelineServiceError: project_repo 未注入（配置错误）.
         """
         await self._ensure_project(project_id)
-        events = await self._repo.list_all(_to_int_id(project_id))
+        events = await self._repo.list_all(project_id)
         return TimelineView(
             project_id=project_id,
             total=len(events),
@@ -401,7 +400,7 @@ class TimelineService:
                 conflicts=[],
                 flashbacks=[],
             )
-        events = await self._repo.list_all(_to_int_id(event.project_id))
+        events = await self._repo.list_all(event.project_id)
         # 事件在叙事序中的位置 i（list_all 已按 narrative_position ASC 稳定排序）
         i = next((idx for idx, e in enumerate(events) if e.id == event.id), None)
         conflicts: list[TimelineConflict] = []
@@ -460,7 +459,7 @@ class TimelineService:
             TimelineServiceError: project_repo 未注入（配置错误）.
         """
         await self._ensure_project(project_id)
-        events = await self._repo.list_all(_to_int_id(project_id))
+        events = await self._repo.list_all(project_id)
         # 参与比较集合: 叙事顺序上 time_value 非 None 的事件（元组携带收窄后的
         # float 时间值，供 mypy 静态收窄；None 事件计入 skipped）
         seq = [(e, e.time_value) for e in events if e.time_value is not None]

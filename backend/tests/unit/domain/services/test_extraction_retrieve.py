@@ -342,7 +342,7 @@ def _req(type_: ExtractionType, **kw: Any) -> ExtractionRequest:
 
 def _chapter_by_id(cid: int) -> Chapter:
     """按仓储层 int id 返回对应测试章节（CH1/CH2 两章批量场景用）。"""
-    return _chapter(CH1, CONTENT_1) if cid == CH1.int else _chapter(CH2, CONTENT_2)
+    return _chapter(CH1, CONTENT_1) if cid == CH1 else _chapter(CH2, CONTENT_2)
 
 
 _NO_VECTOR = object()
@@ -488,7 +488,7 @@ async def test_list_runs_passthrough() -> None:
     items, total = await svc.list_runs(PID, type=ExtractionType.CHARACTER, offset=10, limit=20)
 
     deps.run_repo.list.assert_awaited_once_with(
-        PID.int, type=ExtractionType.CHARACTER, offset=10, limit=20
+        PID, type=ExtractionType.CHARACTER, offset=10, limit=20
     )
     assert items == runs
     assert total == 1
@@ -497,13 +497,6 @@ async def test_list_runs_passthrough() -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # Issue #104 Phase 3 覆盖率补齐：防御分支 / None 路径 / 未达投影 / reindex 缺口
 # ═══════════════════════════════════════════════════════════════════════════
-
-
-def test_to_int_id_int_passthrough() -> None:
-    """_to_int_id 输入已是 int → 原样返回（UUID 分支已覆盖）。"""
-    from inkflow.domain.services.extraction_service import _to_int_id
-
-    assert _to_int_id(42) == 42
 
 
 def test_project_timeline_event_without_chapter_anchor() -> None:

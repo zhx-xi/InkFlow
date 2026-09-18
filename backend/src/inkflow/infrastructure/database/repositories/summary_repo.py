@@ -11,10 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.context import ChapterSummary
 from inkflow.infrastructure.database.models.chapter import ChapterORM
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -39,13 +36,12 @@ class SQLiteSummaryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get(self, chapter_id: int | uuid.UUID) -> ChapterSummary | None:
-        # #1230: 入参先归一为 int 再比较（domain 层天然传 UUID）
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(chapter_id, uuid.UUID):
-            cid = require_uuid_pk(chapter_id)
-        else:
-            cid = uuid_to_pk_or_none(chapter_id)
+    async def get(self, chapter_id: uuid.UUID) -> ChapterSummary | None:
+        """按主键查询章节摘要。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        cid = require_uuid_pk(chapter_id)
         if cid is None:
             return None
         stmt = select(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == cid)
@@ -53,14 +49,18 @@ class SQLiteSummaryRepository:
         orm = result.scalar_one_or_none()
         return _summary_orm_to_domain(orm) if orm else None
 
-    async def upsert(self, chapter_id: int, summary: str, model: str) -> ChapterSummary:
+    async def upsert(self, chapter_id: uuid.UUID, summary: str, model: str) -> ChapterSummary:
+        """插入或更新摘要缓存（章节主键为领域 UUID，见 #1291）."""
+        cid = require_uuid_pk(chapter_id)
+        if cid is None:
+            raise ValueError(f"ChapterSummary 章节主键超出 int64 范围：{chapter_id}")
         result = await self._session.execute(
-            select(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == chapter_id)
+            select(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == cid)
         )
         orm = result.scalar_one_or_none()
         now = _utcnow()
         if orm is None:
-            orm = ChapterSummaryORM(chapter_id=chapter_id, summary=summary, model=model)
+            orm = ChapterSummaryORM(chapter_id=cid, summary=summary, model=model)
             self._session.add(orm)
         else:
             orm.summary = summary
@@ -70,11 +70,15 @@ class SQLiteSummaryRepository:
         await self._session.refresh(orm)
         return _summary_orm_to_domain(orm)
 
-    async def list_recent(self, project_id: int, limit: int = 10) -> list[ChapterSummary]:
+    async def list_recent(self, project_id: uuid.UUID, limit: int = 10) -> list[ChapterSummary]:
+        """按章节顺序倒序取项目内最近摘要（项目主键为领域 UUID，见 #1291）."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(ChapterSummaryORM)
             .join(ChapterORM, ChapterORM.id == ChapterSummaryORM.chapter_id)
-            .where(ChapterORM.project_id == project_id)
+            .where(ChapterORM.project_id == pid)
             .order_by(ChapterORM.order_index.desc())
             .limit(limit)
         )

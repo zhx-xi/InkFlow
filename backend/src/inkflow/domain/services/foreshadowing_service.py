@@ -2,7 +2,7 @@
 
 职责（spec §5.1/§5.2/§7）:
 - 伏笔 CRUD 编排：委托 ForeshadowingRepositoryProtocol，负责领域层
-  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_int_id` 模式）
+  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_uuid` 模式）
 - 同名唯一性校验（422，spec §2.3/§3.4）: 项目内活动伏笔 title 唯一
   （partial unique），创建/改名时经 repo.get_by_title 检查，
   命中 → ForeshadowingNameConflictError
@@ -57,10 +57,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -143,7 +143,7 @@ class ForeshadowingService:
             ForeshadowingServiceError: project_repo / timeline_repo 未注入（配置错误）.
         """
         await self._ensure_project(data.project_id)
-        existing = await self._repo.get_by_title(_to_int_id(data.project_id), data.title)
+        existing = await self._repo.get_by_title(data.project_id, data.title)
         if existing is not None:
             raise ForeshadowingNameConflictError()
         if data.event_id is not None:
@@ -200,7 +200,7 @@ class ForeshadowingService:
         """
         await self._ensure_project(project_id)
         return await self._repo.list(
-            project_id=_to_int_id(project_id),
+            project_id=project_id,
             search=search,
             status=status,
             sort_by=sort_by,
@@ -246,7 +246,7 @@ class ForeshadowingService:
                 await self._validate_event(existing.project_id, new_event_id)
         # title 改名同名检查（命中其他伏笔 → 422）
         if "title" in updates and updates["title"] != existing.title:
-            dup = await self._repo.get_by_title(_to_int_id(existing.project_id), updates["title"])
+            dup = await self._repo.get_by_title(existing.project_id, updates["title"])
             if dup is not None and dup.id != existing.id:
                 raise ForeshadowingNameConflictError()
         merged = existing.model_copy(update=updates)
@@ -311,9 +311,8 @@ class ForeshadowingService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        fid = _to_int_id(foreshadowing_id)
         logger.info("真删伏笔: foreshadowing_id=%s", foreshadowing_id)
-        deleted: bool = await self._repo.hard_delete(fid)
+        deleted: bool = await self._repo.hard_delete(_to_uuid(foreshadowing_id))
         if deleted:
             logger.warning(
                 "foreshadowing 删除事件缺 project_id（delete 未加载实体，spec §15.3.2）: id=%s",

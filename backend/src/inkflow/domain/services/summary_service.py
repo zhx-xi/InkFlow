@@ -33,7 +33,7 @@ class ChapterReaderProtocol(Protocol):
     避免直接依赖 ChapterRepositoryProtocol，只暴露最小接口.
     """
 
-    async def get_chapter(self, chapter_id: int) -> ChapterDomain | None: ...
+    async def get_chapter(self, chapter_id: uuid.UUID) -> ChapterDomain | None: ...
 
 
 def _utcnow() -> str:
@@ -79,10 +79,9 @@ class SummaryService:
         Returns:
             摘要文本（≤ 300 字）.
         """
-        chapter_id_int = int(chapter_id) if isinstance(chapter_id, uuid.UUID) else chapter_id
-
         # 查找章节
-        chapter = await self._chapters.get_chapter(chapter_id_int)
+        # #1291：章节主键入参为领域 UUID，直传不经 int 中转
+        chapter = await self._chapters.get_chapter(chapter_id)
         if chapter is None:
             raise ValueError(f"章节不存在: {chapter_id}")
 
@@ -153,13 +152,11 @@ class SummaryService:
         Returns:
             摘要列表.
         """
-        pid_int = int(project_id) if isinstance(project_id, uuid.UUID) else project_id
-        return await self._repo.list_recent(pid_int, limit)
+        return await self._repo.list_recent(project_id, limit)
 
     async def _generate_and_cache(self, chapter: ChapterDomain, model: str) -> str:
         """生成摘要并写入缓存."""
         summary = await self.summarize_chapter(chapter, model)
-        # 如果 chapter.id 是 UUID，需要转换为 int 传给 repo
-        chapter_id_int = int(chapter.id) if isinstance(chapter.id, uuid.UUID) else chapter.id
-        await self._repo.upsert(chapter_id_int, summary, model)
+        # #1291：章节主键为领域 UUID，直传（repo 层经 require_uuid_pk 归一）
+        await self._repo.upsert(chapter.id, summary, model)
         return summary

@@ -14,9 +14,8 @@
 `_fingerprint_provider` / `_reindex_lock`）由门面 `__init__` 装配，此处以类级注解
 声明（供 mypy 解析 `self.*` 访问，运行时由门面赋值）。
 
-`_to_int_id` 一并迁入本模块（门面 `extract` / `_resolve_sources` / `list_runs` 与
-本模块 `reindex` 均使用）——迁入以切断「门面 ↔ 本模块」的 import 环（本模块对门面
-零运行时依赖），门面 re-export。
+#1291 后本模块不再持有任何 int↔UUID 中转 helper：project_id 以领域 UUID 直传仓储。
+此前迁入本模块的 `_to_uuid` 已随 int 兼容面退役一并删除（本模块对门面零运行时依赖）。
 
 依据: specs/f14-extraction/spec.md §5.6（RAG 索引流程）。
 """
@@ -67,13 +66,6 @@ _REINDEX_PAGE_SIZE = 100
 def _content_hash(text: str) -> str:
     """计算源内容 sha256 指纹（UTF-8 hexdigest，LLM 增量跳过判定依据）。"""
     return sha256(text.encode("utf-8")).hexdigest()
-
-
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
 
 
 def _project_character(character: Character, project_id: str) -> IndexableEntity:
@@ -252,7 +244,6 @@ class _ExtractionRAGMixin:
             # 只走探测/差集/指纹不索引——父侧契约修正 2026-08-12）
             types = list(entity_types) if entity_types is not None else list(EntityType)
             pid = str(project_id)
-            pid_int = _to_int_id(project_id)
             # ① 写 reindexing 指纹（非 None 时；commit-last 前失败不提交 fresh）
             fp = await self._fingerprint_provider() if self._fingerprint_provider else None
             if fp is not None:
@@ -274,28 +265,28 @@ class _ExtractionRAGMixin:
                     if self._character_repo is None:
                         warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
                         continue
-                    records = await self._paged_list(self._character_repo.list, pid_int)
+                    records = await self._paged_list(self._character_repo.list, project_id)
                     entities = [_project_character(c, pid) for c in records]
                 elif entity_type is EntityType.SETTING:
                     if self._world_repo is None:
                         warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
                         continue
-                    records = await self._paged_list(self._world_repo.list, pid_int)
+                    records = await self._paged_list(self._world_repo.list, project_id)
                     entities = [_project_setting(s, pid) for s in records]
                 elif entity_type is EntityType.FORESHADOWING:
                     if self._foreshadowing_repo is None:
                         warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
                         continue
-                    records = await self._paged_list(self._foreshadowing_repo.list, pid_int)
+                    records = await self._paged_list(self._foreshadowing_repo.list, project_id)
                     entities = [_project_foreshadowing(f, pid) for f in records]
                 elif entity_type is EntityType.TIMELINE_EVENT:
                     if self._timeline_repo is None:
                         warnings.append(f"实体类型 {entity_type.value} 未配置仓储，已跳过")
                         continue
-                    events = await self._timeline_repo.list_all(pid_int)
+                    events = await self._timeline_repo.list_all(project_id)
                     entities = [_project_timeline_event(e, pid) for e in events]
                 elif entity_type is EntityType.CHAPTER_CHUNK:
-                    chapters = await self._paged_list(self._chapter_repo.list_chapters, pid_int)
+                    chapters = await self._paged_list(self._chapter_repo.list_chapters, project_id)
                     # Q4 拍板（spec §5.6.4）: chapter_x 为全书级，按 order_index
                     # 全局排序（1-based）；repo 保证排序时此步幂等，mock 无序时兜底。
                     chapters = sorted(chapters, key=lambda ch: getattr(ch, "order_index", 0.0))
@@ -307,7 +298,7 @@ class _ExtractionRAGMixin:
                     # （无卷章节 volume_title 省略；旧 mock 仓储无 list_volumes 契约兼容）
                     volume_titles: dict[Any, str] = {}
                     if any(getattr(ch, "volume_id", None) is not None for ch in chapters):
-                        volumes = await self._chapter_repo.list_volumes(pid_int)
+                        volumes = await self._chapter_repo.list_volumes(project_id)
                         volume_titles = {v.id: v.title for v in volumes}
                     entities = []
                     for chapter_x, ch in enumerate(chapters, start=1):
@@ -450,7 +441,7 @@ class _ExtractionRAGMixin:
             analyzer=lambda t: boundaries,
         )
 
-    async def _paged_list(self, fn: Callable[..., Any], project_id: int) -> list[Any]:
+    async def _paged_list(self, fn: Callable[..., Any], project_id: uuid.UUID) -> list[Any]:
         """分页循环拉取仓储列表（limit=100，spec §5.6 reindex 分页）。"""
         items: list[Any] = []
         offset = 0

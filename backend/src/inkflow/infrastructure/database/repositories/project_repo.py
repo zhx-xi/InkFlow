@@ -16,10 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.database.models.project import ProjectORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -79,14 +76,12 @@ class SQLiteProjectRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, project_id: int | uuid.UUID) -> Project | None:
-        """按 ID 查询项目（排除软删除记录）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1230: 入参先归一为 int 再比较（domain 层天然传 UUID；UUID < int 会抛 TypeError）
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(project_id, uuid.UUID):
-            pid = require_uuid_pk(project_id)
-        else:
-            pid = uuid_to_pk_or_none(project_id)
+    async def get(self, project_id: uuid.UUID) -> Project | None:
+        """按主键查询项目（排除软删除记录）。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID`` —— #1230 ⑤ 的 int 兼容面已退役。
+        """
+        pid = require_uuid_pk(project_id)
         if pid is None:
             return None
         stmt = select(ProjectORM).where(
@@ -168,30 +163,36 @@ class SQLiteProjectRepository:
             raise ValueError(f"Project with id {actual_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def soft_delete(self, project_id: int) -> bool:
+    async def soft_delete(self, project_id: uuid.UUID) -> bool:
         """软删除项目（标记 is_deleted=True）.
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return False
         stmt = (
             sa_update(ProjectORM)
-            .where(ProjectORM.id == project_id, ~ProjectORM.is_deleted)
+            .where(ProjectORM.id == pid, ~ProjectORM.is_deleted)
             .values(is_deleted=True, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
         return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
-    async def restore(self, project_id: int) -> Project | None:
+    async def restore(self, project_id: uuid.UUID) -> Project | None:
         """恢复软删除的项目（设置 is_deleted=False）.
 
         Returns:
             恢复后的 Project，若记录不存在则返回 None.
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = (
             sa_update(ProjectORM)
-            .where(ProjectORM.id == project_id, ProjectORM.is_deleted)
+            .where(ProjectORM.id == pid, ProjectORM.is_deleted)
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
@@ -202,13 +203,16 @@ class SQLiteProjectRepository:
 
         return await self.get(project_id)
 
-    async def hard_delete(self, project_id: int) -> bool:
+    async def hard_delete(self, project_id: uuid.UUID) -> bool:
         """物理删除项目（从数据库中永久移除）.
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
-        stmt = select(ProjectORM).where(ProjectORM.id == project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return False
+        stmt = select(ProjectORM).where(ProjectORM.id == pid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:

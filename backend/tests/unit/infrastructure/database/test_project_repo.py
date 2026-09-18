@@ -79,7 +79,7 @@ class TestProjectRepositoryCoverageGaps:
         assert saved.target_words == 100000
         assert saved.is_deleted is False
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.tags == ["玄幻"]
@@ -110,20 +110,20 @@ class TestProjectRepositoryCoverageGaps:
     async def test_hard_delete_missing_returns_false(self, db_session):
         """hard_delete 不存在的项目 → False."""
         repo = SQLiteProjectRepository(db_session)
-        assert await repo.hard_delete(99999) is False
+        assert await repo.hard_delete(uuid.uuid4()) is False
 
     async def test_soft_delete_and_restore_missing(self, db_session):
         """soft_delete 不存在 → False；restore 不存在 → None（重复操作无毒）."""
         repo = SQLiteProjectRepository(db_session)
-        assert await repo.soft_delete(99999) is False
-        assert await repo.restore(99999) is None
+        assert await repo.soft_delete(uuid.uuid4()) is False
+        assert await repo.restore(uuid.uuid4()) is None
 
     # ── 其余行补齐（原由 api/integration 测试覆盖，本 worktree 只有 unit） ──
 
     async def test_get_missing_returns_none(self, db_session):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteProjectRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_list_all_search_sort_pagination(self, db_session):
         """list_all 搜索（icontains）/排序/分页/total；软删项目不出现."""
@@ -131,7 +131,7 @@ class TestProjectRepositoryCoverageGaps:
         p1 = await repo.add(_project("alpha 项目"))
         p2 = await repo.add(_project("bravo 项目"))
         p3 = await repo.add(_project("charlie 项目"))
-        await repo.soft_delete(p3.id.int)
+        await repo.soft_delete(p3.id)
 
         # 搜索
         found, total = await repo.list_all(search="项目")
@@ -160,7 +160,7 @@ class TestProjectRepositoryCoverageGaps:
         assert updated.tags == ["科幻"]
         assert updated.updated_at >= created.updated_at
 
-        got = await repo.get(created.id.int)
+        got = await repo.get(created.id)
         assert got is not None and got.name == "新名"
 
     async def test_soft_delete_and_restore_roundtrip(self, db_session):
@@ -168,23 +168,23 @@ class TestProjectRepositoryCoverageGaps:
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("待删项目"))
 
-        assert await repo.soft_delete(created.id.int) is True
-        assert await repo.get(created.id.int) is None
+        assert await repo.soft_delete(created.id) is True
+        assert await repo.get(created.id) is None
 
-        restored = await repo.restore(created.id.int)
+        restored = await repo.restore(created.id)
         assert restored is not None
         assert restored.id == created.id
         assert restored.is_deleted is False
-        assert await repo.get(created.id.int) is not None
+        assert await repo.get(created.id) is not None
 
     async def test_hard_delete_roundtrip(self, db_session):
         """hard_delete 成功路径：行物理消失，重复删除返回 False."""
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("待硬删项目"))
 
-        assert await repo.hard_delete(created.id.int) is True
-        assert await repo.get(created.id.int) is None
-        assert await repo.hard_delete(created.id.int) is False
+        assert await repo.hard_delete(created.id) is True
+        assert await repo.get(created.id) is None
+        assert await repo.hard_delete(created.id) is False
 
     # ── #225 agent_* 三态持久化（确认型守护：repo 层行为不变，锁定落库/读回契约） ──
 
@@ -209,7 +209,7 @@ class TestProjectRepositoryCoverageGaps:
         assert updated.config.agent_writer is None
 
         # 「重启读回」单元级锚点：get 重新构造领域对象，null 必须保留（非默认回填）
-        got = await repo.get(created.id.int)
+        got = await repo.get(created.id)
         assert got is not None
         assert got.config.agent_writer is None
         assert got.config.model == "gpt-4o"
@@ -224,7 +224,7 @@ class TestProjectRepositoryCoverageGaps:
             _project("sentinel 项目", config=ProjectConfig(agent_writer="__default__"))
         )
 
-        got = await repo.get(created.id.int)
+        got = await repo.get(created.id)
         assert got is not None
         assert got.config.agent_writer == "__default__"
 
@@ -240,8 +240,9 @@ class TestInt64RangeGuard1106:
         """project_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteProjectRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
 
 # #1230: repo 层 get 的 UUID 类型早退（domain 层天然传 UUID，守卫须先归一类型）
@@ -264,7 +265,7 @@ class TestRepoGetAcceptsUUID1230:
         repo = SQLiteProjectRepository(db_session)
         created = await repo.add(_project("UUID 主键项目"))
 
-        got = await repo.get(created.id)  # type: ignore[arg-type]  # 本用例核心（传 UUID）
+        got = await repo.get(created.id)
 
         assert got is not None
         assert got.id == created.id
@@ -274,5 +275,5 @@ class TestRepoGetAcceptsUUID1230:
         repo = SQLiteProjectRepository(db_session)
         assert uuid.uuid4().int > 2**63 - 1, "前提：随机 uuid4 的 .int 超 int64"
 
-        assert await repo.get(uuid.uuid4()) is None  # type: ignore[arg-type]  # 传 UUID
-        assert await repo.get(uuid.UUID(int=1)) is None  # type: ignore[arg-type]  # 传 UUID
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=1)) is None

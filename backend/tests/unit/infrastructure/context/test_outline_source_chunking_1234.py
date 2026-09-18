@@ -371,7 +371,7 @@ class TestOutlineBackwardCompat:
         items = await source.collect(PROJECT_ID, None)
 
         assert _levels(items) == ["overall"]
-        repo.list.assert_awaited_once_with(PROJECT_ID.int)
+        repo.list.assert_awaited_once_with(PROJECT_ID)
 
     async def test_no_outlines_returns_empty(self) -> None:
         """项目无大纲 → []（既有契约不变）."""

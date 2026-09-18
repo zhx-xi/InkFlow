@@ -45,7 +45,6 @@ from inkflow.domain.services._outline_generator import (
     _extract_json_fragment,
     _first_error,
     _resolve_num_chapters_in_text,
-    _to_int_id,
 )
 from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
 
@@ -568,11 +567,7 @@ class TestOutlineGenerator:
 
 
 class TestOutlineGeneratorHelpers:
-    """模块级纯函数测试（_to_int_id / _first_error / _resolve_num_chapters_in_text）。"""
-
-    def test_to_int_id_passthrough_for_int(self) -> None:
-        """int 输入原样返回（非 UUID 分支）。"""
-        assert _to_int_id(42) == 42
+    """模块级纯函数测试（_first_error / _resolve_num_chapters_in_text）。"""
 
     def test_first_error_with_empty_errors_returns_str(self) -> None:
         """errors() 为空 → 回退 str(err)。"""
@@ -718,7 +713,7 @@ class TestAppendMode:
             default_model=DEFAULT_MODEL,
         )
         assert mock_repo.next_position.await_count == 1  # 单次查询 + 批量偏移（D3）
-        assert mock_repo.next_position.await_args.args[0] == target.id.int  # 按目标大纲查询
+        assert mock_repo.next_position.await_args.args[0] == target.id  # 按目标大纲查询
         assert [p.name for p in result.plot_points] == ["节点甲", "节点乙", "节点丙"]
         assert [p.position for p in result.plot_points] == [4, 5, 6]
         assert [c.args[0].name for c in mock_repo.add_point.await_args_list] == [

@@ -151,7 +151,7 @@ class TestCreate:
         """最小创建：status=open、priority=50、event_id=None、未删除。"""
         created = await service.create(ForeshadowingCreate(project_id=PID, title="林晚的身世"))
         assert created.title == "林晚的身世"
-        mock_repo.get_by_title.assert_awaited_once_with(PID.int, "林晚的身世")
+        mock_repo.get_by_title.assert_awaited_once_with(PID, "林晚的身世")
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, Foreshadowing)
         assert added.project_id == PID
@@ -264,7 +264,7 @@ class TestListGet:
         assert items == [f]
         assert total == 1
         kwargs = mock_repo.list.await_args.kwargs
-        assert kwargs["project_id"] == PID.int
+        assert kwargs["project_id"] == PID
         assert kwargs["search"] == "身世"
         assert kwargs["status"] == "open"
         assert kwargs["sort_by"] == "priority"
@@ -515,7 +515,7 @@ class TestDelete:
         f = _foreshadowing("林晚的身世")
         result = await service.delete(f.id)
         assert result is True
-        mock_repo.hard_delete.assert_awaited_once_with(f.id.int)
+        mock_repo.hard_delete.assert_awaited_once_with(f.id)
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
         assert await service.delete(uuid.uuid4()) is False

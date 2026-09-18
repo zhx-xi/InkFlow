@@ -55,7 +55,7 @@ GREEN 实现契约（本文件 docstring 即契约，GREEN 实现者以此为准
 4. 领域模型（domain/models/world.py）: WorldSetting 新增 `parent_id: uuid.UUID | None = None`
    （None = 顶层）；_orm_to_domain / _domain_to_orm / update 三写点均映射 parent_id
    （DB int ↔ 领域 UUID 用 _int_to_uuid/_uuid_to_int 既有辅助，F14 教训）；DB 自增 int
-   id 与 UUID 的换算: 持久化 int = domain.id.int（跨实体引用 parent_id 用 int）。
+   id 与 UUID 的换算: 持久化 int = domain.id（跨实体引用 parent_id 用 int）。
 
 5. 错误类归属（本文件不直接断言，service 测试文件覆盖）: WorldParentNotFoundError /
    WorldCycleError / WorldChildrenActionRequiredError / WorldReparentTargetError
@@ -334,16 +334,16 @@ class TestWorldAncestorDescendantCte:
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        assert await repo.collect_ancestor_ids(county.id.int) == [state.id.int, country.id.int]
-        assert await repo.collect_ancestor_ids(state.id.int) == [country.id.int]
-        assert await repo.collect_ancestor_ids(country.id.int) == []
+        assert await repo.collect_ancestor_ids(county.id) == [state.id.int, country.id.int]
+        assert await repo.collect_ancestor_ids(state.id) == [country.id.int]
+        assert await repo.collect_ancestor_ids(country.id) == []
 
     async def test_list_descendants_includes_self_level_order(self, db_session, project):
         """list_descendants(国) = [国, 州, 县]（含自身，层序父先子后，spec §9 场景 1）."""
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        desc = await repo.list_descendants(country.id.int)
+        desc = await repo.list_descendants(country.id)
         assert [s.id for s in desc] == [country.id, state.id, county.id]
         assert [s.name for s in desc] == ["loc_country", "loc_state", "loc_county"]
 
@@ -355,8 +355,8 @@ class TestWorldAncestorDescendantCte:
         c = await _add_setting(repo, project, "loc_C", parent=b)
         d = await _add_setting(repo, project, "loc_D", parent=c)
 
-        assert await repo.collect_ancestor_ids(d.id.int) == [c.id.int, b.id.int, a.id.int]
-        desc = await repo.list_descendants(a.id.int)
+        assert await repo.collect_ancestor_ids(d.id) == [c.id.int, b.id.int, a.id.int]
+        desc = await repo.list_descendants(a.id)
         assert [s.id for s in desc] == [a.id, b.id, c.id, d.id]
 
     async def test_hard_deleted_excluded_from_cte(self, db_session, project):
@@ -365,22 +365,22 @@ class TestWorldAncestorDescendantCte:
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        await repo.hard_delete(state.id.int)
+        await repo.hard_delete(state.id)
 
         # 县仍存在，但其父链经过已物理删除的州 → 断链 → 无祖先
-        assert await repo.collect_ancestor_ids(county.id.int) == []
+        assert await repo.collect_ancestor_ids(county.id) == []
         # 国的子树只剩自身（州被排除，县经州不可达）
-        desc = await repo.list_descendants(country.id.int)
+        desc = await repo.list_descendants(country.id)
         assert [s.id for s in desc] == [country.id]
         # 已物理删除的节点自身也不可进入 CTE
-        assert await repo.collect_ancestor_ids(state.id.int) == []
-        assert await repo.list_descendants(state.id.int) == []
+        assert await repo.collect_ancestor_ids(state.id) == []
+        assert await repo.list_descendants(state.id) == []
 
     async def test_missing_id_returns_empty(self, db_session, project):
         """不存在的 id → 空列表（不抛错，spec §5.3 起始 SELECT 不命中）."""
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.collect_ancestor_ids(99999) == []
-        assert await repo.list_descendants(99999) == []
+        assert await repo.collect_ancestor_ids(uuid.uuid4()) == []
+        assert await repo.list_descendants(uuid.uuid4()) == []
 
     async def test_descendants_same_level_sorted_by_created_at(self, db_session, project):
         """同层按 created_at ASC 层序稳定输出（F15 教训: 排序键用时间键，不依赖中文文本）."""
@@ -400,7 +400,7 @@ class TestWorldAncestorDescendantCte:
             repo, project, "loc_C2", parent=b2, created_at=datetime(2026, 1, 5, tzinfo=UTC)
         )
 
-        desc = await repo.list_descendants(a.id.int)
+        desc = await repo.list_descendants(a.id)
         assert [s.name for s in desc] == ["loc_A", "loc_B1", "loc_B2", "loc_C1", "loc_C2"]
 
     async def test_descendants_map_parent_id_to_domain_uuid(self, db_session, project):
@@ -408,7 +408,7 @@ class TestWorldAncestorDescendantCte:
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        desc = await repo.list_descendants(country.id.int)
+        desc = await repo.list_descendants(country.id)
         by_id = {s.id: s for s in desc}
         assert by_id[country.id].parent_id is None
         assert by_id[state.id].parent_id == country.id
@@ -439,7 +439,9 @@ class TestWorldListParentFilter:
         repo = SQLiteWorldRepository(db_session)
         await self._build_filter_tree(repo, project)
 
-        settings, total = await repo.list(project.id, sort_by="name", sort_desc=False)
+        settings, total = await repo.list(
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False
+        )
         assert total == 6
         assert [s.name for s in settings] == [
             "loc_A",
@@ -456,13 +458,13 @@ class TestWorldListParentFilter:
         _, a, _, _, c, _ = await self._build_filter_tree(repo, project)
 
         settings, total = await repo.list(
-            project.id, parent_id=a.id.int, sort_by="name", sort_desc=False
+            uuid.UUID(int=project.id), parent_id=a.id, sort_by="name", sort_desc=False
         )
         assert total == 2
         assert [s.name for s in settings] == ["loc_C", "loc_D"]
 
         # 父无子 → 空
-        assert await repo.list(project.id, parent_id=c.id.int) == ([], 0)
+        assert await repo.list(uuid.UUID(int=project.id), parent_id=c.id) == ([], 0)
 
     async def test_list_top_level_only(self, db_session, project):
         """top_level_only=True → 只返回 parent_id IS NULL 的顶层（spec §7 边界 16）."""
@@ -470,7 +472,7 @@ class TestWorldListParentFilter:
         await self._build_filter_tree(repo, project)
 
         settings, total = await repo.list(
-            project.id, top_level_only=True, sort_by="name", sort_desc=False
+            uuid.UUID(int=project.id), top_level_only=True, sort_by="name", sort_desc=False
         )
         assert total == 1
         assert [s.name for s in settings] == ["loc_root"]
@@ -482,9 +484,14 @@ class TestWorldListParentFilter:
         _, a, _, _, _, _ = await self._build_filter_tree(repo, project)
 
         # AND: 无条目既属于 A 的直接子级又是顶层 → 空
-        assert await repo.list(project.id, parent_id=a.id.int, top_level_only=True) == ([], 0)
+        assert await repo.list(uuid.UUID(int=project.id), parent_id=a.id, top_level_only=True) == (
+            [],
+            0,
+        )
         # parent_id=None（哨兵 = 未过滤）+ top_level_only → 顶层
-        settings, total = await repo.list(project.id, parent_id=None, top_level_only=True)
+        settings, total = await repo.list(
+            uuid.UUID(int=project.id), parent_id=None, top_level_only=True
+        )
         assert total == 1
         assert {s.name for s in settings} == {"loc_root"}
 
@@ -504,11 +511,11 @@ class TestWorldHardDeleteSemantics:
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        n = await repo.hard_delete_many([country.id.int, state.id.int, county.id.int])
+        n = await repo.hard_delete_many([country.id, state.id, county.id])
         assert n == 3
-        assert await repo.get(country.id.int) is None
-        assert await repo.get(state.id.int) is None
-        assert await repo.get(county.id.int) is None
+        assert await repo.get(country.id) is None
+        assert await repo.get(state.id) is None
+        assert await repo.get(county.id) is None
         # 物理删除（非 is_deleted=1）: 表内行数归零
         count = await db_session.execute(select(func.count()).select_from(WorldSettingORM))
         assert count.scalar_one() == 0
@@ -523,12 +530,12 @@ class TestWorldHardDeleteSemantics:
         repo = SQLiteWorldRepository(db_session)
         country, state, county = await _build_3level_tree(repo, project)
 
-        assert await repo.hard_delete_many([99999]) == 0
+        assert await repo.hard_delete_many([uuid.uuid4()]) == 0
         # 只删 country（未传子级）→ 返回 1，子级仍在（子树集合由 service 用 list_descendants 计算）
-        assert await repo.hard_delete_many([country.id.int, 99999]) == 1
-        assert await repo.get(country.id.int) is None
-        assert await repo.get(state.id.int) is not None
-        assert await repo.get(county.id.int) is not None
+        assert await repo.hard_delete_many([country.id, uuid.uuid4()]) == 1
+        assert await repo.get(country.id) is None
+        assert await repo.get(state.id) is not None
+        assert await repo.get(county.id) is not None
 
     async def test_delete_with_reparent_moves_children_and_deletes_self(self, db_session, project):
         """delete_with_reparent(父id, 新父id) → 子改挂新父 + 自身删除，单事务（spec §5.5）."""
@@ -536,11 +543,11 @@ class TestWorldHardDeleteSemantics:
         country, state, county = await _build_3level_tree(repo, project)
         x = await _add_setting(repo, project, "loc_X", parent=country)  # reparent 目标（子级）
 
-        assert await repo.delete_with_reparent(state.id.int, x.id.int) is True
-        assert await repo.get(state.id.int) is None  # 自身物理删除
-        assert await repo.get(country.id.int) is not None  # 父不受影响
+        assert await repo.delete_with_reparent(state.id, x.id) is True
+        assert await repo.get(state.id) is None  # 自身物理删除
+        assert await repo.get(country.id) is not None  # 父不受影响
 
-        county_after = await repo.get(county.id.int)
+        county_after = await repo.get(county.id)
         assert county_after is not None
         assert county_after.parent_id == x.id  # 直接子改挂新父
 
@@ -553,9 +560,9 @@ class TestWorldHardDeleteSemantics:
         d = await _add_setting(repo, project, "loc_D", parent=c)
         x = await _add_setting(repo, project, "loc_X", parent=a)
 
-        assert await repo.delete_with_reparent(b.id.int, x.id.int) is True
-        c_after = await repo.get(c.id.int)
-        d_after = await repo.get(d.id.int)
+        assert await repo.delete_with_reparent(b.id, x.id) is True
+        c_after = await repo.get(c.id)
+        d_after = await repo.get(d.id)
         assert c_after is not None and c_after.parent_id == x.id
         assert d_after is not None and d_after.parent_id == c.id  # 孙的 parent 仍指向子
 
@@ -568,9 +575,9 @@ class TestWorldHardDeleteSemantics:
         a = await _add_setting(repo, project, "loc_A", parent=root)
         b = await _add_setting(repo, project, "loc_B", parent=root)
 
-        assert await repo.delete_with_reparent(a.id.int, b.id.int) is True
-        assert await repo.get(a.id.int) is None
-        assert await repo.get(b.id.int) is not None
+        assert await repo.delete_with_reparent(a.id, b.id) is True
+        assert await repo.get(a.id) is None
+        assert await repo.get(b.id) is not None
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -589,7 +596,7 @@ class TestWorldParentIdWriteRoundtrip:
         county = await _add_setting(repo, project, "loc_county", parent=country)
 
         assert county.parent_id == country.id
-        got = await repo.get(county.id.int)
+        got = await repo.get(county.id)
         assert got is not None and got.parent_id == country.id
 
         # 持久化验证: DB 行 parent_id 为 int（uuid.UUID(int=...).int 换算）
@@ -608,7 +615,7 @@ class TestWorldParentIdWriteRoundtrip:
         updated = await repo.update(c.model_copy(update={"parent_id": b.id}))
         assert updated.parent_id == b.id
 
-        got = await repo.get(c.id.int)
+        got = await repo.get(c.id)
         assert got is not None and got.parent_id == b.id
 
     async def test_parent_id_none_preserved_and_promote_via_update(self, db_session, project):
@@ -619,14 +626,14 @@ class TestWorldParentIdWriteRoundtrip:
         b = await _add_setting(repo, project, "loc_B", parent=a)
         assert b.parent_id == a.id
 
-        got_a = await repo.get(a.id.int)
+        got_a = await repo.get(a.id)
         assert got_a is not None and got_a.parent_id is None  # 根保持顶层
 
         # 置顶: 删掉唯一根后，b 置顶成为新的唯一根（单根不变量允许）
-        await repo.hard_delete(a.id.int)
+        await repo.hard_delete(a.id)
         promoted = await repo.update(b.model_copy(update={"parent_id": None}))
         assert promoted.parent_id is None
-        got_b = await repo.get(b.id.int)
+        got_b = await repo.get(b.id)
         assert got_b is not None and got_b.parent_id is None
 
 
@@ -644,7 +651,7 @@ class TestWorldGetByParentAndName:
         repo = SQLiteWorldRepository(db_session)
         _, state, county = await _build_3level_tree(repo, project)
 
-        hit = await repo.get_by_parent_and_name(project.id, state.id.int, "loc_county")
+        hit = await repo.get_by_parent_and_name(uuid.UUID(int=project.id), state.id, "loc_county")
         assert hit is not None and hit.id == county.id
 
     async def test_top_level_hit(self, db_session, project):
@@ -652,7 +659,7 @@ class TestWorldGetByParentAndName:
         repo = SQLiteWorldRepository(db_session)
         country, _, _ = await _build_3level_tree(repo, project)
 
-        hit = await repo.get_by_parent_and_name(project.id, None, "loc_country")
+        hit = await repo.get_by_parent_and_name(uuid.UUID(int=project.id), None, "loc_country")
         assert hit is not None and hit.id == country.id
 
     async def test_missing_returns_none(self, db_session, project):
@@ -660,16 +667,25 @@ class TestWorldGetByParentAndName:
         repo = SQLiteWorldRepository(db_session)
         _, state, _ = await _build_3level_tree(repo, project)
 
-        assert await repo.get_by_parent_and_name(project.id, state.id.int, "loc_nope") is None
-        assert await repo.get_by_parent_and_name(project.id, 99999, "loc_county") is None
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), state.id, "loc_nope")
+            is None
+        )
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), uuid.uuid4(), "loc_county")
+            is None
+        )
 
     async def test_hard_deleted_not_matched(self, db_session, project):
         """真删条目不命中（v1.1 物理删除后查询无记录，spec §5.1 校验语义）."""
         repo = SQLiteWorldRepository(db_session)
         _, state, county = await _build_3level_tree(repo, project)
-        await repo.hard_delete(county.id.int)
+        await repo.hard_delete(county.id)
 
-        assert await repo.get_by_parent_and_name(project.id, state.id.int, "loc_county") is None
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), state.id, "loc_county")
+            is None
+        )
 
     async def test_project_isolation(self, db_session, project):
         """跨项目不命中（parent 归属校验数据隔离基线，spec §2.1 规则 3）."""
@@ -684,8 +700,14 @@ class TestWorldGetByParentAndName:
         other_repo = SQLiteWorldRepository(db_session)
         await other_repo.add(_setting(other, "loc_county"))
 
-        assert await repo.get_by_parent_and_name(project.id, state.id.int, "loc_county") is not None
-        assert await repo.get_by_parent_and_name(other.id, state.id.int, "loc_county") is None
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), state.id, "loc_county")
+            is not None
+        )
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=other.id), state.id, "loc_county")
+            is None
+        )
 
     async def test_same_name_different_parents_both_match(self, db_session, project):
         """不同父同名（跨层同名合法，新语义）→ 各自按 (父, 名) 命中（spec §2.4 场景表）."""
@@ -695,8 +717,8 @@ class TestWorldGetByParentAndName:
         x1 = await _add_setting(repo, project, "loc_X", parent=a)
         x2 = await _add_setting(repo, project, "loc_X", parent=b)
 
-        hit_a = await repo.get_by_parent_and_name(project.id, a.id.int, "loc_X")
-        hit_b = await repo.get_by_parent_and_name(project.id, b.id.int, "loc_X")
+        hit_a = await repo.get_by_parent_and_name(uuid.UUID(int=project.id), a.id, "loc_X")
+        hit_b = await repo.get_by_parent_and_name(uuid.UUID(int=project.id), b.id, "loc_X")
         assert hit_a is not None and hit_a.id == x1.id
         assert hit_b is not None and hit_b.id == x2.id
         assert hit_a.id != hit_b.id

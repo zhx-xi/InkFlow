@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.chapter_audit import AuditLog
 from inkflow.infrastructure.database.models.audit_log import AuditLogORM
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _log_orm_to_domain(orm: AuditLogORM) -> AuditLog:
@@ -74,19 +75,22 @@ class SQLiteAuditLogRepository:
         await self._session.refresh(orm)
         return _log_orm_to_domain(orm)
 
-    async def latest_pending(self, chapter_id: int) -> AuditLog | None:
+    async def latest_pending(self, chapter_id: uuid.UUID) -> AuditLog | None:
         """返回该章最新 pending 审计记录（created_at desc，id desc 兜底）.
 
         Args:
-            chapter_id: 章节主键（int，与 ORM 层一致）.
+            chapter_id: 章节主键（领域 UUID，见 #1291）.
 
         Returns:
             最新 pending 记录；该章无 pending（已全部确认/从未审计）→ None.
         """
+        cid = require_uuid_pk(chapter_id)
+        if cid is None:
+            return None
         stmt = (
             select(AuditLogORM)
             .where(
-                AuditLogORM.chapter_id == chapter_id,
+                AuditLogORM.chapter_id == cid,
                 AuditLogORM.status == "pending",
             )
             .order_by(AuditLogORM.created_at.desc(), AuditLogORM.id.desc())
@@ -97,12 +101,12 @@ class SQLiteAuditLogRepository:
         return _log_orm_to_domain(orm) if orm else None
 
     async def confirm(
-        self, log_id: int, *, action: str, note: str, confirmed_at: datetime
+        self, log_id: uuid.UUID, *, action: str, note: str, confirmed_at: datetime
     ) -> AuditLog | None:
         """确认审计记录：action 映射为 status（accept→accepted / reject→rejected）落库.
 
         Args:
-            log_id: 审计记录主键（int）.
+            log_id: 审计记录主键（领域 UUID，见 #1291）.
             action: 确认动作（accept=接受 / reject=拒绝，映射为落库状态）.
             note: 确认备注（拒绝原因等，写入 audit_logs.note）.
             confirmed_at: 确认时间（UTC）.
@@ -110,7 +114,10 @@ class SQLiteAuditLogRepository:
         Returns:
             更新后的 AuditLog；log_id 不存在 → None.
         """
-        stmt = select(AuditLogORM).where(AuditLogORM.id == log_id)
+        lid = require_uuid_pk(log_id)
+        if lid is None:
+            return None
+        stmt = select(AuditLogORM).where(AuditLogORM.id == lid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
@@ -123,21 +130,24 @@ class SQLiteAuditLogRepository:
         return _log_orm_to_domain(orm)
 
     async def list(
-        self, project_id: int, *, offset: int = 0, limit: int = 20
+        self, project_id: uuid.UUID, *, offset: int = 0, limit: int = 20
     ) -> tuple[builtins.list[AuditLog], int]:
         """按项目分页查询审计记录（created_at desc 最新在前）.
 
         Args:
-            project_id: 项目主键（int，与 ORM 层一致）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             offset: 分页偏移（默认 0）.
             limit: 每页条数（默认 20）.
 
         Returns:
             (页内 AuditLog 列表, 该项目审计记录总数).
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
         stmt = (
             select(AuditLogORM)
-            .where(AuditLogORM.project_id == project_id)
+            .where(AuditLogORM.project_id == pid)
             .order_by(AuditLogORM.created_at.desc(), AuditLogORM.id.desc())
             .offset(offset)
             .limit(limit)
@@ -145,9 +155,7 @@ class SQLiteAuditLogRepository:
         result = await self._session.execute(stmt)
         items = [_log_orm_to_domain(o) for o in result.scalars().all()]
         total_stmt = (
-            select(func.count())
-            .select_from(AuditLogORM)
-            .where(AuditLogORM.project_id == project_id)
+            select(func.count()).select_from(AuditLogORM).where(AuditLogORM.project_id == pid)
         )
         total = (await self._session.execute(total_stmt)).scalar_one()
         return items, total

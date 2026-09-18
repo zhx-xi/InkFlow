@@ -180,8 +180,8 @@ class TestPreferenceSourceCollect:
 
         assert items == []
 
-    async def test_project_repo_called_with_int_project_id(self):
-        """开关⑤: 以 project_id.int 调 project_repo.get（F1 惯例）."""
+    async def test_project_repo_called_with_uuid_project_id(self):
+        """开关⑤: 以领域 UUID 调 project_repo.get（#1291 收窄，替代 F1 int 惯例）."""
         project_repo = AsyncMock()
         project_repo.get.return_value = _project(memory_learning=True)
         preference_repo = AsyncMock()
@@ -190,7 +190,7 @@ class TestPreferenceSourceCollect:
 
         await source.collect(PROJECT_ID, CHAPTER_ID)
 
-        project_repo.get.assert_awaited_once_with(100)
+        project_repo.get.assert_awaited_once_with(PROJECT_ID)
         preference_repo.list_by_project.assert_awaited()
         assert preference_repo.list_by_project.await_args.args[0] == PROJECT_ID
 
@@ -486,9 +486,9 @@ class TestPreferenceSourceUserLevel:
         )
         project_repo = AsyncMock()
         project_repo.get.side_effect = lambda pid: {
-            PROJECT_ID.int: _project(memory_learning=True),
-            deleted.int: None,  # 已删项目
-            alive.int: _project(memory_learning=True),
+            PROJECT_ID: _project(memory_learning=True),
+            deleted: None,  # 已删项目
+            alive: _project(memory_learning=True),
         }.get(pid)
         preference_repo = AsyncMock()
         preference_repo.list_by_project.return_value = ([], 0)
@@ -517,10 +517,10 @@ class TestPreferenceSourceUserLevel:
         )
         project_repo = AsyncMock()
         project_repo.get.side_effect = lambda pid: {
-            PROJECT_ID.int: _project(memory_learning=True),
-            deleted.int: None,  # 已删项目
-            alive_a.int: _project(memory_learning=True),
-            alive_b.int: _project(memory_learning=True),
+            PROJECT_ID: _project(memory_learning=True),
+            deleted: None,  # 已删项目
+            alive_a: _project(memory_learning=True),
+            alive_b: _project(memory_learning=True),
         }.get(pid)
         preference_repo = AsyncMock()
         preference_repo.list_by_project.return_value = ([], 0)

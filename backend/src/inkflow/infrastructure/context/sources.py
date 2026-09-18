@@ -57,7 +57,7 @@ class OutlineSource:
     章纲 parent_id 上溯），其余卷/章不注入；每块描述摘要化（≤60 字）。
 
     Args:
-        outline_repo: 大纲仓储（list 接受 int 主键，域内 UUID 以 project_id.int 转换）.
+        outline_repo: 大纲仓储（list 接受领域 UUID，project_id 直传）.
         chapter_repo: 章节仓储（可选；缺省 None = 未接线 —— 章标题兜底与
             chapter.volume_id 卷匹配不可用，chapter_id 精确匹配与 parent_id 上溯仍生效）.
     """
@@ -80,7 +80,7 @@ class OutlineSource:
         项目无大纲 → 空列表（跳过，不报错）；chapter_id=None 或越界
         （> 2^63-1，SQLite INTEGER 溢出族 #1151）→ 只注入 overall。
         """
-        outlines, _total = await self._outline_repo.list(project_id.int)
+        outlines, _total = await self._outline_repo.list(project_id)
         if not outlines:
             return []
         blocks = await self._resolve_blocks(outlines, chapter_id)
@@ -116,7 +116,7 @@ class OutlineSource:
         """按需取章节实体；未接线 / 缺 id / id 越界 → None 且不查仓储（#1151）."""
         if self._chapter_repo is None or chapter_id is None or not _is_sqlite_int_id(chapter_id):
             return None
-        chapter: Chapter | None = await self._chapter_repo.get_chapter(chapter_id.int)
+        chapter: Chapter | None = await self._chapter_repo.get_chapter(chapter_id)
         return chapter
 
     async def _match_chapter(
@@ -177,7 +177,7 @@ class CharacterSettingSource:
     """角色设定数据源 — 从 characters 表读角色（D5=A：名 + brief 轻量化注入）.
 
     Args:
-        character_repo: 角色仓储（list 接受 int 主键，域内 UUID 以 project_id.int 转换）.
+        character_repo: 角色仓储（list 接受领域 UUID，project_id 直传）.
     """
 
     def __init__(self, character_repo: CharacterRepositoryProtocol) -> None:
@@ -189,7 +189,7 @@ class CharacterSettingSource:
         chapter_id: uuid.UUID | None,
     ) -> list[ContextItem]:
         """收集项目全部角色的设定条目；项目无角色 → 空列表（跳过，不报错）."""
-        chars, _total = await self._character_repo.list(project_id.int)
+        chars, _total = await self._character_repo.list(project_id)
         return [
             ContextItem(
                 source=ContextSourceType.CHARACTER_SETTING,
@@ -217,7 +217,7 @@ class WorldSettingSource:
     """世界设定数据源 — 从 world_settings 表读条目.
 
     Args:
-        world_repo: 世界观仓储（list 接受 int 主键，域内 UUID 以 project_id.int 转换）.
+        world_repo: 世界观仓储（list 接受领域 UUID，project_id 直传）.
     """
 
     def __init__(self, world_repo: WorldRepositoryProtocol) -> None:
@@ -229,7 +229,7 @@ class WorldSettingSource:
         chapter_id: uuid.UUID | None,
     ) -> list[ContextItem]:
         """收集项目全部世界观条目；项目无条目 → 空列表（跳过，不报错）."""
-        settings, _total = await self._world_repo.list(project_id.int)
+        settings, _total = await self._world_repo.list(project_id)
         return [
             ContextItem(
                 source=ContextSourceType.WORLD_SETTING,
@@ -267,7 +267,7 @@ class ForeshadowingSource:
         - 项目存在但所有伏笔已回收/已软删除 → 空列表（正常路径）
         - chapter_id 参数 MVP 不使用（全量注入 open 伏笔，按章节过滤归 Phase 2+）
         """
-        items = await self._repo.list_open(project_id.int)  # (priority DESC, updated_at DESC)
+        items = await self._repo.list_open(project_id)  # (priority DESC, updated_at DESC)
         return [
             ContextItem(
                 source=ContextSourceType.FORESHADOWING,
@@ -315,8 +315,7 @@ class SummarySource:
     保持确定性、零 LLM 调用，两轨共用同一缓存表，无重复生成。
 
     Args:
-        summary_repo: 摘要缓存仓储（list_recent 接受 int 主键，域内 UUID 以
-            project_id.int 转换）.
+        summary_repo: 摘要缓存仓储（list_recent 接受领域 UUID，project_id 直传）.
         chapter_repo: 章节仓储（可选；用于补齐条目所需的 `chapter_index`，
             经 `resolve_chapter_index` 轻读）. None = 未接线 → 序号兜底 0.
         summary_max_chapters: dynamic 层最多注入的摘要条数（spec §4.1）.
@@ -348,7 +347,7 @@ class SummarySource:
         条目标题/排序键所需的章节序号经 `chapter_repo` 轻读补齐（#1253）。
         """
         try:
-            summaries = await self._repo.list_recent(project_id.int, self._max_chapters)
+            summaries = await self._repo.list_recent(project_id, self._max_chapters)
         except Exception:
             logger.warning("前文摘要读取失败，跳过该数据源（spec §4.6）", exc_info=True)
             return []

@@ -41,10 +41,7 @@ from inkflow.domain.models.session import (
     SessionType,
 )
 from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -165,13 +162,12 @@ class SQLiteSessionRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, session_id: int | uuid.UUID) -> Session | None:
-        """按主键查询会话（不含已归档）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(session_id, uuid.UUID):
-            sid = require_uuid_pk(session_id)
-        else:
-            sid = uuid_to_pk_or_none(session_id)
+    async def get(self, session_id: uuid.UUID) -> Session | None:
+        """按主键查询会话（不含已归档）。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        sid = require_uuid_pk(session_id)
         if sid is None:
             return None
         stmt = select(SessionORM).where(
@@ -186,7 +182,7 @@ class SQLiteSessionRepository:
         self,
         session_type: str | None = None,
         status: str | None = None,
-        project_id: int | uuid.UUID | None = None,
+        project_id: uuid.UUID | None = None,
         search: str | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -211,7 +207,7 @@ class SQLiteSessionRepository:
         """
         # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int / 不存在的项目）→ 空结果，
         # 防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500
-        pid = uuid_to_pk_or_none(project_id)
+        pid = require_uuid_pk(project_id)
         if project_id is not None and pid is None:
             return [], 0
         base = select(SessionORM)
@@ -242,12 +238,12 @@ class SQLiteSessionRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms], total
 
-    async def list_include_deleted(self, session_id: int | uuid.UUID) -> Session | None:
+    async def list_include_deleted(self, session_id: uuid.UUID) -> Session | None:
         """按主键查询会话（含已归档；详情可追档，归档也可读）.
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
         """
-        sid = uuid_to_pk_or_none(session_id)
+        sid = require_uuid_pk(session_id)
         if sid is None:
             return None
         stmt = select(SessionORM).where(SessionORM.id == sid)
@@ -294,30 +290,36 @@ class SQLiteSessionRepository:
             raise ValueError(f"Session {session_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def soft_delete(self, session_id: int) -> bool:
+    async def soft_delete(self, session_id: uuid.UUID) -> bool:
         """归档会话（is_deleted=True）.
 
         Returns:
             True 表示成功归档一条记录，False 表示未找到/已归档
         """
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return False
         stmt = (
             sa_update(SessionORM)
-            .where(SessionORM.id == session_id, ~SessionORM.is_deleted)
+            .where(SessionORM.id == sid, ~SessionORM.is_deleted)
             .values(is_deleted=True, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
         return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类未声明 rowcount（属性在底层 cursor）
 
-    async def restore(self, session_id: int) -> Session | None:
+    async def restore(self, session_id: uuid.UUID) -> Session | None:
         """解除已归档会话（is_deleted=False）.
 
         Returns:
             解除后的 Session；记录不存在或未归档时返回 None（重复操作无副作用）
         """
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return None
         stmt = (
             sa_update(SessionORM)
-            .where(SessionORM.id == session_id, SessionORM.is_deleted)
+            .where(SessionORM.id == sid, SessionORM.is_deleted)
             .values(is_deleted=False, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
@@ -327,13 +329,16 @@ class SQLiteSessionRepository:
         await self._session.commit()
         return await self.get(session_id)
 
-    async def hard_delete(self, session_id: int) -> bool:
+    async def hard_delete(self, session_id: uuid.UUID) -> bool:
         """物理删除会话（日志随 FK CASCADE 级联删除）.
 
         Returns:
             True 表示删除成功，False 表示不存在
         """
-        stmt = select(SessionORM).where(SessionORM.id == session_id)
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return False
+        stmt = select(SessionORM).where(SessionORM.id == sid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
@@ -352,17 +357,20 @@ class SQLiteSessionRepository:
         await self._session.refresh(orm)
         return _log_orm_to_domain(orm)
 
-    async def next_seq(self, session_id: int) -> int:
+    async def next_seq(self, session_id: uuid.UUID) -> int:
         """计算会话内下一条日志序号（max(seq)+1；无日志时 = 1）."""
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return 0
         stmt = select(func.coalesce(func.max(SessionLogORM.seq), 0) + 1).where(
-            SessionLogORM.session_id == session_id
+            SessionLogORM.session_id == sid
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
 
     async def list_logs(
         self,
-        session_id: int,
+        session_id: uuid.UUID,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[builtins.list[SessionLogEntry], int]:
@@ -376,7 +384,10 @@ class SQLiteSessionRepository:
         Returns:
             (日志列表, 总数) 元组.
         """
-        base = select(SessionLogORM).where(SessionLogORM.session_id == session_id)
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return [], 0
+        base = select(SessionLogORM).where(SessionLogORM.session_id == sid)
 
         # 总数（分页前）
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -389,21 +400,25 @@ class SQLiteSessionRepository:
         orms = result.scalars().all()
         return [_log_orm_to_domain(o) for o in orms], total
 
-    async def count_logs(self, session_id: int) -> int:
+    async def count_logs(self, session_id: uuid.UUID) -> int:
         """统计会话日志条数（SessionView.log_count）."""
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return 0
         stmt = (
-            select(func.count())
-            .select_from(SessionLogORM)
-            .where(SessionLogORM.session_id == session_id)
+            select(func.count()).select_from(SessionLogORM).where(SessionLogORM.session_id == sid)
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
 
-    async def last_log(self, session_id: int) -> SessionLogEntry | None:
+    async def last_log(self, session_id: uuid.UUID) -> SessionLogEntry | None:
         """查询会话最新日志条目（SessionView.last_log；无日志时返回 None）."""
+        sid = require_uuid_pk(session_id)
+        if sid is None:
+            return None
         stmt = (
             select(SessionLogORM)
-            .where(SessionLogORM.session_id == session_id)
+            .where(SessionLogORM.session_id == sid)
             .order_by(SessionLogORM.seq.desc())
             .limit(1)
         )

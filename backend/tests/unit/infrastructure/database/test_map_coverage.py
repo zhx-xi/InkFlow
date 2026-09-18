@@ -228,7 +228,7 @@ class TestServiceCoverageGaps:
         child = _map(name="孤儿子图", root_location_id=None)
         target = _map(name="目标图")
         sid = uuid.UUID(int=22222)
-        mock_repo.children = AsyncMock(side_effect=lambda mid: [] if mid != sid.int else [child])
+        mock_repo.children = AsyncMock(side_effect=lambda mid: [] if mid != sid else [child])
         mock_repo.get = AsyncMock(
             side_effect=lambda mid: target if mid in {sid, target.id} else None
         )
@@ -242,7 +242,7 @@ class TestServiceCoverageGaps:
         mock_repo.get = AsyncMock(return_value=m)
         mock_asset_store.delete = AsyncMock(side_effect=OSError("locked"))
         assert await service.delete_map(m.id) is True
-        mock_repo.delete.assert_awaited_once_with(m.id.int)
+        mock_repo.delete.assert_awaited_once_with(m.id)
 
     async def test_add_pin_without_location_skips_world_check(
         self, service, mock_repo, mock_world_repo
@@ -309,9 +309,9 @@ class TestRepoCoverageGaps:
         )
         saved = await repo.add(wm)
         p = await repo.add_pin(_pin(map_id=saved.id, x=1.0, y=2.0, label="p1"))
-        hit = await repo.get_pin(p.id.int)
+        hit = await repo.get_pin(p.id)
         assert hit is not None and hit.id == p.id and hit.label == "p1"
-        assert await repo.get_pin(99999) is None
+        assert await repo.get_pin(uuid.uuid4()) is None
 
     async def test_list_maps_by_project(self, db_session, project) -> None:
         """list_maps_by_project 全量收集（L344-346）."""
@@ -337,7 +337,7 @@ class TestRepoCoverageGaps:
         )
         await repo.add(wm)
         await repo.add(wm2)
-        maps = await repo.list_maps_by_project(project.id)
+        maps = await repo.list_maps_by_project(uuid.UUID(int=project.id))
         assert {m.name for m in maps} == {"地图A", "地图B"}
 
 

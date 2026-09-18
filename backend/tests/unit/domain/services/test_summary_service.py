@@ -64,18 +64,17 @@ def _summary(chapter_id: uuid.UUID) -> ChapterSummary:
 class MockSummaryRepo:
     """Mock SummaryRepositoryProtocol."""
 
-    def __init__(self, summaries: dict[int, ChapterSummary] | None = None) -> None:
-        self._store: dict[int, ChapterSummary] = summaries or {}
-        self.upsert_calls: list[tuple[int, str, str]] = []
+    def __init__(self, summaries: dict[uuid.UUID, ChapterSummary] | None = None) -> None:
+        self._store: dict[uuid.UUID, ChapterSummary] = summaries or {}
+        self.upsert_calls: list[tuple[uuid.UUID, str, str]] = []
 
     async def get(self, chapter_id: uuid.UUID) -> ChapterSummary | None:
-        """#1271：get 入参为领域 UUID；内部归一为 int 键（与 upsert 同源，镜像真实 repo）。"""
-        key = chapter_id.int if isinstance(chapter_id, uuid.UUID) else chapter_id
-        return self._store.get(key)
+        """#1291：get 入参为领域 UUID，缓存亦以领域 UUID 为键（镜像真实 repo）。"""
+        return self._store.get(chapter_id)
 
-    async def upsert(self, chapter_id: int, summary: str, model: str) -> ChapterSummary:
+    async def upsert(self, chapter_id: uuid.UUID, summary: str, model: str) -> ChapterSummary:
         self.upsert_calls.append((chapter_id, summary, model))
-        cid_uuid = uuid.UUID(int=chapter_id) if isinstance(chapter_id, int) else uuid.uuid4()
+        cid_uuid = chapter_id
         cs = ChapterSummary(
             id=uuid.uuid4(),
             chapter_id=cid_uuid,
@@ -87,7 +86,7 @@ class MockSummaryRepo:
         self._store[chapter_id] = cs
         return cs
 
-    async def list_recent(self, project_id: int, limit: int = 10) -> list[ChapterSummary]:
+    async def list_recent(self, project_id: uuid.UUID, limit: int = 10) -> list[ChapterSummary]:
         # ⚠️ 补强（#524）：镜像真实 repo order_by desc 语义——Mock 无排序则「排序契约」无法在测试断言
         return sorted(self._store.values(), key=lambda s: s.updated_at, reverse=True)[:limit]
 
@@ -153,12 +152,12 @@ class MockPromptManager:
 
 
 class MockChapterReader:
-    """Mock ChapterReaderProtocol."""
+    """Mock ChapterReaderProtocol（#1291：章节主键为领域 UUID）。"""
 
-    def __init__(self, chapters: dict[int, Chapter] | None = None) -> None:
-        self._chapters: dict[int, Chapter] = chapters or {}
+    def __init__(self, chapters: dict[uuid.UUID, Chapter] | None = None) -> None:
+        self._chapters: dict[uuid.UUID, Chapter] = chapters or {}
 
-    async def get_chapter(self, chapter_id: int) -> Chapter | None:
+    async def get_chapter(self, chapter_id: uuid.UUID) -> Chapter | None:
         return self._chapters.get(chapter_id)
 
 
@@ -192,7 +191,7 @@ class TestSummaryService:
         prompts: MockPromptManager,
         chapter: Chapter,
     ) -> SummaryService:
-        reader = MockChapterReader({int(chapter.id): chapter})
+        reader = MockChapterReader({chapter.id: chapter})
         return SummaryService(
             summary_repo=repo,
             llm_client=llm,
@@ -212,9 +211,8 @@ class TestSummaryService:
         self, svc: SummaryService, chapter: Chapter, repo: MockSummaryRepo, llm: MockLLMClient
     ) -> None:
         """缓存命中时不应重新调用 LLM."""
-        # 手动添加缓存（使用 int ID）
-        chapter_id_int = int(chapter.id) if isinstance(chapter.id, uuid.UUID) else chapter.id
-        repo._store[chapter_id_int] = ChapterSummary(
+        # 手动添加缓存（#1291：缓存键为领域 UUID）
+        repo._store[chapter.id] = ChapterSummary(
             id=uuid.uuid4(),
             chapter_id=chapter.id,
             summary="已缓存的摘要",
@@ -231,8 +229,7 @@ class TestSummaryService:
         self, svc: SummaryService, chapter: Chapter, repo: MockSummaryRepo, llm: MockLLMClient
     ) -> None:
         """缓存已过期（章节已更新）时重新生成."""
-        chapter_id_int = int(chapter.id) if isinstance(chapter.id, uuid.UUID) else chapter.id
-        repo._store[chapter_id_int] = ChapterSummary(
+        repo._store[chapter.id] = ChapterSummary(
             id=uuid.uuid4(),
             chapter_id=chapter.id,
             summary="过期的摘要",
@@ -249,8 +246,7 @@ class TestSummaryService:
         self, svc: SummaryService, chapter: Chapter, repo: MockSummaryRepo, llm: MockLLMClient
     ) -> None:
         """force=True 时忽略缓存."""
-        chapter_id_int = int(chapter.id) if isinstance(chapter.id, uuid.UUID) else chapter.id
-        repo._store[chapter_id_int] = ChapterSummary(
+        repo._store[chapter.id] = ChapterSummary(
             id=uuid.uuid4(),
             chapter_id=chapter.id,
             summary="缓存摘要",
@@ -275,13 +271,12 @@ class TestSummaryService:
         self, svc: SummaryService, chapter: Chapter, repo: MockSummaryRepo
     ) -> None:
         """list_recent 返回缓存摘要列表."""
-        chapter_id_int = int(chapter.id) if isinstance(chapter.id, uuid.UUID) else chapter.id
         older = _summary(chapter.id)
         older.updated_at = "2020-01-01T00:00:00+00:00"
         newer = _summary(chapter.id)
         newer.updated_at = "2099-12-31T23:59:59+00:00"
-        repo._store[chapter_id_int] = older
-        repo._store[chapter_id_int + 1] = newer
+        repo._store[chapter.id] = older
+        repo._store[uuid.uuid4()] = newer  # 同项目另一章（UUID 键唯一）
         results = await svc.list_recent(chapter.project_id)
         # ⚠️ 补强（#524）：断言「按最新在前」排序（真实 repo order_by order_index desc 的 Mock 镜像）
         assert [r.updated_at for r in results] == sorted(
@@ -297,7 +292,7 @@ class TestSummaryService:
     ) -> None:
         """LLM 输出 > 300 字 → 截断为 297 + '...'（≤ 300 字契约）。"""
         long_llm = MockLLMClient(response_text="长" * 500)
-        reader = MockChapterReader({int(chapter.id): chapter})
+        reader = MockChapterReader({chapter.id: chapter})
         svc = SummaryService(
             summary_repo=repo,
             llm_client=long_llm,
@@ -322,7 +317,7 @@ class TestSummaryService:
             ):
                 raise RuntimeError("llm down")
 
-        reader = MockChapterReader({int(chapter.id): chapter})
+        reader = MockChapterReader({chapter.id: chapter})
         svc = SummaryService(
             summary_repo=repo,
             llm_client=FailingLLM(),

@@ -149,7 +149,7 @@ async def test_delete_map_cascade_without_self_map_publishes_none_project(
 
     assert await service.delete_map(orphan_id, cascade=True) is True
 
-    mock_repo.delete_many.assert_awaited_once_with([9])
+    mock_repo.delete_many.assert_awaited_once_with([uuid.UUID(int=9)])
     assert len(recorded_events) == 1
     event = recorded_events[0]
     assert (event.domain, event.op) == ("map", "delete")

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -199,7 +200,7 @@ async def test_c2_create_project_after_legacy_migration_succeeds(tmp_path: Path)
             assert created.name == "E2E-新书"
             assert created.tags == ["玄幻"]
 
-            read_back = await SQLiteProjectRepository(session).get(created.id.int)
+            read_back = await SQLiteProjectRepository(session).get(created.id)
             assert read_back is not None
             assert read_back.name == "E2E-新书"
 
@@ -214,7 +215,7 @@ async def test_c3_legacy_rows_preserved_after_migration(tmp_path: Path) -> None:
 
         async with db_module.async_session_factory() as session:
             repo = SQLiteProjectRepository(session)
-            legacy = await repo.get(1)
+            legacy = await repo.get(uuid.UUID(int=1))
             assert legacy is not None, "存量行被删（数据丢失回归）"
             assert legacy.name == "蜀山旧档"
             assert legacy.tags == ["玄幻"]
@@ -239,7 +240,7 @@ async def test_c4_migration_idempotent_across_restart(tmp_path: Path) -> None:
             created = await service.create_project(
                 name="重启后新书", tags=["仙侠"], language="zh-CN"
             )
-            assert (await SQLiteProjectRepository(session).get(created.id.int)) is not None
+            assert (await SQLiteProjectRepository(session).get(created.id)) is not None
 
 
 # ── C5：反例守护（全新库不受影响 + 列已不存在时 no-op） ──
@@ -259,7 +260,7 @@ async def test_c5_fresh_db_unaffected_and_helper_is_noop(tmp_path: Path) -> None
                 name="全新库新书", tags=["都市"], language="zh-CN"
             )
             # 域 id 为 UUID(int=orm.id)（见 _orm_to_domain）→ 反解回 int 主键查回
-            assert (await SQLiteProjectRepository(session).get(created.id.int)) is not None
+            assert (await SQLiteProjectRepository(session).get(created.id)) is not None
 
 
 # ── C2b：遗留库经修复后不得再残留 genre 列（迁移真实生效，非「绕过写入」） ──

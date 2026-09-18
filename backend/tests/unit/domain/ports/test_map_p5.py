@@ -103,16 +103,18 @@ class TestClearRefPins:
     """C5: MapService.clear_ref_pins('role'|'event', ids) —— RED 预期 AttributeError FAIL."""
 
     async def test_clear_ref_pins_role_delegates_to_repo(self, service, mock_repo) -> None:
-        """clear_ref_pins('role', ids) → repo 收到调用（透传 ref_type + int ids）。"""
+        """clear_ref_pins('role', ids) → repo 收到调用（透传 ref_type + 领域 UUID ids）。"""
         ids = [uuid.UUID(int=1), uuid.UUID(int=2)]
         await service.clear_ref_pins("role", ids)
-        mock_repo.clear_ref_pins.assert_awaited_once_with("role", [1, 2])
+        mock_repo.clear_ref_pins.assert_awaited_once_with(
+            "role", [uuid.UUID(int=1), uuid.UUID(int=2)]
+        )
 
     async def test_clear_ref_pins_event_delegates_to_repo(self, service, mock_repo) -> None:
         """clear_ref_pins('event', ids) → repo 收到调用。"""
         ids = [uuid.UUID(int=5)]
         await service.clear_ref_pins("event", ids)
-        mock_repo.clear_ref_pins.assert_awaited_once_with("event", [5])
+        mock_repo.clear_ref_pins.assert_awaited_once_with("event", [uuid.UUID(int=5)])
 
 
 class TestClearLocationPinsExtended:
@@ -126,4 +128,6 @@ class TestClearLocationPinsExtended:
         await service.clear_location_pins(loc_ids)
         mock_repo.clear_location_pins.assert_awaited()
         # 扩展：maps.root_location_id 清理（repo 新方法 clear_map_root_locations）
-        mock_repo.clear_map_root_locations.assert_awaited_once_with([11, 12])
+        mock_repo.clear_map_root_locations.assert_awaited_once_with(
+            [uuid.UUID(int=11), uuid.UUID(int=12)]
+        )

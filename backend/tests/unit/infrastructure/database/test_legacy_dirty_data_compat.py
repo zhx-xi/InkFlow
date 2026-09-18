@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -234,7 +235,7 @@ async def test_r1_dirty_json_rows_lifespan_then_orm_read_fallback(tmp_path: Path
 
         async with db_module.async_session_factory() as session:
             # ① 损坏/空串 JSON 行 × ORM 读（ProjectRepository.get）
-            project = await SQLiteProjectRepository(session).get(1)
+            project = await SQLiteProjectRepository(session).get(uuid.UUID(int=1))
             assert project is not None
             assert project.name == "蜀山旧档"  # 行保全
             assert project.tags == []  # tags='' → fallback []
@@ -243,13 +244,13 @@ async def test_r1_dirty_json_rows_lifespan_then_orm_read_fallback(tmp_path: Path
             assert project.target_words == 0
 
             # ② characters.extra='{损坏 json'（ValueError → fallback {}）+ brief 补列后读
-            characters, total = await SQLiteCharacterRepository(session).list(1)
+            characters, total = await SQLiteCharacterRepository(session).list(uuid.UUID(int=1))
             assert total == 1
             assert characters[0].name == "玄明"
             assert characters[0].extra == {}
 
             # ③ world_settings.extra='   '（纯空白 → fallback {}）
-            worlds, ws_total = await SQLiteWorldRepository(session).list(1)
+            worlds, ws_total = await SQLiteWorldRepository(session).list(uuid.UUID(int=1))
             assert ws_total == 1
             assert worlds[0].name == "蜀山"
             assert worlds[0].extra == {}
@@ -283,7 +284,7 @@ async def test_r1_legacy_projects_minimal_columns_orm_read(tmp_path: Path) -> No
         await _run_lifespan(engine)
 
         async with db_module.async_session_factory() as session:
-            project = await SQLiteProjectRepository(session).get(1)
+            project = await SQLiteProjectRepository(session).get(uuid.UUID(int=1))
             assert project is not None
             assert project.name == "蜀山"  # 存量行保全
             assert project.tags == []

@@ -16,11 +16,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为存储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    return value.int if isinstance(value, uuid.UUID) else int(value)
-
-
 def _is_random_overflow(value: uuid.UUID) -> bool:
     """#578/#744 会话级溢出预检：随机 uuid4 超出 SQLite 64 位 INTEGER 范围。
 
@@ -94,10 +89,13 @@ class ChatMessageService:
         return created
 
     async def rename_conversation(self, conversation_id: uuid.UUID, title: str) -> bool:
-        """会话改名（#770）：溢出 uuid4 短路「不存在」，否则透传 repo.rename_conversation。"""
+        """会话改名（#770）：溢出 uuid4 短路「不存在」，否则透传 repo.rename_conversation。
+
+        #1291：透传领域 UUID（repo 层经 require_uuid_pk 归一，不再经 int 中转）。
+        """
         if _is_random_overflow(conversation_id):
             return False
-        renamed: bool = await self._repo.rename_conversation(_to_int_id(conversation_id), title)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 rename_conversation
+        renamed: bool = await self._repo.rename_conversation(conversation_id, title)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 rename_conversation
         return renamed
 
     async def list_messages(
@@ -136,40 +134,34 @@ class ChatMessageService:
         return await self._repo.list_conversations(include_deleted=include_deleted)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 list_conversations
 
     async def archive_message(self, message_id: uuid.UUID) -> bool:
-        """归档消息（软删 is_deleted=true）。repo.archive 收到 int 主键。"""
-        if _to_int_id(message_id) > 2**63 - 1:
-            return False
-        return await self._repo.archive(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive
+        """归档消息（软删 is_deleted=true）。repo.archive 收到领域 UUID（#1291）。"""
+        return await self._repo.archive(message_id)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive
 
     async def force_delete_message(self, message_id: uuid.UUID) -> bool:
-        """真删消息。repo.force_delete 收到 int 主键。"""
-        if _to_int_id(message_id) > 2**63 - 1:
-            return False
-        return await self._repo.force_delete(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete
+        """真删消息。repo.force_delete 收到领域 UUID（#1291）。"""
+        return await self._repo.force_delete(message_id)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete
 
     async def restore_message(self, message_id: uuid.UUID) -> ChatMessage | None:
-        """解除归档。repo.restore 收到 int 主键；返回 ChatMessage | None。"""
-        if _to_int_id(message_id) > 2**63 - 1:
-            return None
-        return await self._repo.restore(_to_int_id(message_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore
+        """解除归档。repo.restore 收到领域 UUID（#1291）；返回 ChatMessage | None。"""
+        return await self._repo.restore(message_id)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore
 
     async def archive_conversation(self, conversation_id: uuid.UUID) -> bool:
-        """线程级归档（软删 conversation + 其消息）。repo 收到 int 主键。"""
+        """线程级归档（软删 conversation + 其消息）。repo 收到领域 UUID（#1291）。"""
         if _is_random_overflow(conversation_id):
             return False
-        return await self._repo.archive_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive_conversation
+        return await self._repo.archive_conversation(conversation_id)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 archive_conversation
 
     async def force_delete_conversation(self, conversation_id: uuid.UUID) -> bool:
-        """线程级真删（删消息 + 会话行）。repo 收到 int 主键。"""
+        """线程级真删（删消息 + 会话行）。repo 收到领域 UUID（#1291）。"""
         if _is_random_overflow(conversation_id):
             return False
-        return await self._repo.force_delete_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete_conversation
+        return await self._repo.force_delete_conversation(conversation_id)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 force_delete_conversation
 
     async def restore_conversation(self, conversation_id: uuid.UUID) -> bool:
-        """线程级恢复（取消归档 conversation + 其消息）。repo 收到 int 主键。"""
+        """线程级恢复（取消归档 conversation + 其消息）。repo 收到领域 UUID（#1291）。"""
         if _is_random_overflow(conversation_id):
             return False
-        return await self._repo.restore_conversation(_to_int_id(conversation_id))  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore_conversation
+        return await self._repo.restore_conversation(conversation_id)  # type: ignore[no-any-return, attr-defined]  # 鸭子类型：repo 提供 restore_conversation
 
     async def update_delete_permission(
         self, *, conversation_id: uuid.UUID, delete_permission: str

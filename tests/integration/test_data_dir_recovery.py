@@ -299,8 +299,8 @@ async def test_data_dir_copy_backup_restore_inprocess(tmp_path: Path) -> None:
     async with _redirect_globals(engine_a, factory_a, dir_a):
         await _run_lifespan(engine_a)
 
-    # ② 项目 + 3 章（真 ORM 落库）
-    pid_int = await _seed_project_and_chapters(factory_a, pid_uuid)
+    # ② 项目 + 3 章（真 ORM 落库）；helper 内部断言 UUID(int=pid) 一致
+    await _seed_project_and_chapters(factory_a, pid_uuid)
 
     # ③ reindex（真仓储面 + 真 chroma + 指纹写入）：指纹 fresh、检索基线
     store_a = LangChainVectorStore(dir_a / "chroma", BagEmbeddings(EMBED_DIM, EMBED_MODEL))
@@ -339,11 +339,12 @@ async def test_data_dir_copy_backup_restore_inprocess(tmp_path: Path) -> None:
 
         # ⑤ repo 读项目/章完整
         async with factory_b() as session:
-            project = await SQLiteProjectRepository(session).get(pid_int)
+            # #1291：repo 入参为领域 UUID（pid_int 仅作物理主键断言用）
+            project = await SQLiteProjectRepository(session).get(pid_uuid)
             assert project is not None
             assert project.name == PROJECT_NAME
             chapters, total = await SQLiteChapterRepository(session).list_chapters(
-                pid_int, offset=0, limit=50
+                pid_uuid, offset=0, limit=50
             )
             assert total == 3
             assert [c.title for c in chapters] == CH_TITLES

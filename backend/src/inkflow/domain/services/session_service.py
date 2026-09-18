@@ -2,7 +2,7 @@
 
 职责（spec §2.4/§3.1/§5）:
 - 会话 CRUD 编排：委托 SessionRepositoryProtocol，负责领域层 UUID ↔
-  仓储层 int 转换（沿用 F1 `_to_int_id` 模式）
+  仓储层 int 转换（沿用 F1 `_to_uuid` 模式）
 - 项目存在性校验（spec §7 #1）: project_id 非 None 时复用 F9
   ProjectRepositoryProtocol.get 校验存在性，失败 → ProjectNotFoundError
   （复用 F9 character_errors，不重复定义，陷阱 16）
@@ -88,10 +88,10 @@ def _result_text(result: dict[str, Any]) -> str:
     return ""
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）."""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -168,7 +168,7 @@ class SessionService:
             SessionView（含 count_logs/last_log 聚合）；不存在返回 None
             （router 层转 404）.
         """
-        sid = _to_int_id(session_id)
+        sid = _to_uuid(session_id)
         session = await self._repo.list_include_deleted(sid)
         if session is None:
             return None
@@ -202,7 +202,7 @@ class SessionService:
         sessions, total = await self._repo.list(
             session_type.value if session_type is not None else None,
             status.value if status is not None else None,
-            _to_int_id(project_id) if project_id is not None else None,
+            _to_uuid(project_id) if project_id is not None else None,
             search,
             offset,
             limit,
@@ -356,7 +356,7 @@ class SessionService:
             True 表示删除成功（归档或真实删除）；False 表示会话不存在
             （router 层转 404）.
         """
-        sid = _to_int_id(session_id)
+        sid = _to_uuid(session_id)
         deleted: bool
         if force:
             deleted = await self._repo.hard_delete(sid)
@@ -389,7 +389,7 @@ class SessionService:
             恢复后的 Session（is_deleted=False）；不存在返回 None
             （router 层转 404）.
         """
-        sid = _to_int_id(session_id)
+        sid = _to_uuid(session_id)
         existing = await self._repo.list_include_deleted(sid)
         if existing is None:
             return None
@@ -415,7 +415,7 @@ class SessionService:
         Raises:
             SessionNotFoundError: 会话不存在/已归档（spec §7 #5/#6）.
         """
-        sid = _to_int_id(session_id)
+        sid = _to_uuid(session_id)
         existing = await self._repo.get(session_id)
         if existing is None:
             raise SessionNotFoundError()
@@ -450,7 +450,7 @@ class SessionService:
         Raises:
             SessionNotFoundError: 会话不存在或已归档（spec §7 #8）.
         """
-        sid = _to_int_id(session_id)
+        sid = _to_uuid(session_id)
         existing = await self._repo.list_include_deleted(sid)
         if existing is None or existing.is_deleted:
             raise SessionNotFoundError()
@@ -460,7 +460,7 @@ class SessionService:
 
     async def _to_view(self, session: Session) -> SessionView:
         """构建会话视图: 聚合 count_logs / last_log（spec §3.2）."""
-        sid = _to_int_id(session.id)
+        sid = _to_uuid(session.id)
         log_count = await self._repo.count_logs(sid)
         last_log = await self._repo.last_log(sid)
         return SessionView(session=session, log_count=log_count, last_log=last_log)

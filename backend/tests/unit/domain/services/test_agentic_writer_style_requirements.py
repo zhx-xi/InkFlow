@@ -347,7 +347,7 @@ async def test_real_repo_column_reaches_agentic_prompt_via_assembly(db_session) 
         return getattr(proj, "config", None) if proj is not None else None
 
     async def _req_getter(chapter_id: uuid.UUID) -> str | None:
-        chapter = await chapter_repo.get_chapter(chapter_id.int)
+        chapter = await chapter_repo.get_chapter(chapter_id)
         value = getattr(chapter, "writing_requirements", None) if chapter else None
         return value if isinstance(value, str) and value else None
 

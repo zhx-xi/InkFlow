@@ -69,7 +69,9 @@ class TestSummaryRepository:
         _, chapters = project_and_chapters
         repo = SQLiteSummaryRepository(db_session)
 
-        summary = await repo.upsert(chapters[0].id, "第一章摘要", "deepseek-v4-flash")
+        summary = await repo.upsert(
+            uuid.UUID(int=chapters[0].id), "第一章摘要", "deepseek-v4-flash"
+        )
 
         assert isinstance(summary, ChapterSummary)
         assert summary.chapter_id == uuid.UUID(int=chapters[0].id)
@@ -91,8 +93,8 @@ class TestSummaryRepository:
         _, chapters = project_and_chapters
         repo = SQLiteSummaryRepository(db_session)
 
-        first = await repo.upsert(chapters[0].id, "旧摘要", "model-a")
-        second = await repo.upsert(chapters[0].id, "新摘要", "model-b")
+        first = await repo.upsert(uuid.UUID(int=chapters[0].id), "旧摘要", "model-a")
+        second = await repo.upsert(uuid.UUID(int=chapters[0].id), "新摘要", "model-b")
 
         assert second.id == first.id
         assert second.chapter_id == first.chapter_id
@@ -108,16 +110,16 @@ class TestSummaryRepository:
         _, chapters = project_and_chapters
         repo = SQLiteSummaryRepository(db_session)
 
-        assert await repo.get(chapters[2].id) is None
+        assert await repo.get(uuid.UUID(int=chapters[2].id)) is None
 
     async def test_list_recent_orders_by_chapter_index_desc(self, db_session, project_and_chapters):
         """list_recent 按 chapter_index 倒序返回项目摘要."""
         project, chapters = project_and_chapters
         repo = SQLiteSummaryRepository(db_session)
         for ch in chapters:
-            await repo.upsert(ch.id, f"摘要-{int(ch.order_index)}", "model")
+            await repo.upsert(uuid.UUID(int=ch.id), f"摘要-{int(ch.order_index)}", "model")
 
-        recent = await repo.list_recent(project.id, limit=10)
+        recent = await repo.list_recent(uuid.UUID(int=project.id), limit=10)
 
         assert [s.chapter_id for s in recent] == [
             uuid.UUID(int=chapters[2].id),
@@ -131,9 +133,9 @@ class TestSummaryRepository:
         project, chapters = project_and_chapters
         repo = SQLiteSummaryRepository(db_session)
         for ch in chapters:
-            await repo.upsert(ch.id, "摘要", "model")
+            await repo.upsert(uuid.UUID(int=ch.id), "摘要", "model")
 
-        limited = await repo.list_recent(project.id, limit=2)
+        limited = await repo.list_recent(uuid.UUID(int=project.id), limit=2)
         assert len(limited) == 2
         assert limited[0].chapter_id == uuid.UUID(int=chapters[2].id)
         assert limited[1].chapter_id == uuid.UUID(int=chapters[1].id)
@@ -143,4 +145,4 @@ class TestSummaryRepository:
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.list_recent(other.id) == []
+        assert await repo.list_recent(uuid.UUID(int=other.id)) == []

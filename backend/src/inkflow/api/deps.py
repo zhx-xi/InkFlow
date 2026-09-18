@@ -179,7 +179,8 @@ def get_project_service(
 ) -> ProjectService:
     """获取 ProjectService 实例（注入数据库 session + F36 项目硬删钩子）."""
     map_svc = get_map_service(db)
-    return ProjectService(db, map_cleanup=lambda pid: map_svc.cleanup_project(uuid.UUID(int=pid)))
+    # #1291：钩子入参为领域 UUID（不再 int 中转）
+    return ProjectService(db, map_cleanup=lambda pid: map_svc.cleanup_project(pid))
 
 
 def get_chapter_service(
@@ -352,9 +353,9 @@ def get_character_service(
     repo = SQLiteCharacterRepository(db)
     map_svc = get_map_service(db)
 
-    async def _map_cleanup(role_id: int) -> None:
+    async def _map_cleanup(role_id: uuid.UUID) -> None:
         """角色硬删钩子：解除 type=role 关联 pin（F43 P5 显式清理）."""
-        await map_svc.clear_ref_pins("role", [uuid.UUID(int=role_id)])
+        await map_svc.clear_ref_pins("role", [role_id])
 
     return CharacterService(
         repository=repo,
@@ -378,9 +379,9 @@ def get_world_service(
     repo = SQLiteWorldRepository(db)
     map_svc = get_map_service(db)
 
-    async def _location_cleanup(location_ids: list[int]) -> None:
+    async def _location_cleanup(location_ids: list[uuid.UUID]) -> None:
         """地点硬删钩子：pin SET NULL（D10=b 显式级联；mypy 契约 Awaitable[None]）."""
-        await map_svc.clear_location_pins([uuid.UUID(int=i) for i in location_ids])
+        await map_svc.clear_location_pins(location_ids)
 
     return WorldService(
         repository=repo,
@@ -459,9 +460,9 @@ def get_timeline_service(
     """获取 TimelineService 实例（事件仓储 + F1 项目校验 + F43 P5 事件硬删钩子）."""
     map_svc = get_map_service(db)
 
-    async def _map_cleanup(event_id: int) -> None:
+    async def _map_cleanup(event_id: uuid.UUID) -> None:
         """事件硬删钩子：解除 type=event 关联 pin（F43 P5 显式清理）."""
-        await map_svc.clear_ref_pins("event", [uuid.UUID(int=event_id)])
+        await map_svc.clear_ref_pins("event", [event_id])
 
     return TimelineService(
         repository=SQLiteTimelineRepository(db),

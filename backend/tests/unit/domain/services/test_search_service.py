@@ -390,7 +390,7 @@ async def test_first_search_rebuilds_all_sources_then_queries(repos):
     assert chapter_doc.project_id == pid.int
     assert chapter_doc.title == "第 1 章 龙"
     assert isinstance(chapter_doc.body, str) and chapter_doc.body
-    repos.outline_repo.list_points.assert_awaited_once_with(outline.id.int)
+    repos.outline_repo.list_points.assert_awaited_once_with(outline.id)
     match, pids, types, limit, _ = _query_call(repos)
     assert '"龙"' in match
     assert pids == [pid.int]

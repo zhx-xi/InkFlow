@@ -341,7 +341,7 @@ def _req(type_: ExtractionType, **kw: Any) -> ExtractionRequest:
 
 def _chapter_by_id(cid: int) -> Chapter:
     """按仓储层 int id 返回对应测试章节（CH1/CH2 两章批量场景用）。"""
-    return _chapter(CH1, CONTENT_1) if cid == CH1.int else _chapter(CH2, CONTENT_2)
+    return _chapter(CH1, CONTENT_1) if cid == CH1 else _chapter(CH2, CONTENT_2)
 
 
 _NO_VECTOR = object()
@@ -601,7 +601,7 @@ async def test_reindex_default_all_types() -> None:
     deps.character_repo.list.assert_awaited()
     deps.world_repo.list.assert_awaited()
     deps.foreshadowing_repo.list.assert_awaited()
-    deps.timeline_repo.list_all.assert_awaited_once_with(PID.int)
+    deps.timeline_repo.list_all.assert_awaited_once_with(PID)
     deps.chapter_repo.list_chapters.assert_awaited()
     # 收集全部 index_batch 入参，断言 5 种类型各 1 条
     indexed_types = [

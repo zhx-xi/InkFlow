@@ -188,7 +188,7 @@ class TestSessionRepository:
         row = await db_session.execute(select(SessionORM).where(SessionORM.id == saved.id.int))
         assert row.scalar_one().title == "第三章续写"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.session_type == SessionType.WRITING
@@ -201,14 +201,14 @@ class TestSessionRepository:
         """project_id=None（全局会话）合法落库并读回 None."""
         repo = SQLiteSessionRepository(db_session)
         saved = await repo.add(_session(None, "全局定时任务", session_type=SessionType.TASK))
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.project_id is None
 
     async def test_get_returns_none_for_missing(self, db_session):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteSessionRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_list_returns_active_sessions_sorted_desc(self, db_session, project):
         """list 排除软删、按 created_at DESC（最新在前，spec §6.2）、返回 (列表, 总数)."""
@@ -216,7 +216,7 @@ class TestSessionRepository:
         e1 = await repo.add(_session(project, "觉醒"))
         e2 = await repo.add(_session(project, "宗门大比"))
         e3 = await repo.add(_session(project, "古神禁地"))
-        await repo.soft_delete(e3.id.int)
+        await repo.soft_delete(e3.id)
 
         # 注入受控 created_at，使 DESC 排序可确定性断言
         await db_session.execute(
@@ -257,7 +257,7 @@ class TestSessionRepository:
         by_status, t2 = await repo.list(status="active")
         assert t2 == 3
         assert {s.id for s in by_status} == {s1.id, s2.id, s4.id}
-        by_project, t3 = await repo.list(project_id=project.id)
+        by_project, t3 = await repo.list(project_id=uuid.UUID(int=project.id))
         assert t3 == 3
         assert {s.id for s in by_project} == {s1.id, s2.id, s3.id}
         # 组合
@@ -303,14 +303,14 @@ class TestSessionRepository:
         """list_include_deleted 返回已归档会话（详情可追溯，spec §7 #7）；缺失 → None."""
         repo = SQLiteSessionRepository(db_session)
         s = await repo.add(_session(project, "觉醒"))
-        assert await repo.list_include_deleted(s.id.int) is not None
+        assert await repo.list_include_deleted(s.id) is not None
 
-        await repo.soft_delete(s.id.int)
-        assert await repo.get(s.id.int) is None
-        got = await repo.list_include_deleted(s.id.int)
+        await repo.soft_delete(s.id)
+        assert await repo.get(s.id) is None
+        got = await repo.list_include_deleted(s.id)
         assert got is not None
         assert got.is_deleted is True
-        assert await repo.list_include_deleted(99999) is None
+        assert await repo.list_include_deleted(uuid.uuid4()) is None
 
     async def test_update_session(self, db_session, project):
         """update 按 id 定位更新字段并返回最新领域对象；updated_at 前移."""
@@ -336,7 +336,7 @@ class TestSessionRepository:
         assert updated.paused_at == _dt(5)
         assert updated.updated_at >= s.updated_at
 
-        got = await repo.get(s.id.int)
+        got = await repo.get(s.id)
         assert got is not None
         assert got.title == "觉醒·改"
         assert got.status == SessionStatus.PAUSED
@@ -366,38 +366,38 @@ class TestSessionRepository:
         repo = SQLiteSessionRepository(db_session)
         s = await repo.add(_session(project, "觉醒"))
 
-        assert await repo.soft_delete(s.id.int) is True
-        assert await repo.get(s.id.int) is None
+        assert await repo.soft_delete(s.id) is True
+        assert await repo.get(s.id) is None
         sessions, total = await repo.list()
         assert sessions == [] and total == 0
 
-        assert await repo.soft_delete(s.id.int) is False
-        assert await repo.soft_delete(99999) is False
+        assert await repo.soft_delete(s.id) is False
+        assert await repo.soft_delete(uuid.uuid4()) is False
 
     async def test_restore_session(self, db_session, project):
         """restore 解除归档；未归档/不存在返回 None（重复操作无毒）."""
         repo = SQLiteSessionRepository(db_session)
         s = await repo.add(_session(project, "觉醒"))
-        await repo.soft_delete(s.id.int)
+        await repo.soft_delete(s.id)
 
-        restored = await repo.restore(s.id.int)
+        restored = await repo.restore(s.id)
         assert restored is not None
         assert restored.id == s.id
         assert restored.is_deleted is False
-        assert await repo.get(s.id.int) is not None
+        assert await repo.get(s.id) is not None
 
-        assert await repo.restore(s.id.int) is None
-        assert await repo.restore(99999) is None
+        assert await repo.restore(s.id) is None
+        assert await repo.restore(uuid.uuid4()) is None
 
     async def test_hard_delete_session(self, db_session, project):
         """hard_delete 物理删除会话行；重复删除返回 False."""
         repo = SQLiteSessionRepository(db_session)
         s = await repo.add(_session(project, "觉醒"))
 
-        assert await repo.hard_delete(s.id.int) is True
-        assert await repo.get(s.id.int) is None
-        assert await repo.list_include_deleted(s.id.int) is None
-        assert await repo.hard_delete(s.id.int) is False
+        assert await repo.hard_delete(s.id) is True
+        assert await repo.get(s.id) is None
+        assert await repo.list_include_deleted(s.id) is None
+        assert await repo.hard_delete(s.id) is False
 
     async def test_hard_delete_cascades_logs(self, db_session, project):
         """会话真实删除 → 日志行物理删除（FK ON DELETE CASCADE，spec §2.2）."""
@@ -406,7 +406,7 @@ class TestSessionRepository:
         await repo.add_log(_log(s.id, 1))
         await repo.add_log(_log(s.id, 2))
 
-        assert await repo.hard_delete(s.id.int) is True
+        assert await repo.hard_delete(s.id) is True
         count = await db_session.execute(select(func.count()).select_from(SessionLogORM))
         assert count.scalar_one() == 0
 
@@ -423,15 +423,15 @@ class TestSessionRepository:
         assert isinstance(e1.id, uuid.UUID)
         assert e2.seq == 2
 
-        logs, total = await repo.list_logs(s.id.int)
+        logs, total = await repo.list_logs(s.id)
         assert total == 3
         assert [e.seq for e in logs] == [1, 2, 3]
         assert logs[0].message == "开始"
         assert logs[0].session_id == s.id
 
-        page, _ = await repo.list_logs(s.id.int, offset=1, limit=1)
+        page, _ = await repo.list_logs(s.id, offset=1, limit=1)
         assert [e.seq for e in page] == [2]
-        assert await repo.list_logs(99999) == ([], 0)
+        assert await repo.list_logs(uuid.uuid4()) == ([], 0)
 
     async def test_next_seq(self, db_session, project):
         """next_seq = 会话内 max(seq)+1；无日志 = 1；会话间隔离."""
@@ -439,25 +439,25 @@ class TestSessionRepository:
         s1 = await repo.add(_session(project, "会话一"))
         s2 = await repo.add(_session(project, "会话二"))
 
-        assert await repo.next_seq(s1.id.int) == 1
+        assert await repo.next_seq(s1.id) == 1
         await repo.add_log(_log(s1.id, 1))
         await repo.add_log(_log(s1.id, 2))
-        assert await repo.next_seq(s1.id.int) == 3
+        assert await repo.next_seq(s1.id) == 3
         # 会话间隔离
-        assert await repo.next_seq(s2.id.int) == 1
+        assert await repo.next_seq(s2.id) == 1
 
     async def test_count_logs_and_last_log(self, db_session, project):
         """count_logs / last_log（SessionView 聚合数据源）；0 日志 → 0/None."""
         repo = SQLiteSessionRepository(db_session)
         s = await repo.add(_session(project, "觉醒"))
 
-        assert await repo.count_logs(s.id.int) == 0
-        assert await repo.last_log(s.id.int) is None
+        assert await repo.count_logs(s.id) == 0
+        assert await repo.last_log(s.id) is None
 
         await repo.add_log(_log(s.id, 1, "开始"))
         await repo.add_log(_log(s.id, 2, "重试", level=LogLevel.WARNING))
-        assert await repo.count_logs(s.id.int) == 2
-        last = await repo.last_log(s.id.int)
+        assert await repo.count_logs(s.id) == 2
+        last = await repo.last_log(s.id)
         assert last is not None
         assert last.seq == 2
         assert last.level == LogLevel.WARNING
@@ -468,11 +468,11 @@ class TestSessionRepository:
         s = await repo.add(_session(project, "觉醒"))
         await repo.add_log(_log(s.id, 1))
 
-        await repo.soft_delete(s.id.int)
-        logs, total = await repo.list_logs(s.id.int)
+        await repo.soft_delete(s.id)
+        logs, total = await repo.list_logs(s.id)
         assert total == 1
         assert logs[0].seq == 1
-        assert await repo.count_logs(s.id.int) == 1
+        assert await repo.count_logs(s.id) == 1
 
     async def test_duplicate_seq_raises_integrity_error(self, db_session, project):
         """(session_id, seq) 唯一约束：同会话重复 seq 插入 → IntegrityError（spec §7 #13）."""
@@ -499,7 +499,7 @@ class TestListIncludeDeleted:
         repo = SQLiteSessionRepository(db_session)
         await repo.add(_session(project, "活动会话"))
         archived = await repo.add(_session(project, "已归档会话"))
-        await repo.soft_delete(archived.id.int)
+        await repo.soft_delete(archived.id)
 
         items, total = await repo.list()
         assert total == 1
@@ -510,7 +510,7 @@ class TestListIncludeDeleted:
         repo = SQLiteSessionRepository(db_session)
         await repo.add(_session(project, "活动会话", created_at=_dt(2)))
         archived = await repo.add(_session(project, "已归档会话", created_at=_dt(1)))
-        await repo.soft_delete(archived.id.int)
+        await repo.soft_delete(archived.id)
 
         items, total = await repo.list(include_deleted=True)
         assert total == 2
@@ -522,7 +522,7 @@ class TestListIncludeDeleted:
         repo = SQLiteSessionRepository(db_session)
         await repo.add(_session(project, "写作一", created_at=_dt(3)))
         archived = await repo.add(_session(project, "写作归档", created_at=_dt(2)))
-        await repo.soft_delete(archived.id.int)
+        await repo.soft_delete(archived.id)
         await repo.add(
             _session(project, "任务一", session_type=SessionType.TASK, created_at=_dt(1))
         )
@@ -548,12 +548,14 @@ class TestInt64RangeGuard1106:
         """session_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteSessionRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
     async def test_list_include_deleted_returns_none_for_out_of_range_id(self, db_session):
         """session_repo.list_include_deleted 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteSessionRepository(db_session)
 
-        assert await repo.list_include_deleted(2**63) is None  # 上界外
-        assert await repo.list_include_deleted(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.list_include_deleted(uuid.uuid4()) is None
+        assert await repo.list_include_deleted(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

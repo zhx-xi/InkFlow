@@ -380,7 +380,7 @@ class SearchService:
         """大纲文档：title = name；body = description + 各情节点 "name: description"."""
         documents: list[SearchDocument] = []
         async for outline in self._iter_pages(self._outline_repo.list, project_id):
-            points = await self._outline_repo.list_points(outline.id.int)
+            points = await self._outline_repo.list_points(outline.id)
             point_text = " ".join(
                 f"{point.name}: {point.description}" if point.description else point.name
                 for point in points
@@ -400,7 +400,7 @@ class SearchService:
     async def _collect_timeline_events(self, project_id: int) -> list[SearchDocument]:
         """时间线文档：title = event.title；body = description + time_display（非空时）."""
         documents: list[SearchDocument] = []
-        for event in await self._timeline_repo.list_all(project_id):
+        for event in await self._timeline_repo.list_all(uuid.UUID(int=project_id)):
             body_text = " ".join(part for part in (event.description, event.time_display) if part)
             documents.append(
                 SearchDocument(
@@ -446,10 +446,15 @@ class SearchService:
         fetcher: Callable[..., Awaitable[tuple[list[Any], int]]],
         project_id: int,
     ) -> AsyncIterator[Any]:
-        """分页循环拉取单一数据源（limit=50 默认；#211 真删后无软删过滤）."""
+        """分页循环拉取单一数据源（limit=50 默认；#211 真删后无软删过滤）.
+
+        #1291：入参为 int 索引域（SearchDocument.project_id 同为 int 基础设施
+        DTO 字段），调用收窄后的仓储时转领域 UUID。
+        """
+        pid = uuid.UUID(int=project_id)
         offset = 0
         while True:
-            batch, total = await fetcher(project_id, offset=offset, limit=_PAGE_SIZE)
+            batch, total = await fetcher(pid, offset=offset, limit=_PAGE_SIZE)
             for entity in batch:
                 yield entity
             offset += len(batch)

@@ -309,7 +309,7 @@ class TestRunSummaryBackgroundRefresh:
 
         assert ok is False  # 不抛（若抛出本用例 ERROR）
         async with real_sqlite_factory as session:
-            logs, total = await SQLiteAuditLogRepository(session).list(PROJECT_ID.int)
+            logs, total = await SQLiteAuditLogRepository(session).list(PROJECT_ID)
         assert total >= 1
         assert any(
             log.severity_summary == "semantic_summary_failed"

@@ -48,16 +48,9 @@ def _utcnow() -> datetime:
 
 
 def _to_uuid(val: int | uuid.UUID) -> uuid.UUID:
-    """将 int 或 UUID 统一转为 uuid.UUID."""
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅用于兼容外部 int 入参，非仓库层中转）."""
     if isinstance(val, int):
         return uuid.UUID(int=val)
-    return val
-
-
-def _to_int(val: int | uuid.UUID) -> int:
-    """将 int 或 UUID 统一转为 int."""
-    if isinstance(val, uuid.UUID):
-        return val.int
     return val
 
 
@@ -95,10 +88,10 @@ class ChapterService:
         """
         pid = _to_uuid(project_id)
         # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
-        if await self._project_repo.get(pid.int) is None:
+        if await self._project_repo.get(pid) is None:
             raise ProjectNotFoundError()
         if order_index is None:
-            order_index = await self._repo.get_next_volume_order(pid.int)
+            order_index = await self._repo.get_next_volume_order(pid)
         vol = Volume(
             id=uuid.uuid4(),
             project_id=pid,
@@ -110,7 +103,7 @@ class ChapterService:
         return created
 
     async def get_volume(self, volume_id: int | uuid.UUID) -> Volume | None:
-        return await self._repo.get_volume(_to_int(volume_id))
+        return await self._repo.get_volume(_to_uuid(volume_id))
 
     async def list_volumes(self, project_id: int | uuid.UUID) -> list[Volume]:
         """查询项目内全部卷（order_index ASC）.
@@ -119,7 +112,7 @@ class ChapterService:
             ProjectNotFoundError: 项目不存在（#1151：上层先判父资源存在，
                 router 转 404「项目不存在」）.
         """
-        pid = _to_int(project_id)
+        pid = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         if await self._project_repo.get(pid) is None:
@@ -127,7 +120,7 @@ class ChapterService:
         return await self._repo.list_volumes(pid)
 
     async def update_volume(self, volume_id: int | uuid.UUID, dto: VolumeUpdate) -> Volume | None:
-        vid = _to_int(volume_id)
+        vid = _to_uuid(volume_id)
         existing = await self._repo.get_volume(vid)
         if existing is None:
             return None
@@ -144,9 +137,7 @@ class ChapterService:
         delete_chapters: bool = False,
         move_to: int | uuid.UUID | None = None,
     ) -> bool:
-        vid = _to_int(volume_id)
-        if vid > 2**63 - 1:
-            return False
+        vid = _to_uuid(volume_id)
         existing: Volume | None = await self._repo.get_volume(vid)
         if existing is None:
             return False
@@ -156,11 +147,9 @@ class ChapterService:
                 for cid in await self._repo.list_chapter_ids_by_volume(vid):
                     await self._repo.delete_chapter(cid)
             elif move_to is not None:
-                target = _to_int(move_to)
+                target = _to_uuid(move_to)
                 if target == vid:
                     raise VolumeMoveError("目标卷不能是当前卷")
-                if target > 2**63 - 1:
-                    raise VolumeMoveError("目标卷不存在")
                 target_vol: Volume | None = await self._repo.get_volume(target)
                 if target_vol is None:
                     raise VolumeMoveError("目标卷不存在")
@@ -191,10 +180,10 @@ class ChapterService:
         vid = _to_uuid(volume_id) if volume_id is not None else None
         # #1149: 落库前先校验项目存在（对齐 create_volume；防 pid.int 超 int64 绑 SQLite
         # 抛 OverflowError → 500，并防孤儿行）
-        if await self._project_repo.get(pid.int) is None:
+        if await self._project_repo.get(pid) is None:
             raise ProjectNotFoundError()
         if order_index is None:
-            order_index = await self._repo.get_next_chapter_order(pid.int, vid.int if vid else None)
+            order_index = await self._repo.get_next_chapter_order(pid, vid)
         # #1095：落库前归一（重复标题 / markdown / 段首缩进）；干净正文原样落库。
         if chapter_content_needs_normalize(content, title):
             content = normalize_chapter_content(content, title)
@@ -224,7 +213,7 @@ class ChapterService:
         return created
 
     async def get_chapter(self, chapter_id: int | uuid.UUID) -> Chapter | None:
-        return await self._repo.get_chapter(_to_int(chapter_id))
+        return await self._repo.get_chapter(_to_uuid(chapter_id))
 
     async def list_chapters(
         self,
@@ -239,14 +228,14 @@ class ChapterService:
         Raises:
             ProjectNotFoundError: 项目不存在（#1151，router 转 404）.
         """
-        pid = _to_int(project_id)
+        pid = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         if await self._project_repo.get(pid) is None:
             raise ProjectNotFoundError()
         return await self._repo.list_chapters(
             pid,
-            _to_int(volume_id) if volume_id is not None else None,
+            _to_uuid(volume_id) if volume_id is not None else None,
             status,
             offset,
             limit,
@@ -255,9 +244,7 @@ class ChapterService:
     async def update_chapter(
         self, chapter_id: int | uuid.UUID, dto: ChapterUpdate
     ) -> Chapter | None:
-        cid = _to_int(chapter_id)
-        if cid > 2**63 - 1:
-            return None  # 随机 uuid4 溢出 SQLite INTEGER：必然不存在 → 404 语义
+        cid = _to_uuid(chapter_id)
         existing = await self._repo.get_chapter(cid)
         if existing is None:
             return None
@@ -298,7 +285,7 @@ class ChapterService:
             return
 
     async def delete_chapter(self, chapter_id: int | uuid.UUID) -> bool:
-        deleted: bool = await self._repo.delete_chapter(_to_int(chapter_id))
+        deleted: bool = await self._repo.delete_chapter(_to_uuid(chapter_id))
         if deleted:
             logger.warning(
                 "chapter 删除事件缺 project_id（delete_chapter 未加载实体，spec §15.3.2）: id=%s",
@@ -326,10 +313,9 @@ class ChapterService:
             "outlines_replaced": int}（幂等：第二次同 fmt 调用两计数全 0）.
         """
         pid = _to_uuid(project_id)
-        pid_int = pid.int
         if fmt not in ("arabic", "chinese"):
             raise ValueError(f"不支持的章节标题格式: {fmt}")
-        project: Project | None = await self._project_repo.get(pid_int)
+        project: Project | None = await self._project_repo.get(pid)
         if project is None:
             return None
 
@@ -337,7 +323,7 @@ class ChapterService:
         offset = 0
         while True:
             chapter_page: tuple[list[Chapter], int] = await self._repo.list_chapters(
-                pid_int, None, None, offset, 50
+                pid, None, None, offset, 50
             )
             chapters, chapter_total = chapter_page
             for ch in chapters:
@@ -356,7 +342,7 @@ class ChapterService:
         offset = 0
         while True:
             outline_page: tuple[list[Outline], int] = await self._outline_repo.list(
-                pid_int, offset=offset, limit=50
+                pid, offset=offset, limit=50
             )
             outline_items, outline_total = outline_page
             outline_snapshot.extend(outline_items)
@@ -370,7 +356,7 @@ class ChapterService:
             normalized = normalize_chapter_title(name, fmt)
             if normalized == name:
                 continue
-            existing_outline = await self._outline_repo.get_by_name(pid_int, normalized)
+            existing_outline = await self._outline_repo.get_by_name(pid, normalized)
             if existing_outline is not None and existing_outline.id != outline.id:
                 # 归一后与既有活动大纲重名（uq_outlines_active_name）→ 跳过防 IntegrityError
                 continue
@@ -401,8 +387,8 @@ class ChapterService:
         if target_volume_id is not None:
             await self._ensure_target_volume(target_volume_id)
         moved: Chapter | None = await self._repo.move_chapter(
-            _to_int(chapter_id),
-            _to_int(target_volume_id) if target_volume_id is not None else None,
+            _to_uuid(chapter_id),
+            _to_uuid(target_volume_id) if target_volume_id is not None else None,
         )
         if moved is not None:
             await publish_change("chapter", "update", moved.id, moved.project_id)
@@ -412,17 +398,15 @@ class ChapterService:
         """改挂目标卷必须存在（#1166；同 delete_volume(move_to=) 口径）.
 
         Raises:
-            VolumeMoveError: 目标卷不存在或超 int64 范围（router 转 422）.
+            VolumeMoveError: 目标卷不存在（router 转 422）.
         """
-        target = _to_int(volume_id)
-        if target > 2**63 - 1:
-            raise VolumeMoveError("目标卷不存在")
+        target = _to_uuid(volume_id)
         target_vol: Volume | None = await self._repo.get_volume(target)
         if target_vol is None:
             raise VolumeMoveError("目标卷不存在")
 
-    async def get_project_word_count(self, project_id: int) -> int:
-        return await self._repo.get_project_word_count(project_id)
+    async def get_project_word_count(self, project_id: int | uuid.UUID) -> int:
+        return await self._repo.get_project_word_count(_to_uuid(project_id))
 
-    async def get_volume_word_count(self, volume_id: int) -> int:
-        return await self._repo.get_volume_word_count(volume_id)
+    async def get_volume_word_count(self, volume_id: int | uuid.UUID) -> int:
+        return await self._repo.get_volume_word_count(_to_uuid(volume_id))

@@ -2,10 +2,13 @@
 
 ChapterRepositoryProtocol 使用 typing.Protocol 实现结构化子类型（static duck typing），
 基础设施层（SQLAlchemy / mock / memory）实现这些方法即可自动满足接口要求。
+
+#1134 批 4（#1291）：全部主键入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.chapter import Chapter, ChapterStatus, Volume
@@ -27,22 +30,22 @@ class ChapterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_volume(self, volume_id: int) -> Volume | None:
+    async def get_volume(self, volume_id: uuid.UUID) -> Volume | None:
         """根据主键获取卷.
 
         Args:
-            volume_id: 卷主键.
+            volume_id: 卷主键（领域 UUID，见 #1291）.
 
         Returns:
             若找到则返回 Volume，否则返回 None.
         """
         ...
 
-    async def list_volumes(self, project_id: int) -> list[Volume]:
+    async def list_volumes(self, project_id: uuid.UUID) -> list[Volume]:
         """列举项目的所有卷，按 order_index 升序排列.
 
         Args:
-            project_id: 项目主键.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             属于该项目的 Volume 列表.
@@ -60,24 +63,24 @@ class ChapterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def delete_volume(self, volume_id: int) -> bool:
+    async def delete_volume(self, volume_id: uuid.UUID) -> bool:
         """物理删除卷（级联删除所属章节）.
 
         Args:
-            volume_id: 待删除的卷主键.
+            volume_id: 待删除的卷主键（领域 UUID，见 #1291）.
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
         ...
 
-    async def get_next_volume_order(self, project_id: int) -> float:
+    async def get_next_volume_order(self, project_id: uuid.UUID) -> float:
         """获取项目下一个卷的顺序值.
 
         通常取项目内最大 order_index + 1，若项目无卷则返回 0.0.
 
         Args:
-            project_id: 项目主键.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             可用的下一个 order_index 值.
@@ -97,11 +100,11 @@ class ChapterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_chapter(self, chapter_id: int) -> Chapter | None:
+    async def get_chapter(self, chapter_id: uuid.UUID) -> Chapter | None:
         """根据主键获取章节.
 
         Args:
-            chapter_id: 章节主键.
+            chapter_id: 章节主键（领域 UUID，见 #1291）.
 
         Returns:
             若找到则返回 Chapter，否则返回 None.
@@ -110,8 +113,8 @@ class ChapterRepositoryProtocol(Protocol):
 
     async def list_chapters(
         self,
-        project_id: int,
-        volume_id: int | None = None,
+        project_id: uuid.UUID,
+        volume_id: uuid.UUID | None = None,
         status: ChapterStatus | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -119,7 +122,7 @@ class ChapterRepositoryProtocol(Protocol):
         """分页列举章节，支持按卷筛选和状态筛选.
 
         Args:
-            project_id: 项目主键.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             volume_id: 按卷筛选，None 表示不过滤.
             status: 按状态筛选，None 表示不过滤.
             offset: 偏移量，默认为 0.
@@ -141,22 +144,24 @@ class ChapterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def delete_chapter(self, chapter_id: int) -> bool:
+    async def delete_chapter(self, chapter_id: uuid.UUID) -> bool:
         """物理删除章节.
 
         Args:
-            chapter_id: 待删除的章节主键.
+            chapter_id: 待删除的章节主键（领域 UUID，见 #1291）.
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
         ...
 
-    async def move_chapter(self, chapter_id: int, target_volume_id: int | None) -> Chapter | None:
+    async def move_chapter(
+        self, chapter_id: uuid.UUID, target_volume_id: uuid.UUID | None
+    ) -> Chapter | None:
         """移动章节到目标卷（或置为无卷归属）.
 
         Args:
-            chapter_id: 待移动的章节主键.
+            chapter_id: 待移动的章节主键（领域 UUID，见 #1291）.
             target_volume_id: 目标卷主键，None 表示移出卷.
 
         Returns:
@@ -164,13 +169,15 @@ class ChapterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_next_chapter_order(self, project_id: int, volume_id: int | None = None) -> float:
+    async def get_next_chapter_order(
+        self, project_id: uuid.UUID, volume_id: uuid.UUID | None = None
+    ) -> float:
         """获取项目（或卷内）下一个章节的顺序值.
 
         通常取指定范围内最大 order_index + 1，若无匹配则返回 0.0.
 
         Args:
-            project_id: 项目主键.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             volume_id: 卷主键，None 表示取项目全局顺序值.
 
         Returns:
@@ -178,22 +185,22 @@ class ChapterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_project_word_count(self, project_id: int) -> int:
+    async def get_project_word_count(self, project_id: uuid.UUID) -> int:
         """获取项目所有章节的字数总和.
 
         Args:
-            project_id: 项目主键.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             字数总和.
         """
         ...
 
-    async def get_volume_word_count(self, volume_id: int) -> int:
+    async def get_volume_word_count(self, volume_id: uuid.UUID) -> int:
         """获取卷内所有章节的字数总和.
 
         Args:
-            volume_id: 卷主键.
+            volume_id: 卷主键（领域 UUID，见 #1291）.
 
         Returns:
             字数总和.

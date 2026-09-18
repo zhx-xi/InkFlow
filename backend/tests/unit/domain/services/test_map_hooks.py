@@ -101,7 +101,7 @@ class TestF36ServiceHooks:
         mock_cb = AsyncMock()
         svc = WorldService(repository=mock_repo, location_cleanup=mock_cb)
         assert await svc.delete_setting(setting.id, cascade=True) is True
-        mock_cb.assert_awaited_once_with([setting.id.int, child.id.int, grandchild.id.int])
+        mock_cb.assert_awaited_once_with([setting.id, child.id, grandchild.id])
         mock_repo.hard_delete_many.assert_awaited_once()
 
     async def test_world_service_location_cleanup_default(self) -> None:
@@ -115,7 +115,7 @@ class TestF36ServiceHooks:
         mock_cb = AsyncMock()
         svc = WorldService(repository=mock_repo, location_cleanup=mock_cb)
         assert await svc.delete_setting(setting.id) is True
-        mock_cb.assert_awaited_once_with([setting.id.int])
+        mock_cb.assert_awaited_once_with([setting.id])
 
         mock_cb.reset_mock()
         mock_repo.hard_delete = AsyncMock(return_value=False)
@@ -123,7 +123,7 @@ class TestF36ServiceHooks:
         mock_cb.assert_not_awaited()
 
     async def test_project_service_map_cleanup(self) -> None:
-        """ProjectService(map_cleanup=cb): hard_delete 前先调 cb(pid.int)（#327 方案 B 顺序）.
+        """ProjectService(map_cleanup=cb): hard_delete 前先调 cb(pid)（#327 方案 B 顺序）.
 
         #327 拍板：FK=ON 后 maps 引用 project 的裸 FK 会拦截删除，map_cleanup
         必须提前到 repo.hard_delete 之前（先删 maps+pins+文件再删 project）。
@@ -140,9 +140,9 @@ class TestF36ServiceHooks:
             mock_cb = AsyncMock()
             svc = ProjectService(db_session=object(), map_cleanup=mock_cb)
             assert await svc.hard_delete(PID) is True
-            mock_cb.assert_awaited_once_with(PID.int)
+            mock_cb.assert_awaited_once_with(PID)
             mock_repo.hard_delete = AsyncMock(return_value=False)
             mock_cb.reset_mock()
             assert await svc.hard_delete(PID) is False
             # #327 新契约：cleanup 无条件提前执行（不再以 deleted 为门槛）
-            mock_cb.assert_awaited_once_with(PID.int)
+            mock_cb.assert_awaited_once_with(PID)

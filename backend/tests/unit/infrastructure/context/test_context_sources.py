@@ -135,8 +135,8 @@ class TestCharacterSettingSource:
         assert item.title == "角色：林晚"
         assert item.content == "林晚：冷傲大小姐"
         assert item.metadata["character_id"] == str(char.id)
-        # 按真实仓储契约调用 list(project_id.int)
-        repo.list.assert_awaited_once_with(_uuid(1).int)
+        # 按真实仓储契约调用 list(project_id)（#1291：领域 UUID 直传）
+        repo.list.assert_awaited_once_with(_uuid(1))
 
     async def test_falls_back_to_personality_when_brief_empty(self) -> None:
         """brief 未填 → 降级截 personality（D5-a1 降级逻辑）."""
@@ -194,7 +194,7 @@ class TestWorldSettingSource:
         assert item.title == "世界观：灵气复苏"
         assert "灵气复苏" in item.content
         assert item.metadata["world_setting_id"] == str(world.id)
-        repo.list.assert_awaited_once_with(_uuid(1).int)
+        repo.list.assert_awaited_once_with(_uuid(1))
 
     async def test_returns_empty_when_no_world_settings(self) -> None:
         """项目无世界设定 → 空列表（跳过，不报错）."""
@@ -234,7 +234,7 @@ class TestOutlineSource:
             assert isinstance(item, ContextItem)
             assert item.source == ContextSourceType.OUTLINE
         assert items[0].content == "总体：主线 —— 全书主线"
-        repo.list.assert_awaited_once_with(pid.int)
+        repo.list.assert_awaited_once_with(pid)
 
     async def test_returns_empty_when_only_unmatched_chapter(self) -> None:
         """孤立章 + 无 overall + chapter_id 不匹配 → 空列表（降级不报错）."""

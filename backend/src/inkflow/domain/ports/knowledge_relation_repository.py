@@ -2,8 +2,7 @@
 
 KnowledgeRelationRepositoryProtocol 定义 KnowledgeRelation 的 CRUD 操作与
 实体清理辅助方法，基础设施层（SQLite / mock / memory）实现该 Protocol。
-仓储层 `get` 主键入参用领域 UUID（#1271 收窄），其余方法沿用 int/uuid
-兼容归一。
+仓储层主键入参统一用领域 UUID（#1134 批 4 / #1291 收窄收尾）。
 
 依据: specs/f48-knowledge-graph/spec.md §2.1/§5.2/§5.3。
 """
@@ -51,21 +50,21 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
 
     async def get_by_key(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         source_type: str,
-        source_id: int,
+        source_id: uuid.UUID,
         target_type: str,
-        target_id: int,
+        target_id: uuid.UUID,
         relation_type: str,
     ) -> KnowledgeRelation | None:
         """按六元组唯一键查询关系.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             source_type: 起点实体类型（EntityType 值字符串）.
-            source_id: 起点实体主键（int）.
+            source_id: 起点实体主键（领域 UUID，见 #1291）.
             target_type: 终点实体类型（EntityType 值字符串）.
-            target_id: 终点实体主键（int）.
+            target_id: 终点实体主键（领域 UUID，见 #1291）.
             relation_type: 关系类型（已去空白）.
 
         Returns:
@@ -74,12 +73,12 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
         ...
 
     async def list(
-        self, project_id: int, offset: int = 0, limit: int = 50
+        self, project_id: uuid.UUID, offset: int = 0, limit: int = 50
     ) -> tuple[builtins.list[KnowledgeRelation], int]:
         """分页查询项目内关系列表（created_at DESC，新在前）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             offset: 分页偏移.
             limit: 分页大小.
 
@@ -90,7 +89,7 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
 
     async def filter(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         source_type: str | None = None,
         target_type: str | None = None,
         relation_type: str | None = None,
@@ -101,7 +100,7 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
         """组合过滤 + 分页查询项目内关系.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             source_type: 起点实体类型过滤（可选）.
             target_type: 终点实体类型过滤（可选）.
             relation_type: 关系类型精确过滤（可选）.
@@ -114,11 +113,11 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_by_project(self, project_id: int) -> builtins.list[KnowledgeRelation]:
+    async def list_by_project(self, project_id: uuid.UUID) -> builtins.list[KnowledgeRelation]:
         """列出项目全部关系（图谱聚合全量）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             项目内全部关系列表.
@@ -136,35 +135,35 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
         """
         ...
 
-    async def delete(self, relation_id: int) -> bool:
+    async def delete(self, relation_id: uuid.UUID) -> bool:
         """真删关系（无 is_deleted）.
 
         Args:
-            relation_id: 关系主键（int）.
+            relation_id: 关系主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
         """
         ...
 
-    async def delete_by_entity(self, entity_type: str, entity_id: int) -> int:
+    async def delete_by_entity(self, entity_type: str, entity_id: uuid.UUID) -> int:
         """删除指定实体作为 source 或 target 的全部关系行.
 
         Args:
             entity_type: 实体类型（EntityType 值字符串）.
-            entity_id: 实体主键（int）.
+            entity_id: 实体主键（领域 UUID，见 #1291）.
 
         Returns:
             删除行数.
         """
         ...
 
-    async def cleanup_for_entity(self, entity_type: str, entity_id: int) -> int:
+    async def cleanup_for_entity(self, entity_type: str, entity_id: uuid.UUID) -> int:
         """实体硬删级联清理 — delete_by_entity 别名（§5.3，语义一致）.
 
         Args:
             entity_type: 实体类型（EntityType 值字符串）.
-            entity_id: 实体主键（int）.
+            entity_id: 实体主键（领域 UUID，见 #1291）.
 
         Returns:
             删除行数.

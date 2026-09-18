@@ -127,7 +127,7 @@ class TestCreateEvent:
         """narrative_position=None → 先 next_position 再 add（追加到叙事末尾）。"""
         mock_repo.next_position = AsyncMock(return_value=5)
         await service.create_event(PID, "宗门大比")
-        mock_repo.next_position.assert_awaited_once_with(PID.int)
+        mock_repo.next_position.assert_awaited_once_with(PID)
         added = mock_repo.add.await_args.args[0]
         assert added.narrative_position == 5
 
@@ -173,7 +173,7 @@ class TestListGet:
         assert items == [event]
         assert total == 1
         kwargs = mock_repo.list.await_args.kwargs
-        assert kwargs["project_id"] == PID.int
+        assert kwargs["project_id"] == PID
         assert kwargs["search"] == "大比"
         assert kwargs["sort_by"] == "time_value"
         assert kwargs["sort_desc"] is False
@@ -290,7 +290,7 @@ class TestDeleteEvent:
         event = _event("宗门大比")
         result = await service.delete_event(event.id)
         assert result is True
-        mock_repo.hard_delete.assert_awaited_once_with(event.id.int)
+        mock_repo.hard_delete.assert_awaited_once_with(event.id)
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
         assert await service.delete_event(uuid.uuid4()) is False
@@ -315,7 +315,7 @@ class TestP5DeleteEventTriggersMapCleanup:
         assert result is True
         map_cleanup.assert_awaited_once()
         call = map_cleanup.await_args
-        assert call is not None and call.args[0] == event.id.int
+        assert call is not None and call.args[0] == event.id
 
     async def test_delete_event_missing_skips_map_cleanup(
         self, mock_repo, mock_project_repo
@@ -364,7 +364,7 @@ class TestViewCheck:
             "林尘觉醒金手指",
             "外门往事",
         ]
-        mock_repo.list_all.assert_awaited_once_with(PID.int)
+        mock_repo.list_all.assert_awaited_once_with(PID)
 
     async def test_get_timeline_view_project_missing_raises(
         self, service: TimelineService, mock_project_repo: MagicMock
@@ -393,7 +393,7 @@ class TestViewCheck:
         assert report.conflicts[0].conflict_type == "order_conflict"
         assert [e.title for e in report.event_timeline] == ["事件二", "事件一"]
         assert [e.title for e in report.narrative_order] == ["事件一", "事件二"]
-        mock_repo.list_all.assert_awaited_once_with(PID.int)
+        mock_repo.list_all.assert_awaited_once_with(PID)
         mock_repo.next_position.assert_not_awaited()
 
     async def test_check_consistency_project_missing_raises(
@@ -430,9 +430,9 @@ class TestIntIdAndDelete:
     async def test_delete_event_with_int_id(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        """delete_event → 委托 repo.hard_delete（int id），返回结果透传。"""
+        """delete_event → int 入参归一为领域 UUID 后直传 repo.hard_delete，结果透传。"""
         assert await service.delete_event(42) is True
-        mock_repo.hard_delete.assert_awaited_once_with(42)
+        mock_repo.hard_delete.assert_awaited_once_with(uuid.UUID(int=42))
 
 
 class TestConsistencyFlashbacksExcluded:

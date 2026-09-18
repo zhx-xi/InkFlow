@@ -41,7 +41,6 @@ from inkflow.domain.services._timeline_extractor import (
     TimelineExtractor,
     _extract_json_fragment,
     _first_error,
-    _to_int_id,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -174,7 +173,7 @@ class TestTimelineExtractor:
         assert result.updated == []
         assert mock_repo.add.await_count == 2
         # 每个提取事件各拉取一次同章候选集（按 title 比对在服务层完成）
-        mock_repo.list_by_chapter.assert_awaited_with(PID.int, CID.int)
+        mock_repo.list_by_chapter.assert_awaited_with(PID, CID)
         # narrative_position 均有 LLM 输出 → 不调 next_position
         mock_repo.next_position.assert_not_awaited()
 
@@ -277,7 +276,7 @@ class TestTimelineExtractor:
         )
         assert len(result.created) == 1
         assert result.created[0].narrative_position == 7
-        mock_repo.next_position.assert_awaited_once_with(PID.int)
+        mock_repo.next_position.assert_awaited_once_with(PID)
 
     async def test_idempotent_second_extract(self, extractor, mock_llm, mock_repo) -> None:
         """同文本二次提取 → 全部命中已有事件且非空覆盖无变化 → 空 created/updated。"""
@@ -477,11 +476,7 @@ class TestTimelineExtractor:
 
 
 class TestTimelineExtractorHelpers:
-    """模块级纯函数测试（_to_int_id / _first_error）。"""
-
-    def test_to_int_id_passthrough_for_int(self) -> None:
-        """int 输入原样返回（非 UUID 分支）。"""
-        assert _to_int_id(42) == 42
+    """模块级纯函数测试（_first_error）。"""
 
     def test_first_error_with_empty_errors_returns_str(self) -> None:
         """errors() 为空 → 回退 str(err)。"""

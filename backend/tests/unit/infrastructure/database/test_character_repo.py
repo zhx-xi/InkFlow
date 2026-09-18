@@ -145,7 +145,7 @@ class TestCharacterRepository:
         row = await db_session.execute(select(CharacterORM).where(CharacterORM.id == saved.id.int))
         assert row.scalar_one().name == "林尘"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.project_id == uuid.UUID(int=project.id)
@@ -155,27 +155,27 @@ class TestCharacterRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteCharacterRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_get_by_name_hit_miss(self, db_session, project):
         """get_by_name 命中角色；未命中/跨项目/真删后均返回 None."""
         repo = SQLiteCharacterRepository(db_session)
         c = await repo.add(_char(project, "林尘"))
 
-        hit = await repo.get_by_name(project.id, "林尘")
+        hit = await repo.get_by_name(uuid.UUID(int=project.id), "林尘")
         assert hit is not None and hit.id == c.id
-        assert await repo.get_by_name(project.id, "不存在") is None
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "不存在") is None
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get_by_name(other.id, "林尘") is None
+        assert await repo.get_by_name(uuid.UUID(int=other.id), "林尘") is None
 
         # 真删后不再命中
-        await repo.hard_delete(c.id.int)
-        assert await repo.get_by_name(project.id, "林尘") is None
+        await repo.hard_delete(c.id)
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "林尘") is None
 
     async def test_list_returns_characters_with_total(self, db_session, project):
         """list 返回 (列表, 总数)."""
@@ -184,7 +184,7 @@ class TestCharacterRepository:
         c2 = await repo.add(_char(project, "阿澈"))
         c3 = await repo.add(_char(project, "青云真人"))
 
-        chars, total = await repo.list(project.id)
+        chars, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 3
         assert {c.id for c in chars} == {c1.id, c2.id, c3.id}
 
@@ -195,11 +195,11 @@ class TestCharacterRepository:
         await repo.add(_char(project, "林晚"))
         await repo.add(_char(project, "阿澈"))
 
-        chars, total = await repo.list(project.id, search="林")
+        chars, total = await repo.list(uuid.UUID(int=project.id), search="林")
         assert total == 2
         assert {c.name for c in chars} == {"林尘", "林晚"}
 
-        chars2, total2 = await repo.list(project.id, search="不存在")
+        chars2, total2 = await repo.list(uuid.UUID(int=project.id), search="不存在")
         assert total2 == 0
         assert chars2 == []
 
@@ -210,7 +210,7 @@ class TestCharacterRepository:
         c1 = await repo.add(_char(project, "林尘", group_ids=[g.id]))
         await repo.add(_char(project, "阿澈"))
 
-        chars, total = await repo.list(project.id, group_id=g.id.int)
+        chars, total = await repo.list(uuid.UUID(int=project.id), group_id=g.id)
         assert total == 1
         assert [c.id for c in chars] == [c1.id]
         assert c1.group_ids == [g.id]
@@ -222,13 +222,15 @@ class TestCharacterRepository:
         await repo.add(_char(project, "alpha"))
         await repo.add(_char(project, "bravo"))
 
-        asc, _ = await repo.list(project.id, sort_by="name", sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=False)
         assert [c.name for c in asc] == ["alpha", "bravo", "charlie"]
 
-        desc, _ = await repo.list(project.id, sort_by="name", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=True)
         assert [c.name for c in desc] == ["charlie", "bravo", "alpha"]
 
-        by_created, _ = await repo.list(project.id, sort_by="created_at", sort_desc=False)
+        by_created, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="created_at", sort_desc=False
+        )
         assert [c.name for c in by_created] == ["charlie", "alpha", "bravo"]
 
     async def test_list_pagination(self, db_session, project):
@@ -238,16 +240,18 @@ class TestCharacterRepository:
             await repo.add(_char(project, f"角色{i}"))
 
         page1, total = await repo.list(
-            project.id, sort_by="name", sort_desc=False, offset=0, limit=2
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False, offset=0, limit=2
         )
-        page2, _ = await repo.list(project.id, sort_by="name", sort_desc=False, offset=2, limit=2)
+        page2, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False, offset=2, limit=2
+        )
 
         assert total == 5
         assert len(page1) == 2
         assert len(page2) == 2
         assert {c.id for c in page1}.isdisjoint({c.id for c in page2})
         # 分页越界 → 空列表（同 F1）
-        page3, _ = await repo.list(project.id, offset=99, limit=2)
+        page3, _ = await repo.list(uuid.UUID(int=project.id), offset=99, limit=2)
         assert page3 == []
 
     async def test_update_character(self, db_session, project):
@@ -264,7 +268,7 @@ class TestCharacterRepository:
         assert updated.goals == "变强"
         assert updated.updated_at >= c.updated_at
 
-        got = await repo.get(c.id.int)
+        got = await repo.get(c.id)
         assert got is not None and got.name == "林尘·改"
 
     async def test_update_character_with_groups_reinserts_members(self, db_session, project):
@@ -278,7 +282,7 @@ class TestCharacterRepository:
         )
 
         assert updated.group_ids == [group.id]
-        got = await repo.get(c.id.int)
+        got = await repo.get(c.id)
         assert got is not None and got.group_ids == [group.id]
 
     async def test_hard_delete_character(self, db_session, project):
@@ -286,9 +290,9 @@ class TestCharacterRepository:
         repo = SQLiteCharacterRepository(db_session)
         c = await repo.add(_char(project, "林尘"))
 
-        assert await repo.hard_delete(c.id.int) is True
-        assert await repo.get(c.id.int) is None
-        assert await repo.hard_delete(c.id.int) is False
+        assert await repo.hard_delete(c.id) is True
+        assert await repo.get(c.id) is None
+        assert await repo.hard_delete(c.id) is False
 
     # ── 全唯一索引 ──
 
@@ -305,7 +309,7 @@ class TestCharacterRepository:
         """真删后可重建同名（v1.1 全唯一索引仅约束现存行）."""
         repo = SQLiteCharacterRepository(db_session)
         first = await repo.add(_char(project, "林尘"))
-        await repo.hard_delete(first.id.int)
+        await repo.hard_delete(first.id)
 
         # 全唯一索引仅约束现存行 → 同名可复用
         second = await repo.add(_char(project, "林尘"))
@@ -319,11 +323,11 @@ class TestCharacterRepository:
         g1 = await repo.add_group(_group(project, "主角团", sort_order=2))
         g2 = await repo.add_group(_group(project, "反派", sort_order=1))
 
-        got = await repo.get_group(g1.id.int)
+        got = await repo.get_group(g1.id)
         assert got is not None and got.name == "主角团"
-        assert await repo.get_group(99999) is None
+        assert await repo.get_group(uuid.uuid4()) is None
 
-        groups = await repo.list_groups(project.id)
+        groups = await repo.list_groups(uuid.UUID(int=project.id))
         assert [g.name for g in groups] == ["反派", "主角团"]
 
         updated = await repo.update_group(
@@ -332,9 +336,9 @@ class TestCharacterRepository:
         assert updated.name == "主角团·改"
         assert updated.sort_order == 0
 
-        assert await repo.hard_delete_group(g2.id.int) is True
-        assert await repo.get_group(g2.id.int) is None
-        assert [g.name for g in await repo.list_groups(project.id)] == ["主角团·改"]
+        assert await repo.hard_delete_group(g2.id) is True
+        assert await repo.get_group(g2.id) is None
+        assert [g.name for g in await repo.list_groups(uuid.UUID(int=project.id))] == ["主角团·改"]
 
     async def test_hard_delete_group_removes_memberships(self, db_session, project):
         """分组硬删后，关联行消失（成员角色 group_ids 清空），分组行物理消失."""
@@ -343,11 +347,11 @@ class TestCharacterRepository:
         c = await repo.add(_char(project, "林尘", group_ids=[g.id]))
         assert c.group_ids == [g.id]
 
-        assert await repo.hard_delete_group(g.id.int) is True
-        assert await repo.get_group(g.id.int) is None
-        got = await repo.get(c.id.int)
+        assert await repo.hard_delete_group(g.id) is True
+        assert await repo.get_group(g.id) is None
+        got = await repo.get(c.id)
         assert got is not None and got.group_ids == []
-        assert await repo.hard_delete_group(g.id.int) is False
+        assert await repo.hard_delete_group(g.id) is False
 
     # ── CharacterRelation ──
 
@@ -358,16 +362,16 @@ class TestCharacterRepository:
         b = await repo.add(_char(project, "阿澈"))
         rel = await repo.add_relation(_relation(project, a, b, "师徒", description="旧说明"))
 
-        got = await repo.get_relation(rel.id.int)
+        got = await repo.get_relation(rel.id)
         assert got is not None
         assert got.from_character_id == a.id
         assert got.to_character_id == b.id
         assert got.relation_type == "师徒"
         assert got.description == "旧说明"
 
-        by_key = await repo.get_relation_by_key(a.id.int, b.id.int, "师徒")
+        by_key = await repo.get_relation_by_key(a.id, b.id, "师徒")
         assert by_key is not None and by_key.id == rel.id
-        assert await repo.get_relation_by_key(a.id.int, b.id.int, "宿敌") is None
+        assert await repo.get_relation_by_key(a.id, b.id, "宿敌") is None
 
         updated = await repo.update_relation(
             rel.model_copy(update={"description": "新说明", "relation_type": "亦师亦友"})
@@ -384,11 +388,11 @@ class TestCharacterRepository:
         r1 = await repo.add_relation(_relation(project, a, b, "师徒"))
         r2 = await repo.add_relation(_relation(project, c, a, "宿敌"))
 
-        rels = await repo.list_relations(project.id, character_id=a.id.int)
+        rels = await repo.list_relations(uuid.UUID(int=project.id), character_id=a.id)
         assert {r.id for r in rels} == {r1.id, r2.id}
 
         # 不传 character_id → 项目内全部活动关系
-        all_rels = await repo.list_relations(project.id)
+        all_rels = await repo.list_relations(uuid.UUID(int=project.id))
         assert len(all_rels) == 2
 
     async def test_duplicate_active_relation_raises_integrity_error(self, db_session, project):
@@ -409,10 +413,10 @@ class TestCharacterRepository:
         b = await repo.add(_char(project, "阿澈"))
         r = await repo.add_relation(_relation(project, a, b, "师徒"))
 
-        assert await repo.hard_delete_relation(r.id.int) is True
+        assert await repo.hard_delete_relation(r.id) is True
         count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
-        assert await repo.hard_delete_relation(r.id.int) is False
+        assert await repo.hard_delete_relation(r.id) is False
 
     # ── 级联真删 ──
 
@@ -424,7 +428,7 @@ class TestCharacterRepository:
         await repo.add_relation(_relation(project, a, b, "师徒"))
         await repo.add_relation(_relation(project, b, a, "宿敌"))
 
-        assert await repo.hard_delete(a.id.int) is True
+        assert await repo.hard_delete(a.id) is True
 
         count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
@@ -554,7 +558,7 @@ class TestCharacterRepositoryCoverageGaps:
     async def test_hard_delete_group_missing_returns_false(self, db_session, project):
         """hard_delete_group 不存在的分组 → False."""
         repo = SQLiteCharacterRepository(db_session)
-        assert await repo.hard_delete_group(99999) is False
+        assert await repo.hard_delete_group(uuid.uuid4()) is False
 
     # ── ORM __repr__ ──
 
@@ -607,7 +611,7 @@ class TestP5HardDeleteCleansRelations:
         await repo.add_relation(_relation(project, a, b, "师徒"))
         await repo.add_relation(_relation(project, b, a, "宿敌"))
 
-        assert await repo.hard_delete(a.id.int) is True
+        assert await repo.hard_delete(a.id) is True
 
         count = await db_session_off_fk.execute(
             select(func.count()).select_from(KnowledgeRelationORM)
@@ -626,22 +630,25 @@ class TestInt64RangeGuard1106:
         """character_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteCharacterRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
     async def test_get_group_returns_none_for_out_of_range_id(self, db_session):
         """character_repo.get_group 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteCharacterRepository(db_session)
 
-        assert await repo.get_group(2**63) is None  # 上界外
-        assert await repo.get_group(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get_group(uuid.uuid4()) is None
+        assert await repo.get_group(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
     async def test_get_relation_returns_none_for_out_of_range_id(self, db_session):
         """character_repo.get_relation 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteCharacterRepository(db_session)
 
-        assert await repo.get_relation(2**63) is None  # 上界外
-        assert await repo.get_relation(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get_relation(uuid.uuid4()) is None
+        assert await repo.get_relation(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
 
 # ══ #495 角色关系数据面统一：F9 关系底层存储切换 ══
@@ -728,22 +735,24 @@ class TestRelationStorageUnification495:
         r2 = await repo.add_relation(_relation(project, c, a, "宿敌"))
         assert len(await _kr_rows(db_session)) == 2, "F9 写入必须落在 kr 表"
 
-        got = await repo.get_relation(r1.id.int)
+        got = await repo.get_relation(r1.id)
         assert got is not None
         assert got.id == r1.id
         assert got.from_character_id == a.id and got.to_character_id == b.id
         assert got.relation_type == "师徒"
 
-        by_key = await repo.get_relation_by_key(a.id.int, b.id.int, "师徒")
+        by_key = await repo.get_relation_by_key(a.id, b.id, "师徒")
         assert by_key is not None and by_key.id == r1.id
 
-        assert {r.id for r in await repo.list_relations(project.id, character_id=a.id.int)} == {
+        assert {
+            r.id for r in await repo.list_relations(uuid.UUID(int=project.id), character_id=a.id)
+        } == {
             r1.id,
             r2.id,
         }
-        assert len(await repo.list_relations(project.id)) == 2
+        assert len(await repo.list_relations(uuid.UUID(int=project.id))) == 2
 
-        before = (await repo.get_relation(r1.id.int)).updated_at
+        before = (await repo.get_relation(r1.id)).updated_at
         updated = await repo.update_relation(
             r1.model_copy(update={"description": "新说明", "relation_type": "亦师亦友"})
         )
@@ -751,9 +760,9 @@ class TestRelationStorageUnification495:
         assert updated.relation_type == "亦师亦友"
         assert updated.updated_at >= before
 
-        assert await repo.hard_delete_relation(r1.id.int) is True
-        assert await repo.get_relation(r1.id.int) is None
-        assert await repo.hard_delete_relation(r1.id.int) is False
+        assert await repo.hard_delete_relation(r1.id) is True
+        assert await repo.get_relation(r1.id) is None
+        assert await repo.hard_delete_relation(r1.id) is False
         assert await _kr_rows(db_session) == [
             ("character", c.id.int, "character", a.id.int, "宿敌", "")
         ]
@@ -785,15 +794,15 @@ class TestRelationStorageUnification495:
             description="图谱页跨实体关系",
         )
 
-        rels = await repo.list_relations(project.id)
+        rels = await repo.list_relations(uuid.UUID(int=project.id))
         assert [(r.from_character_id, r.to_character_id, r.relation_type) for r in rels] == [
             (a.id, b.id, "师徒")
         ]
 
-        got = await repo.get_relation(pair_id)
+        got = await repo.get_relation(uuid.UUID(int=pair_id))  # _insert_kr 返回物理 int
         assert got is not None and got.relation_type == "师徒"
         assert got.from_character_id == a.id  # int → UUID 映射
-        assert await repo.get_relation(world_id) is None, "跨实体行不属于 F9 契约"
+        assert await repo.get_relation(uuid.UUID(int=world_id)) is None, "跨实体行不属于 F9 契约"
 
     async def test_hard_delete_type_filtered_keeps_same_int_id_other_entity(
         self, db_session, project
@@ -838,7 +847,7 @@ class TestRelationStorageUnification495:
             description="世界观关系（同 int id）",
         )
 
-        assert await repo.hard_delete(cid) is True
+        assert await repo.hard_delete(uuid.UUID(int=cid)) is True
 
         assert await _kr_rows(db_session) == [
             ("world", cid, "world", 43, "位于", "世界观关系（同 int id）")

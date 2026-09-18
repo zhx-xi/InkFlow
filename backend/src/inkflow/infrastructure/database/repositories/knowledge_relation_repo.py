@@ -31,10 +31,7 @@ from inkflow.domain.models.knowledge_graph import (
     RelationSource,
 )
 from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -100,13 +97,12 @@ class SQLiteKnowledgeRelationRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, relation_id: int | uuid.UUID) -> KnowledgeRelation | None:
-        """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(relation_id, uuid.UUID):
-            rid = require_uuid_pk(relation_id)
-        else:
-            rid = uuid_to_pk_or_none(relation_id)
+    async def get(self, relation_id: uuid.UUID) -> KnowledgeRelation | None:
+        """按主键查询关系。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        rid = require_uuid_pk(relation_id)
         if rid is None:
             return None
         stmt = select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rid)
@@ -116,20 +112,25 @@ class SQLiteKnowledgeRelationRepository:
 
     async def get_by_key(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         source_type: str,
-        source_id: int,
+        source_id: uuid.UUID,
         target_type: str,
-        target_id: int,
+        target_id: uuid.UUID,
         relation_type: str,
     ) -> KnowledgeRelation | None:
         """按六元组唯一键查询关系."""
+        pid = require_uuid_pk(project_id)
+        sid = require_uuid_pk(source_id)
+        tid = require_uuid_pk(target_id)
+        if pid is None or sid is None or tid is None:
+            return None
         stmt = select(KnowledgeRelationORM).where(
-            KnowledgeRelationORM.project_id == project_id,
+            KnowledgeRelationORM.project_id == pid,
             KnowledgeRelationORM.source_type == source_type,
-            KnowledgeRelationORM.source_id == source_id,
+            KnowledgeRelationORM.source_id == sid,
             KnowledgeRelationORM.target_type == target_type,
-            KnowledgeRelationORM.target_id == target_id,
+            KnowledgeRelationORM.target_id == tid,
             KnowledgeRelationORM.relation_type == relation_type,
         )
         result = await self._session.execute(stmt)
@@ -139,14 +140,17 @@ class SQLiteKnowledgeRelationRepository:
     # ── list（created_at DESC）与分页 ──
 
     async def list(
-        self, project_id: int, offset: int = 0, limit: int = 50
+        self, project_id: uuid.UUID, offset: int = 0, limit: int = 50
     ) -> tuple[builtins.list[KnowledgeRelation], int]:
         """分页查询项目内关系列表（created_at DESC，新在前）.
 
         Returns:
             (当前页关系列表, 符合条件的总记录数).
         """
-        base = select(KnowledgeRelationORM).where(KnowledgeRelationORM.project_id == project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        base = select(KnowledgeRelationORM).where(KnowledgeRelationORM.project_id == pid)
         count_stmt = select(func.count()).select_from(base.subquery())
         count_result = await self._session.execute(count_stmt)
         total = count_result.scalar_one()
@@ -167,7 +171,7 @@ class SQLiteKnowledgeRelationRepository:
 
     async def filter(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         source_type: str | None = None,
         target_type: str | None = None,
         relation_type: str | None = None,
@@ -180,7 +184,10 @@ class SQLiteKnowledgeRelationRepository:
         Returns:
             (关系列表, 总数) 元组.
         """
-        base = select(KnowledgeRelationORM).where(KnowledgeRelationORM.project_id == project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        base = select(KnowledgeRelationORM).where(KnowledgeRelationORM.project_id == pid)
         if source_type is not None:
             base = base.where(KnowledgeRelationORM.source_type == source_type)
         if target_type is not None:
@@ -238,19 +245,25 @@ class SQLiteKnowledgeRelationRepository:
 
     # ── delete（真删语义，无 is_deleted）──
 
-    async def delete(self, relation_id: int) -> bool:
+    async def delete(self, relation_id: uuid.UUID) -> bool:
         """真删关系（无 is_deleted）；不存在返回 False."""
-        stmt = sa_delete(KnowledgeRelationORM).where(KnowledgeRelationORM.id == relation_id)
+        rid = require_uuid_pk(relation_id)
+        if rid is None:
+            return False
+        stmt = sa_delete(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rid)
         result = await self._session.execute(stmt)
         await self._session.commit()
         rowcount: int = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
         return rowcount > 0
 
-    async def list_by_project(self, project_id: int) -> builtins.list[KnowledgeRelation]:
+    async def list_by_project(self, project_id: uuid.UUID) -> builtins.list[KnowledgeRelation]:
         """列出项目全部关系（图谱聚合全量，created_at ASC 供 graph 稳定排序）."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(KnowledgeRelationORM)
-            .where(KnowledgeRelationORM.project_id == project_id)
+            .where(KnowledgeRelationORM.project_id == pid)
             .order_by(KnowledgeRelationORM.created_at.asc(), KnowledgeRelationORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -259,21 +272,24 @@ class SQLiteKnowledgeRelationRepository:
 
     # ── delete_by_entity / cleanup_for_entity（实体硬删级联清理）──
 
-    async def delete_by_entity(self, entity_type: str, entity_id: int) -> int:
+    async def delete_by_entity(self, entity_type: str, entity_id: uuid.UUID) -> int:
         """删除指定实体作为 source 或 target 的全部关系行（真删），返回删除行数.
 
         按 (type,id) 对匹配——各实体 int id 空间重叠，不过滤 type 会误删他类
         实体关系行（#495）。
         """
+        eid = require_uuid_pk(entity_id)
+        if eid is None:
+            return 0
         stmt = sa_delete(KnowledgeRelationORM).where(
             or_(
                 and_(
                     KnowledgeRelationORM.source_type == entity_type,
-                    KnowledgeRelationORM.source_id == entity_id,
+                    KnowledgeRelationORM.source_id == eid,
                 ),
                 and_(
                     KnowledgeRelationORM.target_type == entity_type,
-                    KnowledgeRelationORM.target_id == entity_id,
+                    KnowledgeRelationORM.target_id == eid,
                 ),
             )
         )
@@ -281,6 +297,6 @@ class SQLiteKnowledgeRelationRepository:
         rowcount: int = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
         return rowcount
 
-    async def cleanup_for_entity(self, entity_type: str, entity_id: int) -> int:
+    async def cleanup_for_entity(self, entity_type: str, entity_id: uuid.UUID) -> int:
         """实体硬删级联清理 —— delete_by_entity 别名（§5.3，语义一致）."""
         return await self.delete_by_entity(entity_type, entity_id)

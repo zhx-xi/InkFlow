@@ -133,7 +133,7 @@ class TestTimelineRepository:
         )
         assert row.scalar_one().title == "林尘觉醒金手指"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.project_id == uuid.UUID(int=project.id)
@@ -144,7 +144,7 @@ class TestTimelineRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteTimelineRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_list_returns_events_with_total(self, db_session, project):
         """list 返回 (列表, 总数)；真删事件不可见."""
@@ -152,9 +152,9 @@ class TestTimelineRepository:
         e1 = await repo.add(_event(project, "觉醒"))
         e2 = await repo.add(_event(project, "宗门大比"))
         e3 = await repo.add(_event(project, "古神禁地"))
-        await repo.hard_delete(e3.id.int)
+        await repo.hard_delete(e3.id)
 
-        events, total = await repo.list(project.id)
+        events, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 2
         assert {e.id for e in events} == {e1.id, e2.id}
 
@@ -163,7 +163,7 @@ class TestTimelineRepository:
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.list(other.id) == ([], 0)
+        assert await repo.list(uuid.UUID(int=other.id)) == ([], 0)
 
     async def test_list_search_icontains(self, db_session, project):
         """search 对 title 不区分大小写子串匹配."""
@@ -172,11 +172,11 @@ class TestTimelineRepository:
         await repo.add(_event(project, "觉醒之夜"))
         await repo.add(_event(project, "宗门大比"))
 
-        events, total = await repo.list(project.id, search="觉醒")
+        events, total = await repo.list(uuid.UUID(int=project.id), search="觉醒")
         assert total == 2
         assert {e.title for e in events} == {"林尘觉醒", "觉醒之夜"}
 
-        events2, total2 = await repo.list(project.id, search="不存在")
+        events2, total2 = await repo.list(uuid.UUID(int=project.id), search="不存在")
         assert total2 == 0
         assert events2 == []
 
@@ -187,10 +187,10 @@ class TestTimelineRepository:
         await repo.add(_event(project, "第一幕", narrative_position=1))
         await repo.add(_event(project, "第二幕", narrative_position=2))
 
-        events, _ = await repo.list(project.id)
+        events, _ = await repo.list(uuid.UUID(int=project.id))
         assert [e.title for e in events] == ["第一幕", "第二幕", "第三幕"]
 
-        desc, _ = await repo.list(project.id, sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_desc=True)
         assert [e.title for e in desc] == ["第三幕", "第二幕", "第一幕"]
 
     async def test_list_sort_by_time_value_nulls_last(self, db_session, project):
@@ -200,10 +200,10 @@ class TestTimelineRepository:
         await repo.add(_event(project, "十年后", time_value=10.0))
         await repo.add(_event(project, "五年前", time_value=5.0))
 
-        asc, _ = await repo.list(project.id, sort_by="time_value")
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="time_value")
         assert [e.title for e in asc] == ["五年前", "十年后", "未知"]
 
-        desc, _ = await repo.list(project.id, sort_by="time_value", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="time_value", sort_desc=True)
         assert [e.title for e in desc] == ["十年后", "五年前", "未知"]
 
     async def test_list_sort_by_title_and_created_at(self, db_session, project):
@@ -213,13 +213,15 @@ class TestTimelineRepository:
         await repo.add(_event(project, "alpha"))
         await repo.add(_event(project, "bravo"))
 
-        asc, _ = await repo.list(project.id, sort_by="title", sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="title", sort_desc=False)
         assert [e.title for e in asc] == ["alpha", "bravo", "charlie"]
 
-        desc, _ = await repo.list(project.id, sort_by="title", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="title", sort_desc=True)
         assert [e.title for e in desc] == ["charlie", "bravo", "alpha"]
 
-        by_created, _ = await repo.list(project.id, sort_by="created_at", sort_desc=False)
+        by_created, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="created_at", sort_desc=False
+        )
         assert [e.title for e in by_created] == ["charlie", "alpha", "bravo"]
 
     async def test_list_pagination(self, db_session, project):
@@ -228,15 +230,15 @@ class TestTimelineRepository:
         for i in range(5):
             await repo.add(_event(project, f"事件{i}", narrative_position=i))
 
-        page1, total = await repo.list(project.id, offset=0, limit=2)
-        page2, _ = await repo.list(project.id, offset=2, limit=2)
+        page1, total = await repo.list(uuid.UUID(int=project.id), offset=0, limit=2)
+        page2, _ = await repo.list(uuid.UUID(int=project.id), offset=2, limit=2)
 
         assert total == 5
         assert len(page1) == 2
         assert len(page2) == 2
         assert {e.id for e in page1}.isdisjoint({e.id for e in page2})
         # 分页越界 → 空列表（同 F1）
-        page3, _ = await repo.list(project.id, offset=99, limit=2)
+        page3, _ = await repo.list(uuid.UUID(int=project.id), offset=99, limit=2)
         assert page3 == []
 
     async def test_list_all_returns_events_sorted(self, db_session, project):
@@ -246,7 +248,7 @@ class TestTimelineRepository:
         early = await repo.add(_event(project, "位置1·先建", narrative_position=1))
         pos2 = await repo.add(_event(project, "位置2", narrative_position=2))
         gone = await repo.add(_event(project, "已删·位置0", narrative_position=0))
-        await repo.hard_delete(gone.id.int)
+        await repo.hard_delete(gone.id)
 
         # created_at 由 DB 生成（插入序）；用直接 UPDATE 注入受控时间戳，
         # 使「同位置 → created_at ASC」排序可确定性断言
@@ -267,35 +269,35 @@ class TestTimelineRepository:
         )
         await db_session.commit()
 
-        events = await repo.list_all(project.id)
+        events = await repo.list_all(uuid.UUID(int=project.id))
         assert [e.id for e in events] == [early.id, late_first.id, pos2.id]
 
     async def test_next_position_empty_project_returns_1(self, db_session, project):
         """空项目 next_position = 1."""
         repo = SQLiteTimelineRepository(db_session)
-        assert await repo.next_position(project.id) == 1
+        assert await repo.next_position(uuid.UUID(int=project.id)) == 1
 
     async def test_next_position_appends_after_max(self, db_session, project):
         """next_position = 项目内事件 max+1；真删事件不计入 max；项目隔离."""
         repo = SQLiteTimelineRepository(db_session)
         await repo.add(_event(project, "事件A", narrative_position=5))
-        assert await repo.next_position(project.id) == 6
+        assert await repo.next_position(uuid.UUID(int=project.id)) == 6
 
         # 重复位置允许 → max 不变
         await repo.add(_event(project, "事件B", narrative_position=5))
-        assert await repo.next_position(project.id) == 6
+        assert await repo.next_position(uuid.UUID(int=project.id)) == 6
 
         # 真删事件不计入 max
         high = await repo.add(_event(project, "事件C", narrative_position=100))
-        await repo.hard_delete(high.id.int)
-        assert await repo.next_position(project.id) == 6
+        await repo.hard_delete(high.id)
+        assert await repo.next_position(uuid.UUID(int=project.id)) == 6
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.next_position(other.id) == 1
+        assert await repo.next_position(uuid.UUID(int=other.id)) == 1
 
     async def test_update_event(self, db_session, project):
         """update 按 id 定位更新字段并返回最新领域对象（含 time_value 清除）."""
@@ -317,7 +319,7 @@ class TestTimelineRepository:
         assert updated.narrative_position == 1
         assert updated.updated_at >= e.updated_at
 
-        got = await repo.get(e.id.int)
+        got = await repo.get(e.id)
         assert got is not None
         assert got.title == "觉醒·改"
         assert got.time_value is None
@@ -334,9 +336,9 @@ class TestTimelineRepository:
         repo = SQLiteTimelineRepository(db_session)
         e = await repo.add(_event(project, "觉醒"))
 
-        assert await repo.hard_delete(e.id.int) is True
-        assert await repo.get(e.id.int) is None
-        assert await repo.hard_delete(e.id.int) is False
+        assert await repo.hard_delete(e.id) is True
+        assert await repo.get(e.id) is None
+        assert await repo.hard_delete(e.id) is False
 
     # ── 无唯一约束（spec §2.4）──
 
@@ -347,7 +349,7 @@ class TestTimelineRepository:
         second = await repo.add(_event(project, "回忆", narrative_position=2, time_value=5.0))
 
         assert second.id != first.id
-        events, total = await repo.list(project.id)
+        events, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 2
         assert {e.id for e in events} == {first.id, second.id}
 
@@ -390,11 +392,11 @@ class TestTimelineRepository:
         )
         assert row.scalar_one().source_chapter_id == chapter.id
 
-        got = await repo.get(extracted.id.int)
+        got = await repo.get(extracted.id)
         assert got is not None
         assert got.source_chapter_id == uuid.UUID(int=chapter.id)
 
-        got_manual = await repo.get(manual.id.int)
+        got_manual = await repo.get(manual.id)
         assert got_manual is not None
         assert got_manual.source_chapter_id is None
 
@@ -423,7 +425,7 @@ class TestTimelineRepository:
         gone = await repo.add(
             _event(project, "一章·已删", source_chapter_id=c1, narrative_position=0)
         )
-        await repo.hard_delete(gone.id.int)
+        await repo.hard_delete(gone.id)
 
         # 注入受控 created_at，使「同位置 → created_at ASC」排序可确定性断言
         await db_session.execute(
@@ -438,16 +440,16 @@ class TestTimelineRepository:
         )
         await db_session.commit()
 
-        events = await repo.list_by_chapter(project.id, ch1.id)
+        events = await repo.list_by_chapter(uuid.UUID(int=project.id), c1)
         assert [e.id for e in events] == [early.id, late_first.id]
         assert all(e.source_chapter_id == c1 for e in events)
 
         # 跨章互不干扰（二章事件不进一章结果）
-        events2 = await repo.list_by_chapter(project.id, ch2.id)
+        events2 = await repo.list_by_chapter(uuid.UUID(int=project.id), c2)
         assert [e.id for e in events2] == [other_ch.id]
 
         # 无该章事件 → 空列表
-        assert await repo.list_by_chapter(project.id, 99999) == []
+        assert await repo.list_by_chapter(uuid.UUID(int=project.id), uuid.uuid4()) == []
 
     async def test_chapter_hard_delete_sets_source_chapter_id_null(self, db_session, project):
         """章节硬删 → 事件 source_chapter_id 置 None（FK ON DELETE SET NULL，事件保留）."""
@@ -464,7 +466,7 @@ class TestTimelineRepository:
         await db_session.delete(ch_row.scalar_one())
         await db_session.commit()
 
-        got = await repo.get(e.id.int)
+        got = await repo.get(e.id)
         assert got is not None
         assert got.source_chapter_id is None
         # 事件行保留（仅来源置空）
@@ -512,7 +514,7 @@ class TestP5HardDeleteCleansForeshadowings:
         db_session_off_fk.add(fs)
         await db_session_off_fk.commit()
 
-        assert await repo.hard_delete(e.id.int) is True
+        assert await repo.hard_delete(e.id) is True
 
         row = await db_session_off_fk.execute(
             select(ForeshadowingORM).where(ForeshadowingORM.id == fs.id)
@@ -531,5 +533,6 @@ class TestInt64RangeGuard1106:
         """timeline_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteTimelineRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

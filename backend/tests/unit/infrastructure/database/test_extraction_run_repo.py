@@ -161,7 +161,7 @@ class TestExtractionRunRepository:
         # 持久化验证：直接查表
         assert await _count_rows(db_session, project.id) == 1
 
-        got = await repo.get(project.id, ExtractionType.CHARACTER, "chapter-1")
+        got = await repo.get(uuid.UUID(int=project.id), ExtractionType.CHARACTER, "chapter-1")
         assert got is not None
         assert got.id == saved.id
         assert got.content_hash == "abc123"
@@ -175,16 +175,23 @@ class TestExtractionRunRepository:
         await repo.upsert(_run(project, ExtractionType.CHARACTER, "chapter-1"))
 
         # 未知源
-        assert await repo.get(project.id, ExtractionType.CHARACTER, "chapter-999") is None
+        assert (
+            await repo.get(uuid.UUID(int=project.id), ExtractionType.CHARACTER, "chapter-999")
+            is None
+        )
         # 未知类型
-        assert await repo.get(project.id, ExtractionType.SETTING, "chapter-1") is None
+        assert (
+            await repo.get(uuid.UUID(int=project.id), ExtractionType.SETTING, "chapter-1") is None
+        )
 
         # 项目隔离：其他项目查不到
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get(other.id, ExtractionType.CHARACTER, "chapter-1") is None
+        assert (
+            await repo.get(uuid.UUID(int=other.id), ExtractionType.CHARACTER, "chapter-1") is None
+        )
 
     # ── upsert 同键更新（ON CONFLICT DO UPDATE）──
 
@@ -242,7 +249,7 @@ class TestExtractionRunRepository:
         assert second.run_at != first.run_at
 
         # get 读回与第二次一致
-        got = await repo.get(project.id, ExtractionType.FORESHADOWING, "chapter-2")
+        got = await repo.get(uuid.UUID(int=project.id), ExtractionType.FORESHADOWING, "chapter-2")
         assert got is not None
         assert got.content_hash == "hash-v2"
         assert got.status == ExtractionStatus.SKIPPED
@@ -275,21 +282,25 @@ class TestExtractionRunRepository:
         await repo.upsert(_run(project, ExtractionType.CHARACTER, "chapter-2"))
         await repo.upsert(_run(project, ExtractionType.SETTING, "manual"))
 
-        all_items, all_total = await repo.list(project.id)
+        all_items, all_total = await repo.list(uuid.UUID(int=project.id))
         assert all_total == 3
         assert {r.source_key for r in all_items} == {"chapter-1", "chapter-2", "manual"}
 
-        char_items, char_total = await repo.list(project.id, type=ExtractionType.CHARACTER)
+        char_items, char_total = await repo.list(
+            uuid.UUID(int=project.id), type=ExtractionType.CHARACTER
+        )
         assert char_total == 2
         assert {r.source_key for r in char_items} == {"chapter-1", "chapter-2"}
         assert all(r.type == ExtractionType.CHARACTER for r in char_items)
 
-        setting_items, setting_total = await repo.list(project.id, type=ExtractionType.SETTING)
+        setting_items, setting_total = await repo.list(
+            uuid.UUID(int=project.id), type=ExtractionType.SETTING
+        )
         assert setting_total == 1
         assert setting_items[0].source_key == "manual"
 
         # 无匹配类型 → 空
-        empty, empty_total = await repo.list(project.id, type=ExtractionType.OUTLINE)
+        empty, empty_total = await repo.list(uuid.UUID(int=project.id), type=ExtractionType.OUTLINE)
         assert empty == []
         assert empty_total == 0
 
@@ -306,7 +317,7 @@ class TestExtractionRunRepository:
             _run(project, ExtractionType.CHARACTER, "chapter-new", run_at=_dt(3))
         )
 
-        items, _ = await repo.list(project.id)
+        items, _ = await repo.list(uuid.UUID(int=project.id))
         assert [r.id for r in items] == [new.id, mid.id, old.id]
         # 时间序断言（naive 读回）
         assert [r.run_at for r in items] == [
@@ -323,8 +334,8 @@ class TestExtractionRunRepository:
                 _run(project, ExtractionType.CHARACTER, f"chapter-{i}", run_at=_dt(i + 1))
             )
 
-        page1, total = await repo.list(project.id, offset=0, limit=2)
-        page2, _ = await repo.list(project.id, offset=2, limit=2)
+        page1, total = await repo.list(uuid.UUID(int=project.id), offset=0, limit=2)
+        page2, _ = await repo.list(uuid.UUID(int=project.id), offset=2, limit=2)
 
         assert total == 5
         assert len(page1) == 2
@@ -332,7 +343,7 @@ class TestExtractionRunRepository:
         assert {r.id for r in page1}.isdisjoint({r.id for r in page2})
 
         # 分页越界 → 空列表
-        page3, _ = await repo.list(project.id, offset=99, limit=2)
+        page3, _ = await repo.list(uuid.UUID(int=project.id), offset=99, limit=2)
         assert page3 == []
 
     # ── 项目硬删 → 级联清理（FK CASCADE）──
@@ -352,7 +363,7 @@ class TestExtractionRunRepository:
         result = await db_session.execute(select(func.count()).select_from(ExtractionRunORM))
         assert result.scalar_one() == 0
         # repo 视角：项目已不存在 → 空列表
-        items, total = await repo.list(project.id)
+        items, total = await repo.list(uuid.UUID(int=project.id))
         assert items == []
         assert total == 0
 
@@ -361,5 +372,7 @@ class TestExtractionRunRepository:
     async def test_list_empty_table(self, db_session, project):
         """空表 list → ([], 0)；get → None."""
         repo = SQLExtractionRunRepository(db_session)
-        assert await repo.list(project.id) == ([], 0)
-        assert await repo.get(project.id, ExtractionType.CHARACTER, "chapter-1") is None
+        assert await repo.list(uuid.UUID(int=project.id)) == ([], 0)
+        assert (
+            await repo.get(uuid.UUID(int=project.id), ExtractionType.CHARACTER, "chapter-1") is None
+        )

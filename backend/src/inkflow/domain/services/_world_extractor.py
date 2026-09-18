@@ -59,13 +59,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _extract_json_fragment(text: str) -> str | None:
     """从带围栏/前后缀文字的文本中提取首个 ``{...}`` 平衡片段.
 
@@ -261,7 +254,8 @@ class WorldExtractor:
     ) -> WorldExtractionResult:
         """合并落库: 条目按 (project_id, name) 匹配活动条目，同名=同一世界观条目。"""
         warnings = list(item_warnings)
-        pid_int = _to_int_id(request.project_id)
+        # #1291：project_id 为领域 UUID，直传仓储
+        pid = request.project_id
 
         if not world_settings:
             warnings.append("未从文本中提取到任何世界观条目")
@@ -269,7 +263,7 @@ class WorldExtractor:
         created: list[WorldSetting] = []
         updated: list[WorldSetting] = []
         for es in world_settings:
-            existing = await self._repo.get_by_name(pid_int, es.name)
+            existing = await self._repo.get_by_name(pid, es.name)
             if existing is None:
                 now = _utcnow()
                 new_setting = await self._repo.add(

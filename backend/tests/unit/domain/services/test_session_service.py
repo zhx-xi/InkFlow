@@ -271,9 +271,9 @@ class TestGet:
         assert view.log_count == 5
         assert view.last_log is not None
         assert view.last_log.seq == 5
-        mock_repo.list_include_deleted.assert_awaited_once_with(SID.int)
-        mock_repo.count_logs.assert_awaited_once_with(SID.int)
-        mock_repo.last_log.assert_awaited_once_with(SID.int)
+        mock_repo.list_include_deleted.assert_awaited_once_with(SID)
+        mock_repo.count_logs.assert_awaited_once_with(SID)
+        mock_repo.last_log.assert_awaited_once_with(SID)
 
     async def test_get_archived_session_readable(
         self, service: SessionService, mock_repo: MagicMock
@@ -316,7 +316,7 @@ class TestList:
         assert views[0].session.title == "每日定时写作"
         assert views[1].session.status == SessionStatus.COMPLETED
         mock_repo.list.assert_awaited_once_with(
-            "task", "completed", PID.int, "每日", 0, 20, include_deleted=False
+            "task", "completed", PID, "每日", 0, 20, include_deleted=False
         )
         assert mock_repo.count_logs.await_count == 2
         assert mock_repo.last_log.await_count == 2
@@ -620,7 +620,7 @@ class TestLogs:
         logs, total = await service.list_logs(SID, offset=0, limit=50)
         assert total == 1
         assert logs[0].message == "开始"
-        mock_repo.list_logs.assert_awaited_once_with(SID.int, 0, 50)
+        mock_repo.list_logs.assert_awaited_once_with(SID, 0, 50)
 
     async def test_list_logs_missing_session_raises_not_found(
         self, service: SessionService, mock_repo: MagicMock
@@ -647,7 +647,7 @@ class TestDeleteRestore:
         """首次 DELETE（活动会话）→ soft_delete（归档）."""
         mock_repo.list_include_deleted = AsyncMock(return_value=_session(is_deleted=False))
         assert await service.delete(SID) is True
-        mock_repo.soft_delete.assert_awaited_once_with(SID.int)
+        mock_repo.soft_delete.assert_awaited_once_with(SID)
         mock_repo.hard_delete.assert_not_awaited()
 
     async def test_delete_archived_hard_deletes(
@@ -656,7 +656,7 @@ class TestDeleteRestore:
         """已归档再 DELETE → 真实删除（物理 + 日志级联，spec §7 #8b）."""
         mock_repo.list_include_deleted = AsyncMock(return_value=_session(is_deleted=True))
         assert await service.delete(SID) is True
-        mock_repo.hard_delete.assert_awaited_once_with(SID.int)
+        mock_repo.hard_delete.assert_awaited_once_with(SID)
         mock_repo.soft_delete.assert_not_awaited()
 
     async def test_delete_force_hard_deletes_active(
@@ -664,7 +664,7 @@ class TestDeleteRestore:
     ) -> None:
         """force=true 对活动会话直接真实删除（spec §2.5 显式通道）."""
         assert await service.delete(SID, force=True) is True
-        mock_repo.hard_delete.assert_awaited_once_with(SID.int)
+        mock_repo.hard_delete.assert_awaited_once_with(SID)
         mock_repo.soft_delete.assert_not_awaited()
         mock_repo.list_include_deleted.assert_not_awaited()
 
@@ -685,7 +685,7 @@ class TestDeleteRestore:
         restored = await service.restore(SID)
         assert restored is not None
         assert restored.is_deleted is False
-        mock_repo.restore.assert_awaited_once_with(SID.int)
+        mock_repo.restore.assert_awaited_once_with(SID)
 
     async def test_restore_active_session_idempotent(
         self, service: SessionService, mock_repo: MagicMock

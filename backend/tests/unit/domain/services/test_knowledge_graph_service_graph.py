@@ -346,9 +346,9 @@ class TestGraph:
         assert view.nodes[-1].entity_id == pin_b.id
         assert view.nodes[3].name == "A大纲"  # Outline.name 映射
         assert view.nodes[5].name == "序章"  # TimelineEvent.title 映射
-        mock_character_repo.list.assert_awaited_once_with(PID.int)
-        mock_map_repo.list_maps_by_project.assert_awaited_once_with(PID.int)
-        mock_map_repo.list_pins.assert_awaited_once_with(wm.id.int)
+        mock_character_repo.list.assert_awaited_once_with(PID)
+        mock_map_repo.list_maps_by_project.assert_awaited_once_with(PID)
+        mock_map_repo.list_pins.assert_awaited_once_with(wm.id)
 
     async def test_edges_single_table_knowledge_relations_only(
         self,
@@ -392,7 +392,7 @@ class TestGraph:
         assert pair_edge.id == f"kr:{kr_pair.id}"
         assert pair_edge.label == "师徒"
         assert pair_edge.description == "授业恩师"
-        mock_relation_repo.list_by_project.assert_awaited_once_with(PID.int)
+        mock_relation_repo.list_by_project.assert_awaited_once_with(PID)
         mock_character_repo.list_relations.assert_not_awaited()
 
     async def test_edges_no_duplicate_for_same_key_single_table(
@@ -502,27 +502,29 @@ class TestCleanup:
     """cleanup_for_entity 级联清理回调（spec §5.3/§9 场景 7）."""
 
     async def test_delegates_to_relation_repo(self, service, mock_relation_repo):
-        """实体硬删 → cleanup_for_entity(entity_type, entity_id) 委托 repo（int 主键 +
-        枚举转字符串）."""
+        """实体硬删 → cleanup_for_entity(entity_type, entity_id) 委托 repo（领域 UUID +
+        枚举转字符串，#1291）."""
         mock_relation_repo.cleanup_for_entity = AsyncMock(return_value=2)
         ent_id = uuid.uuid4()
 
         deleted = await service.cleanup_for_entity(EntityType.CHARACTER, ent_id)
         assert deleted == 2
-        mock_relation_repo.cleanup_for_entity.assert_awaited_once_with("character", ent_id.int)
+        mock_relation_repo.cleanup_for_entity.assert_awaited_once_with("character", ent_id)
 
         await service.cleanup_for_entity("world", ent_id)
-        mock_relation_repo.cleanup_for_entity.assert_awaited_with("world", ent_id.int)
+        mock_relation_repo.cleanup_for_entity.assert_awaited_with("world", ent_id)
 
     async def test_minimal_service_backward_compat(self, mock_relation_repo):
         """默认 None 依赖向后兼容（§5.3 决策 3）：仅注入 relation_repo 也能清理与空图谱查询."""
         svc = KnowledgeGraphService(relation_repo=mock_relation_repo)
 
-        assert await svc.cleanup_for_entity("character", 123) == 0
+        assert await svc.cleanup_for_entity("character", uuid.UUID(int=123)) == 0
         view = await svc.graph(PID)
         assert view.nodes == []
         assert view.edges == []
-        mock_relation_repo.cleanup_for_entity.assert_awaited_once_with("character", 123)
+        mock_relation_repo.cleanup_for_entity.assert_awaited_once_with(
+            "character", uuid.UUID(int=123)
+        )
 
 
 class TestBulkCreate:

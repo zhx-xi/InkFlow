@@ -189,7 +189,7 @@ class TestOutlineCrud:
             level="overall",
         )
         assert created.name == "第一卷大纲"
-        mock_repo.get_by_name.assert_awaited_once_with(PID.int, "第一卷大纲")
+        mock_repo.get_by_name.assert_awaited_once_with(PID, "第一卷大纲")
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, Outline)
         assert added.project_id == PID
@@ -230,7 +230,7 @@ class TestOutlineCrud:
         assert items == [outline]
         assert total == 1
         kwargs = mock_repo.list.await_args.kwargs
-        assert kwargs["project_id"] == PID.int
+        assert kwargs["project_id"] == PID
         assert kwargs["search"] == "第一卷"
         assert kwargs["sort_by"] == "name"
         assert kwargs["sort_desc"] is False
@@ -278,7 +278,7 @@ class TestOutlineCrud:
         outline = _outline(name="第一卷大纲")
         result = await service.delete_outline(outline.id)
         assert result is True
-        mock_repo.hard_delete.assert_awaited_once_with(outline.id.int)
+        mock_repo.hard_delete.assert_awaited_once_with(outline.id)
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
         assert await service.delete_outline(uuid.uuid4()) is False
@@ -296,7 +296,7 @@ class TestPlotPointCrud:
         created = await service.create_point(
             outline.id, name="主角登场", type="开篇", description="外门测试"
         )
-        mock_repo.next_position.assert_awaited_once_with(outline.id.int)
+        mock_repo.next_position.assert_awaited_once_with(outline.id)
         added = mock_repo.add_point.await_args.args[0]
         assert isinstance(added, PlotPoint)
         assert added.outline_id == outline.id
@@ -333,7 +333,7 @@ class TestPlotPointCrud:
         mock_repo.get_arc = AsyncMock(return_value=arc)
 
         created = await service.create_point(outline.id, name="金手指觉醒", arc_id=arc.id)
-        mock_repo.get_arc.assert_awaited_once_with(arc.id.int)
+        mock_repo.get_arc.assert_awaited_once_with(arc.id)
         assert created.arc_id == arc.id
 
     async def test_create_point_arc_missing_or_cross_project_raises(
@@ -381,7 +381,7 @@ class TestPlotPointCrud:
         result = await service.update_point(existing.id, PlotPointUpdate(arc_id=other_arc.id))
         merged = mock_repo.update_point.await_args.args[0]
         assert merged.arc_id == other_arc.id
-        mock_repo.get_arc.assert_awaited_once_with(other_arc.id.int)
+        mock_repo.get_arc.assert_awaited_once_with(other_arc.id)
         assert result == merged
 
     async def test_update_point_arc_not_in_project_raises(self, service, mock_repo) -> None:
@@ -412,7 +412,7 @@ class TestPlotPointCrud:
         point = _point("主角登场", outline=_outline(name="第一卷大纲"))
         result = await service.delete_point(point.id)
         assert result is True
-        mock_repo.hard_delete_point.assert_awaited_once_with(point.id.int)
+        mock_repo.hard_delete_point.assert_awaited_once_with(point.id)
 
         mock_repo.hard_delete_point = AsyncMock(return_value=False)
         assert await service.delete_point(uuid.uuid4()) is False
@@ -426,7 +426,7 @@ class TestPlotPointCrud:
 
         result = await service.list_points(outline.id)
         assert result == [point]
-        mock_repo.list_points.assert_awaited_once_with(outline.id.int)
+        mock_repo.list_points.assert_awaited_once_with(outline.id)
 
         # #1139: 大纲不存在 → 抛 OutlineNotFoundError（router 转 404），
         # 不得返回空列表（空列表 = 「大纲存在但无情节点」，语义不同）
@@ -443,7 +443,7 @@ class TestStoryArcCrud:
         """创建弧线 → repo.add_arc 收到完整实体（UUID 项目归属）。"""
         arc = await service.create_arc(PID, "主角成长线", "从废柴到强者的蜕变")
         assert arc.name == "主角成长线"
-        mock_repo.get_arc_by_name.assert_awaited_once_with(PID.int, "主角成长线")
+        mock_repo.get_arc_by_name.assert_awaited_once_with(PID, "主角成长线")
         added = mock_repo.add_arc.await_args.args[0]
         assert isinstance(added, StoryArc)
         assert added.project_id == PID
@@ -461,7 +461,7 @@ class TestStoryArcCrud:
         arc = _arc(name="主角成长线")
         mock_repo.get_arc = AsyncMock(return_value=arc)
         assert await service.get_arc(arc.id) == arc
-        mock_repo.get_arc.assert_awaited_once_with(arc.id.int)
+        mock_repo.get_arc.assert_awaited_once_with(arc.id)
 
         mock_repo.get_arc = AsyncMock(return_value=None)
         assert await service.get_arc(uuid.uuid4()) is None
@@ -469,7 +469,7 @@ class TestStoryArcCrud:
         mock_repo.list_arcs = AsyncMock(return_value=[arc])
         result = await service.list_arcs(PID)
         assert result == [arc]
-        mock_repo.list_arcs.assert_awaited_once_with(PID.int)
+        mock_repo.list_arcs.assert_awaited_once_with(PID)
 
     async def test_update_arc_merges_fields_and_conflict(self, service, mock_repo) -> None:
         """更新弧线：仅覆盖传入字段；改名为已有弧线名 → 冲突；缺失 → None。"""
@@ -502,7 +502,7 @@ class TestStoryArcCrud:
         arc = _arc(name="主角成长线")
         result = await service.delete_arc(arc.id)
         assert result is True
-        mock_repo.hard_delete_arc.assert_awaited_once_with(arc.id.int)
+        mock_repo.hard_delete_arc.assert_awaited_once_with(arc.id)
         mock_repo.clear_arc_of_points.assert_not_awaited()
 
         mock_repo.hard_delete_arc = AsyncMock(return_value=False)
@@ -721,7 +721,7 @@ class TestCoverageGaps:
 
         assert await service.get_point(point.id) == point
 
-        mock_repo.get_point.assert_awaited_once_with(point.id.int)
+        mock_repo.get_point.assert_awaited_once_with(point.id)
 
     async def test_update_arc_without_name_skips_conflict_check(self, service, mock_repo) -> None:
         """不传 name → 跳过同名冲突检查，仅合并 description。"""

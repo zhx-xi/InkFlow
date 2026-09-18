@@ -123,10 +123,9 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         """
         if override is not None:
             return override
-        if project_id.int > 2**63 - 1:
-            return False
-        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-            project_id.int
+        # #1291：越界判定由 repo 层 require_uuid_pk 统一负责（此处不再自行 .int 预检）
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
+            project_id
         )
         if project is None:
             return False
@@ -359,10 +358,9 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
             project_id
         )
         items, _total = result
-        if project_id.int > 2**63 - 1:
-            return []
-        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-            project_id.int
+        # #1291：越界判定由 repo 层统一负责
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
+            project_id
         )
         if project is None:
             return []
@@ -675,10 +673,9 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         memory_learning=false / summary_repo 未注入 → 空结构（不查 summary_repo）;
         用户级 = 全局记录（scope=user, project_id=None，spec §5.3 全局单一性）.
         """
-        if project_id.int > 2**63 - 1:
-            return {"project_id": str(project_id), "project": None, "user": None}
-        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-            project_id.int
+        # #1291：越界判定由 repo 层统一负责
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
+            project_id
         )
         if project is None:
             if self._summary_repo is not None:
@@ -715,15 +712,10 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
 
         Returns: {"project_id", "summarized", "project"|None, "user"|None}.
         """
-        if project_id.int > 2**63 - 1:
-            return {
-                "project_id": str(project_id),
-                "summarized": False,
-                "project": None,
-                "user": None,
-            }
-        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-            project_id.int
+        # #1291：project_repo.get 入参收窄为 uuid.UUID —— 越界判定由 repo 层
+        # require_uuid_pk 统一负责（此处不再自行 .int 预检）。
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
+            project_id
         )
         if project is None:
             if self._summary_repo is not None:
@@ -856,10 +848,9 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
         - 幂等：summary 不存在（delete_by_project 返回 0）→ 仍返回 deleted:True;
         - memory_learning=false 仍可删（Q2=B，不检查开关）。
         """
-        if project_id.int > 2**63 - 1:
-            raise ProjectNotFoundError()
-        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-            project_id.int
+        # #1291：越界判定由 repo 层统一负责
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
+            project_id
         )
         if project is None:
             raise ProjectNotFoundError()

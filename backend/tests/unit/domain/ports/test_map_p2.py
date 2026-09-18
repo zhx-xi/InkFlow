@@ -34,7 +34,7 @@ AssertionError 混合），零收集 ERROR（错误类缺失用 try/except Impor
      未注入跳过关联校验仅透传，防破坏既有 F36 测试构造）
    - add_pin(map_id, location_id=None, x=0.0, y=0.0, label="", type="location",
      ref_id=None): ① 地图不存在 → MapNotFoundError（既有）；② type=role →
-     character_repo.get(_to_int_id(ref_id)) 为 None → raise MapPinRefNotFoundError；
+     character_repo.get(ref_id) 为 None → raise MapPinRefNotFoundError；
      ③ type=event → timeline_repo.get 同语义；④ type 非法（非 location/role/event/other）
      → raise MapBgSourceError（422 语义）
    - create_map(..., image_filename="", image_content=b"", bg_source="image"):

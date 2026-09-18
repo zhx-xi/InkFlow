@@ -117,7 +117,7 @@ class TestWorldRepository:
         )
         assert row.scalar_one().name == "灵气复苏"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.project_id == uuid.UUID(int=project.id)
@@ -127,27 +127,27 @@ class TestWorldRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_get_by_name_hit_miss(self, db_session, project):
         """get_by_name 命中条目；未命中/跨项目/真删后均返回 None."""
         repo = SQLiteWorldRepository(db_session)
         s = await repo.add(_setting(project, "灵气复苏"))
 
-        hit = await repo.get_by_name(project.id, "灵气复苏")
+        hit = await repo.get_by_name(uuid.UUID(int=project.id), "灵气复苏")
         assert hit is not None and hit.id == s.id
-        assert await repo.get_by_name(project.id, "不存在") is None
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "不存在") is None
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get_by_name(other.id, "灵气复苏") is None
+        assert await repo.get_by_name(uuid.UUID(int=other.id), "灵气复苏") is None
 
         # 真删后不再命中
-        await repo.hard_delete(s.id.int)
-        assert await repo.get_by_name(project.id, "灵气复苏") is None
+        await repo.hard_delete(s.id)
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "灵气复苏") is None
 
     async def test_list_returns_settings_with_total(self, db_session, project):
         """list 返回 (列表, 总数)."""
@@ -156,7 +156,7 @@ class TestWorldRepository:
         s2 = await repo.add(_setting(project, "宗门等级", parent_id=s1.id))
         s3 = await repo.add(_setting(project, "古神禁地", parent_id=s1.id))
 
-        settings, total = await repo.list(project.id)
+        settings, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 3
         assert {s.id for s in settings} == {s1.id, s2.id, s3.id}
 
@@ -167,11 +167,11 @@ class TestWorldRepository:
         await repo.add(_setting(project, "灵气时代", parent_id=s1.id))
         await repo.add(_setting(project, "宗门等级", parent_id=s1.id))
 
-        settings, total = await repo.list(project.id, search="灵气")
+        settings, total = await repo.list(uuid.UUID(int=project.id), search="灵气")
         assert total == 2
         assert {s.name for s in settings} == {"灵气复苏", "灵气时代"}
 
-        settings2, total2 = await repo.list(project.id, search="不存在")
+        settings2, total2 = await repo.list(uuid.UUID(int=project.id), search="不存在")
         assert total2 == 0
         assert settings2 == []
 
@@ -182,14 +182,14 @@ class TestWorldRepository:
         await repo.add(_setting(project, "宗门等级", category="规则", parent_id=s1.id))
         s3 = await repo.add(_setting(project, "无主之地", category="", parent_id=s1.id))
 
-        settings, total = await repo.list(project.id, category="设定")
+        settings, total = await repo.list(uuid.UUID(int=project.id), category="设定")
         assert total == 1
         assert [s.id for s in settings] == [s1.id]
 
-        uncategorized, total_u = await repo.list(project.id, category="")
+        uncategorized, total_u = await repo.list(uuid.UUID(int=project.id), category="")
         assert total_u == 1
         assert [s.id for s in uncategorized] == [s3.id]
-        assert await repo.list(project.id, category="地理") == ([], 0)
+        assert await repo.list(uuid.UUID(int=project.id), category="地理") == ([], 0)
 
     async def test_list_sort_by_name_and_created_at(self, db_session, project):
         """sort_by=name/created_at 与 sort_desc 生效."""
@@ -198,13 +198,15 @@ class TestWorldRepository:
         await repo.add(_setting(project, "alpha", parent_id=s1.id))
         await repo.add(_setting(project, "bravo", parent_id=s1.id))
 
-        asc, _ = await repo.list(project.id, sort_by="name", sort_desc=False)
+        asc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=False)
         assert [s.name for s in asc] == ["alpha", "bravo", "charlie"]
 
-        desc, _ = await repo.list(project.id, sort_by="name", sort_desc=True)
+        desc, _ = await repo.list(uuid.UUID(int=project.id), sort_by="name", sort_desc=True)
         assert [s.name for s in desc] == ["charlie", "bravo", "alpha"]
 
-        by_created, _ = await repo.list(project.id, sort_by="created_at", sort_desc=False)
+        by_created, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="created_at", sort_desc=False
+        )
         assert [s.name for s in by_created] == ["charlie", "alpha", "bravo"]
 
     async def test_list_pagination(self, db_session, project):
@@ -215,16 +217,18 @@ class TestWorldRepository:
             await repo.add(_setting(project, f"条目{i}", parent_id=first.id))
 
         page1, total = await repo.list(
-            project.id, sort_by="name", sort_desc=False, offset=0, limit=2
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False, offset=0, limit=2
         )
-        page2, _ = await repo.list(project.id, sort_by="name", sort_desc=False, offset=2, limit=2)
+        page2, _ = await repo.list(
+            uuid.UUID(int=project.id), sort_by="name", sort_desc=False, offset=2, limit=2
+        )
 
         assert total == 5
         assert len(page1) == 2
         assert len(page2) == 2
         assert {s.id for s in page1}.isdisjoint({s.id for s in page2})
         # 分页越界 → 空列表（同 F1）
-        page3, _ = await repo.list(project.id, offset=99, limit=2)
+        page3, _ = await repo.list(uuid.UUID(int=project.id), offset=99, limit=2)
         assert page3 == []
 
     async def test_update_setting(self, db_session, project):
@@ -241,7 +245,7 @@ class TestWorldRepository:
         assert updated.content == "新内容"
         assert updated.updated_at >= s.updated_at
 
-        got = await repo.get(s.id.int)
+        got = await repo.get(s.id)
         assert got is not None and got.name == "灵气复苏·改"
 
     async def test_hard_delete_setting(self, db_session, project):
@@ -249,9 +253,9 @@ class TestWorldRepository:
         repo = SQLiteWorldRepository(db_session)
         s = await repo.add(_setting(project, "灵气复苏"))
 
-        assert await repo.hard_delete(s.id.int) is True
-        assert await repo.get(s.id.int) is None
-        assert await repo.hard_delete(s.id.int) is False
+        assert await repo.hard_delete(s.id) is True
+        assert await repo.get(s.id) is None
+        assert await repo.hard_delete(s.id) is False
 
     # ── 全唯一索引 ──
 
@@ -275,7 +279,7 @@ class TestWorldRepository:
         repo = SQLiteWorldRepository(db_session)
         parent = await repo.add(_setting(project, "青州"))
         first = await repo.add(_setting(project, "清河县城", parent_id=parent.id))
-        await repo.hard_delete(first.id.int)
+        await repo.hard_delete(first.id)
 
         # 全唯一索引仅约束现存行 → 同父下同名可复用
         second = await repo.add(_setting(project, "清河县城", parent_id=parent.id))
@@ -292,16 +296,16 @@ class TestWorldRepository:
         # 未分类 → 不计入汇总
         await repo.add(_setting(project, "无主之地", category="", parent_id=s1.id))
         s_del = await repo.add(_setting(project, "古神禁地", category="地理", parent_id=s1.id))
-        await repo.hard_delete(s_del.id.int)  # 真删 → 不计入汇总
+        await repo.hard_delete(s_del.id)  # 真删 → 不计入汇总
 
-        cats = await repo.list_categories(project.id)
+        cats = await repo.list_categories(uuid.UUID(int=project.id))
         assert cats == [("规则", 2), ("设定", 1)]
 
         # 项目隔离
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
-        assert await repo.list_categories(other.id) == []
+        assert await repo.list_categories(uuid.UUID(int=other.id)) == []
 
     # ── 硬删除 FK 级联 ──
 
@@ -412,7 +416,7 @@ class TestF35LocationTree:
         state = await repo.add(_setting(project, "青州", parent_id=country.id))
         await repo.add(_setting(project, "清河县城", parent_id=state.id))
 
-        hit = await repo.get_by_parent_and_name(project.id, state.id.int, "清河县城")
+        hit = await repo.get_by_parent_and_name(uuid.UUID(int=project.id), state.id, "清河县城")
         assert hit is not None
         assert hit.name == "清河县城"
 
@@ -424,7 +428,7 @@ class TestF35LocationTree:
         country = await repo.add(_setting(project, "大越国"))
         await repo.add(_setting(project, "青州", parent_id=country.id))
 
-        hit = await repo.get_by_parent_and_name(project.id, None, "大越国")
+        hit = await repo.get_by_parent_and_name(uuid.UUID(int=project.id), None, "大越国")
         assert hit is not None and hit.id == country.id
 
     async def test_get_by_parent_and_name_miss_returns_none(self, db_session, project):
@@ -435,8 +439,14 @@ class TestF35LocationTree:
         country = await repo.add(_setting(project, "大越国"))
         await repo.add(_setting(project, "青州", parent_id=country.id))
 
-        assert await repo.get_by_parent_and_name(project.id, country.id.int, "不存在") is None
-        assert await repo.get_by_parent_and_name(project.id, 99999, "青州") is None
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), country.id, "不存在")
+            is None
+        )
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), uuid.uuid4(), "青州")
+            is None
+        )
 
     async def test_get_by_parent_and_name_excludes_deleted(self, db_session, project):
         """真删条目不命中（全唯一索引，spec §2.4）.
@@ -445,9 +455,11 @@ class TestF35LocationTree:
         repo = SQLiteWorldRepository(db_session)
         country = await repo.add(_setting(project, "大越国"))
         state = await repo.add(_setting(project, "青州", parent_id=country.id))
-        await repo.hard_delete(state.id.int)
+        await repo.hard_delete(state.id)
 
-        assert await repo.get_by_parent_and_name(project.id, country.id.int, "青州") is None
+        assert (
+            await repo.get_by_parent_and_name(uuid.UUID(int=project.id), country.id, "青州") is None
+        )
 
     # ── collect_ancestor_ids（递归 CTE 祖先链，不含自身，spec §5.2/§5.3）──
 
@@ -460,7 +472,7 @@ class TestF35LocationTree:
         state = await repo.add(_setting(project, "青州", parent_id=country.id))
         county = await repo.add(_setting(project, "清河县城", parent_id=state.id))
 
-        ancestors = await repo.collect_ancestor_ids(county.id.int)
+        ancestors = await repo.collect_ancestor_ids(county.id)
         assert ancestors == [state.id.int, country.id.int]  # 近→远，不含自身
 
     async def test_collect_ancestor_ids_top_level_empty(self, db_session, project):
@@ -470,14 +482,14 @@ class TestF35LocationTree:
         repo = SQLiteWorldRepository(db_session)
         country = await repo.add(_setting(project, "大越国"))
 
-        assert await repo.collect_ancestor_ids(country.id.int) == []
+        assert await repo.collect_ancestor_ids(country.id) == []
 
     async def test_collect_ancestor_ids_missing_empty(self, db_session, project):
         """不存在的 id → 空列表（CTE 起点无行）.
         RED: 方法不存在 → AttributeError.
         """
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.collect_ancestor_ids(99999) == []
+        assert await repo.collect_ancestor_ids(uuid.uuid4()) == []
 
     # ── list_descendants（递归 CTE 子树，含自身，层序，spec §5.3）──
 
@@ -490,7 +502,7 @@ class TestF35LocationTree:
         state = await repo.add(_setting(project, "青州", parent_id=country.id))
         county = await repo.add(_setting(project, "清河县城", parent_id=state.id))
 
-        subtree = await repo.list_descendants(country.id.int)
+        subtree = await repo.list_descendants(country.id)
         assert [s.id for s in subtree] == [country.id, state.id, county.id]
 
     async def test_list_descendants_missing_empty(self, db_session, project):
@@ -498,7 +510,7 @@ class TestF35LocationTree:
         RED: 方法不存在 → AttributeError.
         """
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.list_descendants(99999) == []
+        assert await repo.list_descendants(uuid.uuid4()) == []
 
     # ── list parent_id 过滤（Q3=A，spec §7 边界 16）──
 
@@ -512,7 +524,7 @@ class TestF35LocationTree:
         await repo.add(_setting(project, "清河县城", parent_id=state.id))
         await repo.add(_setting(project, "东大陆", parent_id=state.id))
 
-        children, total = await repo.list(project.id, parent_id=country.id.int)
+        children, total = await repo.list(uuid.UUID(int=project.id), parent_id=country.id)
         assert total == 1
         assert [s.id for s in children] == [state.id]
 
@@ -524,7 +536,7 @@ class TestF35LocationTree:
         country = await repo.add(_setting(project, "大越国"))
         await repo.add(_setting(project, "青州", parent_id=country.id))
 
-        tops, total = await repo.list(project.id, top_level_only=True)
+        tops, total = await repo.list(uuid.UUID(int=project.id), top_level_only=True)
         assert total == 1
         assert [s.id for s in tops] == [country.id]
 
@@ -534,7 +546,7 @@ class TestF35LocationTree:
         country = await repo.add(_setting(project, "大越国"))
         await repo.add(_setting(project, "青州", parent_id=country.id))
 
-        all_s, total = await repo.list(project.id)
+        all_s, total = await repo.list(uuid.UUID(int=project.id))
         _ = all_s  # 列表内容由后续断言覆盖
         assert total == 2
 
@@ -565,7 +577,7 @@ class TestF35LocationTree:
         )
         await db_session.commit()
 
-        hit = await repo.get_by_name(project.id, "旧城区")
+        hit = await repo.get_by_name(uuid.UUID(int=project.id), "旧城区")
         assert hit is not None and hit.id == first.id  # 最早创建一条
 
     # ── repo 三写点 parent_id 往返（F14 教训，spec §9 场景 8）──
@@ -578,7 +590,7 @@ class TestF35LocationTree:
         parent = await repo.add(_setting(project, "大越国"))
         child = await repo.add(_setting(project, "青州", parent_id=parent.id))
 
-        got = await repo.get(child.id.int)
+        got = await repo.get(child.id)
         assert got is not None and got.parent_id == parent.id
 
     async def test_update_parent_id_roundtrip(self, db_session, project):
@@ -604,7 +616,7 @@ class TestF35LocationTree:
         )
         await repo.update(moved)
 
-        got = await repo.get(state.id.int)
+        got = await repo.get(state.id)
         assert got is not None and got.parent_id == p2.id
 
     async def test_add_without_parent_keeps_none(self, db_session, project):
@@ -612,7 +624,7 @@ class TestF35LocationTree:
         repo = SQLiteWorldRepository(db_session)
         top = await repo.add(_setting(project, "大越国"))
 
-        got = await repo.get(top.id.int)
+        got = await repo.get(top.id)
         assert got is not None and got.parent_id is None
 
 
@@ -630,11 +642,11 @@ class TestF35DeleteWithReparentCoverage:
         repo = SQLiteWorldRepository(db_session)
         target = await repo.add(_setting(project, "东大陆"))
 
-        result = await repo.delete_with_reparent(99999, target.id.int)
+        result = await repo.delete_with_reparent(uuid.uuid4(), target.id)
 
         assert result is False
         # 子改挂未执行：目标父下无新增子级
-        children, _ = await repo.list(project.id, parent_id=target.id.int)
+        children, _ = await repo.list(uuid.UUID(int=project.id), parent_id=target.id)
         assert children == []
 
     async def test_delete_with_reparent_moves_children_and_deletes_self(self, db_session, project):
@@ -645,11 +657,11 @@ class TestF35DeleteWithReparentCoverage:
         new_parent = await repo.add(_setting(project, "东大陆", parent_id=root.id))
         child = await repo.add(_setting(project, "清河县城", parent_id=old_parent.id))
 
-        result = await repo.delete_with_reparent(old_parent.id.int, new_parent.id.int)
+        result = await repo.delete_with_reparent(old_parent.id, new_parent.id)
 
         assert result is True
-        assert await repo.get(old_parent.id.int) is None  # 自身真删
-        moved = await repo.get(child.id.int)
+        assert await repo.get(old_parent.id) is None  # 自身真删
+        moved = await repo.get(child.id)
         assert moved is not None and moved.parent_id == new_parent.id
 
 
@@ -679,7 +691,7 @@ class TestListAllActive:
         s1 = await repo.add(_setting(project, "大越国"))
         s2 = await repo.add(_setting(project, "青州", parent_id=s1.id))
         s_del = await repo.add(_setting(project, "古神禁地", parent_id=s1.id))
-        await repo.hard_delete(s_del.id.int)  # 真删 → 不返回
+        await repo.hard_delete(s_del.id)  # 真删 → 不返回
 
         other = ProjectORM(name="其他项目")
         db_session.add(other)
@@ -687,7 +699,7 @@ class TestListAllActive:
         await db_session.refresh(other)
         await repo.add(_setting(other, "他书条目"))
 
-        active = await repo.list_all_active(project.id)
+        active = await repo.list_all_active(uuid.UUID(int=project.id))
         assert [s.id for s in active] == [s1.id, s2.id]
 
     async def test_sorted_by_created_at_asc(self, db_session, project):
@@ -718,7 +730,7 @@ class TestListAllActive:
         )
         await db_session.commit()
 
-        active = await repo.list_all_active(project.id)
+        active = await repo.list_all_active(uuid.UUID(int=project.id))
         assert [s.name for s in active] == ["早条目", "晚条目"]
 
     async def test_empty_project_returns_empty_list(self, db_session, project):
@@ -726,7 +738,7 @@ class TestListAllActive:
         RED: 方法不存在 → AttributeError.
         """
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.list_all_active(project.id) == []
+        assert await repo.list_all_active(uuid.UUID(int=project.id)) == []
 
 
 @pytest.mark.integration
@@ -748,11 +760,11 @@ class TestWorldCategoryRepository:
     async def test_create_and_get_category_roundtrip(self, db_session, project):
         """create_category 落库 + get_category 读回（name/UUID 映射正确；kind 缺省 geo）."""
         repo = SQLiteWorldRepository(db_session)
-        created = await repo.create_category(project.id, "势力")
+        created = await repo.create_category(uuid.UUID(int=project.id), "势力")
         assert created.name == "势力"
         assert created.kind == "geo"
         assert created.project_id == uuid.UUID(int=project.id)
-        fetched = await repo.get_category(created.id.int)
+        fetched = await repo.get_category(created.id)
         assert fetched is not None
         assert fetched.name == "势力"
         assert fetched.kind == "geo"
@@ -760,38 +772,38 @@ class TestWorldCategoryRepository:
     async def test_create_category_with_kind_roundtrip(self, db_session, project):
         """create_category 显式 kind='abstract' → 落库 + 读回 kind='abstract'."""
         repo = SQLiteWorldRepository(db_session)
-        created = await repo.create_category(project.id, "势力", "abstract")
+        created = await repo.create_category(uuid.UUID(int=project.id), "势力", "abstract")
         assert created.kind == "abstract"
-        fetched = await repo.get_category(created.id.int)
+        fetched = await repo.get_category(created.id)
         assert fetched is not None
         assert fetched.kind == "abstract"
 
     async def test_get_category_by_name_hit_and_miss(self, db_session, project):
         """get_category_by_name 命中 / 未命中."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.create_category(project.id, "势力")
-        hit = await repo.get_category_by_name(project.id, "势力")
+        await repo.create_category(uuid.UUID(int=project.id), "势力")
+        hit = await repo.get_category_by_name(uuid.UUID(int=project.id), "势力")
         assert hit is not None
         assert hit.name == "势力"
-        miss = await repo.get_category_by_name(project.id, "不存在")
+        miss = await repo.get_category_by_name(uuid.UUID(int=project.id), "不存在")
         assert miss is None
 
     async def test_create_duplicate_name_integrity_error(self, db_session, project):
         """同名分类 → IntegrityError（(project_id, name) 全唯一索引）."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.create_category(project.id, "势力")
+        await repo.create_category(uuid.UUID(int=project.id), "势力")
         with pytest.raises(IntegrityError):
-            await repo.create_category(project.id, "势力")
+            await repo.create_category(uuid.UUID(int=project.id), "势力")
 
     async def test_list_world_categories_with_count(self, db_session, project):
         """list_world_categories 返回 (实体, 条目数)；空类别条目不计数."""
         repo = SQLiteWorldRepository(db_session)
-        await repo.create_category(project.id, "势力")
+        await repo.create_category(uuid.UUID(int=project.id), "势力")
         # 造两条 category=势力 + 一条未分类条目
         s1 = await repo.add(_setting(project, "宗门体系", category="势力"))
         await repo.add(_setting(project, "功法等级", category="势力", parent_id=s1.id))
         await repo.add(_setting(project, "未分类条目", category="", parent_id=s1.id))
-        result = await repo.list_world_categories(project.id)
+        result = await repo.list_world_categories(uuid.UUID(int=project.id))
         assert len(result) == 1
         cat, count = result[0]
         assert cat.name == "势力"
@@ -800,39 +812,39 @@ class TestWorldCategoryRepository:
     async def test_rename_category_syncs_entry_category(self, db_session, project):
         """重命名分类 → 同名字符串条目 category 同步改新名（D2=A 重命名侧）."""
         repo = SQLiteWorldRepository(db_session)
-        created = await repo.create_category(project.id, "势力")
+        created = await repo.create_category(uuid.UUID(int=project.id), "势力")
         entry = await repo.add(_setting(project, "宗门体系", category="势力"))
-        renamed = await repo.rename_category(created.id.int, "宗门")
+        renamed = await repo.rename_category(created.id, "宗门")
         assert renamed is not None
         assert renamed.name == "宗门"
         # 条目 category 同步
-        fetched_entry = await repo.get(entry.id.int)
+        fetched_entry = await repo.get(entry.id)
         assert fetched_entry is not None
         assert fetched_entry.category == "宗门"
 
     async def test_delete_category_clears_entry_category(self, db_session, project):
         """删除分类 → 同名字符串条目 category 置空（D2=A 删除侧）."""
         repo = SQLiteWorldRepository(db_session)
-        created = await repo.create_category(project.id, "势力")
+        created = await repo.create_category(uuid.UUID(int=project.id), "势力")
         entry = await repo.add(_setting(project, "宗门体系", category="势力"))
-        ok = await repo.delete_category(created.id.int)
+        ok = await repo.delete_category(created.id)
         assert ok is True
         # 分类实体已删
-        assert await repo.get_category(created.id.int) is None
+        assert await repo.get_category(created.id) is None
         # 条目 category 置空
-        fetched_entry = await repo.get(entry.id.int)
+        fetched_entry = await repo.get(entry.id)
         assert fetched_entry is not None
         assert fetched_entry.category == ""
 
     async def test_rename_category_not_found_returns_none(self, db_session, project):
         """重命名不存在的分类 → None（覆盖率：不存在分支）."""
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.rename_category(999999, "宗门") is None
+        assert await repo.rename_category(uuid.UUID(int=999999), "宗门") is None
 
     async def test_delete_category_not_found_returns_false(self, db_session, project):
         """删除不存在的分类 → False（覆盖率：不存在分支）."""
         repo = SQLiteWorldRepository(db_session)
-        assert await repo.delete_category(999999) is False
+        assert await repo.delete_category(uuid.UUID(int=999999)) is False
 
 
 # #1106: repo 层 int64 守卫 —— 超范围主键 → None（走守卫 return None 真分支）
@@ -846,5 +858,6 @@ class TestInt64RangeGuard1106:
         """world_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteWorldRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

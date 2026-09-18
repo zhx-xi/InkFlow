@@ -99,9 +99,9 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         try:
             outline_repo = SQLiteOutlineRepository(db)
             character_repo = SQLiteCharacterRepository(db)
-            pid = project_id.int if isinstance(project_id, uuid.UUID) else project_id
-            outlines, _ = await outline_repo.list(pid, offset=0, limit=50)
-            chars, _ = await character_repo.list(pid, offset=0, limit=50)
+            # #1291：仓储入参为领域 UUID，直传（不再经 .int 中转）
+            outlines, _ = await outline_repo.list(project_id, offset=0, limit=50)
+            chars, _ = await character_repo.list(project_id, offset=0, limit=50)
             parts: list[str] = []
             for outline in outlines or []:
                 name = getattr(outline, "name", "")
@@ -202,18 +202,13 @@ def _build_book_service(db: AsyncSession) -> BookService:
     repo = SQLiteBookRepository(db)
 
     class _OutlineListAdapter:
-        """outline_repo 适配：BookService 传 UUID project_id → 转 int 调真实仓储。
-
-        双体系（outline 表 int 主键 vs F44 UUID）：plan.project_id 是
-        uuid.UUID(int=project_int) 形式，.int 即 ORM int 主键。
-        """
+        """outline_repo 适配：BookService 传 UUID project_id → 直传真实仓储（#1291）。"""
 
         def __init__(self, inner: SQLiteOutlineRepository) -> None:
             self._inner = inner
 
         async def list(self, project_id, **kwargs):
-            pid = project_id.int if isinstance(project_id, uuid.UUID) else project_id
-            return await self._inner.list(pid, **kwargs)
+            return await self._inner.list(project_id, **kwargs)
 
     outline_repo = _OutlineListAdapter(SQLiteOutlineRepository(db))
 
@@ -232,7 +227,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
         """项目级上限默认（Q2=C：ProjectConfig.extra，§2.4/D11）。
 
         父侧已核实：Project ORM 主键为 int，domain id = uuid.UUID(int=orm.id)
-        （project_repo._orm_to_domain L32）——UUID → int 用 project_id.int。
+        （project_repo._orm_to_domain L32）——仓储入参直传领域 UUID（#1291）。
         """
         try:
             from inkflow.infrastructure.database.repositories.project_repo import (
@@ -240,7 +235,7 @@ def _build_book_service(db: AsyncSession) -> BookService:
             )
 
             project_repo = SQLiteProjectRepository(db)
-            project = await project_repo.get(project_id.int)
+            project = await project_repo.get(project_id)
             if project is None:
                 return None
             return getattr(project, "config", None)
