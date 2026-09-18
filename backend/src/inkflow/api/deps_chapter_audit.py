@@ -88,4 +88,8 @@ def get_chapter_audit_service(
         audit_service=deps_module.get_audit_service(db),
         llm_client=llm_client,
         audit_log_repo=deps_module.SQLiteAuditLogRepository(db),
+        # #1266：两类补充 check 的输入源——大纲仓储（章纲/卷纲/后章大纲）+
+        # 摘要服务（前章摘要；走 #1253 既有缓存，不读前章全文，控预算）。
+        outline_repo=deps_module.SQLiteOutlineRepository(db),
+        summary_service=deps_module.get_summary_service(db),
     )

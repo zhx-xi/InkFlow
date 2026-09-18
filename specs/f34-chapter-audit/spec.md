@@ -4,7 +4,7 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.2 | **日期**: 2026-09-18 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）
+> **Spec 版本**: 1.3 | **日期**: 2026-09-18 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）
 > **所属阶段**: 0.6.0（#208 章节审计，估算 5-7 人天——v1.1 拍板含轻量记录 + CLI 确认 + GUI 最小版）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=C **轻量审计记录**（audit_logs 表：时间/章节/结果/确认状态/备注，不含 findings 明细；可追溯性落地且避免全量持久化膨胀）；Q2=B **CLI 支持确认**（`--confirm accept|reject`——单 CLI 用户不应被迫下载 GUI，双入口确认状态统一落 audit_logs）；Q3=C **GUI 最小版一并做**（章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知——确认闭环是功能定义）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 同步修订；Issue #208 验收标准已更新（gh comment 留痕 2026-08-09）。
@@ -69,6 +69,14 @@ ChapterAuditReport（检查项 + 严重级别 + 建议）
 | `character_drift` | 人设漂移 | LLM 分析 | F9 Character（name/personality/background/goals） |
 | `setting_drift` | 设定漂移 | LLM 分析 | F10 WorldSetting（name/content） |
 | `static_consistency` | 静态一致性 | 确定性（委托 F15） | F15 AuditService（可选包含，默认含） |
+| `cross_chapter` | 前后章连贯性 | LLM 分析 | 前一章摘要（#1253 `chapter_summaries`）+ 后一章大纲（#1266） |
+| `outline_compliance` | 大纲符合度 | LLM 分析 | 本章章纲 + 所属卷纲（F11 outlines，#1266） |
+
+> **#1266 增量（两类 check 的定义与前置条件）**：
+> - `cross_chapter`（前后章连贯性）：比对本章正文 vs **前一章摘要**（复用 #1253 `SummaryService.ensure_summary` 缓存，**不读前章全文**——跨章检查的预算纪律）与**后一章大纲**（章纲序列中紧随本章章纲的下一个）。判定跨章连贯性断点：前章悬念未接、因果链缺失、人物状态突变、时间线矛盾。**前置**：前一章摘要可得 + 本章在大纲序列中可定位；缺 → 跳过该检查（不产 finding、不降级）。
+> - `outline_compliance`（大纲符合度）：比对本章正文 vs **本章章纲**（`outline.chapter_id == 本章` 且 `level == "chapter"`）与**所属卷纲**（章纲 `parent_id` 指向的卷）。判定正文是否覆盖大纲要点、是否偏离。**前置**：本章存在章纲；无 → 跳过该检查（不产 finding、不降级）。
+> - 两类均复用既有 `_run_drift_check` 范式（`(findings, degraded)` 返回 + 模型异常立即降级 / 解析失败重试 1 次 + 降级落日志）；severity 与既有漂移检查同级（`error` = 明确矛盾，`warning` = 明显疑似）；正文截断沿用既有 `_audit_context._MAX_CHAPTER_CHARS` 常量（不新造预算）。
+> - 降级语义对**每类检查独立**：某类 LLM 失败 → 该类 findings 为空 + 报告 `degraded=true`，其余检查与确定性检查照常（HTTP 仍 200）。
 
 ### 2.2 ChapterAuditFinding / ChapterAuditReport（瞬态报告模型）
 
@@ -450,8 +458,13 @@ class ChapterAuditService:
         audit_service: AuditService,          # F15 委托（静态一致性）
         llm_client: ChatOpenAIProtocol,        # F5 LLM（Fake 注入测试）
         audit_log_repo: AuditLogRepositoryProtocol,  # 自有端口（Q1=C 轻量记录）
+        outline_repo: OutlineRepositoryProtocol | None = None,  # #1266 大纲符合度 + 后章大纲
+        summary_service: SummaryService | None = None,          # #1266 前章摘要（#1253 缓存）
     ) -> None: ...
 ```
+
+> **#1266 新增两参数均可选（None = 跳过对应 check）**：旧装配点零改动即兼容（缺省跳过而非报错）；
+> 生产装配点 `api/deps_chapter_audit.py` 已注入 `SQLiteOutlineRepository` + `get_summary_service(db)`。
 
 > LLM 客户端注入走 F5 既有 Protocol（`domain/ports/llm_client.py`），不新建 LLM 端口（F16 `_style_llm_analyzer` 先例）；audit_log_repo 是**本模块自有端口**（F15 audit_repo 先例：业务表之外的补充持久化，不 MODIFY 任何既有 Protocol）。
 
@@ -573,6 +586,8 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 | M11 | **v1.1：GUI 最小版** 章节页审计按钮 → 报告弹层 → accept/reject 点击闭环（audit_logs 状态更新） | E2E | `pytest`（前端 E2E，Q3=C 细化） |
 | M12 | 全量门禁：lint/unit/integration/api/cli 绿 + 覆盖率达标 | CI | `uv run ruff check src/ tests/unit/ ../tests/` + 全量 pytest |
 | M13 | 真实 LLM 验证（ADR-026 label 触发） | CI（label） | e2e-ai-backend job：真实模型一次审计成功 + 降级路径 |
+| M14 | **v1.3：#1266 前后章连贯性** check 产出（不连贯输入 → `cross_chapter` finding）+ 反向断言（连贯 → 不产）+ LLM 失败降级（`degraded=true` 不抛错）+ 无前章摘要跳过 | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_check_types.py` |
+| M15 | **v1.3：#1266 大纲符合度** check 产出（偏离输入 → `outline_compliance` finding）+ 反向断言（符合 → 不产）+ LLM 失败降级 + 无章纲跳过 + 正文截断沿用既有常量 | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_check_types.py` |
 
 > Issue #208 验收标准映射（v1.1 拍板同步 2026-08-09）：写完一章可触发=M11（前端自动触发） · 报告含字数/人设/设定+级别=M1/M3 · GUI 确认交互=M11 · **记录可追溯=Q1=C 轻量记录（M5/M7/M8，audit_logs + CLI --history + API audit-logs）** · **CLI 可确认=Q2=B（M7）**。
 

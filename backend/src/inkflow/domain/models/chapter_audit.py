@@ -20,19 +20,23 @@ from pydantic import BaseModel
 
 
 class AuditCheckType(StrEnum):
-    """章节审计检查项（spec §2.1）— 4 项.
+    """章节审计检查项（spec §2.1）— 6 项.
 
     Attributes:
         WORD_COUNT: 字数检查（F2 确定性）.
         CHARACTER_DRIFT: 人设漂移（LLM 分析，vs F9 角色档案）.
         SETTING_DRIFT: 设定漂移（LLM 分析，vs F10 世界观条目）.
         STATIC_CONSISTENCY: 静态一致性（委托 F15，可选包含）.
+        CROSS_CHAPTER: 前后章连贯性（LLM 分析，vs 前一章摘要 + 后一章大纲，#1266）.
+        OUTLINE_COMPLIANCE: 大纲符合度（LLM 分析，vs 本章章纲 + 卷纲，#1266）.
     """
 
     WORD_COUNT = "word_count"  # 字数检查（F2 确定性）
     CHARACTER_DRIFT = "character_drift"  # 人设漂移（LLM，vs F9 角色档案）
     SETTING_DRIFT = "setting_drift"  # 设定漂移（LLM，vs F10 世界观条目）
     STATIC_CONSISTENCY = "static_consistency"  # 静态一致性（委托 F15）
+    CROSS_CHAPTER = "cross_chapter"  # 前后章连贯性（LLM，vs 前章摘要 + 后章大纲，#1266）
+    OUTLINE_COMPLIANCE = "outline_compliance"  # 大纲符合度（LLM，vs 本章章纲 + 卷纲，#1266）
 
 
 class AuditSeverity(StrEnum):

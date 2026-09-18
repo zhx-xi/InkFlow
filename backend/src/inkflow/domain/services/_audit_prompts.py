@@ -284,3 +284,132 @@ def parse_drift_output(raw: str) -> list[ChapterAuditFinding] | None:
         return None
     else:
         return result
+
+
+# ── #1266 补两类 check：前后章连贯性 + 大纲符合度 ─────────────────────
+
+_SYSTEM_PROMPT_CROSS_CHAPTER = (
+    "你是小说连贯性审校。比对本章正文与前一章摘要、后一章大纲，找出跨章连贯性断点："
+    "前章悬念未接、因果链缺失、人物状态突变、时间线矛盾。只报明确断点或明显疑似，"
+    "不报细枝末节。\n"
+    "输出严格 JSON，不要输出任何其他文字，格式：\n"
+    "{\n"
+    '  "findings": [\n'
+    "    {\n"
+    '      "check_type": "cross_chapter",\n'
+    '      "severity": "error|warning",\n'
+    '      "message": "...",\n'
+    '      "suggestion": "...",\n'
+    '      "ref_entity_id": null,\n'
+    '      "ref_entity_name": "",\n'
+    '      "context": "<≤200字相关片段>"\n'
+    "    }\n"
+    "  ]\n"
+    "}\n"
+    "check_type 必须为 cross_chapter；severity 必须为 error（明确矛盾）"
+    "或 warning（明显疑似）。"
+)
+
+_SYSTEM_PROMPT_OUTLINE_COMPLIANCE = (
+    "你是小说大纲符合度审校。比对本章正文与本章章纲（及所属卷纲），找出正文未覆盖的"
+    "大纲要点、与大纲方向偏离之处。只报明确缺失或明显偏离，不报细枝末节。\n"
+    "输出严格 JSON，不要输出任何其他文字，格式：\n"
+    "{\n"
+    '  "findings": [\n'
+    "    {\n"
+    '      "check_type": "outline_compliance",\n'
+    '      "severity": "error|warning",\n'
+    '      "message": "...",\n'
+    '      "suggestion": "...",\n'
+    '      "ref_entity_id": null,\n'
+    '      "ref_entity_name": "",\n'
+    '      "context": "<≤200字相关片段>"\n'
+    "    }\n"
+    "  ]\n"
+    "}\n"
+    "check_type 必须为 outline_compliance；severity 必须为 error（大纲要点明确未写）"
+    "或 warning（明显偏离）。"
+)
+
+
+def build_cross_chapter_messages(
+    chapter_text: str,
+    previous_summary: str,
+    next_outline: str,
+    truncated: bool,
+) -> list[ChatMessage]:
+    """组装前后章连贯性检查消息（#1266）— 同构返回 [system, user] 两条.
+
+    输入刻意只用**摘要**（前一章）与**大纲**（后一章），不塞前章全文——
+    跨章检查的预算纪律（spec §5.4 同口径）。
+
+    Args:
+        chapter_text: 本章文本（service 层已按 §5.4 截断/标注）.
+        previous_summary: 前一章摘要（#1253 SummaryService 产物，≤ 300 字）.
+        next_outline: 后一章大纲文本（无后章 → 空串，由 service 组装）.
+        truncated: 本章文本是否已截断（True 时 user 消息含「已截断」字样）.
+
+    Returns:
+        [system 指令, user 携带前章摘要 + 后章大纲 + 本章正文] 两条消息.
+    """
+    user_content = (
+        f"前一章摘要：\n{previous_summary}\n\n"
+        f"后一章大纲：\n{next_outline or '（无后一章大纲）'}\n\n"
+        f"{_chapter_section(chapter_text, truncated)}"
+    )
+    return [
+        ChatMessage(role="system", content=_SYSTEM_PROMPT_CROSS_CHAPTER),
+        ChatMessage(role="user", content=user_content),
+    ]
+
+
+def build_outline_compliance_messages(
+    chapter_text: str,
+    chapter_outline: str,
+    volume_outline: str,
+    truncated: bool,
+) -> list[ChatMessage]:
+    """组装大纲符合度检查消息（#1266）— 同构返回 [system, user] 两条.
+
+    Args:
+        chapter_text: 本章文本（service 层已按 §5.4 截断/标注）.
+        chapter_outline: 本章章纲文本（name + description）.
+        volume_outline: 所属卷纲文本（无 → 空串，由 service 组装）.
+        truncated: 本章文本是否已截断（True 时 user 消息含「已截断」字样）.
+
+    Returns:
+        [system 指令, user 携带章纲 + 卷纲 + 本章正文] 两条消息.
+    """
+    user_content = (
+        f"本章章纲：\n{chapter_outline}\n\n"
+        f"所属卷纲：\n{volume_outline or '（无卷纲）'}\n\n"
+        f"{_chapter_section(chapter_text, truncated)}"
+    )
+    return [
+        ChatMessage(role="system", content=_SYSTEM_PROMPT_OUTLINE_COMPLIANCE),
+        ChatMessage(role="user", content=user_content),
+    ]
+
+
+def parse_extra_check_output(raw: str) -> list[ChapterAuditFinding] | None:
+    """解析 #1266 两类 check 的 LLM 输出 — 与 parse_drift_output 同契约.
+
+    仅接受 check_type 为 cross_chapter / outline_compliance 的 findings
+    （越界类型视为非法 → 整批 None → 该检查降级，防止模型张冠李戴回填到
+    人设/设定漂移语义上）。其余字段校验、容忍围栏与解析失败语义完全复用
+    parse_drift_output（单一实现点，拒绝同族分叉）。
+
+    Args:
+        raw: LLM 原始输出文本.
+
+    Returns:
+        映射后的 ChapterAuditFinding 列表（空 findings 返回 []）；
+        任何解析/校验失败返回 None.
+    """
+    parsed = parse_drift_output(raw)
+    if parsed is None:
+        return None
+    allowed = {AuditCheckType.CROSS_CHAPTER, AuditCheckType.OUTLINE_COMPLIANCE}
+    if any(f.check_type not in allowed for f in parsed):
+        return None
+    return parsed
