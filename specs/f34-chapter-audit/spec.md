@@ -4,7 +4,7 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **Spec 版本**: 1.2 | **日期**: 2026-09-18 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）
 > **所属阶段**: 0.6.0（#208 章节审计，估算 5-7 人天——v1.1 拍板含轻量记录 + CLI 确认 + GUI 最小版）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=C **轻量审计记录**（audit_logs 表：时间/章节/结果/确认状态/备注，不含 findings 明细；可追溯性落地且避免全量持久化膨胀）；Q2=B **CLI 支持确认**（`--confirm accept|reject`——单 CLI 用户不应被迫下载 GUI，双入口确认状态统一落 audit_logs）；Q3=C **GUI 最小版一并做**（章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知——确认闭环是功能定义）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 同步修订；Issue #208 验收标准已更新（gh comment 留痕 2026-08-09）。
@@ -526,8 +526,9 @@ class ChapterAuditService:
 
 | 消费方 | 方式 |
 |--------|------|
+| F44 全自动写作链（#1267） | **写作门禁**：`severity=error`（阻断级，口径 `_audit_bridge.BLOCKING_SEVERITY`）→ 停止后续章节，被阻断章 `progress=needs_review`，run 终态 `blocked`；`warning`/`info` 不阻断；`degraded=true` **不阻断但告警**（「没审出来 ≠ 审出问题」）。阻断判定唯一实现点 = `_audit_bridge.audit_blocks_writing` / `inspect_audit_conclusion`（交 F44 §5.5 展开） |
 | F22 搜索（#54） | 增强触发语义（审计确认 → 索引增量），**非阻塞**（F22 v1.1 已用状态变更触发） |
-| GUI | 章节页审计按钮 + 确认弹层 |
+| GUI | 章节页审计按钮 + 确认弹层（交互式轨 = 用户决定是否阻断，复用 `confirm accept\|reject` 状态机） |
 | CLI | `inkflow audit chapter`（触发 + 确认 + 历史） |
 
 ### 编号口径声明

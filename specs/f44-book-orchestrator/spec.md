@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.8（#1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.9（#1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -477,15 +477,24 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 
 | 章级事实 | run 终态 |
 |---|---|
+| 任一章 `needs_review`（审计阻断待人工介入，#1267） | `blocked`（**新增终态**：审计阻断，优先级最高） |
 | failed 章 > 0 且 done 章 == 0 | `failed` |
 | failed 章 > 0 且 done 章 > 0 | `degraded`（新增终态：部分成功） |
 | failed 章 == 0 | `completed` |
 
 `aborted` / `waiting_hitl` 既有语义不变（护栏中止/ HITL 暂停不重新派生）。无章快路径（`prepare_run` 无目标章）不派生，维持 completed。
 
+**v1.5 增量：审计阻断终态 `blocked`（#1267）**。审计结论成为写作链门禁——阻断级 finding（`severity == "error"`，唯一口径 `_audit_bridge.BLOCKING_SEVERITY`）出现即停止后续章节（不静默继续），已完成产出保留。判定与消费点：
+
+- **判定唯一实现点**：`_audit_bridge.audit_blocks_writing` / `inspect_audit_conclusion`（全自动轨与交互式轨共用，禁各自另立阈值）；`warning`/`info` **不**阻断。
+- **全自动轨（`book_agentic_pipeline`）**：`_audit_chapter` 审计后写 `audit_blocked={outline_id: 原因}` + `status="blocked"`；闸门置于**决策之前**（阻断后连决策请求都不再发，确定性停止，不依赖模型自觉），**`_fallback_node` 兜底路径同受闸**（否则「决策重试耗尽 → fallback」会绕过阻断把后续章写满）；`_finalize_audit_block` 收尾把被阻断章 `progress[oid] = "needs_review"` 并写 `progress_reason`。
+- **优雅停止语义（非抛异常中断）**：已完成章的 `progress`/`results`/`execution_refs` 全部保留，仅被阻断章标记 `needs_review`——「停止后续章节但不丢弃已完成产出」。
+- **交互式轨**：复用既有 `audit_logs.status="pending"` → `confirm(accept|reject)` 状态机（不另造路径），审计出阻断级 finding 时停在 pending 等用户决定，不自动 accepted。
+- **`degraded` 例外（硬性）**：审计 `degraded=true`（LLM 审计失败降级）**不阻断**但须**告警**——「没审出来 ≠ 审出问题」；`inspect_audit_conclusion` 以 `verdict` 三态（`blocked`/`degraded`/`passed`）显式区分「审了且过」vs「没审成」，**不得把 degraded 当通过**。
+
 **章级事实权威源（按轨）**：静态轨 = `plan.progress`（服务层自持）；volume/agentic 轨 = 收尾时 `volume_pipeline/agentic_pipeline.get_checkpoint_state(thread_id)["results"]`（`{outline_id: execution_id | "failed"}`）同步回 `plan.progress` 后派生；pipeline 鸭子无 `get_checkpoint_state`（阶段 3 旧测试形态）→ 跳过派生维持原状态（防御分支，向后兼容守护）。收尾读取必须是 resume/execute 动作完成后的**重读（fresh read）**：`confirm_run` / `resume_run` 动作前的那次读取仅用于 `__interrupt__` 判定，**不得复用为事实源**——动作前快照不含续跑段章事实，复用即 #897 假绿残留（独立评审 MAJOR 发现，v1.3 澄清）。resume_run 单测的 checkpoint 读取次数契约相应放宽为「至少一次含动作后重读」。
 
-**失败原因可见（验收 2 落定）**：`WritingPlan` 新增顶层字段 `progress_reason: str | None`（ORM String(2000) nullable + `ensure_writing_plan_progress_reason_column` 幂等迁移，镜像 `hitl_payload` 先例）。收尾派生为 failed/degraded 时写入摘要（≤2000 截断）：静态轨 = 每章「outline_id: 异常类名: 消息」行（委托失败即时采集，单前缀不重复）；volume/agentic 轨 = failed 章列表 + 「凭据无效或运行时错误，详见章执行日志」提示。`GET /runs/{run_id}` 与 `GET /runs/{run_id}/summary` 响应新增顶层键 `progress_reason`，**仅 `failed`/`degraded` 态透出**（其余状态按状态门控返回 null，中间态不显示陈旧值）；`mark_failed`（整单异常兜底，无章级原因语义）清空该字段——防跨态泄漏（v1.3 澄清）。
+**失败原因可见（验收 2 落定）**：`WritingPlan` 新增顶层字段 `progress_reason: str | None`（ORM String(2000) nullable + `ensure_writing_plan_progress_reason_column` 幂等迁移，镜像 `hitl_payload` 先例）。收尾派生为 failed/degraded 时写入摘要（≤2000 截断）：静态轨 = 每章「outline_id: 异常类名: 消息」行（委托失败即时采集，单前缀不重复）；volume/agentic 轨 = failed 章列表 + 「凭据无效或运行时错误，详见章执行日志」提示。`GET /runs/{run_id}` 与 `GET /runs/{run_id}/summary` 响应新增顶层键 `progress_reason`，**仅 `failed`/`degraded`/`blocked`（#1267）态透出**（其余状态按状态门控返回 null，中间态不显示陈旧值）；`mark_failed`（整单异常兜底，无章级原因语义）清空该字段——防跨态泄漏（v1.3 澄清；v1.5 补 `blocked` 态透出：审计阻断原因须对用户可见，不得静默）。
 
 **同类异常短路剩余章（裁定：不做）**：原因可见后用户可经 `intervene redirect` 处置；「连续 N 章同型异常即中止」有误伤风险（provider 瞬时抖动 + 章级重试已兜），且后台任务强杀语义未定。留待真实使用反馈再起。
 
@@ -498,9 +507,10 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 | `completed` | `run-badge-completed` | 绿（ok/10 底 · ok 字） |
 | `failed` | `run-badge-failed` | 红（err/10 底 · err 字） |
 | `degraded` | `run-badge-degraded` | 橙黄（warn/10 底 · warn 字，部分成功警示档） |
+| `blocked`（#1267） | `run-badge-blocked` | 橙红（warn/10 底 · err 字，审计阻断待人工介入档） |
 | 其余（running/pending/paused/waiting_hitl/aborted） | 无 `run-badge-*` 钩子 | 中性（surface-3 底 · ink 字），维持现状 |
 
-`progress_reason` 渲染：前端 `RunStatusResponse` 类型 + `book` store 新增 `progressReason: string \| null`（`loadRunStatus` 透传 `res.progress_reason ?? null`，`reset` 清零）；面板在 `(runStatus 为 failed/degraded) 且 progressReason 非空` 时渲染「失败原因」块（`run-progress-reason`：标签 `book.run.reason` + 理由文本，含 outline_id 定位锚点；后端已按状态门控，前端双保险）；理由 >200 字符默认 `line-clamp-3` 三行截断 + 展开/收起按钮（镜像记忆页 `SummaryCard` 先例）。i18n：`book.run.reason` / `book.run.reason.expand` / `book.run.reason.collapse`（zh/en 对称）。契约：`BookRunPanel.test.tsx`（#903 describe，档位三档互斥 + 渲染条件守护 + 轮询 degraded 即停确认）+ `stores/book.test.ts`（progressReason 透传/reset）。简图原型 + 高保真：`design/GUI/book/book-run.html` 与 `book-run-<state>.png`（五档：running/completed/failed/degraded/degraded-expanded）。
+`progress_reason` 渲染：前端 `RunStatusResponse` 类型 + `book` store 新增 `progressReason: string \| null`（`loadRunStatus` 透传 `res.progress_reason ?? null`，`reset` 清零）；面板在 `(runStatus 为 failed/degraded/blocked) 且 progressReason 非空` 时渲染「失败原因」块（`run-progress-reason`：标签 `book.run.reason` + 理由文本，含 outline_id 定位锚点；后端已按状态门控，前端双保险）；理由 >200 字符默认 `line-clamp-3` 三行截断 + 展开/收起按钮（镜像记忆页 `SummaryCard` 先例）。i18n：`book.run.reason` / `book.run.reason.expand` / `book.run.reason.collapse`（zh/en 对称）。契约：`BookRunPanel.test.tsx`（#903 describe，档位三档互斥 + 渲染条件守护 + 轮询 degraded 即停确认）+ `stores/book.test.ts`（progressReason 透传/reset）。简图原型 + 高保真：`design/GUI/book/book-run.html` 与 `book-run-<state>.png`（五档：running/completed/failed/degraded/degraded-expanded）。
 
 ```text
 ┌ 书级运行面板（BookRunPanel）──────────────────────────────┐
