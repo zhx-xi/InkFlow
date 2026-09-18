@@ -740,22 +740,28 @@ class BookService(BookOutlineMixin, BookRunMixin):
         )
 
     async def _check_content_written(self, plan: WritingPlan, chapter: Outline) -> bool:
-        """「内容已写」安全闸判定：执行已完成或 content_checker 命中 → True."""
-        if str(chapter.id) in plan.execution_refs and plan.progress.get(str(chapter.id)) == "done":
-            return True
-        if self._content_checker is not None and chapter.chapter_id is not None:
-            return bool(await self._content_checker(chapter.chapter_id))
-        return False
+        """「内容已写」安全闸判定：以**实际数据状态**为唯一判据 → True.
+
+        #1265：判据只看 `content_checker`（Chapter.content 非空），不以
+        `plan.progress` / `execution_refs` 执行态记录短路。执行态记录持久化在
+        writing_plans 独立两列，删章/清草稿不会触碰它 → 旧实现的
+        `progress[oid]=="done"` 短路会让删空后的章永远被误判「已写」而无法重跑。
+
+        `chapter_id is None`（章已删，`outlines.chapter_id` FK SET NULL）→ 判定
+        未写（放行重跑）；未装配 `content_checker`（None 降级路径）→ 无从查证
+        实际数据，按未写放行（旧语义是「安全闸只查执行记录」，#1265 起收紧为
+        「执行态记录不作判据」——调用方须装配 checker 才能拦重复跑）。
+        """
+        if self._content_checker is None or chapter.chapter_id is None:
+            return False
+        return bool(await self._content_checker(chapter.chapter_id))
 
     async def _check_chapter_written(self, plan: WritingPlan, chapter: ChapterDict) -> bool:
-        """「内容已写」安全闸（dict 形态，卷级编排用）——镜像 _check_content_written."""
-        outline_id = str(chapter["outline_id"])
-        if outline_id in plan.execution_refs and plan.progress.get(outline_id) == "done":
-            return True
+        """「内容已写」安全闸（dict 形态，卷级编排用）——镜像 _check_content_written（#1265）."""
         chapter_id = chapter.get("chapter_id")
-        if self._content_checker is not None and chapter_id is not None:
-            return bool(await self._content_checker(chapter_id))
-        return False
+        if self._content_checker is None or chapter_id is None:
+            return False
+        return bool(await self._content_checker(chapter_id))
 
     async def _delegate_chapter(
         self, plan: WritingPlan, chapter: Outline, limits: BookLimits
