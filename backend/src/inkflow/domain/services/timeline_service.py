@@ -187,7 +187,7 @@ class TimelineService:
         """
         if self._project_repo is None:
             raise TimelineServiceError("项目仓储未配置，无法校验项目存在性")
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 
@@ -250,13 +250,13 @@ class TimelineService:
         await publish_change("timeline_event", "create", created.id, created.project_id)
         return created
 
-    async def get_event(self, event_id: int | uuid.UUID) -> TimelineEvent | None:
+    async def get_event(self, event_id: uuid.UUID) -> TimelineEvent | None:
         """按主键获取事件；不存在返回 None（router 转 404）."""
-        return await self._repo.get(_to_int_id(event_id))
+        return await self._repo.get(event_id)
 
     async def list_events(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "narrative_position",
         sort_desc: bool = False,
@@ -281,7 +281,7 @@ class TimelineService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list(
             project_id=pid_int,
@@ -293,7 +293,7 @@ class TimelineService:
         )
 
     async def update_event(
-        self, event_id: int | uuid.UUID, update: TimelineEventUpdate
+        self, event_id: uuid.UUID, update: TimelineEventUpdate
     ) -> TimelineEvent | None:
         """部分更新事件（exclude_unset 语义，同 F1）.
 
@@ -309,8 +309,7 @@ class TimelineService:
         Returns:
             更新后的完整 TimelineEvent；事件不存在返回 None（router 转 404）.
         """
-        eid = _to_int_id(event_id)
-        existing = await self._repo.get(eid)
+        existing = await self._repo.get(event_id)
         if existing is None:
             return None
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
@@ -372,7 +371,7 @@ class TimelineService:
             narrative_order=events,
         )
 
-    async def check_event(self, event_id: int | uuid.UUID) -> EventCheckReport | None:
+    async def check_event(self, event_id: uuid.UUID) -> EventCheckReport | None:
         """单事件检查（F43 P4 spec §2.9/§3.7）——报告该事件参与的相邻对逆序冲突.
 
         ① repo.get 取事件，不存在 → 返回 None（router 转 404）；
@@ -391,8 +390,7 @@ class TimelineService:
         Returns:
             EventCheckReport；事件不存在返回 None（router 转 404「事件不存在」）.
         """
-        eid = _to_int_id(event_id)
-        event: TimelineEvent | None = await self._repo.get(eid)
+        event: TimelineEvent | None = await self._repo.get(event_id)
         if event is None:
             return None
         if event.time_value is None:

@@ -41,7 +41,10 @@ from inkflow.domain.models.session import (
     SessionType,
 )
 from inkflow.infrastructure.database.models.session import SessionLogORM, SessionORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -164,7 +167,11 @@ class SQLiteSessionRepository:
 
     async def get(self, session_id: int | uuid.UUID) -> Session | None:
         """按主键查询会话（不含已归档）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        sid = uuid_to_pk_or_none(session_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(session_id, uuid.UUID):
+            sid = require_uuid_pk(session_id)
+        else:
+            sid = uuid_to_pk_or_none(session_id)
         if sid is None:
             return None
         stmt = select(SessionORM).where(

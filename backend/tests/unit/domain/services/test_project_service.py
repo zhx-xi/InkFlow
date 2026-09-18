@@ -70,7 +70,7 @@ class TestProjectUpdate:
         """项目不存在 → 返回 None，不触发仓储更新。"""
         result = await svc.update(PID, ProjectUpdate(name="新名字"))
         assert result is None
-        mock_repo.get.assert_awaited_once_with(PID.int)
+        mock_repo.get.assert_awaited_once_with(PID)
         mock_repo.update.assert_not_awaited()
 
     async def test_update_merges_provided_fields(self, svc, mock_repo) -> None:
@@ -189,11 +189,11 @@ class TestProjectServiceBasics:
         assert added.config == ProjectConfig()
 
     async def test_get_returns_project_or_none(self, svc, mock_repo) -> None:
-        """get 委托：UUID → int 转换；int id 直接透传；不存在 → None。"""
+        """get 委托：#1271 起领域 UUID 直传 repo.get；int id 兼容透传；不存在 → None。"""
         project = _project()
         mock_repo.get = AsyncMock(return_value=project)
         assert await svc.get(PID) == project
-        mock_repo.get.assert_awaited_once_with(PID.int)
+        mock_repo.get.assert_awaited_once_with(PID)
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await svc.get(42) is None

@@ -1,9 +1,8 @@
 """世界观条目仓储端口 — 世界观管理持久化契约.
 
 WorldRepositoryProtocol 定义 WorldSetting 的 CRUD 操作与类别聚合，
-基础设施层（SQLite / mock / memory）实现此 Protocol。仓储层方法入参
-用 int（与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1
-`_to_int_id` 模式）。
+基础设施层（SQLite / mock / memory）实现此 Protocol。仓储层 `get` 主键入参
+用领域 UUID（#1271 收窄），其余方法沿用 int/uuid 兼容归一。
 
 依据: specs/f10-world-settings/spec.md §8.1。
 """
@@ -40,11 +39,11 @@ class WorldRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, setting_id: int) -> WorldSetting | None:
+    async def get(self, setting_id: uuid.UUID) -> WorldSetting | None:
         """按主键查询条目.
 
         Args:
-            setting_id: 条目主键（int，与 ORM 层一致）.
+            setting_id: 条目主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 WorldSetting，否则返回 None.

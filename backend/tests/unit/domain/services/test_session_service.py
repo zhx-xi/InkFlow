@@ -211,11 +211,11 @@ class TestCreate:
     async def test_create_project_checked_before_add(
         self, service: SessionService, mock_repo: MagicMock, mock_project_repo: MagicMock
     ) -> None:
-        """project_id 非 None → project_repo.get(项目 int id) 前置校验（先于创建）."""
+        """project_id 非 None → project_repo.get(项目 UUID) 前置校验（先于创建）."""
         await service.create(
             SessionCreate(session_type=SessionType.TASK, project_id=PID, title="每日定时写作")
         )
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
         mock_repo.add.assert_awaited_once()
 
     async def test_create_project_id_none_skips_validation(
@@ -348,7 +348,7 @@ class TestUpdate:
 
         call = mock_repo.update.await_args
         assert call.args[0].id == SID
-        mock_repo.get.assert_awaited_once_with(SID.int)
+        mock_repo.get.assert_awaited_once_with(SID)
 
     async def test_update_context_replaces_whole_dict(
         self, service: SessionService, mock_repo: MagicMock

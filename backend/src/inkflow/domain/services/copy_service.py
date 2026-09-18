@@ -83,9 +83,9 @@ class WorldCopyService:
 
     async def copy(
         self,
-        source_project_id: int | uuid.UUID,
-        target_project_id: int | uuid.UUID,
-        root_setting_id: int | uuid.UUID | None = None,
+        source_project_id: uuid.UUID,
+        target_project_id: uuid.UUID,
+        root_setting_id: uuid.UUID | None = None,
         self_only: bool = False,
     ) -> WorldCopyResult:
         """复制源项目世界观到目标项目（spec §5.1 算法 ①-⑧）.
@@ -114,16 +114,16 @@ class WorldCopyService:
             root_setting_id,
         )
         # ① 目标项目存在性（ProjectNotFoundError，复用 world_errors）
-        if await self._project_repo.get(target_int) is None:
+        if await self._project_repo.get(target_project_id) is None:
             raise ProjectNotFoundError()
         # ② 源项目存在性（CopySourceNotFoundError）
-        if await self._project_repo.get(source_int) is None:
+        if await self._project_repo.get(source_project_id) is None:
             raise CopySourceNotFoundError()
         # ③ 复制集合：root 提供 → 校验在源项目活动条目内 + list_descendants（含自身层序）；
         #    缺省 → list_all_active（created_at ASC 稳定排序）
         if root_setting_id is not None:
             root_int = _to_int_id(root_setting_id)
-            root = await self._repo.get(root_int)
+            root = await self._repo.get(root_setting_id)
             if root is None or _to_int_id(root.project_id) != source_int:
                 raise CopyRootNotFoundError()
             # P1: self_only=True → 仅复制 root 本体（不含子级）

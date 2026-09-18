@@ -373,7 +373,7 @@ class TestB2B3RefValidation:
         ref = uuid.uuid4()
         with pytest.raises(MapPinRefNotFoundError):
             await svc.add_pin(uuid.uuid4(), type="role", ref_id=ref, x=10.0, y=10.0)
-        mock_character_repo.get.assert_awaited_once_with(ref.int)
+        mock_character_repo.get.assert_awaited_once_with(ref)
 
     async def test_add_pin_event_ref_not_found_raises(
         self,
@@ -401,7 +401,7 @@ class TestB2B3RefValidation:
         ref = uuid.uuid4()
         with pytest.raises(MapPinRefNotFoundError):
             await svc.add_pin(uuid.uuid4(), type="event", ref_id=ref, x=10.0, y=10.0)
-        mock_timeline_repo.get.assert_awaited_once_with(ref.int)
+        mock_timeline_repo.get.assert_awaited_once_with(ref)
 
 
 class TestB4InvalidPinType:

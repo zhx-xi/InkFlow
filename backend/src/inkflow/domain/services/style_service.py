@@ -149,7 +149,7 @@ class StyleService:
             StyleLLMUnavailableError: llm_analysis=true 且分析器未装配（500，§5.6）.
         """
         # ① 项目校验（服务层统一校验一次，404；先于输入校验，§5.1 要点 2）
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 

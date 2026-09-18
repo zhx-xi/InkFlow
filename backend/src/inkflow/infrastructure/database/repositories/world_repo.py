@@ -26,7 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.world import WorldCategory, WorldSetting
 from inkflow.infrastructure.database.models.world import WorldCategoryORM, WorldSettingORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -112,7 +115,11 @@ class SQLiteWorldRepository:
 
     async def get(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
         """按主键查询条目。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        pk = uuid_to_pk_or_none(setting_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(setting_id, uuid.UUID):
+            pk = require_uuid_pk(setting_id)
+        else:
+            pk = uuid_to_pk_or_none(setting_id)
         if pk is None:
             return None
         stmt = select(WorldSettingORM).where(WorldSettingORM.id == pk)

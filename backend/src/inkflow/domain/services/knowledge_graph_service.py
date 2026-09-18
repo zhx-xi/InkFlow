@@ -108,7 +108,7 @@ class KnowledgeGraphService:
         self,
         project_id_int: int,
         entity_type: EntityType,
-        entity_id_int: int,
+        entity_id: uuid.UUID,
         endpoint: str,
     ) -> None:
         """校验实体存在且属于目标项目；失败统一抛 KnowledgeEntityNotFoundError.
@@ -120,7 +120,7 @@ class KnowledgeGraphService:
         Args:
             project_id_int: 目标项目主键（int）.
             entity_type: 实体类型.
-            entity_id_int: 实体主键（int）.
+            entity_id: 实体主键（领域 UUID）.
             endpoint: 端点标识（"source" / "target"，用于错误 detail）.
 
         Raises:
@@ -128,10 +128,12 @@ class KnowledgeGraphService:
         """
         if entity_type is EntityType.MAP_PIN:
             pin = (
-                await self._map_repo.get_pin(entity_id_int) if self._map_repo is not None else None
+                await self._map_repo.get_pin(_to_int_id(entity_id))
+                if self._map_repo is not None
+                else None
             )
             wm = (
-                await self._map_repo.get(_to_int_id(pin.map_id))
+                await self._map_repo.get(pin.map_id)
                 if self._map_repo is not None and pin is not None
                 else None
             )
@@ -141,7 +143,7 @@ class KnowledgeGraphService:
                 )
             return
         repo = self._repo_for(entity_type)
-        entity = await repo.get(entity_id_int) if repo is not None else None
+        entity = await repo.get(entity_id) if repo is not None else None
         if entity is None or _to_int_id(entity.project_id) != project_id_int:
             raise KnowledgeEntityNotFoundError(
                 message=f"{endpoint} 实体不存在或不在同一项目: {entity_type.value}"
@@ -205,7 +207,9 @@ class KnowledgeGraphService:
         """
         pid_int = _to_int_id(project_id)
         # ① 项目存在
-        project = await self._project_repo.get(pid_int) if self._project_repo is not None else None
+        project = (
+            await self._project_repo.get(project_id) if self._project_repo is not None else None
+        )
         if project is None:
             raise ProjectNotFoundError()
         # ② 自环
@@ -224,8 +228,8 @@ class KnowledgeGraphService:
         except ValidationError as exc:
             raise KnowledgeRelationValidationError(str(exc)) from exc
         # ④ 实体存在 + 同项目（source 先于 target）
-        await self._validate_entity(pid_int, dto.source_type, _to_int_id(dto.source_id), "source")
-        await self._validate_entity(pid_int, dto.target_type, _to_int_id(dto.target_id), "target")
+        await self._validate_entity(pid_int, dto.source_type, dto.source_id, "source")
+        await self._validate_entity(pid_int, dto.target_type, dto.target_id, "target")
         # ⑤ 同键唯一
         if (
             await self._relation_repo.get_by_key(
@@ -269,7 +273,7 @@ class KnowledgeGraphService:
 
     async def get_relation(self, relation_id: uuid.UUID) -> KnowledgeRelation:
         """按主键获取关系；不存在 → KnowledgeRelationNotFoundError（404）."""
-        relation = await self._relation_repo.get(_to_int_id(relation_id))
+        relation = await self._relation_repo.get(relation_id)
         if relation is None:
             raise KnowledgeRelationNotFoundError()
         return relation
@@ -303,7 +307,7 @@ class KnowledgeGraphService:
             KnowledgeEntityNotFoundError: 变更端点实体不存在或跨项目.
             KnowledgeRelationConflictError: 改键后与另一行冲突.
         """
-        existing = await self._relation_repo.get(_to_int_id(relation_id))
+        existing = await self._relation_repo.get(relation_id)
         if existing is None:
             raise KnowledgeRelationNotFoundError()
         # ② source 不可改（§7 边界 7）
@@ -353,13 +357,9 @@ class KnowledgeGraphService:
         pid_int = _to_int_id(existing.project_id)
         # 实体存在 + 同项目（只校验传入端点）
         if source_type is not None or source_id is not None:
-            await self._validate_entity(
-                pid_int, dto.source_type, _to_int_id(dto.source_id), "source"
-            )
+            await self._validate_entity(pid_int, dto.source_type, dto.source_id, "source")
         if target_type is not None or target_id is not None:
-            await self._validate_entity(
-                pid_int, dto.target_type, _to_int_id(dto.target_id), "target"
-            )
+            await self._validate_entity(pid_int, dto.target_type, dto.target_id, "target")
         # ③ 同键唯一（改键后与另一行冲突 → 422；查到自身 = 键未变，放行，#537）
         existing_by_key: KnowledgeRelation | None = await self._relation_repo.get_by_key(
             pid_int,
@@ -408,7 +408,7 @@ class KnowledgeGraphService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._relation_repo.filter(
             pid_int,
@@ -439,7 +439,7 @@ class KnowledgeGraphService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到聚合各 repo
         # 绑定抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         nodes: list[GraphNode] = []
         nodes.extend(await self._collect_nodes(pid_int, EntityType.CHARACTER, lambda e: e.name))

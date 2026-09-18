@@ -6,6 +6,7 @@ SummaryRepositoryProtocol 定义 get / upsert / list_recent 三个操作，
 
 from __future__ import annotations
 
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.context import ChapterSummary
@@ -18,11 +19,11 @@ class SummaryRepositoryProtocol(Protocol):
     updated_at 用于失效检测（chapter.updated_at > summary.updated_at → 重新生成）.
     """
 
-    async def get(self, chapter_id: int) -> ChapterSummary | None:
+    async def get(self, chapter_id: uuid.UUID) -> ChapterSummary | None:
         """查询章节摘要缓存.
 
         Args:
-            chapter_id: 章节主键（int，与 ORM 层一致）.
+            chapter_id: 章节主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 ChapterSummary，否则返回 None.

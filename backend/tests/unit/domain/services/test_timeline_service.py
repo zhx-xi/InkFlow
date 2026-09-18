@@ -199,7 +199,7 @@ class TestListGet:
         mock_repo.get = AsyncMock(return_value=event)
         result = await service.get_event(event.id)
         assert result == event
-        mock_repo.get.assert_awaited_once_with(event.id.int)
+        mock_repo.get.assert_awaited_once_with(event.id)
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await service.get_event(uuid.uuid4()) is None

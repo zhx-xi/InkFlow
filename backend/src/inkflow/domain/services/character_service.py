@@ -122,7 +122,7 @@ class CharacterService:
         """
         if self._project_repo is None:
             return None
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
         return project
@@ -187,13 +187,13 @@ class CharacterService:
         await publish_change("character", "create", created.id, project_id)
         return created
 
-    async def get_character(self, character_id: int | uuid.UUID) -> Character | None:
+    async def get_character(self, character_id: uuid.UUID) -> Character | None:
         """按主键获取角色；不存在返回 None（router 转 404）."""
-        return await self._repo.get(_to_int_id(character_id))
+        return await self._repo.get(character_id)
 
     async def list_characters(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         search: str | None = None,
         group_id: int | uuid.UUID | None = None,
         sort_by: str = "updated_at",
@@ -210,7 +210,7 @@ class CharacterService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list(
             project_id=pid_int,
@@ -223,7 +223,7 @@ class CharacterService:
         )
 
     async def update_character(
-        self, character_id: int | uuid.UUID, update: CharacterUpdate
+        self, character_id: uuid.UUID, update: CharacterUpdate
     ) -> Character | None:
         """部分更新角色（exclude_unset 语义，同 F1）.
 
@@ -238,8 +238,7 @@ class CharacterService:
         Returns:
             更新后的完整 Character；角色不存在返回 None（router 转 404）.
         """
-        cid = _to_int_id(character_id)
-        existing = await self._repo.get(cid)
+        existing = await self._repo.get(character_id)
         if existing is None:
             return None
         if "name" in update.model_fields_set and update.name is not None:
@@ -297,7 +296,7 @@ class CharacterService:
 
     # ── CharacterRelation ──────────────────────────────────────────
 
-    async def list_relations(self, character_id: int | uuid.UUID) -> list[CharacterRelation]:
+    async def list_relations(self, character_id: uuid.UUID) -> list[CharacterRelation]:
         """查询角色全部关系（双向: 作为 from 或 to，spec §6.1）.
 
         Args:
@@ -311,15 +310,15 @@ class CharacterService:
                 router 转 404「角色不存在」）.
         """
         cid = _to_int_id(character_id)
-        character = await self._repo.get(cid)
+        character = await self._repo.get(character_id)
         if character is None:
             raise CharacterNotFoundError()
         return await self._repo.list_relations(_to_int_id(character.project_id), cid)
 
     async def create_relation(
         self,
-        character_id: int | uuid.UUID,
-        to_character_id: int | uuid.UUID,
+        character_id: uuid.UUID,
+        to_character_id: uuid.UUID,
         relation_type: str,
         description: str = "",
     ) -> CharacterRelation:
@@ -344,10 +343,10 @@ class CharacterService:
         tid = _to_int_id(to_character_id)
         if cid == tid:
             raise SelfRelationError()
-        from_char = await self._repo.get(cid)
+        from_char = await self._repo.get(character_id)
         if from_char is None:
             raise CharacterNotFoundError()
-        to_char = await self._repo.get(tid)
+        to_char = await self._repo.get(to_character_id)
         if to_char is None:
             raise CharacterNotFoundError()
         if from_char.project_id != to_char.project_id:
@@ -496,13 +495,13 @@ class CharacterService:
         """按主键获取分组；不存在返回 None（router 转 404）."""
         return await self._repo.get_group(_to_int_id(group_id))
 
-    async def list_groups(self, project_id: int | uuid.UUID) -> list[CharacterGroup]:
+    async def list_groups(self, project_id: uuid.UUID) -> list[CharacterGroup]:
         """查询项目内全部分组（按 sort_order 升序）."""
         pid_int = _to_int_id(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list_groups(pid_int)
 

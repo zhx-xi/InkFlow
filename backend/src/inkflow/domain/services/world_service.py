@@ -117,7 +117,7 @@ class WorldService:
         """
         if self._project_repo is None:
             return None
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
         return project
@@ -167,7 +167,8 @@ class WorldService:
             if not has_root:
                 raise WorldRootMissingError()
             # ① 父存在 + 同项目（repo.get 真删语义下不存在即无记录）
-            parent = await self._repo.get(parent_int)
+            assert parent_id is not None  # parent_int 非 None ⇒ parent_id 非 None
+            parent = await self._repo.get(parent_id)
             if parent is None or _to_int_id(parent.project_id) != pid_int:
                 raise WorldParentNotFoundError()
         # #834 分类前置：带 category 条目须先创建该分类
@@ -203,13 +204,13 @@ class WorldService:
         await publish_change("world_setting", "create", created.id, created.project_id)
         return created
 
-    async def get_setting(self, setting_id: int | uuid.UUID) -> WorldSetting | None:
+    async def get_setting(self, setting_id: uuid.UUID) -> WorldSetting | None:
         """按主键获取条目；不存在返回 None（router 转 404）."""
-        return await self._repo.get(_to_int_id(setting_id))
+        return await self._repo.get(setting_id)
 
     async def list_settings(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         search: str | None = None,
         category: str | None = None,
         sort_by: str = "updated_at",
@@ -239,7 +240,7 @@ class WorldService:
         # #1151: 先判父项目存在——缺失 → 404（world_repo.list 自带 128 位 int 守卫，
         # 故本条无溢出缺口；§3.2 特例，repo 层不动）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list(
             project_id=pid_int,
@@ -253,7 +254,7 @@ class WorldService:
             top_level_only=top_level_only,
         )
 
-    async def list_categories(self, project_id: int | uuid.UUID) -> list[tuple[str, int]]:
+    async def list_categories(self, project_id: uuid.UUID) -> list[tuple[str, int]]:
         """聚合项目内活动条目的类别计数（排除空类别）.
 
         Args:
@@ -266,7 +267,7 @@ class WorldService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到聚合 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list_categories(pid_int)
 
@@ -288,7 +289,7 @@ class WorldService:
         return roots[0] if roots else None
 
     async def update_setting(
-        self, setting_id: int | uuid.UUID, update: WorldUpdate
+        self, setting_id: uuid.UUID, update: WorldUpdate
     ) -> WorldSetting | None:
         """部分更新条目（exclude_unset 语义，同 F1；F35 parent_id 例外）.
 
@@ -305,7 +306,7 @@ class WorldService:
             更新后的完整 WorldSetting；条目不存在返回 None（router 转 404）.
         """
         sid = _to_int_id(setting_id)
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(setting_id)
         if existing is None:
             return None
         # F10 兼容：顶层条目改名沿用项目级同名预检（既有测试契约）
@@ -344,9 +345,9 @@ class WorldService:
                 and await self.has_root_setting(existing.project_id)
             ):
                 raise WorldRootConflictError()  # 非根条目置顶 -> 第二根
-            if new_parent_int is not None:
+            if update.parent_id is not None:
                 # 父存在 + 同项目
-                parent = await self._repo.get(new_parent_int)
+                parent = await self._repo.get(update.parent_id)
                 if parent is None or _to_int_id(parent.project_id) != _to_int_id(
                     existing.project_id
                 ):
@@ -375,7 +376,7 @@ class WorldService:
 
     async def delete_setting(
         self,
-        setting_id: int | uuid.UUID,
+        setting_id: uuid.UUID,
         cascade: bool = False,
         reparent_to: uuid.UUID | None = None,
     ) -> bool:
@@ -406,7 +407,7 @@ class WorldService:
         sid = _to_int_id(setting_id)
         # 解析条目所在项目（查子/reparent 校验用；缺失时删除由 repo 返回 False 兜底——
         # 测试契约要求 cascade/reparent 路径不做存在性闸门）
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(setting_id)
         project_int = _to_int_id(existing.project_id) if existing is not None else 0
         existing_project_id: uuid.UUID | None = (
             existing.project_id if existing is not None else None
@@ -431,7 +432,7 @@ class WorldService:
         if reparent_to is not None:
             target_int = _to_int_id(reparent_to)
             # reparent 目标校验（存在/同项目/非自身子树 → WorldReparentTargetError）
-            target = await self._repo.get(target_int)
+            target = await self._repo.get(reparent_to)
             if target is None:
                 raise WorldReparentTargetError()
             # 同项目校验：以直接子所在项目为准（数据隔离保证子与自身同项目）
@@ -511,11 +512,10 @@ class WorldService:
 
     async def list_world_categories(self, project_id: uuid.UUID) -> list[tuple[WorldCategory, int]]:
         """分类实体列表 + 每个分类名匹配的条目计数（spec §3.1/§6.1）."""
-        pid_int = _to_int_id(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list_world_categories(project_id)
 
@@ -565,14 +565,13 @@ class WorldService:
 
     # ── F35 树查询（spec §5.3）────────────────────────────────────
 
-    async def list_ancestors(self, setting_id: int | uuid.UUID) -> list[WorldSetting] | None:
+    async def list_ancestors(self, setting_id: uuid.UUID) -> list[WorldSetting] | None:
         """祖先链（含自身，自身在前，面包屑展示）.
 
         Returns:
             祖先链（[自身, 父, 祖父, ...]）；条目不存在 → None（router 转 404）。
         """
-        sid = _to_int_id(setting_id)
-        setting = await self._repo.get(sid)
+        setting = await self._repo.get(setting_id)
         if setting is None:
             return None
         chain: list[WorldSetting] = [setting]
@@ -584,14 +583,14 @@ class WorldService:
             if parent_int in seen:
                 break  # 防御：数据异常成环时截断
             seen.add(parent_int)
-            parent = await self._repo.get(parent_int)
+            parent = await self._repo.get(current.parent_id)
             if parent is None:
                 break  # 父不存在 → 链在此截断
             chain.append(parent)
             current = parent
         return chain
 
-    async def list_descendants(self, setting_id: int | uuid.UUID) -> list[WorldSetting] | None:
+    async def list_descendants(self, setting_id: uuid.UUID) -> list[WorldSetting] | None:
         """子树（含自身，层序：父先子后）——透传 repo，空结果再判父条目存在性.
 
         #1139: 空结果才需判定父条目存在性——条目不存在 → WorldNotFoundError
@@ -607,7 +606,7 @@ class WorldService:
         """
         sid = _to_int_id(setting_id)
         subtree = await self._repo.list_descendants(sid)
-        if not subtree and await self._repo.get(sid) is None:
+        if not subtree and await self._repo.get(setting_id) is None:
             raise WorldNotFoundError()
         return subtree
 

@@ -225,7 +225,7 @@ class RelationExtractionService:
         for child in worlds:
             if child.parent_id is None:
                 continue
-            parent = await self._world_repo.get(_to_int_id(child.parent_id))
+            parent = await self._world_repo.get(child.parent_id)
             if parent is None:
                 warnings.append(f"R1 跳过: 世界观 {child.name} 的父条目不存在")
                 continue
@@ -251,7 +251,7 @@ class RelationExtractionService:
         for fs in foreshadows:
             if fs.event_id is None:
                 continue
-            event = await self._timeline_repo.get(_to_int_id(fs.event_id))
+            event = await self._timeline_repo.get(fs.event_id)
             if event is None:
                 warnings.append(f"R2 跳过: 伏笔 {fs.title} 锚定的事件不存在")
                 continue
@@ -281,7 +281,7 @@ class RelationExtractionService:
                 if pin.type == "other":
                     continue
                 if pin.location_id is not None:
-                    world = await self._world_repo.get(_to_int_id(pin.location_id))
+                    world = await self._world_repo.get(pin.location_id)
                     if world is None:
                         warnings.append(f"R3 跳过: pin {pin.label} 关联的地点不存在")
                         continue
@@ -296,7 +296,7 @@ class RelationExtractionService:
                     )
                     continue
                 if pin.ref_id is not None and pin.type == "role":
-                    character = await self._character_repo.get(_to_int_id(pin.ref_id))
+                    character = await self._character_repo.get(pin.ref_id)
                     if character is None:
                         warnings.append(f"R3 跳过: pin {pin.label} 关联的角色不存在")
                         continue
@@ -311,7 +311,7 @@ class RelationExtractionService:
                     )
                     continue
                 if pin.ref_id is not None and pin.type == "event":
-                    event = await self._timeline_repo.get(_to_int_id(pin.ref_id))
+                    event = await self._timeline_repo.get(pin.ref_id)
                     if event is None:
                         warnings.append(f"R3 跳过: pin {pin.label} 关联的事件不存在")
                         continue

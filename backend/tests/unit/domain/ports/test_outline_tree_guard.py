@@ -198,7 +198,7 @@ class TestOutlineTreeGuard:
         """GC4 合法树 overall→volume→chapter → 全部成功，父链正确."""
         overall = _outline("整本", level="overall")
         volume = _outline("卷一", level="volume", parent_id=overall.id)
-        parent_map = {overall.id.int: overall, volume.id.int: volume}
+        parent_map = {overall.id: overall, volume.id: volume}  # #1271: get 入参为领域 UUID
 
         async def fake_get(pk):
             return parent_map.get(pk)

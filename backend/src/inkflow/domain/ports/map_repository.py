@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.map import MapPin, WorldMap
@@ -31,11 +32,11 @@ class MapRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, map_id: int) -> WorldMap | None:
+    async def get(self, map_id: uuid.UUID) -> WorldMap | None:
         """按主键查询地图.
 
         Args:
-            map_id: 地图主键（int，与 ORM 层一致）.
+            map_id: 地图主键（领域 UUID，见 #1271）.
 
         Returns:
             命中返回 WorldMap，否则返回 None.

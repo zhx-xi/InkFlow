@@ -128,7 +128,7 @@ class SearchService:
         ③ 词法：懒索引就绪 → jieba 分词 → MATCH 构造 → FTS5 查询
         """
         for pid in query.project_ids:
-            project = await self._project_repo.get(pid.int)
+            project = await self._project_repo.get(pid)
             if project is None:
                 raise ProjectNotFoundError(f"Project not found: {pid}")
 
@@ -168,7 +168,9 @@ class SearchService:
         requested = project_ids
         if requested is not None:
             for pid in requested:
-                project = await self._project_repo.get(pid)
+                # #1271: 本入口 project_ids 为 int 契约（router 解析后转 int），
+                # 项目存在性校验需 UUID 形态；同方法末尾亦有 int ↔ UUID 往返
+                project = await self._project_repo.get(uuid.UUID(int=pid))
                 if project is None:
                     raise ProjectNotFoundError(f"Project not found: {pid}")
             target_ids = requested

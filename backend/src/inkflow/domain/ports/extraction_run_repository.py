@@ -1,9 +1,8 @@
 """F14 增量追踪记录仓储端口 — 提取运行状态持久化契约.
 
 ExtractionRunRepositoryProtocol 定义 ExtractionRun 的查询与 upsert 操作，
-基础设施层（SQLite / mock / memory）实现此 Protocol。仓储层方法入参用 int
-（与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id`
-模式）。
+基础设施层（SQLite / mock / memory）实现此 Protocol。`get` 的 `project_id`
+入参用领域 UUID（#1271 收窄）；`type` / `source_key` 与其余方法不变。
 
 依据: specs/f14-extraction/spec.md §8.1。
 """
@@ -11,6 +10,7 @@ ExtractionRunRepositoryProtocol 定义 ExtractionRun 的查询与 upsert 操作�
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.extraction import ExtractionRun, ExtractionType
@@ -27,12 +27,12 @@ class ExtractionRunRepositoryProtocol(Protocol):
     """
 
     async def get(
-        self, project_id: int, type: ExtractionType, source_key: str
+        self, project_id: uuid.UUID, type: ExtractionType, source_key: str
     ) -> ExtractionRun | None:
         """按 (project_id, type, source_key) 查询最新 run 记录.
 
         Args:
-            project_id: 项目主键（int，与 ORM 层一致）.
+            project_id: 项目主键（领域 UUID，见 #1271）.
             type: 提取类型.
             source_key: 源标识（章节模式=str(chapter_id)；手动模式="manual"）.
 

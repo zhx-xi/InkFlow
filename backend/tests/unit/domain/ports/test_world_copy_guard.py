@@ -24,8 +24,6 @@ from inkflow.domain.services.copy_service import WorldCopyService
 
 SOURCE_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TARGET_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")
-SOURCE_INT = SOURCE_PID.int
-TARGET_INT = TARGET_PID.int
 TS = datetime(2026, 8, 1, 10, 0, 0)
 
 
@@ -68,10 +66,10 @@ def mock_repo() -> MagicMock:
 
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — 源/目标项目均存在."""
+    """Mock ProjectRepositoryProtocol — 源/目标项目均存在（#1271: get 收领域 UUID）."""
     repo = MagicMock(spec=ProjectRepositoryProtocol)
     repo.get = AsyncMock(
-        side_effect=lambda pid: SimpleNamespace(id=pid) if pid in (SOURCE_INT, TARGET_INT) else None
+        side_effect=lambda pid: SimpleNamespace(id=pid) if pid in (SOURCE_PID, TARGET_PID) else None
     )
     return repo
 

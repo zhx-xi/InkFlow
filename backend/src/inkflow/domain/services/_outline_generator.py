@@ -579,7 +579,7 @@ class OutlineGenerator:
         """
         target_id = request.target_outline_id
         assert target_id is not None  # §1.1 model_validator 保证 replace 必有目标大纲
-        outline = await self._repo.get(_to_int_id(target_id))
+        outline = await self._repo.get(target_id)
         if outline is None:
             raise OutlineNotFoundError()
         extra = dict(outline.extra)
@@ -621,7 +621,7 @@ class OutlineGenerator:
         pid_int = _to_int_id(request.project_id)
         target_outline_id = request.target_outline_id
         assert target_outline_id is not None  # 追加分支守卫已收窄（mypy）
-        target = await self._repo.get(_to_int_id(target_outline_id))
+        target = await self._repo.get(target_outline_id)
         if target is None or target.project_id != request.project_id:
             raise OutlineNotFoundError()
 

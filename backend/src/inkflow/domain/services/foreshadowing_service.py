@@ -98,7 +98,7 @@ class ForeshadowingService:
         """
         if self._project_repo is None:
             raise ForeshadowingServiceError("项目仓储未配置，无法校验项目存在性")
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 
@@ -119,7 +119,7 @@ class ForeshadowingService:
         """
         if self._timeline_repo is None:
             raise ForeshadowingServiceError("时间线仓储未配置，无法校验事件锚点")
-        event = await self._timeline_repo.get(event_id.int)
+        event = await self._timeline_repo.get(event_id)
         if event is None:
             raise EventNotFoundError()
         if event.project_id != project_id:
@@ -166,9 +166,9 @@ class ForeshadowingService:
         await publish_change("foreshadowing", "create", created.id, created.project_id)
         return created
 
-    async def get(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
+    async def get(self, foreshadowing_id: uuid.UUID) -> Foreshadowing | None:
         """按主键获取伏笔；不存在返回 None（router 转 404）."""
-        return await self._repo.get(_to_int_id(foreshadowing_id))
+        return await self._repo.get(foreshadowing_id)
 
     async def list(
         self,
@@ -210,7 +210,7 @@ class ForeshadowingService:
         )
 
     async def update(
-        self, foreshadowing_id: int | uuid.UUID, data: ForeshadowingUpdate
+        self, foreshadowing_id: uuid.UUID, data: ForeshadowingUpdate
     ) -> Foreshadowing | None:
         """部分更新伏笔（exclude_unset 语义，同 F1）.
 
@@ -231,8 +231,7 @@ class ForeshadowingService:
             EventNotFoundError / EventNotInProjectError: event_id 锚点校验失败（422）.
             ForeshadowingServiceError: timeline_repo 未注入（配置错误）.
         """
-        fid = _to_int_id(foreshadowing_id)
-        existing = await self._repo.get(fid)
+        existing = await self._repo.get(foreshadowing_id)
         if existing is None:
             return None
         # None = 不修改（与未传入等价，同 F12 update 模式）；"",
@@ -257,7 +256,7 @@ class ForeshadowingService:
             await publish_change("foreshadowing", "update", updated.id, existing.project_id)
         return updated
 
-    async def resolve(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
+    async def resolve(self, foreshadowing_id: uuid.UUID) -> Foreshadowing | None:
         """标记回收（spec §2.4: open→resolved，自动设置 resolved_at=now(UTC)）.
 
         Args:
@@ -267,8 +266,7 @@ class ForeshadowingService:
             迁移后的 Foreshadowing；已 resolved 原样返回（幂等，resolved_at
             不更新）；伏笔不存在返回 None（router 转 404）.
         """
-        fid = _to_int_id(foreshadowing_id)
-        existing = await self._repo.get(fid)
+        existing = await self._repo.get(foreshadowing_id)
         if existing is None:
             return None
         if existing.status == ForeshadowingStatus.RESOLVED:
@@ -281,7 +279,7 @@ class ForeshadowingService:
         await publish_change("foreshadowing", "update", foreshadowing_id, existing.project_id)
         return resolved
 
-    async def reopen(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
+    async def reopen(self, foreshadowing_id: uuid.UUID) -> Foreshadowing | None:
         """重新开启（spec §2.4: resolved→open，清空 resolved_at）.
 
         Args:
@@ -291,8 +289,7 @@ class ForeshadowingService:
             迁移后的 Foreshadowing；已 open 原样返回（幂等）；伏笔不存在
             返回 None（router 转 404）.
         """
-        fid = _to_int_id(foreshadowing_id)
-        existing = await self._repo.get(fid)
+        existing = await self._repo.get(foreshadowing_id)
         if existing is None:
             return None
         if existing.status == ForeshadowingStatus.OPEN:

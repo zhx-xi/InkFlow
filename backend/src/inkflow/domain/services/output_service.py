@@ -126,9 +126,7 @@ class ExportService:
 
     # ── 服务编排（spec §5.1 步骤 ①-④）────────────────────────────
 
-    async def export(
-        self, project_id: int | uuid.UUID, include_settings: bool = False
-    ) -> BookDocument:
+    async def export(self, project_id: uuid.UUID, include_settings: bool = False) -> BookDocument:
         """导出聚合编排 — 项目 → BookDocument（统一中间表示）.
 
         流程: 项目校验 → 正文 + 设定并行聚合（asyncio.gather，§5.1 要点 2；
@@ -150,7 +148,7 @@ class ExportService:
         """
         # ① 项目校验（服务层统一校验一次，404）
         pid_int = _to_int_id(project_id)
-        project = await self._project_repo.get(pid_int)
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 

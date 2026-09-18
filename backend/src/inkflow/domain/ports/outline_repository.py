@@ -2,8 +2,8 @@
 
 OutlineRepositoryProtocol 定义 Outline / PlotPoint / StoryArc 三组
 CRUD 操作与级联辅助方法，基础设施层（SQLite / mock / memory）实现此
-Protocol。仓储层方法入参用 int（与 ORM 层一致），Service 负责 UUID ↔ int
-转换（沿用 F1 `_to_int_id` 模式）。
+Protocol。仓储层 `get` 主键入参用领域 UUID（#1271 收窄），其余方法沿用
+int/uuid 兼容归一。
 
 依据: specs/f11-outline/spec.md §8.1。
 """
@@ -11,6 +11,7 @@ Protocol。仓储层方法入参用 int（与 ORM 层一致），Service 负责 
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.outline import (
@@ -44,11 +45,11 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, outline_id: int) -> Outline | None:
+    async def get(self, outline_id: uuid.UUID) -> Outline | None:
         """按主键查询大纲.
 
         Args:
-            outline_id: 大纲主键（int，与 ORM 层一致）.
+            outline_id: 大纲主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 Outline，否则返回 None.

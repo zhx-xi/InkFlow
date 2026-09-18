@@ -210,7 +210,7 @@ class TestOutlineCrud:
         mock_repo.get = AsyncMock(return_value=outline)
         result = await service.get_outline(outline.id)
         assert result == outline
-        mock_repo.get.assert_awaited_once_with(outline.id.int)
+        mock_repo.get.assert_awaited_once_with(outline.id)
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await service.get_outline(uuid.uuid4()) is None
@@ -531,7 +531,7 @@ class TestGenerate:
         outcome = await service.generate(request)
 
         assert outcome == result
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
         mock_generator.generate.assert_awaited_once()
         call = mock_generator.generate.await_args
         assert call.args[0] == request  # request 按位置传参
@@ -609,7 +609,7 @@ class TestGenerate:
         outcome = await service.generate(request)
 
         assert outcome == result
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
         mock_generator.generate.assert_awaited_once()
         call = mock_generator.generate.await_args
         assert call.args[0] == request  # request 按位置传参
@@ -818,7 +818,7 @@ class TestCreateOutlineConfigNormalization:
         """project config=chinese → level=chapter 的 name 落库前归一为 '第三章 风'。"""
         parent = self._volume_parent()
         mock_project_repo.get = AsyncMock(return_value=chinese_project)
-        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id else None)
         mock_repo.get_by_name = AsyncMock(return_value=None)
         mock_repo.add = AsyncMock(side_effect=lambda o: o)
 
@@ -835,7 +835,7 @@ class TestCreateOutlineConfigNormalization:
         """level=volume → 不按 project config 归一（名称原样落库）。"""
         parent = self._overall_parent()
         mock_project_repo.get = AsyncMock(return_value=chinese_project)
-        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id else None)
         mock_repo.get_by_name = AsyncMock(return_value=None)
         mock_repo.add = AsyncMock(side_effect=lambda o: o)
 
@@ -850,7 +850,7 @@ class TestCreateOutlineConfigNormalization:
         """project_repo=None → 向后兼容：不炸、名称原样落库（保持现行为）。"""
         svc = OutlineService(repository=mock_repo, generator=None, project_repo=None)
         parent = self._overall_parent()
-        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda oid: parent if oid == parent.id else None)
         mock_repo.get_by_name = AsyncMock(return_value=None)
         mock_repo.add = AsyncMock(side_effect=lambda o: o)
 

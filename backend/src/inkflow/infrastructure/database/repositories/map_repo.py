@@ -32,7 +32,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.map import MapPin, WorldMap
 from inkflow.infrastructure.database.models.map import MapORM, MapPinORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -140,7 +143,11 @@ class SQLiteMapRepository:
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
         """
-        mid = uuid_to_pk_or_none(map_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(map_id, uuid.UUID):
+            mid = require_uuid_pk(map_id)
+        else:
+            mid = uuid_to_pk_or_none(map_id)
         if mid is None:
             return None
         stmt = select(MapORM).where(MapORM.id == mid)

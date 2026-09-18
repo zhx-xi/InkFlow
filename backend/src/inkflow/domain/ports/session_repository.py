@@ -2,8 +2,8 @@
 
 SessionRepositoryProtocol 定义 Session 与 SessionLogEntry 的持久化操作
 （CRUD + 过滤列表 + 归档/解除/真实删除 + 日志 seq 分配与查询），基础
-设施层（SQLite / mock / memory）实现本 Protocol。仓储层方法入参用 int
-（与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
+设施层（SQLite / mock / memory）实现本 Protocol。仓储层 `get` 主键入参用
+领域 UUID（#1271 收窄），其余方法沿用 int/uuid 兼容归一。
 
 依据: specs/f24-session/spec.md §8.2。
 """
@@ -11,6 +11,7 @@ SessionRepositoryProtocol 定义 Session 与 SessionLogEntry 的持久化操作
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.session import Session, SessionLogEntry
@@ -38,11 +39,11 @@ class SessionRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, session_id: int) -> Session | None:
+    async def get(self, session_id: uuid.UUID) -> Session | None:
         """按主键查询会话（不含已归档）.
 
         Args:
-            session_id: 会话主键（int，与 ORM 层一致）.
+            session_id: 会话主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 Session，否则返回 None.

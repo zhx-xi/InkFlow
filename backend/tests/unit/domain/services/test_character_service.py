@@ -249,7 +249,7 @@ class TestCharacterCrud:
         mock_repo.get = AsyncMock(return_value=char)
         result = await service.get_character(char.id)
         assert result == char
-        mock_repo.get.assert_awaited_once_with(char.id.int)
+        mock_repo.get.assert_awaited_once_with(char.id)
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await service.get_character(uuid.uuid4()) is None
@@ -605,7 +605,7 @@ class TestExtract:
         outcome = await service.extract(request)
 
         assert outcome == result
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
         mock_extractor.extract.assert_awaited_once_with(request, default_model=DEFAULT_MODEL)
 
     async def test_extract_project_missing_raises(

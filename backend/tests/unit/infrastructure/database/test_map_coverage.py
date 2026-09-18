@@ -218,7 +218,7 @@ class TestServiceCoverageGaps:
         target = _map(name="目标图")
         # children side_effect 只对根 sid 返回 [child]，其余返回 []（防 BFS 无限递归）
         mock_repo.children = AsyncMock(side_effect=lambda mid: [] if mid != 11111 else [child])
-        mock_repo.get = AsyncMock(side_effect=lambda mid: target if mid == target.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda mid: target if mid == target.id else None)
         assert await service.delete_map(uuid.UUID(int=11111), reparent_to=target.id) is False
 
     async def test_delete_reparent_child_root_none_skips(
@@ -230,7 +230,7 @@ class TestServiceCoverageGaps:
         sid = uuid.UUID(int=22222)
         mock_repo.children = AsyncMock(side_effect=lambda mid: [] if mid != sid.int else [child])
         mock_repo.get = AsyncMock(
-            side_effect=lambda mid: target if mid in {sid.int, target.id.int} else None
+            side_effect=lambda mid: target if mid in {sid, target.id} else None
         )
         mock_repo.list_pins = AsyncMock(return_value=[])
         assert await service.delete_map(sid, reparent_to=target.id) is True

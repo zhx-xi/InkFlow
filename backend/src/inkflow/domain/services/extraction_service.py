@@ -311,7 +311,7 @@ class ExtractionService(_ExtractionRAGMixin):
             RAGUnavailableError: index=true 但向量存储未装配（500）.
         """
         # ① 门面统一校验项目存在（所有类型统一，§5.1 要点 2）
-        project = await self._project_repo.get(_to_int_id(request.project_id))
+        project = await self._project_repo.get(request.project_id)
         if project is None:
             raise ProjectNotFoundError()
 
@@ -404,7 +404,7 @@ class ExtractionService(_ExtractionRAGMixin):
 
         if request.text is not None:
             h = _content_hash(request.text)
-            run = await self._run_repo.get(_to_int_id(request.project_id), request.type, "manual")
+            run = await self._run_repo.get(request.project_id, request.type, "manual")
             skip = run is not None and run.content_hash == h and not request.force
             return [_Source(key="manual", label="manual", hash=h, skip=skip, text=request.text)]
 
@@ -418,9 +418,7 @@ class ExtractionService(_ExtractionRAGMixin):
             if len(chapter.content) > _MAX_CHAPTER_CHARS:
                 raise ExtractionValidationError("章节内容超过提取上限（50000 字符）")
             h = _content_hash(chapter.content)
-            run = await self._run_repo.get(
-                _to_int_id(request.project_id), request.type, str(chapter_id)
-            )
+            run = await self._run_repo.get(request.project_id, request.type, str(chapter_id))
             skip = run is not None and run.content_hash == h and not request.force
             sources.append(
                 _Source(
@@ -752,6 +750,6 @@ class ExtractionService(_ExtractionRAGMixin):
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._run_repo.list(pid_int, type=type, offset=offset, limit=limit)

@@ -31,7 +31,10 @@ from inkflow.infrastructure.database.models.character import (
     CharacterORM,
 )
 from inkflow.infrastructure.database.models.knowledge_graph import KnowledgeRelationORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 _CHARACTER = "character"
 
@@ -177,7 +180,11 @@ class SQLiteCharacterRepository:
 
     async def get(self, character_id: int | uuid.UUID) -> Character | None:
         """按主键查询角色。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        cid = uuid_to_pk_or_none(character_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(character_id, uuid.UUID):
+            cid = require_uuid_pk(character_id)
+        else:
+            cid = uuid_to_pk_or_none(character_id)
         if cid is None:
             return None
         stmt = select(CharacterORM).where(CharacterORM.id == cid)

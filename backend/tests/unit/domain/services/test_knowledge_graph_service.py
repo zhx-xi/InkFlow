@@ -355,7 +355,7 @@ class TestCreateRelation:
                 target_id=uuid.uuid4(),
                 relation_type="属于",
             )
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
         mock_relation_repo.add.assert_not_awaited()
 
     async def test_self_loop_raises(self, service, mock_project_repo, mock_relation_repo):
@@ -490,7 +490,7 @@ class TestCreateRelation:
         mock_project_repo.get = AsyncMock(return_value=_project())
         a = _char("林尘")
         b = _char("阿澈")
-        mock_character_repo.get = AsyncMock(side_effect=lambda cid: a if cid == a.id.int else b)
+        mock_character_repo.get = AsyncMock(side_effect=lambda cid: a if cid == a.id else b)
 
         created = await service.create_relation(
             project_id=PID,
@@ -509,7 +509,7 @@ class TestCreateRelation:
         assert added.source_type == EntityType.CHARACTER
         assert added.target_type == EntityType.CHARACTER
         assert added.description == "林尘的师弟"
-        mock_character_repo.get.assert_awaited_with(b.id.int)
+        mock_character_repo.get.assert_awaited_with(b.id)
 
     async def test_success_source_manual_and_relation_type_stripped(
         self, service, mock_project_repo, mock_character_repo, mock_world_repo, mock_relation_repo
@@ -533,8 +533,8 @@ class TestCreateRelation:
         )
         assert created.relation_type == "属于"
         assert created.source == RelationSource.MANUAL
-        mock_character_repo.get.assert_awaited_once_with(src_char.id.int)
-        mock_world_repo.get.assert_awaited_once_with(tgt_world.id.int)
+        mock_character_repo.get.assert_awaited_once_with(src_char.id)
+        mock_world_repo.get.assert_awaited_once_with(tgt_world.id)
         mock_relation_repo.get_by_key.assert_awaited_once_with(
             PID.int, "character", src_char.id.int, "world", tgt_world.id.int, "属于"
         )
@@ -565,7 +565,7 @@ class TestCreateRelation:
             relation_type="位于",
         )
         mock_map_repo.get_pin.assert_awaited_once_with(pin.id.int)
-        mock_map_repo.get.assert_awaited_once_with(wm.id.int)
+        mock_map_repo.get.assert_awaited_once_with(wm.id)
         assert created.source_type == EntityType.MAP_PIN
 
     async def test_map_pin_orphan_or_wrong_project_raises(
@@ -765,7 +765,7 @@ class TestGetRelation:
 
         got = await service.get_relation(rel.id)
         assert got.id == rel.id
-        mock_relation_repo.get.assert_awaited_once_with(rel.id.int)
+        mock_relation_repo.get.assert_awaited_once_with(rel.id)
 
 
 class TestListRelations:
@@ -834,7 +834,7 @@ class TestUpdateRelationCoverageGap:
         )
         assert updated.source_type == EntityType.OUTLINE
         assert updated.source_id == new_outline.id
-        mock_outline_repo.get.assert_awaited_once_with(new_outline.id.int)
+        mock_outline_repo.get.assert_awaited_once_with(new_outline.id)
 
     async def test_update_self_loop_raises(self, service, mock_relation_repo):
         """改键成自环（target 改指向 source 同实体）→ KnowledgeRelationSelfLoopError。"""

@@ -30,7 +30,10 @@ from inkflow.infrastructure.database.models.outline import (
     PlotPointORM,
     StoryArcORM,
 )
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -153,7 +156,11 @@ class SQLiteOutlineRepository:
 
     async def get(self, outline_id: int | uuid.UUID) -> Outline | None:
         """按主键查询大纲。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        oid = uuid_to_pk_or_none(outline_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(outline_id, uuid.UUID):
+            oid = require_uuid_pk(outline_id)
+        else:
+            oid = uuid_to_pk_or_none(outline_id)
         if oid is None:
             return None
         stmt = select(OutlineORM).where(OutlineORM.id == oid)
