@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.9（#1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.10（#1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -10,6 +10,12 @@
 **参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 **状态**: ✅ 已实现（PR #441/#443/#445/#446/#447/#448/#453/#454 + #505/#504 访谈 LLM v1.2，2026-08-19）
 
+> **Spec 变更**（v1.9 → v1.10，2026-09-18，#1187 用户拍板「B+C 综合」）：卷级轨同卷章节**并行扇出互不知情**（无承接、无因果、无「上一章结尾的悬念」），卷边界 HITL 时作者才第一次看到 30-40 章各自成文的成品。修订 = **保留并行（不取消，那是方案 A，用户未选）**，在并行下补承接保障，两阶段：
+> - **B 阶段（写前定「承接点 + 章末钩子」）**：新增 `prepare_continuity` 节点，位于 `volume_fan_out` **之前**——**一次 LLM 调用生成整卷承接表**（输入 = 卷纲 + 各章章纲 + 前一章章纲，**不依赖任何正文**，因扇出前无正文），产出落 `VolumeState["continuity"]`（`{str(outline_id): {"carry": str, "hook": str}}`），经 `Send` payload 带进各章分支并注入章 brief（**复用既有 `_build_chapter_brief` / `resolve_brief_setting` 通道，不新造注入路径**）。LLM 失败/解析失败 → 降级空承接表（不阻断写作）。
+> - **C 阶段（写后卷级审计）**：新增 `volume_audit` 节点，位于 `join` **之后**、`volume_boundary` **之前**（`write_chapter → join` 直连保持不动）；逐章调 **F34 `ChapterAuditService.audit`**（不新造审计实现）→ `_audit_bridge.report_to_audit_dict` 扁平化 → `blocking_update` 判定阻断（**复用 #1267 语义**：`severity == error` 且非 `degraded`）。阻断 → 不进入 `volume_boundary`，`status="blocked"`（复用 v1.5 已登记的阻断终态）。未装配 `audit_service` → 节点透传（行为与改造前一致，向后兼容）。
+> - **不取消并行**：本修订是「并行下保证承接」，非「取消并行」（方案 A 未采纳）。
+> - 正文修订位置：§5.3（新增承接两阶段机制段）+ 本节版本行。
+>
 > **Spec 变更**（v1.7 → v1.8，2026-09-11，#1097 用户拍板缺陷修复）：书级运行写完全书后 `GET /volumes` 为 0、章节全部未归卷（数据面实证 10 章 0 卷），而大纲树完整。根因 = confirm 的 D4 自动建章分支（#976/#994）只透传 `draft.volume_id`，book 轨该值恒 None（卷 outline 节点的 `outlines.volume_id` 列未写）。修订：`DraftService` 增可选注入 `volume_ensurer`，confirm 建章前沿生效来源 outline 上溯 `level=volume` 卷父按名 **ensure** `volumes` 行并透传 `create_chapter(volume_id=…)`；无卷父保持 None；同项目同名卷幂等复用。正文修订位置：§5.2（章级幂等节新增「自动建卷 + 章节归卷」段）+ 本节版本行。**不含** #980（卷分组布局 spec）与 #1094（树布局）范围——本修订仅数据面。
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-19，#475 D1 拍板）：访谈从「确定性分批提问」（ROUND1/ROUND2 硬编码状态机）升级为**真 LLM 动态提问**。① 通用必答问题（题材/篇幅/主题）与针对性问题（按小说大纲/类型/设定动态生成）并存（§5.1）；② 每次回答后 LLM 提取「已确定项」（confirmed_items）落会话，下轮只问「未确定项」（§5.1/§2.2）；③ 冲突/不合理回答 → 回问用户重新确认（conflicts 记录，§5.1/§2.2/§7）；④ 必答项齐备后进入末尾总体确认（confirming=true，列出全部确定项，§5.1/§3.2）；⑤ 确定项全量落 PlannerSession（供 #486 会话/记忆 UI + 提取记忆/设定库 + 用户审计，§2.2/§11）。**拆 2 PR 边界（用户拍板，Q4 已确认 ✅）**：PR-1 后端提问引擎（PlannerService 问题生成换 LLM 调用 + 确定项提取/冲突检测，§5.1 后端契约）；PR-2 前端对话式 UI（BookPlannerPanel 固定表单 → 对话式消息流，§5.1 前端契约）。正文修订位置：§1.3/§2.2/§3.2/§4/§5.1/§6/§7/§8/§9/§10/§11/§12/§13 + 待澄清 Q4。既有确定性问题常量保留为 **LLM 失败降级兜底**（§7 场景 15），向后兼容。
@@ -443,6 +449,37 @@ Spike ③ 实测：卷内全部章并行写完 → 卷边界 interrupt 暂停（
 章级失败 → 重试 N 次（默认 2） → 标记 failed 继续（章级只报告，进度落库）
 卷级失败 → interrupt 用户决定 或 授权主 agent 决定（supervisor 补救）
 ```
+
+**v1.10 增量：卷内承接两阶段（#1187，用户拍板「B+C 综合」）**
+
+卷内并行扇出（`Send`）是为提速刻意设计（#337 阶段 3 map-reduce），但**各章互不知情**——无承接、无因果、无「上一章结尾的悬念」。修订方向是**在并行下保证承接**（**不取消并行**，方案 A 未采纳）：
+
+```
+START → bootstrap → prepare_continuity（B：写前定承接表，一次 LLM 调用/卷）
+      → volume_fan_out（Send 扇出，payload 带本章 carry/hook）
+        → write_chapter（并行；brief 注入【上一章结尾】/【本章结尾钩子】）
+      → join → volume_audit（C：逐章 F34 审计 + 阻断判定）→ volume_boundary
+```
+
+**B 阶段 `prepare_continuity`（写前定「承接点 + 章末钩子」）**：
+
+- **位置**：`volume_fan_out` **之前**。此位置是硬要求——扇出后各分支同时启动，任何一条都拿不到前章**正文**；因此承接信息必须**只依赖大纲面**（卷纲 + 各章章纲 + 前一章章纲），在扇出前一次性确定。
+- **成本**：**一次 LLM 调用生成整卷承接表**（非每章一次）——30 章卷 30 次调用不可接受。
+- **产出与通道**：`VolumeState["continuity"]: dict[str, dict]`，键 = `str(outline_id)`，值 = `{"carry": 本章开头应承接什么, "hook": 本章结尾应留下什么}`。卷推进（`_goto_next_volume`）时清空重算（**不进下一卷**——否则跨卷串味）。
+- **注入**：`Send` payload 携带本章 carry/hook → `_delegate_chapter` 追加承接段进 `system_prompt`（**复用既有 `_build_chapter_brief` / `resolve_brief_setting` 通道**，不新造注入路径）。**隔离性**：章 A 的 brief 只含章 A 的承接，绝不串入他章。
+- **降级**：LLM 调用失败 / JSON 解析失败 → 空承接表（brief 不注入），**不阻断写作**（宁缺毋滥：无据可依时不做伪承接）。
+- **缺卷纲**：降级为「仅前后章纲」（章纲恒在），承接仍可生成。
+
+**C 阶段 `volume_audit`（写后卷级审计，复用 F34）**：
+
+- **位置**：`join` **之后**、`volume_boundary` **之前**。`write_chapter → join` 直连**保持不动**（既有拓扑契约不受影响）。
+- **实现**：逐章委派 **F34 `ChapterAuditService.audit(project_id, chapter_id)`**（**不新造审计实现**）——重点复用 #1266 补的两类 `check_type`：**前后章连贯性**（`cross_chapter`，正是本 issue 诉求）+ **大纲符合度**（`outline_compliance`）。failed 章跳过（无正文可审）。
+- **阻断判定**：经 `_audit_bridge.report_to_audit_dict` 扁平化 → `blocking_update`（**复用 #1267 唯一口径**：`severity == error` 且 `degraded == false` 才阻断；`warning`/`info` 不阻断，`degraded` 告警不阻断——「没审出来 ≠ 审出问题」）。
+- **阻断后果**：不进入 `volume_boundary`，`VolumeState["audit_blocked"]` 写入原因 + `status="blocked"`（**复用 v1.5 已登记的阻断终态**），已完成产出保留。
+- **向后兼容**：`audit_service` 未装配（`None`）→ 节点透传至 `volume_boundary`，行为与改造前逐字一致。审计异常 → 吞掉 + warning，不阻断编排。
+- **节点内不加 `interrupt`**：审计是纯计算；章执行分支内 interrupt 是 Spike ④ 硬约束（resume 语义歧义），本阶段同样不引入。
+
+**单章轨（F49）不在本修订范围**：F49 书级轨是串行路由、无并行互不知情问题（其零前文问题属 #1175 另一轨迹）。
 
 **F29 护栏复用**：步数/连续调用/fallback 护栏（`SupervisorExecuteConfig.max_steps/max_consecutive/fallback_on_error`），步数上限随计划缩放（`max_agent_calls` 按计划章数换算，防长书超步）。
 
