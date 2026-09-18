@@ -640,6 +640,28 @@ async def _run_book(
         reset_request_correlation_id(corr_token)
 
 
+@router.post("/runs/{run_id}/reset")
+@instrument(caller_type="api")
+async def reset_run(
+    run_id: str,
+    svc: BookService = Depends(get_book_service),
+):
+    """重置书级运行执行态（#1282 方案 B）：清 progress/execution_refs + 退回 ready。
+
+    不删正文（chapters/chapters.drafts 零触碰）——「不删旧稿就重跑」的用户出口：
+    reset 后再 POST /runs 即可重跑；若正文仍在，安全闸（#1265 判据）依旧拦截，
+    故本端点是显式重置而非静默覆盖。幂等：可重复调用。破坏性仅限于「跑过」的
+    执行记录（详见 BookService.reset_run docstring）。异常 404/422。
+    """
+    try:
+        return await svc.reset_run(run_id)
+    except ValueError as e:
+        detail = str(e)
+        if "运行不存在" in detail:
+            raise HTTPException(status_code=404, detail=detail) from e
+        raise HTTPException(status_code=422, detail=detail) from e
+
+
 @router.post("/runs/{run_id}/confirm")
 @instrument(caller_type="api")
 async def confirm_run(
