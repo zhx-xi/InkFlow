@@ -140,6 +140,17 @@ jobs:
               - 'backend/src/inkflow/api/routers/books.py'
             ci:
               - '.github/**'
+              # #1292 后续：CI 基础设施同族（门禁脚本 / lint 配置 / conftest / 打包 spec）。
+              # 这些文件已进 workflow 级 paths:（保证 required check 有报告），但若不进本
+              # output，带 if 的 job 仍会 skip ——尤其 backend-contract-drift 的判定物正是
+              # ci_cd/export_openapi.py + ci_cd/openapi_snapshot.json，改它不触发 = 门禁自身裸奔。
+              - 'ci_cd/**'
+              - 'ruff.toml'
+              - 'pyrightconfig.json'
+              - 'backend/conftest.py'
+              - 'backend/.pre-commit-config.yaml'
+              - 'backend/pyinstaller/**'
+              - 'backend/scripts/**'
             # 文档类变更：分支保护 required checks（lint/unit/build）在 docs-only PR 也必须
             # 有结论（成功或跳过），否则 GitHub 视为 pending → BLOCKED 无法 merge
             # （#118 实测：docs-only PR 全部 job skipped → merge 被 base branch policy 阻止）。
