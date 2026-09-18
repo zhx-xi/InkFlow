@@ -9,7 +9,7 @@ issue #1282 背景：#1265 解耦安全闸判据后，「重跑」的唯一途�
   reset 不是「静默覆盖」（方案 A 的取舍，本 issue 明确不做）。
 
 可证伪自证：不调 reset 时，同一 plan 的 prepare_run 必须抛
-ChapterAlreadyWrittenError（见 test_prepare_run_after_reset_* 对照组）。
+ChapterAlreadyWrittenError（见 test_prepare_run_without_reset_rejected）。
 """
 
 from __future__ import annotations
@@ -59,8 +59,17 @@ def _plan() -> WritingPlan:
     )
 
 
+async def _find_chapters_stub(_plan: object) -> list[Outline]:
+    """章节点解析替身：返回固定章列表，使安全闸判据完全由 content_checker 决定。"""
+    return [_chapter()]
+
+
 async def _build_service(*, content_written: bool) -> tuple[BookService, AsyncMock]:
-    """装配 BookService：repo 返回同一 plan 实例，content_checker 由参数驱动。"""
+    """装配 BookService：repo 返回同一 plan 实例，content_checker 由参数驱动。
+
+    ``_find_chapters`` 用朴素协程替身（而非 ``AsyncMock``）：作用域仅限本文件，
+    让 ``prepare_run`` 的章节点来源确定，闸门结论只取决于 ``content_checker``。
+    """
     plan = _plan()
     repo = AsyncMock()
     repo.get_writing_plan = AsyncMock(return_value=plan)
@@ -73,7 +82,7 @@ async def _build_service(*, content_written: bool) -> tuple[BookService, AsyncMo
         limits=BookLimits(),
         content_checker=AsyncMock(return_value=content_written),
     )
-    svc._find_chapters = AsyncMock(return_value=[_chapter()])  # type: ignore[method-assign]  # 章节点解析出 DB，测试注入替身
+    svc._find_chapters = _find_chapters_stub  # type: ignore[method-assign]  # 章节点解析出 DB，测试注入替身
     return svc, repo
 
 
@@ -151,8 +160,13 @@ async def test_prepare_run_after_reset_allowed_when_content_gone() -> None:
 
 @pytest.mark.asyncio
 async def test_prepare_run_without_reset_rejected() -> None:
-    """可证伪自证（对照组）：不调 reset → 同一 plan 一律被安全闸拒绝。"""
-    svc, _repo = await _build_service(content_written=False)
+    """可证伪自证（对照组）：不调 reset → 同一 plan 一律被安全闸拒绝。
+
+    用 ``content_written=True``（正文在场的**直判据**，#1265 核心语义）而非
+    依赖 ``execution_refs`` 有痕：后者要穿过 ``prepare_run`` 的悬空引用修剪
+    （按活 outline 剪 refs）才生效，是间接前提，不该作为对照组的唯一触发源。
+    """
+    svc, _repo = await _build_service(content_written=True)
 
     with pytest.raises(ChapterAlreadyWrittenError):
         await svc.prepare_run(_PLAN_ID)
