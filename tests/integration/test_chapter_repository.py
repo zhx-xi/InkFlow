@@ -89,7 +89,7 @@ class TestChapterRepository:
         result = await repo.add_volume(vol)
         assert result.title == "第一卷"
 
-        fetched = await repo.get_volume(result.id.int)
+        fetched = await repo.get_volume(result.id)
         assert fetched is not None
         assert fetched.title == "第一卷"
 
@@ -141,7 +141,7 @@ class TestChapterRepository:
             )
         )
 
-        volumes = await repo.list_volumes(sample_project.id)
+        volumes = await repo.list_volumes(uuid.UUID(int=sample_project.id))
         assert len(volumes) == 2
         assert volumes[0].title == "B"
 
@@ -182,7 +182,7 @@ class TestChapterRepository:
             )
         )
 
-        moved = await repo.move_chapter(ch.id.int, v2.id.int)
+        moved = await repo.move_chapter(ch.id, v2.id)
         assert moved is not None
         assert moved.volume_id == v2.id
 
@@ -242,10 +242,10 @@ class TestChapterRepository:
             )
         )
 
-        ok = await repo.delete_volume(vol.id.int)
+        ok = await repo.delete_volume(vol.id)
         assert ok is True
 
-        ch_after = await repo.get_chapter(ch.id.int)
+        ch_after = await repo.get_chapter(ch.id)
         assert ch_after is not None
         assert ch_after.volume_id is None
 
@@ -278,5 +278,5 @@ class TestChapterRepository:
             )
         )
 
-        total = await repo.get_project_word_count(sample_project.id)
+        total = await repo.get_project_word_count(uuid.UUID(int=sample_project.id))
         assert total == 4  # 2 CJK + 2 EN

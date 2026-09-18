@@ -29,12 +29,14 @@ from inkflow.infrastructure.database.repositories.project_repo import (
 async def test_normalize_all_titles_arabic(db_session, sample_project):
     """arabic 归一：'第三章 转折'→'第3章 转折'（chapters_replaced 1）、
     '第一百章 终'→'第100章 终'（outline 同步 1）；其余不动。"""
-    pid = sample_project.id
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
     svc = ChapterService(db_session)
     await svc.create_chapter(pid, "第1章 起点")
     await svc.create_chapter(pid, "第三章 转折")
     await svc.create_chapter(pid, "一叶落")
-    db_session.add(OutlineORM(project_id=pid, name="第一百章 终", level="chapter", volume_id=None))
+    db_session.add(
+        OutlineORM(project_id=pid.int, name="第一百章 终", level="chapter", volume_id=None)
+    )
     await db_session.commit()
 
     result = await svc.normalize_all_titles(pid, "arabic")
@@ -49,7 +51,7 @@ async def test_normalize_all_titles_arabic(db_session, sample_project):
 @pytest.mark.chapter
 async def test_normalize_all_titles_idempotent(db_session, sample_project):
     """同 fmt 第二次调用 → 两计数全 0（幂等）。"""
-    pid = sample_project.id
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
     svc = ChapterService(db_session)
     await svc.create_chapter(pid, "第三章 转折")
 
@@ -64,7 +66,7 @@ async def test_normalize_all_titles_idempotent(db_session, sample_project):
 @pytest.mark.chapter
 async def test_normalize_all_titles_persists_config(db_session, sample_project):
     """normalize 后 project.config.chapter_title_format == fmt（project_repo.update 持久化）。"""
-    pid = sample_project.id
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
     svc = ChapterService(db_session)
     await svc.create_chapter(pid, "第三章 转折")
 
@@ -80,7 +82,7 @@ async def test_normalize_all_titles_persists_config(db_session, sample_project):
 @pytest.mark.chapter
 async def test_normalize_all_titles_chinese(db_session, sample_project):
     """chinese 归一：'第1章 起点'→'第一章 起点'（计数 1）。"""
-    pid = sample_project.id
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
     svc = ChapterService(db_session)
     await svc.create_chapter(pid, "第1章 起点")
     await svc.create_chapter(pid, "第三章 转折")
@@ -118,9 +120,13 @@ async def test_normalize_all_titles_project_missing_returns_none(db_session):
 @pytest.mark.chapter
 async def test_normalize_all_titles_skips_non_chapter_and_unchanged(db_session, sample_project):
     """契约 §4：level≠chapter 大纲不参与归一；归一后不变的章级大纲不计数。"""
-    pid = sample_project.id
-    db_session.add(OutlineORM(project_id=pid, name="第1卷 风起", level="volume", volume_id=None))
-    db_session.add(OutlineORM(project_id=pid, name="第一章 已中", level="chapter", volume_id=None))
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
+    db_session.add(
+        OutlineORM(project_id=pid.int, name="第1卷 风起", level="volume", volume_id=None)
+    )
+    db_session.add(
+        OutlineORM(project_id=pid.int, name="第一章 已中", level="chapter", volume_id=None)
+    )
     await db_session.commit()
 
     svc = ChapterService(db_session)
@@ -137,9 +143,9 @@ async def test_normalize_all_titles_skips_non_chapter_and_unchanged(db_session, 
 @pytest.mark.chapter
 async def test_normalize_all_titles_dup_name_skipped(db_session, sample_project):
     """契约 §4：章纲归一后撞 uq_outlines_active_name 重名 → 跳过不计数不抛。"""
-    pid = sample_project.id
-    db_session.add(OutlineORM(project_id=pid, name="第1章 a", level="chapter", volume_id=None))
-    db_session.add(OutlineORM(project_id=pid, name="第一章 a", level="chapter", volume_id=None))
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
+    db_session.add(OutlineORM(project_id=pid.int, name="第1章 a", level="chapter", volume_id=None))
+    db_session.add(OutlineORM(project_id=pid.int, name="第一章 a", level="chapter", volume_id=None))
     await db_session.commit()
 
     svc = ChapterService(db_session)
@@ -151,13 +157,13 @@ async def test_normalize_all_titles_dup_name_skipped(db_session, sample_project)
 @pytest.mark.chapter
 async def test_normalize_all_titles_paginates_all_chapters(db_session, sample_project):
     """契约 §4：>50 章/大纲时分页循环取完（回边弧），全部归一计数正确。"""
-    pid = sample_project.id
+    pid = uuid.UUID(int=sample_project.id)  # #1291：入参为领域 UUID（fixture 直插 ORM）
     svc = ChapterService(db_session)
     for i in range(51, 106):  # 55 章阿拉伯序号 51..105 → chinese 全变化
         await svc.create_chapter(pid, f"第{i}章 t")
     for i in range(106, 161):  # 55 个章级大纲 106..160 → chinese 全变化
         db_session.add(
-            OutlineORM(project_id=pid, name=f"第{i}章 o", level="chapter", volume_id=None)
+            OutlineORM(project_id=pid.int, name=f"第{i}章 o", level="chapter", volume_id=None)
         )
     await db_session.commit()
 

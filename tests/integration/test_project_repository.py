@@ -4,6 +4,8 @@
 需 pytest marker: @pytest.mark.project
 """
 
+import uuid
+
 import pytest
 
 
@@ -25,7 +27,8 @@ class TestProjectRepository:
         await db_session.commit()
         await db_session.refresh(orm)
 
-        result = await repo.get(orm.id)
+        # #1291：repo.get 入参为领域 UUID；本用例直插 ORM，故按 UUID(int=orm.id) 回灌
+        result = await repo.get(uuid.UUID(int=orm.id))
         assert result is not None
         assert result.name == "测试小说"
 
@@ -100,7 +103,8 @@ class TestProjectRepository:
         await db_session.commit()
         await db_session.refresh(orm)
 
-        success = await repo.soft_delete(orm.id)
+        # #1291：入参为领域 UUID（本用例直插 ORM → UUID(int=orm.id) 回灌）
+        success = await repo.soft_delete(uuid.UUID(int=orm.id))
         assert success is True
-        result = await repo.get(orm.id)
+        result = await repo.get(uuid.UUID(int=orm.id))
         assert result is None
