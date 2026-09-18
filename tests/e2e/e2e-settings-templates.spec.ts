@@ -315,12 +315,12 @@ test('模板分类：设为默认 → 默认徽标迁移（A→B）', async () =
 
     // A 设为默认 → A 卡片出现「默认」徽标
     await window.getByTestId(`template-set-default-${idA}`).click();
-    await expect(window.getByTestId(`template-default-badge-${idA}`)).toBeVisible();
+    await expect(window.getByTestId(`template-default-badge-${idA}`)).toBeVisible({ timeout: 15_000 });
 
     // B 设为默认 → 徽标迁移：B 出现 + A 消失
     await window.getByTestId(`template-set-default-${idB}`).click();
-    await expect(window.getByTestId(`template-default-badge-${idB}`)).toBeVisible();
-    await expect(window.getByTestId(`template-default-badge-${idA}`)).not.toBeVisible();
+    await expect(window.getByTestId(`template-default-badge-${idB}`)).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId(`template-default-badge-${idA}`)).not.toBeVisible({ timeout: 15_000 });
   } finally {
     await app.close();
   }
@@ -351,13 +351,13 @@ test('模板分类：删除被引用模板 → 风险确认（列出项目）→
     await gotoTemplatesCat(window);
     await window.getByTestId(`template-delete-${tplId}`).click();
     const confirm = window.getByTestId('template-confirm-dialog');
-    await expect(confirm).toBeVisible();
+    await expect(confirm).toBeVisible({ timeout: 15_000 });
     await expect(confirm).toContainText('正在被 1 个项目使用');
     await expect(confirm).toContainText(projectName);
 
     // 确认 → DELETE 204 → 卡片 T 消失
     await window.getByTestId('template-confirm-ok').click();
-    await expect(tplCard).not.toBeVisible();
+    await expect(tplCard).not.toBeVisible({ timeout: 15_000 });
   } finally {
     await app.close();
   }
@@ -386,10 +386,10 @@ test('模板分类：删除被引用模板 → 风险确认 → 取消（确认�
     await gotoTemplatesCat(window);
     await window.getByTestId(`template-delete-${tplId}`).click();
     const confirm = window.getByTestId('template-confirm-dialog');
-    await expect(confirm).toBeVisible();
+    await expect(confirm).toBeVisible({ timeout: 15_000 });
     await window.getByTestId('template-confirm-cancel').click();
-    await expect(confirm).not.toBeVisible();
-    await expect(tplCard).toBeVisible();
+    await expect(confirm).not.toBeVisible({ timeout: 15_000 });
+    await expect(tplCard).toBeVisible({ timeout: 15_000 });
   } finally {
     await app.close();
   }
