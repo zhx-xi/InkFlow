@@ -65,6 +65,17 @@
 | `tests/cli/test_cli_agent_tools.py` | 51- | `TOOL_NAMES` 39 名清单 + 固定序 | `TOOL_REGISTRY` |
 | `tests/cli/test_cli_agent_tools.py` | 112,125 | `[item['name'] ...] == TOOL_NAMES` / `len(items) == 39` | `TOOL_REGISTRY` |
 
+### e2e-frontend-writing job（由 `contract` filter 触发，2026-09-18 #1280 起）
+
+| 契约源 | 锁定符号 | 硬编码断言 |
+|--------|----------|-----------|
+| `backend/src/inkflow/api/deps_chapter_audit.py` | 审计 LLM 装配（`resolve_credentials`） | `tests/e2e/e2e-audit.spec.ts:139/:186` 断言审计弹层出**报告**（200 + degraded）而非 `audit.errorTitle` 错误态；断言 `:160` 报告含章名 |
+| `backend/src/inkflow/api/_llm_resolver.py` | `resolve_llm_credentials` / `_EMPTY_MODEL_DETAIL` | 同上（同一条装配链：无模型 → 降级，不得 422，spec §3.3/§5.3） |
+
+> 背景（#1280）：纯后端改动改坏了审计装配（无模型 → 装配期 422），但该 job 仅由
+> `frontend`/`e2e`/`ci` 触发 → skip → 断裂静默入 main（同 #972 形态）。
+> 单元侧另有恒跑守卫 `unit-backend`（`test_chapter_audit_no_model_degrade_1280.py`）。
+
 ## 写作链契约源联保（#1184a）
 
 写作链的 prompt 契约源（章 brief 变量 / writer system prompt / 上下文注入渲染）长期**不在**本清单，
