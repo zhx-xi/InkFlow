@@ -26,6 +26,7 @@ from inkflow.domain.models.chapter import (
     ChapterStatus,
     ChapterUpdate,
     normalize_chapter_content,
+    strip_first_line_title_echo,
 )
 from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.domain.services._word_count import count_words
@@ -167,6 +168,22 @@ class DraftService:
         )
         return result
 
+    async def _resolve_chapter_title(self, chapter_id: uuid.UUID | None) -> str:
+        """取目标章节的 title（#1261 收口剥离回声行的判据基准）.
+
+        弱依赖：chapter_service 未注入/无 get_chapter/查询失败 → 返回空串
+        （调用方 :func:`strip_first_line_title_echo` 对空 title 原样返回，
+        即退回修复前行为，不影响确认流主链路）。
+        """
+        getter = getattr(self._chapter_service, "get_chapter", None)
+        if chapter_id is None or getter is None:
+            return ""
+        try:
+            chapter = await getter(chapter_id)
+        except Exception:  # 弱依赖：章节查询失败不得阻断收口
+            return ""
+        return str(getattr(chapter, "title", "") or "")
+
     async def confirm(
         self,
         draft_id: str,
@@ -240,9 +257,15 @@ class DraftService:
                 draft_id, target
             )
         if self._chapter_service is not None:
+            # #1261：收口是唯一「知道首行是标题回声」的阶段 —— 草稿层归一以
+            # title="" 执行（draft_service.py:118），无从识别标题，首行已被加上
+            # 缩进成为 `　　第1章 …`。此处取**目标章节的真实 title** 定向剥离该
+            # 回声行，再交 update_chapter 的通用归一路径处理正文（顺序：剥离 → 缩进）。
+            echo_title = title or await self._resolve_chapter_title(target)
+            content = strip_first_line_title_echo(draft.content, echo_title or "")
             await self._chapter_service.update_chapter(  # type: ignore[attr-defined]  # 鸭子类型：chapter_service 按契约提供 update_chapter
                 target,
-                ChapterUpdate(content=draft.content, status=ChapterStatus.FINAL),
+                ChapterUpdate(content=content, status=ChapterStatus.FINAL),
             )
         confirmed: Draft | None = await self._repo.update_status(  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 update_status
             draft_id,

@@ -335,6 +335,59 @@ def normalize_chapter_content(content: str, title: str) -> str:
     return normalized if normalized.strip() else ""
 
 
+def _is_title_echo_line(line: str, title: str) -> bool:
+    """行是否为「标题回声」——**带缩进**且与 title 等价的页面顶部标题行（#1261）.
+
+    与 :func:`_is_duplicate_title_line` 的分工（两者刻意分离，不可合并）：
+
+    ========================================  ==================  ================
+    判据                                       适用阶段            对缩进行
+    ========================================  ==================  ================
+    :func:`_is_duplicate_title_line`           通用归一/守卫       False（正文段落）
+    :func:`_is_title_echo_line`（本函数）      **收口阶段**        True（待剥离标题）
+    ========================================  ==================  ================
+
+    #1112 铁律（顶格铁律）保护「已带缩进的 title 等价行」不被通用归一删除 ——
+    因为编辑器/GUI 手写的正文首段可能恰好与章名同文，那是**合法正文**。
+    但 #1261 暴露了同构串的另一种来源：草稿层以 ``title=""`` 归一
+    （``draft_service.py:118``）给首行加缩进，收口时首行已成 ``　　第1章 …``
+    形态，通用归一的顶格铁律认不出它 ⇒ 标题被永久藏进段落。
+
+    两种来源**逐字节同构**，故判据只能落在**流水线阶段**而非内容：确认收口是
+    唯一「知道首行是标题回声」的阶段（草稿层当时无 title 可用），因此本函数
+    只在收口调用，不得进入通用归一/守卫路径（否则推翻 #1112）。
+    """
+    return bool(_LEADING_WHITESPACE_RE.match(line)) and _is_title_equivalent(line, title)
+
+
+def strip_first_line_title_echo(content: str, title: str) -> str:
+    """收口阶段：剥离首行「标题回声」（缩进 + 与 title 等价）及其后空行（#1261）.
+
+    仅处理**首行**（含前导空行框，取规范化首行）；正文中部与 title 同文的段落
+    一律保留。无匹配时逐字节返回原值（幂等）。
+
+    Args:
+        content: 草稿正文（可能首行为草稿层归一留下的 ``　　第1章 …``）。
+        title: 章节目录标题（真实 title，非空才可能匹配）。
+
+    Returns:
+        剥离标题回声后的正文；无匹配时原样返回。
+    """
+    if not content or not title:
+        return content
+    lines = content.split("\n")
+    head = 0
+    while head < len(lines) and not lines[head].strip():
+        head += 1
+    if head >= len(lines) or not _is_title_echo_line(lines[head], title):
+        return content
+    rest = lines[head + 1 :]
+    start = 0
+    while start < len(rest) and not rest[start].strip():
+        start += 1
+    return "\n".join(rest[start:])
+
+
 class ChapterStatus(StrEnum):
     """章节写作状态：草稿 → 写作中 → 审阅中 → 定稿."""
 
