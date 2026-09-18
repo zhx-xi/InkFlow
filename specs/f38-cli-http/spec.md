@@ -170,19 +170,19 @@ CLI 改造后消费的既有端点（**全部既有，零新增**；路径前缀
 
 | CLI 命令组 | 消费端点（方法 + 路径） | 归属模块 |
 |-----------|------------------------|----------|
-| `project` | POST /projects · GET /projects · GET/PATCH/DELETE /projects/{id} · POST /projects/{id}/restore | F1 |
+| `project` | POST /projects · GET /projects · GET/PATCH/DELETE /projects/{id} · POST /projects/{id}/restore（**保留**——F1 回收站属 #211 明文豁免域） | F1 |
 | `chapter` | POST /projects/{pid}/volumes · GET/PATCH/DELETE /volumes/{vid} · POST /projects/{pid}/chapters · GET /projects/{pid}/chapters · GET/PATCH/DELETE /chapters/{cid} · POST /chapters/{cid}/move | F2 |
-| `character` | POST/GET /projects/{pid}/characters · GET/PATCH/DELETE /characters/{id} · POST /characters/{id}/restore · relations 三端点 · character-groups 五端点 · POST /characters/extract | F9/F14 |
-| `world` | POST/GET /projects/{pid}/world-settings · GET /projects/{pid}/world-settings/categories · GET/PATCH/DELETE /world-settings/{id} · POST /world-settings/{id}/restore · POST /world-settings/extract | F10/f35-f37 |
-| `outline` | POST/GET /projects/{pid}/outlines · GET/PATCH/DELETE /outlines/{id} · POST /outlines/{id}/restore · plot-points 五端点 · story-arcs 五端点 · POST /outlines/generate | F11 |
-| `timeline` | POST/GET /projects/{pid}/timeline/events · GET /projects/{pid}/timeline · GET /projects/{pid}/timeline/check · GET/PATCH/DELETE /timeline/events/{id} · POST /timeline/events/{id}/restore | F12 |
-| `foreshadowing` | POST/GET /projects/{pid}/foreshadowings · GET/PATCH/DELETE /foreshadowings/{id} · POST /foreshadowings/{id}/restore/resolve/reopen | F13 |
+| `character` | POST/GET /projects/{pid}/characters · GET/PATCH/DELETE /characters/{id} · relations 三端点 · character-groups 五端点 · POST /characters/extract（**v1.1/#211 移除 POST /characters/{id}/restore**） | F9/F14 |
+| `world` | POST/GET /projects/{pid}/world-settings · GET /projects/{pid}/world-settings/categories · GET/PATCH/DELETE /world-settings/{id} · POST /world-settings/extract（**v1.1/#211 移除 POST /world-settings/{id}/restore**） | F10/f35-f37 |
+| `outline` | POST/GET /projects/{pid}/outlines · GET/PATCH/DELETE /outlines/{id} · plot-points 五端点 · story-arcs 五端点 · POST /outlines/generate（**v1.1/#211 移除 POST /outlines/{id}/restore**） | F11 |
+| `timeline` | POST/GET /projects/{pid}/timeline/events · GET /projects/{pid}/timeline · GET /projects/{pid}/timeline/check · GET/PATCH/DELETE /timeline/events/{id}（**v1.1/#211 移除 POST /timeline/events/{id}/restore**） | F12 |
+| `foreshadowing` | POST/GET /projects/{pid}/foreshadowings · GET/PATCH/DELETE /foreshadowings/{id} · POST /foreshadowings/{id}/resolve|reopen（**v1.1/#211 移除 restore**） | F13 |
 | `extract` | POST /extract · GET /projects/{pid}/extractions/runs · POST /projects/{pid}/vector/reindex · POST /projects/{pid}/vector/retrieve | F14 |
 | `audit` | GET /projects/{pid}/audit | F15 |
 | `style` | POST /projects/{pid}/style/analyze | F16 |
 | `vector` | POST /projects/{pid}/vector/retrieve · POST /projects/{pid}/vector/reindex | F14 |
 | `agent` | POST /pipelines/execute · POST /pipelines/validate · GET /pipelines/executions · GET /pipelines/executions/{id} | F4/F26 |
-| `session` | POST/GET /sessions · GET/PATCH /sessions/{id} · POST /sessions/{id}/pause|resume|complete|fail · POST/GET /sessions/{id}/logs · DELETE /sessions/{id} · POST /sessions/{id}/restore | F24 |
+| `session` | POST/GET /sessions · GET/PATCH /sessions/{id} · POST /sessions/{id}/pause|resume|complete|fail · POST/GET /sessions/{id}/logs · DELETE /sessions/{id} · POST /sessions/{id}/restore（**保留**——F24 归档属 #211 明文豁免域） | F24 |
 | `write` | POST /writing/stream（SSE，默认流式，§5.4）· POST /writing/generate|continue|revise（非流式兜底） | F3/F23 |
 
 ### 3.2 请求/响应示例（project create）

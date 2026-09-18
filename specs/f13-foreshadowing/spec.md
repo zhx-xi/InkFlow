@@ -4,7 +4,8 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.2 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
+> **Spec 变更**: v1.2 — 删除语义统一（issue #211，「普通实体软删→真删」）**文档同步补齐**：Foreshadowing 移除 `is_deleted` 字段（§2.1）；DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /foreshadowings/{id}/restore` 端点与 `foreshadowing restore` 命令移除（§3/§4/§14）；§2.4 状态机的 `deleted` 态与 `restore` 迁移一并移除（两态 + 专用动作端点）；§2.3 partial unique → 全唯一索引。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后，2026-09-18 补齐（原变更日期 2026-08-13）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C：伏笔绑定 F12 时间线事件（event_id 锚点）；移除独立 narrative_position；F12 升级为硬依赖（须先合入 main）；详见 §2.2/§11/§12
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第五个模块，估算 2-3 人天）
 > **关联 Issues**: [#43](https://github.com/zhx-xi/InkFlow/issues/43)
@@ -22,7 +23,7 @@
 
 ## 1. 概述
 
-管理小说的**伏笔档案**（创建/查询/更新/软删除），跟踪每条伏笔的**生命周期状态**（open 已埋设未回收 → resolved 已回收），并作为 **F6 上下文注入的真实数据源**：写作时把「未回收伏笔」按优先级注入写作 Prompt，提醒作者不要忘记兑现埋下的伏笔（验收标准 2「写作时注入伏笔提示」）。
+管理小说的**伏笔档案**（创建/查询/更新/真删），跟踪每条伏笔的**生命周期状态**（open 已埋设未回收 → resolved 已回收），并作为 **F6 上下文注入的真实数据源**：写作时把「未回收伏笔」按优先级注入写作 Prompt，提醒作者不要忘记兑现埋下的伏笔（验收标准 2「写作时注入伏笔提示」）。
 
 **核心价值**: 作者与 AI Agent 可以维护「埋了什么伏笔、是否已回收」的结构化档案；写作时 F3/F6 组装上下文自动注入未解决伏笔提醒，避免「埋了不回收」的长篇一致性硬伤；为 F15 审计（伏笔维度一致性）、F16 一致性审计提供数据基础。
 
@@ -56,7 +57,7 @@ F13  追踪:    伏笔档案(状态机) ──确定性追踪──▶ 状态流
 |------|------|------|------|
 | id | UUID | PK | 领域层 UUID，DB int 自增映射 |
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
-| title | str | NOT NULL, 1-100 字符, 去空白 | 伏笔名（如「林晚的身世」「铜镜的秘密」）；**项目内活动伏笔唯一**（partial unique，见 §2.3） |
+| title | str | NOT NULL, 1-100 字符, 去空白 | 伏笔名（如「林晚的身世」「铜镜的秘密」）；**项目内唯一**（全唯一索引，见 §2.3） |
 | description | str | NOT NULL, DEFAULT "", ≤ 5000 字符 | 伏笔详情（埋设内容、预期回收方式） |
 | priority | int | NOT NULL, DEFAULT 50, 0-100, 已索引 | **注入优先级**（大者先注入；F6 dynamic 层排序契约的键，见 §5.4/§6.2） |
 | status | str | NOT NULL, DEFAULT "open", 已索引 | 伏笔状态（`open` / `resolved`，见 §2.4 状态机） |
@@ -64,20 +65,20 @@ F13  追踪:    伏笔档案(状态机) ──确定性追踪──▶ 状态流
 | event_id | UUID? | NULLABLE, FK→timeline_events.id (ON DELETE SET NULL), 已索引 | **时间线事件锚点**（F12 事件，埋设落点；事件自带 time_value/narrative_position，伏笔的叙事位置从事件获取——移除独立 narrative_position 字段避免双份真相，见 §2.2）；None = 未挂接 |
 | resolved_at | datetime? | NULLABLE, 已索引 | 回收时间 (UTC)；status=resolved 时由服务层自动设置，reopen 时清空 |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（标签、关联角色名等 Phase 2+ 字段预留） |
-| is_deleted | bool | NOT NULL, DEFAULT False, 已索引 | 软删除标记 |
+| ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False, 已索引~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
 **业务规则**:
-- `title` 项目内**活动伏笔唯一** = 「同名 = 同一伏笔」——伏笔是**档案**而非实例（见 §2.3 论证）；防止手误重复建档
+- `title` 项目内**唯一** = 「同名 = 同一伏笔」——伏笔是**档案**而非实例（见 §2.3 论证）；防止手误重复建档
 - `status` **不允许通过 PATCH 直接修改**：状态迁移走专用动作端点（`resolve` / `reopen`，见 §3/§2.4），保证迁移规则单一入口、可校验
 - `priority` 是作者维护的**自由整数**（0-100），建议值仅提示不校验（受控词表归 F14，同 F9 relation_type / F10 category 处理）
 - `resolved_at` 只由状态迁移维护（resolve 设置 / reopen 清空），**不接受外部写入**
-- 软删除的伏笔**不进入**注入集合与列表（默认过滤）
+- **删除 = 物理删除（v1.1 / #211）**：删除后伏笔不存在，自然不进入注入集合与列表；无软删/恢复语义
 - 回收说明（在哪回收、如何兑现）MVP 写进 `description` 更新或 `extra`，不设独立字段（见待澄清 Q3）
-- `event_id` 非 None 时（创建/更新）：事件必须**存在且属于同一项目**——经 F12 `TimelineRepositoryProtocol.get` 校验（F12 语义：get **不含软删事件**，故软删事件不可挂接 → 422「事件不存在」）；`event.project_id != 伏笔.project_id` → 422「事件不属于该项目」（§3.4）
+- `event_id` 非 None 时（创建/更新）：事件必须**存在且属于同一项目**——经 F12 `TimelineRepositoryProtocol.get` 校验（F12 语义：get 返回已存在的事件，F12 亦已真删，故已删除事件不可挂接 → 422「事件不存在」）；`event.project_id != 伏笔.project_id` → 422「事件不属于该项目」（§3.4）
 - `event_id` **不唯一**：一个事件可挂多条伏笔（无 unique 约束，仅索引）
-- 事件**软删**（F12 语义：记录保留、不进入视图）**不影响**已挂接伏笔的 `event_id`：锚点保留，注入 metadata 原样携带（§5.3）；事件**硬删**（force）→ FK ON DELETE SET NULL 自动置 None（挂接解除，论证见 §12）
+- 事件删除（F12 v1.1 真删）→ FK ON DELETE SET NULL 自动置 None（挂接解除，论证见 §12）
 
 ### 2.2 埋设/回收位置表达（决策：自由文本 location + event_id 事件锚点）
 
@@ -85,14 +86,16 @@ F13  追踪:    伏笔档案(状态机) ──确定性追踪──▶ 状态流
 
 | 备选方案 | 优点 | 缺点 | 结论 |
 |----------|------|------|------|
-| **自由文本 location + event_id 事件锚点（选定）** | 伏笔落点与 F12 时间线联动（叙事位置/世界内时间从事件获取，单一真相）；location 保留作者自由描述（不挂事件时仍可写「第 3 章」）；事件软删不影响锚点（§2.1） | F12 为硬依赖（须先合入 main，§11）；挂接需事件存在性 + 同项目校验（复用 F12 `TimelineRepositoryProtocol.get`，F13 仓储无新增方法，§8.1） | ✅ MVP（用户拍板 Q1=选项 C） |
+| **自由文本 location + event_id 事件锚点（选定）** | 伏笔落点与 F12 时间线联动（叙事位置/世界内时间从事件获取，单一真相）；location 保留作者自由描述（不挂事件时仍可写「第 3 章」）；事件删除 → FK SET NULL 解除挂接（§2.1） | F12 为硬依赖（须先合入 main，§11）；挂接需事件存在性 + 同项目校验（复用 F12 `TimelineRepositoryProtocol.get`，F13 仓储无新增方法，§8.1） | ✅ MVP（用户拍板 Q1=选项 C） |
 | 自由文本 location + 独立 narrative_position（v1.0 设计） | 零跨模块依赖；narrative_position 提供可排序锚点 | **双份真相**：F12 事件已带 narrative_position，独立字段与之漂移（改事件叙事位置 ≠ 伏笔侧）；v1.0 时「F12 未合入 main」是临时约束，现已解除 | ❌ 移除（冗余字段，YAGNI；叙事位置统一从事件获取） |
 | 绑定 F2 章节（chapter_id FK） | 位置精确到章，可「按当前章节过滤未回收伏笔」 | 需 F2 跨模块硬依赖与章节存在性校验；章节重排/删除时锚点失效需级联处理 | ❌ 否决（F11/F12 边界声明先例：规划层与章节层互不绑定；按章节过滤注入归 Phase 2+，见待澄清 Q3） |
 
-### 2.3 唯一约束（partial unique index，SQLite）
+### 2.3 唯一约束（全唯一索引，SQLite）
+
+> **v1.1（#211）变更**：partial unique（`WHERE is_deleted = 0`）→ **全唯一索引**。下方代码块为 v1.0 时代形态，作为历史快照保留。
 
 ```python
-# ORM __table_args__（SQLAlchemy 2.0 + SQLite partial index）
+# ORM __table_args__（SQLAlchemy 2.0 + SQLite partial index）—— v1.0 历史快照
 __table_args__ = (
     Index(
         "uq_foreshadowings_active_title",
@@ -103,7 +106,7 @@ __table_args__ = (
 )
 ```
 
-**为什么是 partial index**: 「同名 = 同一伏笔」——伏笔是**档案**（一条伏笔一个生命周期：埋设 → 追踪 → 回收），「林晚的身世」只应有一条档案，同名重复建档是手误或重复提取；而**软删除后再创建同名伏笔**是合法操作（旧档案已废弃，作者重新埋同一条线），partial index 恰好两者兼得（已删除行不参与唯一性）。服务层再做一次同名检查以给出友好 422 文案。
+**为什么改用全唯一索引（v1.1 / #211）**: 「同名 = 同一伏笔」——伏笔是**档案**（一条伏笔一个生命周期：埋设 → 追踪 → 回收），「林晚的身世」只应有一条档案，同名重复建档是手误或重复提取；`is_deleted` 列移除后不存在「已删行」需排除，partial 过滤失去对象；删除后再创建同名伏笔仍合法（旧行已物理删除，不占唯一性）。服务层仍做一次同名检查以给出友好 422 文案。
 
 **与 F12 的对比论证**（F12 无唯一约束、F13 有唯一约束，两者不矛盾）:
 
@@ -111,7 +114,7 @@ __table_args__ = (
 |------|----------------------|-----------------|
 | 语义 | 事件是**实例**：多个「回忆」「战斗」事件合法存在，「同名 = 同一事件」不成立 | 伏笔是**档案**：「同名 = 同一伏笔」，一条伏笔一个生命周期 |
 | 业务后果 | 同刻/同题事件各自独立、互不影响 | 同名重复建档 = 双份状态真相（一条 open 一条 resolved 时无法判断） |
-| 唯一约束 | 不设（title/narrative_position/time_value 均可重复） | 设 partial unique `(project_id, title WHERE is_deleted=0)` |
+| 唯一约束 | 不设（title/narrative_position/time_value 均可重复） | 设全唯一索引 `(project_id, title)`（v1.1） |
 
 > F13 因此**有同名冲突检查**（422），错误面比 F12 多一类（见 §3.4 异常映射表）。
 
@@ -127,9 +130,7 @@ __table_args__ = (
    │   open   │                                  │ open   │（同一条线）
    └──────────┘                                  └────────┘
         │
-        └── DELETE（软删除）──▶ deleted（任意状态可删；不注入、列表不可见）
-                                   │
-                                   └── restore ──▶ 恢复为原状态（open/resolved 保留）
+        └── DELETE（v1.1 真删）──▶ 物理删除（任意状态可删；档案不复存在，不可恢复）
 ```
 
 | 迁移 | 动作 | 前置状态 | 后置状态 | 副作用 |
@@ -137,14 +138,13 @@ __table_args__ = (
 | 埋设 | 创建（POST） | — | open | 默认状态；priority 默认 50 |
 | 回收 | `resolve` | open | resolved | 自动设置 `resolved_at = now(UTC)` |
 | 重新开启 | `reopen` | resolved | open | 自动清空 `resolved_at` |
-| 废弃 | DELETE（软删除） | open / resolved | deleted | 不注入、列表不可见；restore 可恢复 |
-| 恢复 | `restore` | deleted | 原状态 | open/resolved 状态与 resolved_at 原样保留 |
+| 删除 | DELETE（**v1.1 真删**） | open / resolved | —（档案物理删除） | 不可恢复；删除后重新埋同题材 = 另建新档案 |
+| ~~恢复~~ | ~~`restore`~~ | — | — | **（v1.1 移除）** 真删语义下无恢复场景，端点/命令已移除 |
 
 **状态机规则**:
-- **MVP 不设 dropped 状态**（架构师候选方案，论证见 §12 决策表）：「废弃伏笔」与「软删除」在注入/追踪语义上完全等价（都不注入、档案保留、可恢复），软删除 + 同名重建已覆盖「作废后重埋同题材」场景；独立 dropped 态需要额外迁移端点与测试面，收益不成比例（P5 YAGNI）。若 F15 审计需要区分「废弃」与「删除」的变更记录，Phase 2+ 再加第三态
-- `resolve` 已 resolved 的伏笔 → **幂等成功**（重复操作无毒，同 F12 restore 未删除的语义）
+- **MVP 不设 dropped 状态**（架构师候选方案，论证见 §12 决策表）：v1.1 真删语义下「废弃伏笔」等价于「删除后重埋新档案」（都不注入、不再追踪）；独立 dropped 态需要额外迁移端点与测试面，收益不成比例（P5 YAGNI）。若 F15 审计需要区分「废弃」与「删除」的变更记录，Phase 2+ 再加第三态
+- `resolve` 已 resolved 的伏笔 → **幂等成功**（重复操作无毒，同 F12 resolve 语义）
 - `reopen` 已 open 的伏笔 → 幂等成功
-- 软删除（deleted）的伏笔执行 resolve/reopen → 404「伏笔不存在」（已排除）
 - 状态迁移**不记录历史轨迹**（无状态变更日志表）；变更审计归 F15（§10）
 
 ### 2.5 领域模型（Pydantic v2 语法，参照 F12 `domain/models/timeline.py`）
@@ -211,7 +211,6 @@ class Foreshadowing(BaseModel):
     event_id: uuid.UUID | None = None        # F12 时间线事件锚点（None = 未挂接；叙事位置从事件获取）
     resolved_at: datetime | None = None      # 回收时间（仅状态迁移维护）
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -306,12 +305,12 @@ class ForeshadowingUpdate(BaseModel):
 | GET | `/api/v1/projects/{project_id}/foreshadowings` | 伏笔列表 | Query: `?search=&status=&sort_by=&sort_desc=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | GET | `/api/v1/foreshadowings/{foreshadowing_id}` | 伏笔详情 | — | 200 + Foreshadowing JSON |
 | PATCH | `/api/v1/foreshadowings/{foreshadowing_id}` | 更新伏笔（不含 status） | `ForeshadowingUpdate` | 200 + Foreshadowing |
-| DELETE | `/api/v1/foreshadowings/{foreshadowing_id}` | 删除伏笔 | Query: `?force=true` | 204（默认软删除） |
-| POST | `/api/v1/foreshadowings/{foreshadowing_id}/restore` | 恢复伏笔 | — | 200 + Foreshadowing |
+| DELETE | `/api/v1/foreshadowings/{foreshadowing_id}` | 删除伏笔（**v1.1 真删**） | — | 204 |
+| ~~POST~~ | ~~`/api/v1/foreshadowings/{foreshadowing_id}/restore`~~ | **（v1.1 移除）** 端点已不存在 | — | — |
 | POST | `/api/v1/foreshadowings/{foreshadowing_id}/resolve` | 标记回收（open→resolved） | — | 200 + Foreshadowing |
 | POST | `/api/v1/foreshadowings/{foreshadowing_id}/reopen` | 重新开启（resolved→open） | — | 200 + Foreshadowing |
 
-> `/foreshadowings` 下全部为**静态路径段 + 固定动作段**（`restore`/`resolve`/`reopen` 无 `{foreshadowing_id}` 动态段冲突），无需注册顺序注意（同 F12 §3.1 说明；F10 的 extract 路径歧义处理在此不适用）。
+> `/foreshadowings` 下全部为**静态路径段 + 固定动作段**（`resolve`/`reopen` 无 `{foreshadowing_id}` 动态段冲突），无需注册顺序注意（同 F12 §3.1 说明；F10 的 extract 路径歧义处理在此不适用）。【v1.1 移除 `restore` 动作段】
 
 ### 3.2 请求/响应示例 — 伏笔 CRUD
 
@@ -335,7 +334,7 @@ Content-Type: application/json
   "description": "林晚右肩的胎记与女主母亲的信物相同；预期第 30 章前后揭露。",
   "priority": 80, "status": "open",
   "location": "第 5 章·林晚沐浴场景", "event_id": "7a4f2c91-...",
-  "resolved_at": null, "extra": {}, "is_deleted": false,
+  "resolved_at": null, "extra": {},
   "created_at": "2026-08-01T10:00:00Z", "updated_at": "2026-08-01T10:00:00Z"
 }
 ```
@@ -355,7 +354,7 @@ POST /api/v1/projects/3f2e1d4a-.../foreshadowings
 POST /api/v1/projects/3f2e1d4a-.../foreshadowings
 { "title": "铜镜的秘密", "event_id": "11111111-1111-1111-1111-111111111111" }
 ```
-→ 422 `{"detail": "事件不存在"}`（含已软删事件——F12 get 不含软删，§2.1）
+→ 422 `{"detail": "事件不存在"}`（F12 v1.1 亦真删，事件物理不存在即不可挂接，§2.1）
 
 **挂接其他项目的事件**:
 ```http
@@ -406,12 +405,11 @@ PATCH /api/v1/foreshadowings/9b1c2d3e-...
 ```
 → 200（event_id 为 null；传非空字符串 → 422，见 §3.4）
 
-**软删除 / 恢复 / 硬删除**:
+**删除伏笔（v1.1 真删语义）**:
 ```http
-DELETE /api/v1/foreshadowings/9b1c2d3e-...            → 204（软删除）
-POST /api/v1/foreshadowings/9b1c2d3e-.../restore      → 200 + Foreshadowing
-DELETE /api/v1/foreshadowings/9b1c2d3e-...?force=true → 204（物理删除）
+DELETE /api/v1/foreshadowings/9b1c2d3e-...   → 204（物理删除，不可恢复）
 ```
+> **v1.1（#211）变更**：原 `DELETE` 默认软删 + `?force=true` 物理删双路径**收敛为真删单路径**；原 `POST /foreshadowings/{id}/restore` 端点**移除**。
 
 ### 3.3 请求/响应示例 — 状态机动作
 
@@ -440,7 +438,7 @@ POST /api/v1/foreshadowings/9b1c2d3e-.../reopen
 ```http
 POST /api/v1/foreshadowings/9b1c2d3e-.../resolve
 ```
-→ 200（重复操作无毒：状态不变，resolved_at 不更新——同 F12 restore 未删除的语义）
+→ 200（重复操作无毒：状态不变，resolved_at 不更新——同 F12 resolve 幂等语义）
 
 ### 3.4 错误响应格式（沿用 F1/F2/F9/F10/F11/F12/ADR-012）
 
@@ -468,7 +466,7 @@ POST /api/v1/foreshadowings/9b1c2d3e-.../resolve
 | 项目/伏笔不存在（Service 返回 None） | 404 | 见上 |
 | 无效 UUID 格式 | 404 | 统一解析失败处理（同 F9/F10/F11/F12 `_parse_id`） |
 | 同名活动伏笔 | 422 | 服务层业务校验（`ForeshadowingNameConflictError`，消息即 detail） |
-| event_id 指向不存在的事件（含已软删事件） | 422 | 服务层经 F12 `TimelineRepositoryProtocol.get` 校验（`EventNotFoundError`，消息「事件不存在」） |
+| event_id 指向不存在的事件 | 422 | 服务层经 F12 `TimelineRepositoryProtocol.get` 校验（`EventNotFoundError`，消息「事件不存在」） |
 | event_id 指向其他项目的事件 | 422 | 服务层校验 `event.project_id == 伏笔.project_id`（`EventNotInProjectError`，消息「事件不属于该项目」） |
 | Pydantic `ValidationError`（含 event_id 清除传非空字符串、event_id 非法 UUID 格式） | 422 | FastAPI 自动生成 |
 | DB 错误 | 500 | 全局处理器（loguru 记录，ADR-012/016） |
@@ -501,8 +499,8 @@ inkflow foreshadowing update --id <uuid> \
     [--location <str|"">] [--event-id <uuid|"">] [--json]
     # --location "" 表示清除埋设位置；--event-id "" 表示解除事件挂接（置为 None）
 
-inkflow foreshadowing delete --id <uuid> [--force] [--permanent] [--json]
-inkflow foreshadowing restore --id <uuid> [--json]
+inkflow foreshadowing delete --id <uuid> [--force] [--json]     # v1.1 真删（--permanent 已移除）
+# v1.1 移除: inkflow foreshadowing restore --id <uuid> [--json]
 
 inkflow foreshadowing resolve --id <uuid> [--json]    # 标记回收（open→resolved）
 inkflow foreshadowing reopen --id <uuid> [--json]     # 重新开启（resolved→open）
@@ -552,7 +550,7 @@ inkflow foreshadowing delete --id ... --json
  ② 状态机: open ──resolve──▶ resolved（自动记 resolved_at）；reopen 反向
  ③ F6 注入: 写作时 F3 调用 ContextService.build_context
     └─ ForeshadowingSource.collect(project_id, chapter_id)   ← 本模块实现（替换空实现）
-        ├─ 查询项目全部 status=open 且未软删除的伏笔（按 priority DESC）
+        ├─ 查询项目全部 status=open 的伏笔（按 priority DESC）
         ├─ 每条构造 ContextItem(source=FORESHADOWING, title=「伏笔：XXX」,
         │     content=提醒文本, priority=伏笔.priority, metadata={...})
         └─ 返回列表 → F6 dynamic 层按 priority 降序注入，超预算裁剪（dropped）
@@ -567,14 +565,14 @@ inkflow foreshadowing delete --id ... --json
 
 ### 5.2 状态机定义与迁移规则
 
-状态机（两态 + 软删除）已在 §2.4 定义，本节补充实现口径：
+状态机（两态 open/resolved，v1.1 真删）已在 §2.4 定义，本节补充实现口径：
 
 | 规则 | 说明 |
 |------|------|
-| 迁移来源 | 只有 3 个入口：创建（→open）、`resolve`（open→resolved）、`reopen`（resolved→open）；DELETE/restore 不改变 status 字段 |
+| 迁移来源 | 只有 3 个入口：创建（→open）、`resolve`（open→resolved）、`reopen`（resolved→open）；DELETE 不改变 status 字段（档案消失） |
 | resolve 实现 | 查询活动伏笔 → 不存在 → 404；status=open → 置 resolved + `resolved_at=now(UTC)`；已 resolved → 原样返回（幂等） |
 | reopen 实现 | 查询活动伏笔 → 不存在 → 404；status=resolved → 置 open + `resolved_at=None`；已 open → 原样返回（幂等） |
-| 软删除实现 | 任意状态可软删除；恢复后 status/resolved_at 原样保留 |
+| 删除实现 | **v1.1 真删**：任意状态可删除（物理删除，档案不存在）；无恢复语义 |
 | 并发 | 单用户本地工具，不处理并发状态竞争（同 F10/F12；DB 行级更新兜底） |
 
 ### 5.3 ForeshadowingSource 实现（替换 `infrastructure/context/sources.py` 空实现）
@@ -598,7 +596,7 @@ class ForeshadowingSource:
         """收集全部未回收伏笔的提醒条目.
 
         - 项目不存在/无 open 伏笔 → 空列表（跳过，不报错，同 F6 数据源惯例）
-        - 项目存在但所有伏笔已回收/已软删除 → 空列表（正常路径）
+        - 项目存在但所有伏笔已回收 → 空列表（正常路径）
         - chapter_id 参数 MVP 不使用（全量注入 open 伏笔，按章节过滤归 Phase 2+，见待澄清 Q3）
         """
         items = await self._repo.list_open(project_id.int)   # (priority DESC, updated_at DESC)
@@ -656,12 +654,12 @@ class ForeshadowingSource:
 
 | 约束 | 值 | 说明 |
 |------|-----|------|
-| 注入范围 | 项目内全部 **open 且未软删除** 伏笔 | resolved/deleted 不注入；无分页/过滤参数（YAGNI） |
+| 注入范围 | 项目内全部 **open** 伏笔 | resolved 不注入；无分页/过滤参数（YAGNI） |
 | 排序 | `(priority DESC, updated_at DESC)` | 与列表默认排序一致（§6.3）；priority 相等按 updated_at 兜底 |
 | 项目不存在 | 空列表 | 同 F6 数据源惯例（跳过不报错）；F6 组装层另有项目校验 |
 | 无伏笔/全部已回收 | 空列表 → 空注入 | 正常路径 |
 | chapter_id | 签名保留、MVP 不使用 | Protocol 契约兼容（F6 定义），过滤归 Phase 2+ |
-| event_id 锚点 | 仅透传 metadata，不校验/不查询事件 | 挂接校验发生在 Service 层（§2.1）；事件软删不影响注入（提醒文本只来自伏笔字段）；事件硬删 → FK SET NULL，event_id 变 null（§2.1/§12） |
+| event_id 锚点 | 仅透传 metadata，不校验/不查询事件 | 挂接校验发生在 Service 层（§2.1）；提醒文本只来自伏笔字段；事件真删 → FK SET NULL，event_id 变 null（§2.1/§12） |
 | 预算裁剪 | F6 dynamic 层处理 | 伏笔不阻塞写作（同摘要失败策略，F6 spec §4.6） |
 
 ### 5.6 状态追踪+注入 vs 提取/生成/一致性检查：差异对照表
@@ -688,9 +686,9 @@ class ForeshadowingSource:
 
 - **open（未回收）** = 已埋设、等待兑现：唯一进入 F6 注入集合的状态（§5.3）
 - **resolved（已回收）** = 故事中已兑现/已揭露：不注入，档案保留供作者回溯（「这本书埋了哪些伏笔、都回收了吗」）
-- 流转只走 §2.4 迁移表：创建→open；`resolve`→resolved；`reopen`→open；DELETE/restore 不改变 status
+- 流转只走 §2.4 迁移表：创建→open；`resolve`→resolved；`reopen`→open；DELETE 不改变 status
 - `resolved_at` 是状态迁移的**只读副产物**（resolve 设置 / reopen 清空），作者不可直接修改
-- 软删除的伏笔不进入任何列表与注入视图；恢复后原状态原样保留
+- 已删除的伏笔不进入任何列表与注入视图（物理不存在）
 
 ### 6.2 priority 语义
 
@@ -720,34 +718,32 @@ class ForeshadowingSource:
 |------|---------|
 | 创建伏笔名为空/全空白 | 422: "伏笔名不能为空" |
 | 创建伏笔名 > 100 字符 | 422: "伏笔名不能超过 100 个字符" |
-| 创建伏笔名与项目内**活动**伏笔重复 | 422: "同名伏笔已存在（伏笔名在项目内必须唯一）" |
-| 软删除后**再创建同名伏笔** | ✅ 成功（partial unique 排除已删除行；服务层同名检查仅限活动条目） |
+| 创建伏笔名与项目内伏笔重复 | 422: "同名伏笔已存在（伏笔名在项目内必须唯一）" |
+| 删除后**再创建同名伏笔** | ✅ 成功（全唯一索引 v1.1；旧行已物理删除，不占唯一性） |
 | description > 5000 字符 | 422: "伏笔描述不能超过 5000 个字符" |
 | priority 超出 0-100 | 422: "优先级必须在 0-100 之间" |
 | location > 200 字符 | 422: "埋设位置不能超过 200 个字符" |
-| 创建/更新 event_id 指向不存在的事件 | 422: "事件不存在"（含已软删事件——F12 get 不含软删，§2.1） |
+| 创建/更新 event_id 指向不存在的事件 | 422: "事件不存在"（F12 v1.1 真删，事件物理不存在即不可挂接，§2.1） |
 | 创建/更新 event_id 指向其他项目的事件 | 422: "事件不属于该项目" |
 | 创建伏笔时项目不存在 | 404: "项目不存在" |
-| 获取/更新/软删除/硬删除不存在的伏笔 | 404: "伏笔不存在" |
-| 硬删除已软删除的伏笔 | 404: "伏笔不存在"（已排除） |
-| 恢复不存在的伏笔 | 404: "伏笔不存在" |
-| 恢复未删除的伏笔 | 正常返回（重复操作无毒，同 F1） |
+| 获取/更新/删除不存在的伏笔 | 404: "伏笔不存在" |
+| 重复删除同一伏笔 | 404: "伏笔不存在"（不可恢复） |
+| 恢复不存在的伏笔 | **（v1.1 移除）** restore 端点/命令已不存在（真删语义无恢复场景） |
 | resolve 不存在的伏笔 | 404: "伏笔不存在" |
-| resolve 已软删除的伏笔 | 404: "伏笔不存在"（已排除，§2.4） |
+| resolve 不存在/已删除的伏笔 | 404: "伏笔不存在"（已排除，§2.4） |
 | resolve 已 resolved 的伏笔 | ✅ 幂等成功（状态不变，resolved_at 不更新） |
 | reopen 已 open 的伏笔 | ✅ 幂等成功（状态不变） |
 | 更新 event_id 传 ""（解除挂接） | ✅ 成功，置 None |
 | 更新 event_id 传非空字符串（如 "abc"） | 422（解除事件挂接只接受空字符串；Create/Update 传非法 UUID 格式 → Pydantic 422） |
-| 已挂接伏笔的事件被软删 | ✅ event_id 保留（锚点保留，§2.1）；注入 metadata 原样携带；resolve/reopen/更新不受影响 |
-| 已挂接伏笔的事件被硬删（force） | ✅ FK ON DELETE SET NULL 自动置 None（挂接解除，无 422；论证见 §12） |
+| 已挂接伏笔的事件被删除（v1.1 真删） | ✅ FK ON DELETE SET NULL 自动置 None（挂接解除，无 422；论证见 §12） |
 | 更新 location 传 ""（清除） | ✅ 成功，置 ""（未记录） |
 | 更新请求携带 status/resolved_at 字段 | 422（Pydantic 忽略未知字段 → 不生效；状态迁移走动作端点，§2.4） |
-| F6 注入：项目无伏笔 / 全部已回收 / 全部已软删除 | 空列表 → 空注入（正常路径，不报错） |
+| F6 注入：项目无伏笔 / 全部已回收 | 空列表 → 空注入（正常路径，不报错） |
 | F6 注入：dynamic 预算不足 | 伏笔条目被裁剪 + `DroppedItem(reason="over_budget")`，**不阻塞写作**（F6 行为） |
 | F6 注入：项目不存在 | collect 返回空列表（F6 数据源惯例；组装层另有项目校验） |
 | resolve 后立即写作 | 该伏笔不再出现于注入集合（无缓存，实时生效） |
 | 伏笔列表搜索无结果 / 分页越界 | 200: 空 items（同 F1） |
-| 项目硬删除 | 伏笔级联物理删除（FK CASCADE）；项目软删除不影响伏笔数据 |
+| 项目硬删除 | 伏笔级联物理删除（FK CASCADE） |
 | CLI 删除类命令无 `--force` | 二次确认；`--json` 下 → VALIDATION_ERROR（沿用 F7 §7） |
 | CLI 非法 `--status` 值（如 `--status pending`） | 退出码 2（用法错误，Typer Choice 校验） |
 
@@ -789,15 +785,15 @@ backend/src/inkflow/
 │       │   │                          (project_id, priority) / (project_id, event_id)；
 │       │   │                          event_id FK→timeline_events.id (ON DELETE SET NULL)
 │       │   │                          ——F12 表须已存在（硬依赖，§11）；
-│       │   │                          partial unique (project_id, title WHERE is_deleted=0)；
-│       │   │                          soft-delete 标记）
+│       │   │                          全唯一索引 (project_id, title)（v1.1）；
+│       │   │                          v1.1 真删语义无 soft-delete 标记）
 │       │   └── __init__.py       ← MODIFY: 注册 ForeshadowingORM（create_tables 依赖）
 │       └── repositories/
 │           ├── foreshadowing_repo.py ← CREATE: SQLiteForeshadowingRepository
 │           └── __init__.py       ← MODIFY
 ├── api/
 │   ├── routers/
-│   │   ├── foreshadowings.py     ← CREATE: 8 个端点（CRUD + restore + resolve + reopen）
+│   │   ├── foreshadowings.py     ← CREATE: 7 个端点（CRUD + resolve + reopen）
 │   │   └── __init__.py           ← MODIFY
 │   ├── deps.py                   ← MODIFY: get_foreshadowing_service 复用 F12 已实现的
 │   │                                 timeline_repository 获取路径（如 get_timeline_repository），
@@ -809,7 +805,7 @@ backend/src/inkflow/
 └── cli/
     ├── commands/
     │   ├── foreshadowing.py      ← CREATE: foreshadowing 组（create/list/get/update/delete/
-    │   │                              restore/resolve/reopen 8 命令）
+    │   │                              resolve/reopen 7 命令；【v1.1 移除 restore】）
     │   └── __init__.py           ← MODIFY
     └── app.py                    ← MODIFY: 注册 foreshadowing 命令组
 ```
@@ -837,9 +833,9 @@ tests/cli/
 class ForeshadowingRepositoryProtocol(Protocol):
     """伏笔档案仓储端口.
 
-    按 spec §2: 单实体；项目内活动伏笔 title 唯一（partial unique）；
-    软删除后同名可复用。list_open 供 F6 数据源查询注入集合
-    （status=open 且未软删除，按 (priority DESC, updated_at DESC) 排序）。
+    按 spec §2: 单实体；项目内伏笔 title 唯一（全唯一索引 v1.1 / #211）；
+    删除即物理删除，无「已删行」，故无 partial 过滤。list_open 供 F6 数据源
+    查询注入集合（status=open，按 (priority DESC, updated_at DESC) 排序）。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9/F10/F11/F12）。
@@ -855,14 +851,13 @@ class ForeshadowingRepositoryProtocol(Protocol):
                    limit: int = 50) -> tuple[builtins.list[Foreshadowing], int]: ...
     async def list_open(self, project_id: int) -> builtins.list[Foreshadowing]: ...  # F6 注入集合（priority DESC）
     async def update(self, f: Foreshadowing) -> Foreshadowing: ...
-    async def soft_delete(self, foreshadowing_id: int) -> bool: ...
-    async def restore(self, foreshadowing_id: int) -> Foreshadowing | None: ...
-    async def hard_delete(self, foreshadowing_id: int) -> bool: ...
+    async def hard_delete(self, foreshadowing_id: int) -> bool: ...   # v1.1 真删（唯一删除路径）
+    # v1.1 移除: soft_delete / restore（#211）
 ```
 
 > 仓储层方法入参用 int（与 F9/F10/F11/F12 RepositoryProtocol 一致）；Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。`list_open` 返回顺序即 F6 注入顺序（§5.3 直接消费）。
 >
-> **事件校验（v1.1）**: F13 仓储**无新增事件查询方法**——event_id 存在性 + 同项目校验复用 **F12 `TimelineRepositoryProtocol.get`**（Service 层构造注入，装配见 §8 deps.py），校验语义与 F12 一致（get 不含软删事件）。
+> **事件校验（v1.1）**: F13 仓储**无新增事件查询方法**——event_id 存在性 + 同项目校验复用 **F12 `TimelineRepositoryProtocol.get`**（Service 层构造注入，装配见 §8 deps.py），校验语义与 F12 一致（F12 亦真删，事件物理不存在即不可挂接）。列表 `list`/`list_open` 的过滤条件不含软删（v1.1 起无该列）。
 
 ---
 
@@ -883,11 +878,11 @@ CLI 测试: foreshadowing 组（Mock ForeshadowingService）    ~15 cases
 
 **领域模型**: title 空/空白/超长 → ValidationError / description 超长 → ValidationError / priority 越界（-1、101）→ ValidationError、边界（0、100）合法 / location 超长 → ValidationError / event_id 合法 UUID 与 None 合法、非法 UUID 格式 → ValidationError / ForeshadowingStatus 枚举两值（open/resolved）/ ForeshadowingUpdate 部分更新语义（priority None 不修改；location None 不修改、"" 清除；event_id None 不修改、"" 解除挂接、非空字符串 → 422）/ ForeshadowingCreate 无 status 字段（默认 open）
 
-**仓储**: 伏笔 CRUD 往返（含 event_id 挂接/解除持久化）/ `get_by_title` 命中与未命中 / 活动同名唯一（partial unique：插入第二个活动同名 → IntegrityError；软删除后可再插同名）/ 软删除后 get 返回 None / `list` 搜索、status 过滤（open/resolved/不传=全部）、各 sort_by 排序（priority 默认降序）/ `list_open` 只含 open 活动伏笔、按 (priority DESC, updated_at DESC)、resolved/软删除排除 / 分页 / 硬删除 FK 级联（项目删除 → 伏笔级联）/ **事件硬删 → 伏笔 event_id 自动置 None（FK ON DELETE SET NULL，PRAGMA foreign_keys=ON 下验证）**
+**仓储**: 伏笔 CRUD 往返（含 event_id 挂接/解除持久化）/ `get_by_title` 命中与未命中 / 同名唯一（全唯一索引 v1.1：插入第二个同名 → IntegrityError；删除后可再插同名）/ 真删后 get 返回 None / `list` 搜索、status 过滤（open/resolved/不传=全部）、各 sort_by 排序（priority 默认降序）/ `list_open` 只含 open 伏笔、按 (priority DESC, updated_at DESC) / 分页 / 硬删 FK 级联（项目删除 → 伏笔级联）/ **事件真删 → 伏笔 event_id 自动置 None（FK ON DELETE SET NULL，PRAGMA foreign_keys=ON 下验证）**
 
-**服务**: 创建/更新/软删/恢复全流程 / 同名活动伏笔 → 422 / 伏笔不存在各操作 → None → 404 / resolve 编排（open→resolved + resolved_at 设置；已 resolved 幂等；软删除 → 404）/ reopen 编排（resolved→open + resolved_at 清空；已 open 幂等）/ status 不可经 update 修改 / 项目不存在 → 404 / **event_id 校验编排**：挂接成功（Mock timeline_repo.get 命中同项目）→ 事件不存在（get 返回 None）→ 422 / 跨项目事件 → 422 / 已软删事件（get 返回 None）→ 422 / update event_id="" 解除挂接 → None / update 未传 event_id → 不修改
+**服务**: 创建/更新/真删全流程 / 同名伏笔 → 422 / 伏笔不存在各操作 → None → 404 / resolve 编排（open→resolved + resolved_at 设置；已 resolved 幂等）/ reopen 编排（resolved→open + resolved_at 清空；已 open 幂等）/ status 不可经 update 修改 / 项目不存在 → 404 / **event_id 校验编排**：挂接成功（Mock timeline_repo.get 命中同项目）→ 事件不存在（get 返回 None）→ 422 / 跨项目事件 → 422 / update event_id="" 解除挂接 → None / update 未传 event_id → 不修改
 
-**数据源（ForeshadowingSource，Mock Repo）**: 有 open 伏笔 → 逐条 ContextItem（source=FORESHADOWING、title 前缀「伏笔：」、content 模板正确、priority 透传、metadata 完整含 event_id）/ 挂接事件伏笔 metadata.event_id 为 UUID 字符串、未挂接为 null / priority 降序返回 / description 为空时 content 模板省略描述段 / location 为空时模板省略位置段 / 无 open 伏笔 → 空列表 / 全部 resolved → 空列表 / 项目不存在（repo 返回空）→ 空列表 / 软删除的伏笔不出现（repo 语义保证）
+**数据源（ForeshadowingSource，Mock Repo）**: 有 open 伏笔 → 逐条 ContextItem（source=FORESHADOWING、title 前缀「伏笔：」、content 模板正确、priority 透传、metadata 完整含 event_id）/ 挂接事件伏笔 metadata.event_id 为 UUID 字符串、未挂接为 null / priority 降序返回 / description 为空时 content 模板省略描述段 / location 为空时模板省略位置段 / 无 open 伏笔 → 空列表 / 全部 resolved → 空列表 / 项目不存在（repo 返回空）→ 空列表
 
 **API**: 8 端点成功路径（含创建/更新带 event_id）/ 404 全路径（项目/伏笔）/ 422 业务校验（同名冲突、字段超长、priority 越界、事件不存在、事件跨项目、清除传非空字符串）/ resolve/reopen 状态迁移示例响应（resolved_at 设置与清空）/ 幂等 resolve → 200 / 无效 UUID → 404
 
@@ -969,19 +964,19 @@ F13 被依赖:
 | 决策 | 方案 | 理由 |
 |------|------|------|
 | 单实体建模 | Foreshadowing（项目级伏笔档案），**无第二张实体表** | PRD P1-05「埋设/回收追踪」是单档案生命周期管理；伏笔类别/标签/关系均非 MVP 核心结构（同 F10「分类用字段不建表、MVP 不建关联表」决策思路，见 §10） |
-| 唯一约束 | partial unique index `(project_id, title WHERE is_deleted = 0)`，同名创建 422 | 伏笔是**档案**而非实例：一条伏笔一个生命周期，「林晚的身世」只应有一条档案（防手误重复建档 + 为 F14 提取提供合并锚点）；软删除后可重建同名；**与 F12 的对比**：时间线事件是实例（多「回忆」事件合法）故无唯一约束，伏笔的「同名 = 同一伏笔」语义决定必须唯一（§2.3 论证表） |
-| 状态机 | **两态 open/resolved + 软删除**，迁移走专用动作端点（resolve/reopen） | 「埋设/回收追踪」验收标准的直接表达；专用端点保证迁移规则单一入口、可校验（同 restore 先例）；**dropped 论证**：废弃与软删除在注入/追踪语义上完全等价（都不注入、档案保留、可恢复），软删除 + 同名重建已覆盖「作废后重埋」场景，独立第三态徒增端点与测试面（P5 YAGNI）；F15 需要区分「废弃/删除」变更记录时 Phase 2+ 再加 |
+| 唯一约束 | 全唯一索引 `(project_id, title)`（v1.1；原名 `uq_foreshadowings_active_title`），同名创建 422 | 伏笔是**档案**而非实例：一条伏笔一个生命周期，「林晚的身世」只应有一条档案（防手误重复建档 + 为 F14 提取提供合并锚点）；删除后可重建同名（旧行已物理删除）；**与 F12 的对比**：时间线事件是实例（多「回忆」事件合法）故无唯一约束，伏笔的「同名 = 同一伏笔」语义决定必须唯一（§2.3 论证表） |
+| 状态机 | **两态 open/resolved**，迁移走专用动作端点（resolve/reopen）；删除 = 真删 | 「埋设/回收追踪」验收标准的直接表达；专用端点保证迁移规则单一入口、可校验（同 resolve/reopen 先例）；**dropped 论证**：v1.1 真删下「废弃」= 删除后重埋新档案，独立第三态徒增端点与测试面（P5 YAGNI）；F15 需要区分「废弃/删除」变更记录时 Phase 2+ 再加 |
 | 位置表达 | 自由文本 `location` + **event_id 事件锚点**（v1.1，用户拍板 Q1=选项 C）；**移除独立 `narrative_position`** | 伏笔落点与 F12 时间线联动，叙事位置从事件获取（单一真相）；v1.0 的 narrative_position 与 F12 事件字段构成**双份真相**（改事件叙事位置时伏笔侧漂移）故移除（YAGNI）；location 保留自由文本兜底（不挂事件仍可写「第 3 章」）；F2 章节 FK 维持否决（§2.2 论证表） |
-| event_id 引用方式 | **DB 级 FK ON DELETE SET NULL + 服务层校验** | ① 引用完整性由 DB 兜底：事件硬删（force）→ 伏笔 event_id 自动置 None（挂接解除），项目硬删 → 伏笔/事件各自 FK CASCADE（无悬挂引用）；② 服务层校验提供友好 422（「事件不存在」/「事件不属于该项目」），DB FK 仅作并发/硬删窗口兜底；③ SQLite 需 PRAGMA foreign_keys=ON——已由 F10/F12 测试基建覆盖（in-memory SQLite 连接开启），无新增基建成本；④ 备选逻辑引用（无 FK）：事件硬删后伏笔 event_id 悬挂，服务层每次查询需检测无效锚点（额外查询 + 状态不一致窗口），收益仅为「免 PRAGMA 依赖」，不值（否决） |
-| 事件校验职责 | **Service 层复用 F12 `TimelineRepositoryProtocol.get`**（构造注入 timeline_repo），校验存在性 + `event.project_id` 相等 → 422 | F12 已实现该 Protocol（真实代码 `domain/ports/timeline_repository.py`，get 不含软删事件），F13 仓储**无新增方法**（避免两套事件查询逻辑）；F6 注入链路不跨模块（ForeshadowingSource 只注入 foreshadowing_repo，事件软删不影响注入，§5.3）；错误类 `EventNotFoundError` / `EventNotInProjectError`（§3.4） |
+| event_id 引用方式 | **DB 级 FK ON DELETE SET NULL + 服务层校验** | ① 引用完整性由 DB 兜底：事件真删（v1.1）→ 伏笔 event_id 自动置 None（挂接解除），项目硬删 → 伏笔/事件各自 FK CASCADE（无悬挂引用）；② 服务层校验提供友好 422（「事件不存在」/「事件不属于该项目」），DB FK 仅作并发窗口兜底；③ SQLite 需 PRAGMA foreign_keys=ON——已由 F10/F12 测试基建覆盖（in-memory SQLite 连接开启），无新增基建成本；④ 备选逻辑引用（无 FK）：事件删除后伏笔 event_id 悬挂，服务层每次查询需检测无效锚点（额外查询 + 状态不一致窗口），收益仅为「免 PRAGMA 依赖」，不值（否决） |
+| 事件校验职责 | **Service 层复用 F12 `TimelineRepositoryProtocol.get`**（构造注入 timeline_repo），校验存在性 + `event.project_id` 相等 → 422 | F12 已实现该 Protocol（真实代码 `domain/ports/timeline_repository.py`），F13 仓储**无新增方法**（避免两套事件查询逻辑）；F6 注入链路不跨模块（ForeshadowingSource 只注入 foreshadowing_repo，§5.3）；错误类 `EventNotFoundError` / `EventNotInProjectError`（§3.4） |
 | priority 字段 | int 0-100 默认 50（大者先注入） | F6 dynamic 层排序契约的键（F6 spec §4.2「伏笔条目按 priority 降序」）；无 priority 字段则 F6 无法对伏笔排序、注入顺序不可控 |
 | F6 集成归属 | **ForeshadowingSource 真实实现纳入 F13 里程碑**（MODIFY sources.py + deps.py） | 验收标准 2「写作时注入伏笔提示」的**实证路径**——不替换则验收标准无法演示；与 F9/F10 的差异：F9/F10 的注入非 PRD 验收标准，替换归 0.2.0 联调（Q1 先例），F13 的注入是验收标准本体（待澄清 Q2 确认） |
 | 注入范围 | **全部 open 伏笔 + priority 降序**，由 F6 dynamic 层按预算裁剪 | 伏笔量级小（≤ 数十条），全量候选 + 预算裁剪已保证不超窗口，加阈值过滤是重复裁剪逻辑（YAGNI）；低优先级伏笔恰恰最易被忘；F6 dropped 记录已提供裁剪可观测性（§5.4 论证） |
 | 注入文本 | 确定性模板拼接（`_render_reminder` 纯函数），无 LLM 无模板文件 | 伏笔提醒是结构化数据的文本投影，确定性可测试；LLM 加工（如「把伏笔融入剧情建议」）归 F14（§10） |
-| 回收动作 | 专用端点 `resolve` / `reopen`（POST，落库副作用） | 显式状态迁移（同 restore 先例）；PATCH 不承载 status（防任意跳转）；动作端点幂等（重复 resolve/reopen 无毒，同 F12 restore 未删除语义） |
+| 回收动作 | 专用端点 `resolve` / `reopen`（POST，落库副作用） | 显式状态迁移；PATCH 不承载 status（防任意跳转）；动作端点幂等（重复 resolve/reopen 无毒） |
 | resolved_at | 只读副产物字段：resolve 自动设置、reopen 清空、不接受外部写入 | 回收时间的唯一真相来源；避免「状态与时间戳不一致」的双份真相 |
 | 端点布局 | 创建/列表嵌套项目路径，详情/更新/删除/动作扁平（同 F2/F9/F10/F12） | 与既有端点风格一致，OpenAPI 分组清晰；`/foreshadowings` 下全静态路径段，无路径歧义（F10 extract 处理不适用） |
-| CLI 布局 | `inkflow foreshadowing` 顶级组 8 个扁平命令（无子组） | 单实体模块（同 F10 world 组 / F12 timeline 组布局）；避免顶级命令膨胀；resolve/reopen 人类可读输出 + `--json` 完整对象 |
+| CLI 布局 | `inkflow foreshadowing` 顶级组 7 个扁平命令（无子组；v1.1 移除 restore） | 单实体模块（同 F10 world 组 / F12 timeline 组布局）；避免顶级命令膨胀；resolve/reopen 人类可读输出 + `--json` 完整对象 |
 | 更新清除语义 | `event_id`/`location` 用 `""` 清除（None = 不修改） | 与 F10 category、F11 arc_id、F12 time_value 的既有约定同构（event_id 的 `uuid | str | None` 型与 F11 arc_id 完全同构）；None 与 "" 双语义解决「可空字段无法表达清除」的 Pydantic 更新难题 |
 | 无 LLM 错误面 | 错误码仅 NOT_FOUND / VALIDATION_ERROR / DB_ERROR（无 LLM_ERROR） | 同 F12：无 LLM 模块错误面最小；比 F12 多两类错误——同名冲突（唯一约束的必然结果，§2.3）与事件校验（event_id 跨模块引用，§3.4） |
 | CLI 测试归属 | `tests/cli/test_cli_foreshadowing.py`（顶层 tests/cli/，Issue #61 迁移后布局）+ ci.yml `integration-cli-backend` job 显式列出 | 新增 CLI 测试文件默认是 CI 盲区（Issue #59 实测）；显式文件列表是既有 job 风格（Windows 下 pytest 不展开 glob，陷阱 15） |
@@ -1021,13 +1016,13 @@ F13 被依赖:
 
 | 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
 |------|---------|--------------|------|------|------|
-| POST /projects/{project_id}/foreshadowings | 项目存在 | 校验（title/priority/location/event_id）→ 创建（status=open，叙事位置从事件获取） | 201 + Foreshadowing | 404「项目不存在」；422「伏笔名不能为空」/「伏笔名不能超过 100 个字符」/「伏笔描述不能超过 5000 个字符」/「优先级必须在 0-100 之间」/「埋设位置不能超过 200 个字符」/「同名伏笔已存在（伏笔名在项目内必须唯一）」/「事件不存在」（含已软删）/「事件不属于该项目」 | 软删后同名可再建（partial unique）；event_id 缺省=不挂接（location 自由文本兜底） |
+| POST /projects/{project_id}/foreshadowings | 项目存在 | 校验（title/priority/location/event_id）→ 创建（status=open，叙事位置从事件获取） | 201 + Foreshadowing | 404「项目不存在」；422「伏笔名不能为空」/「伏笔名不能超过 100 个字符」/「伏笔描述不能超过 5000 个字符」/「优先级必须在 0-100 之间」/「埋设位置不能超过 200 个字符」/「同名伏笔已存在（伏笔名在项目内必须唯一）」/「事件不存在」/「事件不属于该项目」 | 删除后同名可再建（全唯一索引 v1.1）；event_id 缺省=不挂接（location 自由文本兜底） |
 | GET /projects/{project_id}/foreshadowings | 项目存在 | status/search/排序/分页过滤 | 200 + {items,total,offset,limit} | 404「项目不存在」 | 搜索无结果/分页越界 → 空 items |
 | GET /foreshadowings/{foreshadowing_id} | 伏笔存在 | 查询 | 200 + Foreshadowing | 404「伏笔不存在」 | — |
-| PATCH /foreshadowings/{foreshadowing_id} | 伏笔存在 | 部分更新（不含 status/resolved_at） | 200 + Foreshadowing | 404「伏笔不存在」；422（event_id 传非空字符串 →「解除事件挂接请传空字符串」；携带 status/resolved_at 不生效） | location="" → 置 ""（未记录）；event_id="" → 置 null；已挂接事件软删 → event_id 保留 |
-| DELETE /foreshadowings/{foreshadowing_id} | 伏笔存在 | 软删除 | 204 | 404「伏笔不存在」（不存在/已软删） | ?force=true 物理删除 |
-| POST /foreshadowings/{foreshadowing_id}/restore | 伏笔存在（硬删除外） | 恢复 | 200 + Foreshadowing | 404「伏笔不存在」 | 未软删时恢复=无操作成功 |
-| POST /foreshadowings/{foreshadowing_id}/resolve | 伏笔存在 | 状态迁移 open→resolved + 自动设 resolved_at | 200 + Foreshadowing | 404「伏笔不存在」（含已软删） | 幂等：已 resolved 再 resolve 状态不变、resolved_at 不更新 |
+| PATCH /foreshadowings/{foreshadowing_id} | 伏笔存在 | 部分更新（不含 status/resolved_at） | 200 + Foreshadowing | 404「伏笔不存在」；422（event_id 传非空字符串 →「解除事件挂接请传空字符串」；携带 status/resolved_at 不生效） | location="" → 置 ""（未记录）；event_id="" → 置 null |
+| DELETE /foreshadowings/{foreshadowing_id} | 伏笔存在 | **真删** | 204 | 404「伏笔不存在」 | **v1.1**：无软删路径、无 `force` 参数；重复删除 → 404 |
+| ~~POST /foreshadowings/{foreshadowing_id}/restore~~ | — | **（v1.1 移除）** 端点已不存在 | — | 请求该路径 → 404 | — |
+| POST /foreshadowings/{foreshadowing_id}/resolve | 伏笔存在 | 状态迁移 open→resolved + 自动设 resolved_at | 200 + Foreshadowing | 404「伏笔不存在」 | 幂等：已 resolved 再 resolve 状态不变、resolved_at 不更新 |
 | POST /foreshadowings/{foreshadowing_id}/reopen | 伏笔存在 | 状态迁移 resolved→open + 清 resolved_at | 200 + Foreshadowing | 404「伏笔不存在」 | 幂等：已 open 再 reopen 状态不变 |
 
 ### 14.2 CLI 命令状态流
@@ -1038,8 +1033,8 @@ F13 被依赖:
 | foreshadowing list | 项目存在 | 列表（--status open/resolved 过滤） | 「📋 未回收伏笔 3 条: ...」/「🔍 已回收伏笔 1 条: ...（回收于 ...）」 | 404 | --status 非法值 → 退出码 2（Typer Choice） |
 | foreshadowing get | 伏笔存在 | 查询 | JSON | 404「伏笔不存在」 | — |
 | foreshadowing update | 伏笔存在 | 更新（--location ""/--event-id "" 清除） | JSON | 404；422 | — |
-| foreshadowing delete | 伏笔存在 | 二次确认（--force）→ 软删；--permanent 硬删 | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | — |
-| foreshadowing restore | 伏笔存在 | 恢复 | 200 | 404 | — |
+| foreshadowing delete | 伏笔存在 | 二次确认（--force）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除 |
+| ~~foreshadowing restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 | foreshadowing resolve | 伏笔存在 | 标记回收（open→resolved） | 「✅ 伏笔已回收: [林晚的身世]」/ --json | 404 | 幂等（已 resolved 再 resolve 不更新 resolved_at） |
 | foreshadowing reopen | 伏笔存在 | 重新开启（resolved→open） | 「✅ 伏笔已重新开启: [林晚的身世]」/ --json | 404 | 幂等 |
 
@@ -1047,12 +1042,12 @@ F13 被依赖:
 
 ### 14.3 验收锚点（写入 §14）
 
-- A1：创建挂不存在事件 → 422「事件不存在」（含已软删事件——F12 get 不含软删）；挂其他项目事件 → 422「事件不属于该项目」
+- A1：创建挂不存在事件 → 422「事件不存在」；挂其他项目事件 → 422「事件不属于该项目」
 - A2：resolve → 200 status=resolved + resolved_at 非空；对已 resolved 再 resolve → 200 幂等（resolved_at 不更新）；reopen → open + resolved_at=null
-- A3：同名活动伏笔 → 422「同名伏笔已存在（伏笔名在项目内必须唯一）」；软删后再建同名 → 成功
-- A4：已挂接事件被硬删（force）→ event_id FK ON DELETE SET NULL 自动解除挂接（无 422）；被软删 → event_id 保留、注入 metadata 原样携带、resolve/reopen/更新不受影响
+- A3：同名伏笔 → 422「同名伏笔已存在（伏笔名在项目内必须唯一）」；删除后再建同名 → 成功
+- A4：已挂接事件被删除（v1.1 真删）→ event_id FK ON DELETE SET NULL 自动解除挂接（无 422）；resolve/reopen/更新不受影响
 - A5：F6 注入：全部 open 伏笔按 priority 降序注入；resolve 后立即不再注入（无缓存）；dynamic 预算不足 → 裁剪 + DroppedItem(over_budget) 不阻塞写作
 
 ### 14.4 Spec 漂移标注（追加时核对实现 routers/foreshadowings.py）
 
-- **restore 端点缺失**：spec §3.1/§4.1 声明的 `POST /foreshadowings/{foreshadowing_id}/restore` 与 CLI `foreshadowing restore` 在实现中缺失（routers/foreshadowings.py 无 restore 路由；services 无 restore 方法；CLI 无 restore 命令）——实现路由 7 条 vs spec 枚举 8 端点（resolve/reopen 已实现）。
+- **restore 端点（v1.1 已移除，非实现缺口）**：§3.1/§4.1 原声明的 `POST /foreshadowings/{foreshadowing_id}/restore` 与 CLI `foreshadowing restore` 在 routers/foreshadowings.py / services / CLI 中**均不存在**——这是 #211「普通实体软删→真删」的**有意结果**（非未落地）：v1.1 删除即物理删除，无恢复场景。本节曾据实现缺失记为漂移，现更正定性（2026-09-18 文档同步补齐）。实现路由 7 条（resolve/reopen 已实现）与 v1.2 端点枚举一致。

@@ -393,7 +393,7 @@ write.detail.unknown        // 未知
 | #765 | 右栏折叠按钮移到左缘 +「折叠」提示词 | — |
 
 ### 15.2 会话域模型
-- 会话 = 后端 `/chat/conversations` 线程（#744 已实现，复用不新建；含 `is_deleted` 归档语义）。
+- 会话 = 后端 `/chat/conversations` 线程（#744 已实现，复用不新建；含 `is_deleted` 归档语义——`conversations`/`chat_messages` 属 #211 **明文豁免域**，软删语义保留）。
 - 左侧导航新增「会话」分组（与设定库同级，取代 #752 会话入设定库栏的做法），列表 = `GET /chat/conversations?include_deleted=true`；每项显示 `last_message` / `message_count` / `updated_at`。
 - **#825 修正**：后端 `GET /chat/conversations` **不收 project_id**（忽略未定义 query）→ 会话栏须**本地按当前项目 `project_id` 过滤**（镜像 sessions.tsx）；每条目显示**单一 title**（空回退 last_message，无冗余底部小 title）；折叠按钮位于「会话」标题行最右（justify-between）。
 - 会话栏容器折叠/展开状态 → `localStorage` 持久化；分组按时间 + 置顶（简化，勿照搬 Hermes 三级分组）。
@@ -425,7 +425,7 @@ write.detail.unknown        // 未知
 | `frontend/packages/renderer/src/components/ContextPanel.tsx` + 右栏容器 | MODIFY：折叠按钮左移 +「折叠」提示（#765）；空需求占位（#759） |
 
 ### 15.7 验收 M（叠加 v1.0 M1-M8 + v1.1 N1-N5）
-- **P1**：左侧会话栏显示项目会话（含归档 `is_deleted`）；折叠/展开状态持久化。
+- **P1**：左侧会话栏显示项目会话（含归档 `is_deleted`——豁免域，语义保留）；折叠/展开状态持久化。
 - **P2**：续写/生成 → 新会话出现在会话栏；写作页页脚无「执行中」进度条。
 - **P3**：右栏无「草稿审批」；审批/保存在编辑工具栏可操作（#1003：工具栏行最右，见 f19-gui/writing.md §9）。
 - **P4**：右栏折叠按钮在左缘 + 显示「折叠」提示。
@@ -459,7 +459,7 @@ write.detail.unknown        // 未知
 | 工具结果卡片（chat-tool-result-&lt;n&gt;） | — | 流式出现（结果 JSON 摘要） | — | tool-error 样式 | 结果信封 ok=false 展示业务错误 | — |
 | 视图切换按钮（view-toggle） | 默认 editor-view（aria-label 查看 AI 执行详情 write.view.toDetail） | 切换 editor ↔ detail | — | 主编辑区渲染 ChapterEditor（editor-view）/ ExecutionDetailPanel（detail-view） | — | 图标 lucide ListRestart 或 Eye/Pencil；aria-label 按当前视图（write.view.toEditor 返回正文编辑） |
 | AI 执行详情页（exec-detail） | 无执行记录 → 空态（exec-detail-empty） | 数据源 GET /pipelines/executions/{id} | 加载态 | 渲染 stages（status/output/error/retry_count/duration_ms）/ trace（node/type/reasoning/tool_calls/output/duration_ms 分色）/ relations（边 + gate_result）/ 最终回复 | — | trace 无决策条目（静态模式仅 stage 条目，decision 仅 supervisor 模式产生）；旧库未迁移 → getattr trace 空数组防御 |
-| 会话栏折叠（SessionBar） | 展开列表 | 折叠/展开 | — | 状态持久化（localStorage） | — | 分组按时间 + 置顶；归档会话 is_deleted 也显示（include_deleted=true） |
+| 会话栏折叠（SessionBar） | 展开列表 | 折叠/展开 | — | 状态持久化（localStorage） | — | 分组按时间 + 置顶；归档会话 is_deleted 也显示（include_deleted=true；豁免域语义保留） |
 | 续写/生成按钮 | 常驻 | POST /chat/conversations 创建新会话 → 该次生成挂到新会话 | 生成中 | 会话栏出现新项 | 错误 toast | 移除写作页页脚内联「执行中 N%」进度条；生成进度改在会话视图呈现 |
 | 右栏折叠按钮 | 右栏左缘 +「折叠」提示词（图标 + 文字） | 收起右栏 | — | 展开条可恢复 | — | 右栏只留上下文注入面板 |
 | 上下文注入面板 | 空写作要求 | — | — | 显示「未填写写作要求」占位 | — | 不渲染 422 原始 JSON（#759） |
@@ -490,7 +490,7 @@ write.detail.unknown        // 未知
 
 ### 17.2 会话域模型
 
-- 会话 = 后端 `/chat/conversations` 线程（#744 已实现，复用不新建；含 `is_deleted` 归档语义）。
+- 会话 = 后端 `/chat/conversations` 线程（#744 已实现，复用不新建；含 `is_deleted` 归档语义——`conversations`/`chat_messages` 属 #211 **明文豁免域**，软删语义保留）。
 - **不新增 `chapter_id` 字段**，也不新增任何章节关联字段（用户拍板 2026-08-30）。
 - 会话 `title` 是**唯一的章节锚点**（匹配章节或回退全局页）。导航规则见 §17.4。
 

@@ -4,7 +4,9 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-01 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
+> **Spec 变更（v1.1，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① TimelineEvent 移除 `is_deleted` 字段（§2.1）；② DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /timeline/events/{id}/restore` 端点与 `timeline restore` 命令移除（§3/§4/§14）；③ 双线视图与一致性检查基于物理存在的事件（§5）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
+>
+> **Spec 版本**: 1.1 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第四个模块，估算 3-4 人天）
 > **关联 Issues**: [#42](https://github.com/zhx-xi/InkFlow/issues/42)
 > **依赖**: F1 ✅（前置）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F12 无 LLM，见 §1/§5）
@@ -21,7 +23,7 @@
 
 ## 1. 概述
 
-管理小说的**时间线事件**（创建/查询/更新/软删除）。每个事件同时携带两个时间维度：**世界内时间**（故事世界内「事件发生在何时」，构成**事件时间线**）与**叙事位置**（小说叙述中「该事件在第几个被讲」，构成**叙事时间线**），并支持**双线一致性检查**——对比两条时间线的顺序，输出冲突报告（未声明的倒叙/插叙被识别为「时间倒流」冲突，显式声明的倒叙/插叙被识别为合法）。
+管理小说的**时间线事件**（创建/查询/更新/真删）。每个事件同时携带两个时间维度：**世界内时间**（故事世界内「事件发生在何时」，构成**事件时间线**）与**叙事位置**（小说叙述中「该事件在第几个被讲」，构成**叙事时间线**），并支持**双线一致性检查**——对比两条时间线的顺序，输出冲突报告（未声明的倒叙/插叙被识别为「时间倒流」冲突，显式声明的倒叙/插叙被识别为合法）。
 
 **核心价值**: 作者与 AI Agent 可以维护「故事世界发生了什么（按世界内时间）」与「小说叙述了什么（按叙事顺序）」两条线；一致性检查把时间线硬伤（如叙事顺序矛盾、忘记标注的倒叙）显式化、可修正，为 F3 写作（按时间线推进）、F6 上下文注入（时间线事件进 Prompt）、F15 审计、F16 一致性审计提供数据基础。
 
@@ -61,7 +63,7 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 | narrative_position | int | NOT NULL, DEFAULT 0, ≥ 0, 已索引 | **叙事位置**（单一线性序号，小者在前 = 先被叙述）；创建缺省 = 项目内 max+1（叙事末尾追加）；允许重复（排序按 `(narrative_position ASC, created_at ASC)` 稳定输出） |
 | timeline_flag | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间线标记（建议值：`""` = 正叙、`flashback` = 倒叙、`flashforward` = 插叙/预叙；自由文本，未在建议词表中的值等同未标记，见 §6.2） |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（参与角色、地点、标签等 Phase 2+ 字段预留） |
-| is_deleted | bool | NOT NULL, DEFAULT False, 已索引 | 软删除标记 |
+| ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False, 已索引~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
@@ -69,7 +71,7 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 - `title` **允许重复**：不同事件可有相同标题（如多个「回忆」事件），事件无自然业务唯一键（同 F11 PlotPoint 处理，见 §2.4）
 - `time_value` 与 `narrative_position` **独立可编辑**：改世界内时间不影响叙事顺序，反之亦然——双线相对独立正是需要一致性检查的原因（§5）
 - `time_value = None`（时间未知）是合法状态：事件仍属于叙事时间线，但在事件时间线排末尾、不参与一致性检查（计入 `skipped`，不报冲突）
-- 软删除的事件**不进入**双线视图与一致性检查
+- 删除的事件（v1.1 真删）**物理不存在**，不进入双线视图与一致性检查
 
 ### 2.2 双时间线设计决策（时间表示法）
 
@@ -92,7 +94,7 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 ### 2.3 事件归属与级联
 
 - 事件是**项目级**实体（`project_id` 直接归属项目，无父实体——单实体模块，同 F10 WorldSetting）
-- 事件无子实体：**无级联软删/恢复语义**；项目软删除不影响事件数据，项目硬删除 → 事件级联物理删除（DB FK CASCADE）
+- 事件无子实体：**无级联语义**；项目硬删除 → 事件级联物理删除（DB FK CASCADE）
 
 ### 2.4 唯一约束说明（不设 partial unique index）
 
@@ -167,7 +169,6 @@ class TimelineEvent(BaseModel):
     narrative_position: int = 0
     timeline_flag: str = ""              # ""/flashback/flashforward（建议值，自由文本）
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -344,8 +345,8 @@ class TimelineView(BaseModel):
 | GET | `/api/v1/projects/{project_id}/timeline/check` | 一致性检查 | Query: `?include_flashbacks=` | 200 + ConsistencyReport |
 | GET | `/api/v1/timeline/events/{event_id}` | 事件详情 | — | 200 + TimelineEvent JSON |
 | PATCH | `/api/v1/timeline/events/{event_id}` | 更新事件 | `TimelineEventUpdate` | 200 + TimelineEvent |
-| DELETE | `/api/v1/timeline/events/{event_id}` | 删除事件 | Query: `?force=true` | 204（默认软删除） |
-| POST | `/api/v1/timeline/events/{event_id}/restore` | 恢复事件 | — | 200 + TimelineEvent |
+| DELETE | `/api/v1/timeline/events/{event_id}` | 删除事件（**v1.1 真删**） | — | 204 |
+| ~~POST~~ | ~~`/api/v1/timeline/events/{event_id}/restore`~~ | **（v1.1 移除）** 端点已不存在 | — | — |
 
 > `/timeline`、`/timeline/events`、`/timeline/check` 均为**静态路径段**（无 `{event_id}` 动态段冲突），无需注册顺序注意（F11 的 generate 路径歧义处理在此不适用）。
 
@@ -372,7 +373,7 @@ Content-Type: application/json
   "description": "外门考核夜，林尘丹田中的古鼎第一次亮起。",
   "time_value": 317.5, "time_unit": "年", "time_display": "青元历 317 年秋",
   "narrative_position": 3, "timeline_flag": "",
-  "extra": {}, "is_deleted": false,
+  "extra": {},
   "created_at": "2026-08-01T10:00:00Z", "updated_at": "2026-08-01T10:00:00Z"
 }
 ```
@@ -405,12 +406,11 @@ PATCH /api/v1/timeline/events/9b1c2d3e-...
 ```
 → 200（更新后 TimelineEvent JSON，time_value 为 null，timeline_flag 为 "flashback"）
 
-**软删除 / 恢复 / 硬删除**:
+**删除事件（v1.1 真删语义）**:
 ```http
-DELETE /api/v1/timeline/events/9b1c2d3e-...            → 204（软删除）
-POST /api/v1/timeline/events/9b1c2d3e-.../restore      → 200 + TimelineEvent
-DELETE /api/v1/timeline/events/9b1c2d3e-...?force=true → 204（物理删除）
+DELETE /api/v1/timeline/events/9b1c2d3e-...   → 204（物理删除，不可恢复）
 ```
+> **v1.1（#211）变更**：原 `DELETE` 默认软删 + `?force=true` 物理删双路径**收敛为真删单路径**；原 `POST /timeline/events/{id}/restore` 端点**移除**。
 
 ### 3.3 请求/响应示例 — 双线总览与一致性检查
 
@@ -545,8 +545,8 @@ inkflow timeline update --id <uuid> \
     [--time-display <str>] [--narrative-position <int>] [--timeline-flag <str|"">] [--json]
     # --time-value "" 表示清除世界内时间（置为未知）；--timeline-flag "" 表示清除标记（置为正叙）
 
-inkflow timeline delete --id <uuid> [--force] [--permanent] [--json]
-inkflow timeline restore --id <uuid> [--json]
+inkflow timeline delete --id <uuid> [--force] [--json]     # v1.1 真删（--permanent 已移除）
+# v1.1 移除: inkflow timeline restore --id <uuid> [--json]
 ```
 
 > 命令名 `check` / `view` 与 Python 内置无关键字冲突（`check` 非保留字），Typer 命令注册正常。
@@ -669,7 +669,7 @@ consistent = (len(conflicts) == 0)
 
 | 约束 | 值 | 说明 |
 |------|-----|------|
-| 检查范围 | 项目内全部**活动**事件 | 软删除事件不参与（§2.1）；无分页/过滤参数（YAGNI） |
+| 检查范围 | 项目内全部事件（v1.1 真删后无软删态） | 无分页/过滤参数（YAGNI） |
 | include_flashbacks | 默认 true | false = 报告不含已声明的倒叙/插叙项 |
 | 0 / 1 个事件 | consistent=true，checked=0/1 | 空时间线无矛盾可言 |
 | 全部时间未知 | checked=0, skipped=n, consistent=true | 未定时间不产生矛盾 |
@@ -702,7 +702,7 @@ consistent = (len(conflicts) == 0)
   - **事件时间线**（世界内时间轴）：`time_value` 升序；时间未知排末尾
   - **叙事时间线**（叙事顺序）：`narrative_position` 升序（created_at ASC 稳定）
 - 双线**独立可编辑**：改世界内时间不影响叙事位置，反之亦然；双线矛盾由一致性检查（§5）揭示并给出可执行修正项
-- 软删除的事件不进入任何视图与检查
+- 已删除的事件物理不存在，不进入任何视图与检查
 
 ### 6.2 timeline_flag 语义
 
@@ -736,10 +736,9 @@ consistent = (len(conflicts) == 0)
 | time_unit > 20 / time_display > 100 / timeline_flag > 20 字符 | 422（字段校验） |
 | narrative_position < 0 | 422: "叙事位置不能为负数" |
 | 创建事件时项目不存在 | 404: "项目不存在" |
-| 获取/更新/软删除/硬删除不存在的事件 | 404: "事件不存在" |
-| 硬删除已软删除的事件 | 404: "事件不存在"（已排除） |
-| 恢复不存在的事件 | 404: "事件不存在" |
-| 恢复未删除的事件 | 正常返回（重复操作无毒，同 F1） |
+| 获取/更新/删除不存在的事件 | 404: "事件不存在" |
+| 重复删除同一事件 | 404: "事件不存在"（不可恢复） |
+| 恢复不存在的事件 | **（v1.1 移除）** restore 端点/命令已不存在（真删语义无恢复场景） |
 | 更新 time_value 传 ""（清除时间） | ✅ 成功，time_value 置 None（时间未知） |
 | 更新 time_value 传非空字符串（如 "abc"） | 422（清除时间只接受空字符串） |
 | 更新 timeline_flag 传 ""（清除标记） | ✅ 成功，timeline_flag 置 ""（正叙） |
@@ -752,8 +751,8 @@ consistent = (len(conflicts) == 0)
 | 一致性检查：同刻事件（time_value 相等） | 不冲突（叙事顺序可任意） |
 | 一致性检查：include_flashbacks=false | flashbacks 返回空列表；conflicts/consistent 不变 |
 | 一致性检查：项目不存在 | 404: "项目不存在" |
-| 软删除事件 | 204；不进入双线视图与一致性检查 |
-| 项目硬删除 | 事件级联物理删除（FK CASCADE）；项目软删除不影响数据 |
+| 删除事件（v1.1 真删） | 204；不进入双线视图与一致性检查（物理不存在） |
+| 项目硬删除 | 事件级联物理删除（FK CASCADE） |
 | 事件列表搜索无结果 / 分页越界 | 200: 空 items（同 F1） |
 | 双线总览无活动事件 | 200: `{"project_id": "...", "total": 0, "event_timeline": [], "narrative_order": []}` |
 | CLI 删除类命令无 `--force` | 二次确认；`--json` 下 → VALIDATION_ERROR（沿用 F7 §7） |
@@ -786,7 +785,7 @@ backend/src/inkflow/
 │       ├── models/
 │       │   ├── timeline.py         ← CREATE: TimelineEventORM（索引: project_id /
 │       │   │                           (project_id, narrative_position) / (project_id, time_value)，
-│       │   │                           软删除标记）
+│       │   │                           v1.1 真删语义无软删除标记）
 │       │   └── __init__.py         ← MODIFY: 注册 ORM（create_tables 依赖）
 │       └── repositories/
 │           ├── timeline_repo.py    ← CREATE: SQLiteTimelineRepository
@@ -800,14 +799,14 @@ backend/src/inkflow/
 └── cli/
     ├── commands/
     │   ├── timeline.py             ← CREATE: timeline 组（create/list/view/check/get/update/
-    │   │                               delete/restore 8 命令）
+    │   │                               delete 7 命令；【v1.1 移除 restore】）
     │   └── __init__.py             ← MODIFY
     └── app.py                      ← MODIFY: 注册 timeline 命令组
 
 backend/tests/
 ├── unit/
 │   ├── test_timeline_models.py     ← CREATE: 领域模型/DTO 验证（含 time_value 清除语义）
-│   ├── test_timeline_repo.py       ← CREATE: 仓储集成测试（in-memory SQLite，含双索引/软删除）
+│   ├── test_timeline_repo.py       ← CREATE: 仓储集成测试（in-memory SQLite，含双索引/真删）
 │   ├── test_timeline_service.py    ← CREATE: 服务测试（事件 CRUD + next_position + 业务校验）
 │   ├── test_timeline_check.py      ← CREATE: 一致性检查算法专项（构造序列用例 + 快照断言，§5）
 │   └── test_timeline_api.py        ← CREATE: API 集成测试（Mock Service）
@@ -823,8 +822,8 @@ class TimelineRepositoryProtocol(Protocol):
     """时间线事件仓储端口.
 
     按 spec §2: 单实体（无子实体、无唯一约束）；事件列表默认按
-    narrative_position ASC 排序；双线视图/一致性检查需要全量活动事件
-    （list_all）。软删除事件不进入任何查询结果。
+    narrative_position ASC 排序；双线视图/一致性检查需要全量事件
+    （list_all）。v1.1 真删语义：删除即物理删除，已删事件不存在。
 
     注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
     因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9/F10/F11）。
@@ -836,12 +835,11 @@ class TimelineRepositoryProtocol(Protocol):
     async def list(self, project_id: int, search: str | None = None,
                    sort_by: str = "narrative_position", sort_desc: bool = False,
                    offset: int = 0, limit: int = 50) -> tuple[builtins.list[TimelineEvent], int]: ...
-    async def list_all(self, project_id: int) -> builtins.list[TimelineEvent]: ...  # 双线/检查用全量活动事件
+    async def list_all(self, project_id: int) -> builtins.list[TimelineEvent]: ...  # 双线/检查用全量事件
     async def next_position(self, project_id: int) -> int: ...   # 项目内 max(narrative_position)+1（无事件时 = 1）
     async def update(self, event: TimelineEvent) -> TimelineEvent: ...
-    async def soft_delete(self, event_id: int) -> bool: ...
-    async def restore(self, event_id: int) -> TimelineEvent | None: ...
-    async def hard_delete(self, event_id: int) -> bool: ...
+    async def hard_delete(self, event_id: int) -> bool: ...   # v1.1 真删（唯一删除路径）
+    # v1.1 移除: soft_delete / restore（#211）
 ```
 
 > 仓储层方法入参用 int（与 F9/F10/F11 RepositoryProtocol 一致）；Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。`next_position` 在 `add` 前调用（narrative_position=None 时）。`list_all` 按 `(narrative_position ASC, created_at ASC)` 返回（叙事顺序），检查算法直接消费。
@@ -865,9 +863,9 @@ CLI 测试: timeline 组（Mock TimelineService）              ~14 cases
 
 **领域模型**: 事件 title 空/空白/超长 → ValidationError / time_value 为 None 合法（时间未知）/ NaN、±Inf → ValidationError / time_value 越界（±1e12 之外）→ ValidationError / time_unit/time_display/timeline_flag 超长 → ValidationError / narrative_position 负数 → ValidationError / TimelineEventUpdate 部分更新语义（time_value None 不修改、"" 清除、非空字符串 → 422；timeline_flag "" 清除）/ TimelineEventCreate narrative_position=None 合法 / 检查模型 schema（TimelineConflict conflict_type 三值、ConsistencyReport 默认空列表）
 
-**仓储**: 事件 CRUD 往返 / `list` 搜索与分页 / `list` 各 sort_by 排序（narrative_position 默认升序；time_value 排序 NULLS LAST）/ `list_all` 全量活动事件（软删除排除）/ `next_position`（空项目 → 1、追加 → max+1）/ 软删除后 get 返回 None / 恢复 / 硬删除 / 项目硬删除 → 事件级联（FK CASCADE）/ narrative_position 重复时 created_at ASC 稳定排序
+**仓储**: 事件 CRUD 往返 / `list` 搜索与分页 / `list` 各 sort_by 排序（narrative_position 默认升序；time_value 排序 NULLS LAST）/ `list_all` 全量事件 / `next_position`（空项目 → 1、追加 → max+1）/ 真删后 get 返回 None / 项目硬删除 → 事件级联（FK CASCADE）/ narrative_position 重复时 created_at ASC 稳定排序
 
-**服务**: 事件创建/更新/软删/恢复全流程 / next_position 编排（position=None 时先查后建）/ 项目不存在各操作 → None → 404 / 事件不存在各操作 → None → 404 / 更新 time_value "" → 置 None 编排 / view 编排（两种排序视图）/ check_consistency 编排（项目不存在 → 404；repo 未注入 → 配置错误）
+**服务**: 事件创建/更新/真删全流程 / next_position 编排（position=None 时先查后建）/ 项目不存在各操作 → None → 404 / 事件不存在各操作 → None → 404 / 更新 time_value "" → 置 None 编排 / view 编排（两种排序视图）/ check_consistency 编排（项目不存在 → 404；repo 未注入 → 配置错误）
 
 **一致性检查（专项，构造序列用例 + 快照断言）**:
 - 正叙序列（如 [1,2,3,4]）→ 无冲突，consistent=true，checked=4
@@ -883,7 +881,7 @@ CLI 测试: timeline 组（Mock TimelineService）              ~14 cases
 - 全部时间未知 → checked=0, skipped=n, consistent=true
 - 0 / 1 个事件 → consistent=true
 - include_flashbacks=false → flashbacks 为空列表，conflicts/consistent 不变
-- 软删除事件不参与检查
+- 已删除事件不参与检查（物理不存在）
 - **确定性/快照**：同一事件集合两次检查 → 逐字段相等（快照断言）
 - 报告视图正确性：event_timeline 按 time_value 升序（未知排末尾）、narrative_order 按叙事位置升序
 
@@ -963,7 +961,7 @@ F12 被依赖:
 | 检查端点 | `GET /api/v1/projects/{project_id}/timeline/check`（幂等只读计算） | F9/F10/F11 的动作型端点（extract/generate）均有落库副作用故用 POST；check **无副作用**，GET 语义正确且可缓存（备选 POST 被否决） |
 | 双线总览端点 | `GET /api/v1/projects/{project_id}/timeline`（一次性返回两条视图） | 「双线管理」验收标准的直接表达；两条线是同一批事件的投影，拆两个端点徒增往返（备选拆分被否决）；全量返回（事件数 ≤ 数百，无分页，YAGNI） |
 | 端点布局 | 创建/列表/视图/检查嵌套项目路径，详情/更新/删除扁平（同 F2/F9/F10/F11） | 与既有端点风格一致，OpenAPI 分组清晰；`/timeline`、`/timeline/events`、`/timeline/check` 全静态段无路径歧义 |
-| 软删除 | 单实体标准软删除（同 F10），无级联 | 单实体模块无级联语义（无子实体）；软删事件不进入视图与检查 |
+| 删除语义 | 单实体真删（v1.1 / #211），无级联 | 单实体模块无级联语义（无子实体）；真删后事件物理不存在，不进入视图与检查 |
 | CLI 布局 | `inkflow timeline` 顶级组 8 个扁平命令（无子组） | 单实体模块（同 F10 world 组布局）；避免顶级命令膨胀；`check`/`view` 为只读命令，人类可读摘要 + `--json` 完整报告 |
 | 更新清除语义 | `time_value`/`timeline_flag` 用 `""` 清除（None = 不修改） | 与 F10 category、F11 arc_id 的既有约定同构；None 与 "" 双语义解决「可空字段无法表达清除」的 Pydantic 更新难题 |
 
@@ -974,10 +972,10 @@ F12 被依赖:
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
 | M1 | 领域模型 + DTO 验证（双时间维度字段 + 清除语义 + 检查报告模型） | `pytest backend/tests/unit/domain/models/test_timeline_models.py -v` 全绿 |
-| M2 | 仓储层全部方法（单实体 CRUD + 双索引 + next_position + 软删除） | `pytest backend/tests/unit/infrastructure/database/test_timeline_repo.py -v` 全绿 |
+| M2 | 仓储层全部方法（单实体 CRUD + 双索引 + next_position + 真删） | `pytest backend/tests/unit/infrastructure/database/test_timeline_repo.py -v` 全绿 |
 | M3 | 服务层 CRUD + 业务校验（next_position 编排/更新清除编排/404 全路径） | `pytest backend/tests/unit/domain/services/test_timeline_service.py -v` 全绿 |
 | M4 | 一致性检查算法（相邻对扫描/倒叙声明/未知时间/同刻/快照断言） | `pytest backend/tests/unit/domain/services/test_timeline_check.py -v` 全绿 |
-| M5 | API 8 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_timeline_api.py -v` 全绿 |
+| M5 | API 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_timeline_api.py -v` 全绿 |
 | M6 | CLI timeline 组（信封/退出码/确认交互/check 摘要） | `pytest tests/test_cli_timeline.py -v` 全绿 |
 | M7 | 手工验证：真实项目建事件 → 双线总览 → 检查 → 修正闭环 | 手工验证（`inkflow timeline create` 建 3+ 事件制造逆序 → `inkflow timeline check` 看到冲突 → 加 flashback 标记 → 重查 consistent=true；`inkflow timeline view` 双线正确） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F12 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
@@ -1008,8 +1006,8 @@ F12 被依赖:
 | GET /projects/{project_id}/timeline/check | 项目存在 | 相邻对扫描（确定性算法，无 LLM） | 200 + ConsistencyReport（checked/skipped/consistent/conflicts/flashbacks + 双线视图） | 404「项目不存在」 | include_flashbacks 查询参数（默认含）；0/1 事件 → consistent=true；全未知时间 → checked=0 skipped=n；逆序对 next 标记 flashback / prev 标记 flashforward → 不算冲突；未知标记（如 "flshback"）→ order_conflict；同刻事件不冲突 |
 | GET /timeline/events/{event_id} | 事件存在 | 查询 | 200 + TimelineEvent | 404「事件不存在」 | 无效 UUID → 404 |
 | PATCH /timeline/events/{event_id} | 事件存在 | 部分更新（时间/标记清除语义） | 200 + TimelineEvent | 404「事件不存在」；422（time_value 清除只接受空字符串） | time_value="" → 置 None（时间未知）；timeline_flag="" → 置 ""（正叙）；time_value 传 "abc" → 422 |
-| DELETE /timeline/events/{event_id} | 事件存在 | 软删除（不进入双线视图与一致性检查） | 204 | 404「事件不存在」（不存在/已软删） | ?force=true 物理删除 |
-| POST /timeline/events/{event_id}/restore | 事件存在（硬删除外） | 恢复 | 200 + TimelineEvent | 404「事件不存在」 | 未软删时恢复=无操作成功 |
+| DELETE /timeline/events/{event_id} | 事件存在 | **真删**（不进入双线视图与一致性检查） | 204 | 404「事件不存在」 | **v1.1**：无软删路径、无 `force` 参数；重复删除 → 404 |
+| ~~POST /timeline/events/{event_id}/restore~~ | — | **（v1.1 移除）** 端点已不存在 | — | 请求该路径 → 404 | — |
 
 ### 14.2 CLI 命令状态流
 
@@ -1021,8 +1019,8 @@ F12 被依赖:
 | timeline check | 项目存在 | 一致性检查（--include-flashbacks 默认开） | 「🔍 一致性检查: ✅ 一致（检查 4 个事件，跳过 1 个时间未知）」/「⚠️ 发现 2 个冲突」/「💡 1 个已声明倒叙/插叙」 | 404 | 发现冲突退出码仍 0 |
 | timeline get | 事件存在 | 查询 | JSON | 404「事件不存在」 | — |
 | timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除） | JSON | 404；422 | — |
-| timeline delete | 事件存在 | 二次确认（--force 跳过）→ 软删；--permanent 硬删 | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | — |
-| timeline restore | 事件存在 | 恢复 | 200 | 404 | — |
+| timeline delete | 事件存在 | 二次确认（--force 跳过）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除 |
+| ~~timeline restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 
 > 错误码：NOT_FOUND / VALIDATION_ERROR / DB_ERROR（**无 LLM_ERROR**——F12 无 LLM）。
 
@@ -1031,11 +1029,11 @@ F12 被依赖:
 - A1：POST 事件 time_value=NaN/±Inf → 422「世界内时间必须是有限数值」；越界 → 422「世界内时间超出允许范围（[-10^12, 10^12]）」
 - A2：PATCH time_value 传 "abc" → 422；传 "" → 200 且 time_value=null（时间未知，一致性检查计入 skipped）
 - A3：逆序对未标记 → check 200 的 conflicts 含 order_conflict、consistent=false；给后叙事件加 timeline_flag=flashback 重查 → flashbacks 含该项、consistent=true
-- A4：软删事件 → 双线总览与 check 均不含该事件；restore 后恢复可见
+- A4：删除事件 → 双线总览与 check 均不含该事件（物理不存在，不可恢复）
 - A5：0/1 个活动事件 → 200 consistent=true（checked=0/1）；全部事件时间未知 → checked=0、skipped=n、consistent=true
 - A6：include_flashbacks=false → flashbacks 返回空列表；conflicts/consistent 不变
 
 ### 14.4 Spec 漂移标注（追加时核对实现 routers/timeline.py）
 
-- **restore 端点缺失**：spec §3.1/§4.1 声明的 `POST /timeline/events/{event_id}/restore` 与 CLI `timeline restore` 在实现中缺失（routers/timeline.py 无 restore 路由；services 无 restore 方法；CLI 无 restore 命令）。
+- **restore 端点（v1.1 已移除，非实现缺口）**：§3.1/§4.1 原声明的 `POST /timeline/events/{event_id}/restore` 与 CLI `timeline restore` 在 routers/timeline.py / services / CLI 中**均不存在**——这是 #211「普通实体软删→真删」的**有意结果**（非未落地）：v1.1 删除即物理删除，无恢复场景。本节曾据实现缺失记为漂移，现更正定性（2026-09-18 文档同步补齐）。
 - **实现侧新增端点**：`GET /timeline/events/{event_id}/check`（单事件一致性检查）为 spec §3.1 未声明端点——实现路由 8 条 vs spec 枚举 8 端点，构成不同（缺 restore、多单事件 check）。

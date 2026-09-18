@@ -416,7 +416,7 @@ class MapAssetStoreProtocol(Protocol):
 -- （地点软删 → 该地点下地图不出现在 children——软删地点不可导航）
 SELECT DISTINCT m2.* FROM maps m2
 JOIN map_pins p ON p.map_id = :map_id AND p.location_id IS NOT NULL
-JOIN world_settings w ON w.id = p.location_id AND w.is_deleted = 0   -- 地点软删过滤
+JOIN world_settings w ON w.id = p.location_id   -- (v1.1/#211) 原 is_deleted=0 过滤已废：地点真删
 WHERE m2.root_location_id = p.location_id
 ORDER BY m2.created_at ASC;
 ```
@@ -432,7 +432,7 @@ ORDER BY m2.created_at ASC;
 
 **懒构建**：父地点无图 = children 空（合法）；地点无父节点 = 全局图（合法）——任何层可断。
 
-> **⚠️ 归档地点与地图（评审 F2 补充声明）**：F10 软删地点（is_deleted=1）后，其下地图**仍存在**（地图是独立资产，不随地点软删）——但 children 导航**不显示**（JOIN 过滤），面包屑断链规避；用户需先将地点 restore 或改挂地图 root_location。
+> **⚠️ 地点删除与地图（v1.2/#211 更新）**：F10 地点已统一**真删**（#211 落地，`is_deleted` 列移除）——地点被删后其下地图**仍存在**（地图是独立资产，不随地点删除；FK 处置见 §2.4），children 导航中原「软删过滤 JOIN」作废；用户可改挂地图 root_location。
 
 ### 5.3 删除语义（D1-D7 拍板，load-bearing）
 
@@ -640,7 +640,7 @@ F36 被依赖:
 | 6 | **删除 = 真删 + 级联/reparent（D1-D6）** | DELETE 无参真删 / cascade 递归 / reparent_to 补 pin；有子 422 | 防误删整棵子树；子地图处理显式选择（用户方案） | 归档两级（否决）；静默默认级联（误删风险） |
 | 7 | **换图先写新后删旧** | save 成功才删旧文件 | 换图失败不丢旧图（原子性） | 先删旧（失败丢图） |
 | 8 | **FK 运行时由 service 显式维护（D10=b）** | 级联/SET NULL 全 service 单事务；ORM FK 仅建表声明 | 生产连接未开 foreign_keys=ON，测试开——依赖 DB FK = 测试绿生产挂 | 全局开 FK pragma（回归 F1-F16，独立后续项 #211） |
-| 9 | **children 过滤地点软删（评审 F2）** | JOIN world_settings 过滤 is_deleted=0 | 软删地点不可导航（面包屑断链规避）；地图保留为独立资产 | 不过滤（导航断链） |
+| 9 | **children 过滤地点软删（评审 F2）** | ~~JOIN world_settings 过滤 is_deleted=0~~ **【v1.2/#211 作废】** 地点真删后无软删过滤 | 地图保留为独立资产 | — |
 | 10 | **children 与 #175 共用地点→地图查询（评审 S10）** | repo 提供 `list_by_root_locations(project_id, location_ids)` | 单一来源（children 服务层 = list_pins 提取 locations → 调共用查询）；#175 复制直接复用 | 两套查询（实现重复） |
 | 11 | 项目硬删显式级联 | service 查 maps → 删 pins → 删文件 → 删 maps | D10=b 推论：FK 不生效时防孤儿数据 | 依赖 DB CASCADE（不生效） |
 | 12 | 无缺省置顶选项 | reparent_to 必填（显式目标） | 「变孤儿」不隐式发生（与 F35 一致） | 缺省置顶（隐式断链） |

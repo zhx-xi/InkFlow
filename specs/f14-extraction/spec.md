@@ -1430,7 +1430,7 @@ backend/src/inkflow/
 │       │                                置 None、事件保留；软删章节事件保留来源锚点）
 │       └── repositories/timeline_repo.py ← MODIFY F12: SQLiteTimelineRepository 实现
 │                                            list_by_chapter（WHERE project_id=? AND
-│                                            source_chapter_id=? AND is_deleted=0）
+│                                            source_chapter_id=?）——#211 后无 is_deleted 列
 ```
 
 **跨模块 MODIFY F32 settings（app_settings 切片配置 — 行式键值表免 ALTER，§5.6.3）**:

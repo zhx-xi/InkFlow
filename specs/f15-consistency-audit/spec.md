@@ -1,12 +1,13 @@
 # F15: 一致性审计服务 (audit_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
+> **Spec 版本**: 1.2 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第七个**模块，估算 3-5 人天）
 > **关联 Issues**: [#45](https://github.com/zhx-xi/InkFlow/issues/45)
 > **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——事件 `source_chapter_id` 跨模块引用校验 + 提取缺口对照）；F9 ✅（角色/关系/分组档案读取）；F10 ✅（世界条目读取）；F12 ✅（事件档案读取 + **委托 `TimelineService.check_consistency`** 时间线维度）；F13 ✅（伏笔档案读取 + `event_id` 锚点校验）；F14 ✅（`extraction_runs` 状态读取）；F5 — **不依赖**（F15 无 LLM，见 §1/§5）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #74）
+> **Spec 变更**（1.1 → 1.2，2026-09-18 #211）：**软删集合机制整体作废**——#211「普通实体软删→真删」后 F9/F12/F13 移除 `is_deleted` 列，审计的软删集合补充查询（原 `AuditRepositoryProtocol.list_deleted` + `infrastructure/database/repositories/audit_repo.py` 实现）**已删除**（域端口保留为兼容构造签名的空壳，见 `domain/ports/audit_repository.py` 文件头注释）。R-C1/R-C2/R-F1 三规则的「软删目标 → warning」分档随之移除，收敛为**悬空 → error 单一档**（引用目标不在活动集合即 error）；warning 仅保留 R-X2（提取失败 run）。§5.1/§5.4/§6.1/§8.2/§9/§12/§13 同步。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后（原变更日期 2026-08-13）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
 > **Spec 变更**（1.0 → 1.1，2026-09-17 #495）：§13 M8 手工验证闭环的「悬空引用」造场景同步——角色关系行改插 `knowledge_relations` 的 character↔character 子空间（`source_type='character'` + `target_type='character'`），因 `character_relations` 表已随 #495 废弃删除；R-C1 规则读取路径（`character_repo.list_relations`）与 F15 契约零变更。
 
 >
@@ -21,7 +22,7 @@
 
 对项目内**角色 / 时间线 / 世界 / 伏笔 4 个维度**做**一致性审计**：以确定性规则扫描各模块档案（角色关系/分组引用、时间线双线一致性、世界档案健康度、伏笔事件锚点与状态机、跨维度引用联动、F14 提取缺口），汇总输出一份 **AuditReport 审计报告**（summary + findings）。审计是**当前数据快照的只读计算**——不落库、不修改任何数据（验收标准 ①「4 维度一致性检查」+ ②「可生成审计报告」的直接表达）。
 
-**核心价值**: 长篇小说创作的数据分散在 F9-F13 五套档案里，作者与 AI Agent 需要一个「一键体检」入口：哪些角色关系引用了已删除的角色、时间线有没有未声明的倒叙、伏笔是否挂了已软删的事件、状态与时间戳是否矛盾、F14 增量提取有没有失败/漏跑的章节——一次调用全部暴露，修完再跑即收敛。**与 F12 双线检查的区别**: F12 只查时间线**内部**；F15 查**全部档案 + 档案之间的跨模块引用**（F14 引入的 `source_chapter_id` → F2 章节、F13 的 `event_id` → F12 事件，正是长篇小说最容易出现悬挂引用的地方）。
+**核心价值**: 长篇小说创作的数据分散在 F9-F13 五套档案里，作者与 AI Agent 需要一个「一键体检」入口：哪些角色关系引用了已删除的角色、时间线有没有未声明的倒叙、伏笔是否挂了已删除的事件、状态与时间戳是否矛盾、F14 增量提取有没有失败/漏跑的章节——一次调用全部暴露，修完再跑即收敛。**与 F12 双线检查的区别**: F12 只查时间线**内部**；F15 查**全部档案 + 档案之间的跨模块引用**（F14 引入的 `source_chapter_id` → F2 章节、F13 的 `event_id` → F12 事件，正是长篇小说最容易出现悬挂引用的地方）。
 
 **与 F9-F14 样板的关系（关键差异——本模块是「横切审计型」：F12 确定性检查型与 F14 横切收敛门面型的杂交）**: F9/F10 沉淀「实体 + AI 提取」，F11 演进为「实体 + AI 生成」，F12 演进为「实体 + 确定性检查（无 LLM）」，F13 演进为「实体 + 状态追踪 + F6 注入（无 LLM）」，F14 演进为「横切收敛门面（无新实体 + 增量 + RAG）」；**F15 不再新建任何业务实体表，也不新增任何 LLM 管线**——它是**只读聚合**：继承 F12 的「纯内存确定性计算、严格幂等、无副作用、可快照断言」（§5），继承 F14 的「跨模块读取、门面式依赖注入」（§5.1/§8），两者叠加出「对 4 维档案做一次性一致性体检」的横切能力：
 
@@ -40,7 +41,7 @@ F15  审计:    4 维档案(角色/时间线/世界/伏笔) + 跨模块引用 �
                └─ 跨维度:  事件 source_chapter_id → F2 章节 + F14 extraction_runs 缺口（R-X1/R-X2）
 ```
 
-**复用** 各模块的既有读取能力：`CharacterRepositoryProtocol`（含 `list_relations(project_id)` 全量关系查询）、`WorldRepositoryProtocol.list`、`ForeshadowingRepositoryProtocol.list`、`ChapterRepositoryProtocol.list_chapters`、`ExtractionRunRepositoryProtocol.list`（F14）——F15 服务层构造注入这些 Protocol 与 F12 `TimelineService`（委托 `view()`/`check_consistency()`，**不重写双线检查算法**，同 F14 门面「注入各模块 Service/仓储、不复制逻辑」的先例）；软删集合（既有查询不可见的 `is_deleted=1` 数据）经 **F15 自有补充查询端口** `AuditRepositoryProtocol` 获取（§8.2）。**无跨模块 MODIFY**：所有数据读取走既有 Protocol 方法（角色/世界/伏笔用分页循环取全量，零新增方法，论证见 §5.1/§12）。
+**复用** 各模块的既有读取能力：`CharacterRepositoryProtocol`（含 `list_relations(project_id)` 全量关系查询）、`WorldRepositoryProtocol.list`、`ForeshadowingRepositoryProtocol.list`、`ChapterRepositoryProtocol.list_chapters`、`ExtractionRunRepositoryProtocol.list`（F14）——F15 服务层构造注入这些 Protocol 与 F12 `TimelineService`（委托 `view()`/`check_consistency()`，**不重写双线检查算法**，同 F14 门面「注入各模块 Service/仓储、不复制逻辑」的先例）。**v1.1/#211 变更**：原「软删集合经 F15 自有 `AuditRepositoryProtocol` 获取」的机制**已作废**——F9/F12/F13 真删后无 `is_deleted` 列，`list_deleted` 与 `audit_repo.py` 实现均已移除；引用完整性规则改为「引用目标不在活动集合即悬空 → error」单一档。**无跨模块 MODIFY**：所有数据读取走既有 Protocol 方法（角色/世界/伏笔用分页循环取全量，零新增方法，论证见 §5.1/§12）。
 
 **边界声明**:
 - F15 **不建新实体表**（无 audit_reports 表）：审计是「当前数据快照的只读计算」，输出内存中的 AuditReport；**审计历史落库/多次运行轨迹对比归 Phase 2+**（见 §10）
@@ -73,7 +74,7 @@ class AuditSeverity(StrEnum):
     """严重级别（§6.2 语义）."""
 
     ERROR = "error"      # 引用断裂 / 状态矛盾 —— 数据不一致，需修正
-    WARNING = "warning"  # 软删引用 / 可恢复异常 —— 数据一致但值得注意
+    WARNING = "warning"  # 可恢复异常（提取失败 run / 档案缺口）—— 数据一致但值得注意
     INFO = "info"        # 缺口 / 健康度提示 —— 不涉及一致性
 ```
 
@@ -91,7 +92,7 @@ class AuditSeverity(StrEnum):
 | entity_type | str | 违规主体类型（`character`/`relation`/`group`/`world_setting`/`event`/`foreshadowing`/`chapter`/`run`） |
 | entity_id | uuid.UUID? | 违规主体 id（run 缺口无 UUID → None，id 字段承载） |
 | entity_name | str | 违规主体名称（标题/姓名/条目名；无名称场景用 id 短串） |
-| ref_type | str? | 引用目标类型（悬空/软删场景：`character`/`group`/`event`/`chapter`） |
+| ref_type | str? | 引用目标类型（悬空场景：`character`/`group`/`event`/`chapter`） |
 | ref_id | uuid.UUID? | 引用目标 id（如悬空的 to_character_id） |
 | data | dict[str, Any] | 附加上下文（时间线冲突对快照、run 状态等；§5 各规则明细） |
 
@@ -237,8 +238,8 @@ class AuditReport(BaseModel):
 | 落库 audit_reports 表（报告 + 快照 JSON） | 有历史可回溯 | 报告过期问题（数据变报告旧）；表结构/查询/清理三块设计；超出 3-5 人天 | ❌ 否决（归 Phase 2+，§10） |
 | **单报告模型 AuditReport（选定）** | 一个端点一次返回全部（体检心智）；summary + findings + 嵌套 timeline_check 三层结构覆盖摘要/明细/深挖 | 无（findings 量级 ≤ 数百） | ✅ 选定（§2.3） |
 | 每维度独立端点/独立报告 | 按需拉取 | 5 次往返；「整体一致性」无法一次判断；验收标准 ②「生成审计报告」是单数报告 | ❌ 否决（YAGNI） |
-| **三级严重级别 error/warning/info（选定）** | 与各模块软删语义对齐（软删引用 = warning 而非 error）；consistent 语义清晰（仅 error 决定） | 级别语义需文档化（§6.2） | ✅ 选定（§6.2/§12） |
-| 两级（error/info） | 模型更简 | 软删引用（合法但值得注意）无处安放——要么误报 error 要么降级 info 丢失提示价值 | ❌ 否决（§5.4 软删语义论证） |
+| **三级严重级别 error/warning/info（选定）** | error = 悬空引用等异常数据（v1.1/#211：真删后无「软删引用」档）；warning = 可恢复异常（提取失败 run 等）；consistent 语义清晰（仅 error 决定） | 级别语义需文档化（§6.2） | ✅ 选定（§6.2/§12） |
+| 两级（error/info） | 模型更简 | 可恢复异常（如提取失败 run）无处安放——要么误报 error 要么降级 info 丢失提示价值 | ❌ 否决（§5.4 论证） |
 | **finding.id 稳定键（选定）** | 快照断言/去重锚点；未来增量对比（Phase 2+ 历史归档）的基础 | 无 | ✅ 选定（§2.2/§6.3） |
 | finding 无 id | 模型更简 | 无法断言「同一条 finding 是否再次出现」；快照测试需整体比对 | ❌ 否决（确定性测试是 F12 继承的验收基线，§9） |
 
@@ -302,7 +303,7 @@ GET /api/v1/projects/3f2e1d4a-.../audit
       "rule_id": "character.group_ref",
       "dimension": "character",
       "severity": "warning",
-      "message": "角色 沈砚 的分组引用指向已软删的分组（分组已删除但成员引用残留）",
+      "message": "角色 沈砚 的分组引用指向不存在的分组（悬空引用）",
       "entity_type": "character",
       "entity_id": "5e6f7a8b-...",
       "entity_name": "沈砚",
@@ -345,7 +346,7 @@ GET /api/v1/projects/3f2e1d4a-.../audit
       "rule_id": "foreshadowing.event_anchor",
       "dimension": "foreshadowing",
       "severity": "warning",
-      "message": "伏笔「铜镜的秘密」锚点事件已软删（锚点保留但事件不在时间线视图中，请确认是否需解除挂接）",
+      "message": "伏笔「铜镜的秘密」锚点事件不存在（悬空锚点）",
       "entity_type": "foreshadowing",
       "entity_id": "1a2b3c4d-...",
       "entity_name": "铜镜的秘密",
@@ -459,8 +460,8 @@ inkflow audit check --project-id <uuid> [--json]
   [error] 角色: 关系 林晚→?? 的 to 端指向不存在的角色（悬空引用）
   [error] 时间线: 未声明的倒叙「林晚入宫」(5.0) →「外门往事」(3.0)
   [error] 伏笔: 「身世之谜」status=resolved 但 resolved_at 为空
-  [warning] 角色: 角色 沈砚 的分组引用指向已软删的分组
-  [warning] 伏笔: 「铜镜的秘密」锚点事件已软删
+  [error] 角色: 角色 沈砚 的分组引用指向不存在的分组（悬空引用）
+  [error] 伏笔: 「铜镜的秘密」锚点事件不存在（悬空锚点）
   [info] 世界: 项目已有 3 个章节但尚未建立世界观档案
   （共 6 条发现；完整报告见 inkflow audit check --json）
 
@@ -527,18 +528,17 @@ async def run_audit(self, project_id: uuid.UUID) -> AuditReport:
     # ② 单次全量读取（分页循环，§5.1 要点 4/5）
     chars, rels, groups = await self._load_characters(project_id)      # list 分页 + list_relations + list_groups
     worlds = await self._load_worlds(project_id)                       # list 分页循环
-    events, deleted_events = await self._load_events(project_id)       # view().narrative_order + audit_repo 软删事件集合
+    events = await self._load_events(project_id)                       # view().narrative_order（v1.1/#211: 无软删集合）
     fores = await self._load_foreshadowings(project_id)                # list 分页循环
     chapters = await self._load_chapters(project_id)                   # list_chapters 分页循环
     runs = await self._load_runs(project_id)                           # run_repo.list 分页循环
-    deleted_chars, deleted_groups = await self._audit_repo.list_deleted(project_id.int)  # 软删集合（§5.1 注）
     # ③ 规则引擎（按维度序执行，全部纯内存）
     findings: list[AuditFinding] = []
-    findings += self._audit_character(chars, rels, groups, deleted_chars, deleted_groups)  # R-C1/R-C2
+    findings += self._audit_character(chars, rels, groups)             # R-C1/R-C2（v1.1: 无软删集合）
     timeline_check = await self._timeline_service.check_consistency(project_id)  # R-T1 委托 F12
     findings += self._audit_timeline(timeline_check)                   # 转换（§5.3）
     findings += self._audit_world(worlds, len(chapters))               # R-W1/R-W2
-    findings += self._audit_foreshadowing(fores, events, deleted_events)  # R-F1/R-F2
+    findings += self._audit_foreshadowing(fores, events)              # R-F1/R-F2（v1.1: 无软删集合）
     findings += self._audit_cross(events, chapters, runs)              # R-X1/R-X2
     # ④ 汇总 + ⑤ 排序（§6.3）
     summary = self._summarize(findings, counts={...})                  # consistent 仅由 error 决定
@@ -547,35 +547,30 @@ async def run_audit(self, project_id: uuid.UUID) -> AuditReport:
                        findings=sorted(findings, key=_finding_sort_key),
                        timeline_check=timeline_check)
 
-def _audit_character(self, chars, rels, groups, deleted_chars, deleted_groups) -> list[AuditFinding]:
+def _audit_character(self, chars, rels, groups) -> list[AuditFinding]:
     """R-C1 关系引用完整性 + R-C2 分组引用完整性（纯函数，可单测）."""
     active = {c.id for c in chars}
-    deleted = set(deleted_chars)
     findings = []
     for r in rels:                             # list_relations 全量（F9 已提供）
         for end, label in ((r.from_character_id, "from"), (r.to_character_id, "to")):
-            if end in active:
-                continue
-            if end in deleted:
-                findings.append(AuditFinding(...severity=WARNING...))  # 软删 → warning
-            else:
+            if end not in active:                                       # v1.1/#211: 无软删档
                 findings.append(AuditFinding(...severity=ERROR...))    # 悬空 → error
     ...
     return findings
 ```
 
-> **注（软删集合的数据来源 — F15 自有补充查询）**: 各模块既有 Protocol 查询**默认不含软删**（`list`/`list_relations`/`list_groups`/`view` 语义均为活动数据，见各 Protocol docstring）——而审计的「软删 → warning」分级（R-C1/R-C2/R-F1）需要**软删集合**。既有模块**没有**只读的软删列表方法（`restore` 会改数据、`get` 不含软删，均不可用），因此 F15 新建**自有补充查询端口** `domain/ports/audit_repository.py`（`AuditRepositoryProtocol`，§8.2）并由 `infrastructure/database/repositories/audit_repo.py` 实现（SQLAlchemy 直接对 characters / character_groups / timeline_events 表查 `is_deleted=1`，只读、按 project_id 过滤）——**零跨模块 MODIFY**：不改动任何既有 Protocol/仓储，软删集合查询是审计特有的读取需求，由 F15 自己的 port + 实现承载（依赖方向合法：domain/ports → infrastructure 实现）。F2 章节**无软删概念**（硬删除，§5.5 注），R-X1 不需要软删章节集合。
+> **注（软删集合机制已于 #211 作废 — v1.2）**: 本 spec v1.1 曾设计「F15 自有补充查询端口 `AuditRepositoryProtocol`（`list_deleted`）」以获取软删集合，用于 R-C1/R-C2/R-F1 的「软删目标 → warning」分档。#211「普通实体软删→真删」后 F9/F12/F13 移除 `is_deleted` 列，**该机制整体作废**：`list_deleted` 方法与其实现 `infrastructure/database/repositories/audit_repo.py` **均已删除**（域端口 `domain/ports/audit_repository.py` 保留为兼容历史构造签名的空壳，见其文件头注释）。引用完整性规则随之收敛为**「引用目标不在活动集合即悬空 → error」单一档**——真删语义下不存在「已删除但记录保留」的中间状态，故无需软删集合。F2 章节本就**无软删概念**（硬删除，§5.5 注）。
 
 ### 5.2 规则注册表（8 条规则）
 
 | 规则 | rule_id | 维度 | 严重级别 | 数据源 | 判定条件（违规即产出 finding） |
 |------|---------|------|----------|--------|-------------------------------|
-| 关系引用完整性 | `character.relation_ref` | character | error / warning | F9 关系 + 角色 + audit_repo 软删集合 | 活动关系的 from/to 端指向：**软删角色** → warning；**不存在**（DB 级悬空）→ error |
-| 分组引用完整性 | `character.group_ref` | character | error / warning | F9 角色 + 分组 + audit_repo 软删集合 | 活动角色的 group_id 指向：**软删分组** → warning；**不存在** → error |
+| 关系引用完整性 | `character.relation_ref` | character | error | F9 关系 + 角色（v1.1：无软删集合） | 活动关系的 from/to 端指向**不存在**的角色（DB 级悬空）→ error（真删后无「软删角色 → warning」档） |
+| 分组引用完整性 | `character.group_ref` | character | error | F9 角色 + 分组（v1.1：无软删集合） | 活动角色的 group_id 指向**不存在**的分组 → error |
 | 时间线双线一致性 | `timeline.dual_consistency` | timeline | error / info | F12 ConsistencyReport | 委托 F12：order_conflict → error；flashback/flashforward → info（已声明合法）；无冲突 → 无 finding |
 | 世界条目内容健康度 | `world.entry_content` | world | info | F10 条目 | 活动条目 content 为空（仅名称无描述）→ info |
 | 世界档案缺口 | `world.archive_gap` | world | info | F2 章节 + F10 条目 | 项目有 ≥ 1 个活动章节且 0 个活动世界条目 → info |
-| 伏笔事件锚点 | `foreshadowing.event_anchor` | foreshadowing | error / warning | F13 伏笔 + F12 事件 + audit_repo 软删集合 | 活动伏笔的 event_id 指向：**软删事件** → warning（F13 语义：软删不影响锚点，审计提示）；**不存在** → error |
+| 伏笔事件锚点 | `foreshadowing.event_anchor` | foreshadowing | error | F13 伏笔 + F12 事件（v1.1：无软删集合） | 活动伏笔的 event_id 指向**不存在**的事件 → error |
 | 伏笔状态机一致性 | `foreshadowing.status_time` | foreshadowing | error | F13 伏笔 | status=resolved 且 resolved_at=None → error；status=open 且 resolved_at≠None → error |
 | 事件来源章节 | `timeline.source_chapter` | cross | error | F12 事件 + F2 章节 | 活动事件的 source_chapter_id 指向**不存在的章节** → error（F2 章节为硬删除、F14 FK ON DELETE SET NULL 应置 None——残留即异常数据） |
 | 提取 run 缺口 | `extraction.run_gap` | cross | warning / info | F14 run + F2 章节 | run.status=error → warning「提取失败」；活动章节从未有任何 run 记录 → info「从未提取」 |
@@ -604,25 +599,26 @@ def _audit_character(self, chars, rels, groups, deleted_chars, deleted_groups) -
 **R-C1 关系引用完整性**（`character.relation_ref`）:
 
 ```text
-输入: 活动关系列表 R + 活动角色 id 集合 C_active + 软删角色 id 集合 C_deleted（来自 audit_repo，§5.1 注）
+输入: 活动关系列表 R + 活动角色 id 集合 C_active（v1.1/#211：无软删集合，真删后不存在「已删行」）
 对每条 r ∈ R:
   对端 ∈ {r.from_character_id, r.to_character_id}:
     ├─ 对端 ∈ C_active        → 通过
-    ├─ 对端 ∈ C_deleted       → warning「关系 {from}→{to} 的 {端} 指向已软删的角色」
-    │                            （F9 语义: 角色软删会级联软删其关系——正常路径不可达，
-    │                              残留即历史数据/硬删窗口异常，提示作者确认）
-    └─ 对端 ∉ C_active ∪ C_deleted → error「关系 {from}→{to} 的 {端} 指向不存在的角色（悬空引用）」
+    ├─ (v1.1/#211 移除 C_deleted 档 —— 真删语义下无「已删角色」状态)
+    │                            （v1.1/#211: 真删后无「已删角色」集合；F9 语义——角色真删会
+    │                              级联物理删除其关系，正常路径不可达，残留即异常）
+    └─ 对端 ∉ C_active       → error「关系 {from}→{to} 的 {端} 指向不存在的角色（悬空引用）」
 ```
 
 **R-C2 分组引用完整性**（`character.group_ref`）:
 
 ```text
-输入: 活动角色列表 C + 活动分组 id 集合 G_active + 软删分组 id 集合 G_deleted（来自 audit_repo，§5.1 注）
+输入: 活动角色列表 C + 活动分组 id 集合 G_active（v1.1/#211：无软删集合）
 对每条 c ∈ C（group_id 非 None）:
   ├─ group_id ∈ G_active  → 通过
-  ├─ group_id ∈ G_deleted → warning「角色 {name} 的分组引用指向已软删的分组」
-  │                          （F9 语义: 软删分组时成员 group_id 置 NULL——正常路径不可达，残留即异常）
-  └─ group_id ∉ G_active ∪ G_deleted → error「角色 {name} 的分组引用指向不存在的分组（悬空引用）」
+  ├─ (v1.1/#211 移除 G_deleted 档 —— 真删分组时成员 group_id 置 NULL)
+                              （v1.1/#211: 无「已删分组」集合；F9 语义——真删分组时成员
+                                group_id 置 NULL，正常路径不可达，残留即异常）
+  └─ group_id ∉ G_active  → error「角色 {name} 的分组引用指向不存在的分组（悬空引用）」
 ```
 
 **R-W1 世界条目内容健康度**（`world.entry_content`）:
@@ -642,13 +638,13 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
 **R-F1 伏笔事件锚点**（`foreshadowing.event_anchor`）:
 
 ```text
-输入: 活动伏笔列表 F + 活动事件 id 集合 E_active + 软删事件 id 集合 E_deleted（来自 audit_repo，§5.1 注）
+输入: 活动伏笔列表 F + 活动事件 id 集合 E_active（v1.1/#211：无软删集合）
 对每条 f ∈ F（event_id 非 None）:
   ├─ event_id ∈ E_active  → 通过
-  ├─ event_id ∈ E_deleted → warning「伏笔 {title} 锚点事件已软删」
-  │                          （F13 语义: 事件软删不影响伏笔 event_id 锚点——锚点保留、注入 metadata
-  │                            原样携带；审计提示作者该事件已不在时间线视图中，确认是否需解除挂接）
-  └─ event_id ∉ E_active ∪ E_deleted → error「伏笔 {title} 锚点事件不存在（悬空锚点）」
+  ├─ (v1.1/#211 移除 E_deleted 档 —— 事件真删 → FK ON DELETE SET NULL 解除挂接)
+                              （v1.1/#211: 无「已删事件」集合；F13 语义——事件真删 → FK
+                                ON DELETE SET NULL 解除挂接，正常路径不可达，残留即异常）
+  └─ event_id ∉ E_active  → error「伏笔 {title} 锚点事件不存在（悬空锚点）」
 ```
 
 **R-F2 伏笔状态机一致性**（`foreshadowing.status_time`）:
@@ -662,7 +658,7 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
        「伏笔 {title} 状态为 open 但存在 resolved_at（状态与时间戳矛盾）」
 ```
 
-> **软删引用语义与 F9-F14 各 spec 一致（关键设计）**: ① 软删实体的引用**不是 error**——各模块的软删语义本就允许「记录保留、引用保留」（F13: 事件软删不影响伏笔锚点），审计报 **warning** 提示作者注意；② 只有**硬删/异常数据导致的悬空**（目标在活动集合与软删集合中都不存在）才报 **error**——正常业务路径下 F9/F13/F14 的 FK ON DELETE SET NULL / 级联删除会阻止悬空产生（F2 章节为**硬删除**，事件 `source_chapter_id` 在章节删除时被 FK SET NULL 置 None，故 R-X1 只有 error 档、无软删分支，§5.5 注），error 级意味着「数据已处于异常状态」（历史迁移、手工 DB 操作、并发窗口），需要人工修复；③ 该分级与各模块 spec 的删除语义一一对应（F9 §2.4 级联软删、F13 §2.1 锚点保留、F14 §2.6 章节联动（按 F2 实际语义：章节硬删 → SET NULL）），审计不引入新语义。
+> **引用完整性语义（v1.2 / #211 更新）**: ① 真删语义下**不存在「软删引用」这一档**——F9/F12/F13 的实体被删除后不保留记录，故引用目标要么活动、要么悬空，无中间状态；② **悬空（目标不在活动集合中）一律报 error**——这是唯一档——正常业务路径下 F9/F13/F14 的 FK ON DELETE SET NULL / 级联删除会阻止悬空产生（F2 章节为**硬删除**，事件 `source_chapter_id` 在章节删除时被 FK SET NULL 置 None，故 R-X1 只有 error 档、无软删分支，§5.5 注），error 级意味着「数据已处于异常状态」（历史迁移、手工 DB 操作、并发窗口），需要人工修复；③ 该判定与各模块 spec 的删除语义一一对应（F9 §2.4 级联物理删除、F13 §2.1 事件真删 → FK SET NULL 解除挂接、F14 §2.6 章节联动（按 F2 实际语义：章节硬删 → SET NULL）），审计不引入新语义。
 
 ### 5.5 跨维度联动规则明细（R-X1 / R-X2）
 
@@ -705,7 +701,7 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
 | 落库 | 同名合并 | 无 | run 记录 | **无（审计历史归 Phase 2+，§10）** |
 | 错误面 | LLM_ERROR + 提取错误 | 无 LLM | LLM/RAG/提取错误 | **仅 NOT_FOUND / DB_ERROR（最小错误面）** |
 | 测试方式 | Mock LLM 分支 | 快照断言 | Mock 各模块 Service | **Mock 各模块仓储 + Mock TimelineService，快照断言** |
-| 跨模块 | F6 替换归联调 | 无 | 委托 5 模块 + MODIFY F12 | **读取 6 模块 + 委托 F12，零跨模块 MODIFY**（软删集合走自有 audit_repo，§8.2） |
+| 跨模块 | F6 替换归联调 | 无 | 委托 5 模块 + MODIFY F12 | **读取 6 模块 + 委托 F12，零跨模块 MODIFY**（v1.2/#211：软删集合机制已作废，无 audit_repo） |
 
 ---
 
@@ -725,7 +721,7 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
 | 级别 | 含义 | 对 consistent 的影响 | 典型场景 |
 |------|------|---------------------|----------|
 | **error** | 引用断裂 / 状态矛盾——数据不一致，**需修正** | **决定 consistent**（任一 error → consistent=false） | 悬空关系/分组/锚点、状态-时间戳矛盾、未声明时间倒流 |
-| **warning** | 软删引用 / 可恢复异常——数据一致但值得注意 | 不影响 | 软删角色/分组/事件被引用、提取失败 run |
+| **warning** | 可恢复异常——数据一致但值得注意 | 不影响 | 提取失败 run（R-X2） |
 | **info** | 缺口 / 健康度提示——不涉及一致性 | 不影响 | 未建立档案、条目无内容、从未提取章节、已声明倒叙 |
 
 - `summary.consistent = (error 级 findings 为空)`——**仅由 error 决定**（同 F12 `consistent = conflicts 为空` 的语义同构：warning/info 是提示不是错误）
@@ -755,10 +751,10 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
 | 有章节无任何档案（角色/世界/伏笔/事件均 0） | 200：R-W2 info「未建立世界观档案」+ R-X2 info「章节从未提取」（×章节数）；consistent=true（无 error） |
 | 0 / 1 个时间线事件 | R-T1 无 finding（F12 语义: 空/单事件时间线无矛盾可言） |
 | 全部事件时间未知 | R-T1 无 finding（checked=0、skipped=n，透传嵌套报告） |
-| 关系引用已软删角色 | R-C1 warning（F9 级联软删语义下正常路径不可达——角色软删级联软删关系，残留即异常，提示确认） |
-| 关系引用不存在的角色（悬空） | R-C1 error（目标不在活动 ∪ 软删集合） |
-| 角色 group_id 指向软删/不存在的分组 | R-C2 warning / error（F9 语义: 软删分组时成员 group_id 置 NULL——残留即异常） |
-| 伏笔 event_id 指向软删事件 | R-F1 warning（F13 语义: 软删不影响锚点——锚点保留、注入原样携带；审计提示事件已不在视图） |
+| ~~关系引用已软删角色~~ | **（v1.1/#211 移除）** 真删后无此状态 |
+| 关系引用不存在的角色（悬空） | R-C1 error（目标不在活动集合） |
+| 角色 group_id 指向不存在的分组 | R-C2 error（F9 语义: 真删分组时成员 group_id 置 NULL——残留即异常） |
+| 伏笔 event_id 指向不存在的事件 | R-F1 error（F13 语义: 事件真删 → FK SET NULL 解除挂接——残留即异常） |
 | 伏笔 event_id 指向不存在的事件（悬空） | R-F1 error（正常路径 F13 服务层校验 + FK SET NULL 会阻止，悬空即异常数据） |
 | 伏笔 status=resolved 但 resolved_at 为空 | R-F2 error（状态与时间戳矛盾；正常路径 F13 resolve 动作端点自动设置 resolved_at，矛盾即异常数据） |
 | 伏笔 status=open 但 resolved_at 非空 | R-F2 error（同上；reopen 会清空 resolved_at） |
@@ -789,9 +785,8 @@ backend/src/inkflow/
 │   │   └── __init__.py        ← MODIFY: 导出新模型
 │   ├── ports/
 │   │   ├── audit_errors.py    ← CREATE: AuditServiceError / ProjectNotFoundError（404）
-│   │   ├── audit_repository.py ← CREATE: AuditRepositoryProtocol（软删集合补充查询，
-│   │   │                            list_deleted(project_id) -> (软删角色 ids, 软删分组 ids,
-│   │   │                            软删事件 ids)——§8.2；既有 Protocol 无只读软删查询，§5.1 注）
+│   │   ├── audit_repository.py ← 空壳保留（#211 后无软删集合查询；仅兼容
+│   │   │                            历史构造签名，见文件头注释）
 │   │   └── __init__.py        ← MODIFY: 导出
 │   └── services/
 │       ├── audit_service.py   ← CREATE: AuditService（run_audit 编排 + 8 条规则（§5.2）
@@ -803,9 +798,9 @@ backend/src/inkflow/
 ├── infrastructure/
 │   └── database/
 │       └── repositories/
-│           ├── audit_repo.py  ← CREATE: SQLiteAuditRepository（AuditRepositoryProtocol 实现：
+│           (v1.1/#211) audit_repo.py 已删除 —— 原 SQLiteAuditRepository 实现（
 │           │                        SQLAlchemy 只读查询 characters / character_groups /
-│           │                        timeline_events 表 is_deleted=1，按 project_id 过滤；
+│           │                        查 characters/character_groups/timeline_events 的 is_deleted=1）
 │           │                        F15 自有实现，不 MODIFY 任何既有仓储）
 │           └── __init__.py    ← MODIFY
 ├── api/
@@ -825,7 +820,7 @@ backend/src/inkflow/
 ```text
 backend/tests/unit/
 ├── test_audit_models.py       ← CREATE: 报告模型/DTO 校验（枚举/字段/序列化）
-├── test_audit_repo.py         ← CREATE: SQLiteAuditRepository（in-memory SQLite：软删角色/
+├── (v1.1/#211 移除) test_audit_repo.py —— 原 SQLiteAuditRepository 集成测试（软删角色/
 │                                    分组/事件集合查询、project_id 过滤、空结果、活动数据排除）
 ├── test_audit_service.py      ← CREATE: 规则引擎测试（Mock 各仓储 + Mock TimelineService +
 │                                    Mock AuditRepositoryProtocol：
@@ -836,7 +831,7 @@ tests/cli/
 └── test_cli_audit.py          ← CREATE: CLI 测试（Mock AuditService，信封/退出码/摘要）
 ```
 
-> **与 F12/F13 §8 的差异（测试布局）**: CLI 测试放顶层 `tests/cli/test_cli_audit.py`（Issue #61 后的现行布局，同 F13/F14）。**infrastructure/ 唯一新增** = `repositories/audit_repo.py`（软删集合补充查询，§5.1 注/§8.2——不建表、无 ORM 模型，只读查询既有表）；**无 `infrastructure/llm/templates/`**（无 LLM）。
+> **与 F12/F13 §8 的差异（测试布局）**: CLI 测试放顶层 `tests/cli/test_cli_audit.py`（Issue #61 后的现行布局，同 F13/F14）。**infrastructure/ 零新增**（v1.2/#211：原唯一新增 `repositories/audit_repo.py` 已删除；不建表、无 ORM 模型）；**无 `infrastructure/llm/templates/`**（无 LLM）。
 >
 > ⚠️ **CI 覆盖盲区防范（Issue #59/#61 教训）**: `tests/cli/test_cli_audit.py` **默认不被任何 CI job 收集**——实施时必须将其**显式加入 ci.yml `integration-cli-backend` job 的 pytest 文件列表**（与现有 14 个 `../tests/cli/test_cli_*.py` 并列，当前列表: project_mock/chapter_mock/write/output/serve/config/llm/character/world/outline/timeline/foreshadowing/extraction/vector；PowerShell 反引号续行、Windows 下 pytest 不展开 glob，须显式文件名——见 §9/§12）。`backend/tests/unit/` 新文件由 `unit-test-backend` job 的 `pytest tests/unit/` 自动覆盖（无需改 ci.yml）。
 
@@ -855,7 +850,7 @@ class AuditService:
     - F13 ForeshadowingRepositoryProtocol（伏笔读取）
     - F2 ChapterRepositoryProtocol（章节读取——R-X1/R-X2/R-W2 数据源）
     - F14 ExtractionRunRepositoryProtocol（run 读取——R-X2 数据源）
-    - AuditRepositoryProtocol（软删集合补充查询——R-C1/R-C2/R-F1 分级数据源，§8.2）
+    - （v1.1/#211 移除）AuditRepositoryProtocol 的 list_deleted 软删集合查询——引用校验改为悬空 error 单一档
 
     只依赖 domain/ports/ 与 domain/services/（Protocol 与领域服务），
     不依赖任何 infrastructure 实现——domain/ 零框架 import 门禁天然满足（ADR-002/015）。
@@ -870,7 +865,7 @@ class AuditService:
         foreshadowing_repo: ForeshadowingRepositoryProtocol,
         chapter_repo: ChapterRepositoryProtocol,
         run_repo: ExtractionRunRepositoryProtocol,
-        audit_repo: AuditRepositoryProtocol,
+        # (v1.1/#211) audit_repo 已从构造签名移除（真删语义无软删集合）
     ) -> None: ...
 
     async def run_audit(self, project_id: uuid.UUID) -> AuditReport: ...
@@ -882,8 +877,7 @@ def get_audit_service(db: AsyncSession) -> AuditService:
     """获取 AuditService 实例（F15 审计服务，spec §5/§8）.
 
     装配: 复用 F9/F10/F13/F14/F2/F1 各 SQLite 仓储 + F12 TimelineService
-    （get_timeline_service 先例）+ SQLiteAuditRepository（F15 自有软删集合
-    查询实现，§8.2）——除 audit_repo 外全部为既有实现。
+    （get_timeline_service 先例）——v1.2/#211 起全部为既有实现（无新增 infrastructure）。
     """
     return AuditService(
         project_repo=SQLiteProjectRepository(db),
@@ -893,43 +887,25 @@ def get_audit_service(db: AsyncSession) -> AuditService:
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
         run_repo=SQLExtractionRunRepository(db),
-        audit_repo=SQLiteAuditRepository(db),
+        # (v1.1/#211) audit_repo 参数已移除
     )
 ```
 
-### 8.2 AuditRepositoryProtocol（F15 自有补充查询端口 — 软删集合）
+### 8.2 ~~AuditRepositoryProtocol（F15 自有补充查询端口 — 软删集合）~~【v1.2 / #211 已作废】
+
+> **本节的 `list_deleted` 契约与 `SQLiteAuditRepository` 实现已于 #211 删除**（F9/F12/F13 真删后无 `is_deleted` 列）。下方内容作为 v1.0 设计**历史快照**保留，**不作当前契约依据**。现行为：引用完整性规则以「目标不在活动集合即悬空 → error」单一档判定（§5.4 注）；`domain/ports/audit_repository.py` 文件仍存在但仅剩兼容历史构造签名的空壳（见其文件头注释）。
 
 ```python
-# domain/ports/audit_repository.py
+# domain/ports/audit_repository.py —— v1.0 历史快照（#211 后 list_deleted 已删除）
 class AuditRepositoryProtocol(Protocol):
-    """审计软删集合补充查询端口（spec §5.1 注/§5.4）.
+    """~~审计软删集合补充查询端口~~ —— #211 真删语义下作废。
 
-    各模块既有 Protocol 查询默认不含软删（list/list_relations/list_groups/
-    view 均为活动数据），而审计的「软删 → warning」分级（R-C1/R-C2/R-F1）
-    需要软删集合——本端口承载该审计特有读取需求，由 F15 自有实现
-    （infrastructure/database/repositories/audit_repo.py）提供，不改动
-    任何既有 Protocol/仓储（零跨模块 MODIFY）。
-
-    注: F2 章节无软删概念（硬删除），本端口不提供章节软删查询（§5.5 注）。
+    现行文件内容：仅保留空的 Protocol 定义以兼容历史构造签名；
+    list_deleted 方法与其实现 audit_repo.py 均已删除。
     """
-
-    async def list_deleted(
-        self, project_id: int
-    ) -> tuple[builtins.list[int], builtins.list[int], builtins.list[int]]:
-        """列出项目内三类软删实体 id（角色 / 分组 / 事件）.
-
-        Args:
-            project_id: 项目主键（int，与 ORM 层一致）.
-
-        Returns:
-            (软删角色 ids, 软删分组 ids, 软删事件 ids) 三元组——
-            分别来自 characters / character_groups / timeline_events 表的
-            is_deleted=1 行（按 project_id 过滤）.
-        """
-        ...
 ```
 
-> **为什么 audit_repo 是「F15 自己的 port」而非 MODIFY 既有 Protocol（论证）**: ① 软删集合查询是**审计特有的读取需求**——各模块业务 CRUD 不需要「列出软删实体」（`restore` 是单实体操作、`get` 排除软删），为审计给 F9/F12 加方法 = 扩大既有模块契约面；② F15 自有 port + 实现保持「零跨模块 MODIFY」的纯消费者定位（§11），新增代码全部收在 F15 文件清单内；③ 依赖方向合法：`domain/ports/audit_repository.py` 定义契约、`infrastructure/database/repositories/audit_repo.py` 实现（同其它仓储同构，ADR-002/003）；④ 测试简单：服务层 Mock 该 port、实现层 in-memory SQLite 集成测试（§9）。
+> **（v1.0 历史论证，v1.2/#211 起该端口已作废）为什么 audit_repo 曾是「F15 自己的 port」而非 MODIFY 既有 Protocol**: ① 软删集合查询是**审计特有的读取需求**——各模块业务 CRUD 不需要「列出软删实体」（`restore` 是单实体操作、`get` 排除软删），为审计给 F9/F12 加方法 = 扩大既有模块契约面；② F15 自有 port + 实现保持「零跨模块 MODIFY」的纯消费者定位（§11），新增代码全部收在 F15 文件清单内；③ 依赖方向合法：`domain/ports/audit_repository.py` 定义契约、`infrastructure/database/repositories/audit_repo.py` 实现（同其它仓储同构，ADR-002/003）；④ 测试简单：服务层 Mock 该 port、实现层 in-memory SQLite 集成测试（§9）。
 
 > **不新增依赖**: F15 无 LLM、无 RAG、无新表——`backend/pyproject.toml` 与 `core/config.py` **零变更**（无新依赖、无新配置项；审计为只读计算，无阈值/开关类配置——规则常量写代码常量，YAGNI）。
 
@@ -941,7 +917,7 @@ class AuditRepositoryProtocol(Protocol):
 
 ```text
 单元测试: 报告模型/DTO 校验（枚举、字段、序列化）        ~8 cases
-集成测试: SQLiteAuditRepository（in-memory SQLite，软删集合查询）~8 cases
+集成测试: （v1.1/#211 移除）原 SQLiteAuditRepository 软删集合查询 ~8 cases
 服务测试: AuditService 规则引擎（Mock 各仓储 + Mock TimelineService +
           Mock AuditRepositoryProtocol）                   ~32 cases
 API 测试: GET /audit（Mock AuditService）               ~6 cases
@@ -952,17 +928,17 @@ CLI 测试: audit 组（Mock AuditService）                 ~10 cases
 
 **报告模型**: AuditDimension 五值 / AuditSeverity 三值 / AuditFinding 默认值（entity_id/ref_type/ref_id/data 可空）/ AuditSummary 计数逻辑（by_dimension 缺省空字典）/ AuditReport 序列化（model_dump(mode="json") 全字段）/ ConsistencyReport 引用（timeline_check=None 与完整嵌套两态）
 
-**仓储（SQLiteAuditRepository，in-memory SQLite）**: list_deleted 命中三类软删实体（角色/分组/事件，is_deleted=1）/ 活动实体（is_deleted=0）不返回 / 空项目 → 空三元组 / project_id 过滤（跨项目软删不可见）/ 无软删行 → 空列表 / 软删后 restore 的行不再出现 / 只读断言（查询不修改数据）
+**仓储（v1.1/#211 移除）**: 原 `SQLiteAuditRepository` 的 `list_deleted` 测试组整体删除——F9/F12/F13 真删后无 `is_deleted` 列，该实现已从代码库移除
 
 **规则引擎（Mock 各仓储 + Mock TimelineService + Mock AuditRepositoryProtocol，核心 ~32 cases）**:
-- **R-C1 关系引用**: 两端均活动 → 无 finding / to 端软删 → warning（message 含「已软删」）/ from 端软删 → warning / to 端不存在 → error（悬空）/ from 端不存在 → error / 空关系列表 → 无 finding / 软删关系不进入检查（repo 语义——list_relations 不含软删）
-- **R-C2 分组引用**: group_id 活动 → 无 finding / group_id 软删 → warning / group_id 不存在 → error / group_id=None（未分组）→ 跳过 / 空角色列表 → 无 finding
+- **R-C1 关系引用**: 两端均活动 → 无 finding / to 端不存在 → error（悬空）/ from 端不存在 → error / 空关系列表 → 无 finding（v1.1/#211: 无软删档）
+- **R-C2 分组引用**: group_id 活动 → 无 finding / group_id 不存在 → error / group_id=None（未分组）→ 跳过 / 空角色列表 → 无 finding（v1.1/#211: 无软删档）
 - **R-T1 时间线委托**: Mock check_consistency 返回含 2 条 order_conflict + 1 条 flashback 的报告 → 2 error + 1 info，转换字段正确（entity_id=prev.id、ref_id=next.id、data 含 prev/next 快照、id 稳定键）/ consistent=true 报告 → 无 finding / checked=0、skipped=n → 无 finding / **委托调用断言**: Mock check_consistency 被调用且收到 project_id（include_flashbacks=True 透传）/ **嵌套透传**: AuditReport.timeline_check == Mock 报告原样
 - **R-W1 条目内容**: content 为空 → info / content 非空 → 无 finding / 空白串（"   "）→ info
 - **R-W2 档案缺口**: 有章节（≥1）无条目 → info / 无章节 → 无 finding / 有条目 → 无 finding
-- **R-F1 事件锚点**: event_id 活动 → 无 finding / event_id 软删 → warning（F13 语义验证）/ event_id 不存在 → error / event_id=None（未挂接）→ 跳过 / 软删伏笔不进入检查（repo 语义）
+- **R-F1 事件锚点**: event_id 活动 → 无 finding / event_id 不存在 → error（悬空锚点）/ event_id=None（未挂接）→ 跳过（v1.1/#211: 无软删档）
 - **R-F2 状态机**: resolved+无 resolved_at → error / open+有 resolved_at → error / resolved+有 resolved_at → 无 finding / open+无 resolved_at → 无 finding
-- **R-X1 来源章节**: source_chapter_id 活动 → 无 finding / 软删 → warning / 不存在 → error / None（手工事件）→ 跳过
+- **R-X1 来源章节**: source_chapter_id 活动 → 无 finding / 不存在 → error / None（手工事件）→ 跳过（F2 章节本就硬删除，无软删档，§5.5 注）
 - **R-X2 run 缺口**: run.status=error → warning（data 含 error 消息）/ 章节 id 在 run source_key 中 → 无 info / 章节 id 不在 → info / source_key="manual" 不参与章节比对 / 无 run → 全部章节 info / 无章节 → 无 finding
 - **分页循环（Mock list 返回固定页）**: 角色 250 条（3 页）→ 循环拉全 250 / 世界 0 条 → 循环立即结束 / list 返回空页 → 终止（防死循环）
 - **汇总与排序**: 混合 findings → by_dimension 计数正确（5 维度键齐全）/ consistent 仅由 error 决定（warning+info 不影响）/ 排序 (dimension 序, severity 序, entity_name) 断言 / counts 各键计数正确（共享同一次读取——Mock 调用次数断言）
@@ -1007,7 +983,7 @@ CLI 测试: audit 组（Mock AuditService）                 ~10 cases
 
 ## 11. 依赖关系
 
-与 F1 §11 / F9-F14 §11 已声明依赖保持一致（F15 在其上调整——**横切审计型依赖面：读取 6 模块 + 委托 F12，零跨模块 MODIFY、唯一新增基础设施 = audit_repo**）：
+与 F1 §11 / F9-F14 §11 已声明依赖保持一致（F15 在其上调整——**横切审计型依赖面：读取 6 模块 + 委托 F12，零跨模块 MODIFY、v1.2/#211 起零新增基础设施**）：
 
 ```text
 F15 依赖:
@@ -1018,10 +994,10 @@ F15 依赖:
                            counts.chapters）
   F9 (character_service) ✅ — 角色档案读取（CharacterRepositoryProtocol: list 分页循环 +
                            list_relations 全量 + list_groups 全量——R-C1/R-C2 + counts；
-                           软删角色/分组集合经 F15 自有 audit_repo 查询，§5.1 注/§8.2）
+                           v1.2/#211：无软删集合，引用目标不在活动集合即悬空 → error）
   F10 (world_service)  ✅ — 世界条目读取（WorldRepositoryProtocol.list 分页循环——R-W1/R-W2 + counts）
   F12 (timeline_service) ✅ — ① 事件档案读取（TimelineService.view() 全量事件——R-X1 数据源；
-                           软删事件集合经 audit_repo 查询——R-F1 分级，§5.1 注/§8.2）；
+                           v1.2/#211：无软删集合——R-F1 悬空 → error）；
                            ② **委托 TimelineService.check_consistency**（R-T1 时间线维度，
                            不重写算法，§5.3）；③ ConsistencyReport 模型引用（§2.4）
   F13 (foreshadowing_service) ✅ — 伏笔档案读取（ForeshadowingRepositoryProtocol.list 分页循环
@@ -1043,7 +1019,7 @@ F15 被依赖:
   F3 (writing_service) ⏳ — (Phase 2+ 联调) 审计结果作为写作前自检的可选环节（§10）
 ```
 
-> **零跨模块 MODIFY 声明（与 F13/F14 的差异）**: F13 跨模块 MODIFY F6 sources.py、F14 跨模块 MODIFY F12 事件实体——**F15 无任何跨模块 MODIFY**：所有数据读取走既有 Protocol 方法（分页循环取全量，§5.1 要点 5）+ F15 自有 `AuditRepositoryProtocol`（软删集合补充查询，§8.2），不新增任何字段/方法/表到既有模块；新增代码全部收在 F15 文件清单内（§8），是创作工具链中首个「纯消费者」模块（只读依赖面）。
+> **零跨模块 MODIFY 声明（与 F13/F14 的差异）**: F13 跨模块 MODIFY F6 sources.py、F14 跨模块 MODIFY F12 事件实体——**F15 无任何跨模块 MODIFY**：所有数据读取走既有 Protocol 方法（分页循环取全量，§5.1 要点 5），不新增任何字段/方法/表到既有模块；新增代码全部收在 F15 文件清单内（§8），是创作工具链中首个「纯消费者」模块（只读依赖面）。
 >
 > **编号口径**: F15 = 一致性审计、F16 = 风格检测（ADR-019 现行口径）；旧文档中「F16 一致性审计」字样（如 F13 spec §1/§10 的早期表述）均为 ADR-019 之前旧编号（实际 = F15），本 spec 及后续一律以 ADR-019 为准（同 F9/F10/F12/F13/F14 spec §11 声明）。
 
@@ -1055,12 +1031,12 @@ F15 被依赖:
 |------|------|------|
 | 模块类型 | **横切审计型**（F12 确定性检查 × F14 横切门面的杂交）：无 LLM、只读聚合、不建实体表 | PRD P1-07 验收标准 ①「4 维度一致性检查」是**跨档案检查**（非新档案），验收标准 ②「可生成审计报告」是**只读计算产物**（非新数据）；F12 已证明确定性检查模式（无 LLM、幂等、可快照），F14 已证明横切读取模式（门面注入、零重写）——两者叠加即 F15，无需发明新模式（§1） |
 | 不建实体表 | AuditReport 为纯内存瞬态报告模型，无 audit_reports 表/ORM | 审计是「当前数据快照的只读计算」——报告由数据即时推导，落库即引入「报告过期」问题（数据变了报告旧了）；历史归档（多次运行对比）是独立需求，归 Phase 2+（§10）；P5 YAGNI |
-| 依赖注入方式 | 构造注入各模块 **Repository Protocol** + F12 **TimelineService** + F15 自有 **AuditRepositoryProtocol**（镜像 F14 门面）；只依赖 domain/ports/ + domain/services/ | 各 Protocol 已由 F9-F14 定义（§8 引用不重定义）；注入仓储而非直接 SQL（ADR-003）；不依赖 infrastructure 使服务层可纯 Mock 测试（ADR-009/015）；委托 TimelineService 而非重写双线算法——F12 算法是单一真相（§5.3，同 F14 委托各 Service 先例）；软删集合查询由 F15 自有 port 承载（§8.2） |
+| 依赖注入方式 | 构造注入各模块 **Repository Protocol** + F12 **TimelineService**（v1.2/#211 起不含 audit_repo，镜像 F14 门面）；只依赖 domain/ports/ + domain/services/ | 各 Protocol 已由 F9-F14 定义（§8 引用不重定义）；注入仓储而非直接 SQL（ADR-003）；不依赖 infrastructure 使服务层可纯 Mock 测试（ADR-009/015）；委托 TimelineService 而非重写双线算法——F12 算法是单一真相（§5.3，同 F14 委托各 Service 先例）；软删集合查询由 F15 自有 port 承载（§8.2） |
 | 全量读取策略 | **分页循环**（list limit=100 循环拉全量），不为 F9/F10/F13 加 list_all 方法 | 审计是低频只读操作（量级 ≤ 数百），分页循环成本毫秒级；给 3 个模块加全量方法 = 跨模块 MODIFY × 3 + 各模块测试面扩大，违背 YAGNI（备选「MODIFY 加 list_all」被否决，§5.1 要点 5）；F9 关系/分组已有全量方法（list_relations/list_groups）、F12 事件走 view() 全量——已覆盖大部分读取；软删集合（分页 list 不可见）走 F15 自有 audit_repo（下一行） |
-| 软删集合查询 | **F15 自有 `AuditRepositoryProtocol` + `SQLiteAuditRepository`**（只读查 characters / character_groups / timeline_events 表 is_deleted=1，按 project_id 过滤） | 既有 Protocol 无只读软删列表方法（`get` 排除软删、`restore` 会改数据，均不可用）；软删集合是**审计特有**读取需求，F15 自有 port + 实现承载（§8.2）——零跨模块 MODIFY、依赖方向合法（ADR-002/003）；备选「MODIFY F9/F12 Protocol 加 list_deleted」扩大既有契约面、污染业务端口（否决，§8.2 论证） |
+| ~~软删集合查询~~ | **（v1.2/#211 作废）** 原 `AuditRepositoryProtocol.list_deleted` + `SQLiteAuditRepository` 已删除 | F9/F12/F13 真删后无 `is_deleted` 列 → 无软删集合可查；引用完整性收敛为悬空 error 单一档（§5.4 注） |
 | 时间线维度 | **委托 F12 check_consistency**，conflicts/flashbacks → findings 转换 + 原始 ConsistencyReport 嵌套透传 | 双线检查算法（相邻对扫描、声明制）是 F12 的成熟能力与单一真相（F12 §5.3 完备性论证）；重写 = 双份算法真相 + 双份测试面；转换层（§5.3）是纯函数可单测；嵌套报告让深挖零往返 |
-| 严重级别 | 三级 error/warning/info；**consistent 仅由 error 决定** | 与 F12「consistent = conflicts 为空」语义同构（已声明倒叙不影响一致性子）；软删引用与缺口是「注意」不是「错误」——各模块软删语义本就允许引用保留（F13 锚点保留），报 error 会误伤合法数据（§6.2） |
-| 软删引用分级 | 软删目标 → warning；悬空（活动 ∪ 软删集合都不存在）→ error | 与 F9-F14 删除语义一一对应（§5.4 论证）：正常业务路径 FK SET NULL/级联删除阻止悬空，error = 异常数据；软删是合法状态，warning = 提示作者确认（§5.4 注）；**F2 章节无软删概念**（硬删除 + FK SET NULL），R-X1 只有 error 档（§5.5 注） |
+| 严重级别 | 三级 error/warning/info；**consistent 仅由 error 决定** | 与 F12「consistent = conflicts 为空」语义同构（已声明倒叙不影响一致性子）；档案缺口是「注意」不是「错误」（F13 锚点保留），报 error 会误伤合法数据（§6.2） |
+| 引用完整性分级（v1.2/#211） | **悬空（不在活动集合）→ error 单一档**；无「软删目标 → warning」档 | 与 F9-F14 真删语义一一对应（§5.4 论证）：正常业务路径 FK SET NULL/级联删除阻止悬空，error = 异常数据；真删后无「记录保留」中间状态，故无 warning 档；**F2 章节本就无软删概念**（硬删除 + FK SET NULL）（§5.5 注） |
 | API 形态 | `GET /api/v1/projects/{project_id}/audit`（只读幂等，无查询参数） | 镜像 F12 `GET .../timeline/check` 先例（无副作用 → GET 语义正确、可缓存，F12 §12 论证）；审计是项目级资源嵌套项目路径（§3）；无过滤参数——报告量级 ≤ 数百，全量返回 + 客户端过滤（YAGNI） |
 | CLI 布局 | `inkflow audit check --project-id <uuid> [--json]`，人类可读摘要 + --json 完整报告 | 审计是单一心智（「体检」），一个命令足够（同 F12 check 先例）；摘要规则（error/warning 逐条、info 只计数）控制终端噪音；--json 供 Agent/脚本消费（F7 约定） |
 | CLI 退出码 | **恒 0**（成功执行；发现不一致是「结果」非「执行错误」） | 与 F7 退出码语义隔离：退出码 1 = 执行错误（NOT_FOUND/DB_ERROR），审计发现问题 ≠ 命令失败；脚本消费 `data.summary.consistent` 判断（--json 信封）；备选「发现 error 退出码 1」会让脚本无法区分「审计失败」与「审计发现不一致」（待澄清 Q1） |
@@ -1078,8 +1054,8 @@ F15 被依赖:
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
 | M1 | 报告模型 + DTO 校验（AuditDimension 5 值 / AuditSeverity 3 值 / AuditFinding 可空字段 / AuditSummary 计数 / AuditReport 序列化 + ConsistencyReport 引用） | `pytest backend/tests/unit/domain/models/test_audit_models.py -v` 全绿 |
-| M2 | 规则引擎·角色维度（R-C1 关系引用完整性：活动/软删 warning/悬空 error 全分支；R-C2 分组引用完整性） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-C1/R-C2 用例） |
-| M3 | 规则引擎·世界 + 伏笔维度（R-W1 条目内容健康度 / R-W2 档案缺口 / R-F1 event_id 锚点（软删 warning、悬空 error）/ R-F2 status-resolved_at 状态机一致性） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-W*/R-F* 用例） |
+| M2 | 规则引擎·角色维度（R-C1 关系引用完整性：活动通过 / 悬空 error 分支；R-C2 分组引用完整性） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-C1/R-C2 用例） |
+| M3 | 规则引擎·世界 + 伏笔维度（R-W1 条目内容健康度 / R-W2 档案缺口 / R-F1 event_id 锚点（悬空 error）/ R-F2 status-resolved_at 状态机一致性） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-W*/R-F* 用例） |
 | M4 | 规则引擎·时间线委托 + 跨维度（R-T1 委托 Mock check_consistency → 转换 + 嵌套透传；R-X1 事件 source_chapter_id 章节校验；R-X2 run 缺口：error run warning + 从未提取章节 info） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（R-T1/R-X* 用例） |
 | M5 | 服务编排（分页循环全量读取 / 汇总计数 / consistent 语义 / findings 排序 / counts / 项目校验 404 / 失败传播 / 确定性快照断言） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（编排用例） |
 | M6 | API GET /audit（成功路径 / 404 项目不存在 / 无效 UUID / 500 透传 / 幂等） | `pytest backend/tests/unit/api/routers/test_audit_api.py -v` 全绿 |
@@ -1109,7 +1085,7 @@ F15 被依赖:
 
 | 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
 |------|---------|--------------|------|------|------|
-| GET /projects/{project_id}/audit | 项目存在 | 校验项目（404）→ 单次全量读取（分页循环：角色/关系/分组/世界条目/事件/伏笔/章节/runs + 软删集合）→ 规则引擎（R-C1/R-C2 角色、R-T1 委托 F12、R-W1/R-W2 世界、R-F1/R-F2 伏笔、R-X1/R-X2 跨维度）→ 汇总 + 排序（dimension → severity → entity_name） | 200 + AuditReport（summary.consistent/total/by_dimension/counts + findings[] + timeline_check 嵌套） | 404「项目不存在」；无效 UUID → 404（_parse_id）；500「内部错误: ...」（任一档案仓储读取失败 / 委托 F12 异常——不产出部分报告） | 只读幂等、无副作用（GET 语义可缓存）；无请求体/无查询参数（YAGNI）；空项目 → consistent=true、findings 空、counts 全 0；有章节无档案 → info 级 R-W2/R-X2、consistent=true（无 error）；0/1 事件 → R-T1 无 finding |
+| GET /projects/{project_id}/audit | 项目存在 | 校验项目（404）→ 单次全量读取（分页循环：角色/关系/分组/世界条目/事件/伏笔/章节/runs）→ 规则引擎（R-C1/R-C2 角色、R-T1 委托 F12、R-W1/R-W2 世界、R-F1/R-F2 伏笔、R-X1/R-X2 跨维度）→ 汇总 + 排序（dimension → severity → entity_name） | 200 + AuditReport（summary.consistent/total/by_dimension/counts + findings[] + timeline_check 嵌套） | 404「项目不存在」；无效 UUID → 404（_parse_id）；500「内部错误: ...」（任一档案仓储读取失败 / 委托 F12 异常——不产出部分报告） | 只读幂等、无副作用（GET 语义可缓存）；无请求体/无查询参数（YAGNI）；空项目 → consistent=true、findings 空、counts 全 0；有章节无档案 → info 级 R-W2/R-X2、consistent=true（无 error）；0/1 事件 → R-T1 无 finding |
 
 ### 14.2 CLI 命令状态流
 
@@ -1120,7 +1096,7 @@ F15 被依赖:
 ### 14.3 验收锚点（写入 §14）
 
 - A1：空项目 → 200 consistent=true、findings 空、counts 全 0、timeline_check.checked=0
-- A2：关系 to 端指向不存在角色（悬空）→ R-C1 error「悬空引用」；引用已软删角色/分组 → warning
+- A2：关系 to 端指向不存在角色（悬空）→ R-C1 error「悬空引用」；分组引用指向不存在分组 → R-C2 error
 - A3：伏笔 status=resolved 但 resolved_at 空（或 open 但 resolved_at 非空）→ R-F2 error
 - A4：事件 source_chapter_id 指向不存在章节 → R-X1 error；run.status=error → R-X2 warning（error 截断 ≤500 入 data）；活动章节从未有任何 run → R-X2 info（manual run 不参与章节比对）
 - A5：CLI 审计发现 error → 退出码 0 + ❌ 摘要；项目不存在 → 退出码 1 + NOT_FOUND 信封
