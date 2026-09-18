@@ -184,7 +184,7 @@ class ChapterAuditService:
             ChapterNotFoundError: 章节不存在或属于其他项目（404 语义）.
         """
         # ① 项目校验（服务层统一校验一次，404）
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 
@@ -307,7 +307,7 @@ class ChapterAuditService:
             NoPendingAuditError: 该章无待确认审计（422 语义）.
         """
         # ① 项目校验（同 audit 步骤 ①）
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 
@@ -355,7 +355,7 @@ class ChapterAuditService:
         Raises:
             ProjectNotFoundError: 项目不存在（404 语义）.
         """
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
         return await self._audit_log_repo.list(_to_int_id(project_id), offset=offset, limit=limit)
@@ -542,7 +542,7 @@ class ChapterAuditService:
             return None
         volume_text = ""
         if chapter_outline.parent_id is not None:
-            volume = await self._outline_repo.get(_to_int_id(chapter_outline.parent_id))
+            volume = await self._outline_repo.get(chapter_outline.parent_id)
             if volume is not None:
                 volume_text = self._format_outline(volume)
         return build_outline_compliance_messages(

@@ -177,7 +177,7 @@ class AuditService:
             各仓储读取异常 / TimelineService 委托异常: 透传（router 转 500）.
         """
         # ① 项目校验（服务层统一校验一次，404）
-        project = await self._project_repo.get(_to_int_id(project_id))
+        project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 

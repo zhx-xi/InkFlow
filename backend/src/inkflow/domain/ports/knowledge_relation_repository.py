@@ -2,8 +2,8 @@
 
 KnowledgeRelationRepositoryProtocol 定义 KnowledgeRelation 的 CRUD 操作与
 实体清理辅助方法，基础设施层（SQLite / mock / memory）实现该 Protocol。
-仓储层方法入参用 int（与 ORM 层一致），Service 负责 UUID → int 转换
-（沿用 F1 `_to_int_id` 模式）。
+仓储层 `get` 主键入参用领域 UUID（#1271 收窄），其余方法沿用 int/uuid
+兼容归一。
 
 依据: specs/f48-knowledge-graph/spec.md §2.1/§5.2/§5.3。
 """
@@ -11,6 +11,7 @@ KnowledgeRelationRepositoryProtocol 定义 KnowledgeRelation 的 CRUD 操作与
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.knowledge_graph import KnowledgeRelation
@@ -37,11 +38,11 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, relation_id: int) -> KnowledgeRelation | None:
+    async def get(self, relation_id: uuid.UUID) -> KnowledgeRelation | None:
         """按主键查询关系.
 
         Args:
-            relation_id: 关系主键（int，与 ORM 层一致）.
+            relation_id: 关系主键（领域 UUID，见 #1271）.
 
         Returns:
             命中则返回 KnowledgeRelation，否则返回 None.

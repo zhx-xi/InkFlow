@@ -111,14 +111,14 @@ class MapService:
 
     async def create_map(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         name: str,
         description: str = "",
-        root_location_id: int | uuid.UUID | None = None,
+        root_location_id: uuid.UUID | None = None,
         image_filename: str = "",
         image_content: bytes = b"",
         bg_source: str = "image",
-        parent_map_id: int | uuid.UUID | None = None,
+        parent_map_id: uuid.UUID | None = None,
     ) -> WorldMap:
         """创建地图（spec §5.4 校验链 ①②③④ + 文件/落库编排 ⑤⑥）.
 
@@ -149,12 +149,12 @@ class MapService:
             raise MapBgSourceError()
         pid_int = _to_int_id(project_id)
         # ① 项目存在性
-        if self._project_repo is None or await self._project_repo.get(pid_int) is None:
+        if self._project_repo is None or await self._project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         # ② 根地点存在 + 同项目（repo.get 仅返回活动条目 → 软删地点 = 不存在）
         root_int = _to_int_id(root_location_id) if root_location_id is not None else None
-        if root_int is not None:
-            loc = await self._world_repo.get(root_int)
+        if root_location_id is not None:
+            loc = await self._world_repo.get(root_location_id)
             if loc is None or _to_int_id(loc.project_id) != pid_int:
                 raise MapRootLocationNotFoundError()
         # ③ 项目内同名 + 根地点唯一挂载
@@ -166,8 +166,8 @@ class MapService:
                 raise MapRootLocationConflictError()
         # ④ parent_map_id 校验（#368 v1.3，spec §5.4）：同项目存在的地图；层级深度不限
         parent_int = _to_int_id(parent_map_id) if parent_map_id is not None else None
-        if parent_int is not None:
-            parent_map = await self._repo.get(parent_int)
+        if parent_map_id is not None:
+            parent_map = await self._repo.get(parent_map_id)
             if parent_map is None or _to_int_id(parent_map.project_id) != pid_int:
                 raise MapParentMapNotFoundError()
         # ⑤ 图片文件编排：image 模式必填图片（缺图 422）；shape/ai 可无图
@@ -209,7 +209,7 @@ class MapService:
 
     async def list_maps(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         root_location_id: int | uuid.UUID | None = None,
         top_level_only: bool = False,
         offset: int = 0,
@@ -231,7 +231,7 @@ class MapService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list(
             project_id=pid_int,
@@ -243,18 +243,18 @@ class MapService:
             limit=limit,
         )
 
-    async def get_map(self, map_id: int | uuid.UUID) -> WorldMap | None:
+    async def get_map(self, map_id: uuid.UUID) -> WorldMap | None:
         """按主键获取地图；不存在返回 None（router 转 404）."""
-        return await self._repo.get(_to_int_id(map_id))
+        return await self._repo.get(map_id)
 
-    async def get_image_file(self, map_id: int | uuid.UUID) -> Path | None:
+    async def get_image_file(self, map_id: uuid.UUID) -> Path | None:
         """返回地图图片的绝对路径（FileResponse 用；地图不存在返回 None）."""
-        wm = await self._repo.get(_to_int_id(map_id))
+        wm = await self._repo.get(map_id)
         if wm is None:
             return None
         return self._asset_store.resolve(wm.image_path)
 
-    async def update_map(self, map_id: int | uuid.UUID, update: WorldMapUpdate) -> WorldMap | None:
+    async def update_map(self, map_id: uuid.UUID, update: WorldMapUpdate) -> WorldMap | None:
         """更新地图元数据（exclude_unset 语义；不换图，换图走 replace_image）.
 
         校验链（spec §5.4）:
@@ -282,7 +282,7 @@ class MapService:
             MapParentCycleError: 目标 = 自身或自身子孙（422）.
         """
         sid = _to_int_id(map_id)
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(map_id)
         if existing is None:
             return None
         # ② 改名冲突（排除自身）
@@ -293,7 +293,7 @@ class MapService:
         # ③ 根地点改挂校验
         if "root_location_id" in update.model_fields_set and update.root_location_id is not None:
             new_int = _to_int_id(update.root_location_id)
-            loc = await self._world_repo.get(new_int)
+            loc = await self._world_repo.get(update.root_location_id)
             if loc is None or _to_int_id(loc.project_id) != _to_int_id(existing.project_id):
                 raise MapRootLocationNotFoundError()
             dups, _ = await self._repo.list(
@@ -304,7 +304,7 @@ class MapService:
         # ④' parent_map_id 改挂（v1.4 #378）：父图存在/同项目 + 循环校验（防成环）
         if "parent_map_id" in update.model_fields_set and update.parent_map_id is not None:
             parent_int = _to_int_id(update.parent_map_id)
-            parent_map = await self._repo.get(parent_int)
+            parent_map = await self._repo.get(update.parent_map_id)
             if parent_map is None or _to_int_id(parent_map.project_id) != _to_int_id(
                 existing.project_id
             ):
@@ -331,7 +331,7 @@ class MapService:
 
     async def replace_image(
         self,
-        map_id: int | uuid.UUID,
+        map_id: uuid.UUID,
         image_filename: str,
         image_content: bytes,
     ) -> WorldMap | None:
@@ -348,8 +348,7 @@ class MapService:
         Raises:
             MapAssetError: 新图写入失败（旧文件与 DB 均不动，透传）.
         """
-        sid = _to_int_id(map_id)
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(map_id)
         if existing is None:
             return None
         # ② 先写新文件（失败透传——旧文件与 DB 不动）
@@ -365,9 +364,9 @@ class MapService:
 
     async def delete_map(
         self,
-        map_id: int | uuid.UUID,
+        map_id: uuid.UUID,
         cascade: bool = False,
-        reparent_to: int | uuid.UUID | None = None,
+        reparent_to: uuid.UUID | None = None,
     ) -> bool:
         """真删地图（D6 参数矩阵，spec §5.3）.
 
@@ -395,16 +394,16 @@ class MapService:
         # #1139: 过滤（children）与级联 SQL 绑定前先短路不存在的地图——128 位 int
         # 会在 SQL 绑定处抛 OverflowError → 500；真删矩阵各分支均以「地图存在」
         # 为前提，不存在 → False（router 转 404「地图不存在」）
-        if await self._repo.get(sid) is None:
+        if await self._repo.get(map_id) is None:
             return False
         direct_children = await self._repo.children(sid)
         if cascade:
-            return await self._delete_cascade(sid, direct_children)
+            return await self._delete_cascade(map_id, direct_children)
         if reparent_to is not None:
-            return await self._delete_reparent(sid, direct_children, reparent_to)
+            return await self._delete_reparent(map_id, direct_children, reparent_to)
         if direct_children:
             raise MapChildrenActionRequiredError()
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(map_id)
         if existing is None:
             return False
         await self._repo.delete(sid)
@@ -413,7 +412,7 @@ class MapService:
         await publish_change("map", "delete", existing.id, existing.project_id)
         return True
 
-    async def children(self, map_id: int | uuid.UUID) -> list[WorldMap]:
+    async def children(self, map_id: uuid.UUID) -> list[WorldMap]:
         """查询本图 pin 关联地点的子地图（drill-down；地点软删过滤由 repo 保证）.
 
         #1139: 空结果才需判定父地图存在性——地图不存在 → MapNotFoundError
@@ -423,16 +422,17 @@ class MapService:
         """
         mid = _to_int_id(map_id)
         items = await self._repo.children(mid)
-        if not items and await self._repo.get(mid) is None:
+        if not items and await self._repo.get(map_id) is None:
             raise MapNotFoundError()
         return items
 
     # ── 删除辅助（D6 分支）────────────────────────────────────────
 
-    async def _delete_cascade(self, sid: int, direct_children: list[WorldMap]) -> bool:
+    async def _delete_cascade(self, map_id: uuid.UUID, direct_children: list[WorldMap]) -> bool:
         """cascade 分支: 递归子树集合 → delete_many 单事务 → 逐图删文件."""
+        sid = _to_int_id(map_id)
         # 自身文件路径先取（先 DB 后文件；删后 repo.get 将查不到自身）
-        self_map = await self._repo.get(sid)
+        self_map = await self._repo.get(map_id)
         subtree_ids: list[int] = [sid]
         subtree_maps: list[WorldMap] = []
         frontier = direct_children
@@ -461,14 +461,15 @@ class MapService:
 
     async def _delete_reparent(
         self,
-        sid: int,
+        map_id: uuid.UUID,
         direct_children: list[WorldMap],
-        reparent_to: int | uuid.UUID,
+        reparent_to: uuid.UUID,
     ) -> bool:
         """reparent 分支: 子图 pin 改挂新父（D3 自动补 pin）→ 真删自身."""
+        sid = _to_int_id(map_id)
         target_int = _to_int_id(reparent_to)
-        target = await self._repo.get(target_int)
-        existing = await self._repo.get(sid)
+        target = await self._repo.get(reparent_to)
+        existing = await self._repo.get(map_id)
         if target is None:
             raise MapReparentTargetError()
         if existing is None:
@@ -499,7 +500,7 @@ class MapService:
                 for p in target_pins
             ):
                 continue
-            loc = await self._world_repo.get(b_int)
+            loc = await self._world_repo.get(b)
             label = loc.name if loc is not None else ""
             await self._repo.add_pin(
                 MapPin(
@@ -531,13 +532,13 @@ class MapService:
 
     async def add_pin(
         self,
-        map_id: int | uuid.UUID,
-        location_id: int | uuid.UUID | None = None,
+        map_id: uuid.UUID,
+        location_id: uuid.UUID | None = None,
         x: float = 0.0,
         y: float = 0.0,
         label: str = "",
         type: str = "location",
-        ref_id: int | uuid.UUID | None = None,
+        ref_id: uuid.UUID | None = None,
     ) -> MapPin:
         """添加 pin（F43 P2: type/ref_id 关联校验 + 位置校验）.
 
@@ -559,7 +560,7 @@ class MapService:
             MapPinLocationNotFoundError: 地点不存在或跨项目（422）.
         """
         sid = _to_int_id(map_id)
-        wm = await self._repo.get(sid)
+        wm = await self._repo.get(map_id)
         if wm is None:
             raise MapNotFoundError()
         if type not in {"location", "role", "event", "other"}:
@@ -567,16 +568,16 @@ class MapService:
         # F43 P2: role/event 关联校验（未注入对应 repo 时跳过校验仅透传，D-17）
         ref_int = _to_int_id(ref_id) if ref_id is not None else None
         if type == "role" and self._character_repo is not None:
-            char = await self._character_repo.get(ref_int) if ref_int is not None else None
+            char = await self._character_repo.get(ref_id) if ref_id is not None else None
             if char is None or _to_int_id(char.project_id) != _to_int_id(wm.project_id):
                 raise MapPinRefNotFoundError()
         elif type == "event" and self._timeline_repo is not None:
-            event = await self._timeline_repo.get(ref_int) if ref_int is not None else None
+            event = await self._timeline_repo.get(ref_id) if ref_id is not None else None
             if event is None or _to_int_id(event.project_id) != _to_int_id(wm.project_id):
                 raise MapPinRefNotFoundError()
         loc_int = _to_int_id(location_id) if location_id is not None else None
-        if loc_int is not None:
-            loc = await self._world_repo.get(loc_int)
+        if location_id is not None:
+            loc = await self._world_repo.get(location_id)
             if loc is None or _to_int_id(loc.project_id) != _to_int_id(wm.project_id):
                 raise MapPinLocationNotFoundError()
         now = _utcnow()
@@ -598,7 +599,7 @@ class MapService:
         return created_pin
 
     async def list_pins(
-        self, map_id: int | uuid.UUID, location_id: int | uuid.UUID | None = None
+        self, map_id: uuid.UUID, location_id: int | uuid.UUID | None = None
     ) -> list[MapPin]:
         """透传 repo.list_pins；location_id 提供时内存过滤（本地量级；repo 契约单参）.
 
@@ -614,7 +615,7 @@ class MapService:
                 for p in pins
                 if p.location_id is not None and _to_int_id(p.location_id) == loc_int
             ]
-        if not pins and await self._repo.get(mid) is None:
+        if not pins and await self._repo.get(map_id) is None:
             raise MapNotFoundError()
         return pins
 
@@ -630,7 +631,7 @@ class MapService:
         if existing is None:
             return None
         if "location_id" in update.model_fields_set and update.location_id is not None:
-            loc = await self._world_repo.get(_to_int_id(update.location_id))
+            loc = await self._world_repo.get(update.location_id)
             if loc is None:
                 raise MapPinLocationNotFoundError()
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}

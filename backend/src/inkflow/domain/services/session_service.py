@@ -138,7 +138,7 @@ class SessionService:
         if data.project_id is not None:
             if self._project_repo is None:
                 raise SessionServiceError("项目仓储未配置，无法校验项目存在性")
-            project = await self._project_repo.get(_to_int_id(data.project_id))
+            project = await self._project_repo.get(data.project_id)
             if project is None:
                 raise ProjectNotFoundError()
         now = _utcnow()
@@ -225,8 +225,7 @@ class SessionService:
         Returns:
             更新后的完整 Session；会话不存在返回 None.
         """
-        sid = _to_int_id(session_id)
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(session_id)
         if existing is None:
             return None
         updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
@@ -251,8 +250,7 @@ class SessionService:
         或归档 → SessionNotFoundError），再校验迁移合法性（非法 →
         SessionTransitionError，文案「会话当前状态 {状态} 不允许 {动作}」）.
         """
-        sid = _to_int_id(session_id)
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(session_id)
         if existing is None:
             raise SessionNotFoundError()
         if existing.status not in allowed:
@@ -418,7 +416,7 @@ class SessionService:
             SessionNotFoundError: 会话不存在/已归档（spec §7 #5/#6）.
         """
         sid = _to_int_id(session_id)
-        existing = await self._repo.get(sid)
+        existing = await self._repo.get(session_id)
         if existing is None:
             raise SessionNotFoundError()
         seq = await self._repo.next_seq(sid)

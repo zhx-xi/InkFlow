@@ -87,7 +87,7 @@ class SummaryService:
             raise ValueError(f"章节不存在: {chapter_id}")
 
         # 查缓存
-        cached = await self._repo.get(chapter_id_int)
+        cached = await self._repo.get(chapter_id)
 
         if force or cached is None:
             return await self._generate_and_cache(chapter, model)

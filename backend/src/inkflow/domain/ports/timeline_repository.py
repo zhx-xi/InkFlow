@@ -1,9 +1,8 @@
 """时间线事件仓储端口 — 时间线管理持久化契约.
 
 TimelineRepositoryProtocol 定义 TimelineEvent 的 CRUD 操作与叙事位置辅助
-方法，基础设施层（SQLite / mock / memory）实现此 Protocol。仓储层方法入参
-用 int（与 ORM 层一致），Service 负责 UUID ↔ int 转换（沿用 F1
-`_to_int_id` 模式）。
+方法，基础设施层（SQLite / mock / memory）实现此 Protocol。仓储层 `get`
+主键入参用领域 UUID（#1271 收窄），其余方法沿用 int/uuid 兼容归一。
 
 依据: specs/f12-timeline/spec.md §8.1。
 """
@@ -11,6 +10,7 @@ TimelineRepositoryProtocol 定义 TimelineEvent 的 CRUD 操作与叙事位置�
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.timeline import TimelineEvent
@@ -40,11 +40,11 @@ class TimelineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, event_id: int) -> TimelineEvent | None:
+    async def get(self, event_id: uuid.UUID) -> TimelineEvent | None:
         """按主键查询事件.
 
         Args:
-            event_id: 事件主键（int，与 ORM 层一致）.
+            event_id: 事件主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 TimelineEvent，否则返回 None.

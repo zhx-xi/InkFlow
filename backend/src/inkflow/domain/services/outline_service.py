@@ -183,7 +183,7 @@ class OutlineService:
         if level == "chapter" and parent_id is None:
             raise OutlineHierarchyError("章大纲必须挂载在卷大纲下")
         if parent_id is not None:
-            parent = await self._repo.get(_to_int_id(parent_id))
+            parent = await self._repo.get(parent_id)
             if parent is None or parent.project_id != project_id:
                 raise OutlineHierarchyError("父大纲不存在或不属于该项目")
             if level == "volume" and parent.level != "overall":
@@ -247,7 +247,7 @@ class OutlineService:
         if level == "chapter" and self._project_repo is not None:
             # #999 契约 §3：章级大纲按项目已选格式归一后再走重名检查/落库
             # （项目不存在/读配置失败 → 保持 DTO 产物不阻断）
-            project: Project | None = await self._project_repo.get(pid_int)
+            project: Project | None = await self._project_repo.get(project_id)
             if project is not None:
                 name = normalize_chapter_title(name, project.config.chapter_title_format)
         existing = await self._repo.get_by_name(pid_int, name)
@@ -281,9 +281,9 @@ class OutlineService:
         await publish_change("outline", "create", created.id, project_id)
         return created
 
-    async def get_outline(self, outline_id: int | uuid.UUID) -> Outline | None:
+    async def get_outline(self, outline_id: uuid.UUID) -> Outline | None:
         """按主键获取大纲；不存在返回 None（router 转 404）."""
-        return await self._repo.get(_to_int_id(outline_id))
+        return await self._repo.get(outline_id)
 
     async def get_volume_outline(self, volume_id: int | uuid.UUID) -> Outline | None:
         """解析链：当前卷 -> 关联卷纲（level=volume）；无则返回 None."""
@@ -291,7 +291,7 @@ class OutlineService:
 
     async def list_outlines(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
@@ -317,7 +317,7 @@ class OutlineService:
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list(
             project_id=pid_int,
@@ -329,9 +329,7 @@ class OutlineService:
             level=level,
         )
 
-    async def auto_link_chapter(
-        self, outline_id: int | uuid.UUID, chapter_id: int | uuid.UUID
-    ) -> bool:
+    async def auto_link_chapter(self, outline_id: uuid.UUID, chapter_id: int | uuid.UUID) -> bool:
         """#1001 正文落盘自动关联：章级大纲只填空绑定（弱依赖 A）.
 
         Args:
@@ -341,7 +339,7 @@ class OutlineService:
         Returns:
             True = 本次新建关联；False = 未写（不存在/非章级/已绑定/跨项目/章不存在）.
         """
-        outline = await self._repo.get(_to_int_id(outline_id))
+        outline = await self._repo.get(outline_id)
         if outline is None or outline.level != "chapter":
             return False
         if outline.chapter_id is not None:
@@ -396,9 +394,7 @@ class OutlineService:
         linked = await self.auto_link_chapter(target.id, chapter_id)
         return target.id if linked else None
 
-    async def update_outline(
-        self, outline_id: int | uuid.UUID, update: OutlineUpdate
-    ) -> Outline | None:
+    async def update_outline(self, outline_id: uuid.UUID, update: OutlineUpdate) -> Outline | None:
         """部分更新大纲（exclude_unset 语义，同 F1）.
 
         业务校验（spec §7 + F43 P3 §2.8）: 改名撞项目内其他活动大纲 → 422；
@@ -419,8 +415,7 @@ class OutlineService:
             OutlineHierarchyError: 层级约束违反.
             OutlineChapterRefError: chapter_id 约束违反.
         """
-        oid = _to_int_id(outline_id)
-        existing = await self._repo.get(oid)
+        existing = await self._repo.get(outline_id)
         if existing is None:
             return None
         if "name" in update.model_fields_set and update.name is not None:
@@ -482,7 +477,7 @@ class OutlineService:
 
     async def create_point(
         self,
-        outline_id: int | uuid.UUID,
+        outline_id: uuid.UUID,
         name: str,
         type: str = "",
         description: str = "",
@@ -507,7 +502,7 @@ class OutlineService:
             ArcNotInProjectError: 弧线不存在或不属于该项目（422 语义）.
         """
         oid_int = _to_int_id(outline_id)
-        outline = await self._repo.get(oid_int)
+        outline = await self._repo.get(outline_id)
         if outline is None:
             raise OutlineNotFoundError()
         if arc_id is not None:
@@ -600,7 +595,7 @@ class OutlineService:
             await publish_change("plot_point", "delete", point_id, None)
         return deleted
 
-    async def list_points(self, outline_id: int | uuid.UUID) -> list[PlotPoint]:
+    async def list_points(self, outline_id: uuid.UUID) -> list[PlotPoint]:
         """查询大纲内全部情节点（position ASC 稳定排序，spec §6.3）.
 
         Args:
@@ -614,7 +609,7 @@ class OutlineService:
                 router 转 404「大纲不存在」）.
         """
         oid = _to_int_id(outline_id)
-        outline = await self._repo.get(oid)
+        outline = await self._repo.get(outline_id)
         if outline is None:
             raise OutlineNotFoundError()
         return await self._repo.list_points(oid)
@@ -663,13 +658,13 @@ class OutlineService:
         """按主键获取弧线；不存在返回 None（router 转 404）."""
         return await self._repo.get_arc(_to_int_id(arc_id))
 
-    async def list_arcs(self, project_id: int | uuid.UUID) -> list[StoryArc]:
+    async def list_arcs(self, project_id: uuid.UUID) -> list[StoryArc]:
         """查询项目内全部故事弧线（name ASC，spec §6.3）."""
         pid_int = _to_int_id(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
-        if project_repo is not None and await project_repo.get(pid_int) is None:
+        if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         return await self._repo.list_arcs(pid_int)
 
@@ -747,7 +742,7 @@ class OutlineService:
             raise OutlineServiceError("大纲生成器未配置")
         if self._project_repo is None:
             raise OutlineServiceError("项目仓储未配置，无法校验项目存在性")
-        project = await self._project_repo.get(_to_int_id(request.project_id))
+        project = await self._project_repo.get(request.project_id)
         if project is None:
             raise ProjectNotFoundError()
         # #669 replace 前置校验：目标大纲存在且属于同一项目（LLM 调用前快速失败；
@@ -756,7 +751,7 @@ class OutlineService:
         if request.mode == "replace" and request.save:
             target_id = request.target_outline_id
             assert target_id is not None  # §1.1 model_validator 保证 replace 必有目标大纲
-            target = await self._repo.get(_to_int_id(target_id))
+            target = await self._repo.get(target_id)
             if target is None:
                 raise OutlineNotFoundError()
             if target.project_id != request.project_id:
@@ -764,7 +759,7 @@ class OutlineService:
         elif request.save and request.target_outline_id is not None:
             # D6① 追加入口预检（#668）：save=true + target → LLM 调用前快速失败，不浪费 token。
             # 跨项目与不存在统一 OutlineNotFoundError（router 转 404）；save=false 纯预览不校验。
-            target = await self._repo.get(_to_int_id(request.target_outline_id))
+            target = await self._repo.get(request.target_outline_id)
             if target is None or target.project_id != request.project_id:
                 raise OutlineNotFoundError()
         logger.info(
@@ -778,9 +773,7 @@ class OutlineService:
             default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
         )
 
-    async def confirm_replace(
-        self, outline_id: int | uuid.UUID, *, approved: bool
-    ) -> dict[str, Any]:
+    async def confirm_replace(self, outline_id: uuid.UUID, *, approved: bool) -> dict[str, Any]:
         """覆盖确认（#669）：approved=True 应用 pending；False 取消.
 
         两段式替换的第二步（第一步 generate replace 暂存由
@@ -810,7 +803,7 @@ class OutlineService:
         if self._generator is None:
             raise OutlineServiceError("大纲生成器未配置")
         oid = _to_int_id(outline_id)
-        outline = await self._repo.get(oid)
+        outline = await self._repo.get(outline_id)
         if outline is None:
             raise OutlineNotFoundError()
         pending = outline.extra.get("replace_pending")

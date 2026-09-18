@@ -15,9 +15,8 @@
   分页，供 runs 查询（§3.3）
 - FK 级联: 项目物理删除 → run 级联物理删除（DB FK CASCADE）；
   章节删除后 run 行保留（孤儿行，不影响任何逻辑）
-- 仓储层入参用 int（与 ORM 层一致），Service 负责 UUID ↔ int 转换
-  （沿用 F1 `_to_int_id` 模式）；ExtractionRun.project_id 为领域 UUID，
-  落库时经 _uuid_to_int 映射为 int
+- 仓储层 `get` 的 project_id 入参用领域 UUID（#1271 收窄；裸 int 为兼容路径）；
+  ExtractionRun.project_id 为领域 UUID，落库时经 _uuid_to_int 映射为 int
 
 注: 方法名 ``list`` 会遮蔽类作用域中的内置 ``list``，返回注解统一
 写作 ``builtins.list[...]``（与 domain/ports/extraction_run_repository.py 一致）。
@@ -39,6 +38,10 @@ from inkflow.domain.models.extraction import (
     ExtractionType,
 )
 from inkflow.infrastructure.database.models.extraction_run import ExtractionRunORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -98,7 +101,7 @@ class SQLExtractionRunRepository:
 
     async def get(
         self,
-        project_id: int,
+        project_id: int | uuid.UUID,
         type: ExtractionType,
         source_key: str,
     ) -> ExtractionRun | None:
@@ -107,8 +110,15 @@ class SQLExtractionRunRepository:
         门面增量判定用（spec §5.2 步骤 ①）: 命中 = 该源已有 run 记录，
         比较 content_hash 决定 skip；未命中 = 首次提取。
         """
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(project_id, uuid.UUID):
+            pid = require_uuid_pk(project_id)
+        else:
+            pid = uuid_to_pk_or_none(project_id)
+        if pid is None:
+            return None
         stmt = select(ExtractionRunORM).where(
-            ExtractionRunORM.project_id == project_id,
+            ExtractionRunORM.project_id == pid,
             ExtractionRunORM.type == type.value,
             ExtractionRunORM.source_key == source_key,
         )

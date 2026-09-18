@@ -68,7 +68,9 @@ class IndexRebuildService:
             for pid in project_ids:
                 resolved.append(pid.int if isinstance(pid, uuid.UUID) else pid)
             for pid in resolved:
-                project = await self._project_repo.get(pid)
+                # #1271: resolved 为 int 契约（running-key / progress 复用），
+                # 项目存在性校验需 UUID 形态；int → UUID 为原值往返
+                project = await self._project_repo.get(uuid.UUID(int=pid))
                 if project is None:
                     raise ProjectNotFoundError(f"Project not found: {pid}")
         else:

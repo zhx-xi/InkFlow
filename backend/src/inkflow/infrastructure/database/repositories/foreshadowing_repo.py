@@ -35,7 +35,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -110,7 +113,11 @@ class SQLiteForeshadowingRepository:
 
     async def get(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
         """按主键查询伏笔。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        fid = uuid_to_pk_or_none(foreshadowing_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(foreshadowing_id, uuid.UUID):
+            fid = require_uuid_pk(foreshadowing_id)
+        else:
+            fid = uuid_to_pk_or_none(foreshadowing_id)
         if fid is None:
             return None
         stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == fid)

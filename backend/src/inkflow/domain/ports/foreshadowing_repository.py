@@ -2,8 +2,8 @@
 
 ForeshadowingRepositoryProtocol 定义 Foreshadowing 的 CRUD 操作与 F6 注入
 集合查询（list_open），基础设施层（SQLite / mock / memory）实现此
-Protocol。仓储层方法入参用 int（与 ORM 层一致），Service 负责 UUID ↔ int
-转换（沿用 F1 `_to_int_id` 模式）。
+Protocol。仓储层 `get` 主键入参用领域 UUID（#1271 收窄），其余方法沿用
+int/uuid 兼容归一。
 
 事件校验（event_id 存在性 + 同项目）不在本端口：复用 F12
 TimelineRepositoryProtocol.get（Service 层构造注入，spec §8.1）。
@@ -14,6 +14,7 @@ TimelineRepositoryProtocol.get（Service 层构造注入，spec §8.1）。
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.foreshadowing import Foreshadowing
@@ -43,11 +44,11 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, foreshadowing_id: int) -> Foreshadowing | None:
+    async def get(self, foreshadowing_id: uuid.UUID) -> Foreshadowing | None:
         """按主键查询伏笔.
 
         Args:
-            foreshadowing_id: 伏笔主键（int，与 ORM 层一致）.
+            foreshadowing_id: 伏笔主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 Foreshadowing，否则返回 None.

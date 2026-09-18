@@ -5,6 +5,7 @@ ProjectRepositoryProtocol 使用 typing.Protocol 实现结构化子类型（stat
 基础设施层（SQLAlchemy / mock / memory）实现这些方法即可自动满足接口要求。
 """
 
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.project import Project
@@ -24,11 +25,11 @@ class ProjectRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, project_id: int) -> Project | None:
+    async def get(self, project_id: uuid.UUID) -> Project | None:
         """根据主键获取项目（排除软删除记录）.
 
         Args:
-            project_id: 项目主键.
+            project_id: 项目主键（领域 UUID，见 #1271）.
 
         Returns:
             若找到且 is_deleted=False 则返回 Project，否则返回 None.

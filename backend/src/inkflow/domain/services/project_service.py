@@ -236,7 +236,7 @@ class ProjectService:
         Returns:
             若找到则返回 Project，否则返回 None.
         """
-        return await self._repo.get(_to_int_id(project_id))
+        return await self._repo.get(project_id)
 
     async def list_projects(
         self,
@@ -272,7 +272,7 @@ class ProjectService:
         Returns:
             更新后的完整 Project，若项目不存在则返回 None.
         """
-        existing = await self._repo.get(_to_int_id(project_id))
+        existing = await self._repo.get(project_id)
         if existing is None:
             return None
         updates = dto.model_dump(exclude_unset=True)

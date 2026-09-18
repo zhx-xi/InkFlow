@@ -16,7 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.infrastructure.database.models.project import ProjectORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import (
+    require_uuid_pk,
+    uuid_to_pk_or_none,
+)
 
 
 def _utcnow() -> datetime:
@@ -79,7 +82,11 @@ class SQLiteProjectRepository:
     async def get(self, project_id: int | uuid.UUID) -> Project | None:
         """按 ID 查询项目（排除软删除记录）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
         # #1230: 入参先归一为 int 再比较（domain 层天然传 UUID；UUID < int 会抛 TypeError）
-        pid = uuid_to_pk_or_none(project_id)
+        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
+        if isinstance(project_id, uuid.UUID):
+            pid = require_uuid_pk(project_id)
+        else:
+            pid = uuid_to_pk_or_none(project_id)
         if pid is None:
             return None
         stmt = select(ProjectORM).where(

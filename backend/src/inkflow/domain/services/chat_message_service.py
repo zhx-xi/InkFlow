@@ -88,10 +88,7 @@ class ChatMessageService:
         """
         # #1166: 先校验父项目存在——溢出（128 位 int）经 project_repo.get 自带
         # int64 守卫恒 None → 404，不再走到 INSERT（500 同修）
-        if (
-            self._project_repo is not None
-            and await self._project_repo.get(_to_int_id(project_id)) is None
-        ):
+        if self._project_repo is not None and await self._project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
         created: Conversation = await self._repo.create_conversation(project_id, title)  # type: ignore[attr-defined]  # 鸭子类型：repo 提供 create_conversation
         return created

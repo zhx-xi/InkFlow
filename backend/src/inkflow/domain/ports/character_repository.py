@@ -2,8 +2,8 @@
 
 CharacterRepositoryProtocol 定义 Character / CharacterGroup /
 CharacterRelation 三组 CRUD 操作，基础设施层（SQLite / mock / memory）
-实现此 Protocol。仓储层方法入参用 int（与 ORM 层一致），Service 负责
-UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
+实现此 Protocol。仓储层 `get` 主键入参用领域 UUID（#1271 收窄），
+其余方法沿用 int/uuid 兼容归一。
 
 依据: specs/f9-character/spec.md §8.1。
 """
@@ -11,6 +11,7 @@ UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
 from __future__ import annotations
 
 import builtins
+import uuid
 from typing import Protocol
 
 from inkflow.domain.models.character import (
@@ -44,11 +45,11 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get(self, character_id: int) -> Character | None:
+    async def get(self, character_id: uuid.UUID) -> Character | None:
         """按主键查询角色.
 
         Args:
-            character_id: 角色主键（int，与 ORM 层一致）.
+            character_id: 角色主键（领域 UUID，见 #1271）.
 
         Returns:
             若命中则返回 Character，否则返回 None.
