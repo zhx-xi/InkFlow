@@ -575,13 +575,21 @@ test('设定库：一图多标记（E2E-M2）——点击画布 → pin-dialog �
 
     await openMapWorkbench(window, rootLocationId);
 
-    // 预置 1 个 pin（画布叠加层渲染 map-pin-<id>）
-    await expect(canvasPins(window)).toHaveCount(1, { timeout: 15_000 });
+    // #1257：openMapWorkbench 只等到 map-canvas 可见 = 画布节点挂载，不代表 pin 数据已定稿
+    // 渲染（#1239 同族：「可见性 ≠ 就绪」）。画布叠加层(map-pin-<id>) 与 pin 列表行
+    // (map-pin-row-<id>) 同源于 MapWorkbench 的 pins state，两侧同时就绪才是数据定稿证据。
+    // 计数断言(toHaveCount) 只保证数量，不能证明叠加层已完成首帧 → 点击可能落在
+    // 重渲染瞬间被吞（CI 实测：#1257 main run 35206668105 该用例挂 pin-dialog 15s 不见，
+    // 其余 21 用例含 M1/M3 全绿，同 commit PR run + rerun 均绿 = 时序 flaky）。
+    await expect(canvasPins(window)).toHaveCount(1, { timeout: 30_000 });
+    await expect(window.getByTestId('map-pin-list').getByRole('listitem')).toHaveCount(1, {
+      timeout: 30_000,
+    });
 
     // 点击画布任意位置 → PinDialog（名称/类型/保存五元素齐全）
     await window.getByTestId('map-canvas').click({ position: { x: 150, y: 120 } });
     const dialog = window.getByTestId('pin-dialog');
-    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
     await expect(dialog.getByTestId('pin-name')).toBeVisible();
 
     // 填名称 → 保存（label 必填 1-50 gate；默认 type=location 不选关联 → 纯注释 pin）
