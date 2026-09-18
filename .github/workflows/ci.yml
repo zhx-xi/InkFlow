@@ -11,6 +11,16 @@ on:
       - 'tests/**'
       - 'backend/pyproject.toml'
       - 'backend/uv.lock'
+      # ── W14-B (#1291)：补「已纳入 CI 判定、却不在触发集」的路径（workflow 级缺口）──
+      # 与 job 级 paths-filter 不同：这些路径一旦不被 paths: 匹配，整个 workflow 不触发
+      # → 所有 required checks 无报告 → PR BLOCKED（#118/#119 同族）。
+      - 'ci_cd/**'                        # 门禁脚本 + 其单测（lint-backend 跑 pytest ../ci_cd/tests/）
+      - 'ruff.toml'                       # backend lint 配置根（lint-backend 判定输入）
+      - 'pyrightconfig.json'              # 类型检查配置（本地口径，纳入触发集防漂移）
+      - 'backend/conftest.py'             # pytest 根 conftest（fixture 全局影响）
+      - 'backend/.pre-commit-config.yaml' # pre-commit/ruff 版本口径（#1214 教训）
+      - 'backend/pyinstaller/**'          # 打包 spec（#48）
+      - 'backend/scripts/**'              # 开发/测试辅助脚本
       - 'frontend/**'
       - '.github/**'
       - '*.md'
@@ -28,6 +38,14 @@ on:
       - 'tests/**'
       - 'backend/pyproject.toml'
       - 'backend/uv.lock'
+      # ── W14-B (#1291)：同 push 块，补齐 workflow 级触发缺口 ──
+      - 'ci_cd/**'
+      - 'ruff.toml'
+      - 'pyrightconfig.json'
+      - 'backend/conftest.py'
+      - 'backend/.pre-commit-config.yaml'
+      - 'backend/pyinstaller/**'
+      - 'backend/scripts/**'
       - 'frontend/**'
       - '.github/**'
       - '*.md'
