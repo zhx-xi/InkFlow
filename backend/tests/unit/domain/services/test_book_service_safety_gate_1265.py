@@ -185,6 +185,39 @@ async def test_write_book_safety_valve_allows_rerun_when_content_cleared():
 
 
 @pytest.mark.asyncio
+async def test_prepare_run_allows_rerun_after_chapters_deleted():
+    """#1265 真实入口：`prepare_run`（GUI/CLI `book run` → `start_run` → 409 走这条）
+    在章已删（`chapter_id=None`）+ 执行态 done 时必须放行 running。
+
+    issue 现象即从此路径来：`inkflow book run <plan>` rc=1「该章已有内容，拒绝重跑」。
+    """
+    svc, plan, _chapter, deps = _service_with_chapters(
+        chapter_id=None, content_checker_result=False
+    )
+
+    result = await svc.prepare_run(plan.id)
+
+    assert result["status"] == "running"
+    deps["writer_factory"].assert_not_awaited()  # prepare_run 只预检 + 落 running，不委托
+
+
+@pytest.mark.asyncio
+async def test_prepare_run_blocks_real_content():
+    """`prepare_run` 真已写（checker=True）→ 仍抛 ChapterAlreadyWrittenError（409）。
+
+    防重复意图在真实入口上的守护。
+    """
+    svc, plan, chapter, deps = _service_with_chapters(
+        chapter_id=uuid.uuid4(), content_checker_result=True
+    )
+
+    with pytest.raises(ChapterAlreadyWrittenError, match="已有内容"):
+        await svc.prepare_run(plan.id)
+
+    deps["content_checker"].assert_awaited_once_with(chapter.chapter_id)
+
+
+@pytest.mark.asyncio
 async def test_check_content_written_only_progress_must_not_block():
     """用例 4（可证伪自证）：纯执行态记录（无 checker 可查）→ 不得拒绝。
 
