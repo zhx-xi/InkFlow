@@ -275,7 +275,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('__default__');
 
@@ -289,7 +289,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('deepseek/deepseek-v4-flash');
 
@@ -302,7 +302,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('__default__');
 
@@ -316,7 +316,7 @@ test('设置页：#268 角色模型三态 Select（跟随默认/指定模型/禁
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBeNull();
   } finally {
@@ -362,7 +362,7 @@ test('#268 三态指定模型 → 重启（二次 launch 同数据目录）→ �
           const r = await fetchKernel(first.kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('deepseek/deepseek-v4-flash');
   } finally {
@@ -433,7 +433,7 @@ test('设置页：#269 执行顺序上移/下移 → 内核 config.agent_order �
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_order;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toEqual([
         ['agent_architect'],
@@ -450,7 +450,7 @@ test('设置页：#269 执行顺序上移/下移 → 内核 config.agent_order �
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_order;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toEqual([
         ['agent_architect', 'agent_writer'],
@@ -574,7 +574,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_roles?.agent_researcher;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('__default__');
 
@@ -587,7 +587,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_roles?.agent_researcher;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('deepseek/deepseek-v4-flash');
 
@@ -599,7 +599,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_roles;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toEqual({
         agent_researcher: 'deepseek/deepseek-v4-flash',
@@ -615,7 +615,7 @@ test('设置页：#295/#296 自定义角色三态（开/选模型/关）→ 内�
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_roles;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toEqual({
         agent_researcher: null,
@@ -670,7 +670,7 @@ test('#484 添加角色：角色池选择世界观顾问 → 内核 config.agent
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_worldview;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('__default__');
     await expect
@@ -679,7 +679,7 @@ test('#484 添加角色：角色池选择世界观顾问 → 内核 config.agent
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_order;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toEqual([
         ['agent_architect'],

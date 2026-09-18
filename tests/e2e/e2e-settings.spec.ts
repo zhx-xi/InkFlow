@@ -314,7 +314,7 @@ test.describe('F32 设置持久化（#152）', () => {
               })
                 .then((r) => r.json())
                 .then((s: { theme?: string }) => s.theme),
-            { timeout: 10_000 }
+            { timeout: 30_000 }
           )
           .toBe('night');
       } finally {
@@ -456,13 +456,15 @@ test('设置页：默认模型下拉选 deepseek/deepseek-v4-flash → 直调内
 
     // saveConfig 为 fire-and-forget → 轮询后端 GET /projects/{id} 确认 config.model 落库
     // （R1：完整 provider/model 值，非裸 provider 名）
+    // #1283：CI 长跑退化下 10s 不够（run 35323604625 attempt1 本断言满额死等 21.6s≈11.6s 基线
+    // +10s，retry 即绿 = 时序而非逻辑）。对齐本文件既有 30s 先例（:263 四角色行就绪）。
     await expect
       .poll(
         async () => {
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.model;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('deepseek/deepseek-v4-flash');
   } finally {
@@ -512,7 +514,7 @@ test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBe('__default__');
 
@@ -521,13 +523,14 @@ test('设置页：Agent 链开关即改即存（#225 三态语义：null=关闭 
     await expect(writer).not.toBeChecked();
     // 关态落库断言（#225 核心：显式 null 落库，替代旧 updated_at 锚点——
     // 旧实现关闭发 undefined 被省略 → 后端缺失不改 → 此处恒非 null 或保持旧值）
+    // #1283：同开态，CI 长跑下 10s 不够 → 对齐本文件 30s 先例。
     await expect
       .poll(
         async () => {
           const r = await fetchKernel(kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBeNull();
   } finally {
@@ -578,7 +581,7 @@ test('#225 M2：Agent 链开关关闭 → 重启（二次 launch 同数据目录
           const r = await fetchKernel(first.kernel, `/api/v1/projects/${projectId}`);
           return r.config?.agent_writer;
         },
-        { timeout: 10_000 }
+        { timeout: 30_000 }
       )
       .toBeNull(); // 关闭态显式 null 已落库（非缺键/非旧值）
   } finally {
