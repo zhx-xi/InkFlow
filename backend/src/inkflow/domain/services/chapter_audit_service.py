@@ -51,15 +51,20 @@ from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
+from inkflow.domain.ports.outline_repository import OutlineRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._audit_context import select_entities, truncate_chapter
 from inkflow.domain.services._audit_prompts import (
     build_character_drift_messages,
+    build_cross_chapter_messages,
+    build_outline_compliance_messages,
     build_setting_drift_messages,
     parse_drift_output,
+    parse_extra_check_output,
 )
 from inkflow.domain.services.audit_service import AuditService
+from inkflow.domain.services.summary_service import SummaryService
 
 _PAGE_SIZE = 50
 """档案分页循环页大小（spec §5.4，F15 `_load_all` 同款模式）。"""
@@ -121,6 +126,10 @@ class ChapterAuditService:
         audit_service: F15 一致性审计服务——静态委托（include_static=True）.
         llm_client: F5 LLM 客户端——人设/设定漂移分析（失败降级不抛出）.
         audit_log_repo: F34 审计日志仓储——轻量记录落库与确认状态机.
+        outline_repo: F11 大纲仓储——#1266 大纲符合度（本章章纲 + 卷纲）与前后章
+            连贯性（后一章大纲）；缺省 None → 两项新检查跳过（旧装配点零改动）.
+        summary_service: F6 摘要服务——#1266 前后章连贯性取前一章摘要（控预算，
+            不读前章全文）；缺省 None → 该检查跳过.
     """
 
     def __init__(
@@ -133,6 +142,8 @@ class ChapterAuditService:
         audit_service: AuditService,
         llm_client: LLMClientProtocol,
         audit_log_repo: AuditLogRepositoryProtocol,
+        outline_repo: OutlineRepositoryProtocol | None = None,
+        summary_service: SummaryService | None = None,
     ) -> None:
         self._project_repo = project_repo
         self._chapter_repo = chapter_repo
@@ -141,6 +152,8 @@ class ChapterAuditService:
         self._audit_service = audit_service
         self._llm = llm_client
         self._audit_log_repo = audit_log_repo
+        self._outline_repo = outline_repo
+        self._summary_service = summary_service
 
     # ──── 服务编排（spec §5.1 步骤 ①-⑨）──────────────────────────────
 
@@ -211,6 +224,27 @@ class ChapterAuditService:
                     build_setting_drift_messages(chapter_text, selected_worlds, truncated)
                 )
                 findings.extend(drift)
+                degraded = degraded or check_degraded
+
+            # ⑦b 前后章连贯性（#1266，LLM）——前置：前一章摘要 + 后一章大纲
+            cross_messages = await self._build_cross_chapter_messages(
+                project_id,
+                chapter_id,
+                chapter_text,
+                truncated,
+            )
+            if cross_messages is not None:
+                extra, check_degraded = await self._run_extra_check(cross_messages)
+                findings.extend(extra)
+                degraded = degraded or check_degraded
+
+            # ⑦c 大纲符合度（#1266，LLM）——前置：本章章纲（无章纲跳过）
+            outline_messages = await self._build_outline_compliance_messages(
+                project_id, chapter_id, chapter_text, truncated
+            )
+            if outline_messages is not None:
+                extra, check_degraded = await self._run_extra_check(outline_messages)
+                findings.extend(extra)
                 degraded = degraded or check_degraded
 
         # ⑧ 静态一致性委托（F15，过滤本章相关 findings，rule_id 可追溯）
@@ -435,6 +469,214 @@ class ChapterAuditService:
                 return parsed, False
         logger.warning("章节审计 LLM 漂移检查降级（输出解析失败，已达重试上限）")
         return [], True
+
+    # ──── #1266 两类补充检查（前后章连贯性 / 大纲符合度）─────────────
+
+    async def _build_cross_chapter_messages(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID,
+        chapter_text: str,
+        truncated: bool,
+    ) -> list[ChatMessage] | None:
+        """组装前后章连贯性消息（#1266）——无前一章摘要 → None（跳过该检查）.
+
+        前一章摘要优先复用 #1253 `SummaryService`（摘要而非全文，控预算）；
+        摘要不可得 → 不读前章全文兜底，直接跳过（宁缺毋滥：跨章判定没有前文
+        就没有依据，硬凑全文会把单章审计变成「塞满上下文」，见任务书 §3.4）。
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 本章 UUID（定位本章在大纲序列中的位置）.
+            chapter_text: 本章文本（已截断）.
+            truncated: 本章文本是否已截断.
+
+        Returns:
+            [system, user] 两条消息；缺前置（仓储未注入/无前章/无摘要）→ None.
+        """
+        if self._summary_service is None or self._chapter_repo is None:
+            return None
+        prev = await self._previous_chapter(project_id, chapter_id)
+        if prev is None:
+            return None
+        try:
+            summary = await self._summary_service.ensure_summary(prev.id, "")
+        except Exception as exc:  # 摘要生成失败不阻断审计（该检查跳过）
+            logger.warning(
+                "章节审计前后章连贯性检查跳过（前章摘要不可得）: {}: {}",
+                type(exc).__name__,
+                exc,
+            )
+            return None
+        if not summary:
+            return None
+        return build_cross_chapter_messages(
+            chapter_text,
+            summary,
+            await self._next_outline_text(project_id, chapter_id),
+            truncated,
+        )
+
+    async def _build_outline_compliance_messages(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID,
+        chapter_text: str,
+        truncated: bool,
+    ) -> list[ChatMessage] | None:
+        """组装大纲符合度消息（#1266）——本章无章纲 → None（跳过该检查）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 本章 UUID（章纲以 `outline.chapter_id == chapter_id` 命中）.
+            chapter_text: 本章文本（已截断）.
+            truncated: 本章文本是否已截断.
+
+        Returns:
+            [system, user] 两条消息；无大纲仓储/无章纲 → None.
+        """
+        if self._outline_repo is None:
+            return None
+        chapter_outline = await self._find_chapter_outline(project_id, chapter_id)
+        if chapter_outline is None:
+            return None
+        volume_text = ""
+        if chapter_outline.parent_id is not None:
+            volume = await self._outline_repo.get(_to_int_id(chapter_outline.parent_id))
+            if volume is not None:
+                volume_text = self._format_outline(volume)
+        return build_outline_compliance_messages(
+            chapter_text,
+            self._format_outline(chapter_outline),
+            volume_text,
+            truncated,
+        )
+
+    async def _run_extra_check(
+        self, messages: list[ChatMessage]
+    ) -> tuple[list[ChapterAuditFinding], bool]:
+        """执行 #1266 单路 LLM 检查——与 `_run_drift_check` 同语义（失败降级绝不抛出）.
+
+        差异仅在解析器：`parse_extra_check_output` 额外收窄 check_type 到
+        cross_chapter / outline_compliance（防模型回填到漂移语义）。
+
+        Args:
+            messages: 该检查的 [system, user] 提示词.
+
+        Returns:
+            (该检查项 findings, 是否降级).
+        """
+        try:
+            response = await self._llm.chat(messages, temperature=_TEMPERATURE)
+        except Exception as exc:  # LLM 异常一律降级（spec §5.3）
+            logger.warning(
+                "章节审计 LLM 补充检查降级（模型调用异常）: {}: {}",
+                type(exc).__name__,
+                exc,
+            )
+            return [], True
+        parsed = parse_extra_check_output(response.content)
+        if parsed is not None:
+            return parsed, False
+        for _ in range(_MAX_PARSE_ATTEMPTS - 1):
+            try:
+                response = await self._llm.chat(messages, temperature=_TEMPERATURE)
+            except Exception as exc:  # 同上，重试分支
+                logger.warning(
+                    "章节审计 LLM 补充检查降级（重试时模型调用异常）: {}: {}",
+                    type(exc).__name__,
+                    exc,
+                )
+                return [], True
+            parsed = parse_extra_check_output(response.content)
+            if parsed is not None:
+                return parsed, False
+        logger.warning("章节审计 LLM 补充检查降级（输出解析失败，已达重试上限）")
+        return [], True
+
+    async def _previous_chapter(self, project_id: uuid.UUID, chapter_id: uuid.UUID):
+        """取前一章（同项目 order_index 升序中本章的前一个；本章首个 → None）.
+
+        分页拉全项目章节后按 order_index 定位（单用户本地项目规模下无性能问题；
+        复用既有 `list_chapters` 契约，不新造跨章查询端口方法）。
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 本章 UUID.
+
+        Returns:
+            前一章 Chapter；本章为首章或不在列表中 → None.
+        """
+        chapters = await self._load_all_chapters(project_id)
+        for index, item in enumerate(chapters):
+            if item.id == chapter_id:
+                return chapters[index - 1] if index > 0 else None
+        return None
+
+    async def _load_all_chapters(self, project_id: uuid.UUID) -> list[Any]:
+        """分页循环拉取项目全部章节（order_index 升序，`_load_all` 同款模式）."""
+        items: list[Any] = []
+        offset = 0
+        while True:
+            page, _total = await self._chapter_repo.list_chapters(
+                _to_int_id(project_id), offset=offset, limit=_PAGE_SIZE
+            )
+            items.extend(page)
+            if len(page) < _PAGE_SIZE:
+                break
+            offset += _PAGE_SIZE
+        return items
+
+    async def _find_chapter_outline(
+        self, project_id: uuid.UUID, chapter_id: uuid.UUID
+    ) -> Any | None:
+        """按 `chapter_id` 命中本章章纲（level=chapter）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 本章 UUID.
+
+        Returns:
+            命中且 level=chapter 的 Outline；无 → None.
+        """
+        if self._outline_repo is None:
+            return None
+        page, _total = await self._outline_repo.list(_to_int_id(project_id), limit=_PAGE_SIZE)
+        for item in page:
+            if getattr(item, "chapter_id", None) == chapter_id and item.level == "chapter":
+                return item
+        return None
+
+    async def _next_outline_text(self, project_id: uuid.UUID, chapter_id: uuid.UUID) -> str:
+        """取后一章大纲文本（章纲序列中紧随本章章纲的下一个；无 → 空串）.
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 本章 UUID.
+
+        Returns:
+            后一章大纲的「name：description」文本；无后章/无章纲 → "".
+        """
+        if self._outline_repo is None:
+            return ""
+        page, _total = await self._outline_repo.list(
+            _to_int_id(project_id), level="chapter", limit=_PAGE_SIZE
+        )
+        ordered = sorted(
+            (o for o in page if getattr(o, "level", None) == "chapter"),
+            key=lambda o: (o.sort_order, str(o.id)),
+        )
+        for index, item in enumerate(ordered):
+            if getattr(item, "chapter_id", None) == chapter_id:
+                nxt = ordered[index + 1] if index + 1 < len(ordered) else None
+                return self._format_outline(nxt) if nxt is not None else ""
+        return ""
+
+    @staticmethod
+    def _format_outline(outline: Any) -> str:
+        """格式化大纲文本（name：description，#1266 提示词输入）."""
+        description = (outline.description or "").strip()
+        return f"{outline.name}：{description}" if description else str(outline.name)
 
     def _static_findings(
         self, f15_report: AuditReport, chapter_id: uuid.UUID

@@ -125,10 +125,10 @@ def make_log(**overrides: Any) -> AuditLog:
 
 
 class TestAuditCheckTypeEnum:
-    """AuditCheckType 枚举（§2.1: 4 检查项）。"""
+    """AuditCheckType 枚举（§2.1: 6 检查项；#1266 由 4 项扩至 6 项）。"""
 
-    def test_has_exactly_four_members(self):
-        assert len(AuditCheckType) == 4
+    def test_has_exactly_six_members(self):
+        assert len(AuditCheckType) == 6
 
     @pytest.mark.parametrize(
         ("member", "expected"),
@@ -137,6 +137,8 @@ class TestAuditCheckTypeEnum:
             ("CHARACTER_DRIFT", "character_drift"),
             ("SETTING_DRIFT", "setting_drift"),
             ("STATIC_CONSISTENCY", "static_consistency"),
+            ("CROSS_CHAPTER", "cross_chapter"),
+            ("OUTLINE_COMPLIANCE", "outline_compliance"),
         ],
     )
     def test_members_and_values(self, member, expected):
