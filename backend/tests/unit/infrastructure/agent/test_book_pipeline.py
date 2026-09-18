@@ -668,7 +668,11 @@ class TestDraftGuard975:
 
     @pytest.mark.asyncio
     async def test_b975_2_fallback_create_when_no_tool_call(self) -> None:
-        """【G】无 save_draft 调用 -> 照常兜底 create 恰 1 次、summary=="书级委托保存"。"""
+        """【G】无 save_draft 调用 -> 照常兜底 create 恰 1 次、summary==""（#1262 改）。
+
+        #1262：兜底草稿不再冒用「书级委托保存」回执标记——该标记下游判为无实体回执并 reject，
+        导致携带真实正文的兜底草稿被丢弃（正文永久丢失）。
+        """
         from inkflow.domain.models.writing_plan import BookLimits
 
         chapters = [_chapter(name="第一章", sort_order=0)]
@@ -678,4 +682,4 @@ class TestDraftGuard975:
         assert result["status"] == "completed"
         assert deps["draft_service"].create.await_count == 1
         create_kwargs = deps["draft_service"].create.await_args.kwargs
-        assert create_kwargs["summary"] == "书级委托保存"
+        assert create_kwargs["summary"] == ""

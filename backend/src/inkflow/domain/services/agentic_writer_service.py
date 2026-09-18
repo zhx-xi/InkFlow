@@ -40,6 +40,7 @@ from inkflow.domain.models.agent_run import (
     AgentToolCall,
 )
 from inkflow.domain.services._word_count import count_words
+from inkflow.infrastructure.llm.content_text import content_text
 
 # 空 content 重试提示（必须含「请输出正文」——测试契约码点断言）
 _EMPTY_RETRY_PROMPT = "工具结果已回填。请基于以上工具结果直接输出章节正文（Markdown），请输出正文。"
@@ -84,10 +85,17 @@ def _msg_name(message: object) -> str:
 
 
 def _msg_content(message: object) -> str:
-    """提取消息文本内容."""
+    """提取消息文本内容.
+
+    #1262：content 可能是 structured content blocks（list[dict]，含 type=thinking/text）
+    —— 必须走统一归一器（#1045 的 ``content_text``），否则 ``str()`` 把 list repr
+    （含 thinking 内部推理文本）当正文落库（F27 agentic 单章轨与 F44 book 轨同族缺陷）。
+    """
     if isinstance(message, dict):
-        return str(message.get("content", ""))
-    return str(getattr(message, "content", ""))
+        raw = message.get("content", "")
+    else:
+        raw = getattr(message, "content", "")
+    return content_text(raw)
 
 
 def _tool_calls_of(message: object) -> list[dict]:
