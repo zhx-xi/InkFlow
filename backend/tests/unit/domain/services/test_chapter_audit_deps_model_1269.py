@@ -20,12 +20,14 @@
 
 1. **deps 层：项目级 model 被消费** —— 全局空 + 项目级 model 非空时，
    构造出的审计服务其 LLM 客户端 `_default_model` 必须等于项目级 model（非空）。
-2. **deps 层：全局空 + 项目级空 → 不再造出空模型客户端**（422 诊断，绝不静默降级）。
+2. **deps 层：全局空 + 项目级空 → 装配降级**（#1280 翻转，原断言为「422 诊断」）——
+   不得 422（违反 spec §3.3/§5.3），也不得造出「看起来可用」的客户端；
+   客户端 `_default_model == ""` → `chat()` 必抛 → 由 §5.3 降级承接。
 3. **服务层：降级落日志** —— 模型调用异常时除返回 `([], True)` 外，
    必须落一条含异常详情的 WARNING/ERROR 日志（可诊断性，issue §4.1）。
 4. **可证伪**：显式传空 model → 断言 1 必须 FAIL（防恒真断言）。
 
-依据: issue #1269 §2/§4；spec §5.3（降级语义不变，HTTP 200）。
+依据: issue #1269 §2/§4；spec §5.3（降级语义不变，HTTP 200）；#1280（断言 2 翻转）。
 """
 
 from __future__ import annotations
@@ -130,7 +132,7 @@ class TestChapterAuditDepsModelResolution:
     @patch("inkflow.api.deps.get_audit_service")
     @patch("inkflow.infrastructure.llm.provider_config.get_provider_config")
     @patch("inkflow.core.config.config")
-    def test_empty_both_raises_422_not_silent_client(
+    def test_empty_both_degrades_not_422_and_not_silent_client(
         self,
         m_config,
         m_get_provider,
@@ -141,12 +143,18 @@ class TestChapterAuditDepsModelResolution:
         _w_repo,
         _log_repo,
     ) -> None:
-        """断言 2：全局空 + 项目级空 → 422 诊断，绝不造出空模型客户端。
+        """断言 2（#1280 翻转）：全局空 + 项目级空 → **装配降级**，不抛 422。
 
-        当前实现直接返回一个 `_default_model == ""` 的服务（静默）→ FAIL。
+        ⚠️ 本断言在 #1269 原为「必须抛 422（绝不静默降级）」。**#1280 实测翻正**：
+        该 422 违反 F34 spec §3.3（LLM 分析失败 → 200 + degraded，「不视为 HTTP 错误」；
+        错误面只有 404 与 confirm/DTO 的 422），且让 e2e-audit.spec.ts:139/:186 确定性失败、
+        真实用户首启后点「审计」直接吃错误态。
+
+        #1269 的**真实意图**「绝不静默造出空模型客户端」由 #1280 专项文件承接（装配入参为空 +
+        `chat()` 必抛 → §5.3 降级），装配期另落 WARNING 诊断（断言 3）。
+
+        完整契约见 `test_chapter_audit_no_model_degrade_1280.py`。
         """
-        from fastapi import HTTPException
-
         from inkflow.api.deps import get_chapter_audit_service
 
         m_config.llm_default_model = ""
@@ -154,11 +162,9 @@ class TestChapterAuditDepsModelResolution:
         m_audit_svc.return_value = MagicMock()
         m_get_provider.side_effect = ValueError("API key not configured for provider")
 
-        with pytest.raises(HTTPException) as exc:
-            get_chapter_audit_service(MagicMock(), project_model=None, resolve_credentials=True)
-
-        assert exc.value.status_code == 422
-        assert "默认模型" in exc.value.detail or "model" in exc.value.detail.lower()
+        # #1280：不抛 422 —— 必须装配出降级服务
+        svc = get_chapter_audit_service(MagicMock(), project_model=None, resolve_credentials=True)
+        assert svc is not None, "无模型 → 降级装配（spec §5.3），不得 422（spec §3.3）"
 
     @patch("inkflow.api.deps.SQLiteAuditLogRepository")
     @patch("inkflow.api.deps.SQLiteWorldRepository")

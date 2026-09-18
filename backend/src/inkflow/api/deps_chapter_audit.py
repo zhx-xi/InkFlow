@@ -60,19 +60,45 @@ def get_chapter_audit_service(
     """
     llm_client: LLMClientProtocol
     if resolve_credentials:
+        from loguru import logger
+
         from inkflow.api._llm_resolver import resolve_llm_credentials
         from inkflow.core.config import config
         from inkflow.infrastructure.llm import LangChainLLMClient
 
-        model, api_key, base_url = resolve_llm_credentials(
-            config.llm_default_model,
-            project_model=project_model,
-        )
-        llm_client = LangChainLLMClient(
-            default_model=model,
-            api_key=api_key,
-            openai_api_base=base_url,
-        )
+        try:
+            model, api_key, base_url = resolve_llm_credentials(
+                config.llm_default_model,
+                project_model=project_model,
+            )
+        except Exception as exc:
+            # #1280：无模型可解析（全局 + 项目级全空）= **LLM 分析失败** 的一种形态 →
+            # 按 F34 spec §3.3/§5.3 必须「200 + degraded」，不得 422 让整个审计端点失败。
+            # 修复前 `resolve_llm_credentials` 抛 HTTPException(422)，前端弹层直接进
+            # 「审计失败｜未配置默认模型」错误态（e2e-audit.spec.ts:139/:186 确定性红）。
+            #
+            # 此处**不造出「假可用」客户端**（保留 #1269 意图）：显式装配空模型客户端，
+            # 其 `chat()` 立即抛 LLMRequestError（langchain_client.py:100
+            # `parse_model_string("")` → ValueError）→ `_run_drift_check` 既有降级路径
+            # 返回 `([], True)`（spec §5.3，HTTP 仍 200，确定性检查照常返回）。
+            # 同时落 WARNING 诊断（保留 #1269 §4.1 可诊断性成果），
+            # 让「为何降级」在日志里可见而非静默。
+            logger.warning(
+                "章节审计 LLM 装配降级（无可用模型）: project_model={} global_default={} "
+                "原因={}: {} → LLM 检查将降级（degraded=true），确定性检查照常返回"
+                "（spec §5.3）。请在设置中配置 LLM Provider 与默认模型。",
+                project_model or "-",
+                config.llm_default_model or "-",
+                type(exc).__name__,
+                exc,
+            )
+            llm_client = LangChainLLMClient(default_model="")
+        else:
+            llm_client = LangChainLLMClient(
+                default_model=model,
+                api_key=api_key,
+                openai_api_base=base_url,
+            )
     else:
         from inkflow.infrastructure.llm import LangChainLLMClient
 
