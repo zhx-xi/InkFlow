@@ -254,8 +254,12 @@ class TestBPrepareContinuity:
 
         可证伪手法：让所有章正文生成直接失败（writer_factory 恒抛），
         承接表仍须已在 state 中就位 —— 证明承接不依赖任何正文。
+
+        注：全部章 failed → join 判定为卷级失败 → volume_failure interrupt
+        （既有语义，与本轨无关）；异常抛出后 checkpoint 仍已落盘，据其断言承接。
         """
         from inkflow.domain.models.writing_plan import BookLimits
+        from inkflow.infrastructure.agent.book_pipeline import VolumeHITLInterrupt
 
         chapters = [_chapter(name=f"第{i + 1}章", sort_order=i) for i in range(2)]
         table = {
@@ -266,12 +270,15 @@ class TestBPrepareContinuity:
         # writer_factory 恒抛 → 正文永不生成
         deps["writer_factory"].side_effect = RuntimeError("正文生成失败")
         pipeline = _pipeline(deps)
-        result = await pipeline.execute(_plan(), [_volume(chapters)], BookLimits())
-        state = await pipeline.get_checkpoint_state(result["run_id"])
+        with pytest.raises(VolumeHITLInterrupt):
+            await pipeline.execute(_plan(), [_volume(chapters)], BookLimits())
+        state = await pipeline.get_checkpoint_state(pipeline._thread_id)
         assert state is not None
         # 正文未生成（全部 failed）但承接仍在
         assert all(v == "failed" for v in state["results"].values())
         assert state.get("continuity"), "承接信息依赖了正文（扇出前未就位）"
+        for c in chapters:
+            assert str(c["outline_id"]) in state["continuity"]
 
     @pytest.mark.asyncio
     async def test_b_single_llm_call_per_volume(self) -> None:

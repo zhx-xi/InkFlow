@@ -1,18 +1,21 @@
-"""F44 卷级编排图（#337 阶段 3）— Send map-reduce 并行扇出 + 卷边界 HITL + 失败恢复策略树.
+"""F44 卷级编排图（#337 阶段 3 + #1187 承接两阶段）— Send map-reduce 并行扇出
+ + 写前承接（B）+ 卷级审计（C）+ 卷边界 HITL + 失败恢复策略树.
 
 BookVolumePipeline 镜像 SupervisorPipeline（F29）结构：execute 抛 VolumeHITLInterrupt，
 resume 从 checkpointer 恢复。图拓扑（Spike ①-④ 实证形态，父侧契约定稿）：
     START → bootstrap（UntrackedValue 注入 llm_client，镜像 F29）
+        → prepare_continuity（#1187 B：扇出前一次 LLM 调用生成整卷承接表，不读正文）
         → volume_fan_out（Command(goto=[Send("write_chapter", ...)])，非 return [Send(...)]）
-          → write_chapter 并行分支（节点内无 interrupt，章级重试 N 次）
+          → write_chapter 并行分支（节点内无 interrupt，章级重试 N 次；brief 注入本章承接）
           → join（map-reduce 回收；results 通道 Annotated[dict, operator.or_] reducer）
           → join 判定顺序: ① 护栏（累计步数 >= max_agent_calls → END/aborted）
             ② 卷级失败（该卷全部章 failed → volume_failure）
-            ③ 其余 → 最后一卷 END / 非最后一卷 volume_boundary
+            ③ 最后一卷（→ volume_audit → END）/ 其余（→ volume_audit）
+        → volume_audit（#1187 C：逐章 F34 审计 + #1267 阻断判定；纯计算无 interrupt）
         → volume_boundary（interrupt 串行点）→ resume approved → 下一卷 / END
         → volume_failure（interrupt）→ resume decision: continue / abort / supervisor
 
-依据: specs/f44-book-orchestrator/spec.md §5.3/§12 D1-D3/D9/§13.3 M7-M9
+依据: specs/f44-book-orchestrator/spec.md §5.3/§12 D1-D3/D9/§13.3 M7-M9 + v1.10（#1187）
     + .hermes/plans/f44-stage3-contract.md §1（父侧裁定，语义冲突以它为准）
     + docs/f44-orchestrator-spike-2026-08-17.md ①-④（Spike 实证形态）。
 
@@ -37,6 +40,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Send, interrupt
+from loguru import logger
 
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
 from inkflow.domain.services.chapter_brief import (
@@ -53,6 +57,7 @@ from inkflow.domain.services.usage_accounting import (
     draft_fallback_needed,
     result_usage,
 )
+from inkflow.infrastructure.agent._audit_bridge import blocking_update, report_to_audit_dict
 from inkflow.infrastructure.llm.content_text import content_text
 from inkflow.logging import instrument
 
@@ -68,6 +73,11 @@ class VolumeState(TypedDict):
     plan: dict
     limits: dict
     results: Annotated[dict[str, str], operator.or_]
+    # #1187 B：整卷承接表 {str(outline_id): {"carry": 开头承接, "hook": 章末钩子}}——
+    # 普通 dict 通道（非 reducer）：每卷开始时由 prepare_continuity 整体覆盖/重算。
+    continuity: dict[str, dict]
+    # #1187 C：审计阻断记录 {outline_id: 原因}——镜像 book_agentic_pipeline 同名通道
+    audit_blocked: Annotated[dict[str, str], operator.or_]
     failed: Annotated[list[str], operator.add]
     volume_index: int
     total_volumes: int
@@ -126,6 +136,88 @@ def _parse_supervisor_decision(content: str) -> str:
     return "abort" if data.get("action") == "abort" else "continue"
 
 
+def _parse_continuity_table(content: str) -> dict[str, dict]:
+    """解析整卷承接表 JSON → {str(outline_id): {"carry": str, "hook": str}}.
+
+    宽松解析（镜像 `_parse_supervisor_decision`）：LLM 可能用 markdown 代码块围栏包裹
+    （```json\\n{...}\\n```），先试完整解析，失败则提取首个 `{` 到末个 `}` 子串。
+    任何形态不符（非 dict / 值非 dict）→ 丢弃该项；整体解析失败 → 空表（降级不阻断写作）。
+    """
+    data: object = None
+    if content.strip():
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start != -1 and end != -1 and start < end:
+                try:
+                    data = json.loads(content[start : end + 1])
+                except json.JSONDecodeError:
+                    data = None
+    if not isinstance(data, dict):
+        return {}
+    table: dict[str, dict] = {}
+    for outline_id, entry in data.items():
+        if not isinstance(entry, dict):
+            continue
+        table[str(outline_id)] = {
+            "carry": str(entry.get("carry") or ""),
+            "hook": str(entry.get("hook") or ""),
+        }
+    return table
+
+
+def _continuity_messages(volume: dict, chapters: list[dict]) -> list[dict[str, str]]:
+    """构造承接表提示词（#1187 B）——输入只有大纲面：卷纲 + 各章章纲 + 前一章章纲.
+
+    扇出前无任何正文，故承接依据只能是「卷纲 + 章纲」；章 `outline_id` 必须进提示词
+    （LLM 用它做承接表的键）。
+    """
+    lines: list[str] = []
+    previous = "（本章为卷首，无前一章）"
+    for chapter in chapters:
+        lines.append(
+            f"- outline_id={chapter['outline_id']}｜章名：{chapter.get('name', '')}"
+            f"｜本章章纲：{chapter.get('description', '')}"
+            f"｜前一章章纲：{previous}"
+        )
+        previous = f"{chapter.get('name', '')}：{chapter.get('description', '')}"
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是小说卷级承接规划员：同卷各章将被并行写作（互不知情），"
+                "你的职责是给出每章开头的承接点与章末钩子，使并行成稿仍前后连贯。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"【本卷卷纲】{volume.get('description', '') or '（无卷纲，请仅依据章纲推断）'}\n"
+                "【本卷各章章纲】\n" + "\n".join(lines) + "\n请输出 JSON："
+                '{"<outline_id>": {"carry": "本章开头应承接什么", '
+                '"hook": "本章结尾应留下什么"}, ...}，'
+                "覆盖本卷每一章，不要输出任何其他文字。"
+            ),
+        },
+    ]
+
+
+def _continuity_segment(continuity: dict | None) -> str:
+    """本章承接段（追加进章 brief）——carry/hook 任一为空则该行不追加；皆空 → 空串."""
+    if not continuity:
+        return ""
+    lines: list[str] = []
+    carry = str(continuity.get("carry") or "")
+    hook = str(continuity.get("hook") or "")
+    if carry:
+        lines.append(f"【上一章结尾】{carry}")
+    if hook:
+        lines.append(f"【本章结尾钩子】{hook}")
+    return "\n" + "\n".join(lines) if lines else ""
+
+
 @instrument(caller_type="agent")
 async def _bootstrap_node(state: VolumeState, llm_client: object) -> dict[str, object]:
     """启动节点：将 llm_client 写入 UntrackedValue 通道（不参与 checkpointer 序列化，镜像 F29）。"""
@@ -133,14 +225,42 @@ async def _bootstrap_node(state: VolumeState, llm_client: object) -> dict[str, o
 
 
 @instrument(caller_type="agent")
+async def _prepare_continuity(
+    state: VolumeState, pipeline: BookVolumePipeline
+) -> dict[str, object]:
+    """B 阶段（#1187）：扇出前一次 LLM 调用生成整卷承接表 → VolumeState["continuity"].
+
+    位置硬约束：必须在 `volume_fan_out` 之前——扇出后各分支同时启动，拿不到任何前章
+    正文；承接只能依赖大纲面（卷纲 + 各章章纲 + 前一章章纲）。LLM 异常/解析失败 →
+    空承接表（降级不阻断写作）。
+    """
+    return {"continuity": await pipeline._build_continuity(state)}
+
+
+@instrument(caller_type="agent")
 async def _volume_fan_out(state: VolumeState) -> Command[Any]:
-    """卷扇出：Command(goto=[Send("write_chapter", {"chapter": ch}) ...])——Spike ① 形态。
+    """卷扇出：Command(goto=[Send("write_chapter", {...}) ...])——Spike ① 形态。
 
     非 return [Send(...)]（LangGraph 1.2.10 报 InvalidUpdateError）；空卷直接 goto join 回收。
+    #1187 B：payload 携带本章承接（carry/hook），分支 state 即 payload（Send 全量替换）。
     """
     if not state["chapters"]:
         return Command(goto="join")
-    return Command(goto=[Send("write_chapter", {"chapter": ch}) for ch in state["chapters"]])
+    continuity = state.get("continuity") or {}
+    return Command(
+        goto=[Send("write_chapter", _fan_out_payload(ch, continuity)) for ch in state["chapters"]]
+    )
+
+
+def _fan_out_payload(chapter: dict, continuity: dict) -> dict:
+    """章分支 payload：本章 dict + 本章承接（隔离性——只带本章 carry/hook，不串他章）."""
+    entry: object = continuity.get(str(chapter["outline_id"]))
+    entry = entry if isinstance(entry, dict) else {}
+    return {
+        "chapter": chapter,
+        "carry": str(entry.get("carry") or ""),
+        "hook": str(entry.get("hook") or ""),
+    }
 
 
 @instrument(caller_type="agent")
@@ -151,15 +271,20 @@ async def _write_chapter(state: VolumeState, pipeline: BookVolumePipeline) -> di
     → agent.invoke([...]) → draft_service.create(...) → 返回 results 增量。
     任一步抛异常 → 重试整章（重新调用 writer_factory），至多 retry_limit 次重试
     （总尝试 1 + retry_limit）；仍失败 → 章级只报告 failed，不阻塞其他章。
+
+    #1187 B：分支 state = Send payload（含本章承接 carry/hook），原样传给 _delegate_chapter
+    注入本章 brief（隔离性：分支只拿到本章承接）。
     """
-    chapter: dict = cast(dict[str, Any], state)["chapter"]
+    branch = cast(dict[str, Any], state)
+    chapter: dict = branch["chapter"]
     outline_id = str(chapter["outline_id"])
+    continuity = {"carry": branch.get("carry", ""), "hook": branch.get("hook", "")}
     attempts = 0
     usage_events: list[dict] = []
     for _ in range(1 + pipeline._retry_limit):
         attempts += 1
         try:
-            execution_id, event = await pipeline._delegate_chapter(chapter)
+            execution_id, event = await pipeline._delegate_chapter(chapter, continuity=continuity)
         except Exception:
             # 任一步异常 → 重试整章（循环再次调用 writer_factory）
             continue
@@ -175,7 +300,12 @@ async def _write_chapter(state: VolumeState, pipeline: BookVolumePipeline) -> di
 
 @instrument(caller_type="agent")
 async def _join(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any]:
-    """map-reduce 回收节点：判定顺序 = ① 护栏 ② 卷级失败 ③ 最后一卷/卷边界。"""
+    """map-reduce 回收节点：判定顺序 = ① 护栏 ② 卷级失败 ③ 最后一卷/卷级审计。
+
+    #1187 C：③ 承接成功/部分成功的卷统一进入 `volume_audit`（非最后一卷由审计节点续接
+    `volume_boundary`，最后一卷由审计节点收尾 END）——`join → volume_audit` 是画图边
+    （`destinations`，仅渲染不影响执行），实际路由仍由本节点 Command(goto) 决定。
+    """
     if state.get("steps", 0) >= pipeline._limits.max_agent_calls:
         # 预算 = max_agent_calls（每次尝试含重试消耗 1 步）；超预算终止，不抛 interrupt
         return Command(update={"finished": True, "status": "aborted"}, goto=END)
@@ -185,10 +315,26 @@ async def _join(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any
     if chapters and failed_count == len(chapters):
         # 卷级失败判定 = 该卷全部章 failed（部分失败不触发 volume_failure）
         return Command(goto="volume_failure")
+    # 其余（全成功/部分失败，含最后一卷）→ volume_audit：最后一卷由审计节点收尾 END
+    # （不 interrupt → execute 返回 completed），非最后一卷由审计节点续接 volume_boundary。
+    return Command(goto="volume_audit")
+
+
+@instrument(caller_type="agent")
+async def _volume_audit(state: VolumeState, pipeline: BookVolumePipeline) -> Command[Any]:
+    """C 阶段（#1187）：卷级逐章 F34 审计 + #1267 阻断判定（纯计算，无 interrupt）.
+
+    位置：`join` 之后、`volume_boundary` 之前。无阻断 → 最后一卷 END / 其余
+    volume_boundary；阻断级 finding（severity=error 且非 degraded）→ 不进入
+    volume_boundary，`status="blocked"` + goto END（已完成产出保留）。
+    audit_service 未装配（None）→ 行为与改造前一致（不审计，仅按卷序收尾/续接）。
+    """
+    update, blocked = await pipeline._audit_volume(state)
+    if blocked:
+        return Command(update={**update, "finished": True}, goto=END)
     if state["volume_index"] >= state["total_volumes"] - 1:
-        # 最后一卷完成 → 不 interrupt → END（execute 返回 completed）
         return Command(update={"finished": True}, goto=END)
-    return Command(goto="volume_boundary")
+    return Command(update=update, goto="volume_boundary")
 
 
 @instrument(caller_type="agent")
@@ -254,15 +400,21 @@ class BookVolumePipeline:
         volume_lookup: Callable[[uuid.UUID, uuid.UUID | None], Awaitable[str | None]] | None = None,
         context_builder: ContextBuilder | None = None,
         project_config_getter: ProjectConfigGetter | None = None,
+        audit_service: object | None = None,
     ) -> None:
         """构造：llm_client 仅 UntrackedValue 通道传递（镜像 F29 bootstrap 节点），
         不参与执行决策；只在卷级失败 decision="supervisor" 补救时调用 chat。
         checkpointer 显式传入 → 优先使用（不打开文件）；否则 checkpoint_path →
         每次 execute/resume 临时打开 AsyncSqliteSaver 文件后端（跨实例/跨进程
-        resume 可行）；两者皆无 → 进程内 InMemorySaver（阶段 3 默认）。"""
+        resume 可行）；两者皆无 → 进程内 InMemorySaver（阶段 3 默认）。
+
+        #1187：llm_client 另用于 B 阶段 `prepare_continuity` 的整卷承接表生成（一次/卷）；
+        audit_service = F34 `ChapterAuditService` 鸭子契约（未装配 None → 卷级审计透传）。
+        """
         self._llm = llm_client
         self._writer_factory = writer_factory
         self._draft_service = draft_service
+        self._audit_service = audit_service
         self._retry_limit = retry_limit
         self._volume_lookup = volume_lookup
         self._context_builder = context_builder
@@ -279,18 +431,33 @@ class BookVolumePipeline:
     def _build_graph(
         self, checkpointer: BaseCheckpointSaver
     ) -> CompiledStateGraph[VolumeState, Any, Any, Any]:
-        """构建卷级图：bootstrap → volume_fan_out → write_chapter（Send 并行）→ join
+        """构建卷级图：bootstrap → prepare_continuity（B 写前承接）→ volume_fan_out
+        → write_chapter（Send 并行）→ join → volume_audit（C 写后审计）
         → volume_boundary / volume_failure（Command(goto) 动态路由，镜像 F29）；
         checkpointer 参数化（显式 InMemorySaver 或临时 AsyncSqliteSaver）。"""
         g = StateGraph(VolumeState)
         g.add_node("bootstrap", partial(_bootstrap_node, llm_client=self._llm))
-        g.add_node("volume_fan_out", _volume_fan_out)
+        g.add_node("prepare_continuity", partial(_prepare_continuity, pipeline=self))
+        # destinations：Command/Send 型节点的画图边（仅渲染不影响执行，langgraph 语义）——
+        # 缺它则图渲染在 volume_fan_out 处断链（Send 是运行时动态路由，静态不可知）。
+        g.add_node("volume_fan_out", _volume_fan_out, destinations=("write_chapter", "join"))
         g.add_node("write_chapter", partial(_write_chapter, pipeline=self))
-        g.add_node("join", partial(_join, pipeline=self))
+        # destinations：Command 型节点的画图边（仅渲染不影响执行，langgraph 语义）
+        g.add_node(
+            "join",
+            partial(_join, pipeline=self),
+            destinations=("volume_audit", "volume_failure"),
+        )
+        g.add_node(
+            "volume_audit",
+            partial(_volume_audit, pipeline=self),
+            destinations=("volume_boundary",),
+        )
         g.add_node("volume_boundary", partial(_volume_boundary, pipeline=self))
         g.add_node("volume_failure", partial(_volume_failure, pipeline=self))
         g.add_edge(START, "bootstrap")
-        g.add_edge("bootstrap", "volume_fan_out")
+        g.add_edge("bootstrap", "prepare_continuity")
+        g.add_edge("prepare_continuity", "volume_fan_out")
         g.add_edge("write_chapter", "join")
         return g.compile(checkpointer=checkpointer)
 
@@ -340,6 +507,8 @@ class BookVolumePipeline:
                 "plan": plan.model_dump(mode="json"),
                 "limits": limits.model_dump(),
                 "results": {},
+                "continuity": {},
+                "audit_blocked": {},
                 "failed": [],
                 "volume_index": 0,
                 "total_volumes": len(volumes),
@@ -434,10 +603,14 @@ class BookVolumePipeline:
         return await self._run_with_checkpointer(_read, thread_id=run_id)
 
     def _goto_next_volume(self, state: VolumeState) -> Command[Any]:
-        """跳过当前卷推进到下一卷（fan_out）；已是最后一卷 → END（finished=True）。
+        """跳过当前卷推进到下一卷；已是最后一卷 → END（finished=True）。
 
         下一卷章列表从 state["volumes"] 读取（持久化通道：跨重启 resume 的 fresh
-        实例也能继续），不依赖实例内存 _volumes。"""
+        实例也能继续），不依赖实例内存 _volumes。
+
+        #1187 B：卷推进必须清空 continuity（否则下一卷的章会读到上一卷承接表——
+        跨卷串味），并回到 `prepare_continuity` 重算本卷承接表。
+        """
         next_index = state["volume_index"] + 1
         if next_index >= state["total_volumes"]:
             return Command(update={"finished": True}, goto=END)
@@ -445,8 +618,9 @@ class BookVolumePipeline:
             update={
                 "chapters": state["volumes"][next_index]["chapters"],
                 "volume_index": next_index,
+                "continuity": {},
             },
-            goto="volume_fan_out",
+            goto="prepare_continuity",
         )
 
     def _goto_next_volume_with_usage(self, state: VolumeState, event: dict) -> Command[Any]:
@@ -461,19 +635,25 @@ class BookVolumePipeline:
             update={
                 "chapters": state["volumes"][next_index]["chapters"],
                 "volume_index": next_index,
+                "continuity": {},
                 "usage": [event],
             },
-            goto="volume_fan_out",
+            goto="prepare_continuity",
         )
 
     @instrument(caller_type="agent")
-    async def _delegate_chapter(self, chapter: dict) -> tuple[str, dict]:
+    async def _delegate_chapter(
+        self, chapter: dict, *, continuity: dict | None = None
+    ) -> tuple[str, dict]:
         """委托契约核心（镜像 BookService._delegate_chapter）：章 brief → writer_factory
         → agent.invoke → draft_service.create 回收 → (execution_id, usage 事件)。
 
         #902：usage 事件只来自真实 LLM 调用结果（invoke 结果 messages usage_metadata /
         顶层 usage）；双源皆缺 → 全零事件（无伪计费）。事件 source="write"，
         chapter=str(outline_id)。
+
+        #1187 B：continuity = 本章承接（B 阶段承接表按本章 outline_id 取出的项）——
+        承接段追加进既有 brief（`_build_chapter_brief` 通道）产物，隔离性由调用方保证。
         """
         plan = self._plan
         if plan is None:
@@ -486,7 +666,9 @@ class BookVolumePipeline:
             else None
         )
         brief_inputs = await resolve_brief_setting(self._context_builder, cfg, plan, chapter)
-        system_prompt = self._build_chapter_brief(plan, chapter, **brief_inputs)
+        system_prompt = self._build_chapter_brief(
+            plan, chapter, **brief_inputs
+        ) + _continuity_segment(continuity)
         agent = await self._writer_factory(
             system_prompt=system_prompt,
             expected_project_id=plan.project_id,
@@ -523,6 +705,72 @@ class BookVolumePipeline:
                 "total_tokens": total_tokens,
             },
         )
+
+    @instrument(caller_type="agent")
+    async def _build_continuity(self, state: VolumeState) -> dict[str, dict]:
+        """B 阶段承接表生成（#1187）：一次 LLM 调用生成整卷承接表；失败 → 空表.
+
+        输入只有大纲面（卷纲 + 各章章纲 + 前一章章纲）——调用点在扇出前，此时无任何
+        正文可读。LLM 异常 / content 解析失败 → `{}`（降级：brief 不注入承接段）。
+        """
+        chapters: list[dict] = state["chapters"]
+        if not chapters:
+            return {}
+        volumes: list[dict] = state["volumes"]
+        index = state["volume_index"]
+        volume = volumes[index] if 0 <= index < len(volumes) else {}
+        try:
+            response = await self._llm.chat(  # type: ignore[attr-defined]  # 鸭子类型：llm_client 按 F29 契约提供 async chat(messages)
+                _continuity_messages(volume, chapters)
+            )
+        except Exception:
+            logger.warning("#1187 卷级承接表生成失败，降级为空承接表：volume_index={}", index)
+            return {}
+        return _parse_continuity_table(str(getattr(response, "content", "")))
+
+    @instrument(caller_type="agent")
+    async def _audit_volume(self, state: VolumeState) -> tuple[dict[str, object], bool]:
+        """C 阶段卷级审计（#1187）：逐章复用 F34 服务 → (状态更新, 是否阻断).
+
+        顺序：跳过 failed 章（无正文可审）→ `audit_service.audit(project_id, chapter_id)`
+        → `_audit_bridge.report_to_audit_dict` 扁平化 → `blocking_update` 判定（#1267
+        唯一口径，本处不另立阈值）。未装配 audit_service → 空更新（透传）；单章审计异常
+        → 吞掉（warning）继续审其余章，不阻断编排。
+
+        Returns:
+            (update, blocked)：update 为图状态增量（阻断时含 `audit_blocked` + `status`）。
+        """
+        service = self._audit_service
+        if service is None:
+            return {}, False
+        project_id = getattr(self._plan, "project_id", None)
+        blocked_map: dict[str, str] = {}
+        for chapter in state["chapters"]:
+            oid = str(chapter["outline_id"])
+            if state.get("results", {}).get(oid) == "failed":
+                continue  # 失败章无正文可审
+            chapter_id = chapter.get("chapter_id")
+            if chapter_id is None:
+                continue
+            try:
+                report = await service.audit(  # type: ignore[attr-defined]  # 鸭子类型：audit_service 按 F34 契约提供 async audit(project_id, chapter_id, include_static=...)
+                    project_id, chapter_id, include_static=True
+                )
+            except Exception:
+                logger.warning("#1187 卷级审计失败（跳过本章，不阻断编排）：chapter={}", oid)
+                continue
+            audit_dict = report_to_audit_dict(report)
+            raw_findings = list(getattr(report, "findings", None) or [])
+            if raw_findings:
+                # `_dump_finding` 对无 model_dump 的鸭子 finding 只留 message（severity 丢失），
+                # 阻断判定须看原始 findings（_audit_bridge._is_blocking_finding 两形态通吃）。
+                audit_dict["findings"] = raw_findings
+            delta = blocking_update(oid, audit_dict)
+            if delta:
+                blocked_map.update(cast("dict[str, str]", delta["audit_blocked"]))
+        if not blocked_map:
+            return {}, False
+        return {"audit_blocked": blocked_map, "status": "blocked"}, True
 
     async def _resolve_draft_volume(self, plan: WritingPlan, chapter: dict) -> uuid.UUID | None:
         """#976 D3/D5：委托落草稿卷解析（volume_lookup 未装配/无映射 → None）.
