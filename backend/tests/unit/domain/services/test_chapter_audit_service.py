@@ -421,6 +421,35 @@ class TestChapterAuditServiceAudit:
         # audit_logs 记录 degraded=True（可追溯审计质量）
         assert _added_log(mocks).degraded is True
 
+    # ── #1267 交互式轨：审计结论交用户决定（不自动继续）──────────────
+
+    async def test_error_finding_awaits_user_decision(self) -> None:
+        """#1267 交互式轨：审计出阻断级（error）→ 停在 pending 等用户决定。
+
+        issue: 「交互式（GUI/CLI 手动写）审计结果返回给用户，由用户决定是否阻断
+        （接受 / 重写 / 修改后继续）」→ 复用既有 audit_logs 状态机：
+        阻断级 finding 存在时 status 保持 pending、confirmed_at 为 None
+        （不自动 accepted），用户经既有 confirm(accept|reject) 才推进。
+        """
+        from inkflow.infrastructure.agent._audit_bridge import inspect_audit_conclusion
+
+        llm = FakeLLM(responses=[_drift_payload()])
+        service, mocks = _svc(llm=llm, worlds=())  # 1 error 人设漂移
+        report = await service.audit(PID, CID)
+
+        assert report.status == "pending"
+        assert report.confirmed_at is None
+        assert any(f.severity == AuditSeverity.ERROR for f in report.findings)
+        # 消费方读的形态 = 落库记录（GUI/CLI audit-logs 读它）：同为 pending + error 计数
+        log = _added_log(mocks)
+        assert log.status == "pending"
+        assert log.severity_summary.startswith("1 error")
+        assert log.confirmed_at is None
+        # 与编排层共用同一判定（单一实现点，非另立阈值）
+        from inkflow.infrastructure.agent._audit_bridge import report_to_audit_dict
+
+        assert inspect_audit_conclusion(report_to_audit_dict(report))["blocked"] is True
+
     # ── 3 记录落库（Q1=C）───────────────────────────────────────────
 
     async def test_audit_persists_lightweight_log(self) -> None:

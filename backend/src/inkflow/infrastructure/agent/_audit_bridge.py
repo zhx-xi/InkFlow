@@ -7,6 +7,10 @@
 - ``report_to_audit_dict``：``ChapterAuditReport`` → 契约扁平 dict（#1177：把 F34
   四项检查暴露为 ``character_drift`` / ``setting_drift`` / ``issues`` 字段，
   供编排与 revise 节点消费）。
+- ``audit_blocks_writing``：审计结论 → 是否构成「阻断」（#1267）——severity ≥
+  ERROR 的 finding 数 > 0 即阻断；``degraded`` **不**阻断（没审出来 ≠ 审出问题）。
+- ``inspect_audit_conclusion``：审计结论 dict → 阻断判定 + 可感知状态（#1267）——
+  全自动轨（停后续章节）与交互式轨（交用户决定）共用同一判定。
 - ``audit_event``：审计 usage 事件（#902 语义，F34 分支零值）。
 - ``read_draft_body`` / ``read_draft_content`` / ``persist_chapter_body``：正文
   取得与落章适配（#1174 输入面）——全部异常吞掉，绝不让 IO 失败炸掉编排。
@@ -23,12 +27,20 @@ from collections.abc import Sequence
 from loguru import logger
 
 from inkflow.domain.models.chapter import ChapterUpdate
-from inkflow.domain.models.chapter_audit import AuditCheckType
+from inkflow.domain.models.chapter_audit import AuditCheckType, AuditSeverity
 from inkflow.domain.ports.llm_client import ChatMessage
 from inkflow.domain.services.usage_accounting import chat_response_usage
 
 _SEVERITY_PENALTY: dict[str, int] = {"error": 20, "warning": 8, "info": 2}
 """严重级别扣分表（spec §6 三级）；未识别级别不扣分（防御）。"""
+
+BLOCKING_SEVERITY: AuditSeverity = AuditSeverity.ERROR
+"""阻断级严重级别（#1267）——审计发现达该级别即构成「阻断」，须停止/交用户决定。
+
+issue 原话：「审计 fail（severity=error）→ 必须阻断」。**唯一判定口径**：
+全自动轨与交互式轨共用本常量，禁止各自另立阈值（防同族分叉）。
+``warning`` / ``info`` **不**阻断——它们是提示或疑似，不构成「明确矛盾」。
+"""
 
 
 def build_audit_messages(chapter: dict, content: str) -> list[ChatMessage]:
@@ -113,6 +125,96 @@ def report_to_audit_dict(report: object) -> dict:
         "chapter_id": str(getattr(report, "chapter_id", "") or ""),
         "findings": [_dump_finding(f) for f in findings],
     }
+
+
+def audit_blocks_writing(findings: Sequence[object]) -> bool:
+    """审计 findings → 是否构成「阻断」（#1267）——severity ≥ ERROR 的条数 > 0.
+
+    判定口径全项目唯一：``BLOCKING_SEVERITY``（issue 拍板 = ``error``）。
+    ``warning`` / ``info`` 只是提示或疑似，**不**阻断——「审计流于表面」的反面
+    不是「因疑似就停笔」，否则全自动轨几乎每章都会被 info 字数提示卡住。
+
+    Args:
+        findings: 审计发现序列（``ChapterAuditFinding`` 或 dict 同形鸭子对象）.
+
+    Returns:
+        True = 存在阻断级 finding（须停止/交用户决定）；False = 无阻断级发现.
+    """
+    return any(_is_blocking_finding(finding) for finding in findings)
+
+
+def inspect_audit_conclusion(audit: object) -> dict:
+    """审计结论 dict → 阻断判定 + 可感知状态（#1267 两条链路的共用判定）.
+
+    **degraded 例外**：``degraded=True``（LLM 审计失败降级）**不阻断** —— 那是
+    「没审出来」而非「审出问题」；但须 ``warning=True`` 显式告警，绝不当成「通过」
+    （issue 原话：「degraded=true 不得当『通过』——须显式区分『审了且过』vs『没审成』」）。
+
+    Args:
+        audit: ``report_to_audit_dict`` 产物（或同形鸭子 dict）.
+
+    Returns:
+        ``blocked``（是否阻断）/ ``blocking_count``（阻断级 finding 条数）/
+        ``blocking_messages``（阻断级 finding 摘要，首条供 progress_reason）/
+        ``degraded`` / ``warning``（degraded 时 True——告警但不阻断）/
+        ``verdict``（"blocked" | "degraded" | "passed"，三态互斥可查）.
+    """
+    findings = list(getattr(audit, "get", lambda *_: None)("findings", None) or [])
+    blocking = [f for f in findings if _is_blocking_finding(f)]
+    degraded = bool(getattr(audit, "get", lambda *_: None)("degraded", False))
+    blocked = bool(blocking) and not degraded
+    messages = [str(getattr(f, "get", lambda *_: None)("message", "") or "") for f in blocking]
+    return {
+        "blocked": blocked,
+        "blocking_count": len(blocking),
+        "blocking_messages": [m for m in messages if m],
+        "degraded": degraded,
+        "warning": degraded,
+        "verdict": "blocked" if blocked else ("degraded" if degraded else "passed"),
+    }
+
+
+def _is_blocking_finding(finding: object) -> bool:
+    """单条 finding dict → 是否阻断级（dict / Pydantic 两形态通吃）."""
+    if isinstance(finding, dict):
+        severity = finding.get("severity")
+    else:
+        severity = getattr(finding, "severity", None)
+    return str(getattr(severity, "value", severity)) == BLOCKING_SEVERITY.value
+
+
+def blocking_update(oid: str, audit: object) -> dict[str, object]:
+    """审计结论 → 阻断状态更新（#1267 全自动轨）——非阻断/降级 → 空更新.
+
+    **不静默**：阻断时写 ``audit_blocked``（图内可查）+ ``status="blocked"``
+    （pipeline 据此提前收尾），并落一条 WARNING 日志。``degraded=True`` 时只告警
+    （「没审出来 ≠ 审出问题」），绝不判为阻断。
+
+    Args:
+        oid: 本章 outline_id（str）.
+        audit: ``report_to_audit_dict`` 产物.
+
+    Returns:
+        ``{"audit_blocked": {oid: 原因}, "status": "blocked"}`` 或 ``{}``.
+    """
+    conclusion = inspect_audit_conclusion(audit)
+    if conclusion["warning"]:
+        logger.warning(
+            "#1267 审计降级（未审成，不阻断但须人工留意）：chapter={} verdict={}",
+            oid,
+            conclusion["verdict"],
+        )
+    if not conclusion["blocked"]:
+        return {}
+    messages = conclusion["blocking_messages"]
+    reason = f"审计阻断：{messages[0]}" if messages else "审计阻断：存在阻断级审计发现"
+    logger.warning(
+        "#1267 审计阻断（停止后续章节，已完成产出保留）：chapter={} count={} reason={}",
+        oid,
+        conclusion["blocking_count"],
+        reason,
+    )
+    return {"audit_blocked": {oid: reason}, "status": "blocked"}
 
 
 def audit_event(chapter: dict, response: object | None) -> dict:
