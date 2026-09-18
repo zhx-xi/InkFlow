@@ -305,7 +305,7 @@ _ensure_index():
     if not _is_stale(): return          # 双检锁（另一个协程已重建）
     DELETE FROM search_index            # 全量清空（FTS5 支持 DELETE）
     并行拉取 6 类数据源（只读，排除软删; ⚠️ 全部 `list` 默认 limit=50，须循环分页拉全——2026-08-09 源码核实）:
-      chapter:      ChapterRepository.list_chapters(pid, ...) 分页循环 + 服务层过滤 is_deleted
+      chapter:      ChapterRepository.list_chapters(pid, ...) 分页循环（#211 更正：F2 章节硬删除、无 is_deleted 列，无软删过滤）
       character:    CharacterRepository.list(pid, ...) 分页循环（repo 默认排除软删 ✓）
       world:        WorldRepository.list(pid, ...) 分页循环
       outline:      OutlineRepository.list(pid, ...) 分页循环 + list_points(oid)（无分页参数）

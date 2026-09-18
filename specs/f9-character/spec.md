@@ -4,13 +4,15 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.3 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
 > **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #56）
 
+> **Spec 变更（v1.3，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① Character/CharacterGroup/CharacterRelation 移除 `is_deleted` 字段（§2.1/§2.2/§2.3）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /characters/{id}/restore` 端点与 `character restore` 命令移除（§3/§4/§14）；④ 关系删除改真删（物理删除，与 `knowledge_relations` 真删语义一致，§12）；⑤ 提取合并移除「软删同名→新建+warning」分支（§5.4）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
+>
 > **Spec 变更（v1.2，2026-09-17，#495）**: `character_relations` 表废弃删除，角色关系数据面并入 `knowledge_relations` 的 character↔character 子空间（`source_type='character' AND target_type='character'`）——§2.3/§2.4 加历史快照声明（v1.0 时代 ORM 形态保留不改）、§12 决策表「关系存储」行追加状态演进留痕。**F9 对外契约零变更**：`CharacterRelation` 领域模型、`/characters/{cid}/relations` 四端点、`inkflow character relate/unrelate/relations`、角色详情面板全部保留，仅底层存储换表（`character_repo` 关系方法加子空间过滤）。
 > **Spec 变更（v1.1，2026-08-23，issue #593）**: `Character` 新增 **`brief`** 字段（一句话简介，≤500 字符，默认空串）——F6 上下文注入采用「名 + brief」轻量化（D5=A），未填 brief 时 F6 降级截 `personality`。新增于 §2.1 字段表 / §2.5 领域模型 / CharacterCreate / CharacterUpdate，DB 侧列由 `ensure_characters_brief_column` 幂等迁移补齐（§8）。
 
@@ -60,7 +62,7 @@
 | brief | str | NOT NULL, DEFAULT "", ≤ 500 字符 | **v1.1（#593）** 一句话简介（F6 上下文轻量化注入用，名+brief；未填时 F6 降级截 personality） |
 | group_id | UUID? | NULLABLE, FK→character_groups.id (SET NULL), 已索引 | 所属分组（一对一；多对多标签见 §10） |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（外貌/口头禅等 Phase 2+ 字段预留） |
-| is_deleted | bool | NOT NULL, DEFAULT False, 已索引 | 软删除标记 |
+| ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False, 已索引~~ | **（v1.1 移除，#211 文档同步于 v1.3 补齐）** 原软删除标记，真删语义下无意义 |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
@@ -75,12 +77,12 @@
 | name | str | NOT NULL, 1-50 字符, 去空白 | 分组名（如「主角团」「反派」）；**项目内活动分组唯一** |
 | description | str | NOT NULL, DEFAULT "", ≤ 500 字符 | 分组说明 |
 | sort_order | int | NOT NULL, DEFAULT 0, ≥ 0 | 列表排序权重（小者在前） |
-| is_deleted | bool | NOT NULL, DEFAULT False | 软删除标记 |
+| ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False~~ | **（v1.1 移除，#211 文档同步于 v1.3 补齐）** 原软删除标记，真删语义下无意义 |
 | created_at / updated_at | datetime | NOT NULL, AUTO | 同上 |
 
 ### 2.3 CharacterRelation（角色关系 — 关系图谱的有向边）
 
-> **#495 存储变更说明（2026-09-17）**：`CharacterRelation` **领域模型与 F9 对外契约保留不变**；其持久化自 #495 起落到 `knowledge_relations` 的 character↔character 子空间（六元组 `source_type='character'` + `target_type='character'`），原 `character_relations` 物理表已删除——故下表为**领域模型口径**（列名 from_character_id/to_character_id/is_deleted 等为模型字段，非当前 DB 列面；DB 侧为 `knowledge_relations` 的 source_id/target_id）。
+> **#495 存储变更说明（2026-09-17）**：`CharacterRelation` **领域模型与 F9 对外契约保留不变**；其持久化自 #495 起落到 `knowledge_relations` 的 character↔character 子空间（六元组 `source_type='character'` + `target_type='character'`），原 `character_relations` 物理表已删除——故下表为**领域模型口径**（列名 from_character_id/to_character_id 等为模型字段，非当前 DB 列面；DB 侧为 `knowledge_relations` 的 source_id/target_id）。**注（v1.3 / #211）**：`is_deleted` 已于 v1.1 从领域模型一并移除（见 §2.3 表）。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -90,17 +92,19 @@
 | to_character_id | UUID | NOT NULL, FK→characters.id (CASCADE), 已索引 | 关系终点 |
 | relation_type | str | NOT NULL, 1-20 字符, 去空白 | 关系类型（自由文本，如「师徒」「宿敌」「青梅竹马」；受控词表归 F14） |
 | description | str | NOT NULL, DEFAULT "", ≤ 500 字符 | 关系说明 |
-| is_deleted | bool | NOT NULL, DEFAULT False | 软删除标记 |
+| ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False~~ | **（v1.1 移除，#211 文档同步于 v1.3 补齐）** 原软删除标记；关系删除 = 物理删除（与 `knowledge_relations` 真删语义一致，#495 后本模型持久化于该表） |
 | created_at / updated_at | datetime | NOT NULL, AUTO | 同上 |
 
 **业务规则**:
 - 有向边：`from` → `to` 语义明确；图谱查询按**双向**返回（见 §6）
 - **禁止自环**：`from_character_id == to_character_id` → 422「关系两端不能是同一角色」（自环在写作场景无意义，且徒增图谱噪音）
 - 两端必须属于**同一项目**（以 from 角色所在项目为准，to 角色归属不一致 → 422）
-- 活动关系中 `(project_id, from_character_id, to_character_id, relation_type)` 唯一（partial unique，见 §2.4）；完全相同的边重复创建 → 422「该关系已存在」
-- 角色**软删除 → 其所有关系（双向）级联软删除**；角色恢复 → 级联恢复（服务层实现，保证图谱一致）；角色**硬删除 → 关系物理删除**（DB FK CASCADE）
+- **v1.1（#211）语义**：活动关系中 `(project_id, from_character_id, to_character_id, relation_type)` 唯一（全唯一索引，见 §2.4）；完全相同的边重复创建 → 422「该关系已存在」
+- 角色**删除 = 物理删除**：角色真删 → 其所有关系物理删除（`knowledge_relations` 直接 DELETE）；无软删/恢复语义（v1.1 生效）
 
-### 2.4 唯一约束（partial unique index，SQLite）
+### 2.4 唯一约束（全唯一索引，SQLite）
+
+> **v1.1（#211）变更**：partial unique（`WHERE is_deleted = 0`）→ **全唯一索引**（`is_deleted` 列已移除，无过滤条件）。下方代码块为 v1.0 时代形态，作为历史快照保留。
 
 ```python
 # ORM __table_args__（SQLAlchemy 2.0 + SQLite partial index）
@@ -128,7 +132,7 @@ __table_args__ = (
 
 > ⚠️ **历史快照声明**：以上 ORM 代码块为 **v1.0 时代形态**（partial unique + 软删语义，含 `uq_character_relations_active_key`）；#211 已改全唯一索引（`is_deleted` 列移除），**#495（2026-09-17）已删除 `character_relations` 表**——角色关系数据面并入 `knowledge_relations` 的 character↔character 子空间，唯一键为 `uq_knowledge_relations_key`（project_id + 六元组全唯一）。代码块内容作为历史快照保留、不作当前 schema 依据；F9 关系 API/CLI/GUI 契约零变更。
 
-**为什么是 partial index**: 「同名 = 同一角色」是 AI 提取合并策略的锚点（§5.4），活动角色名必须唯一；而**软删除后再创建同名角色**是合法操作（旧档案已废弃），partial index 恰好两者兼得（已删除行不参与唯一性）。服务层再做一次同名检查以给出友好 422 文案。
+**当前约束语义（v1.1 / #211）**: 「同名 = 同一角色」是 AI 提取合并策略的锚点（§5.4），角色名项目内必须唯一；`is_deleted` 列移除后**无需 partial 过滤**——真删语义下不存在「已删行」，`partial index` 的原始用途（让软删行不参与唯一性）随之消失，改用**全唯一索引**。删除后再创建同名角色**合法**（旧行已物理删除，不占唯一性）。服务层仍做一次同名检查以给出友好 422 文案。
 
 ### 2.5 领域模型（Pydantic v2 语法，参照 F1 `domain/models/project.py`）
 
@@ -146,7 +150,6 @@ class Character(BaseModel):
     brief: str = ""  # v1.1（#593）：一句话简介，F6 上下文轻量化注入
     group_id: uuid.UUID | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -201,7 +204,6 @@ class CharacterGroup(BaseModel):
     name: str
     description: str = ""
     sort_order: int = 0
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -214,7 +216,6 @@ class CharacterRelation(BaseModel):
     to_character_id: uuid.UUID
     relation_type: str
     description: str = ""
-    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -276,12 +277,12 @@ class CharacterExtractionResult(BaseModel):
 | GET | `/api/v1/projects/{project_id}/characters` | 角色列表 | Query: `?search=&group_id=&sort_by=&sort_desc=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | GET | `/api/v1/characters/{character_id}` | 角色详情（含 relations 聚合） | — | 200 + Character JSON |
 | PATCH | `/api/v1/characters/{character_id}` | 更新角色 | `CharacterUpdate` | 200 + Character |
-| DELETE | `/api/v1/characters/{character_id}` | 删除角色 | Query: `?force=true` | 204（默认软删除） |
-| POST | `/api/v1/characters/{character_id}/restore` | 恢复角色（含级联恢复关系） | — | 200 + Character |
+| DELETE | `/api/v1/characters/{character_id}` | 删除角色（**v1.1 真删+关系级联**） | — | 204 |
+| ~~POST~~ | ~~`/api/v1/characters/{character_id}/restore`~~ | **（v1.1 移除）** 端点已不存在 | — | — |
 | GET | `/api/v1/characters/{character_id}/relations` | 角色关系列表（双向） | — | 200 + `{items, total}` |
 | POST | `/api/v1/characters/{character_id}/relations` | 创建关系（from=路径角色） | `CharacterRelationCreate` | 201 + CharacterRelation |
 | PATCH | `/api/v1/characters/{character_id}/relations/{relation_id}` | 更新关系 | `{relation_type?, description?}` | 200 + CharacterRelation |
-| DELETE | `/api/v1/characters/{character_id}/relations/{relation_id}` | 删除关系（软删除） | — | 204 |
+| DELETE | `/api/v1/characters/{character_id}/relations/{relation_id}` | 删除关系（**v1.1 真删**） | — | 204 |
 | POST | `/api/v1/projects/{project_id}/character-groups` | 创建分组 | `{name, description?, sort_order?}` | 201 + CharacterGroup |
 | GET | `/api/v1/projects/{project_id}/character-groups` | 分组列表（含 member_count） | — | 200 + `{items, total}` |
 | GET | `/api/v1/character-groups/{group_id}` | 分组详情（含 member_count） | — | 200 + CharacterGroup |
@@ -303,7 +304,7 @@ Content-Type: application/json
 {
   "id": "9b1c2d3e-...", "project_id": "3f2e1d4a-...", "name": "林尘",
   "personality": "坚韧隐忍", "background": "废柴体质觉醒者", "goals": "",
-  "group_id": null, "extra": {}, "is_deleted": false,
+  "group_id": null, "extra": {},
   "created_at": "2026-08-01T10:00:00Z", "updated_at": "2026-08-01T10:00:00Z"
 }
 ```
@@ -328,12 +329,11 @@ PATCH /api/v1/characters/9b1c2d3e-...
 ```
 → 200（更新后 Character JSON，group_id 为 null）
 
-**软删除 / 恢复 / 硬删除**:
+**删除角色（v1.1 真删语义）**:
 ```http
-DELETE /api/v1/characters/9b1c2d3e-...            → 204（软删除）
-POST /api/v1/characters/9b1c2d3e-.../restore      → 200 + Character
-DELETE /api/v1/characters/9b1c2d3e-...?force=true → 204（物理删除，关系级联删除）
+DELETE /api/v1/characters/9b1c2d3e-...   → 204（物理删除，关系级联删除）
 ```
+> **v1.1（#211）变更**：原 `DELETE` 默认软删 + `?force=true` 物理删的双路径**收敛为真删单路径**（`force` 参数移除）；原 `POST /api/v1/characters/{id}/restore` 端点**移除**，删除后不可恢复。
 
 ### 3.3 请求/响应示例 — 关系与分组
 
@@ -387,7 +387,7 @@ DELETE /api/v1/character-groups/5a1b2c3d-... → 204
 {
   "id": "...", "project_id": "...", "name": "林尘",
   "personality": "...", "background": "...", "goals": "...",
-  "group_id": "5a1b2c3d-...", "extra": {}, "is_deleted": false,
+  "group_id": "5a1b2c3d-...", "extra": {},
   "created_at": "...", "updated_at": "...",
   "relations": [
     {"id": "...", "to_character_id": "7a8b9c0d-...", "to_name": "青云真人",
@@ -452,8 +452,8 @@ inkflow character update --id <uuid> \
     [--name <str>] [--personality <str>] [--background <str>] [--goals <str>] \
     [--group-id <uuid|"">] [--json]        # --group-id "" 表示清除分组
 
-inkflow character delete --id <uuid> [--force] [--permanent] [--json]
-inkflow character restore --id <uuid> [--json]
+inkflow character delete --id <uuid> [--force] [--json]     # v1.1 真删；--force 跳过确认（--permanent 已移除）
+# v1.1 移除: inkflow character restore --id <uuid> [--json]
 
 inkflow character relations --id <uuid> [--json]          # 双向关系列表
 inkflow character relate --id <uuid> --to <uuid> --type <str> [--description <str>] [--json]
@@ -572,7 +572,7 @@ variables:
 |------|------|------|
 | 项目内存在同名**活动**角色 | 非空提取字段**覆盖**对应字段（personality/background/goals 独立判断），更新 updated_at | `updated` |
 | 不存在 | 创建新角色（group_id=None） | `created` |
-| 存在但已**软删除** | 视为不存在 → **创建新角色**（不隐式恢复旧档案；partial unique 允许） | `created` + warning「存在已删除的同名角色档案」 |
+| ~~存在但已**软删除**~~ | **（v1.1 移除）** 真删语义下无「已删档案」状态，该分支不存在；删除后重新提取同名角色 = 正常创建新角色（无需 warning） | — |
 | 提取字段非法（name 空/超长、字段超长） | 该条**跳过** | `warnings` |
 
 **关系合并（名称解析 → 键匹配）**:
@@ -582,7 +582,7 @@ variables:
 | `from_name`/`to_name` 都能解析为项目内角色 id（本次创建/更新或库中已存在） | 按 `(from_id, to_id, relation_type)` 查活动关系：存在 → 更新 description（提取值非空时）；不存在 → 创建 | `relations_updated` / `relations_created` |
 | 任一端名称无法解析（LLM 幻觉/不在提取列表且库中不存在） | **跳过**，不创建悬空关系 | `warnings` |
 | 两端为同一角色名 | 跳过（对齐自环禁令） | `warnings` |
-| 已存在但软删除的同键关系 | 创建新活动记录（partial unique 允许） | `relations_created` |
+| ~~已存在但软删除的同键关系~~ | **（v1.1 移除）** 真删语义下无「已删关系」状态，该分支不存在 | — |
 
 **幂等性**: 对同一文本重复提取，第二次应产出空 `created`/`updated` 列表（全部命中已有数据，非空字段覆盖后值不变）——这是合并策略正确性的关键验收点。
 
@@ -602,8 +602,8 @@ variables:
 ### 6.1 关系图谱语义
 
 - **有向存储，双向查询**: 边有方向（`from → to`），但图谱查询（角色详情 relations、`GET /characters/{id}/relations`）一律返回该角色作为 from 或 to 的**全部活动边**——作者视角的关系图谱是无向展示的
-- 软删除角色/关系不进入任何图谱查询结果
-- 角色恢复时级联恢复其关系（服务层：`restore_character` 内先恢复角色，再恢复 `from_character_id = 角色 or to_character_id = 角色` 的关系）
+- **真删语义（v1.1 / #211）**: 角色/关系删除即物理删除，不进入任何图谱查询结果；无「软删边」状态
+- 角色真删时其关系同步物理删除（`knowledge_relations` DELETE，服务层级联 + DB FK CASCADE），无孤儿边
 - 图谱整体导出/可视化不在 F9 范围（F18 Web UI）
 
 ### 6.2 分组语义
@@ -660,7 +660,7 @@ variables:
 | 合并中途 DB 错误 | 整体回滚（单事务），无部分落库 |
 | 角色列表搜索/分组过滤无结果 | 200: `{"items": [], "total": 0}` |
 | 分页越界 | 200: 空 items（同 F1） |
-| 项目硬删除 | 角色/分组/关系级联物理删除（FK CASCADE）；项目软删除不影响角色数据 |
+| 项目硬删除 | 角色/分组/关系级联物理删除（FK CASCADE） |
 | `--text` 与 `--text-file` 同时传入 | CLI 退出码 2（用法错误） |
 | 提取合并幂等性 | 同文本二次提取 → created/updated 为空（全部命中已有） |
 
@@ -693,7 +693,7 @@ backend/src/inkflow/
 │   └── database/
 │       ├── models/
 │       │   ├── character.py      ← CREATE: CharacterORM, CharacterGroupORM, CharacterRelationORM
-│       │   │                        （partial unique index, FK, soft-delete 标记）
+│       │   │                        （全唯一索引 v1.1, FK；真删语义无 soft-delete 标记）
 │       │   └── __init__.py       ← MODIFY: 注册 3 个 ORM（create_tables 依赖）
 │       └── repositories/
 │           ├── character_repo.py ← CREATE: SQLiteCharacterRepository
@@ -706,8 +706,9 @@ backend/src/inkflow/
 │   └── app.py                    ← MODIFY: 注册 characters.router
 └── cli/
     ├── commands/
-    │   ├── character.py          ← CREATE: character 组（create/list/get/update/delete/restore/
+    │   ├── character.py          ← CREATE: character 组（create/list/get/update/delete/
     │   │                             relations/relate/unrelate/extract + group 子组）
+    │   │                             【v1.1 移除 restore 子命令】
     │   └── __init__.py           ← MODIFY
     └── app.py                    ← MODIFY: 注册 character 命令组
 
@@ -738,17 +739,15 @@ class CharacterRepositoryProtocol(Protocol):
                    sort_desc: bool = True, offset: int = 0,
                    limit: int = 50) -> tuple[list[Character], int]: ...
     async def update(self, character: Character) -> Character: ...
-    async def soft_delete(self, character_id: int) -> bool: ...
-    async def restore(self, character_id: int) -> Character | None: ...
-    async def hard_delete(self, character_id: int) -> bool: ...
+    async def hard_delete(self, character_id: int) -> bool: ...   # v1.1 真删（唯一删除路径）
+    # v1.1 移除: soft_delete / restore（#211）
 
     # ── CharacterGroup ──
     async def add_group(self, group: CharacterGroup) -> CharacterGroup: ...
     async def get_group(self, group_id: int) -> CharacterGroup | None: ...
     async def list_groups(self, project_id: int) -> list[CharacterGroup]: ...
     async def update_group(self, group: CharacterGroup) -> CharacterGroup: ...
-    async def soft_delete_group(self, group_id: int) -> bool:  # 成员 group_id 置 NULL
-    async def hard_delete_group(self, group_id: int) -> bool: ...
+    async def hard_delete_group(self, group_id: int) -> bool: ...  # 成员 group_id 置 NULL；v1.1 移除 soft_delete_group
 
     # ── CharacterRelation ──
     async def add_relation(self, relation: CharacterRelation) -> CharacterRelation: ...
@@ -758,10 +757,9 @@ class CharacterRepositoryProtocol(Protocol):
     async def list_relations(self, project_id: int,
                              character_id: int | None = None) -> list[CharacterRelation]: ...
     async def update_relation(self, relation: CharacterRelation) -> CharacterRelation: ...
-    async def soft_delete_relation(self, relation_id: int) -> bool: ...
     async def hard_delete_relation(self, relation_id: int) -> bool: ...
-    async def soft_delete_relations_of(self, character_id: int) -> None: ...  # 级联
-    async def restore_relations_of(self, character_id: int) -> None: ...      # 级联
+    # v1.1 移除: soft_delete_relation / soft_delete_relations_of / restore_relations_of（#211）
+    #   角色真删时其关系由 DB FK CASCADE / 服务层物理删除，无软删级联与恢复语义
 ```
 
 > 仓储层方法入参用 int（与现有 SummaryRepositoryProtocol 一致）；Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。
@@ -866,13 +864,13 @@ F9 被依赖:
 |------|------|------|
 | 关系存储 | 独立 `character_relations` 表，而非 Character 内嵌 JSON | 关系图谱需要双向边查询与按项目隔离；内嵌 JSON 无法高效查询且产生双份真相。角色详情响应的 `relations` 为 API 层只读聚合（**状态演进**：2026-09-17 #495 该独立表已并入通用关系表 `knowledge_relations` 的 character↔character 子空间——「独立关系行 vs 内嵌 JSON」的原决策理由仍成立，关系仍是独立行存储，只是统一到通用关系表；API/CLI/GUI 契约不变） |
 | 同名语义 | 「项目内活动角色 name 唯一」= 同一角色 | 这是 AI 提取合并的锚点（§5.4），也防止手误重复建档 |
-| 唯一约束实现 | SQLite partial unique index（`WHERE is_deleted = 0`） | 软删除后再创建同名角色合法；比「服务层检查 + 全表唯一」更稳（DB 兜底） |
-| 合并策略 | 非空字段覆盖；不隐式恢复软删除档案 | 确定性、幂等、可重跑；隐式恢复会带来「意外复活」的不可预期行为 |
+| 唯一约束实现 | 全唯一索引（v1.1 / #211；原 partial unique `WHERE is_deleted = 0`） | `is_deleted` 列移除后无「已删行」需排除，partial 过滤失去对象；改全唯一索引后**删除后再创建同名角色仍合法**（旧行已物理删除，不占唯一性）；比「仅服务层检查」更稳（DB 兜底） |
+| 合并策略 | 非空字段覆盖；**删除即物理删除**（v1.1，无「已删档案」状态） | 确定性、幂等、可重跑；软删语义下「隐式恢复」的不可预期行为（原 D5 顾虑）随真删一并消失 |
 | 提取重试 | 解析失败修复式重试 ≤ 2 次（F3 模式），合并阶段不重试 | 提取无部分可用输出，失败显式报错；合并重试会导致重复写入 |
 | 提取温度 | 固定 0.2 低温 | 结构化 JSON 输出稳定性优先（F3 修订亦用低温先例） |
 | 提取模板 | `character_extract.yaml` 走 F5 PromptManager | ADR-014/015：模板与代码分离、domain/ 零 LangChain |
 | 分组模型 | 一对一 `group_id`（FK SET NULL），不做标签多对多 | MVP 最小集（PRD「分组管理」）；多对多属 Phase 2+，F14 后按需 |
-| 关系级联 | 角色软删 → 关系双向软删；恢复 → 级联恢复；硬删 → FK CASCADE | 图谱一致性：软删除的角色不应残留可见边；恢复后图谱原样回来 |
+| 关系级联 | 角色真删 → 关系物理删除（`knowledge_relations` DELETE / FK CASCADE） | 图谱一致性：真删语义下不存在「孤儿边」问题，边随角色同步消失 |
 | 端点布局 | 创建/列表嵌套项目路径，详情扁平（同 F2） | 与 F2 §3 端点风格一致，OpenAPI 分组清晰 |
 | extract 端点 | `POST /api/v1/characters/extract`（动作型，返回 200） | 与 F3 writing 动作型端点一致；单次同步调用，不做任务队列（YAGNI） |
 | CLI 分组子命令 | `inkflow character group ...` 三级嵌套 | 分组是角色域的子实体（F2 的 volume 为顶级实体故用顶级组）；避免顶级 `group` 语义歧义 |
@@ -885,9 +883,9 @@ F9 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 验证（含 partial unique 语义、提取 DTO schema） | `pytest backend/tests/unit/domain/models/test_character_models.py -v` 全绿 |
+| M1 | 领域模型 + DTO 验证（含全唯一索引语义、提取 DTO schema） | `pytest backend/tests/unit/domain/models/test_character_models.py -v` 全绿 |
 | M2 | 仓储层全部方法（角色/分组/关系 CRUD + 级联 + 唯一约束） | `pytest backend/tests/unit/infrastructure/database/test_character_repo.py -v` 全绿 |
-| M3 | 服务层 CRUD + 业务校验（同名/自环/跨项目/级联恢复） | `pytest backend/tests/unit/domain/services/test_character_service.py -v` 全绿 |
+| M3 | 服务层 CRUD + 业务校验（同名/自环/跨项目/真删级联） | `pytest backend/tests/unit/domain/services/test_character_service.py -v` 全绿 |
 | M4 | AI 提取管线（解析/重试/合并策略/幂等性，Mock LLM） | `pytest backend/tests/unit/domain/ports/test_character_extraction.py -v` 全绿 |
 | M5 | API 16 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_character_api.py -v` 全绿 |
 | M6 | CLI character 组（信封/退出码/确认交互/双文本通道） | `pytest tests/test_cli_character.py -v` 全绿 |
@@ -903,7 +901,7 @@ F9 被依赖:
 |---|------|------|------|
 | Q1 | F6 `CharacterSettingSource` 空实现（`infrastructure/context/sources.py`）的替换是否纳入 F9 里程碑？该文件属 F6 模块，但真实实现依赖 F9 Repository | 影响 F9 收尾范围与 F6 文件修改归属 | 建议：F9 只交付实体/查询能力；替换作为 0.2.0 内 F6 联调任务（写 F9 plan 时单独列出） |
 | Q2 | 分组语义确认：MVP 按「一对一归属（阵营/组织）」实现；是否需要「标签多对多」（同一角色属多个分组）？ | 影响数据模型与 API（多对多需关联表） | 建议：MVP 一对一，多对多列入 Phase 2+（本 spec 已按此设计） |
-| Q3 | 角色软删除后再次提取到同名角色：当前设计为「新建新档案 + warning」。是否期望「自动恢复旧档案并合并」？ | 影响合并策略与数据生命周期 | 建议：保持新建（不隐式恢复），旧档案由用户显式 restore |
+| Q3 | ~~角色软删除后再次提取到同名角色：当前设计为「新建新档案 + warning」~~ **【v1.1 已消解】** 真删语义（#211）下无「已删除档案」状态，该问题不复存在；删除后重新提取同名角色即正常创建新角色 | 影响合并策略与数据生命周期 | 已由 #211 删除语义统一消解（无需 restore 入口） |
 
 ---
 
@@ -915,21 +913,21 @@ F9 被依赖:
 
 | 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| POST /api/v1/projects/{project_id}/characters | 项目存在 | 校验 DTO → 同名检查 → 建角色 | 201 + Character | 404「项目不存在」；422「角色名不能为空」/「角色名不能超过 50 个字符」/「同名角色已存在（角色名在项目内必须唯一）」 | 软删同名可再建（partial unique 排除已删行） |
+| POST /api/v1/projects/{project_id}/characters | 项目存在 | 校验 DTO → 同名检查 → 建角色 | 201 + Character | 404「项目不存在」；422「角色名不能为空」/「角色名不能超过 50 个字符」/「同名角色已存在（角色名在项目内必须唯一）」 | v1.1 真删语义：删除即物理删除，同名可再建（全唯一索引，旧行已不存在） |
 | GET /api/v1/projects/{project_id}/characters | 项目存在 | search/group 过滤 + 排序分页 | 200 + {items,total,offset,limit} | — | 无结果/分页越界 → 空 items |
-| GET /api/v1/characters/{character_id} | 角色存在（活动） | 查询 + relations 双向聚合 | 200 + Character（含 relations） | 404「角色不存在」 | 无效 UUID → 404；软删角色已排除 |
+| GET /api/v1/characters/{character_id} | 角色存在 | 查询 + relations 双向聚合 | 200 + Character（含 relations） | 404「角色不存在」 | 无效 UUID → 404；已删除角色物理不存在 |
 | PATCH /api/v1/characters/{character_id} | 角色存在 | exclude_unset 部分更新 | 200 + Character | 404「角色不存在」；422「分组不存在于该项目」（group_id 非法） | 不传字段 = 不改 |
-| DELETE /api/v1/characters/{character_id} | 角色存在 | 软删 is_deleted=True + 双向关系级联软删 | 204 | 404「角色不存在」 | 默认软删；?force=true = 物理删 + 关系 FK CASCADE |
-| POST /api/v1/characters/{character_id}/restore | 角色存在（软删） | is_deleted=False + 关系级联恢复 | 200 + Character | 404「角色不存在」 | 恢复未删角色 = 无操作成功 |
+| DELETE /api/v1/characters/{character_id} | 角色存在 | **真删（物理删除）+ 关系级联删除** | 204 | 404「角色不存在」 | **v1.1**：无软删路径、无 `force` 参数；重复删除同 id → 404 |
+| ~~POST /api/v1/characters/{character_id}/restore~~ | — | **（v1.1 移除）** 端点已不存在；真删语义下无恢复场景 | — | 请求该路径 → 404 | — |
 | GET /api/v1/characters/{character_id}/relations | 角色存在 | 双向关系列表（from/to 聚合） | 200 + {items,total} | 404「角色不存在」 | — |
 | POST /api/v1/characters/{character_id}/relations | 角色存在 | 校验 to 存在/同项目/非自环/不重复 → 建关系 | 201 + CharacterRelation | 404「角色不存在」（to 不存在）；422「关系两端不能是同一角色」/「角色与目标角色不属于同一项目」/「该关系已存在」 | from = 路径角色 |
 | PATCH /api/v1/characters/{character_id}/relations/{relation_id} | 关系存在 | 更新 relation_type/description | 200 + CharacterRelation | 404「关系不存在」 | — |
-| DELETE /api/v1/characters/{character_id}/relations/{relation_id} | 关系存在 | 软删关系 | 204 | 404「关系不存在」 | — |
+| DELETE /api/v1/characters/{character_id}/relations/{relation_id} | 关系存在 | **真删关系**（物理删除） | 204 | 404「关系不存在」 | **v1.1**：无软删语义 |
 | POST /api/v1/projects/{project_id}/character-groups | 项目存在 | 同名检查 → 建分组 | 201 + CharacterGroup | 422（同名分组，§3.5 服务层校验） | — |
 | GET /api/v1/projects/{project_id}/character-groups | 项目存在 | 列表（含 member_count） | 200 + {items,total} | — | — |
 | GET /api/v1/character-groups/{group_id} | 分组存在 | 详情（含 member_count） | 200 + CharacterGroup | 404「分组不存在」 | 无效 UUID → 404 |
 | PATCH /api/v1/character-groups/{group_id} | 分组存在 | 更新 name/description/sort_order | 200 + CharacterGroup | 404「分组不存在」；422（同名） | — |
-| DELETE /api/v1/character-groups/{group_id} | 分组存在 | 软删分组 + 成员 group_id 置 NULL | 204 | 404「分组不存在」 | 角色本身不受影响 |
+| DELETE /api/v1/character-groups/{group_id} | 分组存在 | **真删分组** + 成员 group_id 置 NULL | 204 | 404「分组不存在」 | 角色本身不受影响；**v1.1** 无软删语义 |
 | POST /api/v1/characters/extract | 项目存在·text 非空 | LLM 提取 → 解析重试 ≤2 → 合并落库（单事务） | 200 + CharacterExtractionResult | 404「项目不存在」；422「章节文本不能为空」/「章节文本不能超过 50000 个字符」；500「角色提取失败: LLM 输出无法解析，请重试」/「LLM 调用失败，请稍后重试」 | 空列表 → warning「未提取到角色信息」；单条非法 → 跳过 + warning；幂等（同文本二次提取 created/updated 空）；DB 失败整体回滚 |
 
 ### 14.2 CLI 命令状态流
@@ -940,23 +938,23 @@ F9 被依赖:
 | character list | 项目存在 | 列表 | 列表 / --json | — | --search/--group-id/--sort/--sort-desc |
 | character get | 角色存在 | 查询 | JSON | NOT_FOUND「角色不存在」退出码 1 | — |
 | character update | 角色存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --group-id "" 清除分组 |
-| character delete | 角色存在 | 二次确认（--force 跳过）→ 软删 | ✅ 角色已删除: [林尘] | --json 无 --force → VALIDATION_ERROR 退出码 1；404 NOT_FOUND | --permanent 硬删；--force 跳过确认 |
-| character restore | 角色存在（软删） | 恢复 | 200 | 404 NOT_FOUND | 重复恢复无操作成功 |
+| character delete | 角色存在 | 二次确认（--force 跳过）→ **真删** | ✅ 角色已删除: [林尘] | --json 无 --force → VALIDATION_ERROR 退出码 1；404 NOT_FOUND | **v1.1**：`--permanent` 移除（真删无软/硬之分）；`--force` = 跳过确认 |
+| ~~character restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 | character relations | 角色存在 | 双向关系列表 | JSON | 404 NOT_FOUND | — |
 | character relate | 角色存在 | 建关系 | ✅ / JSON | 422 VALIDATION_ERROR（自环/重复/跨项目）；404 NOT_FOUND | — |
-| character unrelate | 关系存在 | 软删关系 | ✅ / JSON | 404 NOT_FOUND；--json 无 --force → VALIDATION_ERROR | — |
+| character unrelate | 关系存在 | **真删关系** | ✅ / JSON | 404 NOT_FOUND；--json 无 --force → VALIDATION_ERROR | — |
 | character extract | 项目存在 | LLM 提取 → 合并落库 | ✅ 提取完成: 新增 3 个角色, 更新 1 个角色, 新增 4 条关系, 更新 0 条, 跳过 2 条, 警告 2 条；--json 报告 | 404 项目不存在；422 空文本；500 LLM_ERROR | --text/--text-file 互斥（同时 → 退出码 2） |
 | character group list | 项目存在 | 分组列表 | 列表 / JSON | — | — |
 | character group create | 项目存在 | 建分组 | ✅ / JSON | 422 VALIDATION_ERROR（同名） | — |
 | character group update | 分组存在 | 更新分组 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR（同名） | — |
-| character group delete | 分组存在 | 软删分组 + 成员置空 | ✅ / JSON | 404 NOT_FOUND；--json 无 --force → VALIDATION_ERROR | 角色保留 |
+| character group delete | 分组存在 | **真删分组** + 成员置空 | ✅ / JSON | 404 NOT_FOUND；--json 无 --force → VALIDATION_ERROR | 角色保留 |
 
 ### 14.3 验收锚点
 
 - A1：创建角色 name 空/全空白 → 422「角色名不能为空」（非 500/非 Pydantic 原文泄漏）
-- A2：同名活动角色 → 422「同名角色已存在（角色名在项目内必须唯一）」；软删后同名可再建
-- A3：DELETE 默认软删 → 204 后 GET 404；restore 级联恢复关系（重复恢复无操作成功）
-- A4：DELETE ?force=true → 204 物理删 + 关系 FK CASCADE；再 restore → 404
+- A2：同名角色 → 422「同名角色已存在（角色名在项目内必须唯一）」；**删除后同名可再建**（v1.1 真删，旧行已物理删除）
+- A3：DELETE → 204 后 GET 404（**v1.1 真删，不可恢复**）；关系随角色一并物理删除
+- A4：**（v1.1 移除）** 原 `?force=true` / restore 双路径已收敛为真删单路径；重复 DELETE 同 id → 404
 - A5：关系自环/跨项目/重复 → 422（「关系两端不能是同一角色」/「角色与目标角色不属于同一项目」/「该关系已存在」）
 - A6：extract text 空 → 422「章节文本不能为空」；LLM 解析失败重试 ≤2 仍失败 → 500「角色提取失败: LLM 输出无法解析，请重试」
 - A7：extract 合并中途 DB 错误 → 单事务整体回滚（无部分落库）

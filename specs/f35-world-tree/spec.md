@@ -3,11 +3,12 @@
 
 > **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、F10 spec（世界观既有模块）、Constitution P1-P6
 >
+> **Spec 变更**（1.1 → 1.2，2026-09-18，#211 文档同步补齐）：#211「F10 删除语义统一（软删→真删）」**已落地**（f10 spec v1.1），本模块原「F10 单条软删保持现状（边界 X）」的表述随之作废——无参 `DELETE /world-settings/{id}` 现为**真删**（不可恢复），`restore` 端点不存在。§1 边界声明 / §3.1 状态流 / §5.5 声明 / §12 决策表 / Q1 同步。本模块自身的树级真删语义（cascade/reparent）不变。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后（原变更日期 2026-08-13）。
 > **Spec 变更**（1.0 → 1.1，2026-08-09 拍板）：Q1-Q3 全拍板——**Q1 删除语义=真删 + 子地点级联/reparent（D1/D2/D4/D6，非归档级联）**；**Q2 提取建树后置给内置 Agent（D8，本轮不做模板增强）**；Q3=列表 parent_id 过滤（A）。**边界 X（D7 + 0.8.0 #211）**：F10 既有单条删除/restore（软删）保持现状不动，本模块新增树级删除操作为**真删**——差异显式声明（§1.2/§5.5）；统一改造登记 [#211](https://github.com/zhx-xi/InkFlow/issues/211)（0.8.0）。
 >
 > **所属阶段**: 0.6.0 世界观三连 Step 1（数据地基，估算 2-3 人天）
 >
-> **关联 Issues**: [#173](https://github.com/zhx-xi/InkFlow/issues/173)（本模块）· #174（地图视图，**依赖本模块**）· #175（跨书复制，**依赖本模块**）· #211（F10 删除语义统一，**后置登记**）
+> **关联 Issues**: [#173](https://github.com/zhx-xi/InkFlow/issues/173)（本模块）· #174（地图视图，**依赖本模块**）· #175（跨书复制，**依赖本模块**）· #211（F10 删除语义统一，**✅ 已落地**——F10 已真删，本 spec 见下变更说明）
 >
 > **依赖**: ✅ F10（world_settings 表 + WorldService + WorldRepositoryProtocol）· ✅ F1（项目 FK 校验）· ⏳ F24 语义（仅会话保留归档；本模块不沿用两级删除——见 §1.2）
 >
@@ -24,7 +25,7 @@
 **核心交付**：
 
 ```text
-F10 现状:  world_settings（扁平列表，name 项目内唯一，软删 + restore）
+F10 现状:  world_settings（扁平列表，name 项目内唯一；v1.1 起真删 + 全唯一索引）
 F35 增量:  + parent_id 自引用列（可空=顶层）
            + extra.scale 尺度自由文本标签
            + 同级唯一（partial unique (project_id, parent_id, name)）
@@ -51,7 +52,7 @@ F35 增量:  + parent_id 自引用列（可空=顶层）
 
 - **不推翻** F10 决策：不建条目间关系表（F10 §2.3）、不建类别层级树（F10 §2.2）——`parent_id` 是**地理条目的包含关系**，category 分类体系保持扁平
 - **范围限定**：只做「地点树数据层」，地图视图（#174）与跨书复制（#175）不在本模块
-- **⚠️ 删除语义边界（边界 X，2026-08-09 拍板）**：本模块**新增的树级删除操作（级联删/reparent）为真删**（物理删除，不可恢复）；**F10 既有单条删除（DELETE 默认软删）与 restore 端点保持现状不动**（0.2.0 已合入契约，F14 提取合并/F15 审计依赖软删排除逻辑）——两语义并存，差异见 §5.5；**全项目删除语义统一（软删→真删）登记 #211（0.8.0）**
+- **⚠️ 删除语义边界（v1.2/#211 更新）**：本模块的树级删除操作（级联删/reparent）为真删（物理删除，不可恢复）；**F10 单条删除亦已于 #211 统一为真删**——原「DELETE 默认软删 + restore 保持现状」的边界 X 拍板**已作废**（全项目普通实体删除语义一致：确认后真删，无 restore）。（历史说明：0.2.0 曾以软删合入契约，F14 提取合并/F15 审计曾依赖软删排除逻辑）——两语义并存，差异见 §5.5；**全项目删除语义统一（软删→真删）登记 #211（0.8.0）**
 - **提取建树后置（D8）**：`world_extract.yaml` 模板增强（「A 属于 B」→ parent 挂接）**本轮不做**——由后续内置 Agent（0.7.0 Agent 化升级，F26/F27 方向）专门承接，登记见 §10；本轮 F10 提取端点行为不变（提取条目全部落顶层）
 - **F6 上下文注入增强**（按祖先链注入「主角位于清河县城，属青州/大越国」）**不在本模块**（涉及跨模块 MODIFY F6 sources.py，后续单独评估，见 §10）
 - **F16 一致性审计**的地理归属检查不在本模块（§10）
@@ -90,7 +91,7 @@ class WorldSetting(BaseModel):
     content: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
     parent_id: uuid.UUID | None = None   # ← F35 新增：父地点；None = 顶层
-    is_deleted: bool = False             # F10 既有（软删现状保留，边界 X）
+    # (v1.1/#211) is_deleted 已从 F10 移除 —— 原「软删现状保留（边界 X）」作废
     created_at: datetime
     updated_at: datetime
 
@@ -133,7 +134,7 @@ class WorldSettingORM(Base):
             "uq_world_settings_active_name_parent",   # ← 替换旧 uq_world_settings_active_name
             "project_id", "parent_id", "name",
             unique=True,
-            sqlite_where=text("is_deleted = 0"),
+            # (v1.1/#211) F10 真删后 is_deleted 列已移除 → 无 sqlite_where（全唯一索引）
         ),
     )
 
@@ -153,7 +154,8 @@ class WorldSettingORM(Base):
 ### 2.4 同级唯一 + 顶层应用层校验 + 提取合并锚点声明
 
 ```text
-SQLite partial unique index (project_id, parent_id, name) WHERE is_deleted = 0:
+SQLite 全唯一索引 (project_id, parent_id, name)（v1.1/#211：原 partial unique 的
+WHERE is_deleted = 0 已随该列移除）:
   - parent_id 非 NULL 行：DB 约束生效（同级同名唯一）
   - parent_id NULL 行（顶层）：SQLite unique index 对 NULL 不冲突（NULL ≠ NULL）
     → DB 约束失效 → 服务层显式校验「顶层同名」→ 422
@@ -210,7 +212,7 @@ Content-Type: application/json
 201
 {"id": "5", "project_id": "1", "name": "清河县城", "category": "地理",
  "content": "...", "extra": {}, "parent_id": "3",
- "is_deleted": false, "created_at": "...", "updated_at": "..."}
+ "created_at": "...", "updated_at": "..."}   # (v1.1/#211) is_deleted 已移除
 ```
 
 **置顶更新**（PATCH body 显式 null）：
@@ -329,20 +331,20 @@ async def _assert_no_cycle(pid_int: int, new_parent_id: int | None) -> None:
 ```sql
 -- 祖先链（含自身）：面包屑/上下文注入/循环防护
 WITH RECURSIVE ancestors(id, name, parent_id) AS (
-  SELECT id, name, parent_id FROM world_settings WHERE id = :sid AND is_deleted = 0
+  SELECT id, name, parent_id FROM world_settings WHERE id = :sid   -- (v1.1/#211) 无 is_deleted 过滤
   UNION ALL
   SELECT w.id, w.name, w.parent_id FROM world_settings w
   JOIN ancestors a ON w.id = a.parent_id
-  WHERE w.is_deleted = 0
+  -- (v1.1/#211) 原 WHERE w.is_deleted = 0 已移除
 ) SELECT id, name, parent_id FROM ancestors;
 
 -- 子树（含自身）：复制/级联删除
 WITH RECURSIVE descendants(id, name, parent_id) AS (
-  SELECT id, name, parent_id FROM world_settings WHERE id = :sid AND is_deleted = 0
+  SELECT id, name, parent_id FROM world_settings WHERE id = :sid   -- (v1.1/#211) 无 is_deleted 过滤
   UNION ALL
   SELECT w.id, w.name, w.parent_id FROM world_settings w
   JOIN descendants d ON w.parent_id = d.id
-  WHERE w.is_deleted = 0
+  -- (v1.1/#211) 原 WHERE w.is_deleted = 0 已移除
 ) SELECT id, name, parent_id FROM descendants;
 ```
 
@@ -367,7 +369,7 @@ def ensure_world_parent_id_column(conn: Connection) -> None:
     conn.execute(text("DROP INDEX IF EXISTS uq_world_settings_active_name"))
     conn.execute(text(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_world_settings_active_name_parent "
-        "ON world_settings (project_id, parent_id, name) WHERE is_deleted = 0"
+        "ON world_settings (project_id, parent_id, name)"   -- (v1.1/#211) 无 WHERE is_deleted
     ))
 ```
 
@@ -381,10 +383,10 @@ def ensure_world_parent_id_column(conn: Connection) -> None:
 
 | 操作 | 无子地点 | 有子地点 |
 |------|----------|----------|
-| `DELETE`（无参数） | **F10 既有软删**（is_deleted=1，边界 X——现状保持） | **422 WorldChildrenActionRequiredError**（强制显式选择） |
+| `DELETE`（无参数） | **F10 真删**（v1.1/#211；原软删现状已废） | **422 WorldChildrenActionRequiredError**（强制显式选择） |
 | `DELETE ?cascade=true` | 真删自身 | **真删整棵子树**（递归物理删，D4=A；子地点不可恢复） |
 | `DELETE ?reparent_to=<id>` | 真删自身 | **真删自身 + 全部直接子地点改挂新父**（D2=A；reparent 目标校验同 §5.1 ②，缺省目标 = 置顶层？→ **reparent_to 必填，不提供缺省置顶选项**——见下） |
-| restore | F10 既有单条恢复保持 | **不扩展**（树级无恢复，D7） |
+| ~~restore~~ | **（v1.1/#211 移除）** 无恢复端点 | **不扩展**（树级无恢复，D7） |
 
 > ⚠️ **reparent 缺省语义决策**：D2 建议「缺省置顶层」，经复核（三角色评审）改为 **reparent_to 必填**——「置顶层」是隐式破坏树结构的操作，应显式表达为 `reparent_to` 指向顶层父链上的目标；若用户确需置顶，CLI/前端以「reparent 到项目根」表达（或未来 GUI 提供置顶选项）。**有子地点 + reparent_to 目标存在子地点自身子树 → WorldReparentTargetError（422）**。
 
@@ -400,7 +402,7 @@ reparent:  1) 直接子地点集合 = list(parent_id == id)
            4) 子地点层级深度不变（原孙子继续挂子——树结构整体平移）
 ```
 
-**⚠️ F10 单条软删差异声明**：本模块树级操作（cascade/reparent）为真删；F10 无参 DELETE 仍软删——**同一端点双语义**，spec 显式声明（客户端按参数选择）。全项目统一（软删→真删）为 0.8.0 #211。
+**⚠️ F10 单条删除差异声明（v1.2/#211 起不再有差异）**：本模块树级操作（cascade/reparent）为真删；F10 无参 DELETE 亦已统一为真删（#211 已落地）——**同一端点单一真删语义**，差异消除。（历史：曾存在「同一端点双语义」的跨 spec 张力，随 #211 落地消解）
 
 ### 5.6 提取建树（后置声明，D8 拍板）
 
@@ -437,7 +439,7 @@ reparent:  1) 直接子地点集合 = list(parent_id == id)
 | 5 | parent_id = 自身子孙 | 422 WorldCycleError |
 | 6 | 顶层同名 | 422 WorldNameConflictError（应用层校验） |
 | 7 | 不同父同名 | ✅ 允许（新语义） |
-| 8 | DELETE 无参数 + 无子地点 | F10 既有软删（is_deleted=1，边界 X） |
+| 8 | DELETE 无参数 + 无子地点 | F10 真删（v1.1/#211；原软删边界 X 已废） |
 | 9 | DELETE 无参数 + 有子地点 | 422 WorldChildrenActionRequiredError（强制选择） |
 | 10 | DELETE ?cascade=true | 真删整棵子树（单事务原子） |
 | 11 | DELETE ?reparent_to=<id> + 目标非法 | 422 WorldReparentTargetError（不存在/跨项目/自身子树） |
@@ -490,7 +492,7 @@ CLI:        ancestors/descendants/--parent/delete 参数/错误码映射        
 1. **递归 CTE 正确性**：建 3 层树（国→州→县），`collect_ancestor_ids(县)` = [州, 国]；`list_descendants(国)` = [州, 县]（层序）
 2. **循环防护三形态**：parent=自身 / parent=子 / parent=孙（通过移动现有节点触发，非仅创建）
 3. **顶层同名 vs 同级同名 vs 跨层同名**：三者行为断言（前两者 422，后者 200）
-4. **删除语义矩阵**：无子 DELETE → 软删（is_deleted=1）；有子 DELETE 无参 → 422；`?cascade=true` → 子树全物理删（断言行消失，非 is_deleted）；`?reparent_to` → 自身删 + 子改挂目标 + 孙子层级不变
+4. **删除语义矩阵**：无子 DELETE → **真删**（v1.1/#211；原软删已废）；有子 DELETE 无参 → 422；`?cascade=true` → 子树全物理删（断言行消失，非 is_deleted）；`?reparent_to` → 自身删 + 子改挂目标 + 孙子层级不变
 5. **reparent 目标校验**：目标不存在/跨项目/目标是自身子孙 → 422（负例命中目标校验分支——F13 教训）
 6. **列表过滤**：`?parent_id=<id>` 直接子级 / `?parent_id=none` 顶层 / 缺省全量（向后兼容回归）
 7. **迁移幂等**：表存在列缺失 → ALTER 成功；再跑 → no-op；表不存在 → no-op；旧索引被替换、新索引生效（`PRAGMA index_list` 断言）
@@ -511,7 +513,7 @@ CLI:        ancestors/descendants/--parent/delete 参数/错误码映射        
 | 地图视图（maps/map_pins 表 + 图片 + pin） | 独立 Step 2 | #174（0.6.0） |
 | 跨书递归复制/导出 | 独立 Step 3，依赖本模块子树查询 | #175（0.6.0） |
 | **提取自动建树（「A 属于 B」parent 挂接）** | **D8 拍板后置**：内置 Agent 专门做（承接要求清单见 §5.6） | **内置 Agent（0.7.0，F26/F27 方向）** |
-| **F10 删除语义统一（软删→真删）** | **边界 X 拍板**：本模块树级操作真删，F10 单条软删保持现状 | **#211（0.8.0）** |
+| **F10 删除语义统一（软删→真删）** | **✅ 已落地**（#211，f10 v1.1）：本模块树级操作真删，F10 单条删除亦真删——语义统一，边界 X 作废 | **#211（已合并）** |
 | F6 上下文注入按祖先链增强 | 跨模块 MODIFY F6 sources.py；数据地基先行，注入增强后续评估 | 后续（0.6.0 内另议或 1.0.0） |
 | F16 地理一致性审计规则 | 独立审计规则增强 | 后续 |
 | 相邻关系（neighbors） | 设计书 §5.3 明确不做，extra 预留 | Phase 3+ |
@@ -550,7 +552,7 @@ F35 被依赖:
 | 6 | **删除语义：真删 + 级联/reparent（D1-D6 拍板）** | 树级操作物理删；有子 422 强制选择 | 删除=删除（产品语言收敛，会话唯一保留归档）；级联/reparent 显式选择防误删整棵 | 两级删除（归档级联——被用户否决，归档=会话专属） |
 | 7 | 迁移无 FK 约束（既有库） | ALTER ADD COLUMN 不带 FK + 应用层校验 | SQLite ADD COLUMN 不支持 FK；两路径终态一致 | 重建表（破坏数据/复杂度高） |
 | 8 | **提取建树后置（D8 拍板）** | 本轮不做模板增强；内置 Agent 承接 | AI 行为归 Agent 域（F26/F27 已规划）；数据层先行（parent_id + 挂接接口就绪） | 模板增强（LLM 输出顺序脆弱、覆盖人工层级风险） |
-| 9 | **边界 X：F10 单条软删保持（D7）** | 无参 DELETE 软删 + restore 端点不扩展 | 已合入契约（F14/F15 依赖软删逻辑）；统一改造 0.8.0 #211 | 本轮统一真删（跨模块行为变更超范围） |
+| 9 | ~~**边界 X：F10 单条软删保持（D7）**~~ **【v1.2/#211 作废】** | 无参 DELETE **真删**（原软删拍板已废） | 原：已合入契约（F14/F15 依赖软删逻辑）；#211 已落地统一真删 | — |
 | 10 | **FK 运行时由 service 显式保证（D10=b）** | 级联/校验全部 service 层；不动 apply_sqlite_pragma | 生产连接未开 foreign_keys=ON，测试开——依赖 DB FK = 测试绿生产挂 | 全局开 FK pragma（回归 F1-F16 全族，独立后续项） |
 | 11 | 新增端点只读 2 个 | ancestors/descendants | 树查询是核心交付（面包屑/复制），CLI/API 都要用 | 不暴露（列表自组装——递归不可达） |
 
@@ -577,7 +579,7 @@ F35 被依赖:
 
 | # | 问题 | 影响 | 结论 |
 |---|------|------|------|
-| Q1 | 删除语义：归档级联 or 真删级联？ | 删除/恢复语义与 API 契约 | ✅ 已确认（2026-08-09 拍板：D1-D7）——**真删 + 子地点级联/reparent（D6 参数，有子 422 强制选择）；F10 单条软删保持（边界 X，#211 后置统一）**（§3.1/§5.5/§12 决策 6/9） |
+| Q1 | 删除语义：归档级联 or 真删级联？ | 删除/恢复语义与 API 契约 | ✅ 已确认（2026-08-09 拍板：D1-D7）——**真删 + 子地点级联/reparent（D6 参数，有子 422 强制选择）；F10 单条删除亦真删（原「软删保持」边界 X 随 #211 落地作废）**（§3.1/§5.5/§12 决策 6/9） |
 | Q2 | 提取模板增强是否本轮做？更新是否覆盖 parent？ | 模板/提取器改动范围 | ✅ 已确认（2026-08-09 拍板：D8）——**本轮不做，后置内置 Agent（0.7.0）；F10 提取端点行为不变**（§5.6/§10/§12 决策 8） |
 | Q3 | 列表接口是否加 parent_id 查询参数？ | 前端树渲染取数方式 | ✅ 已确认（2026-08-09 拍板：选项 A）——**加 `?parent_id=<id>` / `?parent_id=none` 过滤，缺省全量向后兼容**（§3.1/§5.3/§13 M5） |
 
@@ -596,7 +598,7 @@ F35 被依赖:
 | GET /api/v1/world-settings/{setting_id}/ancestors（CREATE） | 条目存在 | 递归 CTE 祖先链（含自身） | 200 + {items,total} | 404 WorldNotFoundError | 根在前，用于面包屑/上下文注入 |
 | GET /api/v1/world-settings/{setting_id}/descendants（CREATE） | 条目存在 | 递归 CTE 子树（含自身） | 200 + {items,total} | 404 WorldNotFoundError | 用于复制/级联删除/地图树 |
 | PATCH /api/v1/world-settings/{setting_id}（MODIFY） | 条目存在 | 更新（parent_id 出现即更新） | 200 + WorldSetting | 404 WorldNotFoundError；422 WorldCycleError（自身/子孙）；422 WorldParentNotFoundError（跨项目） | parent_id null = 置顶 |
-| DELETE /api/v1/world-settings/{setting_id}（无子地点） | 条目存在·无子地点 | F10 既有软删（is_deleted=1） | 204 | 404 WorldNotFoundError | ⚠️ 边界 X：与 F10 v1.1 真删语义存在跨 spec 张力（§5.5，#211 后置统一） |
+| DELETE /api/v1/world-settings/{setting_id}（无子地点） | 条目存在·无子地点 | **F10 真删（v1.1/#211）** | 204 | 404 WorldNotFoundError | （v1.2 更新：原「边界 X 跨 spec 张力」已随 #211 落地消解，§5.5，#211 后置统一） |
 | DELETE /api/v1/world-settings/{setting_id}?cascade=true（有子地点） | 条目存在·有子地点 | 递归真删整棵子树（单事务原子） | 204 | 404 WorldNotFoundError | 真删不可恢复 |
 | DELETE /api/v1/world-settings/{setting_id}?reparent_to=<id>（有子地点） | 条目存在·有子地点 | 直接子改挂新父 + 真删自身 | 204 | 422 WorldReparentTargetError（reparent 目标地点不存在/不在同一项目/是自身子树） | 孙子层级不变（树整体平移） |
 | DELETE /api/v1/world-settings/{setting_id}（有子地点且未指定） | 条目存在·有子地点 | 拒绝删除 | 422 WorldChildrenActionRequiredError（该地点存在子地点，必须指定 cascade 或 reparent_to） | — | 强制显式选择 |

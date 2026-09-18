@@ -215,7 +215,8 @@ $ inkflow export 我的书 --include-settings --json
     - ProjectRepository.get                       → meta
     - ChapterRepository.list_volumes(pid)         → volumes 骨架
     - ChapterRepository.list_chapters(pid, 循环分页拉全) → 每卷 chapters
-      （排除 is_deleted；volume_id=None → 「未分组」卷；⚠️ 分页陷阱见 §8.2）
+      （volume_id=None → 「未分组」卷；⚠️ 分页陷阱见 §8.2）
+      【v1.1/#211 更正：F2 章节为硬删除、chapters 表无 is_deleted 列，无软删过滤】
  ③ 若 include_settings: 聚合附录（只读，并行）:
     - CharacterRepository.list(pid, 循环分页)     → character 条目
     - WorldRepository.list(pid)                   → world 条目
@@ -237,7 +238,7 @@ $ inkflow export 我的书 --include-settings --json
 ### 5.2 聚合与分页（v1.1 保留完整细节——load-bearing）
 
 - **循环分页拉全**：`list_chapters` 默认 `limit=50`（2026-08-09 源码核实），导出必须循环分页（`while len(chapters) < total`）——**绝不默认 50 条静默丢章**（M1 验收兜底）；character/world/outline/foreshadowing 的 `list` 同样默认 limit=50
-- **软删过滤**：`list_chapters` WHERE **不含 is_deleted**（2026-08-09 源码核实），service 聚合层显式过滤；character/world/outline/foreshadowing 的 `list` docstring 确认默认排除软删 ✓
+- **删除语义过滤（v1.1/#211 更正）**：F2 章节为**硬删除**、`chapters` 表**无 `is_deleted` 列**（`models/chapter.py` / `repositories/chapter_repo.py` 零命中实测），故无需任何软删过滤；character/world/outline/foreshadowing 亦已于 #211 真删（无该列）
 
 ### 5.3 TXT 序列化器（_txt_exporter）
 
@@ -404,7 +405,7 @@ class ExportService:
 | timeline | `list_all(project_id)` | F12 全量读取（无分页参数），软删行为以实现为准 |
 | foreshadowing | `list(project_id, ...)` | 默认排除软删 ✓（docstring 核实）+ 分页陷阱 |
 
-> ⚠️ 软删语义（2026-08-09 源码核实）：character/world/outline/foreshadowing 的 `list` docstring 明确「不含已软删除」✓，但 `ChapterRepository.list_chapters` 的 WHERE **不含 `is_deleted` 过滤**（需服务层显式过滤）；**全部 `list` 默认 `limit=50`，聚合必须循环分页拉全**——测试覆盖软删排除 + 分页拉全。
+> ⚠️ 删除语义（v1.1/#211 更正）：character/world/outline/foreshadowing 已于 #211 统一**真删**（`is_deleted` 列移除）；F2 章节本就是**硬删除**（无该列）。故各模块 `list` 均无软删过滤需求。**全部 `list` 默认 `limit=50`，聚合必须循环分页拉全**——测试覆盖分页拉全（原「软删排除」用例作废）。
 
 ---
 
