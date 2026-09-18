@@ -2,7 +2,7 @@
 
 职责（spec §6/§7）:
 - 三实体 CRUD 编排：委托 OutlineRepositoryProtocol，负责领域层
-  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_int_id` 模式）
+  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_uuid` 模式）
 - 业务校验（422 语义，抛 OutlineServiceError 子类）: 同名活动大纲/弧线、
   arc_id 跨项目或不存在
 - 资源不存在（404 语义）: 多数方法返回 None 由 router 层转 404；
@@ -78,10 +78,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -149,7 +149,7 @@ class OutlineService:
         parent_id: uuid.UUID | None,
         chapter_id: uuid.UUID | None,
         volume_id: uuid.UUID | None = None,
-        exclude_outline_id: int | None = None,
+        exclude_outline_id: uuid.UUID | None = None,
     ) -> None:
         """F43 P3 大纲三级 + 章关联层级校验（严格，spec §2.8 决策点 2.A）.
 
@@ -194,18 +194,18 @@ class OutlineService:
             if level != "chapter":
                 raise OutlineChapterRefError("仅章层级大纲可关联写作章节")
             if self._chapter_repo is not None:
-                chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+                chapter = await self._chapter_repo.get_chapter(_to_uuid(chapter_id))
                 if chapter is None or chapter.project_id != project_id:
                     raise OutlineChapterRefError("关联章节不存在或不属于该项目")
         if volume_id is not None and level != "volume":
             raise OutlineVolumeRefError("仅卷级大纲可关联写作卷")
         if volume_id is not None and level == "volume":
             if self._chapter_repo is not None:
-                volume = await self._chapter_repo.get_volume(_to_int_id(volume_id))
+                volume = await self._chapter_repo.get_volume(_to_uuid(volume_id))
                 if volume is None or volume.project_id != project_id:
                     raise OutlineVolumeRefError("关联卷不存在或不属于该项目")
             existing = await self._repo.get_outline_by_volume(
-                _to_int_id(volume_id), exclude_outline_id=exclude_outline_id
+                volume_id, exclude_outline_id=exclude_outline_id
             )
             if existing is not None:
                 raise OutlineVolumeRefError("卷已关联卷纲")
@@ -243,7 +243,7 @@ class OutlineService:
             OutlineHierarchyError: 层级约束违反.
             OutlineChapterRefError: chapter_id 约束违反.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         if level == "chapter" and self._project_repo is not None:
             # #999 契约 §3：章级大纲按项目已选格式归一后再走重名检查/落库
             # （项目不存在/读配置失败 → 保持 DTO 产物不阻断）
@@ -287,7 +287,7 @@ class OutlineService:
 
     async def get_volume_outline(self, volume_id: int | uuid.UUID) -> Outline | None:
         """解析链：当前卷 -> 关联卷纲（level=volume）；无则返回 None."""
-        return await self._repo.get_outline_by_volume(_to_int_id(volume_id))
+        return await self._repo.get_outline_by_volume(_to_uuid(volume_id))
 
     async def list_outlines(
         self,
@@ -313,7 +313,7 @@ class OutlineService:
         Returns:
             (当前页大纲列表, 符合条件的总记录数).
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
@@ -348,7 +348,7 @@ class OutlineService:
             chapter_id if isinstance(chapter_id, uuid.UUID) else uuid.UUID(int=chapter_id)
         )
         if self._chapter_repo is not None:
-            chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+            chapter = await self._chapter_repo.get_chapter(_to_uuid(chapter_id))
             if chapter is None or chapter.project_id != outline.project_id:
                 return False
         await self._repo.update(outline.model_copy(update={"chapter_id": chapter_uuid}))
@@ -382,7 +382,7 @@ class OutlineService:
             normalize_chapter_title(title, "arabic"),
             normalize_chapter_title(title, "chinese"),
         }
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         hits: dict[uuid.UUID, Outline] = {}
         for candidate in candidates:
             found = await self._repo.get_by_name(pid_int, candidate)
@@ -419,7 +419,7 @@ class OutlineService:
         if existing is None:
             return None
         if "name" in update.model_fields_set and update.name is not None:
-            dup = await self._repo.get_by_name(_to_int_id(existing.project_id), update.name)
+            dup = await self._repo.get_by_name(_to_uuid(existing.project_id), update.name)
             if dup is not None and dup.id != existing.id:
                 raise OutlineNameConflictError()
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
@@ -443,7 +443,7 @@ class OutlineService:
                 parent_id=merged.parent_id,
                 chapter_id=merged.chapter_id,
                 volume_id=merged.volume_id,
-                exclude_outline_id=_to_int_id(merged.id),
+                exclude_outline_id=merged.id,
             )
         logger.info("更新大纲: outline_id=%s", outline_id)
         updated = await self._repo.update(merged)
@@ -461,7 +461,7 @@ class OutlineService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        oid = _to_int_id(outline_id)
+        oid = _to_uuid(outline_id)
         logger.info("真删大纲: outline_id=%s（情节点由 FK CASCADE 级联）", outline_id)
         deleted = await self._repo.hard_delete(oid)
         if deleted:
@@ -501,12 +501,12 @@ class OutlineService:
             OutlineNotFoundError: 大纲不存在（router 转 404）.
             ArcNotInProjectError: 弧线不存在或不属于该项目（422 语义）.
         """
-        oid_int = _to_int_id(outline_id)
+        oid_int = _to_uuid(outline_id)
         outline = await self._repo.get(outline_id)
         if outline is None:
             raise OutlineNotFoundError()
         if arc_id is not None:
-            arc = await self._repo.get_arc(_to_int_id(arc_id))
+            arc = await self._repo.get_arc(_to_uuid(arc_id))
             if arc is None or arc.project_id != outline.project_id:
                 raise ArcNotInProjectError()
         if position is None:
@@ -532,7 +532,7 @@ class OutlineService:
 
     async def get_point(self, point_id: int | uuid.UUID) -> PlotPoint | None:
         """按主键获取情节点；不存在返回 None（router 转 404）."""
-        return await self._repo.get_point(_to_int_id(point_id))
+        return await self._repo.get_point(_to_uuid(point_id))
 
     async def update_point(
         self, point_id: int | uuid.UUID, update: PlotPointUpdate
@@ -552,14 +552,14 @@ class OutlineService:
         Raises:
             ArcNotInProjectError: 新弧线不存在或不属于该项目（422 语义）.
         """
-        pid = _to_int_id(point_id)
+        pid = _to_uuid(point_id)
         existing = await self._repo.get_point(pid)
         if existing is None:
             return None
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
         if "arc_id" in update.model_fields_set:
             if isinstance(update.arc_id, uuid.UUID):
-                arc = await self._repo.get_arc(_to_int_id(update.arc_id))
+                arc = await self._repo.get_arc(_to_uuid(update.arc_id))
                 if arc is None or arc.project_id != existing.project_id:
                     raise ArcNotInProjectError()
                 updates["arc_id"] = update.arc_id
@@ -583,7 +583,7 @@ class OutlineService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        pid = _to_int_id(point_id)
+        pid = _to_uuid(point_id)
         logger.info("真删情节点: point_id=%s", point_id)
         deleted = await self._repo.hard_delete_point(pid)
         if deleted:
@@ -608,7 +608,7 @@ class OutlineService:
             OutlineNotFoundError: 大纲不存在（#1139：空列表 ≠ 父不存在，
                 router 转 404「大纲不存在」）.
         """
-        oid = _to_int_id(outline_id)
+        oid = _to_uuid(outline_id)
         outline = await self._repo.get(outline_id)
         if outline is None:
             raise OutlineNotFoundError()
@@ -635,7 +635,7 @@ class OutlineService:
         Raises:
             ArcNameConflictError: 项目内已存在同名活动弧线.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         existing = await self._repo.get_arc_by_name(pid_int, name)
         if existing is not None:
             raise ArcNameConflictError()
@@ -656,11 +656,11 @@ class OutlineService:
 
     async def get_arc(self, arc_id: int | uuid.UUID) -> StoryArc | None:
         """按主键获取弧线；不存在返回 None（router 转 404）."""
-        return await self._repo.get_arc(_to_int_id(arc_id))
+        return await self._repo.get_arc(_to_uuid(arc_id))
 
     async def list_arcs(self, project_id: uuid.UUID) -> list[StoryArc]:
         """查询项目内全部故事弧线（name ASC，spec §6.3）."""
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
@@ -680,12 +680,12 @@ class OutlineService:
         Returns:
             更新后的完整 StoryArc；弧线不存在返回 None（router 转 404）.
         """
-        aid = _to_int_id(arc_id)
+        aid = _to_uuid(arc_id)
         existing = await self._repo.get_arc(aid)
         if existing is None:
             return None
         if "name" in update.model_fields_set and update.name is not None:
-            dup = await self._repo.get_arc_by_name(_to_int_id(existing.project_id), update.name)
+            dup = await self._repo.get_arc_by_name(_to_uuid(existing.project_id), update.name)
             if dup is not None and dup.id != existing.id:
                 raise ArcNameConflictError()
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
@@ -705,7 +705,7 @@ class OutlineService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        aid = _to_int_id(arc_id)
+        aid = _to_uuid(arc_id)
         logger.info("真删弧线: arc_id=%s（成员 arc_id 由 FK SET NULL）", arc_id)
         deleted = await self._repo.hard_delete_arc(aid)
         if deleted:
@@ -802,7 +802,7 @@ class OutlineService:
         """
         if self._generator is None:
             raise OutlineServiceError("大纲生成器未配置")
-        oid = _to_int_id(outline_id)
+        oid = _to_uuid(outline_id)
         outline = await self._repo.get(outline_id)
         if outline is None:
             raise OutlineNotFoundError()
@@ -833,7 +833,7 @@ class OutlineService:
             "plot_points": [p.model_dump(mode="json") for p in old_points],
         }
         for point in old_points:
-            await self._repo.hard_delete_point(_to_int_id(point.id))
+            await self._repo.hard_delete_point(_to_uuid(point.id))
         generated = GeneratedOutline.model_validate(pending["generated"])
         arcs, plot_points, warnings = await self._materialize_replace_points(
             outline=outline,

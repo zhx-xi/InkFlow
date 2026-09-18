@@ -322,5 +322,5 @@ class TestChatMessageRepoTitle:
         factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with factory() as session:
             repo = SQLiteChatMessageRepository(session)
-            ok = await repo.rename_conversation(999999, RENAME_TITLE)
+            ok = await repo.rename_conversation(uuid.UUID(int=999999), RENAME_TITLE)
             assert ok is False

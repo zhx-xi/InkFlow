@@ -63,8 +63,8 @@ def _message(
     )
 
 
-async def test_chat_repo_list_by_project_accepts_uuid_and_int(db_session) -> None:
-    """Public project listing accepts UUID and integer project identifiers."""
+async def test_chat_repo_list_by_project_accepts_uuid(db_session) -> None:
+    """Public project listing accepts UUID project identifiers (#1291: 裸 int 已退役)."""
     await _seed_project(db_session, 1, "one")
     await _seed_project(db_session, 2, "two")
     repo = SQLiteChatMessageRepository(db_session)
@@ -77,20 +77,18 @@ async def test_chat_repo_list_by_project_accepts_uuid_and_int(db_session) -> Non
         _message(project_id=uuid.UUID(int=2), conversation_id=uuid.UUID(int=2), content="two")
     )
 
-    uuid_items, uuid_total = await repo.list_by_project(uuid.UUID(int=1))
-    int_items, int_total = await repo.list_by_project(1)
+    items, total = await repo.list_by_project(uuid.UUID(int=1))
 
-    assert uuid_total == int_total == 1
-    assert [item.id for item in uuid_items] == [expected.id]
-    assert [item.id for item in int_items] == [expected.id]
+    assert total == 1
+    assert [item.id for item in items] == [expected.id]
 
 
 async def test_chat_repo_delete_restore_missing_paths(db_session) -> None:
     """Public delete/restore methods report false/None for absent rows."""
     repo = SQLiteChatMessageRepository(db_session)
 
-    assert await repo.force_delete_message(999_999) is False
-    assert await repo.restore_message(999_999) is None
+    assert await repo.force_delete_message(uuid.uuid4()) is False
+    assert await repo.restore_message(uuid.uuid4()) is None
     assert await repo.force_delete_conversation(uuid.UUID(int=999_999)) is False
 
 
@@ -147,8 +145,8 @@ async def test_map_repo_clear_ref_pins_and_root_locations(db_session) -> None:
     await db_session.commit()
 
     repo = SQLiteMapRepository(db_session)
-    assert await repo.clear_ref_pins("role", [42]) == 1
-    assert await repo.clear_map_root_locations([1]) == 1
+    assert await repo.clear_ref_pins("role", [uuid.UUID(int=42)]) == 1
+    assert await repo.clear_map_root_locations([uuid.UUID(int=1)]) == 1
 
     stored_pin = (await db_session.execute(select(MapPinORM).where(MapPinORM.id == 1))).scalar_one()
     stored_map = (await db_session.execute(select(MapORM).where(MapORM.id == 1))).scalar_one()

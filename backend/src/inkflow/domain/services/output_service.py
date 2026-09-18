@@ -64,20 +64,6 @@ _PAGE_SIZE = 50
 """循环分页页大小（各 list 方法默认 limit=50，聚合必须拉全，§5.2）。"""
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1/F15 `_to_int_id` 模式）.
-
-    Args:
-        value: 领域 UUID 或已有 int 主键.
-
-    Returns:
-        仓储层 int 主键（UUID 取其 int 表示）.
-    """
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _normalize_export_content(chapter: Chapter) -> str:
     """#1095 导出侧兜底：脏正文（重复标题 / markdown #）归一.
 
@@ -147,20 +133,19 @@ class ExportService:
             各仓储读取异常: 透传（router 转 500，§7 E9 原子快照）.
         """
         # ① 项目校验（服务层统一校验一次，404）
-        pid_int = _to_int_id(project_id)
         project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
 
         # ② 正文聚合 + ③ 设定聚合（并行，§5.1 要点 2: 各数据源相互独立）
-        volumes_coro = self._chapter_repo.list_volumes(pid_int)
-        chapters_coro = self._load_all(self._chapter_repo.list_chapters, pid_int)
+        volumes_coro = self._chapter_repo.list_volumes(project_id)
+        chapters_coro = self._load_all(self._chapter_repo.list_chapters, project_id)
         settings: list[BookSetting] = []
         if include_settings:
             volumes, chapters, settings = await asyncio.gather(
                 volumes_coro,
                 chapters_coro,
-                self._aggregate_settings(pid_int),
+                self._aggregate_settings(project_id),
             )
         else:
             # 条件依赖: False → 设定 repo 零调用（不创建 _aggregate_settings 协程）
@@ -181,14 +166,14 @@ class ExportService:
     async def _load_all(
         self,
         repo_list: Callable[..., Awaitable[tuple[list[Any], int]]],
-        pid_int: int,
+        pid: uuid.UUID,
     ) -> list[Any]:
         """分页循环拉取全量档案（list(limit=50) 循环直到累计 ≥ total）.
 
         Args:
-            repo_list: 各模块仓储的分页 list 方法（首参 project_id int，
+            repo_list: 各模块仓储的分页 list 方法（首参 project_id 领域 UUID，
                 支持 offset/limit 关键字）.
-            pid_int: 项目 int 主键.
+            pid: 项目领域 UUID.
 
         Returns:
             全量档案列表（分页合并，读取顺序即各仓储返回顺序）.
@@ -196,7 +181,7 @@ class ExportService:
         items: list[Any] = []
         offset = 0
         while True:
-            page, total = await repo_list(pid_int, offset=offset, limit=_PAGE_SIZE)
+            page, total = await repo_list(pid, offset=offset, limit=_PAGE_SIZE)
             items.extend(page)
             offset += _PAGE_SIZE
             if len(items) >= total:
@@ -268,21 +253,21 @@ class ExportService:
 
     # ── 附录聚合（spec §5.1 ③/§6.3，include_settings=True 时）────
 
-    async def _aggregate_settings(self, pid_int: int) -> list[BookSetting]:
+    async def _aggregate_settings(self, pid: uuid.UUID) -> list[BookSetting]:
         """5 类设定档案聚合 — asyncio.gather 并行拉取（§5.1 要点 2），组装顺序固定.
 
         Args:
-            pid_int: 项目 int 主键.
+            pid: 项目领域 UUID.
 
         Returns:
             按 §6.1 排序键与 §6.3 摘要拼接规则组装的 BookSetting 列表.
         """
         characters, worlds, outlines, events, foreshadowings = await asyncio.gather(
-            self._load_all(self._character_repo.list, pid_int),
-            self._load_all(self._world_repo.list, pid_int),
-            self._load_all(self._outline_repo.list, pid_int),
-            self._timeline_repo.list_all(pid_int),
-            self._load_all(self._foreshadowing_repo.list, pid_int),
+            self._load_all(self._character_repo.list, pid),
+            self._load_all(self._world_repo.list, pid),
+            self._load_all(self._outline_repo.list, pid),
+            self._timeline_repo.list_all(pid),
+            self._load_all(self._foreshadowing_repo.list, pid),
         )
 
         # 组装顺序固定（§5.1 ③）: character → world → outline → timeline → foreshadowing
@@ -323,7 +308,7 @@ class ExportService:
         """大纲附录 — sort_order ASC, created_at ASC；情节点 position ASC 逐行拼接."""
         result: list[BookSetting] = []
         for outline in sorted(outlines, key=lambda o: (o.sort_order, o.created_at)):
-            points = await self._outline_repo.list_points(_to_int_id(outline.id))
+            points = await self._outline_repo.list_points(outline.id)
             lines = [outline.description]
             for point in sorted(points, key=lambda p: (p.position, p.created_at)):
                 lines.append(f"- {point.name}（{point.type}）: {point.description}")

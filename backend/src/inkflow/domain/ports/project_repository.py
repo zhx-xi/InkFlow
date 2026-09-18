@@ -69,33 +69,33 @@ class ProjectRepositoryProtocol(Protocol):
         """
         ...
 
-    async def soft_delete(self, project_id: int) -> bool:
+    async def soft_delete(self, project_id: uuid.UUID) -> bool:
         """软删除项目（标记 is_deleted=True）.
 
         Args:
-            project_id: 待删除的项目主键.
+            project_id: 待删除的项目主键（领域 UUID，见 #1291）.
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
         ...
 
-    async def restore(self, project_id: int) -> Project | None:
+    async def restore(self, project_id: uuid.UUID) -> Project | None:
         """恢复软删除的项目（设置 is_deleted=False）.
 
         Args:
-            project_id: 待恢复的项目主键.
+            project_id: 待恢复的项目主键（领域 UUID，见 #1291）.
 
         Returns:
             恢复后的 Project，若记录不存在则返回 None.
         """
         ...
 
-    async def hard_delete(self, project_id: int) -> bool:
+    async def hard_delete(self, project_id: uuid.UUID) -> bool:
         """物理删除项目（从数据库中永久移除）.
 
         Args:
-            project_id: 待删除的项目主键.
+            project_id: 待删除的项目主键（领域 UUID，见 #1291）.
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.

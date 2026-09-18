@@ -825,15 +825,14 @@ class AgentService(AgentServiceStreamMixin):
         if self._summary_service is None or not chapter_id:
             return variables
         try:
-            project = await self._project_repo.get(uuid.UUID(project_id).int)
+            pid = uuid.UUID(project_id)
+            project = await self._project_repo.get(pid)
             if project is None:
                 return variables
-            current = await self._chapter_repo.get_chapter(uuid.UUID(chapter_id).int)
+            current = await self._chapter_repo.get_chapter(uuid.UUID(chapter_id))
             if current is None:
                 return variables
-            chapters, _ = await self._chapter_repo.list_chapters(
-                uuid.UUID(project_id).int, limit=1000
-            )
+            chapters, _ = await self._chapter_repo.list_chapters(pid, limit=1000)
             prev = sorted(
                 (c for c in chapters if c.order_index < current.order_index),
                 key=lambda c: c.order_index,

@@ -62,13 +62,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _extract_json_fragment(text: str) -> str | None:
     """从带围栏/前后缀文字的文本中提取首个 ``{...}`` 平衡片段.
 
@@ -264,7 +257,8 @@ class ForeshadowingExtractor:
     ) -> ForeshadowingExtractionResult:
         """合并落库: 按 (project_id, title) 匹配伏笔 → 覆盖/新建。"""
         warnings = list(item_warnings)
-        pid_int = _to_int_id(request.project_id)
+        # #1291：project_id 为领域 UUID，直传仓储
+        pid = request.project_id
 
         if not foreshadowings:
             warnings.append("未从文本中提取到任何伏笔")
@@ -272,7 +266,7 @@ class ForeshadowingExtractor:
         created: list[Foreshadowing] = []
         updated: list[Foreshadowing] = []
         for ef in foreshadowings:
-            existing = await self._repo.get_by_title(pid_int, ef.title)
+            existing = await self._repo.get_by_title(pid, ef.title)
             if existing is None:
                 now = _utcnow()
                 new_fs = await self._repo.add(

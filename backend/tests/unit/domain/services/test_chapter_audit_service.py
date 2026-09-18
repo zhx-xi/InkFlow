@@ -106,7 +106,6 @@ from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 from inkflow.domain.ports.llm_client import ChatMessage, ChatResponse
 from inkflow.domain.services.chapter_audit_service import (  # RED: 模块未实现
     ChapterAuditService,
-    _to_int_id,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -743,7 +742,7 @@ class TestChapterAuditServiceAudit:
         )
 
 
-# ── 补测: list_logs / _load_all 多页 / _to_int_id / confirm 防御 / 重试异常 ──
+# ── 补测: list_logs / _load_all 多页 / confirm 防御 / 重试异常 ──
 
 
 class _RetryFailLLM(FakeLLM):
@@ -782,11 +781,11 @@ class TestChapterAuditServiceListLogs:
         logs, total = await service.list_logs(PID, offset=0, limit=20)
         assert logs == []
         assert total == 0
-        mocks["audit_log_repo"].list.assert_awaited_once_with(PID.int, offset=0, limit=20)
+        mocks["audit_log_repo"].list.assert_awaited_once_with(PID, offset=0, limit=20)
 
 
 class TestChapterAuditServiceCoverage:
-    """覆盖率 miss 分支补测: _load_all 多页 / _to_int_id / confirm 防御 / 重试异常。"""
+    """覆盖率 miss 分支补测: _load_all 多页 / confirm 防御 / 重试异常。"""
 
     async def test_load_all_paginates_multiple_pages(self) -> None:
         """_load_all 分页循环（L355）: 满页 50 条后 offset=50 拉第二页，档案合并进 LLM。"""
@@ -799,17 +798,13 @@ class TestChapterAuditServiceCoverage:
 
         assert mocks["character_repo"].list.await_count == 2
         first, second = mocks["character_repo"].list.await_args_list
-        assert first.args == (PID.int,)
+        assert first.args == (PID,)
         assert first.kwargs == {"offset": 0, "limit": 50}
-        assert second.args == (PID.int,)
+        assert second.args == (PID,)
         assert second.kwargs == {"offset": 50, "limit": 50}
         # 两页档案进入人设漂移消息（user 消息含 c1 档案名）
         assert llm.call_count == 1
         assert "李青焰" in llm.calls[0][1].content
-
-    def test_to_int_id_int_passthrough(self) -> None:
-        """_to_int_id int 分支（L90）: 已是 int 主键原样返回。"""
-        assert _to_int_id(123) == 123
 
     async def test_confirm_defensive_none_from_repo_raises(self) -> None:
         """confirm 防御分支（L299）: latest_pending 非空但仓储 confirm 返回 None

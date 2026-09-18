@@ -13,7 +13,7 @@
   confirmed_at（datetime）→ 返回 status="accepted" 的 AuditLog
 - reject + note: action="reject" note="人设需再打磨" 透传 → status="rejected"
 - 重复 confirm（E9）: 最新记录已非 pending → NoPendingAuditError
-- 领域 UUID → int 转换（_to_int_id 模式: uuid.UUID.int）传给 repo
+- 领域 UUID 直传 repo（#1291：不再 .int 中转）
 
 设计假设（GREEN 实现契约，依据 specs/f34-chapter-audit/spec.md §5.1/§3.3）:
 1. 模块路径: inkflow.domain.services.chapter_audit_service（CREATE）
@@ -35,8 +35,8 @@
    审计」，E12 文案）——陷阱 16: 错误类不导出到 ports/__init__.py，本文件
    守护断言 not hasattr(inkflow.domain.ports, "NoPendingAuditError")
    （RED 阶段即 PASS）
-6. repo 调用 id 一律 int（uuid.UUID.int）: latest_pending(chapter_id.int)、
-   confirm(log_id.int, action=..., note=..., confirmed_at=datetime.now(UTC))
+6. repo 调用 id 一律领域 UUID（#1291）: latest_pending(chapter_id)、
+   confirm(log_id, action=..., note=..., confirmed_at=datetime.now(UTC))
    ——confirm 的 log_id 取 latest_pending 返回记录的 id
 7. 本文件 mock repos + mock audit_log_repo（AsyncMock），不触碰真实 DB
 8. RED 预期: 收集期 1 error（ModuleNotFoundError: No module named
@@ -174,8 +174,8 @@ class TestConfirmAccept:
         assert result.status == "accepted"
         assert result.confirmed_at is not None
 
-    async def test_accept_passes_int_ids_and_params_to_repo(self, svc):
-        """领域 UUID → int 转换（_to_int_id 模式）: repo 收到 int id。"""
+    async def test_accept_passes_uuid_ids_and_params_to_repo(self, svc):
+        """#1291：领域 UUID 直传 repo（无 .int 中转）: repo 收到领域 UUID。"""
         svc.project_repo.get.return_value = _project()
         svc.chapter_repo.get_chapter.return_value = _chapter()
         pending = make_log()
@@ -187,10 +187,10 @@ class TestConfirmAccept:
         await svc.service.confirm(PID, CID, action="accept")
 
         svc.project_repo.get.assert_awaited_once_with(PID)
-        svc.chapter_repo.get_chapter.assert_awaited_once_with(CID.int)
-        svc.audit_log_repo.latest_pending.assert_awaited_once_with(CID.int)
+        svc.chapter_repo.get_chapter.assert_awaited_once_with(CID)
+        svc.audit_log_repo.latest_pending.assert_awaited_once_with(CID)
         args, kwargs = svc.audit_log_repo.confirm.await_args
-        assert args[0] == pending.id.int
+        assert args[0] == pending.id
         assert kwargs["action"] == "accept"
         assert kwargs["note"] == ""
         assert isinstance(kwargs["confirmed_at"], datetime)

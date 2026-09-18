@@ -95,10 +95,10 @@ class TestCharacterGroupMembers:
         c1 = await repo.add(_char(project, "林尘"))
         c2 = await repo.add(_char(project, "阿澈"))
 
-        await repo.add_group_member(c1.id.int, g.id.int)
-        await repo.add_group_member(c2.id.int, g.id.int)
+        await repo.add_group_member(c1.id, g.id)
+        await repo.add_group_member(c2.id, g.id)
 
-        members = await repo.list_members_by_group(g.id.int)
+        members = await repo.list_members_by_group(g.id)
         assert {m.id for m in members} == {c1.id, c2.id}
 
     async def test_add_group_member_is_idempotent(self, db_session, project):
@@ -107,10 +107,10 @@ class TestCharacterGroupMembers:
         g = await repo.add_group(_group(project, "主角团"))
         c = await repo.add(_char(project, "林尘"))
 
-        await repo.add_group_member(c.id.int, g.id.int)
-        await repo.add_group_member(c.id.int, g.id.int)
+        await repo.add_group_member(c.id, g.id)
+        await repo.add_group_member(c.id, g.id)
 
-        members = await repo.list_members_by_group(g.id.int)
+        members = await repo.list_members_by_group(g.id)
         assert [m.id for m in members] == [c.id]
 
     async def test_remove_group_member(self, db_session, project):
@@ -119,12 +119,12 @@ class TestCharacterGroupMembers:
         g = await repo.add_group(_group(project, "主角团"))
         c1 = await repo.add(_char(project, "林尘"))
         c2 = await repo.add(_char(project, "阿澈"))
-        await repo.add_group_member(c1.id.int, g.id.int)
-        await repo.add_group_member(c2.id.int, g.id.int)
+        await repo.add_group_member(c1.id, g.id)
+        await repo.add_group_member(c2.id, g.id)
 
-        await repo.remove_group_member(c1.id.int, g.id.int)
+        await repo.remove_group_member(c1.id, g.id)
 
-        members = await repo.list_members_by_group(g.id.int)
+        members = await repo.list_members_by_group(g.id)
         assert [m.id for m in members] == [c2.id]
 
     async def test_list_groups_by_character(self, db_session, project):
@@ -133,18 +133,18 @@ class TestCharacterGroupMembers:
         g1 = await repo.add_group(_group(project, "主角团"))
         g2 = await repo.add_group(_group(project, "青云宗"))
         c = await repo.add(_char(project, "林尘"))
-        await repo.add_group_member(c.id.int, g1.id.int)
-        await repo.add_group_member(c.id.int, g2.id.int)
+        await repo.add_group_member(c.id, g1.id)
+        await repo.add_group_member(c.id, g2.id)
 
-        groups = await repo.list_groups_by_character(c.id.int)
+        groups = await repo.list_groups_by_character(c.id)
         assert {gr.id for gr in groups} == {g1.id, g2.id}
         assert all(gr.project_id == uuid.UUID(int=project.id) for gr in groups)
 
     async def test_list_unknown_ids_return_empty(self, db_session, project):
         """不存在的分组/角色 → 空列表."""
         repo = SQLiteCharacterRepository(db_session)
-        assert await repo.list_members_by_group(99999) == []
-        assert await repo.list_groups_by_character(99999) == []
+        assert await repo.list_members_by_group(uuid.uuid4()) == []
+        assert await repo.list_groups_by_character(uuid.uuid4()) == []
 
     async def test_add_character_with_group_ids_creates_memberships(self, db_session, project):
         """add(character) 带 group_ids → 关联行落库（list_members_by_group 可查）."""
@@ -153,7 +153,7 @@ class TestCharacterGroupMembers:
         c = await repo.add(_char(project, "林尘", group_ids=[g.id]))
 
         assert c.group_ids == [g.id]
-        members = await repo.list_members_by_group(g.id.int)
+        members = await repo.list_members_by_group(g.id)
         assert [m.id for m in members] == [c.id]
 
     async def test_hard_delete_group_removes_memberships(self, db_session, project):
@@ -162,11 +162,11 @@ class TestCharacterGroupMembers:
         g = await repo.add_group(_group(project, "主角团"))
         c = await repo.add(_char(project, "林尘", group_ids=[g.id]))
 
-        assert await repo.hard_delete_group(g.id.int) is True
+        assert await repo.hard_delete_group(g.id) is True
 
-        assert await repo.list_members_by_group(g.id.int) == []
-        assert await repo.list_groups_by_character(c.id.int) == []
-        assert await repo.get(c.id.int) is not None  # 角色本身保留
+        assert await repo.list_members_by_group(g.id) == []
+        assert await repo.list_groups_by_character(c.id) == []
+        assert await repo.get(c.id) is not None  # 角色本身保留
 
     async def test_hard_delete_character_cascades_memberships(self, db_session, project):
         """角色 hard_delete → 其关联行级联移除（分组本身保留）."""
@@ -174,7 +174,7 @@ class TestCharacterGroupMembers:
         g = await repo.add_group(_group(project, "主角团"))
         c = await repo.add(_char(project, "林尘", group_ids=[g.id]))
 
-        assert await repo.hard_delete(c.id.int) is True
+        assert await repo.hard_delete(c.id) is True
 
-        assert await repo.list_members_by_group(g.id.int) == []
-        assert await repo.get_group(g.id.int) is not None  # 分组本身保留
+        assert await repo.list_members_by_group(g.id) == []
+        assert await repo.get_group(g.id) is not None  # 分组本身保留

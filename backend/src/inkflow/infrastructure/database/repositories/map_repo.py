@@ -32,10 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.domain.models.map import MapPin, WorldMap
 from inkflow.infrastructure.database.models.map import MapORM, MapPinORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -138,16 +135,14 @@ class SQLiteMapRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, map_id: int | uuid.UUID) -> WorldMap | None:
+    async def get(self, map_id: uuid.UUID) -> WorldMap | None:
         """按主键查询地图（无软删过滤——真删语义）.
 
         超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
         """
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(map_id, uuid.UUID):
-            mid = require_uuid_pk(map_id)
-        else:
-            mid = uuid_to_pk_or_none(map_id)
+        mid = require_uuid_pk(map_id)
         if mid is None:
             return None
         stmt = select(MapORM).where(MapORM.id == mid)
@@ -155,17 +150,20 @@ class SQLiteMapRepository:
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
-    async def get_by_name(self, project_id: int, name: str) -> WorldMap | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> WorldMap | None:
         """按项目内地图名查询（name 项目内唯一，无软删过滤）."""
-        stmt = select(MapORM).where(MapORM.project_id == project_id, MapORM.name == name).limit(1)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
+        stmt = select(MapORM).where(MapORM.project_id == pid, MapORM.name == name).limit(1)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
     async def list(
         self,
-        project_id: int,
-        root_location_id: int | uuid.UUID | None = None,
+        project_id: uuid.UUID,
+        root_location_id: uuid.UUID | None = None,
         top_level_only: bool = False,
         offset: int = 0,
         limit: int = 50,
@@ -179,10 +177,13 @@ class SQLiteMapRepository:
         """
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        rlid = uuid_to_pk_or_none(root_location_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        rlid = require_uuid_pk(root_location_id)
         if root_location_id is not None and rlid is None:
             return [], 0
-        base = select(MapORM).where(MapORM.project_id == project_id)
+        base = select(MapORM).where(MapORM.project_id == pid)
         if top_level_only:
             base = base.where(MapORM.root_location_id.is_(None))
         elif rlid is not None:
@@ -224,39 +225,43 @@ class SQLiteMapRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def delete(self, map_id: int) -> bool:
+    async def delete(self, map_id: uuid.UUID) -> bool:
         """真删地图（单事务显式级联删其 pins，D10=b）.
 
         单事务: DELETE map_pins WHERE map_id=? + DELETE maps WHERE id=?
         （显式级联，不依赖 DB FK 动作）。
         """
-        await self._session.execute(sa_delete(MapPinORM).where(MapPinORM.map_id == map_id))
-        result = await self._session.execute(sa_delete(MapORM).where(MapORM.id == map_id))
+        mid = require_uuid_pk(map_id)
+        if mid is None:
+            return False
+        await self._session.execute(sa_delete(MapPinORM).where(MapPinORM.map_id == mid))
+        result = await self._session.execute(sa_delete(MapORM).where(MapORM.id == mid))
         await self._session.commit()
         return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
-    async def delete_many(self, map_ids: builtins.list[int]) -> int:
+    async def delete_many(self, map_ids: builtins.list[uuid.UUID]) -> int:
         """单事务按 id 集合真删多张地图（先删 pins 再删 maps 行）.
 
         Returns:
             删除的 maps 行数（列表含不存在 id 不影响计数；空列表 = 0）。
         """
-        if not map_ids:
+        pks = [pk for pk in (require_uuid_pk(map_id) for map_id in map_ids) if pk is not None]
+        if not pks:
             return 0
-        await self._session.execute(sa_delete(MapPinORM).where(MapPinORM.map_id.in_(map_ids)))
-        result = await self._session.execute(sa_delete(MapORM).where(MapORM.id.in_(map_ids)))
+        await self._session.execute(sa_delete(MapPinORM).where(MapPinORM.map_id.in_(pks)))
+        result = await self._session.execute(sa_delete(MapORM).where(MapORM.id.in_(pks)))
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     # ── pins CRUD ──
 
-    async def list_pins(self, map_id: int | uuid.UUID) -> builtins.list[MapPin]:
+    async def list_pins(self, map_id: uuid.UUID) -> builtins.list[MapPin]:
         """列出地图全部 pin（created_at ASC）.
 
         超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法
         的 128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）.
         """
-        mid = uuid_to_pk_or_none(map_id)
+        mid = require_uuid_pk(map_id)
         if mid is None:
             return []
         stmt = select(MapPinORM).where(MapPinORM.map_id == mid).order_by(MapPinORM.created_at.asc())
@@ -271,9 +276,9 @@ class SQLiteMapRepository:
         await self._session.refresh(orm)
         return _pin_orm_to_domain(orm)
 
-    async def get_pin(self, pin_id: int | uuid.UUID) -> MapPin | None:
+    async def get_pin(self, pin_id: uuid.UUID) -> MapPin | None:
         """按主键查询 pin（不存在返回 None）。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        pid = uuid_to_pk_or_none(pin_id)
+        pid = require_uuid_pk(pin_id)
         if pid is None:
             return None
         stmt = select(MapPinORM).where(MapPinORM.id == pid)
@@ -300,15 +305,18 @@ class SQLiteMapRepository:
         await self._session.refresh(orm)
         return _pin_orm_to_domain(orm)
 
-    async def delete_pin(self, pin_id: int) -> bool:
+    async def delete_pin(self, pin_id: uuid.UUID) -> bool:
         """真删 pin；重复删/不存在 → False."""
-        result = await self._session.execute(sa_delete(MapPinORM).where(MapPinORM.id == pin_id))
+        pk = require_uuid_pk(pin_id)
+        if pk is None:
+            return False
+        result = await self._session.execute(sa_delete(MapPinORM).where(MapPinORM.id == pk))
         await self._session.commit()
         return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
     # ── children（drill-down JOIN，评审 F2）──
 
-    async def children(self, map_id: int | uuid.UUID) -> builtins.list[WorldMap]:
+    async def children(self, map_id: uuid.UUID) -> builtins.list[WorldMap]:
         """查询本图 pin 关联地点的子地图（drill-down，Q1=B）.
 
         单 SQL: JOIN map_pins p（p.map_id=:id AND p.location_id IS NOT NULL）
@@ -319,7 +327,7 @@ class SQLiteMapRepository:
         超 int64 范围视为不存在（SQLite 整数溢出防御，#1139：过滤条件型方法
         的 128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）.
         """
-        mid = uuid_to_pk_or_none(map_id)
+        mid = require_uuid_pk(map_id)
         if mid is None:
             return []
         stmt = (
@@ -346,8 +354,8 @@ class SQLiteMapRepository:
 
     async def list_by_root_locations(
         self,
-        project_id: int,
-        location_ids: builtins.list[int],
+        project_id: uuid.UUID,
+        location_ids: builtins.list[uuid.UUID],
         include_global: bool = True,
     ) -> builtins.list[WorldMap]:
         """按根地点集合查地图（#175 跨书复制共用查询；include_global=True 含全局图）.
@@ -355,12 +363,18 @@ class SQLiteMapRepository:
         空列表入参 + include_global=False → 空列表；空列表 + True → 仅全局图；
         created_at ASC。
         """
-        stmt = select(MapORM).where(MapORM.project_id == project_id)
-        if not location_ids and not include_global:
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
+        loc_pks = [
+            pk for pk in (require_uuid_pk(loc_id) for loc_id in location_ids) if pk is not None
+        ]
+        stmt = select(MapORM).where(MapORM.project_id == pid)
+        if not loc_pks and not include_global:
             return []
         conds = []
-        if location_ids:
-            conds.append(MapORM.root_location_id.in_(location_ids))
+        if loc_pks:
+            conds.append(MapORM.root_location_id.in_(loc_pks))
         if include_global:
             conds.append(MapORM.root_location_id.is_(None))
         if conds:
@@ -369,75 +383,87 @@ class SQLiteMapRepository:
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]
 
-    async def list_maps_by_project(self, project_id: int | uuid.UUID) -> builtins.list[WorldMap]:
+    async def list_maps_by_project(self, project_id: uuid.UUID) -> builtins.list[WorldMap]:
         """收集项目全部地图（项目硬删钩子 cleanup 用，全量不分页）."""
         # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int）→ 空结果，防 128 位 int
         # 绑定 SQLite INTEGER 抛 OverflowError → 500（规则扫描链 R3 走此查询）
-        pid = uuid_to_pk_or_none(project_id)
+        pid = require_uuid_pk(project_id)
         if pid is None:
             return []
         stmt = select(MapORM).where(MapORM.project_id == pid)
         result = await self._session.execute(stmt)
         return [_orm_to_domain(o) for o in result.scalars().all()]
 
-    async def delete_by_project(self, project_id: int) -> int:
+    async def delete_by_project(self, project_id: uuid.UUID) -> int:
         """单事务真删项目全部地图（先删 pins 再删 maps 行，D10=b）.
 
         Returns:
             删除的 maps 行数（项目硬删钩子）。
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 0
         # 先删项目全部 pins（subquery 定位项目内 maps id）
         pin_stmt = sa_delete(MapPinORM).where(
-            MapPinORM.map_id.in_(select(MapORM.id).where(MapORM.project_id == project_id))
+            MapPinORM.map_id.in_(select(MapORM.id).where(MapORM.project_id == pid))
         )
         await self._session.execute(pin_stmt)
         # 再删 maps 行
-        result = await self._session.execute(
-            sa_delete(MapORM).where(MapORM.project_id == project_id)
-        )
+        result = await self._session.execute(sa_delete(MapORM).where(MapORM.project_id == pid))
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
-    async def clear_location_pins(self, location_id: int) -> int:
+    async def clear_location_pins(self, location_id: uuid.UUID) -> int:
         """解除地点关联 pin（UPDATE map_pins SET location_id=NULL）.
 
         pin 保留、label 不变（D10=b 地点硬删钩子，SET NULL 由 service 显式执行）。
         """
+        lid = require_uuid_pk(location_id)
+        if lid is None:
+            return 0
         stmt = (
             sa_update(MapPinORM)
-            .where(MapPinORM.location_id == location_id)
+            .where(MapPinORM.location_id == lid)
             .values(location_id=None, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
-    async def clear_ref_pins(self, ref_type: str, ref_ids: builtins.list[int]) -> int:
+    async def clear_ref_pins(self, ref_type: str, ref_ids: builtins.list[uuid.UUID]) -> int:
         """解除角色/事件关联 pin（UPDATE map_pins SET ref_id=NULL
         WHERE type=:t AND ref_id IN :ids）.
 
         pin 保留、label 不变（F43 P5 角色/事件硬删钩子，SET NULL 由 service
         显式执行，生产 foreign_keys=OFF 下不依赖 FK）。
         """
+        ref_pks = [pk for pk in (require_uuid_pk(ref_id) for ref_id in ref_ids) if pk is not None]
+        if not ref_pks:
+            return 0
         stmt = (
             sa_update(MapPinORM)
-            .where(MapPinORM.type == ref_type, MapPinORM.ref_id.in_(ref_ids))
+            .where(MapPinORM.type == ref_type, MapPinORM.ref_id.in_(ref_pks))
             .values(ref_id=None, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）
 
-    async def clear_map_root_locations(self, location_ids: builtins.list[int]) -> int:
+    async def clear_map_root_locations(self, location_ids: builtins.list[uuid.UUID]) -> int:
         """解除地图根地点关联（UPDATE maps SET root_location_id=NULL
         WHERE root_location_id IN :ids）.
 
         F43 P5 地点硬删钩子扩展: 地点删除后其挂载图 root_location_id 置 NULL
         （图保留，仅解除根地点关联）。
         """
+        loc_pks = [
+            pk for pk in (require_uuid_pk(loc_id) for loc_id in location_ids) if pk is not None
+        ]
+        if not loc_pks:
+            return 0
         stmt = (
             sa_update(MapORM)
-            .where(MapORM.root_location_id.in_(location_ids))
+            .where(MapORM.root_location_id.in_(loc_pks))
             .values(root_location_id=None, updated_at=_utcnow())
         )
         result = await self._session.execute(stmt)

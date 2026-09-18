@@ -30,13 +30,13 @@ class SummaryRepositoryProtocol(Protocol):
         """
         ...
 
-    async def upsert(self, chapter_id: int, summary: str, model: str) -> ChapterSummary:
+    async def upsert(self, chapter_id: uuid.UUID, summary: str, model: str) -> ChapterSummary:
         """插入或更新摘要缓存.
 
         若该章节已有摘要则更新 summary / model / updated_at，否则插入新记录.
 
         Args:
-            chapter_id: 章节主键（int）.
+            chapter_id: 章节主键（领域 UUID，见 #1291）.
             summary: 摘要文本（≤ 300 字）.
             model: 生成摘要所用模型.
 
@@ -45,11 +45,11 @@ class SummaryRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_recent(self, project_id: int, limit: int = 10) -> list[ChapterSummary]:
+    async def list_recent(self, project_id: uuid.UUID, limit: int = 10) -> list[ChapterSummary]:
         """获取项目内按章节序号倒序排列的最新摘要列表.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             limit: 最大返回数.
 
         Returns:

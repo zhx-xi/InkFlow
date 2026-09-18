@@ -2,8 +2,7 @@
 
 ForeshadowingRepositoryProtocol 定义 Foreshadowing 的 CRUD 操作与 F6 注入
 集合查询（list_open），基础设施层（SQLite / mock / memory）实现此
-Protocol。仓储层 `get` 主键入参用领域 UUID（#1271 收窄），其余方法沿用
-int/uuid 兼容归一。
+Protocol。仓储层主键入参统一用领域 UUID（#1134 批 4 / #1291 收窄收尾）。
 
 事件校验（event_id 存在性 + 同项目）不在本端口：复用 F12
 TimelineRepositoryProtocol.get（Service 层构造注入，spec §8.1）。
@@ -55,13 +54,13 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_by_title(self, project_id: int, title: str) -> Foreshadowing | None:
+    async def get_by_title(self, project_id: uuid.UUID, title: str) -> Foreshadowing | None:
         """按 (project_id, title) 查询伏笔.
 
         同名唯一性检查用（spec §2.3 全唯一索引语义）：真删后同名可重建.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             title: 伏笔名.
 
         Returns:
@@ -71,7 +70,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         status: str | None = None,
         sort_by: str = "priority",
@@ -82,7 +81,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """分页查询项目内伏笔列表，支持标题模糊搜索、状态过滤与排序.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             search: 伏笔名不区分大小写子串匹配（可选）.
             status: 状态精确过滤（open / resolved；不传 = 全部伏笔）.
             sort_by: 排序字段（priority / title / status / updated_at /
@@ -97,7 +96,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_open(self, project_id: int) -> builtins.list[Foreshadowing]:
+    async def list_open(self, project_id: uuid.UUID) -> builtins.list[Foreshadowing]:
         """列出项目内全部未回收伏笔（status=open），供 F6 注入消费.
 
         返回顺序即 F6 注入顺序：按 (priority DESC, updated_at DESC) 排序
@@ -105,7 +104,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
         updated_at 兜底稳定排序）。F6 dynamic 层直接消费此结果（spec §5.3）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             未回收伏笔列表.
@@ -123,11 +122,11 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete(self, foreshadowing_id: int) -> bool:
+    async def hard_delete(self, foreshadowing_id: uuid.UUID) -> bool:
         """物理删除伏笔（v1.1 默认真删语义）.
 
         Args:
-            foreshadowing_id: 伏笔主键（int）.
+            foreshadowing_id: 伏笔主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.

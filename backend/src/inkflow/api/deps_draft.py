@@ -109,7 +109,9 @@ def make_volume_ensurer(
             existing = existing_result.scalars().first()
             if existing is not None:
                 return uuid.UUID(int=int(existing.id))  # 幂等：同项目同名复用
-            order_index = await SQLiteChapterRepository(db).get_next_volume_order(project_row_id)
+            order_index = await SQLiteChapterRepository(db).get_next_volume_order(
+                uuid.UUID(int=project_row_id)  # #1291：repo 入参为领域 UUID
+            )
             volume_row = VolumeORM(project_id=project_row_id, title=title, order_index=order_index)
             db.add(volume_row)
             await db.flush()

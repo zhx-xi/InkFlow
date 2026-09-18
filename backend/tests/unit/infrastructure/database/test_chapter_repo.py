@@ -106,7 +106,7 @@ class TestChapterRepositoryGaps:
         assert updated.order_index == 2.5
         # 落库持久化验证：从 DB 直接读回
         orm = (
-            await db_session.execute(select(VolumeORM).where(VolumeORM.id == created.id.int))
+            await db_session.execute(select(VolumeORM).where(VolumeORM.id == created.id))
         ).scalar_one()
         assert orm.title == "第一卷·修订"
         assert orm.order_index == 2.5
@@ -114,7 +114,7 @@ class TestChapterRepositoryGaps:
     async def test_delete_volume_missing_returns_false(self, db_session, project):
         """delete_volume 不存在的卷 → False（不抛异常）。"""
         repo = SQLiteChapterRepository(db_session)
-        assert await repo.delete_volume(999999) is False
+        assert await repo.delete_volume(uuid.UUID(int=999999)) is False
 
     async def test_update_chapter_missing_raises_value_error(self, db_session, project):
         """update_chapter 不存在的章节 → ValueError（Chapter not found）。"""
@@ -171,16 +171,16 @@ class TestChapterRepositoryGaps:
         repo = SQLiteChapterRepository(db_session)
         created = await repo.add_chapter(_chapter(project, "第一章"))
 
-        assert await repo.delete_chapter(created.id.int) is True
+        assert await repo.delete_chapter(created.id) is True
         # 物理删除后读回 None
-        assert await repo.get_chapter(created.id.int) is None
-        assert await repo.delete_chapter(created.id.int) is False
+        assert await repo.get_chapter(created.id) is None
+        assert await repo.delete_chapter(created.id) is False
 
     async def test_get_volume_word_count_empty_returns_zero(self, db_session, project):
         """get_volume_word_count 无章节 → 0（SUM NULL 回退）。"""
         repo = SQLiteChapterRepository(db_session)
         vol = await repo.add_volume(_volume(project, "空卷"))
-        assert await repo.get_volume_word_count(vol.id.int) == 0
+        assert await repo.get_volume_word_count(vol.id) == 0
 
     async def test_get_volume_word_count_sums_chapters(self, db_session, project):
         """get_volume_word_count 汇总卷内章节 word_count。"""
@@ -205,10 +205,10 @@ class TestChapterRepositoryGaps:
             )
         )
 
-        assert await repo.get_volume_word_count(vol.id.int) == ch1.word_count + ch2.word_count
+        assert await repo.get_volume_word_count(vol.id) == ch1.word_count + ch2.word_count
         # 无卷章节不计入
         await repo.add_chapter(_chapter(project, "无卷章"))
-        assert await repo.get_volume_word_count(vol.id.int) == ch1.word_count + ch2.word_count
+        assert await repo.get_volume_word_count(vol.id) == ch1.word_count + ch2.word_count
 
     # ── ORM __repr__（database/models/chapter.py 补齐） ──
 
@@ -308,7 +308,7 @@ class TestP5DeleteChapterCleansReferences:
         )
         await db_session_off_fk.commit()
 
-        assert await repo.delete_chapter(chid) is True
+        assert await repo.delete_chapter(uuid.UUID(int=chid)) is True
 
         # ① outlines.chapter_id → NULL
         outline_row = await db_session_off_fk.execute(select(OutlineORM))
@@ -347,12 +347,14 @@ class TestInt64RangeGuard1106:
         """chapter_repo.get_chapter 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteChapterRepository(db_session)
 
-        assert await repo.get_chapter(2**63) is None  # 上界外
-        assert await repo.get_chapter(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get_chapter(uuid.uuid4()) is None
+        assert await repo.get_chapter(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
     async def test_get_volume_returns_none_for_out_of_range_id(self, db_session):
         """chapter_repo.get_volume 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteChapterRepository(db_session)
 
-        assert await repo.get_volume(2**63) is None  # 上界外
-        assert await repo.get_volume(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get_volume(uuid.uuid4()) is None
+        assert await repo.get_volume(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

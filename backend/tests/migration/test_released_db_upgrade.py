@@ -255,13 +255,13 @@ async def test_m2_m6_full_upgrade(fixture_dir: Path, tmp_path: Path) -> None:
             names = {p.name for p in project_items}
             assert "蜀山，我是掌门" in names and "测试项目B" in names, f"项目名漂移: {names}"
             project = next(p for p in project_items if p.name == "蜀山，我是掌门")
-            pid = project.id.int
+            pid = project.id
             project_b = next(p for p in project_items if p.name == "测试项目B")
 
             char_items, char_total = await character_repo.list(pid)
             assert char_total == 3 and len(char_items) == 3, "升级后角色不可读（项目A 应 3 角色）"
             # 跨项目隔离：项目B 的角色不串入项目A（1 角色），项目A 角色不串入 B
-            b_chars, b_total = await character_repo.list(project_b.id.int)
+            b_chars, b_total = await character_repo.list(project_b.id)
             assert b_total == 1 and len(b_chars) == 1, "跨项目角色隔离破坏"
 
             chapter_items, chapter_total = await chapter_repo.list_chapters(pid)
@@ -273,7 +273,7 @@ async def test_m2_m6_full_upgrade(fixture_dir: Path, tmp_path: Path) -> None:
             titles = {c.title for c in chapter_items}
             assert any("替师出诊" in t for t in titles), f"章节标题集漂移: {titles}"
             # 项目B 无章节（隔离）
-            _, b_chapter_total = await chapter_repo.list_chapters(project_b.id.int)
+            _, b_chapter_total = await chapter_repo.list_chapters(project_b.id)
             assert b_chapter_total == 0, "跨项目章节隔离破坏"
 
             # 写：章节内容更新往返（update_chapter 全字段覆盖）
@@ -298,7 +298,7 @@ async def test_m2_m6_full_upgrade(fixture_dir: Path, tmp_path: Path) -> None:
                 updated_at=now,
             )
             created = await character_repo.add(probe_char)
-            assert await character_repo.hard_delete(created.id.int) is True
+            assert await character_repo.hard_delete(created.id) is True
 
         # ── M6b 重启幂等（第二遍 lifespan，行数不变、无异常）──
         before = {

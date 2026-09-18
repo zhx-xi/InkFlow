@@ -46,13 +46,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）."""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 class WorldCopyService:
     """F37 世界观跨书复制业务服务 — 编排跨书复制全流程.
 
@@ -76,7 +69,7 @@ class WorldCopyService:
         self._map_repo = map_repo
         self._asset_store = asset_store
 
-    async def _has_root(self, project_id: int) -> bool:
+    async def _has_root(self, project_id: uuid.UUID) -> bool:
         """项目是否已有根世界观条目（parent_id IS NULL）."""
         roots, _ = await self._repo.list(project_id, top_level_only=True, limit=1)
         return len(roots) > 0
@@ -91,8 +84,8 @@ class WorldCopyService:
         """复制源项目世界观到目标项目（spec §5.1 算法 ①-⑧）.
 
         Args:
-            source_project_id: 源项目主键（支持 int 或 UUID）.
-            target_project_id: 目标项目主键（支持 int 或 UUID）.
+            source_project_id: 源项目主键（领域 UUID，见 #1291）.
+            target_project_id: 目标项目主键（领域 UUID，见 #1291）.
             root_setting_id: 复制起点条目（指定子树）；None = 复制源项目全部活动条目.
             self_only: True = 仅复制 root_setting_id 本体（不含子级）；缺省 False 保持子树语义.
 
@@ -105,8 +98,9 @@ class WorldCopyService:
             CopySourceNotFoundError: 源项目不存在（404）.
             CopyRootNotFoundError: 复制起点不存在或不在源项目（404）.
         """
-        source_int = _to_int_id(source_project_id)
-        target_int = _to_int_id(target_project_id)
+        # #1291：源/目标项目主键均为领域 UUID，直传仓储（不再 int 中转）
+        source_pid = source_project_id
+        target_pid = target_project_id
         logger.info(
             "世界观跨书复制开始: source=%s target=%s root=%s",
             source_project_id,
@@ -122,17 +116,16 @@ class WorldCopyService:
         # ③ 复制集合：root 提供 → 校验在源项目活动条目内 + list_descendants（含自身层序）；
         #    缺省 → list_all_active（created_at ASC 稳定排序）
         if root_setting_id is not None:
-            root_int = _to_int_id(root_setting_id)
             root = await self._repo.get(root_setting_id)
-            if root is None or _to_int_id(root.project_id) != source_int:
+            if root is None or root.project_id != source_pid:
                 raise CopyRootNotFoundError()
             # P1: self_only=True → 仅复制 root 本体（不含子级）
             if self_only:
                 copy_set = [root]
             else:
-                copy_set = await self._repo.list_descendants(root_int)
+                copy_set = await self._repo.list_descendants(root_setting_id)
         else:
-            copy_set = await self._repo.list_all_active(source_int)
+            copy_set = await self._repo.list_all_active(source_pid)
 
         now = _utcnow()
         created: list[WorldSetting] = []
@@ -147,7 +140,7 @@ class WorldCopyService:
             # 父被跳过/不在集合 → parent_new=None（子置顶层）
             parent_new = id_map.get(src.parent_id.int) if src.parent_id is not None else None
             # #848 复制守卫：目标根单例 + 分类前置（复用 create_setting 校验语义，降级=跳过）
-            if parent_new is None and await self._has_root(target_int):
+            if parent_new is None and await self._has_root(target_pid):
                 skipped.append(src.name)
                 warnings.append(f"目标项目已存在根世界观，顶层条目「{src.name}」已跳过")
                 logger.warning(
@@ -158,8 +151,7 @@ class WorldCopyService:
                 continue
             if (
                 src.category
-                and await self._repo.get_category_by_name(uuid.UUID(int=target_int), src.category)
-                is None
+                and await self._repo.get_category_by_name(target_pid, src.category) is None
             ):
                 skipped.append(src.name)
                 warnings.append(f"目标项目未创建分类「{src.category}」，条目「{src.name}」已跳过")
@@ -171,9 +163,7 @@ class WorldCopyService:
                 )
                 continue
             # ④ 同级同名冲突预筛（target, 映射后父 id, name；父先落库再预筛子）
-            conflict = await self._repo.get_by_parent_and_name(
-                target_int, parent_new.int if parent_new is not None else None, src.name
-            )
+            conflict = await self._repo.get_by_parent_and_name(target_pid, parent_new, src.name)
             if conflict is not None:
                 skipped.append(src.name)
                 warnings.append(f"目标项目已存在同名条目「{src.name}」，已跳过")
@@ -188,7 +178,7 @@ class WorldCopyService:
             # ⑤ 落库：新 UUID + project_id=target + parent 经 old→new 映射 + 字段原样
             new = WorldSetting(
                 id=uuid.uuid4(),
-                project_id=uuid.UUID(int=target_int),
+                project_id=target_pid,
                 name=src.name,
                 parent_id=parent_new,
                 category=src.category,
@@ -205,13 +195,13 @@ class WorldCopyService:
         maps_created: list[WorldMap] = []
         pins_created = 0
         if self._map_repo is not None and self._asset_store is not None:
-            copy_ids = [s.id.int for s in copy_set]
+            copy_ids = [s.id for s in copy_set]
             maps = await self._map_repo.list_by_root_locations(
-                source_int, copy_ids, include_global=True
+                source_pid, copy_ids, include_global=True
             )
             for m in maps:
                 # 目标项目同名图 → 跳过 + warning（不覆盖）
-                if await self._map_repo.get_by_name(target_int, m.name) is not None:
+                if await self._map_repo.get_by_name(target_pid, m.name) is not None:
                     warnings.append(f"目标项目已存在同名地图「{m.name}」，已跳过")
                     logger.warning("复制跳过同名地图: target=%s name=%s", target_project_id, m.name)
                     continue
@@ -230,7 +220,7 @@ class WorldCopyService:
                     continue
                 new_map = WorldMap(
                     id=new_map_id,
-                    project_id=uuid.UUID(int=target_int),
+                    project_id=target_pid,
                     name=m.name,
                     image_path=new_path,
                     description=m.description,
@@ -247,7 +237,7 @@ class WorldCopyService:
                 maps_created.append(saved_map)
                 # pins 复制：location ∈ 映射 → 重映射；∉（或 NULL 纯注释）→ 转纯注释
                 note_count = 0
-                pins = await self._map_repo.list_pins(m.id.int)
+                pins = await self._map_repo.list_pins(m.id)
                 for p in pins:
                     loc_new = id_map.get(p.location_id.int) if p.location_id is not None else None
                     if p.location_id is not None and loc_new is None:

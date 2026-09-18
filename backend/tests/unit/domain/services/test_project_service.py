@@ -189,7 +189,7 @@ class TestProjectServiceBasics:
         assert added.config == ProjectConfig()
 
     async def test_get_returns_project_or_none(self, svc, mock_repo) -> None:
-        """get 委托：#1271 起领域 UUID 直传 repo.get；int id 兼容透传；不存在 → None。"""
+        """get 委托：#1291 起入参归一为领域 UUID 后直传 repo.get；不存在 → None。"""
         project = _project()
         mock_repo.get = AsyncMock(return_value=project)
         assert await svc.get(PID) == project
@@ -197,7 +197,7 @@ class TestProjectServiceBasics:
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await svc.get(42) is None
-        mock_repo.get.assert_awaited_once_with(42)
+        mock_repo.get.assert_awaited_once_with(uuid.UUID(int=42))
 
     async def test_list_projects_forwards_filters(self, svc, mock_repo) -> None:
         """列表查询透传搜索/排序/分页参数。"""
@@ -213,16 +213,16 @@ class TestProjectServiceBasics:
     async def test_soft_delete_restore_hard_delete(self, svc, mock_repo) -> None:
         """软删/恢复/硬删委托与返回值透传。"""
         assert await svc.soft_delete(PID) is True
-        mock_repo.soft_delete.assert_awaited_once_with(PID.int)
+        mock_repo.soft_delete.assert_awaited_once_with(PID)
 
         project = _project()
         mock_repo.restore = AsyncMock(return_value=project)
         assert await svc.restore(PID) == project
-        mock_repo.restore.assert_awaited_once_with(PID.int)
+        mock_repo.restore.assert_awaited_once_with(PID)
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
         assert await svc.hard_delete(999) is False
-        mock_repo.hard_delete.assert_awaited_once_with(999)
+        mock_repo.hard_delete.assert_awaited_once_with(uuid.UUID(int=999))
 
 
 class TestUpdateAgentOrderValidation:

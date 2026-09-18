@@ -250,7 +250,7 @@ class TestMapRepository:
         assert row.name == "青州地图"
         assert row.root_location_id == loc.id
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.project_id == saved.project_id
@@ -264,22 +264,22 @@ class TestMapRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteMapRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_get_by_name_hit_miss_and_project_isolation(self, db_session, project):
         """get_by_name 命中；未命中/跨项目均返回 None."""
         repo = SQLiteMapRepository(db_session)
         m = await repo.add(_map(project, "东大陆全图"))
 
-        hit = await repo.get_by_name(project.id, "东大陆全图")
+        hit = await repo.get_by_name(uuid.UUID(int=project.id), "东大陆全图")
         assert hit is not None and hit.id == m.id
-        assert await repo.get_by_name(project.id, "不存在") is None
+        assert await repo.get_by_name(uuid.UUID(int=project.id), "不存在") is None
 
         other = ProjectORM(name="其他项目")
         db_session.add(other)
         await db_session.commit()
         await db_session.refresh(other)
-        assert await repo.get_by_name(other.id, "东大陆全图") is None
+        assert await repo.get_by_name(uuid.UUID(int=other.id), "东大陆全图") is None
 
     async def test_list_full_sorted_by_created_at_desc(self, db_session, project):
         """list 全量（不过滤）按 created_at DESC；排除其他项目."""
@@ -295,7 +295,7 @@ class TestMapRepository:
         await db_session.refresh(other)
         await _insert_map_direct(db_session, other.id, "Z地图", _now())
 
-        maps, total = await repo.list(project.id)
+        maps, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 3
         assert [m.name for m in maps] == ["C地图", "B地图", "A地图"]
 
@@ -309,16 +309,18 @@ class TestMapRepository:
         m1 = await repo.add(_map(project, "青州图", root_location_id=uuid.UUID(int=loc1.id)))
         m2 = await repo.add(_map(project, "东大陆图", root_location_id=uuid.UUID(int=loc2.id)))
 
-        tops, total = await repo.list(project.id, top_level_only=True)
+        tops, total = await repo.list(uuid.UUID(int=project.id), top_level_only=True)
         assert total == 2
         assert {m.id for m in tops} == {g1.id, g2.id}
 
-        filtered, total_f = await repo.list(project.id, root_location_id=loc1.id)
+        filtered, total_f = await repo.list(
+            uuid.UUID(int=project.id), root_location_id=uuid.UUID(int=loc1.id)
+        )
         assert total_f == 1
         assert [m.id for m in filtered] == [m1.id]
 
         # 缺省（root_location_id=None + top_level_only=False）→ 全量
-        all_maps, total_all = await repo.list(project.id)
+        all_maps, total_all = await repo.list(uuid.UUID(int=project.id))
         assert total_all == 4
         assert {m.id for m in all_maps} == {g1.id, g2.id, m1.id, m2.id}
 
@@ -376,7 +378,7 @@ class TestMapRepository:
         assert updated.description == "新描述"
         assert updated.root_location_id == uuid.UUID(int=loc2.id)
 
-        got = await repo.get(m.id.int)
+        got = await repo.get(m.id)
         assert got is not None
         assert got.name == "青州图·改"
         assert got.root_location_id == uuid.UUID(int=loc2.id)
@@ -384,7 +386,7 @@ class TestMapRepository:
         # 改全局图（root_location_id=None）
         back_to_global = await repo.update(updated.model_copy(update={"root_location_id": None}))
         assert back_to_global is not None and back_to_global.root_location_id is None
-        got2 = await repo.get(m.id.int)
+        got2 = await repo.get(m.id)
         assert got2 is not None and got2.root_location_id is None
 
         # 不存在 → None
@@ -408,7 +410,7 @@ class TestMapRepository:
         parent_b = await repo.add(_map(project, "东大陆总图"))
         rehung = await repo.update(attached.model_copy(update={"parent_map_id": parent_b.id}))
         assert rehung is not None and rehung.parent_map_id == parent_b.id
-        got = await repo.get(child.id.int)
+        got = await repo.get(child.id)
         assert got is not None and got.parent_map_id == parent_b.id
 
     async def test_update_map_parent_map_null_persists(self, db_session, project):
@@ -418,7 +420,7 @@ class TestMapRepository:
         child = await repo.add(_map(project, "子图", parent_map_id=parent.id))
         detached = await repo.update(child.model_copy(update={"parent_map_id": None}))
         assert detached is not None and detached.parent_map_id is None
-        got = await repo.get(child.id.int)
+        got = await repo.get(child.id)
         assert got is not None and got.parent_map_id is None
 
     async def test_delete_map_cascades_pins(self, db_session, project):
@@ -428,14 +430,14 @@ class TestMapRepository:
         await repo.add_pin(_pin(m, label="标记一"))
         await repo.add_pin(_pin(m, label="标记二"))
 
-        assert await repo.delete(m.id.int) is True
-        assert await repo.get(m.id.int) is None
+        assert await repo.delete(m.id) is True
+        assert await repo.get(m.id) is None
         # pins 显式级联删除（不依赖 DB FK 动作）
         count = (await db_session.execute(text("SELECT COUNT(*) FROM map_pins"))).scalar_one()
         assert count == 0
 
-        assert await repo.delete(m.id.int) is False
-        assert await repo.delete(99999) is False
+        assert await repo.delete(m.id) is False
+        assert await repo.delete(uuid.uuid4()) is False
 
     async def test_delete_many_maps_and_pins(self, db_session, project):
         """delete_many 单事务删多图 + 各自 pins；返回删除行数；含不存在 id 不影响计数."""
@@ -447,11 +449,11 @@ class TestMapRepository:
         await repo.add_pin(_pin(m2))
         await repo.add_pin(_pin(m3))
 
-        deleted = await repo.delete_many([m1.id.int, m2.id.int, 99999])
+        deleted = await repo.delete_many([m1.id, m2.id, uuid.uuid4()])
         assert deleted == 2
-        assert await repo.get(m1.id.int) is None
-        assert await repo.get(m2.id.int) is None
-        assert await repo.get(m3.id.int) is not None
+        assert await repo.get(m1.id) is None
+        assert await repo.get(m2.id) is None
+        assert await repo.get(m3.id) is not None
         count = (await db_session.execute(text("SELECT COUNT(*) FROM map_pins"))).scalar_one()
         assert count == 1
 
@@ -468,8 +470,8 @@ class TestMapRepository:
         id2 = await _insert_pin_direct(db_session, m.id.int, t + timedelta(minutes=1), label="中间")
         id3 = await _insert_pin_direct(db_session, m.id.int, t + timedelta(minutes=2), label="最晚")
 
-        pins = await repo.list_pins(m.id.int)
-        assert [p.id.int for p in pins] == [id1, id2, id3]
+        pins = await repo.list_pins(m.id)
+        assert [p.id for p in pins] == [uuid.UUID(int=i) for i in (id1, id2, id3)]
         assert [p.label for p in pins] == ["最早", "中间", "最晚"]
 
         # add_pin 往返：UUID 映射 + 字段（location_id 缺省 None）
@@ -480,7 +482,7 @@ class TestMapRepository:
         assert added.label == "新pin"
         assert added.location_id is None
 
-        pins2 = await repo.list_pins(m.id.int)
+        pins2 = await repo.list_pins(m.id)
         assert len(pins2) == 4
         assert pins2[-1].id == added.id
 
@@ -507,7 +509,7 @@ class TestMapRepository:
         assert updated.label == "新label"
         assert updated.location_id == uuid.UUID(int=loc.id)
 
-        got = (await repo.list_pins(m.id.int))[0]
+        got = (await repo.list_pins(m.id))[0]
         assert got.x == 33.5 and got.label == "新label"
         assert got.location_id == uuid.UUID(int=loc.id)
 
@@ -522,11 +524,11 @@ class TestMapRepository:
         p1 = await repo.add_pin(_pin(m, label="一"))
         p2 = await repo.add_pin(_pin(m, label="二"))
 
-        assert await repo.delete_pin(p1.id.int) is True
-        pins = await repo.list_pins(m.id.int)
+        assert await repo.delete_pin(p1.id) is True
+        pins = await repo.list_pins(m.id)
         assert [p.id for p in pins] == [p2.id]
-        assert await repo.delete_pin(p1.id.int) is False
-        assert await repo.delete_pin(99999) is False
+        assert await repo.delete_pin(p1.id) is False
+        assert await repo.delete_pin(uuid.uuid4()) is False
 
     # ── children（drill-down JOIN，评审 F2，load-bearing）──
 
@@ -541,19 +543,19 @@ class TestMapRepository:
 
         # 懒构建合法态：无 pin 的地图 → 空列表
         empty_map = await repo.add(_map(project, "无pin图"))
-        assert await repo.children(empty_map.id.int) == []
+        assert await repo.children(empty_map.id) == []
 
-        children = await repo.children(a.id.int)
+        children = await repo.children(a.id)
         assert [m.id for m in children] == [c.id]
 
         # 地点真删（FK ON 下先清依赖：clear_location_pins 置空 pin、删除以 B 为根的地图 C，
         # 再物理删 B）→ 该地点下地图不再出现在 children（v1.1 真删语义）
-        await repo.clear_location_pins(b.id)
-        await repo.delete(c.id.int)
+        await repo.clear_location_pins(uuid.UUID(int=b.id))
+        await repo.delete(c.id)
         from inkflow.infrastructure.database.repositories.world_repo import SQLiteWorldRepository
 
-        await SQLiteWorldRepository(db_session).hard_delete(b.id)
-        assert await repo.children(a.id.int) == []
+        await SQLiteWorldRepository(db_session).hard_delete(uuid.UUID(int=b.id))
+        assert await repo.children(a.id) == []
 
     async def test_children_dedup_same_location_two_pins(self, db_session, project):
         """两个 pin 指向同一地点 → children 只返回一次（DISTINCT）."""
@@ -564,7 +566,7 @@ class TestMapRepository:
         await repo.add_pin(_pin(a, location_id=uuid.UUID(int=b.id), label="青州1"))
         await repo.add_pin(_pin(a, location_id=uuid.UUID(int=b.id), label="青州2"))
 
-        children = await repo.children(a.id.int)
+        children = await repo.children(a.id)
         assert [m.id for m in children] == [c.id]
 
     # ── 共用查询 / 项目级操作（#175 / D10=b）──
@@ -583,11 +585,23 @@ class TestMapRepository:
         c2 = await repo.add(_map(project, "C2东大陆图", root_location_id=uuid.UUID(int=b2.id)))
         await repo.add(_map(project, "全局图"))
 
-        found = await repo.list_by_root_locations(project.id, [b1.id, b2.id], include_global=False)
+        found = await repo.list_by_root_locations(
+            uuid.UUID(int=project.id),
+            [uuid.UUID(int=b1.id), uuid.UUID(int=b2.id)],
+            include_global=False,
+        )
         assert {m.id for m in found} == {c1.id, c2.id}
 
-        assert await repo.list_by_root_locations(project.id, [], include_global=False) == []
-        assert await repo.list_by_root_locations(project.id, [99999], include_global=False) == []
+        assert (
+            await repo.list_by_root_locations(uuid.UUID(int=project.id), [], include_global=False)
+            == []
+        )
+        assert (
+            await repo.list_by_root_locations(
+                uuid.UUID(int=project.id), [uuid.uuid4()], include_global=False
+            )
+            == []
+        )
 
     async def test_delete_by_project_and_clear_location_pins(self, db_session, project):
         """delete_by_project 单事务删项目全部 maps+pins 返回 maps 行数；
@@ -600,18 +614,18 @@ class TestMapRepository:
         await repo.add_pin(_pin(m1, label="注释pin"))
 
         # clear_location_pins：SET NULL，pin 保留、label 不变
-        cleared = await repo.clear_location_pins(loc.id)
+        cleared = await repo.clear_location_pins(uuid.UUID(int=loc.id))
         assert cleared == 1
-        pins = await repo.list_pins(m1.id.int)
+        pins = await repo.list_pins(m1.id)
         assert len(pins) == 2
         by_label = {p.label: p for p in pins}
         assert by_label["青州pin"].location_id is None
         assert by_label["注释pin"].location_id is None
 
         # delete_by_project：删项目全部 maps + pins（D10=b 显式级联）
-        deleted = await repo.delete_by_project(project.id)
+        deleted = await repo.delete_by_project(uuid.UUID(int=project.id))
         assert deleted == 2
-        assert await repo.list(project.id) == ([], 0)
+        assert await repo.list(uuid.UUID(int=project.id)) == ([], 0)
         count = (await db_session.execute(text("SELECT COUNT(*) FROM map_pins"))).scalar_one()
         assert count == 0
 
@@ -645,7 +659,7 @@ class TestListByRootLocationsGlobal:
         c1 = await repo.add(_map(project, "C1青州图", root_location_id=uuid.UUID(int=b1.id)))
         g1 = await repo.add(_map(project, "全局图"))
 
-        found = await repo.list_by_root_locations(project.id, [b1.id])
+        found = await repo.list_by_root_locations(uuid.UUID(int=project.id), [uuid.UUID(int=b1.id)])
         assert {m.id for m in found} == {c1.id, g1.id}
 
     async def test_include_global_false_excludes_global(self, db_session, project):
@@ -657,7 +671,9 @@ class TestListByRootLocationsGlobal:
         c1 = await repo.add(_map(project, "C1青州图", root_location_id=uuid.UUID(int=b1.id)))
         await repo.add(_map(project, "全局图"))
 
-        found = await repo.list_by_root_locations(project.id, [b1.id], include_global=False)
+        found = await repo.list_by_root_locations(
+            uuid.UUID(int=project.id), [uuid.UUID(int=b1.id)], include_global=False
+        )
         assert [m.id for m in found] == [c1.id]
 
     async def test_empty_location_ids_true_returns_only_global(self, db_session, project):
@@ -667,7 +683,9 @@ class TestListByRootLocationsGlobal:
         repo = SQLiteMapRepository(db_session)
         await repo.add(_map(project, "全局图"))
 
-        found = await repo.list_by_root_locations(project.id, [], include_global=True)
+        found = await repo.list_by_root_locations(
+            uuid.UUID(int=project.id), [], include_global=True
+        )
         assert [m.name for m in found] == ["全局图"]
 
     async def test_empty_location_ids_false_returns_empty(self, db_session, project):
@@ -677,7 +695,10 @@ class TestListByRootLocationsGlobal:
         repo = SQLiteMapRepository(db_session)
         await repo.add(_map(project, "全局图"))
 
-        assert await repo.list_by_root_locations(project.id, [], include_global=False) == []
+        assert (
+            await repo.list_by_root_locations(uuid.UUID(int=project.id), [], include_global=False)
+            == []
+        )
 
 
 # #1106: repo 层 int64 守卫 —— 超范围主键 → None（走守卫 return None 真分支）
@@ -691,12 +712,14 @@ class TestInt64RangeGuard1106:
         """map_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteMapRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
     async def test_get_pin_returns_none_for_out_of_range_id(self, db_session):
         """map_repo.get_pin 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteMapRepository(db_session)
 
-        assert await repo.get_pin(2**63) is None  # 上界外
-        assert await repo.get_pin(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get_pin(uuid.uuid4()) is None
+        assert await repo.get_pin(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1

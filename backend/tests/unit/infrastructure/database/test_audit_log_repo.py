@@ -25,7 +25,7 @@
    - add(log: AuditLog) -> AuditLog: 插入后返回含 ORM 行 id 的 AuditLog
      （id 为 uuid.UUID，uuid.UUID(int=orm_id)）；created_at 以领域对象
      传入值为准（不覆盖为 now）
-   - latest_pending(chapter_id: int) -> AuditLog | None: 该章全部记录中
+   - latest_pending(chapter_id: uuid.UUID) -> AuditLog | None: 该章全部记录中
      最新（created_at desc）的 pending 记录
    - confirm(log_id: int, *, action: str, note: str, confirmed_at: datetime)
      -> AuditLog | None: status=action + note + confirmed_at 落库；
@@ -240,7 +240,7 @@ class TestLatestPending:
             )
         )
         assert earlier.id != later.id
-        latest = await repo.latest_pending(chapter.id)
+        latest = await repo.latest_pending(uuid.UUID(int=chapter.id))
         assert latest is not None
         assert latest.id == later.id
 
@@ -253,12 +253,12 @@ class TestLatestPending:
             )
         )
         await repo.confirm(
-            saved.id.int,
+            saved.id,
             action="accept",
             note="",
             confirmed_at=datetime(2026, 8, 1, 11, 0, 0, tzinfo=UTC),
         )
-        assert await repo.latest_pending(chapter.id) is None
+        assert await repo.latest_pending(uuid.UUID(int=chapter.id)) is None
 
     async def test_other_chapter_pending_invisible(self, db_session, project, chapter):
         repo = _repo(db_session)
@@ -269,10 +269,10 @@ class TestLatestPending:
                 chapter_id=uuid.UUID(int=chapter.id),
             )
         )
-        assert await repo.latest_pending(other.id) is None
+        assert await repo.latest_pending(uuid.UUID(int=other.id)) is None
 
     async def test_never_audited_returns_none(self, db_session, project, chapter):
-        assert await _repo(db_session).latest_pending(chapter.id) is None
+        assert await _repo(db_session).latest_pending(uuid.UUID(int=chapter.id)) is None
 
 
 class TestConfirm:
@@ -287,9 +287,7 @@ class TestConfirm:
             )
         )
         confirmed_at = datetime(2026, 8, 1, 11, 30, 0, tzinfo=UTC)
-        updated = await repo.confirm(
-            saved.id.int, action="accept", note="", confirmed_at=confirmed_at
-        )
+        updated = await repo.confirm(saved.id, action="accept", note="", confirmed_at=confirmed_at)
         assert updated is not None
         assert updated.id == saved.id
         assert updated.status == "accepted"
@@ -309,7 +307,7 @@ class TestConfirm:
         )
         confirmed_at = datetime(2026, 8, 1, 11, 30, 0, tzinfo=UTC)
         updated = await repo.confirm(
-            saved.id.int, action="reject", note="人设需再打磨", confirmed_at=confirmed_at
+            saved.id, action="reject", note="人设需再打磨", confirmed_at=confirmed_at
         )
         assert updated is not None
         assert updated.status == "rejected"
@@ -321,7 +319,10 @@ class TestConfirm:
 
     async def test_missing_log_returns_none(self, db_session, project, chapter):
         repo = _repo(db_session)
-        assert await repo.confirm(999999, action="accept", note="", confirmed_at=TS) is None
+        assert (
+            await repo.confirm(uuid.UUID(int=999999), action="accept", note="", confirmed_at=TS)
+            is None
+        )
 
 
 class TestList:
@@ -344,13 +345,28 @@ class TestList:
 
     async def test_pagination_total_and_pages(self, db_session, project, chapter):
         ids = await self._seed(db_session, project, chapter, 5)
-        items, total = await _repo(db_session).list(project.id, offset=1, limit=2)
+        items, total = await _repo(db_session).list(uuid.UUID(int=project.id), offset=1, limit=2)
         assert total == 5
         assert len(items) == 2
         assert {it.id for it in items} <= set(ids)
-        page1 = {it.id for it in (await _repo(db_session).list(project.id, offset=0, limit=2))[0]}
-        page2 = {it.id for it in (await _repo(db_session).list(project.id, offset=2, limit=2))[0]}
-        page3 = {it.id for it in (await _repo(db_session).list(project.id, offset=4, limit=2))[0]}
+        page1 = {
+            it.id
+            for it in (await _repo(db_session).list(uuid.UUID(int=project.id), offset=0, limit=2))[
+                0
+            ]
+        }
+        page2 = {
+            it.id
+            for it in (await _repo(db_session).list(uuid.UUID(int=project.id), offset=2, limit=2))[
+                0
+            ]
+        }
+        page3 = {
+            it.id
+            for it in (await _repo(db_session).list(uuid.UUID(int=project.id), offset=4, limit=2))[
+                0
+            ]
+        }
         assert page1 | page2 | page3 == set(ids)
         assert page1.isdisjoint(page2)
         assert page2.isdisjoint(page3)
@@ -358,13 +374,13 @@ class TestList:
 
     async def test_limit_defaults_to_twenty(self, db_session, project, chapter):
         await self._seed(db_session, project, chapter, 3)
-        items, total = await _repo(db_session).list(project.id)
+        items, total = await _repo(db_session).list(uuid.UUID(int=project.id))
         assert total == 3
         assert len(items) == 3
 
     async def test_offset_beyond_total_returns_empty(self, db_session, project, chapter):
         await self._seed(db_session, project, chapter, 2)
-        items, total = await _repo(db_session).list(project.id, offset=10, limit=2)
+        items, total = await _repo(db_session).list(uuid.UUID(int=project.id), offset=10, limit=2)
         assert total == 2
         assert items == []
 
@@ -385,11 +401,11 @@ class TestList:
                 chapter_title="他项目的章",
             )
         )
-        items, total = await _repo(db_session).list(project.id)
+        items, total = await _repo(db_session).list(uuid.UUID(int=project.id))
         assert total == 1
         assert len(items) == 1
         assert items[0].project_id == uuid.UUID(int=project.id)
-        other_items, other_total = await _repo(db_session).list(other_project.id)
+        other_items, other_total = await _repo(db_session).list(uuid.UUID(int=other_project.id))
         assert other_total == 1
         assert other_items[0].project_id == uuid.UUID(int=other_project.id)
 

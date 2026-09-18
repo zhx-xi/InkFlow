@@ -39,7 +39,7 @@ def _resolve_project_id(value: str | None) -> int | None:
         value: FastAPI 查询参数原始串（None = 未提供，不过滤）。
 
     Returns:
-        仓储层 int 主键（UUID 取 uuid.UUID(value).int，与 F1 `_to_int_id` 口径一致）。
+        仓储层 int 主键（搜索索引域仍以 int 项目 id 为准；UUID 取 uuid.UUID(value).int）。
 
     Raises:
         HTTPException: 非数字非 UUID → 422 detail 逐字

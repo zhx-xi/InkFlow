@@ -538,7 +538,7 @@ async def test_chapter_column_value_reaches_brief_via_assembly(db_session):
     repo = SQLiteChapterRepository(db_session)
 
     async def _getter(cid: uuid.UUID) -> str | None:
-        chapter = await repo.get_chapter(cid.int)
+        chapter = await repo.get_chapter(cid)
         value = getattr(chapter, "writing_requirements", None) if chapter else None
         return value if isinstance(value, str) and value else None
 

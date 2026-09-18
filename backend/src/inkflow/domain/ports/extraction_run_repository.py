@@ -1,8 +1,8 @@
 """F14 增量追踪记录仓储端口 — 提取运行状态持久化契约.
 
 ExtractionRunRepositoryProtocol 定义 ExtractionRun 的查询与 upsert 操作，
-基础设施层（SQLite / mock / memory）实现此 Protocol。`get` 的 `project_id`
-入参用领域 UUID（#1271 收窄）；`type` / `source_key` 与其余方法不变。
+基础设施层（SQLite / mock / memory）实现此 Protocol。`project_id` 入参统一
+用领域 UUID（#1134 批 4 / #1291 收窄收尾）；`type` / `source_key` 不变。
 
 依据: specs/f14-extraction/spec.md §8.1。
 """
@@ -55,7 +55,7 @@ class ExtractionRunRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         type: ExtractionType | None = None,
         offset: int = 0,
         limit: int = 50,
@@ -63,7 +63,7 @@ class ExtractionRunRepositoryProtocol(Protocol):
         """分页查询项目内 run 记录，按 run_at DESC 排序（最新在前）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             type: 按提取类型过滤（None = 全部类型）.
             offset: 分页偏移.
             limit: 分页大小.

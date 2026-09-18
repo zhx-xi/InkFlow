@@ -98,13 +98,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _extract_json_fragment(text: str) -> str | None:
     """从带围栏/前后缀文字的文本中提取首个 ``{...}`` 平衡片段.
 
@@ -440,18 +433,17 @@ class OutlineGenerator:
             )
 
         out_warnings = list(warnings)
-        pid_int = _to_int_id(request.project_id)
 
         # 大纲: 生成即新建（同名活动冲突 → 422，不合并/不覆盖旧规划）
         outline_name = generated.name or request.name or _DEFAULT_OUTLINE_NAME
-        existing = await self._repo.get_by_name(pid_int, outline_name)
+        existing = await self._repo.get_by_name(request.project_id, outline_name)
         if existing is not None:
             raise OutlineNameConflictError()
         # #835 建链：level=volume/chapter 时按 parent 名解析父大纲
         # （volume 挂 overall、chapter 挂 volume）
         parent_id: uuid.UUID | None = None
         if generated.parent:
-            found = await self._repo.get_by_name(pid_int, generated.parent.strip())
+            found = await self._repo.get_by_name(request.project_id, generated.parent.strip())
             if found is not None:
                 parent_id = found.id
             else:
@@ -472,7 +464,6 @@ class OutlineGenerator:
 
         # 弧线: 按 (project_id, name) 匹配活动弧线 → 存在=复用 / 不存在=创建
         arcs, arc_by_name = await self._resolve_arcs(
-            pid_int=pid_int,
             project_id=request.project_id,
             generated_arcs=generated.arcs,
             created_at=now,
@@ -481,7 +472,6 @@ class OutlineGenerator:
         # 情节点: 按输出顺序分配 position（1,2,3...）；arc 名解析为 arc_id
         plot_points = await self._persist_plot_points(
             generated_points=generated.plot_points,
-            pid_int=pid_int,
             outline_id=outline.id,
             project_id=request.project_id,
             arc_by_name=arc_by_name,
@@ -527,18 +517,15 @@ class OutlineGenerator:
         Returns:
             (arcs, plot_points, warnings) 三元组——均为落库后实体.
         """
-        pid_int = _to_int_id(project_id)
         now = _utcnow()
         warnings: list[str] = []
         arcs, arc_by_name = await self._resolve_arcs(
-            pid_int=pid_int,
             project_id=project_id,
             generated_arcs=generated.arcs,
             created_at=now,
         )
         plot_points = await self._persist_plot_points(
             generated_points=generated.plot_points,
-            pid_int=pid_int,
             outline_id=outline_id,
             project_id=project_id,
             arc_by_name=arc_by_name,
@@ -618,7 +605,6 @@ class OutlineGenerator:
         generated.name/level/parent 忽略不回写（D5）。
         """
         out_warnings = list(warnings)
-        pid_int = _to_int_id(request.project_id)
         target_outline_id = request.target_outline_id
         assert target_outline_id is not None  # 追加分支守卫已收窄（mypy）
         target = await self._repo.get(target_outline_id)
@@ -629,7 +615,6 @@ class OutlineGenerator:
 
         # 弧线: 与新建分支同一代码路径（§5.4 同名复用 / 否则新建）
         arcs, arc_by_name = await self._resolve_arcs(
-            pid_int=pid_int,
             project_id=request.project_id,
             generated_arcs=generated.arcs,
             created_at=now,
@@ -637,10 +622,9 @@ class OutlineGenerator:
 
         # 情节点: 单次 next_position 取起点后批量递增（D3 O(1) 查询）；
         # 既有情节点零改动（不调用 update_point / hard_delete_point）
-        start = await self._repo.next_position(_to_int_id(target.id))
+        start = await self._repo.next_position(target.id)
         plot_points = await self._persist_plot_points(
             generated_points=generated.plot_points,
-            pid_int=pid_int,
             outline_id=target.id,
             project_id=request.project_id,
             arc_by_name=arc_by_name,
@@ -665,7 +649,6 @@ class OutlineGenerator:
     async def _resolve_arcs(
         self,
         *,
-        pid_int: int,
         project_id: uuid.UUID,
         generated_arcs: list[GeneratedArc],
         created_at: datetime,
@@ -673,8 +656,7 @@ class OutlineGenerator:
         """弧线解析（§5.4，新建/追加共用）: 按 (project_id, name) 同名复用 / 否则新建.
 
         Args:
-            pid_int: 项目仓储层主键（int）.
-            project_id: 项目领域 UUID（新弧线归属）.
+            project_id: 项目领域 UUID（仓储入参 + 新弧线归属，见 #1291）.
             generated_arcs: LLM 生成的弧线列表（已通过 schema 校验）.
             created_at: 本批新弧线统一创建时间（与同批大纲/情节点一致）.
 
@@ -684,7 +666,7 @@ class OutlineGenerator:
         arcs: list[StoryArc] = []
         arc_by_name: dict[str, StoryArc] = {}
         for ga in generated_arcs:
-            existing_arc = await self._repo.get_arc_by_name(pid_int, ga.name)
+            existing_arc = await self._repo.get_arc_by_name(project_id, ga.name)
             if existing_arc is not None:
                 arc_by_name[ga.name] = existing_arc
                 arcs.append(existing_arc)
@@ -707,7 +689,7 @@ class OutlineGenerator:
         self,
         *,
         gp: GeneratedPlotPoint,
-        pid_int: int,
+        project_id: uuid.UUID,
         arc_by_name: dict[str, StoryArc],
         out_warnings: list[str],
     ) -> uuid.UUID | None:
@@ -723,7 +705,7 @@ class OutlineGenerator:
             return None
         arc = arc_by_name.get(arc_name)
         if arc is None:
-            arc = await self._repo.get_arc_by_name(pid_int, arc_name)
+            arc = await self._repo.get_arc_by_name(project_id, arc_name)
         if arc is not None:
             arc_by_name[arc_name] = arc
             return arc.id
@@ -734,7 +716,6 @@ class OutlineGenerator:
         self,
         *,
         generated_points: list[GeneratedPlotPoint],
-        pid_int: int,
         outline_id: uuid.UUID,
         project_id: uuid.UUID,
         arc_by_name: dict[str, StoryArc],
@@ -751,7 +732,7 @@ class OutlineGenerator:
         for index, gp in enumerate(generated_points, start=1):
             arc_id = await self._resolve_point_arc(
                 gp=gp,
-                pid_int=pid_int,
+                project_id=project_id,
                 arc_by_name=arc_by_name,
                 out_warnings=out_warnings,
             )

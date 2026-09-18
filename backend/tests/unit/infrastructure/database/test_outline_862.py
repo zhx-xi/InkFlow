@@ -185,7 +185,7 @@ class TestOutline862Service:
         assert result is not None
         assert result.chapter_id == chapter_uuid
 
-        got = await repo.get(chap.id.int)
+        got = await repo.get(chap.id)
         assert got is not None
         assert got.chapter_id == chapter_uuid
 
@@ -305,7 +305,7 @@ class TestOutline862ServiceVolumeLink:
         result = await svc.update_outline(volume.id, OutlineUpdate(volume_id=volume_uuid))
         assert result is not None
         assert result.volume_id == volume_uuid
-        got = await repo.get(volume.id.int)
+        got = await repo.get(volume.id)
         assert got is not None
         assert got.volume_id == volume_uuid
 
@@ -313,6 +313,6 @@ class TestOutline862ServiceVolumeLink:
         result2 = await svc.update_outline(volume.id, OutlineUpdate(volume_id=""))
         assert result2 is not None
         assert result2.volume_id is None
-        got2 = await repo.get(volume.id.int)
+        got2 = await repo.get(volume.id)
         assert got2 is not None
         assert got2.volume_id is None

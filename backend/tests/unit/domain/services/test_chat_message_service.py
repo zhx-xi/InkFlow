@@ -301,7 +301,7 @@ class TestArchiveDeleteRestore:
         message_id = uuid.UUID(int=42)
         result = await service.archive_message(message_id)
         assert result is True
-        fake_repo.archive.assert_awaited_once_with(message_id.int)
+        fake_repo.archive.assert_awaited_once_with(message_id)
 
     async def test_archive_message_not_found_false(self, service, fake_repo):
         fake_repo.archive = AsyncMock(return_value=False)
@@ -311,7 +311,7 @@ class TestArchiveDeleteRestore:
         message_id = uuid.UUID(int=42)
         result = await service.force_delete_message(message_id)
         assert result is True
-        fake_repo.force_delete.assert_awaited_once_with(message_id.int)
+        fake_repo.force_delete.assert_awaited_once_with(message_id)
 
     async def test_restore_message_returns_entity(self, service, fake_repo):
         message_id = uuid.UUID(int=42)
@@ -319,7 +319,7 @@ class TestArchiveDeleteRestore:
         fake_repo.restore = AsyncMock(return_value=restored)
         result = await service.restore_message(message_id)
         assert result is restored
-        fake_repo.restore.assert_awaited_once_with(message_id.int)
+        fake_repo.restore.assert_awaited_once_with(message_id)
 
 
 class TestConversationLevelArchive:
@@ -328,36 +328,42 @@ class TestConversationLevelArchive:
     async def test_archive_conversation_delegates_to_repo(self, service, fake_repo):
         result = await service.archive_conversation(CID)
         assert result is True
-        fake_repo.archive_conversation.assert_awaited_once_with(CID.int)
+        fake_repo.archive_conversation.assert_awaited_once_with(CID)
 
     async def test_force_delete_conversation_delegates_to_repo(self, service, fake_repo):
         result = await service.force_delete_conversation(CID)
         assert result is True
-        fake_repo.force_delete_conversation.assert_awaited_once_with(CID.int)
+        fake_repo.force_delete_conversation.assert_awaited_once_with(CID)
 
     async def test_restore_conversation_delegates_to_repo(self, service, fake_repo):
         result = await service.restore_conversation(CID)
         assert result is True
-        fake_repo.restore_conversation.assert_awaited_once_with(CID.int)
+        fake_repo.restore_conversation.assert_awaited_once_with(CID)
 
 
 class Test578ServiceOverflowGuard:
     """#578 RED：service 层 128 位溢出预检（随机 uuid4 → 短路，不调用 repo）。"""
 
-    async def test_archive_message_overflow_uuid_skips_repo(self, service, fake_repo):
-        result = await service.archive_message(uuid.uuid4())
-        fake_repo.archive.assert_not_awaited()
-        assert result is False
+    async def test_archive_message_overflow_uuid_delegates_unchanged(self, service, fake_repo):
+        """#1291：消息级溢出预检已下沉 repo 层——service 原样透传 UUID（不 .int）。"""
+        message_id = uuid.uuid4()
+        fake_repo.archive = AsyncMock(return_value=False)
+        assert await service.archive_message(message_id) is False
+        fake_repo.archive.assert_awaited_once_with(message_id)
 
-    async def test_force_delete_message_overflow_uuid_skips_repo(self, service, fake_repo):
-        result = await service.force_delete_message(uuid.uuid4())
-        fake_repo.force_delete.assert_not_awaited()
-        assert result is False
+    async def test_force_delete_message_overflow_uuid_delegates_unchanged(self, service, fake_repo):
+        """#1291：消息级溢出预检已下沉 repo 层——service 原样透传 UUID（不 .int）。"""
+        message_id = uuid.uuid4()
+        fake_repo.force_delete = AsyncMock(return_value=False)
+        assert await service.force_delete_message(message_id) is False
+        fake_repo.force_delete.assert_awaited_once_with(message_id)
 
-    async def test_restore_message_overflow_uuid_skips_repo(self, service, fake_repo):
-        result = await service.restore_message(uuid.uuid4())
-        fake_repo.restore.assert_not_awaited()
-        assert result is None
+    async def test_restore_message_overflow_uuid_delegates_unchanged(self, service, fake_repo):
+        """#1291：消息级溢出预检已下沉 repo 层——service 原样透传 UUID（不 .int）。"""
+        message_id = uuid.uuid4()
+        fake_repo.restore = AsyncMock(return_value=None)
+        assert await service.restore_message(message_id) is None
+        fake_repo.restore.assert_awaited_once_with(message_id)
 
     async def test_archive_conversation_overflow_uuid_skips_repo(self, service, fake_repo):
         result = await service.archive_conversation(uuid.uuid4())
@@ -377,4 +383,4 @@ class Test578ServiceOverflowGuard:
     async def test_archive_message_small_id_still_delegates(self, service, fake_repo):
         result = await service.archive_message(uuid.UUID(int=42))
         assert result is True
-        fake_repo.archive.assert_awaited_once_with(42)
+        fake_repo.archive.assert_awaited_once_with(uuid.UUID(int=42))

@@ -419,7 +419,7 @@ class TestOutlineP3Repo:
             )
         )
 
-        got = await repo.get(child.id.int)
+        got = await repo.get(child.id)
         assert got is not None
         dumped = got.model_dump()
         assert dumped["level"] == "chapter"  # RED: KeyError

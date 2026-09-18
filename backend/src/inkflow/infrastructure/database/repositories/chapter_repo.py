@@ -23,7 +23,7 @@ from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.context import ChapterSummaryORM
 from inkflow.infrastructure.database.models.outline import OutlineORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
-from inkflow.infrastructure.database.repositories._id_guard import uuid_to_pk_or_none
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -75,9 +75,12 @@ class SQLiteChapterRepository:
         await self._session.refresh(orm)
         return _volume_orm_to_domain(orm)
 
-    async def get_volume(self, volume_id: int | uuid.UUID) -> Volume | None:
-        """按主键查询卷。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        vid = uuid_to_pk_or_none(volume_id)
+    async def get_volume(self, volume_id: uuid.UUID) -> Volume | None:
+        """按主键查询卷。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``。
+        """
+        vid = require_uuid_pk(volume_id)
         if vid is None:
             return None
         stmt = select(VolumeORM).where(VolumeORM.id == vid)
@@ -85,10 +88,13 @@ class SQLiteChapterRepository:
         orm = result.scalar_one_or_none()
         return _volume_orm_to_domain(orm) if orm else None
 
-    async def list_volumes(self, project_id: int) -> list[Volume]:
+    async def list_volumes(self, project_id: uuid.UUID) -> list[Volume]:
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(VolumeORM)
-            .where(VolumeORM.project_id == project_id)
+            .where(VolumeORM.project_id == pid)
             .order_by(VolumeORM.order_index.asc())
         )
         result = await self._session.execute(stmt)
@@ -105,16 +111,19 @@ class SQLiteChapterRepository:
         result = await self._session.execute(select(VolumeORM).where(VolumeORM.id == vol_id))
         return _volume_orm_to_domain(result.scalar_one())
 
-    async def delete_volume(self, volume_id: int) -> bool:
+    async def delete_volume(self, volume_id: uuid.UUID) -> bool:
+        vid = require_uuid_pk(volume_id)
+        if vid is None:
+            return False
         await self._session.execute(
-            sa_update(OutlineORM).where(OutlineORM.volume_id == volume_id).values(volume_id=None)
+            sa_update(OutlineORM).where(OutlineORM.volume_id == vid).values(volume_id=None)
         )
         await self._session.execute(
             sa_update(ChapterORM)
-            .where(ChapterORM.volume_id == volume_id)
+            .where(ChapterORM.volume_id == vid)
             .values(volume_id=None, updated_at=_utcnow())
         )
-        result = await self._session.execute(select(VolumeORM).where(VolumeORM.id == volume_id))
+        result = await self._session.execute(select(VolumeORM).where(VolumeORM.id == vid))
         vol = result.scalar_one_or_none()
         if vol is None:
             return False
@@ -122,28 +131,44 @@ class SQLiteChapterRepository:
         await self._session.commit()
         return True
 
-    async def count_chapters_by_volume(self, volume_id: int) -> int:
-        stmt = select(func.count()).select_from(ChapterORM).where(ChapterORM.volume_id == volume_id)
+    async def count_chapters_by_volume(self, volume_id: uuid.UUID) -> int:
+        vid = require_uuid_pk(volume_id)
+        if vid is None:
+            return 0
+        stmt = select(func.count()).select_from(ChapterORM).where(ChapterORM.volume_id == vid)
         result = await self._session.execute(stmt)
         return int(result.scalar_one() or 0)
 
-    async def list_chapter_ids_by_volume(self, volume_id: int) -> list[int]:
-        stmt = select(ChapterORM.id).where(ChapterORM.volume_id == volume_id)
+    async def list_chapter_ids_by_volume(self, volume_id: uuid.UUID) -> list[uuid.UUID]:
+        """返回卷内章节主键（领域 UUID，#1291 收窄）。"""
+        vid = require_uuid_pk(volume_id)
+        if vid is None:
+            return []
+        stmt = select(ChapterORM.id).where(ChapterORM.volume_id == vid)
         result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        return [uuid.UUID(int=row) for row in result.scalars().all()]
 
-    async def move_chapters_to_volume(self, source_volume_id: int, target_volume_id: int) -> int:
+    async def move_chapters_to_volume(
+        self, source_volume_id: uuid.UUID, target_volume_id: uuid.UUID
+    ) -> int:
+        src = require_uuid_pk(source_volume_id)
+        tgt = require_uuid_pk(target_volume_id)
+        if src is None or tgt is None:
+            return 0
         result = await self._session.execute(
             sa_update(ChapterORM)
-            .where(ChapterORM.volume_id == source_volume_id)
-            .values(volume_id=target_volume_id, updated_at=_utcnow())
+            .where(ChapterORM.volume_id == src)
+            .values(volume_id=tgt, updated_at=_utcnow())
         )
         await self._session.commit()
         count: int = result.rowcount if result.rowcount is not None else 0  # type: ignore[attr-defined]  # SQLAlchemy execute() 静态类型为 Result，rowcount 仅在 CursorResult 上声明，运行时实际可用
         return count
 
-    async def get_next_volume_order(self, project_id: int) -> float:
-        stmt = select(func.max(VolumeORM.order_index)).where(VolumeORM.project_id == project_id)
+    async def get_next_volume_order(self, project_id: uuid.UUID) -> float:
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 1.0
+        stmt = select(func.max(VolumeORM.order_index)).where(VolumeORM.project_id == pid)
         result = await self._session.execute(stmt)
         max_order = result.scalar_one()
         return (max_order or 0.0) + 1.0
@@ -167,9 +192,12 @@ class SQLiteChapterRepository:
         await self._session.refresh(orm)
         return _chapter_orm_to_domain(orm)
 
-    async def get_chapter(self, chapter_id: int | uuid.UUID) -> Chapter | None:
-        """按主键查询章节。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        cid = uuid_to_pk_or_none(chapter_id)
+    async def get_chapter(self, chapter_id: uuid.UUID) -> Chapter | None:
+        """按主键查询章节。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``。
+        """
+        cid = require_uuid_pk(chapter_id)
         if cid is None:
             return None
         stmt = select(ChapterORM).where(ChapterORM.id == cid)
@@ -179,18 +207,22 @@ class SQLiteChapterRepository:
 
     async def list_chapters(
         self,
-        project_id: int,
-        volume_id: int | uuid.UUID | None = None,
+        project_id: uuid.UUID,
+        volume_id: uuid.UUID | None = None,
         status: ChapterStatus | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[Chapter], int]:
         # #1162: 嵌套 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
         # （128 位 int 绑定会抛 OverflowError → 500，须与 repo.get 同口径）
-        vid = uuid_to_pk_or_none(volume_id)
+        # #1291：入参收窄为 uuid.UUID，归一统一经 require_uuid_pk。
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        vid = require_uuid_pk(volume_id)
         if volume_id is not None and vid is None:
             return [], 0
-        base = select(ChapterORM).where(ChapterORM.project_id == project_id)
+        base = select(ChapterORM).where(ChapterORM.project_id == pid)
         if vid is not None:
             base = base.where(ChapterORM.volume_id == vid)
         if status is not None:
@@ -245,7 +277,7 @@ class SQLiteChapterRepository:
         result = await self._session.execute(select(ChapterORM).where(ChapterORM.id == ch_id))
         return _chapter_orm_to_domain(result.scalar_one())
 
-    async def delete_chapter(self, chapter_id: int) -> bool:
+    async def delete_chapter(self, chapter_id: uuid.UUID) -> bool:
         """物理删除章节（先显式清理 6 处引用，foreign_keys=OFF 下不依赖 FK）.
 
         F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
@@ -254,24 +286,25 @@ class SQLiteChapterRepository:
         ② audit_logs / chapter_summaries 级联删除
         ③ agent_runs / drafts chapter_id（String(36) uuid 字符串）→ NULL
         """
-        result = await self._session.execute(select(ChapterORM).where(ChapterORM.id == chapter_id))
+        cid = require_uuid_pk(chapter_id)
+        if cid is None:
+            return False
+        result = await self._session.execute(select(ChapterORM).where(ChapterORM.id == cid))
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
-        ch_uuid_str = str(uuid.UUID(int=chapter_id))
+        ch_uuid_str = str(chapter_id)
         await self._session.execute(
-            sa_update(OutlineORM).where(OutlineORM.chapter_id == chapter_id).values(chapter_id=None)
+            sa_update(OutlineORM).where(OutlineORM.chapter_id == cid).values(chapter_id=None)
         )
         await self._session.execute(
             sa_update(TimelineEventORM)
-            .where(TimelineEventORM.source_chapter_id == chapter_id)
+            .where(TimelineEventORM.source_chapter_id == cid)
             .values(source_chapter_id=None)
         )
+        await self._session.execute(sa_delete(AuditLogORM).where(AuditLogORM.chapter_id == cid))
         await self._session.execute(
-            sa_delete(AuditLogORM).where(AuditLogORM.chapter_id == chapter_id)
-        )
-        await self._session.execute(
-            sa_delete(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == chapter_id)
+            sa_delete(ChapterSummaryORM).where(ChapterSummaryORM.chapter_id == cid)
         )
         await self._session.execute(
             sa_update(AgentRunORM)
@@ -285,33 +318,55 @@ class SQLiteChapterRepository:
         await self._session.commit()
         return True
 
-    async def move_chapter(self, chapter_id: int, target_volume_id: int | None) -> Chapter | None:
+    async def move_chapter(
+        self, chapter_id: uuid.UUID, target_volume_id: uuid.UUID | None
+    ) -> Chapter | None:
+        cid = require_uuid_pk(chapter_id)
+        if cid is None:
+            return None
+        tgt = require_uuid_pk(target_volume_id)
+        if target_volume_id is not None and tgt is None:
+            return None
         await self._session.execute(
             sa_update(ChapterORM)
-            .where(ChapterORM.id == chapter_id)
-            .values(volume_id=target_volume_id, updated_at=_utcnow())
+            .where(ChapterORM.id == cid)
+            .values(volume_id=tgt, updated_at=_utcnow())
         )
         await self._session.commit()
-        result = await self._session.execute(select(ChapterORM).where(ChapterORM.id == chapter_id))
+        result = await self._session.execute(select(ChapterORM).where(ChapterORM.id == cid))
         orm = result.scalar_one_or_none()
         return _chapter_orm_to_domain(orm) if orm else None
 
-    async def get_next_chapter_order(self, project_id: int, volume_id: int | None = None) -> float:
-        base = select(func.max(ChapterORM.order_index)).where(ChapterORM.project_id == project_id)
+    async def get_next_chapter_order(
+        self, project_id: uuid.UUID, volume_id: uuid.UUID | None = None
+    ) -> float:
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 1.0
+        vid = require_uuid_pk(volume_id)
+        if volume_id is not None and vid is None:
+            return 1.0
+        base = select(func.max(ChapterORM.order_index)).where(ChapterORM.project_id == pid)
         if volume_id is not None:
-            base = base.where(ChapterORM.volume_id == volume_id)
+            base = base.where(ChapterORM.volume_id == vid)
         result = await self._session.execute(base)
         max_order = result.scalar_one()
         return (max_order or 0.0) + 1.0
 
-    async def get_project_word_count(self, project_id: int) -> int:
-        stmt = select(func.sum(ChapterORM.word_count)).where(ChapterORM.project_id == project_id)
+    async def get_project_word_count(self, project_id: uuid.UUID) -> int:
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 0
+        stmt = select(func.sum(ChapterORM.word_count)).where(ChapterORM.project_id == pid)
         result = await self._session.execute(stmt)
         total = result.scalar_one()
         return total or 0
 
-    async def get_volume_word_count(self, volume_id: int) -> int:
-        stmt = select(func.sum(ChapterORM.word_count)).where(ChapterORM.volume_id == volume_id)
+    async def get_volume_word_count(self, volume_id: uuid.UUID) -> int:
+        vid = require_uuid_pk(volume_id)
+        if vid is None:
+            return 0
+        stmt = select(func.sum(ChapterORM.word_count)).where(ChapterORM.volume_id == vid)
         result = await self._session.execute(stmt)
         total = result.scalar_one()
         return total or 0

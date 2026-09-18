@@ -13,6 +13,7 @@ audit_log_repo.py）结构化实现此 Protocol。
 from __future__ import annotations
 
 import builtins
+import uuid
 from datetime import datetime
 from typing import Protocol
 
@@ -37,11 +38,11 @@ class AuditLogRepositoryProtocol(Protocol):
         """
         ...
 
-    async def latest_pending(self, chapter_id: int) -> AuditLog | None:
+    async def latest_pending(self, chapter_id: uuid.UUID) -> AuditLog | None:
         """返回该章最新 pending 审计记录（created_at desc 取最新）.
 
         Args:
-            chapter_id: 章节主键（int）.
+            chapter_id: 章节主键（领域 UUID，见 #1291）.
 
         Returns:
             最新 pending 记录；该章无 pending（已全部确认/从未审计）→ None.
@@ -49,12 +50,12 @@ class AuditLogRepositoryProtocol(Protocol):
         ...
 
     async def confirm(
-        self, log_id: int, *, action: str, note: str, confirmed_at: datetime
+        self, log_id: uuid.UUID, *, action: str, note: str, confirmed_at: datetime
     ) -> AuditLog | None:
         """确认审计记录（action 映射为 status + note + confirmed_at 落库）.
 
         Args:
-            log_id: 审计记录主键（int）.
+            log_id: 审计记录主键（领域 UUID，见 #1291）.
             action: 确认动作（accept→accepted / reject→rejected）.
             note: 确认备注（拒绝原因等）.
             confirmed_at: 确认时间（UTC）.
@@ -65,12 +66,12 @@ class AuditLogRepositoryProtocol(Protocol):
         ...
 
     async def list(
-        self, project_id: int, *, offset: int = 0, limit: int = 20
+        self, project_id: uuid.UUID, *, offset: int = 0, limit: int = 20
     ) -> tuple[builtins.list[AuditLog], int]:
         """按项目分页查询审计记录（created_at desc 最新在前）.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             offset: 分页偏移（默认 0）.
             limit: 每页条数（默认 20）.
 

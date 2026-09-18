@@ -236,7 +236,7 @@ class TestStyleService:
         assert report.warnings == []
         assert report.llm_assessment is None
         mock_analyze.assert_called_once_with("第一章内容。")
-        deps.chapter_repo.get_chapter.assert_awaited_once_with(CID_1.int)
+        deps.chapter_repo.get_chapter.assert_awaited_once_with(CID_1)
 
     async def test_multi_chapter_merged_in_request_order(self, deps: _Deps) -> None:
         """多章模式：按请求顺序合并（章间 "\\n\\n"）、source="chapters:<ids>"、跨章 warning。"""
@@ -252,7 +252,7 @@ class TestStyleService:
         assert mock_analyze.call_args.args[0] == "第一章内容。\n\n第二章内容。"
         assert report.warnings == ["多章节合并分析（单章粒度分析归 Phase 2+）"]
         # 章节按请求顺序读取（仓储层 int id）
-        assert deps.chapter_repo.get_chapter.await_args_list == [call(CID_1.int), call(CID_2.int)]
+        assert deps.chapter_repo.get_chapter.await_args_list == [call(CID_1), call(CID_2)]
 
     async def test_manual_mode_source_and_no_chapter_reads(self, deps: _Deps) -> None:
         """手动模式：source="manual"、不读章节（Mock chapter_repo 未被调用断言）。"""

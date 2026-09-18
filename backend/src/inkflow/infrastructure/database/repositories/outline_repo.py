@@ -30,10 +30,7 @@ from inkflow.infrastructure.database.models.outline import (
     PlotPointORM,
     StoryArcORM,
 )
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -154,13 +151,12 @@ class SQLiteOutlineRepository:
         await self._session.refresh(orm)
         return _outline_orm_to_domain(orm)
 
-    async def get(self, outline_id: int | uuid.UUID) -> Outline | None:
-        """按主键查询大纲。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(outline_id, uuid.UUID):
-            oid = require_uuid_pk(outline_id)
-        else:
-            oid = uuid_to_pk_or_none(outline_id)
+    async def get(self, outline_id: uuid.UUID) -> Outline | None:
+        """按主键查询大纲。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        oid = require_uuid_pk(outline_id)
         if oid is None:
             return None
         stmt = select(OutlineORM).where(OutlineORM.id == oid)
@@ -168,10 +164,13 @@ class SQLiteOutlineRepository:
         orm = result.scalar_one_or_none()
         return _outline_orm_to_domain(orm) if orm else None
 
-    async def get_by_name(self, project_id: int, name: str) -> Outline | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> Outline | None:
         """按项目内大纲名查询大纲."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = select(OutlineORM).where(
-            OutlineORM.project_id == project_id,
+            OutlineORM.project_id == pid,
             OutlineORM.name == name,
         )
         result = await self._session.execute(stmt)
@@ -179,22 +178,26 @@ class SQLiteOutlineRepository:
         return _outline_orm_to_domain(orm) if orm else None
 
     async def get_outline_by_volume(
-        self, volume_id: int, exclude_outline_id: int | None = None
+        self, volume_id: uuid.UUID, exclude_outline_id: uuid.UUID | None = None
     ) -> Outline | None:
         """按 volume_id 查关联卷纲（level=volume）；exclude_outline_id 排除自身."""
+        vid = require_uuid_pk(volume_id)
+        exid = require_uuid_pk(exclude_outline_id)
+        if vid is None or (exclude_outline_id is not None and exid is None):
+            return None
         stmt = select(OutlineORM).where(
-            OutlineORM.volume_id == volume_id,
+            OutlineORM.volume_id == vid,
             OutlineORM.level == "volume",
         )
         if exclude_outline_id is not None:
-            stmt = stmt.where(OutlineORM.id != exclude_outline_id)
+            stmt = stmt.where(OutlineORM.id != exid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _outline_orm_to_domain(orm) if orm else None
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
@@ -210,7 +213,10 @@ class SQLiteOutlineRepository:
         Returns:
             (当前页大纲列表, 符合条件的总记录数).
         """
-        base = select(OutlineORM).where(OutlineORM.project_id == project_id)
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return [], 0
+        base = select(OutlineORM).where(OutlineORM.project_id == pid)
 
         # 搜索: name icontains
         if search:
@@ -274,7 +280,7 @@ class SQLiteOutlineRepository:
             raise ValueError(f"Outline {outline_id} not found after update")
         return _outline_orm_to_domain(orm)
 
-    async def hard_delete(self, outline_id: int) -> bool:
+    async def hard_delete(self, outline_id: uuid.UUID) -> bool:
         """物理删除大纲（先显式置空子大纲 parent_id 并删情节点，foreign_keys=OFF 下不依赖 FK）.
 
         F43 P5（spec §2.10/§5.18）: 生产连接未开 foreign_keys=ON，显式
@@ -282,19 +288,22 @@ class SQLiteOutlineRepository:
         同一事务。情节点按子树（含后代大纲）级联删除——测试契约：删除父
         大纲后直接子大纲 parent_id 置 None 且其情节点行物理消失。
         """
-        stmt = select(OutlineORM).where(OutlineORM.id == outline_id)
+        oid = require_uuid_pk(outline_id)
+        if oid is None:
+            return False
+        stmt = select(OutlineORM).where(OutlineORM.id == oid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
             return False
         # 先收集子树 id（必须早于 parent_id 置空——置空后递归 CTE 断链）
-        subtree = select(OutlineORM.id).where(OutlineORM.id == outline_id).cte(recursive=True)
+        subtree = select(OutlineORM.id).where(OutlineORM.id == oid).cte(recursive=True)
         subtree = subtree.union_all(
             select(OutlineORM.id).where(OutlineORM.parent_id == subtree.c.id)
         )
         subtree_ids = (await self._session.execute(select(subtree.c.id))).scalars().all()
         await self._session.execute(
-            sa_update(OutlineORM).where(OutlineORM.parent_id == outline_id).values(parent_id=None)
+            sa_update(OutlineORM).where(OutlineORM.parent_id == oid).values(parent_id=None)
         )
         if subtree_ids:
             await self._session.execute(
@@ -314,18 +323,24 @@ class SQLiteOutlineRepository:
         await self._session.refresh(orm)
         return _point_orm_to_domain(orm)
 
-    async def get_point(self, point_id: int) -> PlotPoint | None:
+    async def get_point(self, point_id: uuid.UUID) -> PlotPoint | None:
         """按主键查询情节点."""
-        stmt = select(PlotPointORM).where(PlotPointORM.id == point_id)
+        pk = require_uuid_pk(point_id)
+        if pk is None:
+            return None
+        stmt = select(PlotPointORM).where(PlotPointORM.id == pk)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _point_orm_to_domain(orm) if orm else None
 
-    async def list_points(self, outline_id: int) -> builtins.list[PlotPoint]:
+    async def list_points(self, outline_id: uuid.UUID) -> builtins.list[PlotPoint]:
         """列出大纲内全部情节点，按 (position ASC, created_at ASC) 稳定排序."""
+        oid = require_uuid_pk(outline_id)
+        if oid is None:
+            return []
         stmt = (
             select(PlotPointORM)
-            .where(PlotPointORM.outline_id == outline_id)
+            .where(PlotPointORM.outline_id == oid)
             .order_by(
                 PlotPointORM.position.asc(),
                 PlotPointORM.created_at.asc(),
@@ -336,11 +351,14 @@ class SQLiteOutlineRepository:
         orms = result.scalars().all()
         return [_point_orm_to_domain(o) for o in orms]
 
-    async def list_points_by_arc(self, arc_id: int) -> builtins.list[PlotPoint]:
+    async def list_points_by_arc(self, arc_id: uuid.UUID) -> builtins.list[PlotPoint]:
         """列出挂载到指定弧线的全部情节点，按 position ASC 排序."""
+        aid = require_uuid_pk(arc_id)
+        if aid is None:
+            return []
         stmt = (
             select(PlotPointORM)
-            .where(PlotPointORM.arc_id == arc_id)
+            .where(PlotPointORM.arc_id == aid)
             .order_by(
                 PlotPointORM.position.asc(),
                 PlotPointORM.created_at.asc(),
@@ -351,13 +369,16 @@ class SQLiteOutlineRepository:
         orms = result.scalars().all()
         return [_point_orm_to_domain(o) for o in orms]
 
-    async def next_position(self, outline_id: int) -> int:
+    async def next_position(self, outline_id: uuid.UUID) -> int:
         """计算大纲内下一个排序位置：max(position)+1（无情节点时 = 1）.
 
         计算 max(position)+1。
         """
+        oid = require_uuid_pk(outline_id)
+        if oid is None:
+            return 0
         stmt = select(func.coalesce(func.max(PlotPointORM.position), 0) + 1).where(
-            PlotPointORM.outline_id == outline_id,
+            PlotPointORM.outline_id == oid,
         )
         result = await self._session.execute(stmt)
         return result.scalar_one()
@@ -390,9 +411,12 @@ class SQLiteOutlineRepository:
             raise ValueError(f"PlotPoint {point_id} not found after update")
         return _point_orm_to_domain(orm)
 
-    async def hard_delete_point(self, point_id: int) -> bool:
+    async def hard_delete_point(self, point_id: uuid.UUID) -> bool:
         """物理删除情节点（v1.1 默认真删语义）."""
-        stmt = select(PlotPointORM).where(PlotPointORM.id == point_id)
+        pk = require_uuid_pk(point_id)
+        if pk is None:
+            return False
+        stmt = select(PlotPointORM).where(PlotPointORM.id == pk)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:
@@ -401,14 +425,17 @@ class SQLiteOutlineRepository:
         await self._session.commit()
         return True
 
-    async def clear_arc_of_points(self, arc_id: int) -> None:
+    async def clear_arc_of_points(self, arc_id: uuid.UUID) -> None:
         """弧线删除时把成员情节点的 arc_id 置 NULL（不级联删情节点）.
 
         内部执行 UPDATE 并 commit（与调用方 pending 变更同一事务）。
         """
+        aid = require_uuid_pk(arc_id)
+        if aid is None:
+            return
         await self._session.execute(
             sa_update(PlotPointORM)
-            .where(PlotPointORM.arc_id == arc_id)
+            .where(PlotPointORM.arc_id == aid)
             .values(arc_id=None, updated_at=_utcnow())
         )
         await self._session.commit()
@@ -423,9 +450,9 @@ class SQLiteOutlineRepository:
         await self._session.refresh(orm)
         return _arc_orm_to_domain(orm)
 
-    async def get_arc(self, arc_id: int | uuid.UUID) -> StoryArc | None:
+    async def get_arc(self, arc_id: uuid.UUID) -> StoryArc | None:
         """按主键查询故事弧线。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        aid = uuid_to_pk_or_none(arc_id)
+        aid = require_uuid_pk(arc_id)
         if aid is None:
             return None
         stmt = select(StoryArcORM).where(StoryArcORM.id == aid)
@@ -433,21 +460,27 @@ class SQLiteOutlineRepository:
         orm = result.scalar_one_or_none()
         return _arc_orm_to_domain(orm) if orm else None
 
-    async def get_arc_by_name(self, project_id: int, name: str) -> StoryArc | None:
+    async def get_arc_by_name(self, project_id: uuid.UUID, name: str) -> StoryArc | None:
         """按项目内弧线名查询故事弧线."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = select(StoryArcORM).where(
-            StoryArcORM.project_id == project_id,
+            StoryArcORM.project_id == pid,
             StoryArcORM.name == name,
         )
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _arc_orm_to_domain(orm) if orm else None
 
-    async def list_arcs(self, project_id: int) -> builtins.list[StoryArc]:
+    async def list_arcs(self, project_id: uuid.UUID) -> builtins.list[StoryArc]:
         """查询项目内全部故事弧线，按 name 升序."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(StoryArcORM)
-            .where(StoryArcORM.project_id == project_id)
+            .where(StoryArcORM.project_id == pid)
             .order_by(StoryArcORM.name.asc(), StoryArcORM.id.asc())
         )
         result = await self._session.execute(stmt)
@@ -478,9 +511,12 @@ class SQLiteOutlineRepository:
             raise ValueError(f"StoryArc {arc_id} not found after update")
         return _arc_orm_to_domain(orm)
 
-    async def hard_delete_arc(self, arc_id: int) -> bool:
+    async def hard_delete_arc(self, arc_id: uuid.UUID) -> bool:
         """物理删除故事弧线（成员情节点 arc_id 由 DB FK SET NULL 置空，v1.1 默认真删语义）."""
-        stmt = select(StoryArcORM).where(StoryArcORM.id == arc_id)
+        aid = require_uuid_pk(arc_id)
+        if aid is None:
+            return False
+        stmt = select(StoryArcORM).where(StoryArcORM.id == aid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:

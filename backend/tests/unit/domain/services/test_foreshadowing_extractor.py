@@ -37,7 +37,6 @@ from inkflow.domain.services._foreshadowing_extractor import (
     ForeshadowingExtractor,
     _extract_json_fragment,
     _first_error,
-    _to_int_id,
 )
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -360,11 +359,7 @@ class TestForeshadowingExtractor:
 
 
 class TestForeshadowingExtractorHelpers:
-    """模块级纯函数测试（_to_int_id / _first_error）。"""
-
-    def test_to_int_id_passthrough_for_int(self) -> None:
-        """int 输入原样返回（非 UUID 分支）。"""
-        assert _to_int_id(42) == 42
+    """模块级纯函数测试（_first_error）。"""
 
     def test_first_error_with_empty_errors_returns_str(self) -> None:
         """errors() 为空 → 回退 str(err)。"""

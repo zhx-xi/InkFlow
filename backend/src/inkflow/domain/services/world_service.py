@@ -2,7 +2,7 @@
 
 职责（spec §7/§9）:
 - 条目 CRUD 编排：委托 WorldRepositoryProtocol，负责领域层
-  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_int_id` 模式）
+  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_uuid` 模式）
 - 业务校验（422 语义，抛 WorldServiceError 子类）: 同名活动条目
 - 资源不存在（404 语义）: 多数方法返回 None 由 router 层转 404
 - AI 提取入口（§5.1 步骤 ①）: 校验项目存在并取 project.config.model 作为
@@ -60,10 +60,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）."""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -87,7 +87,7 @@ class WorldService:
         repository: WorldRepositoryProtocol,
         extractor: WorldExtractor | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
-        location_cleanup: Callable[[list[int]], Awaitable[None]] | None = None,
+        location_cleanup: Callable[[list[uuid.UUID]], Awaitable[None]] | None = None,
         llm_default_model: str | None = None,
     ) -> None:
         self._repo = repository
@@ -154,8 +154,8 @@ class WorldService:
         """
         # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
         await self._ensure_project(project_id)
-        pid_int = _to_int_id(project_id)
-        parent_int = _to_int_id(parent_id) if parent_id is not None else None
+        pid_int = _to_uuid(project_id)
+        parent_int = _to_uuid(parent_id) if parent_id is not None else None
         # #834 前置校验：根世界单例 + 先建根
         has_root = await self.has_root_setting(project_id)
         category_stripped = category.strip() if category else ""
@@ -169,7 +169,7 @@ class WorldService:
             # ① 父存在 + 同项目（repo.get 真删语义下不存在即无记录）
             assert parent_id is not None  # parent_int 非 None ⇒ parent_id 非 None
             parent = await self._repo.get(parent_id)
-            if parent is None or _to_int_id(parent.project_id) != pid_int:
+            if parent is None or _to_uuid(parent.project_id) != pid_int:
                 raise WorldParentNotFoundError()
         # #834 分类前置：带 category 条目须先创建该分类
         if (
@@ -236,7 +236,7 @@ class WorldService:
         Returns:
             (当前页条目列表, 符合条件的总记录数).
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404（world_repo.list 自带 128 位 int 守卫，
         # 故本条无溢出缺口；§3.2 特例，repo 层不动）
         project_repo = self._project_repo
@@ -250,7 +250,7 @@ class WorldService:
             sort_desc=sort_desc,
             offset=offset,
             limit=limit,
-            parent_id=_to_int_id(parent_id) if parent_id is not None else None,
+            parent_id=_to_uuid(parent_id) if parent_id is not None else None,
             top_level_only=top_level_only,
         )
 
@@ -263,7 +263,7 @@ class WorldService:
         Returns:
             (类别, 条目数) 列表，按计数降序、类别名升序.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到聚合 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
         project_repo = self._project_repo
@@ -276,7 +276,7 @@ class WorldService:
 
         #567 单例校验：创建根条目前判重。repo.list top_level_only=True limit=1 判空。
         """
-        roots, _ = await self._repo.list(_to_int_id(project_id), top_level_only=True, limit=1)
+        roots, _ = await self._repo.list(_to_uuid(project_id), top_level_only=True, limit=1)
         return len(roots) > 0
 
     async def get_root_setting(self, project_id: int | uuid.UUID) -> WorldSetting | None:
@@ -285,7 +285,7 @@ class WorldService:
         #641：create_world_setting 对 body 无 parent_id 时先取根——有根则自动挂根，
         无根则建根（保留一项目一根硬语义）。repo.list top_level_only=True limit=1 取根。
         """
-        roots, _ = await self._repo.list(_to_int_id(project_id), top_level_only=True, limit=1)
+        roots, _ = await self._repo.list(_to_uuid(project_id), top_level_only=True, limit=1)
         return roots[0] if roots else None
 
     async def update_setting(
@@ -305,7 +305,7 @@ class WorldService:
         Returns:
             更新后的完整 WorldSetting；条目不存在返回 None（router 转 404）.
         """
-        sid = _to_int_id(setting_id)
+        sid = _to_uuid(setting_id)
         existing = await self._repo.get(setting_id)
         if existing is None:
             return None
@@ -315,18 +315,18 @@ class WorldService:
             and update.name is not None
             and existing.parent_id is None
         ):
-            dup_legacy = await self._repo.get_by_name(_to_int_id(existing.project_id), update.name)
+            dup_legacy = await self._repo.get_by_name(_to_uuid(existing.project_id), update.name)
             if dup_legacy is not None and dup_legacy.id != existing.id:
                 raise WorldNameConflictError()
         # 改名同级同名校验（F35: 按同级语义，含顶层）
         if "name" in update.model_fields_set and update.name is not None:
             target_parent_int = (
-                _to_int_id(update.parent_id)
+                _to_uuid(update.parent_id)
                 if "parent_id" in update.model_fields_set and update.parent_id is not None
-                else (_to_int_id(existing.parent_id) if existing.parent_id is not None else None)
+                else (_to_uuid(existing.parent_id) if existing.parent_id is not None else None)
             )
             dup = await self._repo.get_by_parent_and_name(
-                _to_int_id(existing.project_id), target_parent_int, update.name
+                _to_uuid(existing.project_id), target_parent_int, update.name
             )
             if dup is not None and dup.id != existing.id:
                 raise WorldNameConflictError()
@@ -336,7 +336,7 @@ class WorldService:
             updates["parent_id"] = update.parent_id  # 可能为 None（置顶）
         # F35: 改挂/置顶前校验（父存在/循环/同级同名）——只有 parent_id 变化才需要
         if "parent_id" in update.model_fields_set:
-            new_parent_int = _to_int_id(update.parent_id) if update.parent_id is not None else None
+            new_parent_int = _to_uuid(update.parent_id) if update.parent_id is not None else None
             existing_is_root = existing.parent_id is None
             # #847 更新根守卫：非根置顶 → 第二根（new_parent=None，无循环风险，置于前置）
             if (
@@ -348,9 +348,7 @@ class WorldService:
             if update.parent_id is not None:
                 # 父存在 + 同项目
                 parent = await self._repo.get(update.parent_id)
-                if parent is None or _to_int_id(parent.project_id) != _to_int_id(
-                    existing.project_id
-                ):
+                if parent is None or _to_uuid(parent.project_id) != _to_uuid(existing.project_id):
                     raise WorldParentNotFoundError()
             # 循环防护（spec §5.2）
             await self._assert_no_cycle(sid, new_parent_int)
@@ -363,7 +361,7 @@ class WorldService:
             else:
                 new_name = existing.name
             dup2 = await self._repo.get_by_parent_and_name(
-                _to_int_id(existing.project_id), new_parent_int, new_name
+                _to_uuid(existing.project_id), new_parent_int, new_name
             )
             if dup2 is not None and dup2.id != existing.id:
                 raise WorldNameConflictError()
@@ -404,21 +402,22 @@ class WorldService:
             WorldChildrenActionRequiredError: 有子地点且未指定 cascade/reparent_to.
             WorldReparentTargetError: reparent 目标不存在/跨项目/是自身子树.
         """
-        sid = _to_int_id(setting_id)
+        sid = _to_uuid(setting_id)
         # 解析条目所在项目（查子/reparent 校验用；缺失时删除由 repo 返回 False 兜底——
         # 测试契约要求 cascade/reparent 路径不做存在性闸门）
         existing = await self._repo.get(setting_id)
-        project_int = _to_int_id(existing.project_id) if existing is not None else 0
+        # #1291：项目过滤值为领域 UUID；实体缺失（无存在性闸门分支）用零值 UUID 占位
+        project_scope = existing.project_id if existing is not None else uuid.UUID(int=0)
         existing_project_id: uuid.UUID | None = (
             existing.project_id if existing is not None else None
         )
         deleted: bool
         # 判断是否有直接子地点（repo.list parent_id 过滤）
-        children, _ = await self._repo.list(project_int, parent_id=sid, limit=1)
+        children, _ = await self._repo.list(project_scope, parent_id=sid, limit=1)
         if cascade:
             logger.info("级联真删世界观地点子树: setting_id=%s", setting_id)
             subtree = await self._repo.list_descendants(sid)
-            ids = [s.id.int for s in subtree] if subtree else [sid]
+            ids = [s.id for s in subtree] if subtree else [sid]
             await self._repo.hard_delete_many(ids)
             await self._notify_location_cleanup(ids)
             if existing_project_id is None:
@@ -430,25 +429,26 @@ class WorldService:
             await publish_change("world_setting", "delete", setting_id, existing_project_id)
             return True
         if reparent_to is not None:
-            target_int = _to_int_id(reparent_to)
+            target_uuid = _to_uuid(reparent_to)
             # reparent 目标校验（存在/同项目/非自身子树 → WorldReparentTargetError）
-            target = await self._repo.get(reparent_to)
+            target = await self._repo.get(target_uuid)
             if target is None:
                 raise WorldReparentTargetError()
             # 同项目校验：以直接子所在项目为准（数据隔离保证子与自身同项目）
             ref_project_int = (
-                _to_int_id(children[0].project_id)
+                _to_uuid(children[0].project_id)
                 if children
-                else (_to_int_id(existing.project_id) if existing is not None else None)
+                else (_to_uuid(existing.project_id) if existing is not None else None)
             )
-            if ref_project_int is not None and _to_int_id(target.project_id) != ref_project_int:
+            if ref_project_int is not None and _to_uuid(target.project_id) != ref_project_int:
                 raise WorldReparentTargetError()
             subtree = await self._repo.list_descendants(sid)
-            if target_int in [s.id.int for s in subtree]:
+            # #1291：子树成员与目标现均为领域 UUID —— 直接按 UUID 比对
+            if target_uuid in [s.id for s in subtree]:
                 raise WorldReparentTargetError()
             logger.info("reparent 真删世界观条目: setting_id=%s → %s", setting_id, reparent_to)
             await self._notify_location_cleanup([sid])
-            deleted = await self._repo.delete_with_reparent(sid, target_int)
+            deleted = await self._repo.delete_with_reparent(sid, target_uuid)
             if deleted:
                 if existing_project_id is None:
                     logger.warning(
@@ -473,7 +473,7 @@ class WorldService:
             await publish_change("world_setting", "delete", setting_id, existing_project_id)
         return deleted
 
-    async def _notify_location_cleanup(self, ids: list[int]) -> None:
+    async def _notify_location_cleanup(self, ids: list[uuid.UUID]) -> None:
         """调用地点硬删钩子（F36 D10=b）；失败仅 log warning 不阻断主流程."""
         if self._location_cleanup is None:
             return
@@ -577,12 +577,12 @@ class WorldService:
         chain: list[WorldSetting] = [setting]
         current = setting
         # 逐级上溯（祖先链深度有限，应用层遍历；与 repo.collect_ancestor_ids 语义一致）
-        seen: set[int] = set()
+        seen: set[uuid.UUID] = set()
         while current.parent_id is not None:
-            parent_int = _to_int_id(current.parent_id)
-            if parent_int in seen:
+            parent_id = current.parent_id
+            if parent_id in seen:
                 break  # 防御：数据异常成环时截断
-            seen.add(parent_int)
+            seen.add(parent_id)
             parent = await self._repo.get(current.parent_id)
             if parent is None:
                 break  # 父不存在 → 链在此截断
@@ -604,20 +604,26 @@ class WorldService:
         Raises:
             WorldNotFoundError: 条目不存在（router 转 404）.
         """
-        sid = _to_int_id(setting_id)
+        sid = _to_uuid(setting_id)
         subtree = await self._repo.list_descendants(sid)
         if not subtree and await self._repo.get(setting_id) is None:
             raise WorldNotFoundError()
         return subtree
 
-    async def _assert_no_cycle(self, pid_int: int, new_parent_id: int | None) -> None:
-        """校验 new_parent_id 不是 self 或其子孙（spec §5.2，O(depth)）."""
+    async def _assert_no_cycle(
+        self, setting_id: uuid.UUID, new_parent_id: uuid.UUID | None
+    ) -> None:
+        """校验 new_parent_id 不是 self 或其子孙（spec §5.2，O(depth)）.
+
+        #1291：入参为领域 UUID；repo.collect_ancestor_ids 返回 ORM 物理 int 主键，
+        故比对时以 `.int` 归一到同一 int 空间。
+        """
         if new_parent_id is None:
             return
-        if new_parent_id == pid_int:
+        if new_parent_id == setting_id:
             raise WorldCycleError()
         ancestor_ids = await self._repo.collect_ancestor_ids(new_parent_id)
-        if pid_int in ancestor_ids:
+        if setting_id.int in ancestor_ids:
             raise WorldCycleError()
 
     # ── AI 提取入口（spec §5.1 步骤 ①）────────────────────────────

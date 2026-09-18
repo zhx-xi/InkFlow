@@ -161,7 +161,7 @@ class TestKnowledgeRelationRepository:
         assert orm.relation_type == "属于"
         assert orm.source == "manual"
 
-        got = await repo.get(saved.id.int)
+        got = await repo.get(saved.id)
         assert got is not None
         assert got.id == saved.id
         assert got.source_id == src
@@ -172,7 +172,7 @@ class TestKnowledgeRelationRepository:
     async def test_get_returns_none_for_missing(self, db_session, project):
         """get 对不存在的 id 返回 None."""
         repo = SQLiteKnowledgeRelationRepository(db_session)
-        assert await repo.get(99999) is None
+        assert await repo.get(uuid.uuid4()) is None
 
     async def test_get_by_key_hit_miss(self, db_session, project):
         """get_by_key 六元组精确命中；改任一维度/跨项目均 miss."""
@@ -181,15 +181,18 @@ class TestKnowledgeRelationRepository:
         tgt = uuid.UUID(int=104)
         r = await repo.add(_rel(project, source_id=src, target_id=tgt, relation_type="属于"))
 
-        hit = await repo.get_by_key(project.id, "character", src.int, "world", tgt.int, "属于")
+        hit = await repo.get_by_key(
+            uuid.UUID(int=project.id), "character", src, "world", tgt, "属于"
+        )
         assert hit is not None and hit.id == r.id
 
         assert (
-            await repo.get_by_key(project.id, "character", src.int, "world", tgt.int, "宿敌")
+            await repo.get_by_key(uuid.UUID(int=project.id), "character", src, "world", tgt, "宿敌")
             is None
         )
         assert (
-            await repo.get_by_key(project.id, "outline", src.int, "world", tgt.int, "属于") is None
+            await repo.get_by_key(uuid.UUID(int=project.id), "outline", src, "world", tgt, "属于")
+            is None
         )
 
         # 跨项目 miss
@@ -198,7 +201,8 @@ class TestKnowledgeRelationRepository:
         await db_session.commit()
         await db_session.refresh(other)
         assert (
-            await repo.get_by_key(other.id, "character", src.int, "world", tgt.int, "属于") is None
+            await repo.get_by_key(uuid.UUID(int=other.id), "character", src, "world", tgt, "属于")
+            is None
         )
 
     # ── list（created_at DESC）与分页 ──
@@ -234,7 +238,7 @@ class TestKnowledgeRelationRepository:
             )
         )
 
-        rels, total = await repo.list(project.id)
+        rels, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 3
         assert [r.id for r in rels] == [new.id, mid.id, old.id]
 
@@ -254,7 +258,7 @@ class TestKnowledgeRelationRepository:
             )
             ids.append(r.id)
 
-        page, total = await repo.list(project.id, offset=1, limit=2)
+        page, total = await repo.list(uuid.UUID(int=project.id), offset=1, limit=2)
         assert total == 5
         assert [r.id for r in page] == [ids[3], ids[2]]  # DESC 分页
 
@@ -281,7 +285,7 @@ class TestKnowledgeRelationRepository:
             )
         )
 
-        rels, total = await repo.filter(project.id, source_type="character")
+        rels, total = await repo.filter(uuid.UUID(int=project.id), source_type="character")
         assert total == 1
         assert [r.id for r in rels] == [c.id]
 
@@ -307,7 +311,9 @@ class TestKnowledgeRelationRepository:
             )
         )
 
-        rels, total = await repo.filter(project.id, target_type="outline", relation_type="参与")
+        rels, total = await repo.filter(
+            uuid.UUID(int=project.id), target_type="outline", relation_type="参与"
+        )
         assert total == 1
         assert [r.id for r in rels] == [hit.id]
 
@@ -332,9 +338,9 @@ class TestKnowledgeRelationRepository:
             )
         )
 
-        m, m_total = await repo.filter(project.id, source="manual")
+        m, m_total = await repo.filter(uuid.UUID(int=project.id), source="manual")
         assert m_total == 1 and m[0].id == manual.id
-        a, a_total = await repo.filter(project.id, source="ai")
+        a, a_total = await repo.filter(uuid.UUID(int=project.id), source="ai")
         assert a_total == 1 and a[0].id == ai.id
 
     async def test_filter_combined_with_pagination(self, db_session, project):
@@ -350,7 +356,9 @@ class TestKnowledgeRelationRepository:
                     created_at=datetime(2026, 1, 1 + i, 0, 0, 0, tzinfo=UTC),
                 )
             )
-        rels, total = await repo.filter(project.id, relation_type="师徒", offset=1, limit=1)
+        rels, total = await repo.filter(
+            uuid.UUID(int=project.id), relation_type="师徒", offset=1, limit=1
+        )
         assert total == 3
         assert len(rels) == 1
 
@@ -387,7 +395,7 @@ class TestKnowledgeRelationRepository:
         assert updated.description == "新说明"
         assert updated.source == RelationSource.MANUAL  # source 不可经 update 变更
 
-        got = await repo.get(r.id.int)
+        got = await repo.get(r.id)
         assert got is not None
         assert got.target_id == new_tgt
         assert got.relation_type == "出身"
@@ -406,11 +414,11 @@ class TestKnowledgeRelationRepository:
             )
         )
 
-        assert await repo.delete(r.id.int) is True
+        assert await repo.delete(r.id) is True
         count = await db_session.execute(select(func.count()).select_from(KnowledgeRelationORM))
         assert count.scalar_one() == 0
-        assert await repo.get(r.id.int) is None
-        assert await repo.delete(r.id.int) is False
+        assert await repo.get(r.id) is None
+        assert await repo.delete(r.id) is False
 
     async def test_table_has_no_is_deleted_column(self, db_session, project):
         """M1 验收: knowledge_relations 表存在且无 is_deleted 列（真删语义，§2.1 规则 7）."""
@@ -480,7 +488,7 @@ class TestKnowledgeRelationRepository:
             )
         )
 
-        rows = await repo.list_by_project(project.id)
+        rows = await repo.list_by_project(uuid.UUID(int=project.id))
         assert {r.id for r in rows} == {r1.id, r2.id}
 
     # ── delete_by_entity / cleanup_for_entity（§5.3 实体硬删级联清理）──
@@ -511,9 +519,9 @@ class TestKnowledgeRelationRepository:
             _rel(project, source_id=other_ent, target_id=uuid.UUID(int=144), relation_type="位于")
         )
 
-        deleted = await repo.delete_by_entity("character", ent.int)
+        deleted = await repo.delete_by_entity("character", ent)
         assert deleted == 2
-        rows, total = await repo.list(project.id)
+        rows, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 1
         assert rows[0].id == keep.id
 
@@ -530,9 +538,9 @@ class TestKnowledgeRelationRepository:
             _rel(project, source_id=ent, target_id=uuid.UUID(int=146), relation_type="属于")
         )
 
-        deleted = await repo.cleanup_for_entity("character", ent.int)
+        deleted = await repo.cleanup_for_entity("character", ent)
         assert deleted == 1
-        _, total = await repo.list(project.id)
+        _, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 0
 
     # ── 项目硬删 → FK 级联（§2.5）──
@@ -701,9 +709,9 @@ class TestKnowledgeRelationRepository:
                     relation_type="属于",
                 )
             )
-            rid = r.id.int
+            rid = r.id
             await s1.commit()  # 前置 add 已持久化——本用例精确锁定 delete 的 commit 缺失
-            assert await repo.delete(rid) is True
+            assert await repo.delete(r.id) is True
         async with factory() as s2:
             row = await s2.execute(
                 select(KnowledgeRelationORM).where(KnowledgeRelationORM.id == rid)
@@ -723,8 +731,9 @@ class TestInt64RangeGuard1106:
         """knowledge_relation_repo.get 超 int64 范围 → None（不抛 OverflowError）。"""
         repo = SQLiteKnowledgeRelationRepository(db_session)
 
-        assert await repo.get(2**63) is None  # 上界外
-        assert await repo.get(-(2**63) - 1) is None  # 下界外
+        # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
+        assert await repo.get(uuid.uuid4()) is None
+        assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
 
 
 # ══ #495 角色关系数据面统一：delete_by_entity / cleanup_for_entity type 过滤 ══
@@ -788,10 +797,10 @@ class TestDeleteByEntityTypeFilter495:
             )
         )
 
-        deleted = await repo.delete_by_entity("character", ent.int)
+        deleted = await repo.delete_by_entity("character", ent)
 
         assert deleted == 2, "只应删 character 类型的两行（source + target 各一）"
-        rows, total = await repo.list(project.id)
+        rows, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 2
         assert {r.source_type for r in rows} == {EntityType.WORLD}
         assert {r.source_id.int for r in rows} == {300, 303}
@@ -819,9 +828,9 @@ class TestDeleteByEntityTypeFilter495:
             )
         )
 
-        deleted = await repo.cleanup_for_entity("character", ent.int)
+        deleted = await repo.cleanup_for_entity("character", ent)
 
         assert deleted == 1
-        rows, total = await repo.list(project.id)
+        rows, total = await repo.list(uuid.UUID(int=project.id))
         assert total == 1
         assert rows[0].source_type == EntityType.WORLD

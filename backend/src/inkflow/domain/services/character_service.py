@@ -2,7 +2,7 @@
 
 职责（spec §7/§9）:
 - 角色/分组/关系 CRUD 编排：委托 CharacterRepositoryProtocol，负责领域层
-  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_int_id` 模式）
+  UUID ↔ 仓储层 int 转换（沿用 F1 `_to_uuid` 模式）
 - 业务校验（422 语义，抛 CharacterServiceError 子类）: 同名活动角色/分组、
   分组跨项目、关系自环、关系跨项目、重复关系
 - 资源不存在（404 语义）: 多数方法返回 None 由 router 层转 404；
@@ -65,10 +65,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）."""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -92,7 +92,7 @@ class CharacterService:
         repository: CharacterRepositoryProtocol,
         extractor: CharacterExtractor | None = None,
         project_repo: ProjectRepositoryProtocol | None = None,
-        map_cleanup: Callable[[int], Awaitable[None]] | None = None,
+        map_cleanup: Callable[[uuid.UUID], Awaitable[None]] | None = None,
         llm_default_model: str | None = None,
     ) -> None:
         self._repo = repository
@@ -160,12 +160,12 @@ class CharacterService:
             _validate_role_rank(extra, required=False)
         except ValueError as exc:
             raise CharacterRoleRankError(str(exc)) from exc
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         existing = await self._repo.get_by_name(pid_int, name)
         if existing is not None:
             raise CharacterNameConflictError()
         for gid in group_ids or []:
-            group = await self._repo.get_group(_to_int_id(gid))
+            group = await self._repo.get_group(_to_uuid(gid))
             if group is None or group.project_id != project_id:
                 raise GroupNotInProjectError()
         now = _utcnow()
@@ -206,7 +206,7 @@ class CharacterService:
         Returns:
             (当前页角色列表, 符合条件的总记录数).
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
@@ -215,7 +215,7 @@ class CharacterService:
         return await self._repo.list(
             project_id=pid_int,
             search=search,
-            group_id=_to_int_id(group_id) if group_id is not None else None,
+            group_id=_to_uuid(group_id) if group_id is not None else None,
             sort_by=sort_by,
             sort_desc=sort_desc,
             offset=offset,
@@ -242,12 +242,12 @@ class CharacterService:
         if existing is None:
             return None
         if "name" in update.model_fields_set and update.name is not None:
-            dup = await self._repo.get_by_name(_to_int_id(existing.project_id), update.name)
+            dup = await self._repo.get_by_name(_to_uuid(existing.project_id), update.name)
             if dup is not None and dup.id != existing.id:
                 raise CharacterNameConflictError()
         if "group_ids" in update.model_fields_set and update.group_ids:
             for gid in update.group_ids:
-                group = await self._repo.get_group(_to_int_id(gid))
+                group = await self._repo.get_group(_to_uuid(gid))
                 if group is None or group.project_id != existing.project_id:
                     raise GroupNotInProjectError()
         merge_updates = update.model_dump(exclude_unset=True)
@@ -278,7 +278,7 @@ class CharacterService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        cid = _to_int_id(character_id)
+        cid = _to_uuid(character_id)
         logger.info("真删角色: character_id=%s（关系显式清理 + FK 级联）", character_id)
         deleted = await self._repo.hard_delete(cid)
         if deleted and self._map_cleanup is not None:
@@ -309,11 +309,11 @@ class CharacterService:
             CharacterNotFoundError: 角色不存在（#1139：空列表 ≠ 父不存在，
                 router 转 404「角色不存在」）.
         """
-        cid = _to_int_id(character_id)
+        cid = _to_uuid(character_id)
         character = await self._repo.get(character_id)
         if character is None:
             raise CharacterNotFoundError()
-        return await self._repo.list_relations(_to_int_id(character.project_id), cid)
+        return await self._repo.list_relations(_to_uuid(character.project_id), cid)
 
     async def create_relation(
         self,
@@ -339,8 +339,8 @@ class CharacterService:
             CrossProjectRelationError: 两端角色不属于同一项目.
             RelationConflictError: 同键 (from, to, relation_type) 活动关系已存在.
         """
-        cid = _to_int_id(character_id)
-        tid = _to_int_id(to_character_id)
+        cid = _to_uuid(character_id)
+        tid = _to_uuid(to_character_id)
         if cid == tid:
             raise SelfRelationError()
         from_char = await self._repo.get(character_id)
@@ -391,18 +391,18 @@ class CharacterService:
         Returns:
             更新后的完整 CharacterRelation；关系不存在或不属于该角色返回 None.
         """
-        cid = _to_int_id(character_id)
-        rid = _to_int_id(relation_id)
+        cid = _to_uuid(character_id)
+        rid = _to_uuid(relation_id)
         relation = await self._repo.get_relation(rid)
         if relation is None or (
-            _to_int_id(relation.from_character_id) != cid
-            and _to_int_id(relation.to_character_id) != cid
+            _to_uuid(relation.from_character_id) != cid
+            and _to_uuid(relation.to_character_id) != cid
         ):
             return None
         if relation_type is not None and relation_type != relation.relation_type:
             dup = await self._repo.get_relation_by_key(
-                _to_int_id(relation.from_character_id),
-                _to_int_id(relation.to_character_id),
+                _to_uuid(relation.from_character_id),
+                _to_uuid(relation.to_character_id),
                 relation_type,
             )
             if dup is not None and dup.id != relation.id:
@@ -431,12 +431,12 @@ class CharacterService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        cid = _to_int_id(character_id)
-        rid = _to_int_id(relation_id)
+        cid = _to_uuid(character_id)
+        rid = _to_uuid(relation_id)
         relation = await self._repo.get_relation(rid)
         if relation is None or (
-            _to_int_id(relation.from_character_id) != cid
-            and _to_int_id(relation.to_character_id) != cid
+            _to_uuid(relation.from_character_id) != cid
+            and _to_uuid(relation.to_character_id) != cid
         ):
             return False
         logger.info("真删关系: relation_id=%s", relation_id)
@@ -472,7 +472,7 @@ class CharacterService:
         """
         # #1138: 落库前先校验项目存在（对齐 foreshadowing_service._ensure_project）
         await self._ensure_project(project_id)
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         if any(g.name == name for g in await self._repo.list_groups(pid_int)):
             raise GroupNameConflictError()
         now = _utcnow()
@@ -493,11 +493,11 @@ class CharacterService:
 
     async def get_group(self, group_id: int | uuid.UUID) -> CharacterGroup | None:
         """按主键获取分组；不存在返回 None（router 转 404）."""
-        return await self._repo.get_group(_to_int_id(group_id))
+        return await self._repo.get_group(_to_uuid(group_id))
 
     async def list_groups(self, project_id: uuid.UUID) -> list[CharacterGroup]:
         """查询项目内全部分组（按 sort_order 升序）."""
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
@@ -524,12 +524,12 @@ class CharacterService:
         Returns:
             更新后的完整 CharacterGroup；分组不存在返回 None（router 转 404）.
         """
-        gid = _to_int_id(group_id)
+        gid = _to_uuid(group_id)
         group = await self._repo.get_group(gid)
         if group is None:
             return None
         if name is not None and name != group.name:
-            groups = await self._repo.list_groups(_to_int_id(group.project_id))
+            groups = await self._repo.list_groups(_to_uuid(group.project_id))
             if any(g.name == name and g.id != group.id for g in groups):
                 raise GroupNameConflictError()
         updates: dict[str, object] = {}
@@ -555,7 +555,7 @@ class CharacterService:
         Returns:
             True 表示删除成功；False 表示未找到记录.
         """
-        gid = _to_int_id(group_id)
+        gid = _to_uuid(group_id)
         logger.info("真删分组: group_id=%s（成员 group_id 置 NULL）", group_id)
         deleted = await self._repo.hard_delete_group(gid)
         if deleted:

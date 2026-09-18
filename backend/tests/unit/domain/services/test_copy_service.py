@@ -99,8 +99,6 @@ from inkflow.domain.services.copy_service import WorldCopyService
 SOURCE_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 TARGET_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")
 OTHER_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000003")  # 跨项目校验用
-SOURCE_INT = SOURCE_PID.int
-TARGET_INT = TARGET_PID.int
 TS = datetime(2026, 8, 1, 10, 0, 0)
 
 
@@ -197,7 +195,7 @@ def mock_project_repo() -> MagicMock:
     repo.get = AsyncMock(
         side_effect=lambda pid: (
             SimpleNamespace(id=pid)
-            if pid in (SOURCE_PID, TARGET_PID, SOURCE_INT, TARGET_INT)
+            if pid in (SOURCE_PID, TARGET_PID, SOURCE_PID, TARGET_PID)
             else None
         )
     )
@@ -261,7 +259,7 @@ class TestTreeCopy:
         assert c_new.extra == {"scale": 1.0}
         assert [s.id for s in result.created] == [c_new.id, s_new.id, t_new.id]
         assert result.skipped == []
-        mock_repo.list_all_active.assert_awaited_once_with(SOURCE_INT)
+        mock_repo.list_all_active.assert_awaited_once_with(SOURCE_PID)
         mock_repo.list_descendants.assert_not_awaited()
         assert mock_repo.get_by_parent_and_name.await_count == 3
 
@@ -283,7 +281,7 @@ class TestTreeCopy:
         assert t_new.parent_id == s_new.id
         assert [s.name for s in result.created] == ["青州", "清河县城"]
         mock_repo.get.assert_awaited_once_with(state.id)
-        mock_repo.list_descendants.assert_awaited_once_with(state.id.int)
+        mock_repo.list_descendants.assert_awaited_once_with(state.id)
         mock_repo.list_all_active.assert_not_awaited()
 
     async def test_default_uses_list_all_active(self, service, mock_repo) -> None:
@@ -294,7 +292,7 @@ class TestTreeCopy:
         result = await service.copy(SOURCE_PID, TARGET_PID)
 
         assert [s.name for s in result.created] == ["大越国"]
-        mock_repo.list_all_active.assert_awaited_once_with(SOURCE_INT)
+        mock_repo.list_all_active.assert_awaited_once_with(SOURCE_PID)
         mock_repo.list_descendants.assert_not_awaited()
 
     async def test_root_missing_or_cross_project_raises(self, service, mock_repo) -> None:
@@ -307,18 +305,6 @@ class TestTreeCopy:
             await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=root)
         mock_repo.add.assert_not_awaited()
         mock_repo.list_descendants.assert_not_awaited()
-
-    async def test_copy_accepts_int_ids(self, service, mock_repo) -> None:
-        """int 入参分支（_to_int_id 直通）: copy(SOURCE_INT, TARGET_INT) → 正常复制."""
-        country = _setting("大越国")
-        mock_repo.list_all_active = AsyncMock(return_value=[country])
-
-        result = await service.copy(SOURCE_INT, TARGET_INT)
-
-        assert len(result.created) == 1
-        assert result.created[0].name == "大越国"
-        assert result.created[0].project_id == TARGET_PID  # int target → UUID 落库
-        mock_repo.list_all_active.assert_awaited_once_with(SOURCE_INT)
 
 
 class TestConflictSkip:
@@ -371,9 +357,9 @@ class TestConflictSkip:
 
         calls = mock_repo.get_by_parent_and_name.await_args_list
         assert len(calls) == 2
-        assert calls[0] == call(TARGET_INT, None, "大越国")
+        assert calls[0] == call(TARGET_PID, None, "大越国")
         c_new = mock_repo.add.await_args_list[0].args[0]
-        assert calls[1] == call(TARGET_INT, c_new.id.int, "青州")
+        assert calls[1] == call(TARGET_PID, c_new.id, "青州")
 
 
 class TestMapCopy:
@@ -394,8 +380,8 @@ class TestMapCopy:
         result = await service.copy(SOURCE_PID, TARGET_PID)
 
         loc_call = mock_map_repo.list_by_root_locations.await_args
-        assert loc_call.args[0] == SOURCE_INT
-        assert set(loc_call.args[1]) == {country.id.int, state.id.int, county.id.int}
+        assert loc_call.args[0] == SOURCE_PID
+        assert set(loc_call.args[1]) == {country.id, state.id, county.id}
         assert loc_call.kwargs.get("include_global", True) is not False
         added = mock_map_repo.add.await_args.args[0]
         assert added.project_id == TARGET_PID
@@ -453,8 +439,8 @@ class TestMapCopy:
         await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)
 
         loc_call = mock_map_repo.list_by_root_locations.await_args
-        assert set(loc_call.args[1]) == {state.id.int, county.id.int}
-        assert country.id.int not in loc_call.args[1]
+        assert set(loc_call.args[1]) == {state.id, county.id}
+        assert country.id not in loc_call.args[1]
 
     async def test_pin_remaps_location_in_set(self, service, mock_repo, mock_map_repo) -> None:
         """pin 关联地点在复制集合 → 重挂新地点；label/坐标保留；pins_created 计数."""
@@ -682,8 +668,8 @@ class TestSelfOnlyCopy:
         mock_repo.list_descendants.assert_not_awaited()
         mock_repo.list_all_active.assert_not_awaited()
         loc_call = mock_map_repo.list_by_root_locations.await_args
-        assert set(loc_call.args[1]) == {state.id.int}
-        assert country.id.int not in loc_call.args[1]
+        assert set(loc_call.args[1]) == {state.id}
+        assert country.id not in loc_call.args[1]
 
     async def test_self_only_false_uses_descendants(self, service, mock_repo) -> None:
         """root + self_only=False（显式）→ list_descendants 被调用（既有子树语义不破坏）."""
@@ -698,7 +684,7 @@ class TestSelfOnlyCopy:
         )
 
         assert [s.name for s in result.created] == ["青州", "清河县城"]
-        mock_repo.list_descendants.assert_awaited_once_with(state.id.int)
+        mock_repo.list_descendants.assert_awaited_once_with(state.id)
 
     async def test_self_only_default_uses_descendants(self, service, mock_repo) -> None:
         """不传 self_only（缺省 False）→ 既有子树语义（守护用例，RED 阶段即 PASS）."""
@@ -710,4 +696,4 @@ class TestSelfOnlyCopy:
         result = await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)
 
         assert [s.name for s in result.created] == ["青州"]
-        mock_repo.list_descendants.assert_awaited_once_with(state.id.int)
+        mock_repo.list_descendants.assert_awaited_once_with(state.id)

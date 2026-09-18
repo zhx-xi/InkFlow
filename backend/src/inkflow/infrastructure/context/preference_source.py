@@ -84,7 +84,7 @@ class PreferenceSource:
             注入的 ContextItem 列表；项目缺失 / 未开启 / 无偏好 → []（零行为，
             验收判据④）.
         """
-        project = await self._project_repo.get(project_id.int)  # type: ignore[attr-defined]  # 结构化鸭子类型：ProjectRepositoryProtocol.get(int)
+        project = await self._project_repo.get(project_id)  # type: ignore[attr-defined]  # 结构化鸭子类型：ProjectRepositoryProtocol.get
         if project is None or not project.config.extra.get("memory_learning"):
             return []
 
@@ -112,7 +112,7 @@ class PreferenceSource:
                         pid = uuid.UUID(pid_str)
                     except ValueError:
                         continue
-                    proj = await self._project_repo.get(pid.int)  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
+                    proj = await self._project_repo.get(pid)  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get
                     if proj is None:
                         ghost.append(pid_str)
                 if ghost:

@@ -183,7 +183,7 @@ class TestCharacterCrud:
             project_id=PID, name="林尘", personality="坚韧", background="山村少年", goals="变强"
         )
         assert created.name == "林尘"
-        mock_repo.get_by_name.assert_awaited_once_with(PID.int, "林尘")
+        mock_repo.get_by_name.assert_awaited_once_with(PID, "林尘")
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, Character)
         assert added.project_id == PID
@@ -207,7 +207,7 @@ class TestCharacterCrud:
         group = _group(name="主角团")
         mock_repo.get_group = AsyncMock(return_value=group)
         created = await service.create_character(project_id=PID, name="林尘", group_ids=[group.id])
-        mock_repo.get_group.assert_awaited_once_with(group.id.int)
+        mock_repo.get_group.assert_awaited_once_with(group.id)
         assert created.group_ids == [group.id]
 
     async def test_create_character_with_multiple_groups_success(self, service, mock_repo) -> None:
@@ -273,9 +273,9 @@ class TestCharacterCrud:
         assert items == [char]
         assert total == 1
         kwargs = mock_repo.list.await_args.kwargs
-        assert kwargs["project_id"] == PID.int
+        assert kwargs["project_id"] == PID
         assert kwargs["search"] == "林"
-        assert kwargs["group_id"] == group.id.int
+        assert kwargs["group_id"] == group.id
         assert kwargs["sort_by"] == "name"
         assert kwargs["sort_desc"] is False
         assert kwargs["offset"] == 10
@@ -364,7 +364,7 @@ class TestCharacterCrud:
         char = _char(name="林尘")
         result = await service.delete_character(char.id)
         assert result is True
-        mock_repo.hard_delete.assert_awaited_once_with(char.id.int)
+        mock_repo.hard_delete.assert_awaited_once_with(char.id)
         mock_repo.soft_delete.assert_not_awaited()
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
@@ -386,9 +386,7 @@ class TestRelationCrud:
         assert rel.to_character_id == to_char.id
         assert rel.relation_type == "同伴"
         assert rel.description == "结伴同行"
-        mock_repo.get_relation_by_key.assert_awaited_once_with(
-            from_char.id.int, to_char.id.int, "同伴"
-        )
+        mock_repo.get_relation_by_key.assert_awaited_once_with(from_char.id, to_char.id, "同伴")
         added = mock_repo.add_relation.await_args.args[0]
         assert isinstance(added, CharacterRelation)
         assert added.project_id == PID
@@ -445,7 +443,7 @@ class TestRelationCrud:
 
         result = await service.list_relations(from_char.id)
         assert result == [rel]
-        mock_repo.list_relations.assert_awaited_once_with(PID.int, from_char.id.int)
+        mock_repo.list_relations.assert_awaited_once_with(PID, from_char.id)
 
         # #1139: 角色不存在 → 抛 CharacterNotFoundError（router 转 404），
         # 不得返回空列表（空列表 = 「角色存在但无关系」，语义不同）
@@ -472,9 +470,7 @@ class TestRelationCrud:
         assert merged.to_character_id == to_char.id
         assert merged.relation_type == "宿敌"
         assert merged.description == "新描述"
-        mock_repo.get_relation_by_key.assert_awaited_once_with(
-            from_char.id.int, to_char.id.int, "宿敌"
-        )
+        mock_repo.get_relation_by_key.assert_awaited_once_with(from_char.id, to_char.id, "宿敌")
         assert result == merged
 
         # 关系缺失或不属于该角色 → None（router 层转 404）
@@ -494,7 +490,7 @@ class TestRelationCrud:
 
         result = await service.delete_relation(from_char.id, rel.id)
         assert result is True
-        mock_repo.hard_delete_relation.assert_awaited_once_with(rel.id.int)
+        mock_repo.hard_delete_relation.assert_awaited_once_with(rel.id)
         mock_repo.soft_delete_relation.assert_not_awaited()
 
         mock_repo.get_relation = AsyncMock(return_value=None)
@@ -529,7 +525,7 @@ class TestGroupCrud:
         group = _group(name="主角团")
         mock_repo.get_group = AsyncMock(return_value=group)
         assert await service.get_group(group.id) == group
-        mock_repo.get_group.assert_awaited_once_with(group.id.int)
+        mock_repo.get_group.assert_awaited_once_with(group.id)
 
         mock_repo.get_group = AsyncMock(return_value=None)
         assert await service.get_group(uuid.uuid4()) is None
@@ -537,7 +533,7 @@ class TestGroupCrud:
         mock_repo.list_groups = AsyncMock(return_value=[group])
         result = await service.list_groups(PID)
         assert result == [group]
-        mock_repo.list_groups.assert_awaited_once_with(PID.int)
+        mock_repo.list_groups.assert_awaited_once_with(PID)
 
     async def test_update_group_merges_fields(self, service, mock_repo) -> None:
         """更新分组：仅覆盖传入字段；改名为已有分组名 → 冲突；缺失 → None。"""
@@ -569,7 +565,7 @@ class TestGroupCrud:
         group = _group(name="主角团")
         result = await service.delete_group(group.id)
         assert result is True
-        mock_repo.hard_delete_group.assert_awaited_once_with(group.id.int)
+        mock_repo.hard_delete_group.assert_awaited_once_with(group.id)
         mock_repo.soft_delete_group.assert_not_awaited()
 
         mock_repo.hard_delete_group = AsyncMock(return_value=False)
@@ -682,7 +678,7 @@ class TestUpdateCharacterGroup:
         assert updated is not None
         merged = mock_repo.update.await_args.args[0]
         assert merged.group_ids == [group.id]
-        mock_repo.get_group.assert_awaited_once_with(group.id.int)
+        mock_repo.get_group.assert_awaited_once_with(group.id)
 
     async def test_update_character_replaces_group_ids_wholesale(self, service, mock_repo) -> None:
         """全量替换：原有多分组 → 更新为另一分组集合（旧分组不再保留）。"""
@@ -698,7 +694,7 @@ class TestUpdateCharacterGroup:
         assert updated is not None
         merged = mock_repo.update.await_args.args[0]
         assert merged.group_ids == [g_new.id]  # 全量替换，不含 g_old
-        mock_repo.get_group.assert_awaited_once_with(g_new.id.int)
+        mock_repo.get_group.assert_awaited_once_with(g_new.id)
 
     async def test_update_character_group_ids_none_means_no_change(
         self, service, mock_repo
@@ -875,7 +871,7 @@ class TestP5DeleteCharacterTriggersMapCleanup:
         map_cleanup.assert_awaited_once()
         # 钩子接收角色 int id（map_pins.ref_id 为 int 主键）
         call = map_cleanup.await_args
-        assert call is not None and call.args[0] == char.id.int
+        assert call is not None and call.args[0] == char.id
 
     async def test_delete_character_missing_skips_map_cleanup(
         self, mock_repo, mock_project_repo, mock_extractor

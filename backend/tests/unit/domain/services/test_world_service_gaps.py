@@ -53,7 +53,7 @@ async def test_get_root_setting_returns_first_root(service) -> None:
     result = await service.get_root_setting(PID)
 
     assert result is root
-    repo.list.assert_awaited_once_with(PID.int, top_level_only=True, limit=1)
+    repo.list.assert_awaited_once_with(PID, top_level_only=True, limit=1)
 
 
 async def test_get_root_setting_none_when_no_root(service) -> None:

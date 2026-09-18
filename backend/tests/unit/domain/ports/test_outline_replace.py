@@ -496,8 +496,8 @@ class TestConfirmReplace:
         assert all(p.arc_id == existing_arc.id for p in result["plot_points"])
         mock_repo.add_arc.assert_not_awaited()  # 弧线按名复用，不新建
         assert [c.args[0] for c in mock_repo.hard_delete_point.await_args_list] == [
-            OLD1.int,
-            OLD2.int,
+            OLD1,
+            OLD2,
         ]  # 逐点物理删除旧情节点
         mock_repo.update.assert_awaited_once()
         updated = mock_repo.update.await_args.args[0]

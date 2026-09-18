@@ -101,7 +101,6 @@ from inkflow.domain.services._extraction_rag import (
     _project_foreshadowing,
     _project_setting,
     _project_timeline_event,
-    _to_int_id,
 )
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
@@ -410,7 +409,7 @@ class ExtractionService(_ExtractionRAGMixin):
 
         sources: list[_Source] = []
         for chapter_id in request.chapter_ids or []:
-            chapter = await self._chapter_repo.get_chapter(_to_int_id(chapter_id))
+            chapter = await self._chapter_repo.get_chapter(chapter_id)
             if chapter is None:
                 raise ChapterNotFoundError()  # F2 get 不含软删
             if chapter.project_id != request.project_id:
@@ -746,10 +745,9 @@ class ExtractionService(_ExtractionRAGMixin):
         Returns:
             (run 列表, 总数) 元组（按 run_at DESC，最新在前）.
         """
-        pid_int = _to_int_id(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
         if project_repo is not None and await project_repo.get(project_id) is None:
             raise ProjectNotFoundError()
-        return await self._run_repo.list(pid_int, type=type, offset=offset, limit=limit)
+        return await self._run_repo.list(project_id, type=type, offset=offset, limit=limit)

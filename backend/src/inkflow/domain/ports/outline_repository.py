@@ -2,8 +2,7 @@
 
 OutlineRepositoryProtocol 定义 Outline / PlotPoint / StoryArc 三组
 CRUD 操作与级联辅助方法，基础设施层（SQLite / mock / memory）实现此
-Protocol。仓储层 `get` 主键入参用领域 UUID（#1271 收窄），其余方法沿用
-int/uuid 兼容归一。
+Protocol。仓储层主键入参统一用领域 UUID（#1134 批 4 / #1291 收窄收尾）。
 
 依据: specs/f11-outline/spec.md §8.1。
 """
@@ -56,11 +55,11 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_by_name(self, project_id: int, name: str) -> Outline | None:
+    async def get_by_name(self, project_id: uuid.UUID, name: str) -> Outline | None:
         """按项目内大纲名查询大纲.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             name: 大纲名（已去空白）.
 
         Returns:
@@ -69,13 +68,13 @@ class OutlineRepositoryProtocol(Protocol):
         ...
 
     async def get_outline_by_volume(
-        self, volume_id: int, exclude_outline_id: int | None = None
+        self, volume_id: uuid.UUID, exclude_outline_id: uuid.UUID | None = None
     ) -> Outline | None:
         """按 volume_id 查关联卷纲（level=volume）；exclude_outline_id 排除自身（一双一校验）.
 
         Args:
-            volume_id: 卷主键（int）.
-            exclude_outline_id: 排除的大纲主键（int，更新场景排除自身）.
+            volume_id: 卷主键（领域 UUID，见 #1291）.
+            exclude_outline_id: 排除的大纲主键（领域 UUID，更新场景排除自身，见 #1291）.
 
         Returns:
             若命中则返回 Outline，否则返回 None.
@@ -84,7 +83,7 @@ class OutlineRepositoryProtocol(Protocol):
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "updated_at",
         sort_desc: bool = True,
@@ -95,7 +94,7 @@ class OutlineRepositoryProtocol(Protocol):
         """分页查询项目内大纲列表，支持名称模糊搜索与层级过滤.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             search: 大纲名模糊搜索（可选）.
             sort_by: 排序字段（updated_at / name / sort_order）.
             sort_desc: 是否倒序.
@@ -119,11 +118,11 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete(self, outline_id: int) -> bool:
+    async def hard_delete(self, outline_id: uuid.UUID) -> bool:
         """物理删除大纲（情节点由 DB FK CASCADE 级联，v1.1 默认真删语义）.
 
         Args:
-            outline_id: 大纲主键（int）.
+            outline_id: 大纲主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
@@ -143,46 +142,46 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_point(self, point_id: int) -> PlotPoint | None:
+    async def get_point(self, point_id: uuid.UUID) -> PlotPoint | None:
         """按主键查询情节点.
 
         Args:
-            point_id: 情节点主键（int）.
+            point_id: 情节点主键（领域 UUID，见 #1291）.
 
         Returns:
             若命中则返回 PlotPoint，否则返回 None.
         """
         ...
 
-    async def list_points(self, outline_id: int) -> builtins.list[PlotPoint]:
+    async def list_points(self, outline_id: uuid.UUID) -> builtins.list[PlotPoint]:
         """列出大纲内全部情节点，按 (position ASC, created_at ASC) 稳定排序.
 
         Args:
-            outline_id: 大纲主键（int）.
+            outline_id: 大纲主键（领域 UUID，见 #1291）.
 
         Returns:
             情节点列表.
         """
         ...
 
-    async def list_points_by_arc(self, arc_id: int) -> builtins.list[PlotPoint]:
+    async def list_points_by_arc(self, arc_id: uuid.UUID) -> builtins.list[PlotPoint]:
         """列出挂载到指定弧线的全部情节点.
 
         Args:
-            arc_id: 弧线主键（int）.
+            arc_id: 弧线主键（领域 UUID，见 #1291）.
 
         Returns:
             情节点列表.
         """
         ...
 
-    async def next_position(self, outline_id: int) -> int:
+    async def next_position(self, outline_id: uuid.UUID) -> int:
         """计算大纲内下一个排序位置：max(position)+1（无情节点时 = 1）.
 
         在 add_point 前调用（position=None 时）。
 
         Args:
-            outline_id: 大纲主键（int）.
+            outline_id: 大纲主键（领域 UUID，见 #1291）.
 
         Returns:
             下一个 position 值.
@@ -200,22 +199,22 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete_point(self, point_id: int) -> bool:
+    async def hard_delete_point(self, point_id: uuid.UUID) -> bool:
         """物理删除情节点（v1.1 默认真删语义）.
 
         Args:
-            point_id: 情节点主键（int）.
+            point_id: 情节点主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.
         """
         ...
 
-    async def clear_arc_of_points(self, arc_id: int) -> None:
+    async def clear_arc_of_points(self, arc_id: uuid.UUID) -> None:
         """弧线删除时把成员情节点的 arc_id 置 NULL（不级联删情节点）.
 
         Args:
-            arc_id: 弧线主键（int）.
+            arc_id: 弧线主键（领域 UUID，见 #1291）.
         """
         ...
 
@@ -232,22 +231,22 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def get_arc(self, arc_id: int) -> StoryArc | None:
+    async def get_arc(self, arc_id: uuid.UUID) -> StoryArc | None:
         """按主键查询故事弧线.
 
         Args:
-            arc_id: 弧线主键（int）.
+            arc_id: 弧线主键（领域 UUID，见 #1291）.
 
         Returns:
             若命中则返回 StoryArc，否则返回 None.
         """
         ...
 
-    async def get_arc_by_name(self, project_id: int, name: str) -> StoryArc | None:
+    async def get_arc_by_name(self, project_id: uuid.UUID, name: str) -> StoryArc | None:
         """按项目内弧线名查询故事弧线.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
             name: 弧线名（已去空白）.
 
         Returns:
@@ -255,11 +254,11 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def list_arcs(self, project_id: int) -> builtins.list[StoryArc]:
+    async def list_arcs(self, project_id: uuid.UUID) -> builtins.list[StoryArc]:
         """列出项目内全部故事弧线，按 name 升序.
 
         Args:
-            project_id: 项目主键（int）.
+            project_id: 项目主键（领域 UUID，见 #1291）.
 
         Returns:
             弧线列表.
@@ -277,11 +276,11 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
-    async def hard_delete_arc(self, arc_id: int) -> bool:
+    async def hard_delete_arc(self, arc_id: uuid.UUID) -> bool:
         """物理删除故事弧线（成员 arc_id 由 DB FK SET NULL，v1.1 默认真删语义）.
 
         Args:
-            arc_id: 弧线主键（int）.
+            arc_id: 弧线主键（领域 UUID，见 #1291）.
 
         Returns:
             是否删除成功（不存在返回 False）.

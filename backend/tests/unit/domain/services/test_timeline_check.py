@@ -51,7 +51,7 @@ class FakeTimelineRepo:
 
     async def list(
         self,
-        project_id: int,
+        project_id: uuid.UUID,
         search: str | None = None,
         sort_by: str = "narrative_position",
         sort_desc: bool = False,
@@ -63,11 +63,12 @@ class FakeTimelineRepo:
             events = [e for e in events if search.lower() in e.title.lower()]
         return events, len(events)
 
-    async def list_all(self, project_id: int) -> list[TimelineEvent]:
-        events = [e for e in self._events if e.project_id.int == project_id]
+    async def list_all(self, project_id: uuid.UUID) -> list[TimelineEvent]:
+        """#1291：入参为领域 UUID（不再与 `project_id.int` 比较）。"""
+        events = [e for e in self._events if e.project_id == project_id]
         return sorted(events, key=lambda e: (e.narrative_position, e.created_at))
 
-    async def next_position(self, project_id: int) -> int:
+    async def next_position(self, project_id: uuid.UUID) -> int:
         events = await self.list_all(project_id)
         return max((e.narrative_position for e in events), default=0) + 1
 
@@ -78,9 +79,9 @@ class FakeTimelineRepo:
                 return event
         raise KeyError(event.id)
 
-    async def hard_delete(self, event_id: int) -> bool:
+    async def hard_delete(self, event_id: uuid.UUID) -> bool:
         before = len(self._events)
-        self._events = [e for e in self._events if e.id.int != event_id]
+        self._events = [e for e in self._events if e.id != event_id]
         return len(self._events) < before
 
 

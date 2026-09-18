@@ -35,10 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
-from inkflow.infrastructure.database.repositories._id_guard import (
-    require_uuid_pk,
-    uuid_to_pk_or_none,
-)
+from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
 def _utcnow() -> datetime:
@@ -111,13 +108,12 @@ class SQLiteForeshadowingRepository:
         await self._session.refresh(orm)
         return _orm_to_domain(orm)
 
-    async def get(self, foreshadowing_id: int | uuid.UUID) -> Foreshadowing | None:
-        """按主键查询伏笔。超 int64 范围视为不存在（SQLite 整数溢出防御）."""
-        # #1271 收窄契约：UUID 入参走 require_uuid_pk；裸 int 为 #1230 兼容路径
-        if isinstance(foreshadowing_id, uuid.UUID):
-            fid = require_uuid_pk(foreshadowing_id)
-        else:
-            fid = uuid_to_pk_or_none(foreshadowing_id)
+    async def get(self, foreshadowing_id: uuid.UUID) -> Foreshadowing | None:
+        """按主键查询伏笔。超 int64 范围视为不存在（SQLite 整数溢出防御）.
+
+        #1134 批 4（#1291）：入参收窄为 ``uuid.UUID``（#1230 的 int 兼容面已退役）。
+        """
+        fid = require_uuid_pk(foreshadowing_id)
         if fid is None:
             return None
         stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == fid)
@@ -125,13 +121,18 @@ class SQLiteForeshadowingRepository:
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
 
-    async def get_by_title(self, project_id: int, title: str) -> Foreshadowing | None:
+    async def get_by_title(self, project_id: uuid.UUID, title: str) -> Foreshadowing | None:
         """按 (project_id, title) 查询伏笔.
 
         同名唯一性检查用（spec §2.3 全唯一索引语义）：真删后同名可重建。
+
+        #1134 批 4（#1291）：project_id 为领域 UUID。
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return None
         stmt = select(ForeshadowingORM).where(
-            ForeshadowingORM.project_id == project_id,
+            ForeshadowingORM.project_id == pid,
             ForeshadowingORM.title == title,
         )
         result = await self._session.execute(stmt)
@@ -140,7 +141,7 @@ class SQLiteForeshadowingRepository:
 
     async def list(
         self,
-        project_id: int | uuid.UUID,
+        project_id: uuid.UUID,
         search: str | None = None,
         status: str | None = None,
         sort_by: str = "priority",
@@ -166,7 +167,7 @@ class SQLiteForeshadowingRepository:
         """
         # #1166: 过滤值超 int64 范围（随机 uuid4 的 .int / 不存在的项目）→ 空结果，
         # 防 128 位 int 绑定 SQLite INTEGER 抛 OverflowError → 500
-        pid = uuid_to_pk_or_none(project_id)
+        pid = require_uuid_pk(project_id)
         if pid is None:
             return [], 0
         base = select(ForeshadowingORM).where(ForeshadowingORM.project_id == pid)
@@ -201,17 +202,20 @@ class SQLiteForeshadowingRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms], total
 
-    async def list_open(self, project_id: int) -> builtins.list[Foreshadowing]:
+    async def list_open(self, project_id: uuid.UUID) -> builtins.list[Foreshadowing]:
         """列出项目内全部未回收伏笔（status=open），供 F6 注入消费.
 
         返回顺序即 F6 注入顺序：按 (priority DESC, updated_at DESC) 排序
         （spec §6.2/§6.3；priority 为注入优先级键，大者先注入；相等时按
         updated_at 兜底稳定排序）。F6 dynamic 层直接消费此结果（spec §5.3）.
         """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
         stmt = (
             select(ForeshadowingORM)
             .where(
-                ForeshadowingORM.project_id == project_id,
+                ForeshadowingORM.project_id == pid,
                 ForeshadowingORM.status == "open",
             )
             .order_by(
@@ -260,13 +264,16 @@ class SQLiteForeshadowingRepository:
             raise ValueError(f"Foreshadowing {foreshadowing_id} not found after update")
         return _orm_to_domain(orm)
 
-    async def hard_delete(self, foreshadowing_id: int) -> bool:
+    async def hard_delete(self, foreshadowing_id: uuid.UUID) -> bool:
         """物理删除伏笔（v1.1 默认真删语义）.
 
         Returns:
             True 表示删除成功，False 表示不存在.
         """
-        stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == foreshadowing_id)
+        fid = require_uuid_pk(foreshadowing_id)
+        if fid is None:
+            return False
+        stmt = select(ForeshadowingORM).where(ForeshadowingORM.id == fid)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is None:

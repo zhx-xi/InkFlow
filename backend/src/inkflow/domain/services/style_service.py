@@ -48,17 +48,10 @@ _MAX_CHAPTER_CHARS = 50000
 """章节内容分析上限（spec §3.3/§7: 超 50000 字符 → StyleValidationError 422）。"""
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1/F14/F15 `_to_int_id` 模式）.
-
-    Args:
-        value: 领域 UUID 或已有 int 主键.
-
-    Returns:
-        仓储层 int 主键（UUID 取其 int 表示）.
-    """
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -171,7 +164,7 @@ class StyleService:
             ids = chapter_ids or []
             chunks: list[str] = []
             for cid in ids:
-                chapter = await self._chapter_repo.get_chapter(_to_int_id(cid))
+                chapter = await self._chapter_repo.get_chapter(_to_uuid(cid))
                 if chapter is None:
                     raise ChapterNotFoundError()  # F2 get 不含软删
                 if chapter.project_id != project_id:

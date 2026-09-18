@@ -10,7 +10,7 @@
 │ 2. 主方法（任务书拍板：返回 BookDocument，API/CLI 层再包装 ExportResult）│
 │    async def export(self, project_id: int | uuid.UUID,                   │
 │                     include_settings: bool = False) -> BookDocument      │
-│ 3. id 转换（F15 _to_int_id 先例）: uuid.UUID → .int 传入 repo 层；       │
+│ 3. id 传递（#1291）: 领域 UUID 直传 repo 层（无 .int 中转）；           │
 │    int 原样透传。                                                        │
 │ 4. 正文聚合（§5.1 ②/§5.2）:                                             │
 │    a. list_volumes(pid_int) 拉卷骨架                                     │
@@ -354,14 +354,14 @@ async def test_export_project_not_found_raises():
         await deps.service().export(PID)
 
 
-async def test_export_project_id_converted_to_int_for_repo():
-    """project_repo.get 收 #1271 收窄契约直传领域 UUID；chapter_repo 仍收 int。"""
+async def test_export_project_id_passes_domain_uuid_to_repo():
+    """#1291：project_repo / chapter_repo 均直收领域 UUID（无 .int 中转）。"""
     deps = _Deps()
 
     await deps.service().export(PID)
 
     deps.project_repo.get.assert_awaited_once_with(PID)
-    deps.chapter_repo.list_volumes.assert_awaited_once_with(PID.int)
+    deps.chapter_repo.list_volumes.assert_awaited_once_with(PID)
     deps.chapter_repo.list_chapters.assert_awaited_once()
 
 

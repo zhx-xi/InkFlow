@@ -59,13 +59,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _extract_json_fragment(text: str) -> str | None:
     """从带围栏/前后缀文字的文本中提取首个 ``{...}`` 平衡片段.
 
@@ -297,7 +290,8 @@ class CharacterExtractor:
     ) -> CharacterExtractionResult:
         """合并落库: 角色按 (project_id, name) 匹配，关系名称解析后按键 upsert。"""
         warnings = list(item_warnings)
-        pid_int = _to_int_id(request.project_id)
+        # #1291：project_id 为领域 UUID，直传仓储（不再 int 中转）
+        pid = request.project_id
         name_to_char: dict[str, Character] = {}
 
         if not characters:
@@ -306,7 +300,7 @@ class CharacterExtractor:
         created: list[Character] = []
         updated: list[Character] = []
         for ec in characters:
-            existing = await self._repo.get_by_name(pid_int, ec.name)
+            existing = await self._repo.get_by_name(pid, ec.name)
             if existing is None:
                 now = _utcnow()
                 new_char = await self._repo.add(
@@ -336,7 +330,7 @@ class CharacterExtractor:
 
         relations_created, relations_updated = await self._merge_relations(
             request=request,
-            pid_int=pid_int,
+            pid=pid,
             relations=relations,
             name_to_char=name_to_char,
             warnings=warnings,
@@ -358,7 +352,7 @@ class CharacterExtractor:
         self,
         *,
         request: CharacterExtractRequest,
-        pid_int: int,
+        pid: uuid.UUID,
         relations: list[ExtractedRelation],
         name_to_char: dict[str, Character],
         warnings: list[str],
@@ -372,14 +366,14 @@ class CharacterExtractor:
                 warnings.append(f"关系 {er.from_name} → {er.to_name} 为自环，已跳过")
                 continue
 
-            from_char = await self._resolve_character(pid_int, er.from_name, name_to_char)
-            to_char = await self._resolve_character(pid_int, er.to_name, name_to_char)
+            from_char = await self._resolve_character(pid, er.from_name, name_to_char)
+            to_char = await self._resolve_character(pid, er.to_name, name_to_char)
             if from_char is None or to_char is None:
                 warnings.append(f"关系 {er.from_name} → {er.to_name} 的角色无法解析，已跳过")
                 continue
 
             existing_rel = await self._repo.get_relation_by_key(
-                _to_int_id(from_char.id), _to_int_id(to_char.id), er.relation_type
+                from_char.id, to_char.id, er.relation_type
             )
             if existing_rel is None:
                 now = _utcnow()
@@ -418,7 +412,7 @@ class CharacterExtractor:
 
     async def _resolve_character(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         name: str,
         name_to_char: dict[str, Character],
     ) -> Character | None:
@@ -426,7 +420,7 @@ class CharacterExtractor:
         char = name_to_char.get(name)
         if char is not None:
             return char
-        return await self._repo.get_by_name(pid_int, name)
+        return await self._repo.get_by_name(pid, name)
 
 
 def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Character | None:

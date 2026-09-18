@@ -62,10 +62,10 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）."""
-    if isinstance(value, uuid.UUID):
-        return value.int
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
     return value
 
 
@@ -106,7 +106,7 @@ class KnowledgeGraphService:
 
     async def _validate_entity(
         self,
-        project_id_int: int,
+        project_id_uuid: uuid.UUID,
         entity_type: EntityType,
         entity_id: uuid.UUID,
         endpoint: str,
@@ -118,7 +118,7 @@ class KnowledgeGraphService:
         + repo.get(pin.map_id) 的 map.project_id == 项目（经 map→project 链路推导）.
 
         Args:
-            project_id_int: 目标项目主键（int）.
+            project_id_uuid: 目标项目主键（领域 UUID）。
             entity_type: 实体类型.
             entity_id: 实体主键（领域 UUID）.
             endpoint: 端点标识（"source" / "target"，用于错误 detail）.
@@ -128,7 +128,7 @@ class KnowledgeGraphService:
         """
         if entity_type is EntityType.MAP_PIN:
             pin = (
-                await self._map_repo.get_pin(_to_int_id(entity_id))
+                await self._map_repo.get_pin(_to_uuid(entity_id))
                 if self._map_repo is not None
                 else None
             )
@@ -137,14 +137,14 @@ class KnowledgeGraphService:
                 if self._map_repo is not None and pin is not None
                 else None
             )
-            if wm is None or _to_int_id(wm.project_id) != project_id_int:
+            if wm is None or wm.project_id != project_id_uuid:
                 raise KnowledgeEntityNotFoundError(
                     message=f"{endpoint} 实体不存在或不在同一项目: {entity_type.value}"
                 )
             return
         repo = self._repo_for(entity_type)
         entity = await repo.get(entity_id) if repo is not None else None
-        if entity is None or _to_int_id(entity.project_id) != project_id_int:
+        if entity is None or entity.project_id != project_id_uuid:
             raise KnowledgeEntityNotFoundError(
                 message=f"{endpoint} 实体不存在或不在同一项目: {entity_type.value}"
             )
@@ -205,7 +205,7 @@ class KnowledgeGraphService:
             KnowledgeEntityNotFoundError: 起点/终点实体不存在或跨项目.
             KnowledgeRelationConflictError: 同键关系已存在.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # ① 项目存在
         project = (
             await self._project_repo.get(project_id) if self._project_repo is not None else None
@@ -213,7 +213,7 @@ class KnowledgeGraphService:
         if project is None:
             raise ProjectNotFoundError()
         # ② 自环
-        if source_type == target_type and _to_int_id(source_id) == _to_int_id(target_id):
+        if source_type == target_type and _to_uuid(source_id) == _to_uuid(target_id):
             raise KnowledgeRelationSelfLoopError()
         # ③ 六元组字段校验（Pydantic → 422）
         try:
@@ -235,9 +235,9 @@ class KnowledgeGraphService:
             await self._relation_repo.get_by_key(
                 pid_int,
                 dto.source_type.value,
-                _to_int_id(dto.source_id),
+                _to_uuid(dto.source_id),
                 dto.target_type.value,
-                _to_int_id(dto.target_id),
+                _to_uuid(dto.target_id),
                 dto.relation_type,
             )
             is not None
@@ -350,11 +350,11 @@ class KnowledgeGraphService:
                 description=merged.description,
             )
         # 自环检查：仅当两端字段被变更时重查
-        if dto.source_type is dto.target_type and _to_int_id(dto.source_id) == _to_int_id(
+        if dto.source_type is dto.target_type and _to_uuid(dto.source_id) == _to_uuid(
             dto.target_id
         ):
             raise KnowledgeRelationSelfLoopError()
-        pid_int = _to_int_id(existing.project_id)
+        pid_int = _to_uuid(existing.project_id)
         # 实体存在 + 同项目（只校验传入端点）
         if source_type is not None or source_id is not None:
             await self._validate_entity(pid_int, dto.source_type, dto.source_id, "source")
@@ -364,14 +364,12 @@ class KnowledgeGraphService:
         existing_by_key: KnowledgeRelation | None = await self._relation_repo.get_by_key(
             pid_int,
             dto.source_type.value,
-            _to_int_id(dto.source_id),
+            _to_uuid(dto.source_id),
             dto.target_type.value,
-            _to_int_id(dto.target_id),
+            _to_uuid(dto.target_id),
             dto.relation_type,
         )
-        if existing_by_key is not None and _to_int_id(existing_by_key.id) != _to_int_id(
-            relation_id
-        ):
+        if existing_by_key is not None and _to_uuid(existing_by_key.id) != _to_uuid(relation_id):
             raise KnowledgeRelationConflictError()
         merged = merged.model_copy(update={"updated_at": _utcnow()})
         logger.info("更新图谱关系: relation_id=%s", relation_id)
@@ -383,7 +381,7 @@ class KnowledgeGraphService:
         """真删关系；不存在 → KnowledgeRelationNotFoundError（404）."""
         relation: KnowledgeRelation = await self.get_relation(relation_id)
         logger.info("真删图谱关系: relation_id=%s", relation_id)
-        deleted: bool = await self._relation_repo.delete(_to_int_id(relation_id))
+        deleted: bool = await self._relation_repo.delete(_to_uuid(relation_id))
         if deleted:
             await publish_change("knowledge_relation", "delete", relation_id, relation.project_id)
         return deleted
@@ -404,7 +402,7 @@ class KnowledgeGraphService:
         Returns:
             (关系列表, 总数) 元组，created_at DESC 由 repo 保证.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
         # 抛 OverflowError → 500（project_repo.get 自带 int64 守卫，#1139 同族口径）
         project_repo = self._project_repo
@@ -435,7 +433,7 @@ class KnowledgeGraphService:
         Returns:
             KnowledgeGraphView（nodes + edges）.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到聚合各 repo
         # 绑定抛 OverflowError → 500（project_repo.get 自带 int64 守卫）
         project_repo = self._project_repo
@@ -483,7 +481,7 @@ class KnowledgeGraphService:
 
     async def _collect_nodes(
         self,
-        project_id_int: int,
+        project_id_uuid: uuid.UUID,
         entity_type: EntityType,
         name_of: Callable[[Any], str],
     ) -> list[GraphNode]:
@@ -491,7 +489,7 @@ class KnowledgeGraphService:
         repo = self._repo_for(entity_type)
         if repo is None:
             return []
-        items, _ = await repo.list(project_id_int)
+        items, _ = await repo.list(project_id_uuid)
         nodes: list[GraphNode] = []
         for item in items:
             nodes.append(
@@ -504,14 +502,14 @@ class KnowledgeGraphService:
             )
         return nodes
 
-    async def _collect_map_pin_nodes(self, project_id_int: int) -> list[GraphNode]:
+    async def _collect_map_pin_nodes(self, project_id_uuid: uuid.UUID) -> list[GraphNode]:
         """收集项目全部 map_pin 节点（经 map→pin 链路）."""
         if self._map_repo is None:
             return []
-        maps = await self._map_repo.list_maps_by_project(project_id_int)
+        maps = await self._map_repo.list_maps_by_project(project_id_uuid)
         nodes: list[GraphNode] = []
         for wm in maps:
-            pins = await self._map_repo.list_pins(_to_int_id(wm.id))
+            pins = await self._map_repo.list_pins(wm.id)
             for pin in pins:
                 nodes.append(
                     GraphNode(
@@ -538,7 +536,7 @@ class KnowledgeGraphService:
             删除行数.
         """
         type_str = entity_type.value if isinstance(entity_type, EntityType) else entity_type
-        deleted: int = await self._relation_repo.cleanup_for_entity(type_str, _to_int_id(entity_id))
+        deleted: int = await self._relation_repo.cleanup_for_entity(type_str, _to_uuid(entity_id))
         logger.info(
             "图谱关系清理回调: entity_type=%s entity_id=%s deleted=%s",
             type_str,
@@ -575,7 +573,7 @@ class KnowledgeGraphService:
         Returns:
             实际落库的关系列表（跳过行不返回）.
         """
-        pid_int = _to_int_id(project_id)
+        pid_int = _to_uuid(project_id)
         source_value = source if isinstance(source, RelationSource) else RelationSource(source)
         now = _utcnow()
         created: list[KnowledgeRelation] = []
@@ -584,9 +582,9 @@ class KnowledgeGraphService:
                 await self._relation_repo.get_by_key(
                     pid_int,
                     dto.source_type.value,
-                    _to_int_id(dto.source_id),
+                    _to_uuid(dto.source_id),
                     dto.target_type.value,
-                    _to_int_id(dto.target_id),
+                    _to_uuid(dto.target_id),
                     dto.relation_type,
                 )
                 is not None

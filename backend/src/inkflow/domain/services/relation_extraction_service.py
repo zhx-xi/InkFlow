@@ -63,14 +63,6 @@ _Entity = Character | WorldSetting | Outline | TimelineEvent | Foreshadowing
 """名称解析目标实体联合类型（AI 只产出五类，map_pin 不参与）."""
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为存储层 int id（沿用 F1 `_to_int_id` 模式）."""
-
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value  # pragma: no cover  # 调用方恒传 UUID，int 分支为防御性类型兼容
-
-
 class _KeyManagerProtocol(Protocol):
     """APIKeyManager 形态子集（AI 门禁只需 list_providers）."""
 
@@ -143,13 +135,13 @@ class RelationExtractionService:
         if method not in {"rule", "ai", "both"}:
             raise ValueError(f"非法提取方法: {method}，仅支持 rule/ai/both")
 
-        pid_int = _to_int_id(project_id)
+        pid = project_id
         relations: list[KnowledgeRelationCreate] = []
         warnings: list[str] = []
         model: str | None = None
 
         if method in {"rule", "both"}:
-            await self._extract_rules(pid_int, relations, warnings)
+            await self._extract_rules(pid, relations, warnings)
 
         if method in {"ai", "both"}:
             providers: list[str] = []
@@ -161,7 +153,7 @@ class RelationExtractionService:
                 else:
                     raise LLMNotConfiguredError()
             else:
-                outcome = await self._extract_ai(pid_int)
+                outcome = await self._extract_ai(pid)
                 if outcome is None:
                     if method == "ai":
                         return ExtractionResult(
@@ -203,25 +195,25 @@ class RelationExtractionService:
 
     async def _extract_rules(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         relations: list[KnowledgeRelationCreate],
         warnings: list[str],
     ) -> None:
         """规则提取三规则集：R1 父子世界观 / R2 伏笔事件 / R3 地图 pin."""
 
-        await self._rule_r1(pid_int, relations, warnings)
-        await self._rule_r2(pid_int, relations, warnings)
-        await self._rule_r3(pid_int, relations, warnings)
+        await self._rule_r1(pid, relations, warnings)
+        await self._rule_r2(pid, relations, warnings)
+        await self._rule_r3(pid, relations, warnings)
 
     async def _rule_r1(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         relations: list[KnowledgeRelationCreate],
         warnings: list[str],
     ) -> None:
         """R1: WorldSetting.parent_id 非空 → world(child)→world(parent)「属于」."""
 
-        worlds, _ = await self._world_repo.list(pid_int)
+        worlds, _ = await self._world_repo.list(pid)
         for child in worlds:
             if child.parent_id is None:
                 continue
@@ -241,13 +233,13 @@ class RelationExtractionService:
 
     async def _rule_r2(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         relations: list[KnowledgeRelationCreate],
         warnings: list[str],
     ) -> None:
         """R2: Foreshadowing.event_id 非空 → foreshadow→timeline「锚定于」."""
 
-        foreshadows, _ = await self._foreshadow_repo.list(pid_int)
+        foreshadows, _ = await self._foreshadow_repo.list(pid)
         for fs in foreshadows:
             if fs.event_id is None:
                 continue
@@ -267,16 +259,16 @@ class RelationExtractionService:
 
     async def _rule_r3(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         relations: list[KnowledgeRelationCreate],
         warnings: list[str],
     ) -> None:
         """R3 三分支: location→world「位于」/ role→character「出现于地图」/
         event→timeline「出现于地图」；type=other 不产出."""
 
-        maps = await self._map_pin_repo.list_maps_by_project(pid_int)
+        maps = await self._map_pin_repo.list_maps_by_project(pid)
         for wm in maps:
-            pins = await self._map_pin_repo.list_pins(_to_int_id(wm.id))
+            pins = await self._map_pin_repo.list_pins(wm.id)
             for pin in pins:
                 if pin.type == "other":
                     continue
@@ -327,14 +319,14 @@ class RelationExtractionService:
 
     # ── AI 提取 ───────────────────────────────────────────────────────────
 
-    async def _extract_ai(self, pid_int: int) -> _AiOutcome | None:
+    async def _extract_ai(self, pid: uuid.UUID) -> _AiOutcome | None:
         """AI 模板提取: 章节输入 → LLM 调用 → 解析重试 → 名称解析.
 
         Returns:
             None 表示无章节（调用方按 skipped 语义处理）.
         """
 
-        chapters, _ = await self._chapter_repo.list_chapters(pid_int)
+        chapters, _ = await self._chapter_repo.list_chapters(pid)
         if not chapters:
             return None
         text = "".join(chapter.content for chapter in chapters)[:_MAX_TEXT_LENGTH]
@@ -349,7 +341,7 @@ class RelationExtractionService:
         warnings: list[str] = []
         relations: list[KnowledgeRelationCreate] = []
         for item in parsed:
-            relation = await self._resolve_item(pid_int, item, warnings)
+            relation = await self._resolve_item(pid, item, warnings)
             if relation is not None:
                 relations.append(relation)
         model = response.model if response is not None else self._llm_default_model
@@ -381,7 +373,7 @@ class RelationExtractionService:
 
     async def _resolve_item(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         item: dict[str, Any],
         warnings: list[str],
     ) -> KnowledgeRelationCreate | None:
@@ -389,8 +381,8 @@ class RelationExtractionService:
 
         source_type = EntityType(item["from_type"])
         target_type = EntityType(item["to_type"])
-        source = await self._resolve_entity(pid_int, source_type, item["from_name"])
-        target = await self._resolve_entity(pid_int, target_type, item["to_name"])
+        source = await self._resolve_entity(pid, source_type, item["from_name"])
+        target = await self._resolve_entity(pid, target_type, item["to_name"])
         if source is None or target is None:
             warnings.append(f"关系 {item['from_name']} -> {item['to_name']} 实体解析失败，已跳过")
             return None
@@ -405,7 +397,7 @@ class RelationExtractionService:
 
     async def _resolve_entity(
         self,
-        pid_int: int,
+        pid: uuid.UUID,
         entity_type: EntityType,
         name: str,
     ) -> _Entity | None:
@@ -413,19 +405,19 @@ class RelationExtractionService:
         timeline/foreshadow 走列表 title 精确匹配（strip 首尾空白）."""
 
         if entity_type is EntityType.CHARACTER:
-            return await self._character_repo.get_by_name(pid_int, name)
+            return await self._character_repo.get_by_name(pid, name)
         if entity_type is EntityType.WORLD:
-            return await self._world_repo.get_by_name(pid_int, name)
+            return await self._world_repo.get_by_name(pid, name)
         if entity_type is EntityType.OUTLINE:
-            return await self._outline_repo.get_by_name(pid_int, name)
+            return await self._outline_repo.get_by_name(pid, name)
         if entity_type is EntityType.TIMELINE:
-            events = await self._timeline_repo.list_all(pid_int)
+            events = await self._timeline_repo.list_all(pid)
             return next(
                 (event for event in events if event.title.strip() == name.strip()),
                 None,
             )
         if entity_type is EntityType.FORESHADOW:
-            foreshadows, _ = await self._foreshadow_repo.list(pid_int)
+            foreshadows, _ = await self._foreshadow_repo.list(pid)
             return next(
                 (fs for fs in foreshadows if fs.title.strip() == name.strip()),
                 None,

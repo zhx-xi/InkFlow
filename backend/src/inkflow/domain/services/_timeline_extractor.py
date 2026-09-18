@@ -60,13 +60,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(value: int | uuid.UUID) -> int:
-    """将领域 UUID 转换为仓储层 int id（沿用 F1 `_to_int_id` 模式）。"""
-    if isinstance(value, uuid.UUID):
-        return value.int
-    return value
-
-
 def _extract_json_fragment(text: str) -> str | None:
     """从带围栏/前后缀文字的文本中提取首个 ``{...}`` 平衡片段.
 
@@ -263,8 +256,9 @@ class TimelineExtractor:
     ) -> TimelineExtractionResult:
         """合并落库: 按 (project_id, title, source_chapter_id) 匹配事件。"""
         warnings = list(item_warnings)
-        pid_int = _to_int_id(request.project_id)
-        cid_int = _to_int_id(request.chapter_id)
+        # #1291：project_id/chapter_id 均为领域 UUID，直传仓储（不再 int 中转）
+        pid = request.project_id
+        cid = request.chapter_id
 
         if not events:
             warnings.append("未从文本中提取到任何时间线事件")
@@ -272,12 +266,12 @@ class TimelineExtractor:
         created: list[TimelineEvent] = []
         updated: list[TimelineEvent] = []
         for ee in events:
-            existing = await self._find_active_by_title(pid_int, cid_int, ee.title)
+            existing = await self._find_active_by_title(pid, cid, ee.title)
             if existing is None:
                 now = _utcnow()
                 narrative_position = ee.narrative_position
                 if narrative_position is None:
-                    narrative_position = await self._repo.next_position(pid_int)
+                    narrative_position = await self._repo.next_position(pid)
                 new_event = await self._repo.add(
                     TimelineEvent(
                         id=uuid.uuid4(),
@@ -316,10 +310,10 @@ class TimelineExtractor:
     # ── 私有辅助 ────────────────────────────────────────────────
 
     async def _find_active_by_title(
-        self, pid_int: int, cid_int: int, title: str
+        self, pid: uuid.UUID, cid: uuid.UUID, title: str
     ) -> TimelineEvent | None:
         """在指定来源章的事件中按 title 精确匹配（§5.5 匹配逻辑在服务层）。"""
-        events = await self._repo.list_by_chapter(pid_int, cid_int)
+        events = await self._repo.list_by_chapter(pid, cid)
         for event in events:
             if event.title == title:
                 return event

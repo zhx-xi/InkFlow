@@ -398,13 +398,13 @@ class TestVolumeUnifyRepo:
             )
         )
 
-        got = await repo.get(gang.id.int)
+        got = await repo.get(gang.id)
         assert got is not None
         dumped = got.model_dump()
         assert dumped["volume_id"] == vol.id  # RED: KeyError / AttributeError
         assert dumped["level"] == "volume"
 
-        resolved = await repo.get_outline_by_volume(vol.id.int)  # RED: AttributeError
+        resolved = await repo.get_outline_by_volume(vol.id)  # RED: AttributeError
         assert resolved is not None
         assert resolved.id == gang.id
 
@@ -434,10 +434,10 @@ class TestVolumeUnifyRepo:
             )
         )
 
-        ok = await vol_repo.delete_volume(vol.id.int)
+        ok = await vol_repo.delete_volume(vol.id)
         assert ok is True
 
-        still = await repo.get(gang.id.int)
+        still = await repo.get(gang.id)
         assert still is not None  # 卷纲保留
         assert still.model_dump()["volume_id"] is None  # 解绑
 

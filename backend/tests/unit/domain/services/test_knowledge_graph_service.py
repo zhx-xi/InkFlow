@@ -536,7 +536,7 @@ class TestCreateRelation:
         mock_character_repo.get.assert_awaited_once_with(src_char.id)
         mock_world_repo.get.assert_awaited_once_with(tgt_world.id)
         mock_relation_repo.get_by_key.assert_awaited_once_with(
-            PID.int, "character", src_char.id.int, "world", tgt_world.id.int, "属于"
+            PID, "character", src_char.id, "world", tgt_world.id, "属于"
         )
 
     async def test_map_pin_valid_chain_passes(
@@ -564,7 +564,7 @@ class TestCreateRelation:
             target_id=tgt_world.id,
             relation_type="位于",
         )
-        mock_map_repo.get_pin.assert_awaited_once_with(pin.id.int)
+        mock_map_repo.get_pin.assert_awaited_once_with(pin.id)
         mock_map_repo.get.assert_awaited_once_with(wm.id)
         assert created.source_type == EntityType.MAP_PIN
 
@@ -739,7 +739,7 @@ class TestDeleteRelation:
         mock_relation_repo.get = AsyncMock(return_value=existing)
 
         assert await service.delete_relation(existing.id) is True
-        mock_relation_repo.delete.assert_awaited_once_with(existing.id.int)
+        mock_relation_repo.delete.assert_awaited_once_with(existing.id)
 
     async def test_delete_not_found_raises_404(self, service, mock_relation_repo):
         """关系不存在 → KnowledgeRelationNotFoundError（404，§7 边界 8）."""
@@ -794,7 +794,7 @@ class TestListRelations:
         assert total == 1
         assert items[0].id == rel.id
         mock_relation_repo.filter.assert_awaited_once_with(
-            PID.int,
+            PID,
             source_type="character",
             target_type="world",
             relation_type="属于",

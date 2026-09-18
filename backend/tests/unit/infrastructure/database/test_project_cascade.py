@@ -198,4 +198,4 @@ async def test_hard_delete_map_cleanup_failure_does_not_block(
 
     svc = ProjectService(db_session, map_cleanup=fail_cleanup)
     assert await svc.hard_delete(pid) is True
-    fail_cleanup.assert_awaited_once_with(pid)
+    fail_cleanup.assert_awaited_once_with(uuid.UUID(int=pid))

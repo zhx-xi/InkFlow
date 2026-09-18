@@ -135,8 +135,8 @@ class AgentServiceStreamMixin:
             _project_role_models,
         )
 
-        # 1. 验证项目存在（真实仓储 get 接收 ORM int id，UUID(int=orm_id) 可逆转换）
-        project = await self._project_repo.get(request.project_id.int)
+        # 1. 验证项目存在（#1291：project_repo.get 入参为领域 UUID）
+        project = await self._project_repo.get(request.project_id)
         if project is None:
             raise AgentServiceError("项目不存在")
 
@@ -156,7 +156,7 @@ class AgentServiceStreamMixin:
 
         # 3. 验证章节（如果提供）
         if request.chapter_id is not None:
-            chapter = await self._chapter_repo.get_chapter(request.chapter_id.int)
+            chapter = await self._chapter_repo.get_chapter(request.chapter_id)
             if chapter is None:
                 raise AgentServiceError("章节不存在")
 

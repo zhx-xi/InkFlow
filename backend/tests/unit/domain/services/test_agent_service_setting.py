@@ -262,7 +262,7 @@ class MockProjectRepo:
     def __init__(self, project: Project | None = None):
         self.project = project
 
-    async def get(self, project_id: int) -> Project | None:
+    async def get(self, project_id: uuid.UUID) -> Project | None:
         return self.project
 
 
@@ -272,21 +272,21 @@ class MockChapterRepo:
     def __init__(self, chapters: list[Chapter] | None = None):
         self.chapters = chapters or []
 
-    async def get_chapter(self, chapter_id: int) -> Chapter | None:
+    async def get_chapter(self, chapter_id: uuid.UUID) -> Chapter | None:
         for c in self.chapters:
-            if c.id.int == chapter_id:
+            if c.id == chapter_id:
                 return c
         return None
 
     async def list_chapters(
         self,
-        project_id: int,
-        volume_id: int | None = None,
+        project_id: uuid.UUID,
+        volume_id: uuid.UUID | None = None,
         status: object | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[Chapter], int]:
-        matching = [c for c in self.chapters if c.project_id.int == project_id]
+        matching = [c for c in self.chapters if c.project_id == project_id]
         return matching, len(matching)
 
 

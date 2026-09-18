@@ -153,15 +153,11 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _to_int_id(project_id: int | uuid.UUID) -> int:
-    """将 Project 的 UUID id 转换为数据库的 int id.
-
-    Project 实体使用 uuid.UUID 作为 id 类型（_orm_to_domain 将 int PK
-    转换为 UUID），但基础设施层的仓储方法接受 int 参数。
-    """
-    if isinstance(project_id, uuid.UUID):
-        return project_id.int
-    return project_id
+def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
+    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
+    if isinstance(value, int):
+        return uuid.UUID(int=value)
+    return value
 
 
 class ProjectService:
@@ -179,7 +175,7 @@ class ProjectService:
         self,
         db_session,
         *,
-        map_cleanup: Callable[[int], Awaitable[int]] | None = None,
+        map_cleanup: Callable[[uuid.UUID], Awaitable[int]] | None = None,
     ) -> None:
         self._repo = SQLiteProjectRepository(db_session)
         self._map_cleanup = map_cleanup
@@ -236,7 +232,7 @@ class ProjectService:
         Returns:
             若找到则返回 Project，否则返回 None.
         """
-        return await self._repo.get(project_id)
+        return await self._repo.get(_to_uuid(project_id))
 
     async def list_projects(
         self,
@@ -272,7 +268,7 @@ class ProjectService:
         Returns:
             更新后的完整 Project，若项目不存在则返回 None.
         """
-        existing = await self._repo.get(project_id)
+        existing = await self._repo.get(_to_uuid(project_id))
         if existing is None:
             return None
         updates = dto.model_dump(exclude_unset=True)
@@ -306,7 +302,7 @@ class ProjectService:
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
-        ok = await self._repo.soft_delete(_to_int_id(project_id))
+        ok = await self._repo.soft_delete(_to_uuid(project_id))
         if ok:
             log_structured(
                 level="INFO",
@@ -314,8 +310,8 @@ class ProjectService:
                 caller_name="project_service.soft_delete",
                 event="delete_project",
                 message_key="log.event.delete_project",
-                message=f"删除项目：{_to_int_id(project_id)}",
-                params={"project_id": _to_int_id(project_id)},
+                message=f"删除项目：{_to_uuid(project_id)}",
+                params={"project_id": _to_uuid(project_id)},
             )
         return ok
 
@@ -328,7 +324,7 @@ class ProjectService:
         Returns:
             恢复后的 Project，若记录不存在则返回 None.
         """
-        return await self._repo.restore(_to_int_id(project_id))
+        return await self._repo.restore(_to_uuid(project_id))
 
     async def hard_delete(self, project_id: int | uuid.UUID) -> bool:
         """物理删除项目（从数据库中永久移除）.
@@ -345,10 +341,10 @@ class ProjectService:
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
         """
-        pid_int = _to_int_id(project_id)
+        pid = _to_uuid(project_id)
         if self._map_cleanup is not None:
             try:
-                await self._map_cleanup(pid_int)
+                await self._map_cleanup(pid)
             except Exception:
                 logger.warning("项目硬删地图清理失败: %s", project_id, exc_info=True)
-        return await self._repo.hard_delete(pid_int)
+        return await self._repo.hard_delete(pid)

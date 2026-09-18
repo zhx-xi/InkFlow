@@ -51,10 +51,7 @@ except ImportError:  # pragma: no cover - RED 阶段占位分支
     WorldReparentTargetError = type("WorldReparentTargetError", (Exception,), {})
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._world_extractor import WorldExtractor
-from inkflow.domain.services.world_service import (
-    WorldService,
-    _to_int_id,
-)
+from inkflow.domain.services.world_service import WorldService
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 OTHER_PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000002")  # F35: 跨项目校验用
@@ -142,7 +139,7 @@ class TestWorldSettingCrud:
             PID, "灵气复苏", category="设定", content="天地灵气复苏"
         )
         assert created.name == "灵气复苏"
-        mock_repo.get_by_name.assert_awaited_once_with(PID.int, "灵气复苏")
+        mock_repo.get_by_name.assert_awaited_once_with(PID, "灵气复苏")
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, WorldSetting)
         assert added.project_id == PID
@@ -186,7 +183,7 @@ class TestWorldSettingCrud:
         assert items == [setting]
         assert total == 1
         kwargs = mock_repo.list.await_args.kwargs
-        assert kwargs["project_id"] == PID.int
+        assert kwargs["project_id"] == PID
         assert kwargs["search"] == "灵气"
         assert kwargs["category"] == "设定"
         assert kwargs["sort_by"] == "name"
@@ -199,7 +196,7 @@ class TestWorldSettingCrud:
         mock_repo.list_categories = AsyncMock(return_value=[("设定", 3), ("规则", 1)])
         result = await service.list_categories(PID)
         assert result == [("设定", 3), ("规则", 1)]
-        mock_repo.list_categories.assert_awaited_once_with(PID.int)
+        mock_repo.list_categories.assert_awaited_once_with(PID)
 
     async def test_update_setting_merges_provided_fields(self, service, mock_repo) -> None:
         """部分更新：仅覆盖传入字段；category="" 清除类别；category=None 不修改。"""
@@ -249,7 +246,7 @@ class TestWorldSettingCrud:
         setting = _setting(name="灵气复苏")
         result = await service.delete_setting(setting.id)
         assert result is True
-        mock_repo.hard_delete.assert_awaited_once_with(setting.id.int)
+        mock_repo.hard_delete.assert_awaited_once_with(setting.id)
 
         mock_repo.hard_delete = AsyncMock(return_value=False)
         assert await service.delete_setting(uuid.uuid4()) is False
@@ -408,9 +405,7 @@ class TestF35CreateValidationChain:
 
         assert created.name == "清河县城"
         # 校验链调用参数：父 id 已转 int、顶层/同级预检走 (pid, parent_int, name)
-        mock_repo.get_by_parent_and_name.assert_awaited_once_with(
-            PID.int, parent.id.int, "清河县城"
-        )
+        mock_repo.get_by_parent_and_name.assert_awaited_once_with(PID, parent.id, "清河县城")
         added = mock_repo.add.await_args.args[0]
         assert added.parent_id == parent.id  # 领域层保留 UUID
 
@@ -422,7 +417,7 @@ class TestF35CreateValidationChain:
         created = await service.create_setting(PID, "大越国")
 
         assert created.name == "大越国"
-        mock_repo.get_by_parent_and_name.assert_awaited_once_with(PID.int, None, "大越国")
+        mock_repo.get_by_parent_and_name.assert_awaited_once_with(PID, None, "大越国")
         added = mock_repo.add.await_args.args[0]
         assert added.parent_id is None
 
@@ -480,7 +475,7 @@ class TestF35UpdateParentSemantics:
         with pytest.raises(WorldCycleError):
             await service.update_setting(existing.id, WorldUpdate(parent_id=target.id))
         mock_repo.update.assert_not_awaited()
-        mock_repo.collect_ancestor_ids.assert_awaited_once_with(target.id.int)
+        mock_repo.collect_ancestor_ids.assert_awaited_once_with(target.id)
 
     async def test_update_reparent_name_conflict_raises(self, service, mock_repo) -> None:
         """改挂到新父时同级已存在同名 → WorldNameConflictError（同级唯一校验，spec §5.1 ③）.  # F35
@@ -562,9 +557,7 @@ class TestF35UpdateParentSemantics:
         with pytest.raises(WorldNameConflictError):
             await service.update_setting(existing.id, WorldUpdate(name="清河县城·改"))
         mock_repo.update.assert_not_awaited()
-        mock_repo.get_by_parent_and_name.assert_awaited_once_with(
-            PID.int, parent.id.int, "清河县城·改"
-        )
+        mock_repo.get_by_parent_and_name.assert_awaited_once_with(PID, parent.id, "清河县城·改")
 
     async def test_update_reparent_to_self_raises(self, service, mock_repo) -> None:
         """改挂父为自身（parent_id == 自身 id）→ WorldCycleError（L394-395 直接自环短路分支）.
@@ -591,7 +584,7 @@ class TestF35DeleteMatrix:
         RED: 当前实现不查子 → list 未被调用 → 断言失败.
         """
         setting = _setting(name="清河县城")
-        sid = setting.id.int
+        sid = setting.id
         mock_repo.list = AsyncMock(return_value=([], 0))
 
         result = await service.delete_setting(setting.id)
@@ -621,7 +614,7 @@ class TestF35DeleteMatrix:
         """
         setting = _setting(name="青州")
         child = _setting(name="清河县城")
-        sid, child_int = setting.id.int, child.id.int
+        sid, child_int = setting.id, child.id
         mock_repo.list = AsyncMock(return_value=([child], 1))
         mock_repo.list_descendants = AsyncMock(return_value=[setting, child])
 
@@ -633,14 +626,14 @@ class TestF35DeleteMatrix:
         assert set(mock_repo.hard_delete_many.await_args.args[0]) == {sid, child_int}
 
     async def test_delete_reparent_moves_children_to_target(self, service, mock_repo) -> None:
-        """reparent_to=X → 先校验目标（存在+同项目+非自身子树）→ delete_with_reparent(sid, X.int)
+        """reparent_to=X → 先校验目标（存在+同项目+非自身子树）→ delete_with_reparent(sid, X)
         （自身真删 + 直接子改挂，spec §5.5 D2=A）.  # F35
         RED: delete_setting 无 reparent_to 参数 → TypeError.
         """
         setting = _setting(name="青州")
         child = _setting(name="清河县城")
         target = _setting(name="东大陆")
-        sid = setting.id.int
+        sid = setting.id
         mock_repo.list = AsyncMock(return_value=([child], 1))
         mock_repo.list_descendants = AsyncMock(return_value=[setting, child])  # target 不在子树
         mock_repo.get = AsyncMock(return_value=target)
@@ -648,7 +641,7 @@ class TestF35DeleteMatrix:
         result = await service.delete_setting(setting.id, reparent_to=target.id)
 
         assert result is True
-        mock_repo.delete_with_reparent.assert_awaited_once_with(sid, target.id.int)
+        mock_repo.delete_with_reparent.assert_awaited_once_with(sid, target.id)
         mock_repo.hard_delete_many.assert_not_awaited()
         mock_repo.hard_delete.assert_not_awaited()
 
@@ -704,7 +697,7 @@ class TestF35DeleteMatrix:
         setting = _setting(name="青州")
         child = _setting(name="清河县城")
         target = _setting(name="东大陆")
-        sid = setting.id.int
+        sid = setting.id
         mock_repo.list = AsyncMock(return_value=([child], 1))
         mock_repo.list_descendants = AsyncMock(return_value=[setting, child])
         mock_repo.get = AsyncMock(return_value=target)
@@ -713,7 +706,7 @@ class TestF35DeleteMatrix:
 
         assert result is True
         mock_repo.hard_delete_many.assert_awaited_once()
-        assert set(mock_repo.hard_delete_many.await_args.args[0]) == {sid, child.id.int}
+        assert set(mock_repo.hard_delete_many.await_args.args[0]) == {sid, child.id}
         mock_repo.delete_with_reparent.assert_not_awaited()
 
 
@@ -731,7 +724,7 @@ class TestF35TreeQueries:
         result = await service.list_descendants(setting.id)
 
         assert result == [setting, child]
-        mock_repo.list_descendants.assert_awaited_once_with(setting.id.int)
+        mock_repo.list_descendants.assert_awaited_once_with(setting.id)
 
     async def test_list_ancestors_returns_self_then_ancestors(self, service, mock_repo) -> None:
         """3 级祖先链（自身→父→祖父）：返回 [自身, 父, 祖父]（自身在前，面包屑顺序）.
@@ -823,13 +816,12 @@ class TestP5DeleteSettingReparentTriggersLocationCleanup:
         assert result is True
         location_cleanup.assert_awaited_once()
         call = location_cleanup.await_args
-        assert call is not None and call.args[0] == [setting.id.int]
+        assert call is not None and call.args[0] == [setting.id]
 
 
 # ══ #576 coverage 补测（CI coverage-backend branch 门禁红，非 RED）══
 #
 # 补测清单（src/inkflow/domain/services/world_service.py）:
-# - L60 _to_int_id int 输入分支（UUID 分支已有用例覆盖）
 # - L215-218 has_root_setting（整方法未覆盖）
 # - L370-371 _notify_location_cleanup except 分支（成功路径已覆盖）
 # - L415-416 rename_category 撞名冲突分支
@@ -838,23 +830,19 @@ class TestP5DeleteSettingReparentTriggersLocationCleanup:
 class Test576WorldServiceCoverageGaps:
     """#576 coverage 补测（非 RED）— 世界观服务层未覆盖分支补齐。"""
 
-    def test_to_int_id_int_passthrough(self) -> None:
-        """#576 补测：_to_int_id int 输入直通（L60 return value 分支）。"""
-        assert _to_int_id(42) == 42
-
     async def test_has_root_setting_true_when_root_exists(self, service, mock_repo) -> None:
         """#576 补测：has_root_setting 有根条目 → True（L215-218 主路径）。"""
         mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
 
         assert await service.has_root_setting(PID) is True
-        mock_repo.list.assert_awaited_once_with(PID.int, top_level_only=True, limit=1)
+        mock_repo.list.assert_awaited_once_with(PID, top_level_only=True, limit=1)
 
     async def test_has_root_setting_false_when_no_root(self, service, mock_repo) -> None:
         """#576 补测：has_root_setting 无根条目 → False（L218 len>0 反分支）。"""
         mock_repo.list = AsyncMock(return_value=([], 0))
 
         assert await service.has_root_setting(PID) is False
-        mock_repo.list.assert_awaited_once_with(PID.int, top_level_only=True, limit=1)
+        mock_repo.list.assert_awaited_once_with(PID, top_level_only=True, limit=1)
 
     async def test_delete_setting_location_cleanup_failure_swallowed(
         self, mock_repo, mock_project_repo, mock_extractor
@@ -875,7 +863,7 @@ class Test576WorldServiceCoverageGaps:
         result = await svc.delete_setting(setting.id)
 
         assert result is True
-        location_cleanup.assert_awaited_once_with([setting.id.int])
+        location_cleanup.assert_awaited_once_with([setting.id])
 
     async def test_rename_category_name_conflict_raises(self, service, mock_repo) -> None:
         """#576 补测：rename_category 撞名 → WorldCategoryNameConflictError（L415-416）。"""
