@@ -53,6 +53,7 @@ from inkflow.domain.services.usage_accounting import (
     draft_fallback_needed,
     result_usage,
 )
+from inkflow.infrastructure.llm.content_text import content_text
 from inkflow.logging import instrument
 
 _R = TypeVar("_R")
@@ -97,7 +98,9 @@ def _extract_final_content(result: dict[str, Any]) -> str:
         content = final.get("content")
     if content is None:
         return ""
-    return str(content)
+    # #1262：content 可能是 structured content blocks（list[dict]）——统一走归一器，
+    # 避免 str() 把 list repr（含 thinking 文本）当正文。
+    return content_text(content)
 
 
 def _parse_supervisor_decision(content: str) -> str:
@@ -502,7 +505,7 @@ class BookVolumePipeline:
                 project_id=plan.project_id,
                 chapter_id=chapter["chapter_id"],
                 content=content,
-                summary="书级委托保存",
+                summary="",
                 volume_id=await self._resolve_draft_volume(plan, chapter),
                 source_outline_id=chapter["outline_id"],
             )

@@ -18,6 +18,9 @@ from inkflow.api._chat_auth import (  # 集中 re-export 保持 deps 命名空�
 from inkflow.api.deps_agentic_writer import (
     get_agentic_writer_service,  # noqa: F401  # 集中 re-export 保持 deps 命名空间不变
 )
+from inkflow.api.deps_chapter_audit import (
+    get_chapter_audit_service,  # noqa: F401  # 集中 re-export 保持 deps 命名空间不变（#1269）
+)
 from inkflow.api.deps_chat_agent import (
     _make_draft_volume_lookup,  # noqa: F401  # deps_agentic_writer 经 deps_module 调用期解析，保持命名空间
     get_chat_agent_service,
@@ -42,7 +45,6 @@ from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
 from inkflow.domain.services.audit_log_service import AuditLogService
 from inkflow.domain.services.audit_service import AuditService
-from inkflow.domain.services.chapter_audit_service import ChapterAuditService
 from inkflow.domain.services.chapter_service import ChapterService
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.context_service import ContextService
@@ -583,21 +585,6 @@ def get_audit_service(
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
         chapter_repo=SQLiteChapterRepository(db),
         run_repo=SQLExtractionRunRepository(db),
-    )
-
-
-def get_chapter_audit_service(
-    db: AsyncSession,
-) -> ChapterAuditService:
-    """获取 ChapterAuditService 实例（F34 章节审计：F1/F2/F9/F10 仓储 + F15 委托 + F5 LLM 检查）."""
-    return ChapterAuditService(
-        project_repo=SQLiteProjectRepository(db),
-        chapter_repo=SQLiteChapterRepository(db),
-        character_repo=SQLiteCharacterRepository(db),
-        world_repo=SQLiteWorldRepository(db),
-        audit_service=get_audit_service(db),
-        llm_client=LangChainLLMClient(),
-        audit_log_repo=SQLiteAuditLogRepository(db),
     )
 
 

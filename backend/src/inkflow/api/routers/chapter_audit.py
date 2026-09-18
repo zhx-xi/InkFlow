@@ -30,7 +30,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.api.deps import get_chapter_audit_service, get_db
+from inkflow.api.deps import get_chapter_audit_service, get_db, get_project_service
 from inkflow.domain.models.chapter_audit import (
     AuditConfirmRequest,
     AuditTriggerRequest,
@@ -74,9 +74,22 @@ def _parse_chapter_id(chapter_id: str) -> uuid.UUID:
             raise HTTPException(status_code=404, detail="章节不存在") from err
 
 
-def _get_svc(db: AsyncSession) -> ChapterAuditService:
-    """获取 ChapterAuditService 实例（方便 mock）."""
-    return get_chapter_audit_service(db)
+async def _get_svc(db: AsyncSession, project_id: uuid.UUID) -> ChapterAuditService:
+    """获取 ChapterAuditService 实例（方便 mock）.
+
+    #1269：装配前先取项目级 model（`projects.config.model`）注入——
+    打包产物（隔离数据目录）无全局模型时，裸构造会让审计恒降级。
+    取值异常/项目不存在 → None（回落全局默认；404 判定仍由服务层负责）。
+    """
+    project_model: str | None = None
+    try:
+        project = await get_project_service(db).get(project_id)
+        config_obj = getattr(project, "config", None) if project is not None else None
+        value = getattr(config_obj, "model", None)
+        project_model = value if isinstance(value, str) and value else None
+    except Exception:  # 配置不可达绝不炸装配（回退全局默认 / 422 诊断）
+        project_model = None
+    return get_chapter_audit_service(db, project_model=project_model, resolve_credentials=True)
 
 
 async def _run_service(coro: Awaitable[Any]) -> Any:
@@ -114,7 +127,7 @@ async def trigger_audit(
     """
     pid = _parse_id(project_id)
     cid = _parse_chapter_id(chapter_id)
-    svc = _get_svc(db)
+    svc = await _get_svc(db, pid)
     report = await _run_service(svc.audit(pid, cid, include_static=request.include_static))
     return report.model_dump(mode="json")
 
@@ -134,7 +147,7 @@ async def confirm_audit(
     """
     pid = _parse_id(project_id)
     cid = _parse_chapter_id(chapter_id)
-    svc = _get_svc(db)
+    svc = await _get_svc(db, pid)
     log = await _run_service(svc.confirm(pid, cid, action=request.action, note=request.note))
     return {
         "status": log.status,
@@ -156,6 +169,6 @@ async def list_audit_logs(
     Query 校验拦为 422（服务层不被调用）。
     """
     pid = _parse_id(project_id)
-    svc = _get_svc(db)
+    svc = await _get_svc(db, pid)
     logs, total = await _run_service(svc.list_logs(pid, offset=offset, limit=limit))
     return {"total": total, "logs": [log.model_dump(mode="json") for log in logs]}

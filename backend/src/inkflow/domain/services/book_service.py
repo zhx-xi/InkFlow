@@ -53,6 +53,7 @@ from inkflow.domain.services.usage_accounting import (
     extract_total_tokens,
     result_usage,
 )
+from inkflow.infrastructure.llm.content_text import content_text
 
 
 class ChapterAlreadyWrittenError(Exception):
@@ -807,7 +808,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
                 project_id=plan.project_id,
                 chapter_id=chapter.chapter_id,
                 content=content,
-                summary="书级委托保存",
+                summary="",
                 volume_id=volume_id,
                 source_outline_id=chapter.id,
             )
@@ -830,7 +831,9 @@ def _extract_final_content(result: dict[str, Any]) -> str:
         content = final.get("content")
     if content is None:
         return ""
-    return str(content)
+    # #1262：content 可能是 structured content blocks（list[dict]）——必须走统一归一器，
+    # 否则 str() 落库的是 list repr（含 thinking 内部推理文本）。
+    return content_text(content)
 
 
 def _extract_usage_tokens(result: dict[str, Any]) -> int:

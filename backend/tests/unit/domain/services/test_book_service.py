@@ -876,7 +876,7 @@ async def test_delegate_chapter_skips_fallback_when_agent_saved_975():
 
 @pytest.mark.asyncio
 async def test_delegate_chapter_create_when_no_tool_call_975():
-    """【G】#975 守护：无 save_draft tool_call -> 照常兜底 create 恰 1 次、summary=="书级委托保存"。
+    """【G】#975 守护：无 save_draft tool_call -> 照常兜底 create 恰 1 次、summary==""（#1262 改）。
 
     镜像既有 test_delegate_chapter_save_draft_recycle（默认 fake messages 为
     SimpleNamespace(content=..., tool_calls=[]) 无 tool_calls），但显式锁定 summary kwarg。
@@ -893,5 +893,5 @@ async def test_delegate_chapter_create_when_no_tool_call_975():
 
     assert deps["draft_service"].create.await_count == 1
     create_kwargs = deps["draft_service"].create.await_args.kwargs
-    assert create_kwargs["summary"] == "书级委托保存"
+    assert create_kwargs["summary"] == ""
     assert execution_id

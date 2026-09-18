@@ -15,6 +15,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, cast
 
 from inkflow.domain.models.writing_plan import WritingPlan
+from inkflow.infrastructure.llm.content_text import content_text
 
 if TYPE_CHECKING:  # 注解经 `from __future__ import annotations` 延迟求值，运行期无需真类型
     from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticState
@@ -94,7 +95,9 @@ def _extract_final_content(result: dict[str, Any]) -> str:
         content = final.get("content")
     if content is None:
         return ""
-    return str(content)
+    # #1262：content 可能是 structured content blocks（list[dict]）——统一走归一器，
+    # 避免 str() 把 list repr（含 thinking 文本）当正文。
+    return content_text(content)
 
 
 def _plan_to_dict(plan: object) -> dict:
