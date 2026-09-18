@@ -343,31 +343,31 @@ async def test_write_book_no_anchor_dispatches_all_chapters():
 
 @pytest.mark.asyncio
 async def test_write_book_safety_valve_already_executed_raises():
-    """安全阀-执行已完成：execution_refs[outline_id] 存在且 progress==done →
-    ChapterAlreadyWrittenError（消息含「该章已有内容，拒绝重跑」），writer_factory
-    零调用（§5.2 预检全部目标章，一个章都不委托）。
+    """安全阀-真已写（#1265 语义升级）：`execution_refs` 存在且 `progress==done`
+    但**实际正文已清空** → 放行重跑；反之证明「执行态记录不再是唯一判据」。
 
-    阶段 1 无安全阀/异常类 → ImportError + 阶段 1 仍委托 → RED。
+    旧契约以执行态记录为唯一判据：该记录持久化在 `writing_plans` 独立两列，
+    删章/清草稿不触碰它 → 删空后的章被误判「已写」永久无法重跑（#1265）。
+    新契约以实际数据（content_checker → Chapter.content 非空）为唯一判据，
+    执行态记录保留用于统计。真已写仍拒绝的守护见下一用例。
     """
-    from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
-
     repo = AsyncMock()
     plan = _plan(root_outline_id=uuid.uuid4())
     repo.get_writing_plan.return_value = plan
     outline_repo = AsyncMock()
     c1 = _outline(parent_id=None, chapter_id=uuid.uuid4(), name="第一章")
-    c2 = _outline(parent_id=None, chapter_id=uuid.uuid4(), name="第二章")
-    outline_repo.list.return_value = ([c1, c2], 2)
-    # 预置：c1 已执行完成
+    outline_repo.list.return_value = ([c1], 1)
+    # 预置：执行态记录 done，但实际数据为空（删空/清草稿后的真实形态）
     plan.progress[str(c1.id)] = "done"
     plan.execution_refs[str(c1.id)] = "exec-1"
-    deps = _make_deps(repo=repo, outline_repo=outline_repo)
+    content_checker = AsyncMock(return_value=False)
+    deps = _make_deps(repo=repo, outline_repo=outline_repo, content_checker=content_checker)
     svc = BookService(**deps)
 
-    with pytest.raises(ChapterAlreadyWrittenError, match="该章已有内容，拒绝重跑"):
-        await svc.write_book(plan.id)
+    result = await svc.write_book(plan.id)
 
-    deps["writer_factory"].assert_not_awaited()
+    assert result["status"] in {"completed", "running"}
+    deps["writer_factory"].assert_awaited()  # 重跑生效
 
 
 @pytest.mark.asyncio

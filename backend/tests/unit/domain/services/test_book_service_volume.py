@@ -366,11 +366,13 @@ async def test_write_book_volume_no_volume_nodes_single_volume():
 
 
 async def test_write_book_volume_safety_valve_blocks_zero_delegation():
-    """卷级入口安全阀（§5.2/D8 同语义）：任一目标章 execution_refs done →
-    ChapterAlreadyWrittenError（消息含「该章已有内容，拒绝重跑」），
+    """卷级入口安全阀（§5.2/D8 同语义）：任一目标章实际有正文（content_checker
+    命中）→ ChapterAlreadyWrittenError（消息含「该章已有内容，拒绝重跑」），
     volume_pipeline 零调用（一个章都不委托）。
-    GREEN 契约：write_book_volume 预检复用 _check_content_written（RED：
-    构造 TypeError 先行）。"""
+
+    #1265 语义升级：判据改为实际数据（同 _check_content_written），执行态记录
+    不再短路（删章/清草稿后应可重跑）。
+    """
     repo = AsyncMock()
     plan = _plan(root_outline_id=uuid.uuid4())
     repo.get_writing_plan.return_value = plan
@@ -378,11 +380,17 @@ async def test_write_book_volume_safety_valve_blocks_zero_delegation():
     c1 = _outline(parent_id=plan.root_outline_id, chapter_id=uuid.uuid4(), name="第一章")
     c2 = _outline(parent_id=plan.root_outline_id, chapter_id=uuid.uuid4(), name="第二章")
     outline_repo.list.return_value = ([c1, c2], 2)
-    # 预置：c1 已执行完成
+    # 预置：c1 已执行完成 + 实际数据证实有正文
     plan.progress[str(c1.id)] = "done"
     plan.execution_refs[str(c1.id)] = "exec-1"
+    content_checker = AsyncMock(side_effect=lambda cid: cid == c1.chapter_id)
     pipeline = MockVolumePipeline()
-    svc = _service(repo=repo, outline_repo=outline_repo, volume_pipeline=pipeline)
+    svc = _service(
+        repo=repo,
+        outline_repo=outline_repo,
+        volume_pipeline=pipeline,
+        content_checker=content_checker,
+    )
 
     with pytest.raises(ChapterAlreadyWrittenError, match="该章已有内容，拒绝重跑"):
         await svc.write_book_volume(plan.id)
