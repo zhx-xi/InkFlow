@@ -106,6 +106,12 @@ jobs:
             # 扩容规则：新增「被 e2e 硬编码锁定的契约源」时在此追加文件（登记进 docs/contract-guard.md）。
             contract:
               - 'backend/src/inkflow/infrastructure/agent/tools/registry.py'
+              # 章节审计装配契约源（#1280）：e2e-audit.spec.ts 断言「无模型 → 报告弹层
+              # （200 + degraded）而非 422 错误态」（spec §3.3/§5.3）。纯后端改动此前
+              # 不命中 frontend/e2e/ci → e2e-frontend-writing skip → 该契约零守卫，
+              # #1280 断裂即由此静默累积（同 #972 形态）。
+              - 'backend/src/inkflow/api/deps_chapter_audit.py'
+              - 'backend/src/inkflow/api/_llm_resolver.py'
               # 写作链契约源（#1184a）：prompt 契约源改动须触发联保测试，登记见 docs/contract-guard.md。
               - 'backend/src/inkflow/infrastructure/agent/agentic_writer.py'
               - 'backend/src/inkflow/infrastructure/agent/book_agentic_pipeline.py'
@@ -832,7 +838,7 @@ jobs:
     # 原先列 7 个第一批 job = 止损级联 —— 任一 flaky（如 unit-frontend 5s 超时）
     # → 本 job 被 needs 语义静默 skip → 页面级 E2E 验证消失（#936 实测）。
     needs: [changes]
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true'
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.e2e == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.contract == 'true'
     permissions:
       contents: read
     runs-on: windows-latest
