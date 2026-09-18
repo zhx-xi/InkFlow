@@ -94,8 +94,8 @@ class TestUpdateRootGuard:
         """
         root = _setting("大陆")
         target = _setting("概念区")
-        by_int = {root.id.int: root, target.id.int: target}
-        mock_repo.get = AsyncMock(side_effect=lambda sid: by_int.get(sid))
+        by_id = {root.id: root, target.id: target}  # #1271: get 入参为领域 UUID
+        mock_repo.get = AsyncMock(side_effect=lambda sid: by_id.get(sid))
         mock_repo.list = AsyncMock(return_value=([root], 1))  # 唯一根
         with pytest.raises(WorldRootMissingError):
             await service.update_setting(root.id, WorldUpdate(parent_id=target.id))
@@ -111,8 +111,8 @@ class TestUpdateRootGuard:
         root = _setting("大陆")
         child_a = _setting("宗门A", parent_id=root.id)
         child_b = _setting("宗门B", parent_id=root.id)
-        by_int = {root.id.int: root, child_a.id.int: child_a, child_b.id.int: child_b}
-        mock_repo.get = AsyncMock(side_effect=lambda sid: by_int.get(sid))
+        by_id = {root.id: root, child_a.id: child_a, child_b.id: child_b}  # #1271: UUID 键
+        mock_repo.get = AsyncMock(side_effect=lambda sid: by_id.get(sid))
         mock_repo.collect_ancestor_ids = AsyncMock(return_value=[root.id.int])
         mock_repo.get_by_parent_and_name = AsyncMock(return_value=None)
         updated = await service.update_setting(child_a.id, WorldUpdate(parent_id=child_b.id))

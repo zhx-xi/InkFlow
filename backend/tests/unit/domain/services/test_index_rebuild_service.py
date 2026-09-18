@@ -25,6 +25,7 @@ progress_total = 项目数; progress_done 逐项目递增; step 标识当前阶�
 
 from __future__ import annotations
 
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -74,7 +75,9 @@ def spawned():
 @pytest.fixture
 def project_repo():
     repo = AsyncMock()
-    repo.get = AsyncMock(side_effect=lambda pid: AsyncMock() if pid in (PID_A, PID_B) else None)
+    # #1271: project_repo.get 收窄为领域 UUID（service 侧 int → uuid.UUID(int=pid) 归一）
+    known = {uuid.UUID(int=PID_A), uuid.UUID(int=PID_B)}
+    repo.get = AsyncMock(side_effect=lambda pid: AsyncMock() if pid in known else None)
     return repo
 
 

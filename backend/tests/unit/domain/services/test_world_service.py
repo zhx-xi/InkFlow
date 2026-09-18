@@ -165,7 +165,7 @@ class TestWorldSettingCrud:
         mock_repo.get = AsyncMock(return_value=setting)
         result = await service.get_setting(setting.id)
         assert result == setting
-        mock_repo.get.assert_awaited_once_with(setting.id.int)
+        mock_repo.get.assert_awaited_once_with(setting.id)
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await service.get_setting(uuid.uuid4()) is None
@@ -277,7 +277,7 @@ class TestExtract:
         outcome = await service.extract(request)
 
         assert outcome == result
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
         mock_extractor.extract.assert_awaited_once_with(request, default_model=DEFAULT_MODEL)
 
     async def test_extract_project_missing_raises(
@@ -503,9 +503,7 @@ class TestF35UpdateParentSemantics:
         """
         parent = _setting(name="青州")
         existing = _setting(name="清河县城", parent_id=parent.id)
-        mock_repo.get = AsyncMock(
-            side_effect=lambda sid: existing if sid == existing.id.int else None
-        )
+        mock_repo.get = AsyncMock(side_effect=lambda sid: existing if sid == existing.id else None)
 
         with pytest.raises(WorldParentNotFoundError):
             await service.update_setting(existing.id, WorldUpdate(parent_id=uuid.uuid4()))
@@ -519,7 +517,7 @@ class TestF35UpdateParentSemantics:
         existing = _setting(name="清河县城", parent_id=parent.id)
         other_parent = _setting(name="他国", project_id=OTHER_PID)
         mock_repo.get = AsyncMock(
-            side_effect=lambda sid: existing if sid == existing.id.int else other_parent
+            side_effect=lambda sid: existing if sid == existing.id else other_parent
         )
 
         with pytest.raises(WorldParentNotFoundError):
@@ -535,7 +533,7 @@ class TestF35UpdateParentSemantics:
         existing = _setting(name="清河县城", parent_id=parent.id)
         target = _setting(name="东大陆")
         mock_repo.get = AsyncMock(
-            side_effect=lambda sid: existing if sid == existing.id.int else target
+            side_effect=lambda sid: existing if sid == existing.id else target
         )
         # 第一次调用（改名后新父同级预检）不冲突；第二次调用（改挂后同级校验）命中他条目
         mock_repo.get_by_parent_and_name = AsyncMock(
@@ -743,18 +741,18 @@ class TestF35TreeQueries:
         parent = _setting(name="青州", parent_id=grandparent.id)
         setting = _setting(name="清河县城", parent_id=parent.id)
         by_id = {
-            setting.id.int: setting,
-            parent.id.int: parent,
-            grandparent.id.int: grandparent,
+            setting.id: setting,
+            parent.id: parent,
+            grandparent.id: grandparent,
         }
         mock_repo.get = AsyncMock(side_effect=lambda sid: by_id.get(sid))
 
         result = await service.list_ancestors(setting.id)
 
         assert result == [setting, parent, grandparent]
-        mock_repo.get.assert_any_await(setting.id.int)
-        mock_repo.get.assert_any_await(parent.id.int)
-        mock_repo.get.assert_any_await(grandparent.id.int)
+        mock_repo.get.assert_any_await(setting.id)
+        mock_repo.get.assert_any_await(parent.id)
+        mock_repo.get.assert_any_await(grandparent.id)
 
     async def test_list_ancestors_truncates_at_missing_parent(self, service, mock_repo) -> None:
         """父已软删（repo.get(父) → None）→ 链在父处截断，仅返回自身（面包屑不悬挂）.
@@ -762,14 +760,12 @@ class TestF35TreeQueries:
         """
         parent = _setting(name="青州")
         setting = _setting(name="清河县城", parent_id=parent.id)
-        mock_repo.get = AsyncMock(
-            side_effect=lambda sid: setting if sid == setting.id.int else None
-        )
+        mock_repo.get = AsyncMock(side_effect=lambda sid: setting if sid == setting.id else None)
 
         result = await service.list_ancestors(setting.id)
 
         assert result == [setting]
-        mock_repo.get.assert_any_await(parent.id.int)  # 已尝试上溯到父
+        mock_repo.get.assert_any_await(parent.id)  # 已尝试上溯到父
 
     async def test_list_ancestors_truncates_at_cycle(self, service, mock_repo) -> None:
         """数据异常成环（父反指子）→ seen 防御截断，不死循环（L372-373 防御分支）.
@@ -779,7 +775,7 @@ class TestF35TreeQueries:
         parent = _setting(name="青州")
         setting = _setting(name="清河县城", parent_id=parent.id)
         parent_cyclic = parent.model_copy(update={"parent_id": setting.id})  # 异常：父反指子
-        by_id = {setting.id.int: setting, parent_cyclic.id.int: parent_cyclic}
+        by_id = {setting.id: setting, parent_cyclic.id: parent_cyclic}
         mock_repo.get = AsyncMock(side_effect=lambda sid: by_id.get(sid))
 
         result = await service.list_ancestors(setting.id)
@@ -818,9 +814,7 @@ class TestP5DeleteSettingReparentTriggersLocationCleanup:
         )
         setting = _setting(name="清河县城")
         target = _setting(name="青州")
-        mock_repo.get = AsyncMock(
-            side_effect=lambda sid: target if sid == target.id.int else setting
-        )
+        mock_repo.get = AsyncMock(side_effect=lambda sid: target if sid == target.id else setting)
         mock_repo.list = AsyncMock(return_value=([_setting(name="子地点")], 1))
         mock_repo.delete_with_reparent = AsyncMock(return_value=True)
 

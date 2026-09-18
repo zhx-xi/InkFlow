@@ -345,8 +345,8 @@ class TestCreateMap:
         mock_world_repo.get = AsyncMock(return_value=_setting("清河县城"))
         result = await service.create_map(PID, "清河县城图", "县城坊市布局", root, "main.png", IMG)
         assert result.name == "清河县城图"
-        mock_project_repo.get.assert_awaited_once_with(PID.int)
-        mock_world_repo.get.assert_awaited_once_with(root.int)
+        mock_project_repo.get.assert_awaited_once_with(PID)
+        mock_world_repo.get.assert_awaited_once_with(root)
         mock_repo.get_by_name.assert_awaited_once_with(PID.int, "清河县城图")
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, WorldMap)
@@ -426,7 +426,7 @@ class TestCreateMap:
             PID, "清河县城图", "", None, "main.png", IMG, parent_map_id=parent
         )
         assert result.name == "清河县城图"
-        mock_repo.get.assert_awaited_once_with(parent.int)
+        mock_repo.get.assert_awaited_once_with(parent)
         added = mock_repo.add.await_args.args[0]
         assert isinstance(added, WorldMap)
         assert added.parent_map_id == parent
@@ -578,7 +578,7 @@ class TestDeleteMap:
         mock_repo.children = AsyncMock(return_value=[])
         result = await service.delete_map(map_id)
         assert result is False
-        mock_repo.get.assert_any_await(map_id.int)
+        mock_repo.get.assert_any_await(map_id)
         mock_repo.delete.assert_not_awaited()
         mock_asset_store.delete.assert_not_awaited()
 
@@ -629,7 +629,7 @@ class TestDeleteMap:
         """③a repo.get(target) → None → MapReparentTargetError；delete 不调用."""
         m = _map(name="青州全图")
         child = _map(name="清河县城图")
-        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id else None)
         mock_repo.children = AsyncMock(side_effect=lambda mid: [child] if mid == m.id.int else [])
         with pytest.raises(MapReparentTargetError):
             await service.delete_map(m.id, reparent_to=uuid.uuid4())
@@ -643,7 +643,7 @@ class TestDeleteMap:
         m = _map(name="青州全图")
         child = _map(name="清河县城图")
         other_target = _map(name="他书全图", project_id=OTHER_PID)
-        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id.int else other_target)
+        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id else other_target)
         mock_repo.children = AsyncMock(side_effect=lambda mid: [child] if mid == m.id.int else [])
         with pytest.raises(MapReparentTargetError):
             await service.delete_map(m.id, reparent_to=other_target.id)
@@ -658,7 +658,7 @@ class TestDeleteMap:
         child = _map(name="清河县城图")
         target = _map(name="清河县城坊市图")  # 自身深层子孙
         by_id = {m.id.int: [child], child.id.int: [target], target.id.int: []}
-        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id.int else target)
+        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id else target)
         mock_repo.children = AsyncMock(side_effect=lambda mid: by_id.get(mid, []))
         with pytest.raises(MapReparentTargetError):
             await service.delete_map(m.id, reparent_to=target.id)
@@ -676,7 +676,7 @@ class TestDeleteMap:
         child1 = _map(name="清河县城图", image_path="maps/c1/main.png", root_location_id=b1)
         child2 = _map(name="青州分图", image_path="maps/c2/main.png", root_location_id=b2)
         target = _map(name="东大陆全图", image_path="maps/t/main.png")
-        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id.int else target)
+        mock_repo.get = AsyncMock(side_effect=lambda mid: m if mid == m.id else target)
         mock_repo.children = AsyncMock(
             side_effect=lambda mid: [child1, child2] if mid == m.id.int else []
         )
@@ -691,7 +691,7 @@ class TestDeleteMap:
         assert pin.location_id == b2
         assert pin.x == 50.0 and pin.y == 50.0  # 默认居中
         assert pin.label == "青州分地"  # 地点名
-        mock_world_repo.get.assert_awaited_once_with(b2.int)
+        mock_world_repo.get.assert_awaited_once_with(b2)
         mock_repo.update.assert_not_awaited()  # 树平移靠 pin 转移，不 UPDATE root_location
         mock_repo.delete.assert_awaited_once_with(m.id.int)
         mock_asset_store.delete.assert_awaited_once_with(m.image_path)  # 子图文件保留
@@ -723,7 +723,7 @@ class TestPassthroughQueries:
         m = _map(name="清河县城图")
         mock_repo.get = AsyncMock(return_value=m)
         assert await service.get_map(m.id) is m
-        mock_repo.get.assert_awaited_once_with(m.id.int)
+        mock_repo.get.assert_awaited_once_with(m.id)
 
     async def test_children_forwards(self, service, mock_repo) -> None:
         """透传 repo.children(map_id)（drill-down 子地图；地点软删过滤由 repo 保证）."""
@@ -771,7 +771,7 @@ class TestPins:
         assert pin.x == 42.5 and pin.y == 68.0
         assert pin.label == "清河县城"
         assert result is pin
-        mock_world_repo.get.assert_awaited_once_with(loc.int)
+        mock_world_repo.get.assert_awaited_once_with(loc)
 
     async def test_list_pins_forwards(self, service, mock_repo) -> None:
         """透传 repo.list_pins(map_id)；map 不存在返回空列表，无 404 校验（get 不调用）."""

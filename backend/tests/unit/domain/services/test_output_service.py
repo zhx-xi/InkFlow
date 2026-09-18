@@ -355,12 +355,12 @@ async def test_export_project_not_found_raises():
 
 
 async def test_export_project_id_converted_to_int_for_repo():
-    """uuid.UUID → .int 传入 repo 层（F15 _to_int_id 契约）。"""
+    """project_repo.get 收 #1271 收窄契约直传领域 UUID；chapter_repo 仍收 int。"""
     deps = _Deps()
 
     await deps.service().export(PID)
 
-    deps.project_repo.get.assert_awaited_once_with(PID.int)
+    deps.project_repo.get.assert_awaited_once_with(PID)
     deps.chapter_repo.list_volumes.assert_awaited_once_with(PID.int)
     deps.chapter_repo.list_chapters.assert_awaited_once()
 

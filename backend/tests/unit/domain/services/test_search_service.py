@@ -494,7 +494,7 @@ async def test_manual_rebuild_single_project_validates(repos):
 
     await _make_service(repos).rebuild([pid.int])
 
-    repos.project_repo.get.assert_awaited_once_with(pid.int)
+    repos.project_repo.get.assert_awaited_once_with(pid)
     repos.search_repo.ensure_index.assert_awaited_once()
     repos.search_repo.rebuild.assert_awaited_once()
     docs = _rebuild_docs(repos)

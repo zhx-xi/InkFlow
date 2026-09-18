@@ -68,8 +68,10 @@ class MockSummaryRepo:
         self._store: dict[int, ChapterSummary] = summaries or {}
         self.upsert_calls: list[tuple[int, str, str]] = []
 
-    async def get(self, chapter_id: int) -> ChapterSummary | None:
-        return self._store.get(chapter_id)
+    async def get(self, chapter_id: uuid.UUID) -> ChapterSummary | None:
+        """#1271：get 入参为领域 UUID；内部归一为 int 键（与 upsert 同源，镜像真实 repo）。"""
+        key = chapter_id.int if isinstance(chapter_id, uuid.UUID) else chapter_id
+        return self._store.get(key)
 
     async def upsert(self, chapter_id: int, summary: str, model: str) -> ChapterSummary:
         self.upsert_calls.append((chapter_id, summary, model))

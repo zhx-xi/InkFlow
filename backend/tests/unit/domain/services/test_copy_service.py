@@ -188,10 +188,18 @@ def mock_repo() -> MagicMock:
 
 @pytest.fixture
 def mock_project_repo() -> MagicMock:
-    """Mock ProjectRepositoryProtocol — 目标/源项目均存在（按 int 分发）；错误用例覆写."""
+    """Mock ProjectRepositoryProtocol — 目标/源项目均存在（按 id 分发）；错误用例覆写.
+
+    #1271: project_repo.get 收窄为领域 UUID；此处兼容 UUID/int 两形态，
+    供「int 入参直通」兼容用例（test_copy_accepts_int_ids）共用。
+    """
     repo = MagicMock(spec=ProjectRepositoryProtocol)
     repo.get = AsyncMock(
-        side_effect=lambda pid: SimpleNamespace(id=pid) if pid in (SOURCE_INT, TARGET_INT) else None
+        side_effect=lambda pid: (
+            SimpleNamespace(id=pid)
+            if pid in (SOURCE_PID, TARGET_PID, SOURCE_INT, TARGET_INT)
+            else None
+        )
     )
     return repo
 
@@ -262,7 +270,7 @@ class TestTreeCopy:
         country = _setting("大越国")
         state = _setting("青州", parent_id=country.id)
         county = _setting("清河县城", parent_id=state.id)
-        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id else None)
         mock_repo.list_descendants = AsyncMock(return_value=[state, county])
 
         result = await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)
@@ -274,7 +282,7 @@ class TestTreeCopy:
         assert s_new.parent_id is None  # 国不在复制集合 → 置顶层
         assert t_new.parent_id == s_new.id
         assert [s.name for s in result.created] == ["青州", "清河县城"]
-        mock_repo.get.assert_awaited_once_with(state.id.int)
+        mock_repo.get.assert_awaited_once_with(state.id)
         mock_repo.list_descendants.assert_awaited_once_with(state.id.int)
         mock_repo.list_all_active.assert_not_awaited()
 
@@ -439,7 +447,7 @@ class TestMapCopy:
         country = _setting("大越国")
         state = _setting("青州", parent_id=country.id)
         county = _setting("清河县城", parent_id=state.id)
-        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id else None)
         mock_repo.list_descendants = AsyncMock(return_value=[state, county])
 
         await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)
@@ -605,7 +613,7 @@ class TestProjectValidation:
     ) -> None:
         """① 目标项目不存在 → ProjectNotFoundError；零写入."""
         mock_project_repo.get = AsyncMock(
-            side_effect=lambda pid: SimpleNamespace(id=pid) if pid == SOURCE_INT else None
+            side_effect=lambda pid: SimpleNamespace(id=pid) if pid == SOURCE_PID else None
         )
         with pytest.raises(ProjectNotFoundError):
             await service.copy(SOURCE_PID, TARGET_PID)
@@ -616,7 +624,7 @@ class TestProjectValidation:
     ) -> None:
         """② 源项目不存在 → CopySourceNotFoundError；零写入."""
         mock_project_repo.get = AsyncMock(
-            side_effect=lambda pid: SimpleNamespace(id=pid) if pid == TARGET_INT else None
+            side_effect=lambda pid: SimpleNamespace(id=pid) if pid == TARGET_PID else None
         )
         with pytest.raises(CopySourceNotFoundError):
             await service.copy(SOURCE_PID, TARGET_PID)
@@ -662,7 +670,7 @@ class TestSelfOnlyCopy:
         country = _setting("大越国")
         state = _setting("青州", parent_id=country.id)
         county = _setting("清河县城", parent_id=state.id)
-        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id else None)
         mock_repo.list_descendants = AsyncMock(return_value=[state, county])
 
         result = await service.copy(
@@ -682,7 +690,7 @@ class TestSelfOnlyCopy:
         country = _setting("大越国")
         state = _setting("青州", parent_id=country.id)
         county = _setting("清河县城", parent_id=state.id)
-        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id else None)
         mock_repo.list_descendants = AsyncMock(return_value=[state, county])
 
         result = await service.copy(
@@ -696,7 +704,7 @@ class TestSelfOnlyCopy:
         """不传 self_only（缺省 False）→ 既有子树语义（守护用例，RED 阶段即 PASS）."""
         country = _setting("大越国")
         state = _setting("青州", parent_id=country.id)
-        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id.int else None)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id else None)
         mock_repo.list_descendants = AsyncMock(return_value=[state])
 
         result = await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)

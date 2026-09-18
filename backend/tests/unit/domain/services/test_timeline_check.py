@@ -45,8 +45,9 @@ class FakeTimelineRepo:
         self._events.append(event)
         return event
 
-    async def get(self, event_id: int) -> TimelineEvent | None:
-        return next((e for e in self._events if e.id.int == event_id), None)
+    async def get(self, event_id: uuid.UUID) -> TimelineEvent | None:
+        """#1271：get 入参为领域 UUID（不再解包为 int）。"""
+        return next((e for e in self._events if e.id == event_id), None)
 
     async def list(
         self,
@@ -89,11 +90,12 @@ class FakeProjectRepo:
     def __init__(self, exists: bool = True) -> None:
         self._exists = exists
 
-    async def get(self, project_id: int) -> Project | None:
+    async def get(self, project_id: uuid.UUID) -> Project | None:
+        """#1271：get 入参为领域 UUID；Fake 直接以之为实体 id。"""
         if not self._exists:
             return None
         return Project(
-            id=uuid.UUID(int=project_id),
+            id=project_id,
             name="测试项目",
             created_at=TS,
             updated_at=TS,

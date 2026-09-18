@@ -170,7 +170,7 @@ class TestCreate:
         created = await service.create(
             ForeshadowingCreate(project_id=PID, title="林晚的身世", priority=80, event_id=EVENT_ID)
         )
-        mock_timeline_repo.get.assert_awaited_once_with(EVENT_ID.int)
+        mock_timeline_repo.get.assert_awaited_once_with(EVENT_ID)
         added = mock_repo.add.await_args.args[0]
         assert added.event_id == EVENT_ID
         assert created.event_id == EVENT_ID
@@ -297,7 +297,7 @@ class TestListGet:
         mock_repo.get = AsyncMock(return_value=f)
         result = await service.get(f.id)
         assert result == f
-        mock_repo.get.assert_awaited_once_with(f.id.int)
+        mock_repo.get.assert_awaited_once_with(f.id)
 
         mock_repo.get = AsyncMock(return_value=None)
         assert await service.get(uuid.uuid4()) is None
@@ -384,7 +384,7 @@ class TestUpdate:
         mock_repo.update = AsyncMock(side_effect=lambda f: f)
 
         await service.update(existing.id, ForeshadowingUpdate(event_id=EVENT_ID))
-        mock_timeline_repo.get.assert_awaited_once_with(EVENT_ID.int)
+        mock_timeline_repo.get.assert_awaited_once_with(EVENT_ID)
         merged = mock_repo.update.await_args.args[0]
         assert merged.event_id == EVENT_ID
 

@@ -186,7 +186,7 @@ class TestConfirmAccept:
 
         await svc.service.confirm(PID, CID, action="accept")
 
-        svc.project_repo.get.assert_awaited_once_with(PID.int)
+        svc.project_repo.get.assert_awaited_once_with(PID)
         svc.chapter_repo.get_chapter.assert_awaited_once_with(CID.int)
         svc.audit_log_repo.latest_pending.assert_awaited_once_with(CID.int)
         args, kwargs = svc.audit_log_repo.confirm.await_args
