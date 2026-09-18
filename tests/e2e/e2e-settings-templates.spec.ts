@@ -44,6 +44,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -139,6 +140,13 @@ async function fetchKernel(
 
 /** 进入设置页模板分类（侧边栏「设置」→ 设置导航「模板」→ URL cat=templates） */
 async function gotoTemplatesCat(window: Page): Promise<void> {
+  // #1283：与 e2e-settings.spec.ts 的 gotoNav 对齐（#1227 修法）——launchApp() 只等到
+  // 「内核就绪 + 模型预置」（主/后端层信号），不等于主 UI 已挂载：AppLayout 在
+  // !booted/readiness 未就绪时不渲染 app-nav（App.tsx:74/80）。本文件先 reload 再直接点
+  // 链接，boot gate 未过时 app-nav 不存在 → click 死等 30s（CI run 35323604625 attempt1：
+  // 「设为默认」用例 22.5s≈7.5s 基线+15s 超时，retry 仍 23.3s）。门下沉到本函数 = 一处修、
+  // 全文件 5 个调用点覆盖。
+  await awaitAppReady(window, expect);
   await gotoNav(window, '设置');
   await window.getByTestId('settings-cat-templates').click();
   expect(await window.evaluate(() => location.hash)).toContain('cat=templates');
@@ -156,7 +164,10 @@ async function createTemplateViaUi(window: Page, name: string, description = '')
   await window.getByTestId('template-save').click();
   await expect(dialog).not.toBeVisible({ timeout: 15_000 });
   const card = window.locator('[data-testid^="template-card-"]').filter({ hasText: name });
-  await expect(card).toBeVisible({ timeout: 15_000 });
+  // #1283：PATCH 落库 → 列表 refetch 是异步的，CI 长跑下 15s 不够（run 35323604625 attempt1
+  // 「设为默认」用例在此死等 15s，retry 亦 15s 死等）。对齐 #1239/#1257 的「显式预算」手法：
+  // 30s 覆盖长跑退化，而非改断言语义。
+  await expect(card).toBeVisible({ timeout: 30_000 });
   return card;
 }
 
