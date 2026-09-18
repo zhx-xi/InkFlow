@@ -104,7 +104,7 @@ async def test_normalize_all_titles_invalid_fmt_raises(db_session, sample_projec
     """契约 §4：fmt 非法（arabic/chinese 之外）→ ValueError（router 转 422）。"""
     svc = ChapterService(db_session)
     with pytest.raises(ValueError, match="不支持的章节标题格式"):
-        await svc.normalize_all_titles(sample_project.id, "weird")
+        await svc.normalize_all_titles(uuid.UUID(int=sample_project.id), "weird")
 
 
 @pytest.mark.asyncio
