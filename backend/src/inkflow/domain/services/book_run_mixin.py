@@ -135,7 +135,10 @@ class BookRunMixin:
     @staticmethod
     def _derive_run_status(progress: dict[str, str]) -> str:
         """按章级事实派生 run 终态（spec §5.5 表，#897）：无 failed → completed；
-        failed>0 且 done==0 → failed；其余（部分成功）→ degraded。"""
+        failed>0 且 done==0 → failed；其余（部分成功）→ degraded；
+        #1267：有 needs_review（审计阻断待人工介入）→ blocked（不静默当完成）。"""
+        if any(value == "needs_review" for value in progress.values()):
+            return "blocked"
         failed_count = sum(1 for value in progress.values() if value == "failed")
         done_count = sum(1 for value in progress.values() if value == "done")
         if failed_count == 0:

@@ -85,6 +85,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from inkflow.infrastructure.agent._audit_bridge import (
+    audit_blocks_writing,
+    inspect_audit_conclusion,
+)
 from inkflow.infrastructure.agent.book_agentic_pipeline import (
     BookAgenticHITLInterrupt,
     BookAgenticPipeline,
@@ -136,6 +140,7 @@ def _make_plan() -> object:
         character_ids=[],
         root_outline_id=None,
         title="测试书",
+        progress_reason=None,
     )
 
 
@@ -182,12 +187,77 @@ class FakeWriterFactory:
 
 
 class FakeDraftService:
-    def __init__(self) -> None:
+    """F27 草稿服务 fake——create + get（#1174 审计取正文经 draft_id）。
+
+    ``get(draft_id)`` 返回带 content 的草稿，使 ``_delegate_audit`` 的 F34 分支
+    （需要正文非空）可达；真实 F27 契约同名方法。
+    """
+
+    def __init__(self, content: str = "本章正文。" * 50) -> None:
         self.created: list[dict] = []
+        self.content = content
 
     async def create(self, **kwargs):
         self.created.append(kwargs)
         return SimpleNamespace(id=str(uuid.uuid4()))
+
+    async def get(self, draft_id):
+        return SimpleNamespace(id=draft_id, content=self.content)
+
+    async def find_pending(self, project_id, *, source_outline_id=None):
+        return SimpleNamespace(id="draft-id", content=self.content)
+
+
+class FakeChapterService:
+    """F2 章服务 fake（#1174 审计输入面：persist_chapter_body 落章）。"""
+
+    def __init__(self) -> None:
+        self.updates: list[tuple] = []
+
+    async def update_chapter(self, chapter_id, payload):
+        self.updates.append((chapter_id, payload))
+        return SimpleNamespace(id=chapter_id)
+
+
+class FakeAuditService:
+    """F34 章节审计服务 fake（#1267）——按 severities 产出 findings 的 ChapterAuditReport。
+
+    模拟真实 F34 服务返回**领域模型**（非 dict），以驱动真 `report_to_audit_dict`
+    映射（真实形态驱动：不绕过被测量的桥接层）。
+    """
+
+    def __init__(self, severities: set[str] | None = None, *, degraded: bool = False) -> None:
+        self.severities = severities or set()
+        self.degraded = degraded
+        self.calls: list[tuple] = []
+
+    async def audit(self, project_id, chapter_id, *, include_static: bool = True):
+        from datetime import UTC, datetime
+
+        from inkflow.domain.models.chapter_audit import (
+            AuditCheckType,
+            AuditSeverity,
+            ChapterAuditFinding,
+            ChapterAuditReport,
+        )
+
+        self.calls.append((project_id, chapter_id))
+        findings = [
+            ChapterAuditFinding(
+                check_type=AuditCheckType.CHARACTER_DRIFT,
+                severity=AuditSeverity(s),
+                message=f"审计发现-{s}",
+            )
+            for s in sorted(self.severities)
+        ]
+        return ChapterAuditReport(
+            chapter_id=chapter_id,
+            chapter_title="测试章",
+            status="pending",
+            findings=findings,
+            degraded=self.degraded,
+            created_at=datetime.now(UTC),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -487,3 +557,260 @@ class TestBookAgenticPipeline:
             result = await p2.resume(interrupt_obj, approved=True, thread_id=str(plan.id))
             assert result["status"] == "completed"
         assert len(drafts.created) >= 2  # 续跑后全部章落盘
+
+
+# ---------------------------------------------------------------------------
+# #1267 审计结果消费方（写作链按审计结论阻断）RED 契约
+# ---------------------------------------------------------------------------
+
+
+def _audit_dict(severities: list[str], *, degraded: bool = False) -> dict:
+    """构造 report_to_audit_dict 形态的审计结论（findings 平铺 severity）。"""
+    return {
+        "score": 100 - sum({"error": 20, "warning": 8, "info": 2}[s] for s in severities),
+        "issues": [f"问题-{s}" for s in severities],
+        "character_drift": [],
+        "setting_drift": [],
+        "degraded": degraded,
+        "chapter_id": str(uuid.uuid4()),
+        "findings": [
+            {
+                "check_type": "character_drift",
+                "severity": s,
+                "message": f"问题-{s}",
+                "suggestion": "",
+                "ref_entity_id": None,
+                "ref_entity_name": "",
+                "context": "",
+            }
+            for s in severities
+        ],
+    }
+
+
+class TestAuditBlocking:
+    """#1267：审计结论必须有后果——全自动轨必阻断，交互式轨交用户决定。"""
+
+    @pytest.mark.asyncio
+    async def test_autonomous_run_blocks_on_error_finding(self) -> None:
+        """① 全自动轨：审计出 error → 停止后续章节（不发下一章 write 请求）。
+
+        issue: 「全自动（auto_write_enabled=true 或 book run）审计 fail
+        （severity=error）→ 必须阻断（停止写作 / 标记该章待人工介入），不得静默继续」。
+        """
+        chapters = _make_chapters(2)
+        plan = _make_plan()
+        writer = FakeWriterFactory()
+        drafts = FakeDraftService()
+        audits = FakeAuditService({"error"})
+        llm = FakeDecisionLLM(
+            [
+                _gotos("write_chapter", chapters[0]["outline_id"]),
+                _gotos("audit_chapter", chapters[0]["outline_id"]),
+                # 决策还想继续写第 2 章 —— 必须被阻断逻辑拦住（不执行）
+                _gotos("write_chapter", chapters[1]["outline_id"]),
+                _gotos("mark_done", chapters[1]["outline_id"]),
+                '{"action": "finish"}',
+            ]
+        )
+        pipeline = BookAgenticPipeline(
+            llm,
+            writer_factory=writer,
+            draft_service=drafts,
+            audit_service=audits,
+            chapter_service=FakeChapterService(),
+        )
+        result = await pipeline.execute(
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
+            config=_make_config(audit_required=True),
+        )
+        # 阻断：run 停下（非正常完成），第 2 章从未落盘（= 未发下一章请求）
+        assert result["status"] == "blocked", f"应因审计阻断而停，实际 {result['status']}"
+        assert len(writer.calls) == 1, f"第 2 章不应开写，实际写了 {len(writer.calls)} 章"
+        assert all(d.get("chapter_id") != chapters[1]["chapter_id"] for d in drafts.created), (
+            "被阻断的后续章节不应有任何产出丢失前的落盘"
+        )
+
+    @pytest.mark.asyncio
+    async def test_autonomous_run_continues_without_error_finding(self) -> None:
+        """① 反向断言：审计无 error（仅 warning/info）→ 正常继续到 completed。
+
+        防「阻断判定恒 True」这类伪实现——若恒阻断，本用例必红。
+        """
+        chapters = _make_chapters(2)
+        plan = _make_plan()
+        writer = FakeWriterFactory()
+        drafts = FakeDraftService()
+        audits = FakeAuditService({"warning", "info"})
+        llm = FakeDecisionLLM(
+            [
+                _gotos("write_chapter", chapters[0]["outline_id"]),
+                _gotos("audit_chapter", chapters[0]["outline_id"]),
+                _gotos("mark_done", chapters[0]["outline_id"]),
+                _gotos("write_chapter", chapters[1]["outline_id"]),
+                _gotos("mark_done", chapters[1]["outline_id"]),
+                '{"action": "finish"}',
+            ]
+        )
+        pipeline = BookAgenticPipeline(
+            llm,
+            writer_factory=writer,
+            draft_service=drafts,
+            audit_service=audits,
+            chapter_service=FakeChapterService(),
+        )
+        result = await pipeline.execute(
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
+            config=_make_config(audit_required=True),
+        )
+        assert result["status"] != "blocked", "warning/info 不应阻断（非阻断级）"
+        assert len(writer.calls) == 2, "无阻断级发现 → 应继续写完两章"
+
+    @pytest.mark.asyncio
+    async def test_blocked_state_is_persisted_and_observable(self) -> None:
+        """② 状态可查：阻断时状态落库，明确标记「因审计阻断」（不静默）。
+
+        落点 = plan.status="blocked" + plan.progress[oid]="needs_review"
+        + progress_reason 含审计原因（复用既有字段，不新增 DB 字段）。
+        """
+        from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+
+        chapters = _make_chapters(1)
+        plan = WritingPlan(
+            id=uuid.uuid4(),
+            project_id=uuid.uuid4(),
+            title="测试书",
+            status="running",
+            progress={},
+            execution_refs={},
+            limits={},
+            character_ids=[],
+        )
+        writer = FakeWriterFactory()
+        drafts = FakeDraftService()
+        audits = FakeAuditService({"error"})
+        llm = FakeDecisionLLM(
+            [
+                _gotos("write_chapter", chapters[0]["outline_id"]),
+                _gotos("audit_chapter", chapters[0]["outline_id"]),
+                '{"action": "finish"}',
+            ]
+        )
+        pipeline = BookAgenticPipeline(
+            llm,
+            writer_factory=writer,
+            draft_service=drafts,
+            audit_service=audits,
+            chapter_service=FakeChapterService(),
+        )
+        await pipeline.execute(
+            plan,
+            chapters,
+            BookLimits(max_chapters=5, max_agent_calls=50),
+            config=_make_config(audit_required=True),
+        )
+        oid = str(chapters[0]["outline_id"])
+        assert plan.progress.get(oid) == "needs_review", (
+            f"被阻断章应标记 needs_review，实际 {plan.progress.get(oid)}"
+        )
+        assert plan.progress_reason and "审计" in plan.progress_reason, (
+            f"阻断原因须落 progress_reason 可查，实际 {plan.progress_reason!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_degraded_audit_does_not_block_but_warns(self) -> None:
+        """degraded 例外：LLM 审计失败降级 → 不阻断（没审出来 ≠ 审出问题）+ 告警。
+
+        issue: 「degraded=true（LLM 审计失败）不得当『通过』——须显式区分
+        『审了且过』vs『没审成』」→ 本用例断言「不阻断但可感知」。
+        """
+        chapters = _make_chapters(1)
+        plan = _make_plan()
+        writer = FakeWriterFactory()
+        drafts = FakeDraftService()
+        audits = FakeAuditService(set(), degraded=True)
+        llm = FakeDecisionLLM(
+            [
+                _gotos("write_chapter", chapters[0]["outline_id"]),
+                _gotos("audit_chapter", chapters[0]["outline_id"]),
+                _gotos("mark_done", chapters[0]["outline_id"]),
+                '{"action": "finish"}',
+            ]
+        )
+        pipeline = BookAgenticPipeline(
+            llm,
+            writer_factory=writer,
+            draft_service=drafts,
+            audit_service=audits,
+            chapter_service=FakeChapterService(),
+        )
+        result = await pipeline.execute(
+            plan,
+            chapters,
+            _make_limits(max_chapters=5, max_agent_calls=50),
+            config=_make_config(audit_required=True),
+        )
+        assert result["status"] != "blocked", "degraded 不应阻断"
+        audits_dict = _audit_dict([], degraded=True)
+        conclusion = inspect_audit_conclusion(audits_dict)
+        assert conclusion["blocked"] is False
+        assert conclusion["warning"] is True, "degraded 必须告警（不得静默当通过）"
+        assert conclusion["verdict"] == "degraded"
+
+    async def test_interactive_chapter_returns_needs_decision(self) -> None:
+        """③ 交互式轨：阻断级 finding → 结论判定为「需用户决定」（blocked=True）。
+
+        交互式形态 = 复用既有 audit_logs.status="pending" 状态机（用户 confirm
+        accept/reject 才推进）；真实服务侧行为在
+        tests/unit/domain/services/test_chapter_audit_service.py::
+        test_error_finding_awaits_user_decision 断言。本用例钉住**编排侧**读到的
+        同一个判定：F34 服务产出的真实报告 → blocked=True（不自动继续）。
+        """
+        from datetime import UTC, datetime
+
+        from inkflow.domain.models.chapter_audit import (
+            AuditCheckType,
+            AuditSeverity,
+            ChapterAuditFinding,
+            ChapterAuditReport,
+        )
+        from inkflow.infrastructure.agent._audit_bridge import report_to_audit_dict
+
+        report = ChapterAuditReport(
+            chapter_id=uuid.uuid4(),
+            chapter_title="测试章",
+            status="pending",
+            findings=[
+                ChapterAuditFinding(
+                    check_type=AuditCheckType.SETTING_DRIFT,
+                    severity=AuditSeverity.ERROR,
+                    message="与世界观设定矛盾",
+                )
+            ],
+            degraded=False,
+            created_at=datetime.now(UTC),
+        )
+        conclusion = inspect_audit_conclusion(report_to_audit_dict(report))
+        assert conclusion["blocked"] is True, "阻断级 finding → 必须交用户决定"
+        assert conclusion["verdict"] == "blocked"
+        assert conclusion["blocking_count"] == 1
+        assert conclusion["blocking_messages"] == ["与世界观设定矛盾"]
+
+    def test_blocking_judgement_is_falsifiable(self) -> None:
+        """④ 可证伪自证：把阻断判定改成「恒 False」→ 上述断言必 FAIL。
+
+        本用例直接钉住判定函数语义：error → True；warning/info/空 → False。
+        若有人把 ``audit_blocks_writing`` 改成恒 False，本用例即刻变红。
+        """
+        err = [{"severity": "error", "message": "x"}]
+        assert audit_blocks_writing(err) is True, "error 必须判定为阻断级"
+        assert audit_blocks_writing([{"severity": "warning"}]) is False
+        assert audit_blocks_writing([{"severity": "info"}]) is False
+        assert audit_blocks_writing([]) is False
+        # degraded 结论即便带 error 也不阻断（没审出来 ≠ 审出问题）
+        degraded_with_error = _audit_dict(["error"], degraded=True)
+        assert inspect_audit_conclusion(degraded_with_error)["blocked"] is False

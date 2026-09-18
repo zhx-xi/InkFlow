@@ -34,6 +34,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
+from loguru import logger
 
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
@@ -50,6 +51,7 @@ from inkflow.domain.services.chapter_brief import (
 from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
 from inkflow.infrastructure.agent._audit_bridge import (
     audit_event,
+    blocking_update,
     build_audit_messages,
     persist_chapter_body,
     read_draft_body,
@@ -86,6 +88,8 @@ class BookAgenticState(TypedDict):
     progress: dict[str, str]
     results: Annotated[dict[str, str], operator.or_]
     audit_results: Annotated[dict[str, dict], operator.or_]
+    # #1267：审计阻断记录 {outline_id: 原因}——非空即「因审计阻断」，停止后续章节
+    audit_blocked: Annotated[dict[str, str], operator.or_]
     route_history: Annotated[list[str], lambda a, b: a + b]
     usage: Annotated[list[dict], operator.add]
     steps: int
@@ -244,6 +248,13 @@ async def _supervisor_node(state: BookAgenticState, pipeline: BookAgenticPipelin
     response 恰一，跨 checkpoint 持久化）。
     """
     config = pipeline._config
+    # #1267 审计阻断闸：任一章审计出阻断级 finding → 停止后续章节（不静默继续），
+    # 已完成产出保留（progress/results 不动，收尾由 execute 落 needs_review + 原因）。
+    # 放在 LLM 决策之前：阻断后连决策请求都不再发（确定性停止，不依赖模型自觉）。
+    if state.get("audit_blocked"):
+        blocked_id = next(iter(state["audit_blocked"]), "")
+        logger.warning("#1267 审计阻断生效，停止后续章节：chapter={}", blocked_id)
+        return Command(update={"finished": True, "status": "blocked"}, goto=END)
     action, op, oid, decision_events = await _decide_next_action(state, pipeline)
     if action == "":
         # 决策重试耗尽 / 异常：fallback_on_error=false → 直接中止；默认 → 确定性兜底
@@ -376,6 +387,8 @@ async def _audit_chapter(
     }
     if chapter is not None:
         extra["chapter_ops"] = _bump_chapter_ops(state, oid)
+        # #1267 消费方：审计结论必须影响流程——阻断级 finding → 记录「因审计阻断」
+        extra.update(blocking_update(oid, audit))
     return {**update, **extra}
 
 
@@ -434,6 +447,18 @@ async def _fallback_node(
     progress = dict(state.get("progress", {}))
     results: dict[str, str] = {}
     usage_events: list[dict] = []
+    # #1267 审计阻断闸：兜底路径同样受阻断约束（否则「决策重试耗尽 → fallback」
+    # 会绕过阻断继续把后续章写完，阻断形同虚设）。
+    blocked = state.get("audit_blocked") or {}
+    if blocked:
+        logger.warning("#1267 审计阻断生效，兜底路径不再续写：{}", sorted(blocked))
+        return {
+            "progress": progress,
+            "results": results,
+            "usage": usage_events,
+            "finished": True,
+            "status": "blocked",
+        }
     for chapter in state["chapters"]:
         oid = str(chapter["outline_id"])
         if progress.get(oid) == "done":
@@ -596,6 +621,7 @@ class BookAgenticPipeline:
                 "progress": {},
                 "results": {},
                 "audit_results": {},
+                "audit_blocked": {},
                 "route_history": [],
                 "usage": [],
                 "steps": 0,
@@ -615,6 +641,7 @@ class BookAgenticPipeline:
             interrupts = final_dict.get("__interrupt__")
             if interrupts:
                 raise BookAgenticHITLInterrupt(interrupts[0].value)
+            self._finalize_audit_block(plan, final_dict)
             return {
                 "run_id": self._thread_id,
                 "status": str(final_dict.get("status", "completed")),
@@ -622,6 +649,29 @@ class BookAgenticPipeline:
             }
 
         return await self._run_with_checkpointer(_run, thread_id=self._thread_id)
+
+    @staticmethod
+    def _finalize_audit_block(plan: WritingPlan, final: dict[str, Any]) -> None:
+        """#1267 全自动轨收尾：审计阻断 → 状态落库可查（复用既有字段，零新增 DB 字段）.
+
+        - 被阻断的章 ``progress[oid] = "needs_review"``（待人工介入，issue 原话语义）
+        - ``progress_reason`` = 审计阻断原因（用户在 run 详情可读，不静默）
+        - ``plan.status`` 由 BookService.write_book_agentic 按 execute 返回值落库
+          （"blocked"；进度/reason 在此就地写，因 plan 为共享引用）
+
+        非阻断（无 ``audit_blocked``）→ 不动 plan（保持既有收尾语义）。
+        """
+        blocked: dict = final.get("audit_blocked") or {}
+        if not blocked:
+            return
+        reasons: list[str] = []
+        for oid, reason in blocked.items():
+            plan.progress[oid] = "needs_review"
+            reasons.append(str(reason))
+        plan.progress_reason = "\n".join(reasons)[:2000]
+        logger.warning(
+            "#1267 审计阻断收尾：{} 章标记 needs_review，run 状态置 blocked", len(blocked)
+        )
 
     @instrument(caller_type="agent")
     async def resume(
