@@ -408,6 +408,45 @@ class BookService(BookOutlineMixin, BookRunMixin):
             "counters": self._build_counters(plan),
         }
 
+    async def reset_run(self, run_id: str) -> dict:
+        """重置书级运行执行态（#1282 方案 B）：不删正文的重跑出口.
+
+        语义边界（issue #1282 倾向 B）：只清**编排执行态**并退回起点态，**不动**
+        ``chapters.content`` / ``drafts`` —— 「想重写但不想先毁掉旧稿」由用户自己
+        处理旧正文。reset 因此不绕过安全闸：正文仍在 → 下次 ``prepare_run`` 依旧
+        被 ``content_checker`` 拦住（闸门判据是实际数据，#1265 语义不变），
+        即 reset ≠ 静默覆盖（方案 A 的取舍，本 issue 明确不做）。
+
+        清理项：``progress`` / ``execution_refs`` 清空（执行痕迹归零）+
+        ``progress_reason`` / ``thread_id`` / ``hitl_payload`` 复位（陈旧终态与
+        checkpoint 锚点不跨轮泄漏——续跑改由新一轮 execute 重建）。``limits``
+        保留：token 计数是**累计账单**，不是执行态，清掉会重复计费。
+
+        Args:
+            run_id: 书级运行 id（= WritingPlan.id 字符串）.
+
+        Returns:
+            {"run_id": run_id, "status": "ready"}.
+
+        Raises:
+            ValueError: 运行不存在 / 运行已在进行中（先 pause 或等它结束）.
+        """
+        plan = await self._repo.get_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 get_writing_plan
+            run_id
+        )
+        if plan is None:
+            raise ValueError("运行不存在")
+        if plan.status == "running":
+            raise ValueError("运行已在进行中，不可重置")
+        plan.progress = {}
+        plan.execution_refs = {}
+        plan.progress_reason = None
+        plan.thread_id = None
+        plan.hitl_payload = None
+        plan.status = "ready"
+        await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        return {"run_id": run_id, "status": plan.status}
+
     async def intervene(
         self,
         run_id: str,

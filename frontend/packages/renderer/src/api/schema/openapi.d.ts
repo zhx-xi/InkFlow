@@ -248,6 +248,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/books/runs/{run_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Run
+         * @description 重置书级运行执行态（#1282 方案 B）：清 progress/execution_refs + 退回 ready。
+         *
+         *     不删正文（chapters/chapters.drafts 零触碰）——「不删旧稿就重跑」的用户出口：
+         *     reset 后再 POST /runs 即可重跑；若正文仍在，安全闸（#1265 判据）依旧拦截，
+         *     故本端点是显式重置而非静默覆盖。幂等：可重复调用。破坏性仅限于「跑过」的
+         *     执行记录（详见 BookService.reset_run docstring）。异常 404/422。
+         */
+        post: operations["reset_run_api_v1_agent_books_runs__run_id__reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/books/runs/{run_id}/summary": {
         parameters: {
             query?: never;
@@ -6604,6 +6629,37 @@ export interface operations {
                 "application/json": components["schemas"]["InterveneRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_run_api_v1_agent_books_runs__run_id__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

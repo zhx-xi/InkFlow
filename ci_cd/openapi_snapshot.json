@@ -6544,6 +6544,47 @@
         ]
       }
     },
+    "/api/v1/agent/books/runs/{run_id}/reset": {
+      "post": {
+        "description": "重置书级运行执行态（#1282 方案 B）：清 progress/execution_refs + 退回 ready。\n\n不删正文（chapters/chapters.drafts 零触碰）——「不删旧稿就重跑」的用户出口：\nreset 后再 POST /runs 即可重跑；若正文仍在，安全闸（#1265 判据）依旧拦截，\n故本端点是显式重置而非静默覆盖。幂等：可重复调用。破坏性仅限于「跑过」的\n执行记录（详见 BookService.reset_run docstring）。异常 404/422。",
+        "operationId": "reset_run_api_v1_agent_books_runs__run_id__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Run",
+        "tags": [
+          "Books"
+        ]
+      }
+    },
     "/api/v1/agent/books/runs/{run_id}/summary": {
       "get": {
         "description": "书级运行回归摘要（§3.3）：进度树 + 计数器 + steps + next。",

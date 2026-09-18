@@ -215,6 +215,7 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 | `POST /runs/{run_id}/confirm` | 3 | 卷级 HITL 确认（body `{approved, decision?}`；非 waiting_hitl → 422） | 200 |
 | `POST /runs/{run_id}/intervene` | 4 | 中途干预（pause/resume/改向/编辑，§3.3） | 200 |
 | `GET /runs/{run_id}/summary` | 4 | 回归摘要 + 结构化运行日志（§3.4） | 200 |
+| `POST /runs/{run_id}/reset` | 4 | 重置执行态（清 progress/execution_refs + 退回 `ready`，**不删正文**；#1282 方案 B——「不删旧稿就重跑」出口） | 200 |
 
 ### 3.2 请求/响应示例（阶段 1 访谈 + 阶段 3 卷确认）
 
