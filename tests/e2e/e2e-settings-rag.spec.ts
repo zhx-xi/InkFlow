@@ -34,6 +34,7 @@ import {
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
 import { createIsolatedEnv, type IsolatedEnv } from './e2e-isolation';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -93,8 +94,16 @@ async function launchIso(
   return { app, window, kernel };
 }
 
-/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置） */
+/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置）
+ *
+ * #1295：先等渲染层出 boot gate（`awaitAppReady` 幂等，已就绪立即返回）——与
+ * e2e-settings.spec.ts:94-97（#1227 修法）同形。`launchIso()` 只等到「内核就绪 +
+ * 模型预置」（主进程/后端层信号），**不等于**主 UI 已挂载；AppLayout 在
+ * `!booted`/readiness 未就绪时不渲染 `app-nav`（App.tsx:74/80）。
+ * 门下沉到本函数 = 一处修、全文件多调用点覆盖（含第二程 `gotoNav(second.window,'项目')`）。
+ */
 async function gotoNav(window: Page, name: string): Promise<void> {
+  await awaitAppReady(window, expect);
   await window.getByRole('link', { name }).click();
 }
 
@@ -182,11 +191,31 @@ async function ensureEmbeddingProvider(
   return created;
 }
 
-/** 设置页 → 模型分类：ModelsPanel 挂载 → fetchVectorStatus → RAG 状态卡片出现。 */
+/** 设置页 → 模型分类：ModelsPanel 挂载 → fetchVectorStatus → RAG 状态卡片出现。
+ *
+ * #1295：就绪门必须等 **status 解析完成**，而非 `rag-status-card` 可见——
+ * RagStatusCard.tsx:112-117（#824）起内容卡**恒渲染**：status===null 时它已可见
+ * 并渲染 `rag-empty`（「加载中」，:156-159）。故等卡片 = 对「status 已就绪」零判别力，
+ * 会让紧随其后的 `rag-*` 断言用**默认 5s 预算**去追一个尚在飞的
+ * `fetchVectorStatus`（useEffect :25-40 → 解析后才 setStatus）。
+ *
+ *   CI 实证（run 35371922814 attempt1）：本文件四条同形用例里，唯独
+ *   `rag_stale_persists_across_restart` 的首个断言就是裸断言横幅 → 20.1s 超时红；
+ *   另三条因先断 `rag-model-name` 等（天然多给了一轮时间）而侥幸绿 —— 同源竞态。
+ *
+ * 就绪判据 = `rag-empty` 消失。分支真值（RagStatusCard.tsx:151-193，四态互斥）：
+ *   `!currentProjectId` → rag-empty（空态）
+ *   `!status`           → rag-empty（**加载中** ← 本轨要消除的中间窗口）
+ *   `status` 已解析     → no-embedding | fresh | stale-banner（三者之一，**均无 rag-empty**）
+ * 用例均已先建项目（currentProjectId 已设），故 `rag-empty` 消失 ≡ status 解析完成。
+ * ⚠️ 不用 `toPass` 包裹（`toHaveCount(0)` 自身即自动重试，语义更直白）。
+ */
 async function openRagStatus(window: Page): Promise<void> {
   await gotoNav(window, '设置');
   await window.getByTestId('settings-cat-models').click();
   await expect(window.getByTestId('rag-status-card')).toBeVisible({ timeout: 15_000 });
+  // #1295：等 status 解析落态（消除「卡片已挂载但 status 仍 null」的竞态窗口）
+  await expect(window.getByTestId('rag-empty')).toHaveCount(0, { timeout: 30_000 });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,9 +242,10 @@ test.describe('RAG 向量状态区块（#276）', () => {
       await openRagStatus(window);
       await expect(window.getByTestId('rag-model-name')).toContainText('text-embedding-test');
       const banner = window.getByTestId('rag-stale-banner');
-      await expect(banner).toBeVisible();
+      // #1295：显式预算（默认 5s 在 CI 长跑退化下不足）——对齐 #1239/#1257/#1283 手法
+      await expect(banner).toBeVisible({ timeout: 30_000 });
       await expect(banner).toContainText('无索引指纹');
-      await expect(window.getByTestId('rag-reindex-btn')).toBeVisible();
+      await expect(window.getByTestId('rag-reindex-btn')).toBeVisible({ timeout: 30_000 });
     } finally {
       const pids = [kernel.pid, app.process()?.pid];
       await app.close();
@@ -296,7 +326,8 @@ test.describe('RAG 向量状态区块（#276）', () => {
       await ensureEmbeddingProvider(first.kernel, 'text-embedding-test');
 
       await openRagStatus(first.window);
-      await expect(first.window.getByTestId('rag-stale-banner')).toBeVisible();
+      // #1295：显式预算（CI run 35371922814 本行裸断言 5s 超时红，retry 同样红）
+      await expect(first.window.getByTestId('rag-stale-banner')).toBeVisible({ timeout: 30_000 });
     } finally {
       await first.app.close();
     }
@@ -311,7 +342,8 @@ test.describe('RAG 向量状态区块（#276）', () => {
 
       await openRagStatus(second.window);
       const banner = second.window.getByTestId('rag-stale-banner');
-      await expect(banner).toBeVisible();
+      // #1295：显式预算（第二程同源竞态，防同一缺陷在下半场复发）
+      await expect(banner).toBeVisible({ timeout: 30_000 });
       // 后端权威（只读）：指纹缺失跨重启稳定 = stale true / reason unknown（UI 横幅同源）
       const list = await apiJson(second.kernel, 'GET', '/api/v1/projects');
       const project = ((list.data as { items: Array<{ id: string; name: string }> }).items ?? []).find(
