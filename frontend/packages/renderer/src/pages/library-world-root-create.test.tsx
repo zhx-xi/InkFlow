@@ -51,7 +51,7 @@ function seedWorld(
 ) {
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/world-settings') return { items, total: items.length, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/projects/p1/world-settings')) return { items, total: items.length, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/world-categories') return { items: cats, total: cats.length, offset: 0, limit: 50 };
     return { items: [], total: 0, offset: 0, limit: 50 };
   });

@@ -115,9 +115,10 @@ function renderLibrary(initialPath = '/library') {
   );
 }
 
-/** 端点命中断言（宽容单参/双参：契约 = 拉取了该端点，不约束 init 形状） */
+/** 端点命中断言（宽容单参/双参：契约 = 拉取了该端点，不约束 init 形状）。
+ *  #1300：分页端点带 `?limit=&offset=` 查询串 → 前缀匹配（同库 outlines 先例）。 */
 function fetchCalled(path: string): boolean {
-  return apiFetchMock.mock.calls.some((c) => c[0] === path);
+  return apiFetchMock.mock.calls.some((c) => typeof c[0] === 'string' && (c[0] as string).startsWith(path));
 }
 
 /** 下拉/combobox 选择（原生 select 与 Radix 双分支兼容；选项可访问名 = optionText） */

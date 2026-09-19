@@ -61,7 +61,7 @@ describe('设定库页 — 世界观分类 kind 图标 + 地图入口（#699）'
     });
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings')
+      if (path.startsWith('/api/v1/projects/p1/world-settings'))
         return {
           items: [
             { id: 'w1', name: '九州', category: '', content: '', parent_id: null, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-01T10:00:00Z' },

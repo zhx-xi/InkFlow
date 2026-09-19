@@ -129,7 +129,7 @@ describe('地图工作台修复契约（#973 快照刷新 / #978 删除钮重叠
       if (path === '/api/v1/projects') {
         return { items: [projectP1], total: 1, offset: 0, limit: 50 };
       }
-      if (path === '/api/v1/projects/p1/world-settings') {
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) {
         return { items: worldItems, total: worldItems.length, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/projects/p1/maps') {
@@ -178,7 +178,7 @@ describe('地图工作台修复契约（#973 快照刷新 / #978 删除钮重叠
       if (path === '/api/v1/projects') {
         return { items: [projectP1], total: 1, offset: 0, limit: 50 };
       }
-      if (path === '/api/v1/projects/p1/world-settings') {
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) {
         return { items: worldTree, total: worldTree.length, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/projects/p1/maps') {
@@ -214,7 +214,7 @@ describe('地图工作台修复契约（#973 快照刷新 / #978 删除钮重叠
     const categories: Array<{ id: string; name: string; count: number }> = [];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings') {
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) {
         return { items: worldTree, total: worldTree.length, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/projects/p1/maps') return { items: [], total: 0, offset: 0, limit: 50 };

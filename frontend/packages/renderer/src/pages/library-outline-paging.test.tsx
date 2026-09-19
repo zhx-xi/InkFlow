@@ -163,7 +163,7 @@ function mockOutlineApi(state: State, opts?: { generate?: () => Promise<unknown>
     if (path === '/api/v1/projects/p1/chapters') return emptyRes;
     if (path === '/api/v1/projects/p1/maps') return emptyRes;
     if (path === '/api/v1/projects/p1/story-arcs') return emptyRes;
-    if (path === '/api/v1/projects/p1/characters') return { items: [{ id: 'x1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/projects/p1/characters')) return { items: [{ id: 'x1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
     const pts = path.match(/^\/api\/v1\/outlines\/([^/]+)\/plot-points$/);
     if (pts) return emptyRes;
     // AI 生成（POST /api/v1/outlines/generate）→ 注入式或默认回造一个 overall
@@ -321,12 +321,16 @@ describe('#1002 大纲树排序 toggle + 顶层分页（LibraryPage 装配）', 
     const user = userEvent.setup();
     // 默认角色 tab（不进大纲）→ 只拉 characters
     await waitFor(() => {
-      expect(apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/projects/p1/characters')).toBe(true);
+      expect(
+        apiFetchMock.mock.calls.some((c) => typeof c[0] === 'string' && (c[0] as string).startsWith('/api/v1/projects/p1/characters')),
+      ).toBe(true);
     });
     // 明确切到角色 tab（从大纲场景外回归）
     await user.click(screen.getByRole('tab', { name: '角色' }));
     await waitFor(() => {
-      expect(apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/projects/p1/characters')).toBe(true);
+      expect(
+        apiFetchMock.mock.calls.some((c) => typeof c[0] === 'string' && (c[0] as string).startsWith('/api/v1/projects/p1/characters')),
+      ).toBe(true);
     });
     // 无任何 `/outlines?` 调用（三路拉取仅在 outline tab）
     expect(apiFetchMock.mock.calls.some((c) => typeof c[0] === 'string' && (c[0] as string).includes('/api/v1/projects/p1/outlines?'))).toBe(false);
@@ -335,7 +339,7 @@ describe('#1002 大纲树排序 toggle + 顶层分页（LibraryPage 装配）', 
   it('P7 失败兜底：overall 拉取 reject → err toast，不白屏', async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') return { items: [{ id: 'x1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/projects/p1/characters')) return { items: [{ id: 'x1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
       // overall 拉取失败（覆盖 no-query（RED 旧行为）与 level=overall query（GREEN 新消费））
       if (typeof path === 'string' && path.startsWith('/api/v1/projects/p1/outlines')) {
         throw new Error('大纲加载失败');
