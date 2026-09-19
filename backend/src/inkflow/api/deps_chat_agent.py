@@ -111,21 +111,29 @@ async def get_chat_agent_service(
     from inkflow.infrastructure.agent.tools.world_readwrite_tools import WorldRwToolDeps
     from inkflow.infrastructure.agent.tools.writing_tools import WritingToolDeps
 
-    # 模型/密钥/base_url 同源装配（#929 §3）：统一走 resolve_llm_credentials——
-    # 空默认/named provider 无 key → fail-fast 422 + 诊断日志，绝不遍历注册表
-    # 取 models[0]（embedding 误装配为 chat 的缺陷通道，#929 R1/#738 回退废止）。
-    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
-
     # F59-M2：思考档位三级解析（请求 > 项目 > 全局，spec §2.2）；项目查询失败/项目
     # 不存在 → 软回退全局（§5.5 spirit），绝不因档位解析阻断 chat 装配。
+    # #1309：项目实体同时供模型解析（下）——一次查询两用。
     project_effort: str | None = None
+    project_model: str | None = None
     try:
         project_svc = deps_module.get_project_service(db)
         project: Project | None = await project_svc.get(uuid.UUID(data.project_id))
         if project is not None:
             project_effort = getattr(project.config, "reasoning_effort", None)
+            project_model = getattr(project.config, "model", None)
     except Exception:
         pass
+
+    # 模型/密钥/base_url 同源装配（#929 §3）：统一走 resolve_llm_credentials——
+    # 空默认/named provider 无 key → fail-fast 422 + 诊断日志，绝不遍历注册表
+    # 取 models[0]（embedding 误装配为 chat 的缺陷通道，#929 R1/#738 回退废止）。
+    # #1309：回退链补项目档位（项目 config.model > 全局默认），与 book 轨
+    # （books.py:375-378）/ agentic 轨（#1298）同源，拒绝同族分叉。
+    model, api_key, base_url = resolve_llm_credentials(
+        config.llm_default_model,
+        project_model=project_model,
+    )
     effort = resolve_reasoning_effort(
         request_effort=getattr(data, "reasoning_effort", None),
         project_effort=project_effort,
