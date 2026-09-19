@@ -31,6 +31,7 @@ import {
 } from '@playwright/test';
 import { ensureModelConfigured } from './e2e-model-ready';
 import { createIsolatedEnv, withAppClosedOnFailure, type IsolatedEnv } from './e2e-isolation';
+import { awaitAppReady } from './e2e-app-ready';
 
 // 本文件位于 <repoRoot>/tests/e2e/ → 仓库根 → frontend 目录
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -127,9 +128,39 @@ async function launchIsolated(
   });
 }
 
-/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置） */
+/** 侧边栏导航（AppNav 链接文本：项目 / 写作 / 设定库 / 设置）
+ *
+ * #1307：先等渲染层出 boot gate（`awaitAppReady` 幂等，已就绪立即返回）——
+ * 与 e2e-settings-rag.spec.ts 的 gotoNav（#1295 修法）同形。`launchIsolated()` 只等到
+ * 「内核就绪 + 模型预置」（主进程/后端层信号），**不等于**主 UI 已挂载；
+ * AppLayout 在 `!booted` / readiness 未就绪时不渲染 `app-nav`。
+ */
 async function gotoNav(window: Page, name: string): Promise<void> {
+  await awaitAppReady(window, expect);
   await window.getByRole('link', { name }).click();
+}
+
+/** 设置页 → 模型分类：ModelsPanel 挂载 → fetchVectorStatus → RAG 状态卡片出现。
+ *
+ * #1307：就绪门必须等 **status 解析完成**，而非 `rag-status-card` 可见——
+ * RagStatusCard.tsx:112-117（#824）起内容卡**恒渲染**：status===null 时它已可见
+ * 并渲染 `rag-empty`（「加载中」，:156-159）。故等卡片 = 对「status 已就绪」零判别力，
+ * 会让紧随其后的 `rag-*` 断言用**默认 5s 预算**去追一个尚在飞的
+ * `fetchVectorStatus`（useEffect :25-40 → 解析后才 setStatus）。
+ *
+ * 就绪判据 = `rag-empty` 消失。分支真值（RagStatusCard.tsx:152-193，四态互斥）：
+ *   `!currentProjectId` → rag-empty（空态）
+ *   `!status`           → rag-empty（**加载中** ← 本轨要消除的中间窗口）
+ *   `status` 已解析     → no-embedding | fresh | stale-banner（三者之一，**均无 rag-empty**）
+ * 用例均已先建项目（currentProjectId 已设），故 `rag-empty` 消失 ≡ status 解析完成。
+ * ⚠️ 不用 `toPass` 包裹（`toHaveCount(0)` 自身即自动重试，语义更直白）。
+ */
+async function openRagStatus(window: Page): Promise<void> {
+  await gotoNav(window, '设置');
+  await window.getByTestId('settings-cat-models').click();
+  await expect(window.getByTestId('rag-status-card')).toBeVisible({ timeout: 15_000 });
+  // #1307：等 status 解析落态（消除「卡片已挂载但 status 仍 null」的竞态窗口）
+  await expect(window.getByTestId('rag-empty')).toHaveCount(0, { timeout: 30_000 });
 }
 
 /** 通过 UI 创建项目（复制 e2e-settings createProjectViaUi；书名 + ≥1 题材 #595） */
@@ -248,12 +279,11 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
     expect(world.status).toBe(201);
 
     // ④ 设置页模型分类 → rag-status-card stale 态（无索引指纹 reason=unknown）
-    await gotoNav(window, '设置');
-    await window.getByTestId('settings-cat-models').click();
-    await expect(window.getByTestId('rag-status-card')).toBeVisible({ timeout: 15_000 });
+    await openRagStatus(window);
     await expect(window.getByTestId('rag-model-name')).toContainText('e2e-embed-test');
-    await expect(window.getByTestId('rag-stale-banner')).toBeVisible();
-    await expect(window.getByTestId('rag-reindex-btn')).toBeVisible();
+    // #1307：显式预算（默认 5s 在 CI 长跑退化下不足）——对齐 #1295/#1239/#1257/#1283 手法
+    await expect(window.getByTestId('rag-stale-banner')).toBeVisible({ timeout: 30_000 });
+    await expect(window.getByTestId('rag-reindex-btn')).toBeVisible({ timeout: 30_000 });
 
     // ⑤ 点 reindex → 确认对话框 → rag-confirm-ok（#276 既有用例刻意不点的成功环）
     await window.getByTestId('rag-reindex-btn').click();
