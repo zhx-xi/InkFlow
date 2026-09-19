@@ -78,7 +78,12 @@ def _map_agentic_service_error(exc: Exception) -> HTTPException:
 
     - AgenticWriteNotFoundError（项目/章节不存在）→ 404（detail=异常消息）
     - 其余异常 → 500 + X-InkFlow-Error-Code: LLM_ERROR 头（不泄漏内部细节）
+
+    #1298：`HTTPException`（装配层 `_agent_factory` 抛出的 422 未配置模型）**原样透传**，
+    不得被改写成 500 —— 否则 run() 内 fail-fast 的 422 语义失效。
     """
+    if isinstance(exc, HTTPException):
+        return exc
     if isinstance(exc, AgenticWriteNotFoundError):
         return HTTPException(
             status_code=404,
