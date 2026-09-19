@@ -4,9 +4,10 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.4 | **日期**: 2026-09-19 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 变更**: v1.4 — #1299 提取链补齐 `role_rank`（prompt 模板 + ExtractedCharacter + 落库 extra 三层；缺失回退 `minor` 并记 warning），对齐 #833 五档角色等级契约；#1303 工具 `create_character` 签名去默认值（schema 与实现一致必填）。§2.6 / §5.1 / §5.2 同步。
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
-> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）
+> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）, [#1299](https://github.com/zhx-xi/InkFlow/issues/1299)（提取链 role_rank）, [#1303](https://github.com/zhx-xi/InkFlow/issues/1303)（工具 role_rank 必填）
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #56）
@@ -233,6 +234,8 @@ class CharacterRelationCreate(BaseModel):
 class ExtractedCharacter(BaseModel):
     """LLM 提取出的单个角色（schema 校验用）."""
     name: str                  # 1-50 去空白；非法 → 该条跳过 + warning
+    role_rank: Literal["protagonist", "major", "minor", "scene", "walkon"] | None = None
+                               # #1299 角色等级；缺失 → 落库层回退 minor + warning
     personality: str | None = None
     background: str | None = None
     goals: str | None = None
@@ -516,8 +519,9 @@ inkflow character delete --id ... --json
  ④ 解析 JSON → Pydantic schema 校验（ExtractedCharacter / ExtractedRelation）
     ├─ 失败 → 修复式重试（附错误信息）≤ 2 次 → 仍失败 → CharacterExtractionError
  ⑤ 合并落库（单 DB session 事务）:
-    ├─ 角色: 按 (project_id, name) 匹配活动角色 → 存在=更新(非空覆盖) / 不存在=创建
-    └─ 关系: 名称解析为 id → 按 (from, to, type) 匹配 → upsert
+     ├─ 角色: 按 (project_id, name) 匹配活动角色 → 存在=更新(非空覆盖) / 不存在=创建
+     │        （#1299 新建必写 extra.role_rank；LLM 缺该字段 → 回退 minor + warning）
+     └─ 关系: 名称解析为 id → 按 (from, to, type) 匹配 → upsert
  ⑥ 返回 CharacterExtractionResult（created/updated/warnings + 实际模型）
 ```
 
@@ -534,17 +538,23 @@ inkflow character delete --id ... --json
 name: character_extract
 description: 从章节文本提取角色与关系（结构化 JSON 输出）
 system_prompt: |
-  你是小说角色信息提取器。从给定的章节文本中提取出场角色及其性格、背景、目标，
+  你是小说角色信息提取器。从给定的章节文本中提取出场角色及其性格、背景、目标、角色等级，
   以及角色之间的明确关系。只提取文本中直接出现的或明确暗示的信息，不要臆造。
   输出严格 JSON，不要输出任何其他文字，格式如下：
   {
     "characters": [
-      {"name": "角色名", "personality": "性格描述或空", "background": "背景或空", "goals": "目标或空"}
+      {"name": "角色名", "role_rank": "角色等级", "personality": "性格描述或空", "background": "背景或空", "goals": "目标或空"}
     ],
     "relations": [
       {"from": "角色A", "to": "角色B", "type": "关系类型", "description": "说明或空"}
     ]
   }
+  role_rank 必填，只能取以下五档之一（依据该角色在全书中的戏份与地位判定）：
+  - protagonist：主角（故事核心视角人物，通常 1-2 人）
+  - major：重要配角（有独立戏份与动机，长期影响主线）
+  - minor：配角（有姓名与少量戏份，推动局部情节）
+  - scene：场景角色（仅出现在特定场景，无独立支线）
+  - walkon：一次性角色（仅被提及或露一次面，如路人、店小二）
   characters 中不要包含重复的角色名。
 human_prompt: |
   章节文本：
@@ -552,6 +562,10 @@ human_prompt: |
 variables:
   - text
 ```
+
+> **role_rank（#1299）**：模板 + `en` 版本均要求 LLM 输出该字段（五档带判定指引）；
+> LLM 漏字段时 schema 不报错（`None`），落库层回退 `minor` 并记 warning——
+> 既不整条丢弃条目，也不静默兜底为 `major`（#1303 判定的缺陷行为）。
 
 ### 5.3 解析与重试
 

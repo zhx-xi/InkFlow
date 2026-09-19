@@ -169,10 +169,14 @@ class TestCharacterToolRoleRank:
 
     @pytest.mark.asyncio
     async def test_tool_passes_role_rank_in_extra(self) -> None:
-        """工具调用 create_character → 服务收到 extra={'role_rank': …}（当前 FAIL：extra=None）."""
+        """工具调用 create_character → 服务收到 extra={'role_rank': …}（当前 FAIL：extra=None）.
+
+        #1303 升级：role_rank 必填——原契约在此省略该参数并断言兜底 major，
+        恰是本 issue 判定为缺陷的静默兜底行为；现改为显式传参后断言透传。
+        """
         deps = _make_tool_deps()
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        result = json.loads(await tools["create_character"].func(name="林晚"))
+        result = json.loads(await tools["create_character"].func(name="林晚", role_rank="major"))
         assert result["ok"] is True
         call_args = deps.character_service.create_character.call_args
         assert call_args.kwargs["extra"] == {"role_rank": "major"}

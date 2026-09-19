@@ -36,6 +36,7 @@ from inkflow.domain.models.character import (
     CharacterRelation,
     ExtractedCharacter,
     ExtractedRelation,
+    RoleRank,
 )
 from inkflow.domain.ports.character_errors import CharacterExtractionError
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
@@ -303,6 +304,9 @@ class CharacterExtractor:
             existing = await self._repo.get_by_name(pid, ec.name)
             if existing is None:
                 now = _utcnow()
+                # #1299: 新建角色必须带角色等级（GUI 等级徽标 + #679 选项卡过滤依赖）
+                if ec.role_rank is None:
+                    warnings.append(f"角色「{ec.name}」缺少角色等级，已回退为 minor")
                 new_char = await self._repo.add(
                     Character(
                         id=uuid.uuid4(),
@@ -311,6 +315,7 @@ class CharacterExtractor:
                         personality=ec.personality or "",
                         background=ec.background or "",
                         goals=ec.goals or "",
+                        extra={"role_rank": ec.role_rank or RoleRank.MINOR.value},
                         created_at=now,
                         updated_at=now,
                     )

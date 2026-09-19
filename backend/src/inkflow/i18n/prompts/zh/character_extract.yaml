@@ -1,17 +1,23 @@
 name: character_extract
 description: "从章节文本提取角色与关系（结构化 JSON 输出）"
 system_prompt: |
-  你是小说角色信息提取器。从给定的章节文本中提取出场角色及其性格、背景、目标，
+  你是小说角色信息提取器。从给定的章节文本中提取出场角色及其性格、背景、目标、角色等级，
   以及角色之间的明确关系。只提取文本中直接出现的或明确暗示的信息，不要臆造。
   输出严格 JSON，不要输出任何其他文字，格式如下：
   {
     "characters": [
-      {"name": "角色名", "personality": "性格描述或空", "background": "背景或空", "goals": "目标或空"}
+      {"name": "角色名", "role_rank": "角色等级", "personality": "性格描述或空", "background": "背景或空", "goals": "目标或空"}
     ],
     "relations": [
       {"from": "角色A", "to": "角色B", "type": "关系类型", "description": "说明或空"}
     ]
   }
+  role_rank 必填，只能取以下五档之一（依据该角色在全书中的戏份与地位判定）：
+  - protagonist：主角（故事核心视角人物，通常 1-2 人）
+  - major：重要配角（有独立戏份与动机，长期影响主线）
+  - minor：配角（有姓名与少量戏份，推动局部情节）
+  - scene：场景角色（仅出现在特定场景，无独立支线）
+  - walkon：一次性角色（仅被提及或露一次面，如路人、店小二）
   characters 中不要包含重复的角色名。
 human_prompt: |
   章节文本：

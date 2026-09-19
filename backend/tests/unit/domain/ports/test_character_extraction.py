@@ -154,12 +154,14 @@ class TestCharacterExtractor:
                 chars=[
                     {
                         "name": "林尘",
+                        "role_rank": "protagonist",
                         "personality": "坚韧",
                         "background": "山村少年",
                         "goals": "变强",
                     },
                     {
                         "name": "苏瑶",
+                        "role_rank": "major",
                         "personality": "聪慧",
                         "background": "宗门弟子",
                         "goals": "寻亲",
@@ -286,8 +288,8 @@ class TestCharacterExtractor:
                 chars=[
                     {"name": ""},
                     {"name": "长" * 60},
-                    {"name": "林尘", "personality": "坚韧"},
-                    {"name": "苏瑶"},
+                    {"name": "林尘", "role_rank": "protagonist", "personality": "坚韧"},
+                    {"name": "苏瑶", "role_rank": "minor"},
                 ],
                 rels=[
                     {"from": "林尘", "to": "苏瑶", "type": "同伴"},

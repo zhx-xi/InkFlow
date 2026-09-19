@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -296,9 +296,13 @@ class ExtractedCharacter(BaseModel):
     """LLM 提取出的单个角色（schema 校验用）.
 
     name 非法（空/超长）时该条被跳过并记录 warning，不影响其余条目落库。
+    role_rank（#1299）为 LLM 输出的角色等级，缺失时 schema 不报错（None），
+    由落库层回退 RoleRank.MINOR 并记 warning——避免 LLM 偶发漏字段导致整条丢弃，
+    也避免静默兜底为 major（那是 #1303 的病）。
     """
 
     name: str
+    role_rank: Literal["protagonist", "major", "minor", "scene", "walkon"] | None = None
     personality: str | None = None
     background: str | None = None
     goals: str | None = None
