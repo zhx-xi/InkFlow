@@ -17,8 +17,14 @@
  * ⚠️ timeline_flag 语义（spec f12 §6.2:707）：后端为**自由文本 str**（""=正叙 / flashback / flashforward），
  * 非布尔；本组件此前 DTO 声明成 boolean 属漂移，已按真实契约改为 string | boolean（兼容旧 mock），
  * 且**轴渲染不使用该字段**（仅语义标记，与「轴锚点」无关——「时间轴锚点」猜想已证伪）。
+ *
+ * #1302：列表行内编辑（tl-edit-<id>）/ 删除（tl-delete-<id>）入口——形态照抄
+ * LibraryItemList.tsx:148-167 先例（group-hover + focus-within 双触发保证键盘可达可见）；
+ * 编辑复用 LibraryCreateDialog（editing prop），删除走页面级 ConfirmDialog。
+ * ⚠️ 操作块只挂在列表行（library-list 的 <li>）；#1301 的轴节点（tl-axis-node-*）不挂操作按钮。
  */
 import { useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
 import { useI18n } from '../i18n/useI18n';
@@ -76,11 +82,23 @@ export interface TimelineViewProps {
   eventTimeline: TimelineEventDTO[];
   /** 叙事序（narrative_position 升序） */
   narrativeOrder: TimelineEventDTO[];
+  /** #1302：行内编辑入口（打开 LibraryCreateDialog 编辑模式）；缺省不渲染按钮。
+   *  形参用 TimelineEventDTO 的结构子集（id/title/description 等），便于与页面级
+   *  LibraryItemDTO 回调共用（后者字段更宽，不可逆赋值会被 tsc 拦下）。 */
+  onEdit?: (event: TimelineRowRef) => void;
+  /** #1302：行内删除入口（打开页面级二次确认）；缺省不渲染按钮 */
+  onDelete?: (event: TimelineRowRef) => void;
+}
+
+/** #1302：行内操作回调只需行的标识与标题（可被 LibraryItemDTO 回调安全承接 —— 参数逆变安全） */
+export interface TimelineRowRef {
+  id: string | number;
+  title?: string;
 }
 
 type TimelineViewMode = 'narrative' | 'world';
 
-export function TimelineView({ projectId, eventTimeline, narrativeOrder }: TimelineViewProps) {
+export function TimelineView({ projectId, eventTimeline, narrativeOrder, onEdit, onDelete }: TimelineViewProps) {
   const { t } = useI18n();
   const [view, setView] = useState<TimelineViewMode>('narrative');
 
@@ -234,6 +252,27 @@ export function TimelineView({ projectId, eventTimeline, narrativeOrder }: Timel
             >
               {t('lib.tlCheckOne')}
             </button>
+            {/* #1302：悬停显示操作按钮；focus-within 保证键盘可达可见（照抄 LibraryItemList.tsx:148-149） */}
+            <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100">
+              <button
+                type="button"
+                data-testid={`tl-edit-${ev.id}`}
+                aria-label={`${t('lib.edit')} ${ev.title ?? ''}`}
+                className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onEdit?.(ev)}
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                data-testid={`tl-delete-${ev.id}`}
+                aria-label={`${t('lib.delete')} ${ev.title ?? ''}`}
+                className="rounded p-1.5 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onDelete?.(ev)}
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
           </li>
         ))}
       </ul>
