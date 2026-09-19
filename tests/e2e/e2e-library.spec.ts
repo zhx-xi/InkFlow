@@ -314,6 +314,8 @@ test('设定库：分类加载失败 → error + 重试 → 列表恢复', async
     await expect(window.getByTestId('library-list')).toContainText('角色甲', { timeout: 15_000 });
 
     // 拦截角色端点使其失败（渲染进程 window.fetch 可被 page.route 拦截）
+    // #1300：分页接入后该端点带 `?limit=&offset=` 查询串 → glob 必须容忍 query（`?*` 可选段）
+    await window.route('**/api/v1/projects/*/characters?*', (route) => route.abort());
     await window.route('**/api/v1/projects/*/characters', (route) => route.abort());
     const tabs = window.getByTestId('library-tabs');
     // 切换 tab 再切回角色 → 重新拉取角色端点 → 失败 → error 态
@@ -323,6 +325,7 @@ test('设定库：分类加载失败 → error + 重试 → 列表恢复', async
     await expect(window.getByTestId('library-retry')).toBeVisible();
 
     // 取消拦截 → 点重试 → 列表恢复
+    await window.unroute('**/api/v1/projects/*/characters?*');
     await window.unroute('**/api/v1/projects/*/characters');
     await window.getByTestId('library-retry').click();
     await expect(window.getByTestId('library-error')).not.toBeVisible();
