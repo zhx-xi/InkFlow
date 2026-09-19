@@ -214,7 +214,8 @@ export const zh = {
   'lib.tlCheckWarn': '发现 {n} 处时间矛盾',
   'lib.tlCheckSkip': '该事件无时间信息，跳过检查',
   'lib.tlCheckEventOK': '与上下文一致',
-  // F48：知识图谱 tab（specs/f48-knowledge-graph/spec.md §5.4）
+  // #1301 时间轴（spec f12:621/702 · f43:773 · f19:34）；F48：知识图谱 tab（specs/f48-knowledge-graph/spec.md §5.4）
+  'lib.tlAxis': '时间轴', 'lib.tlAxisMain': '主轴', 'lib.tlAxisSub': '标记', 'lib.tlTimeUnknown': '未知', 'lib.tlChapter': '第{n}章',
   'lib.knowledge.newRelation': '新建关系',
   'lib.knowledge.viewGraph': '图谱视图',
   'lib.knowledge.viewList': '关系列表',

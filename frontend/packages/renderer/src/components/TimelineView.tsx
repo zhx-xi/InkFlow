@@ -4,9 +4,23 @@
  * 整体检查（tl-check-all）+ 图例（tl-legend）；
  * 双序切换仅本地切换显示数组（零额外请求；narrative_order 为空时回退 event_timeline）；
  * 行内单事件检查（tl-check-one-<id>）；检查结果 toast 契约见 library-p4.test.tsx docstring。
+ *
+ * #1301（spec↔实现漂移修复）：补**时间轴渲染**（tl-axis）。spec 四处要求时间轴：
+ * - specs/f12-timeline/spec.md:621 「事件时间线（世界内时间轴）」排序键 time_value
+ * - specs/f12-timeline/spec.md:702 「事件时间线（世界内时间轴）：time_value 升序；时间未知排末尾」
+ * - specs/f43-setting-library-gui/spec.md:773「图例：tl-legend（「点=叙事顺序 · 时间轴=世界内时间」）」
+ * - specs/f19-gui/timeline.md:34 同上图例文案
+ * 双序「主轴 + 副标记」映射（#1301 用户原话）：
+ * - 世界序：主轴 = 世界内时间（time_display / time_value+time_unit）；副标记 = 章节（narrative_position）
+ * - 叙事序：主轴 = 章节顺序（narrative_position）；副标记 = 世界内时间（time_display）
+ * 轴为竖向（时间轴惯例；spec 未指定方向）。
+ * ⚠️ timeline_flag 语义（spec f12 §6.2:707）：后端为**自由文本 str**（""=正叙 / flashback / flashforward），
+ * 非布尔；本组件此前 DTO 声明成 boolean 属漂移，已按真实契约改为 string | boolean（兼容旧 mock），
+ * 且**轴渲染不使用该字段**（仅语义标记，与「轴锚点」无关——「时间轴锚点」猜想已证伪）。
  */
 import { useMemo, useState } from 'react';
 import { apiFetch, errorMessage } from '../api/client';
+import { axisLabels } from './timeline-axis-labels';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
@@ -20,7 +34,9 @@ export interface TimelineEventDTO {
   time_unit?: string | null;
   time_display?: string | null;
   narrative_position?: number | null;
-  timeline_flag?: boolean;
+  /** spec f12 §6.2:707：自由文本（""=正叙 / flashback / flashforward），非布尔。
+   *  旧 DTO 误声明为 boolean（漂移）；`string | boolean` 兼容历史 mock 数据。 */
+  timeline_flag?: string | boolean;
 }
 
 /** 完整 TimelineView（spec §5.16：双数组 = 后端排序结果，前端仅本地切换显示数组） */
@@ -148,6 +164,54 @@ export function TimelineView({ projectId, eventTimeline, narrativeOrder }: Timel
           {t('lib.tlLegend')}
         </span>
       </div>
+
+      {/* #1301 时间轴（竖向；主轴 + 副标记随双序互换；空列表不渲染轴） */}
+      {displayed.length > 0 ? (
+        <div
+          data-testid="tl-axis"
+          aria-label={t('lib.tlAxis')}
+          className="relative rounded-lg border border-line bg-surface px-4 py-3 shadow-card"
+        >
+          {/* 轴线本体：左侧竖线，贯穿全部节点 */}
+          <span
+            aria-hidden="true"
+            className="absolute bottom-5 left-[7px] top-5 w-px bg-line"
+          />
+          <ol className="space-y-2">
+            {displayed.map((ev) => {
+              const labels = axisLabels(ev, view, t);
+              return (
+                <li
+                  key={String(ev.id)}
+                  data-testid={`tl-axis-node-${ev.id}`}
+                  className="relative flex items-center gap-3 pl-5 text-[12px]"
+                >
+                  {/* 节点圆点（贴轴线上） */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full bg-accent"
+                  />
+                  <span
+                    data-testid={`tl-axis-main-${ev.id}`}
+                    className="shrink-0 font-medium tabular-nums text-ink"
+                  >
+                    {labels.main}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-ink-2">{ev.title ?? ''}</span>
+                  {labels.sub ? (
+                    <span
+                      data-testid={`tl-axis-sub-${ev.id}`}
+                      className="shrink-0 text-[11px] text-ink-3"
+                    >
+                      {labels.sub}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ) : null}
 
       <ul
         data-testid="library-list"
