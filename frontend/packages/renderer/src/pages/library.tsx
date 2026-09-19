@@ -6,7 +6,6 @@ import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import {
   createKnowledgeRelation,
   deleteKnowledgeRelation,
-  fetchKnowledgeGraph,
   listKnowledgeRelations,
   updateKnowledgeRelation,
   type GraphEdge,
@@ -22,8 +21,9 @@ import { RelationForm, type KnowledgeRelationFormData } from '../components/know
 import { LibraryCreateDialog, type LibraryItemDTO } from '../components/LibraryCreateDialog';
 import { LibraryItemList } from '../components/LibraryItemList';
 import { MapWorkbench, type WorldMapDTO } from '../components/MapWorkbench';
+import { Pagination } from '../components/Pagination';
 import { OutlineTree, type OutlineLevel } from '../components/OutlineTree';
-import { TimelineView, type TimelineEventDTO, type TimelineViewData } from '../components/TimelineView';
+import { TimelineView } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
 import { WorldCategoryToolbar } from '../components/WorldCategoryToolbar';
@@ -34,6 +34,8 @@ import { useI18n } from '../i18n/useI18n';
 import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useWorldCategories, type WorldCategoryEntity } from '../hooks/useWorldCategories';
 import { OUTLINE_PAGE_SIZE, useOutlineLibrary } from '../hooks/useOutlineLibrary';
+import { LIBRARY_PAGE_SIZE, useLibraryPagedList, type PageableCatKey } from '../hooks/useLibraryPagedList';
+import { useLibraryCategoryData } from '../hooks/useLibraryCategoryData';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -44,13 +46,6 @@ const LIBRARY_DATA_CHANGE_DOMAINS = [
   'character_relation', 'outline', 'plot_point', 'story_arc',
   'world_setting', 'world_category', 'foreshadowing', 'timeline_event', 'knowledge_relation',
 ] as const;
-interface ListResponse {
-  items: LibraryItemDTO[];
-  total: number;
-  offset: number;
-  limit: number;
-}
-type CatResponse = ListResponse;
 const CATS: Array<{
   key: CatKey;
   labelKey: string;
@@ -64,6 +59,8 @@ const CATS: Array<{
   { key: 'knowledge', labelKey: 'nav.lib.knowledge', endpoint: (id) => `/api/v1/projects/${id}/knowledge-graph` },
 ];
 const CAT_KEYS = CATS.map((c) => c.key);
+/** #1300：服务端分页分类（后端支持 ?limit=&offset= 且返回 total；其余分类形态特殊不自带分页） */
+const PAGEABLE_CATS: PageableCatKey[] = ['characters', 'world', 'foreshadow'];
 /** F43 §3.1：编辑保存 PATCH 扁平端点（按 activeCat，已核实 backend/api/routers） */
 const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number) => string> = {
   characters: (id) => `/api/v1/characters/${id}`,
@@ -117,9 +114,7 @@ export function LibraryPage() {
   const [activeCat, setActiveCat] = useState<CatKey>(() =>
     isCatKey(catParam) ? catParam : 'characters',
   );
-  const [items, setItems] = useState<ListResponse['items']>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
+  // #1300：分类列表装配由 useLibraryCategoryData / useLibraryPagedList 持有（本文件不再持有其 state）
   const [reloadKey, setReloadKey] = useState(0);
   // #196：分类实体手动创建对话框开关（仅非 knowledge 分类空态 CTA 打开）
   const [createOpen, setCreateOpen] = useState(false);
@@ -142,12 +137,8 @@ export function LibraryPage() {
   const [maps, setMaps] = useState<WorldMapDTO[]>([]);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [workbenchActive, setWorkbenchActive] = useState(false);
-  // F43 P4（§5.16）：时间线完整双视图——event_timeline 存 items（列表/空态），narrative_order 单独存
-  const [timelineNarrative, setTimelineNarrative] = useState<TimelineEventDTO[]>([]);
   // F48：知识图谱 tab——图谱视图/关系列表切换 + 图谱数据 + 关系增删改表单态
   const [kgView, setKgView] = useState<'graph' | 'list'>('graph');
-  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
-  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [relations, setRelations] = useState<KnowledgeRelation[]>([]);
   const [relationFormOpen, setRelationFormOpen] = useState(false);
   const [editingRelation, setEditingRelation] = useState<KnowledgeRelation | null>(null);
@@ -156,12 +147,34 @@ export function LibraryPage() {
 
   // #1002：大纲 tab 数据装配（排序 toggle/顶层分页/卷章全量缓存，含章标题映射）——自本文件拆出以守 900 行护栏
   const outlineLib = useOutlineLibrary(currentProjectId, activeCat, reloadKey);
+  // #1300：设定库分页分类（characters/world/foreshadow）的服务端分页装配——自本文件拆出
+  // （本文件基线 897 行 / 护栏 900，分页逻辑不得内联；同 useOutlineLibrary 先例）
+  const catEndpoint = (CATS.find((c) => c.key === activeCat) ?? CATS[0]).endpoint;
+  const pagedLib = useLibraryPagedList<LibraryItemDTO>(
+    currentProjectId,
+    activeCat,
+    reloadKey,
+    catEndpoint,
+  );
+  // #1300：timeline / knowledge 分类装配（图谱聚合 / 双数组）——自本文件拆出以守 900 行护栏
+  const catData = useLibraryCategoryData<LibraryItemDTO>(
+    currentProjectId,
+    activeCat,
+    reloadKey,
+    CATS,
+  );
+  // #1300：分页分类用 pagedLib；其余（timeline/knowledge）由 catData、outline 由 outlineLib 持有
+  const isPagedCat = PAGEABLE_CATS.includes(activeCat as PageableCatKey);
+  const listItems = isPagedCat ? pagedLib.items : (catData.items as LibraryItemDTO[]);
+  const listLoading = isPagedCat ? pagedLib.loading : catData.loading;
+  const listFailed = isPagedCat ? pagedLib.loadFailed : catData.loadFailed;
+  const { timelineNarrative, graphNodes, graphEdges } = catData;
   // F23 §15.6.2（#1088 批 A3）：数据面变更订阅——外部（CLI/HTTP/MCP/agent）写入 → 事件到达
   // 后 bump reloadKey，复用既有 effect 全量重拉（maps / 分类列表 / 大纲；FR 粒度裁决，不新增局部更新路径）。
   useDataChangeSubscription(LIBRARY_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
   // #1002：outline tab 的 loading/error 由 hook 持有；其余分类沿用通用 effect 态（非 outline 行为零改动）
-  const viewLoading = activeCat === 'outline' ? outlineLib.loading : loading;
-  const viewFailed = activeCat === 'outline' ? outlineLib.loadFailed : loadFailed;
+  const viewLoading = activeCat === 'outline' ? outlineLib.loading : listLoading;
+  const viewFailed = activeCat === 'outline' ? outlineLib.loadFailed : listFailed;
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
   // knowledge 无创建端点（图谱关系编辑走画布/列表内交互），对话框仅在五个可创建分类下渲染
@@ -185,8 +198,8 @@ export function LibraryPage() {
   const worldCategories = useMemo(() => worldCatEntities.map((c) => c.name), [worldCatEntities]);
   // F43 P1 §5.3 世界观树；#588：已有根条目（parent_id===null）时仍保留「创建」入口，允许创建子分类
   const worldRoots = useMemo(
-    () => (activeCat === 'world' ? buildWorldTree(items) : []),
-    [activeCat, items],
+    () => (activeCat === 'world' ? buildWorldTree(listItems) : []),
+    [activeCat, listItems],
   );
   // §5.4：分类筛选作用于整棵树（#567 单例：一项目一根，分类元素为根的子孙→保留匹配节点+子树）
   const filteredWorldRoots = useMemo(
@@ -199,7 +212,7 @@ export function LibraryPage() {
     if (activeCat !== 'characters') return [];
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const item of items) {
+    for (const item of listItems) {
       const groups = item.extra?.groups;
       if (!Array.isArray(groups)) continue;
       for (const g of groups) {
@@ -212,7 +225,7 @@ export function LibraryPage() {
       }
     }
     return out;
-  }, [activeCat, items]);
+  }, [activeCat, listItems]);
 
   // F43 P1（§5.5/E20）：复制目标项目 = projects 排除当前项目；空数组 → 复制按钮 disabled（E21）
   const copyTargetOptions = useMemo(
@@ -276,77 +289,6 @@ export function LibraryPage() {
     const p = searchParams.get('cat');
     if (isCatKey(p) && p !== activeCat) setActiveCat(p);
   }, [searchParams, activeCat]);
-
-  // 拉取分类端点（timeline 特例 TimelineView 双数组；knowledge 特例图谱聚合 nodes+edges；失败 → error 态可重试）
-  useEffect(() => {
-    if (!currentProjectId) {
-      setItems([]);
-      setTimelineNarrative([]);
-      setGraphNodes([]);
-      setGraphEdges([]);
-      setLoading(false);
-      setLoadFailed(false);
-      return;
-    }
-    const current = CATS.find((c) => c.key === activeCat) ?? CATS[0];
-    let cancelled = false;
-    if (current.key === 'knowledge') {
-      // F48 §5.4：图谱视图一次拉取 nodes+edges（非列表端点；不动 loading——列表局部刷新不 unmount）
-      setLoadFailed(false);
-      void fetchKnowledgeGraph(currentProjectId)
-        .then((view) => {
-          if (cancelled) return;
-          setGraphNodes(view.nodes ?? []);
-          setGraphEdges(view.edges ?? []);
-          setItems([]);
-          setTimelineNarrative([]);
-          setLoading(false);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setGraphNodes([]);
-          setGraphEdges([]);
-          setItems([]);
-          setTimelineNarrative([]);
-          setLoading(false);
-          setLoadFailed(true);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (current.key === 'outline') {
-      // #1002：outline tab 由 useOutlineLibrary 两路拉取（overall 顶层分页 + 卷章全量缓存），generic 不再重复拉
-      return () => {
-        cancelled = true;
-      };
-    }
-    setLoading(true);
-    setLoadFailed(false);
-    void apiFetch<CatResponse>(current.endpoint(currentProjectId))
-      .then((data) => {
-        if (cancelled) return;
-        if (current.key === 'timeline') {
-          const view = data as unknown as TimelineViewData;
-          setItems((view.event_timeline ?? []) as unknown as LibraryItemDTO[]);
-          setTimelineNarrative(view.narrative_order ?? []);
-        } else {
-          setItems(data.items ?? []);
-          setTimelineNarrative([]);
-        }
-        setLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setItems([]);
-        setTimelineNarrative([]);
-        setLoading(false);
-        setLoadFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentProjectId, activeCat, reloadKey]);
 
   // F48 §5.4：关系列表视图激活时拉取（分页响应 {items,...}；增删改后经 reloadKey 局部刷新）
   useEffect(() => {
@@ -600,7 +542,7 @@ export function LibraryPage() {
             {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表；world 根态隐藏、选中分类显示） */}
             {currentProjectId !== null && (
               <div className="mb-3 flex items-center justify-end gap-2">
-                {createCat !== null && !loading && !loadFailed && items.length > 0 && !(activeCat === 'world' && workbenchActive) && (activeCat !== 'world' || activeWorldCat !== null) && activeCat !== 'outline' && (
+                {createCat !== null && !viewLoading && !viewFailed && listItems.length > 0 && !(activeCat === 'world' && workbenchActive) && (activeCat !== 'world' || activeWorldCat !== null) && activeCat !== 'outline' && (
                   <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
                     {t('lib.empty.create')}
                   </button>
@@ -660,11 +602,11 @@ export function LibraryPage() {
                 }}
                 onGoEntities={() => handleTabChange('characters')}
               />
-            ) : activeCat === 'world' && workbenchActive && (items.length > 0 || maps.length > 0) ? (
+            ) : activeCat === 'world' && workbenchActive && (listItems.length > 0 || maps.length > 0) ? (
               /* F43 P2（§5.8）：地图工作台——左树（#378 目录树 + P1/P2 兼容徽标）+ 右画布/pin 列表；#378：世界条目为空但已有地图时仍进入工作台 */
               <MapWorkbench
                 projectId={currentProjectId}
-                worldItems={items}
+                worldItems={listItems}
                 maps={maps}
                 activeMapId={activeMapId}
                 reloadKey={reloadKey}
@@ -706,7 +648,7 @@ export function LibraryPage() {
                 onDelete={(item) => setPendingDelete(item)}
                 onAdd={handleOutlineAdd}
               />
-            ) : items.length === 0 ? (
+            ) : listItems.length === 0 ? (
               <div
                 data-testid="library-tab-empty"
                 className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
@@ -776,21 +718,34 @@ export function LibraryPage() {
             ) : activeCat === 'timeline' ? (
               <TimelineView
                 projectId={currentProjectId}
-                eventTimeline={items}
+                eventTimeline={listItems}
                 narrativeOrder={timelineNarrative}
               />
             ) : (
-              <LibraryItemList
-                items={items}
-                withCharacterExtras={activeCat === 'characters'}
-                projectId={currentProjectId}
-                onEdit={(item) => {
-                  setEditing(item);
-                  setCreateOpen(true);
-                }}
-                onDelete={(item) => setPendingDelete(item)}
-                onOpenDetail={activeCat === 'characters' ? (item) => characterDetailRef.current?.openDetail(item) : undefined}
-              />
+              <>
+                <LibraryItemList
+                  items={listItems}
+                  withCharacterExtras={activeCat === 'characters'}
+                  projectId={currentProjectId}
+                  onEdit={(item) => {
+                    setEditing(item);
+                    setCreateOpen(true);
+                  }}
+                  onDelete={(item) => setPendingDelete(item)}
+                  onOpenDetail={activeCat === 'characters' ? (item) => characterDetailRef.current?.openDetail(item) : undefined}
+                />
+                {/* #1300：分页分类（characters/world/foreshadow）列表下方分页条；total<=pageSize 时组件仍渲染（prev/next 双禁用） */}
+                {isPagedCat && (
+                  <Pagination
+                    className="mt-4 justify-end"
+                    page={pagedLib.page}
+                    pageSize={LIBRARY_PAGE_SIZE}
+                    total={pagedLib.total}
+                    onPageChange={pagedLib.setPage}
+                    testIdPrefix="library-page"
+                  />
+                )}
+              </>
             )}
           </div>
         </>
@@ -891,7 +846,7 @@ export function LibraryPage() {
         />
       )}
 
-      <LibraryCharacterDetail ref={characterDetailRef} currentProjectId={currentProjectId} items={items} reload={() => setReloadKey((k) => k + 1)} />
+      <LibraryCharacterDetail ref={characterDetailRef} currentProjectId={currentProjectId} items={listItems} reload={() => setReloadKey((k) => k + 1)} />
     </div>
   );
 }

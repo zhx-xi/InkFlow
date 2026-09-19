@@ -69,7 +69,7 @@ describe('设定库页 — 世界观默认视图重设计（#568）', () => {
     }
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings') return { items, total: items.length, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) return { items, total: items.length, offset: 0, limit: 50 };
       if (path === '/api/v1/projects/p1/world-categories') {
         return { items: [{ id: 'wc1', name: '秘境', count: 1 }], total: 1, offset: 0, limit: 50 };
       }

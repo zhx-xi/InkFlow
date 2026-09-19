@@ -102,7 +102,7 @@ beforeEach(() => {
   // POST maps 恒返回创建成功的新图（首次 m100，后续 m101 防 key 冲突噪音）
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
     if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/world-settings') {
+    if (path.startsWith('/api/v1/projects/p1/world-settings')) {
       return { items: worldItems, total: 1, offset: 0, limit: 50 };
     }
     if (path === '/api/v1/projects/p1/maps') {

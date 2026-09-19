@@ -4,6 +4,7 @@
  *  与 OutlineTree 主文件拆分以守 900 行护栏（同 useWorldCategories 先例）。 */
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
+import { Pagination } from './Pagination';
 
 const SEGMENT_BASE =
   'inline-flex items-center gap-1.5 rounded-md border px-3 py-1 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
@@ -51,7 +52,9 @@ export function OutlineSortToggle({
   );
 }
 
-/** 顶层分页条（outline-page-prev / -info / -next；首页 prev disabled、末页 next disabled） */
+/** 顶层分页条（outline-page-prev / -info / -next；首页 prev disabled、末页 next disabled）。
+ *  #1300：翻页 UI 统一由公共组件 Pagination 提供（数据装配逻辑仍留在 useOutlineLibrary，
+ *  本组件只做布局壳对齐）；testIdPrefix='outline-page' 保留既有契约 testid。 */
 export function OutlinePager({
   total,
   page,
@@ -63,33 +66,14 @@ export function OutlinePager({
   onPageChange?: (p: number) => void;
   pageSize?: number;
 }) {
-  const { t } = useI18n();
-  const safePage = Math.max(0, page);
-  const safeSize = pageSize > 0 ? pageSize : 10;
-  const pages = Math.max(1, Math.ceil(total / safeSize));
   return (
-    <div className="flex items-center justify-center gap-3 border-t border-line px-4 py-2">
-      <button
-        type="button"
-        data-testid="outline-page-prev"
-        disabled={safePage <= 0}
-        className={cn(SEGMENT_BASE, 'text-ink-2 hover:border-accent hover:text-accent')}
-        onClick={() => onPageChange?.(safePage - 1)}
-      >
-        {t('lib.page.prev')}
-      </button>
-      <span data-testid="outline-page-info" className="text-[12px] text-ink-2">
-        {t('lib.page.info', { page: safePage + 1, pages, total })}
-      </span>
-      <button
-        type="button"
-        data-testid="outline-page-next"
-        disabled={(safePage + 1) * safeSize >= total}
-        className={cn(SEGMENT_BASE, 'text-ink-2 hover:border-accent hover:text-accent')}
-        onClick={() => onPageChange?.(safePage + 1)}
-      >
-        {t('lib.page.next')}
-      </button>
-    </div>
+    <Pagination
+      className="justify-center border-t border-line px-4 py-2"
+      page={page}
+      pageSize={pageSize}
+      total={total}
+      onPageChange={(p) => onPageChange?.(p)}
+      testIdPrefix="outline-page"
+    />
   );
 }

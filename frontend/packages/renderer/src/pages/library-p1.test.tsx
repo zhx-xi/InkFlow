@@ -124,7 +124,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const data = chars.map((c) => ({ ...c }));
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1, projectP2], total: 2, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         if (init?.method === 'POST') {
           const body = init.body as Record<string, unknown>;
           const created = { id: 'c9', ...body };
@@ -174,7 +174,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     }));
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: projectList, total: projectList.length, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings') {
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) {
         return { items: worldItems, total: worldItems.length, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/projects/p1/world-categories') {
@@ -199,7 +199,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const chars: Array<Record<string, unknown>> = [];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1, projectP2], total: 2, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         if (init?.method === 'POST') {
           const body = init.body as Record<string, unknown>;
           const created = { id: 'c9', ...body };

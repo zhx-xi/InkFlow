@@ -137,7 +137,7 @@ beforeEach(() => {
     const method = init?.method ?? 'GET';
     if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/maps') return { items: [] };
-    if (path === '/api/v1/projects/p1/characters') {
+    if (path.startsWith('/api/v1/projects/p1/characters')) {
       return { items: CHARACTER_SEED.map((c) => ({ ...c })), total: CHARACTER_SEED.length, offset: 0, limit: 50 };
     }
     // T1：角色关系端点（状态化：POST unshift / PATCH 合并 / DELETE splice / GET 回显）

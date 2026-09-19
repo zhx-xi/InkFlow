@@ -119,7 +119,7 @@ beforeEach(() => {
     const method = init?.method ?? 'GET';
     if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/maps') return { items: [] };
-    if (path === '/api/v1/projects/p1/characters') {
+    if (path.startsWith('/api/v1/projects/p1/characters')) {
       return { items: characters.map((c) => ({ ...c })), total: characters.length, offset: 0, limit: 50 };
     }
     if (path === '/api/v1/projects/p1/character-groups') {

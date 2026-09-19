@@ -8,6 +8,7 @@ import { fetchLogMessages, fetchLogs, type LogRecordDto, type LogsResponseDto } 
 import { errorMessage } from '../api/client';
 import { LogChainView } from '../components/LogChainView';
 import { LogDetail } from '../components/LogDetail';
+import { Pagination } from '../components/Pagination';
 import {
   Select,
   SelectContent,
@@ -289,8 +290,7 @@ export function LogsPage() {
   const handleRefresh = () => {
     setQuery((prev) => ({ ...prev }));
   };
-  const handlePageSizeChange = (value: string) => {
-    const next = Number(value);
+  const handlePageSizeChange = (next: number) => {
     if (!PAGE_SIZES.includes(next)) return;
     setPageSize(next);
     changeQuery({ page: 0 });
@@ -365,9 +365,6 @@ export function LogsPage() {
   };
 
   const chainActive = query.traceId.length > 0 || query.correlationId.length > 0;
-  const total = data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const nextDisabled = !data || (query.page + 1) * pageSize >= total;
   return (
     <div data-testid="logs-page" className="mx-auto max-w-[1080px] px-12 py-10">
       <h1 data-testid="logs-title" className="font-serif text-[26px] font-semibold">{t('logs.title')}</h1>
@@ -547,45 +544,17 @@ export function LogsPage() {
               </ul>
             )}
           </section>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
-                <SelectTrigger
-                  data-testid="log-page-size-select"
-                  aria-label={t('logs.page.size.label')}
-                  className="h-8 w-24"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={String(size)}>{String(size)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <button
-              type="button"
-              data-testid="log-page-prev"
-              disabled={query.page === 0}
-              className="rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => changeQuery({ page: query.page - 1 })}
-            >
-              {t('logs.prev')}
-            </button>
-            <span data-testid="log-page-info" className="text-[13px] text-ink-2">
-              {t('logs.page.info', { page: query.page + 1, pages, total })}
-            </span>
-            <button
-              type="button"
-              data-testid="log-page-next"
-              disabled={nextDisabled}
-              className="rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => changeQuery({ page: query.page + 1 })}
-            >
-              {t('logs.next')}
-            </button>
-          </div>
+          {/* #1300：分页控件改用公共组件（Pagination），testIdPrefix='log-page' 保留既有契约 testid */}
+          <Pagination
+            className="mt-6"
+            page={query.page}
+            pageSize={pageSize}
+            total={data?.total ?? 0}
+            onPageChange={(page) => changeQuery({ page })}
+            onPageSizeChange={handlePageSizeChange}
+            pageSizeOptions={PAGE_SIZES}
+            testIdPrefix="log-page"
+          />
         </>
       )}
     </div>

@@ -176,13 +176,13 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
       if (path === '/api/v1/projects') {
         return { items: [projectP1, projectP2], total: 2, offset: 0, limit: 50 };
       }
-      if (path === '/api/v1/projects/p1/world-settings') {
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) {
         return { items: worldItems, total: worldItems.length, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/projects/p1/maps') {
         return { items: maps, total: maps.length, offset: 0, limit: 50 };
       }
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         const list = refLists.characters ?? [];
         return { items: list, total: list.length, offset: 0, limit: 50 };
       }

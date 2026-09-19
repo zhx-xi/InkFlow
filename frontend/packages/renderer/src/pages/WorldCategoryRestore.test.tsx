@@ -70,7 +70,7 @@ describe('设定库页 — 世界观根条目后仍可创建子分类（#588）'
   function mockWorldWithRoot() {
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings')
+      if (path.startsWith('/api/v1/projects/p1/world-settings'))
         return {
           items: [
             { id: 'w1', name: '世界观', parent_id: null, category: '', content: '公元 2048 年灵气复苏。', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-01T10:00:00Z' },

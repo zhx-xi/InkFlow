@@ -93,8 +93,8 @@ beforeEach(() => {
   useProjectStore.setState({ projects: [], currentProjectId: null, loading: false, error: null });
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/projects') return { items: [projectP1, projectP2], total: 2, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/characters') return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p2/characters') return { items: [{ id: 'c2', name: '沈砚' }], total: 1, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/projects/p1/characters')) return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/projects/p2/characters')) return { items: [{ id: 'c2', name: '沈砚' }], total: 1, offset: 0, limit: 50 };
     if (path.startsWith('/api/v1/projects/p1/outlines')) return { items: [{ id: 'o1', name: '卷一 风起' }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/knowledge-graph') return { nodes: [], edges: [] };
     // 时间线 = TimelineView 形状（backend timeline.py L365-377：event_timeline/narrative_order，无 items）
@@ -319,7 +319,7 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
     let shouldFail = true;
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         if (shouldFail) {
           shouldFail = false;
           throw new Error('分类数据获取失败');
@@ -336,7 +336,9 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
 
     // 重试 = 再次请求同一分类端点（初始失败 1 次 + 重试 1 次 = 2 次）→ 成功后列表恢复
     await waitFor(() => {
-      const charCalls = apiFetchMock.mock.calls.filter((c) => c[0] === '/api/v1/projects/p1/characters');
+      const charCalls = apiFetchMock.mock.calls.filter(
+        (c) => typeof c[0] === 'string' && (c[0] as string).startsWith('/api/v1/projects/p1/characters'),
+      );
       expect(charCalls.length).toBe(2);
       expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
     });
@@ -357,6 +359,16 @@ describe('设定库页 — 分类端点全覆盖与失败兜底（#105 补测）
  * 知识图谱 tab 空态用例改 F48 语义（图谱空态引导，不跳 /writing）。
  */
 describe('设定库页 — #196 分类实体手动创建', () => {
+  /** 端点命中判定：#1300 仅**分页分类**端点带 `?limit=&offset=` 查询串 → 允许 `<端点>?` 前缀。
+   *  非分页端点（outlines —— 由 useOutlineLibrary 三路拉取）保持精确匹配，避免空态播种误伤
+   *  其 `?level=overall` 拉取（响应无 level 字段 → overall 行被过滤 → 树丢 hasOverall）。 */
+  const PAGEABLE_ENDPOINTS = ['characters', 'world-settings', 'foreshadowings'];
+  function matchesEndpoint(path: string, target: string | null): boolean {
+    if (target === null) return false;
+    if (path === target) return true;
+    return PAGEABLE_ENDPOINTS.some((seg) => target.endsWith(`/${seg}`)) && path.startsWith(`${target}?`);
+  }
+
   /** 播种 p1 + 切到指定 tab + 点击空态 CTA 打开对话框 */
   async function openCreateDialog(tabName: string) {
     act(() => {
@@ -381,7 +393,7 @@ describe('设定库页 — #196 分类实体手动创建', () => {
         if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
         if (
           !seeded &&
-          (path === emptyTarget || (emptyTarget === null && path === '/api/v1/projects/p1/timeline'))
+          (matchesEndpoint(path, emptyTarget) || (emptyTarget === null && path === '/api/v1/projects/p1/timeline'))
         ) {
           seeded = true;
           return emptyTarget === null
@@ -443,7 +455,7 @@ describe('设定库页 — #196 分类实体手动创建', () => {
     const chars: Array<{ id: string; name: string }> = [{ id: 'c1', name: '林晚' }];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         if (init?.method === 'POST') {
           const body = init.body as { name: string };
           const created = { id: 'c9', name: body.name };
@@ -564,7 +576,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     const chars: Array<Record<string, unknown>> = [{ ...fullChar }];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         return { items: chars, total: chars.length, offset: 0, limit: 50 };
       }
       // 编辑保存 PATCH 打扁平端点（spec §3.1：PATCH /api/v1/characters/{id}），合并更新回显
@@ -627,7 +639,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     let resolvePatch!: (v: unknown) => void;
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') return { items: chars, total: 1, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/projects/p1/characters')) return { items: chars, total: 1, offset: 0, limit: 50 };
       if (path === '/api/v1/characters/c1' && init?.method === 'PATCH') {
         return new Promise((res) => { resolvePatch = res; });
       }
@@ -667,7 +679,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     mockCharacters();
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         return { items: [{ ...fullChar }], total: 1, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/characters/c1' && init?.method === 'PATCH') throw new Error('保存失败');
@@ -706,7 +718,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     const chars = [{ ...fullChar }];
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         return { items: chars, total: chars.length, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/characters/c1' && init?.method === 'DELETE') {
@@ -742,7 +754,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     });
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings') {
+      if (path.startsWith('/api/v1/projects/p1/world-settings')) {
         return { items: [{ id: 'w1', name: '九州', category: '地理', content: '天下地理' }], total: 1, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/world-settings/w1?cascade=true' && init?.method === 'DELETE') return undefined;
@@ -806,7 +818,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     mockCharacters();
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/characters') {
+      if (path.startsWith('/api/v1/projects/p1/characters')) {
         return { items: [{ ...fullChar }], total: 1, offset: 0, limit: 50 };
       }
       if (path === '/api/v1/characters/c1' && init?.method === 'DELETE') throw new Error('删除失败');
@@ -859,7 +871,7 @@ describe('设定库页 — 世界观已有根条目后仍可创建（#567/#588�
     // 世界观端点返回已有根条目（parent_id=null）
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/world-settings')
+      if (path.startsWith('/api/v1/projects/p1/world-settings'))
         return {
           items: [
             { id: 'w1', name: '世界观', parent_id: null, category: '', content: '公元 2048 年灵气复苏。', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-01T10:00:00Z' },

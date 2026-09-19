@@ -24,6 +24,8 @@ import { logEn, logZh } from './log';
 // #496（contract-496 §4.2）：logs-ux 域（日志页 UI 文案）并入 combo —— RED 期该模块不存在，
 // 本文件收集期 module-not-found（预期【R】），GREEN 新建 logs-ux.ts（导出 logsUxZh/logsUxEn）即愈
 import { logsUxEn, logsUxZh } from './logs-ux';
+// #1300：分页公共组件文案域（Pagination.tsx 的 t('pagination.page.*')）
+import { paginationEn, paginationZh } from './pagination';
 import { writingReqEn, writingReqZh } from './writing-req';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { sessionUxEn, sessionUxZh } from './session-ux';
@@ -53,6 +55,8 @@ const comboZh: Dict = {
   ...logsUxZh,
   // #1017：写作要求三层域
   ...writingReqZh,
+  // #1300：分页域
+  ...paginationZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -70,6 +74,8 @@ const comboEn: Dict = {
   ...logsUxEn,
   // #1017：写作要求三层域
   ...writingReqEn,
+  // #1300：分页域
+  ...paginationEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {
@@ -349,6 +355,7 @@ describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静�
     ['log', logZh],
     ['book', bookZh],
     ['logs-ux', logsUxZh],
+    ['pagination', paginationZh],
   ];
   const sourcesEn: Array<[string, Dict]> = [
     ['en', en],
@@ -364,6 +371,7 @@ describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静�
     ['log', logEn],
     ['book', bookEn],
     ['logs-ux', logsUxEn],
+    ['pagination', paginationEn],
   ];
 
   /** 顺序遍历各来源字典，返回「key（先定义域 ∩ 后定义域）」清单（撞键即非空） */

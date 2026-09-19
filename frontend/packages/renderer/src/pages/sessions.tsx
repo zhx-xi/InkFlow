@@ -26,6 +26,7 @@ import {
   type ChatConversationDto,
 } from '../api/chat';
 import { errorMessage } from '../api/client';
+import { Pagination } from '../components/Pagination';
 import {
   SessionDetailDialog,
   type SessionDetailTarget,
@@ -40,6 +41,9 @@ import { useToastStore } from '../stores/toast';
 
 /** F23 §15.6.2（#1090 批 B）：本页关心的域——session 事件 → 三路列表 FR。 */
 const SESSIONS_DATA_CHANGE_DOMAINS = ['session'] as const;
+
+/** #1300：会话目录本地切片每页条数（三类会话合并后的长列表；与日志页同档 50 偏轻，取 20） */
+const SESSION_PAGE_SIZE = 20;
 
 type SessionFilter = 'all' | 'active' | 'archived';
 
@@ -217,6 +221,19 @@ export function SessionsPage() {
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }, [sessions, plannerItems, conversations, projects, currentProjectId, filter, search]);
+
+  // #1300：本地切片分页——filter/search 变化时页码归零（防停留空页），切片喂渲染
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [filter, search, currentProjectId]);
+  const pagedItems = useMemo(
+    () => directoryItems.slice(page * SESSION_PAGE_SIZE, (page + 1) * SESSION_PAGE_SIZE),
+    [directoryItems, page],
+  );
+  const totalPages = Math.max(1, Math.ceil(directoryItems.length / SESSION_PAGE_SIZE));
+  // 总数收缩（归档/删除/过滤）→ 页码收敛到最后一页
+  useEffect(() => {
+    if (page >= totalPages) setPage(totalPages - 1);
+  }, [page, totalPages]);
 
   const handleArchive = async (id: string): Promise<void> => {
     try {
@@ -416,8 +433,9 @@ export function SessionsPage() {
             {t('sessions.empty')}
           </div>
         ) : (
-          <ul className="space-y-3">
-            {directoryItems.map((item) => (
+          <>
+            <ul className="space-y-3">
+              {pagedItems.map((item) => (
               <li
                 key={`${item.kind}-${item.id}`}
                 data-testid="session-directory-card"
@@ -658,7 +676,17 @@ export function SessionsPage() {
                 )}
               </li>
             ))}
-          </ul>
+            </ul>
+            {/* #1300：会话目录本地切片分页（三类会话已在客户端合并/过滤，纯本地切片无需改 fetch） */}
+            <Pagination
+              className="mt-4 justify-end"
+              page={page}
+              pageSize={SESSION_PAGE_SIZE}
+              total={directoryItems.length}
+              onPageChange={setPage}
+              testIdPrefix="sessions-page"
+            />
+          </>
         )}
       </div>
 

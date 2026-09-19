@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Search } from 'lucide-react';
 import { fetchSearch, type SearchResponseDto } from '../api/search';
+import { Pagination } from '../components/Pagination';
 import {
   fetchIndexRebuildStatus,
   postIndexRebuild,
@@ -35,6 +36,9 @@ type RebuildPhase =
   | { phase: 'running'; taskId: string; status: IndexRebuildStatusDto | null }
   | { phase: 'done'; rebuiltAt: string; projectCount: number }
   | { phase: 'error'; message: string };
+
+/** #1300：搜索结果每页条数（对齐后端 /search 默认档 20） */
+const SEARCH_PAGE_SIZE = 20;
 
 /** entity_type 徽标中文映射（未知类型直出原值） */
 const ENTITY_TYPE_LABEL: Record<string, string> = {
@@ -71,6 +75,8 @@ export function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchResponseDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** #1300：搜索结果当前页（0 基；服务端分页） */
+  const [page, setPage] = useState(0);
 
   // #657 索引维护
   const [rebuildProjectScope, setRebuildProjectScope] = useState<RebuildProjectScope>('current');
@@ -94,16 +100,32 @@ export function SearchPage() {
     const query = q.trim();
     // q strip 后为空 / 未选项目 → 不发请求
     if (!query || !projectId) return;
+    void runSearch(query, 0);
+  };
+
+  // #1300：搜索分页——服务端 limit/offset（后端 GET /search 已支持，默认 20/0）；翻页复用同一 query
+  const runSearch = async (query: string, nextPage: number) => {
     setLoading(true);
     setError(null);
-    setResult(null);
     try {
-      setResult(await fetchSearch({ q: query, projectId, mode }));
+      setResult(
+        await fetchSearch({
+          q: query,
+          projectId: projectId as string,
+          mode,
+          limit: SEARCH_PAGE_SIZE,
+          offset: nextPage * SEARCH_PAGE_SIZE,
+        }),
+      );
+      setPage(nextPage);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
+  };
+  const handlePageChange = (nextPage: number) => {
+    void runSearch(q.trim(), nextPage);
   };
 
   const handleHitClick = (entityType: string, entityId: string) => {
@@ -445,6 +467,15 @@ export function SearchPage() {
                     </li>
                   ))}
                 </ul>
+                {/* #1300：搜索结果分页（服务端 limit/offset；SEARCH_PAGE_SIZE 对齐后端默认档） */}
+                <Pagination
+                  className="mt-6 justify-center"
+                  page={page}
+                  pageSize={SEARCH_PAGE_SIZE}
+                  total={result.total}
+                  onPageChange={handlePageChange}
+                  testIdPrefix="search-page"
+                />
               </div>
             ) : (
               <div

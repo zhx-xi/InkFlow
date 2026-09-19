@@ -57,7 +57,7 @@ beforeEach(() => {
   // 镜像 library 页分类数据 + AIExtractDialog 的章节/运行记录
   apiFetchMock.mockImplementation(async (path: string) => {
     if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-    if (path === '/api/v1/projects/p1/characters') return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
+    if (path.startsWith('/api/v1/projects/p1/characters')) return { items: [{ id: 'c1', name: '林晚' }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/chapters')
       return { items: [{ id: 'ch1', title: '第三章 青云之巅', volume_id: null, order_index: 3, word_count: 3200 }], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/extractions/runs') return { items: [], total: 0, offset: 0, limit: 50 };
