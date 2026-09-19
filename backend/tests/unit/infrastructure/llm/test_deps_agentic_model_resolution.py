@@ -6,8 +6,13 @@ Contracts (mirror #738 chat-path decision D3=A full self-contained loop):
       agent_factory, when invoked, calls build_agentic_writer with a NON-empty
       api_key (resolved from registry fallback).
 2. config.llm_default_model="" + no provider with a chat model + key
-   -> get_agentic_writer_service raises HTTPException(422) "未配置默认模型"
-      (NOT a 500 Missing credentials).
+   -> get_agentic_writer_service assembles fine, then its agent_factory raises
+      HTTPException(422) "未配置默认模型" (NOT a 500 Missing credentials).
+      #1298 契约落点迁移: assembly is a FastAPI Depends resolved before the
+      endpoint body, so it MUST NOT fail-fast (otherwise run() is unreachable
+      and project-level fallback is permanently dead). The 422 therefore lands
+      in run()'s `_agent_factory` -> `_build_agent`, same entry, still zero
+      registry scan.
 3. resolve_model priority agent > project > global is preserved (consistency
    with the other services already using resolve_model).
 
@@ -124,8 +129,12 @@ class TestEmptyDefaultModelFallbackToRegistry:
 
         _default_mocks(m_char, m_foresh, m_sum, m_draft, m_audit, m_audit_ch, m_chapter, m_memory)
 
+        # #1298 契约落点迁移：装配期不再 fail-fast（Depends 先于 endpoint 解析，
+        # 装配期抛 422 → run() 不可达 → 项目级回退失效）；422 落在 run() 内同一入口。
+        svc = get_agentic_writer_service(db=MagicMock())
+        assert svc is not None, "#1298: 装配期不得 fail-fast（否则 run() 不可达）"
         with pytest.raises(HTTPException) as exc_info:
-            get_agentic_writer_service(db=MagicMock())
+            svc._agent_factory(_build_request())
 
         assert exc_info.value.status_code == 422
         assert "默认模型" in exc_info.value.detail or "model" in exc_info.value.detail.lower()
@@ -185,9 +194,12 @@ class TestEmptyDefaultModelFallbackToRegistry:
                 "inkflow.infrastructure.llm.provider_config._load_stored_key",
                 return_value=None,
             ),
-            pytest.raises(HTTPException) as exc_info,
         ):
-            get_agentic_writer_service(db=MagicMock())
+            # #1298 契约落点迁移：装配期不抛（见上一个用例），422 落在 run() 内工厂。
+            svc = get_agentic_writer_service(db=MagicMock())
+            assert svc is not None, "#1298: 装配期不得 fail-fast（否则 run() 不可达）"
+            with pytest.raises(HTTPException) as exc_info:
+                svc._agent_factory(_build_request())
 
         assert exc_info.value.status_code == 422
         assert "默认模型" in exc_info.value.detail or "model" in exc_info.value.detail.lower()
@@ -250,5 +262,5 @@ class TestResolveModelPriority:
         # constructing the service must consult resolve_model
         assert m_resolve.call_count >= 1
         # #929 func-cov（#496 线程盲区）：lazy 工厂同线程直调，触达 _build_agent
-        svc._agent_factory(_build_request())
+        svc._agent_factory(_build_request(), m_resolve.return_value)
         assert m_writer.called, "lazy 工厂被调后必须触达 build_agentic_writer（_build_agent 覆盖）"

@@ -21,7 +21,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import inkflow.api.deps as deps_module
@@ -44,9 +44,10 @@ def get_agentic_writer_service(
 ) -> AgenticWriterService:
     """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）。
 
-    F59-M4（B7）：本轨装配期为同步函数、无 project_id → 只按全局档位解析
-    （与既有 resolve_llm_credentials(config.llm_default_model) 的「该轨模型也
-    只读全局」行为一致）。
+    F59-M4（B7）：本轨装配期为同步函数、无 project_id → 装配期只按全局档位解析
+    （`project_model=None` 显式声明），作为 `_build_agent` 的兜底值；
+    #1298：项目级回退（`项目 config.model > 全局默认`）在 run() 内经 `_agent_factory`
+    第二参注入，非空时在此按同一入口重解析 (model, api_key, base_url)。
     """
     from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
@@ -83,17 +84,42 @@ def get_agentic_writer_service(
     # #1181：写作轨授权（F58 grants + F39 skill 白名单）——内置「写手」Agent 实体同源
     tool_ids, skill_ids = resolve_writer_authorization()
 
-    def _build_agent(request: AgenticWriteRequest) -> object:
-        """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
+    def _build_agent(request: AgenticWriteRequest, model: str | None = None) -> object:
+        """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）.
+
+        #1298：`model` = run() 解析后的模型名（项目 config.model > 全局默认）。
+        非空 → 经同一入口 `resolve_llm_credentials(..., project_model=model)` 重解析
+        (model, api_key, base_url)，覆盖装配期模块级全局值。
+        None/空 → 全局档位兜底：装配期已解析则沿用其值；装配期也解析不到（全局为空，
+        已降级为空值）→ 在此按**同一入口** fail-fast 422（#929 零注册表扫描，禁静默
+        放行；抛出的 HTTPException 由 writing.py 透传，绝不被改写成 500）。
+        """
         system_prompt = build_writer_agent_system_prompt(
             prompt_manager,
             project_id=request.project_id,
             chapter_id=request.chapter_id,
         )
+        if model:
+            resolved_model, resolved_api_key, resolved_base_url = resolve_llm_credentials(
+                config.llm_default_model, project_model=model
+            )
+        elif default_model:
+            # 全局档位兜底（装配期已解析成功，非「假可用」空值）
+            resolved_model, resolved_api_key, resolved_base_url = (
+                default_model,
+                default_api_key,
+                default_base_url,
+            )
+        else:
+            # 项目与全局皆空 → 同一入口 fail-fast 422：resolve_chat_model 在最前抛错，
+            # 永不触达 provider 查询（#929 零注册表扫描语义不变）
+            resolved_model, resolved_api_key, resolved_base_url = resolve_llm_credentials(
+                config.llm_default_model, project_model=None
+            )
         return build_agentic_writer(
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
+            model=resolved_model,
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
             deps=deps,
             system_prompt=system_prompt,
             tool_ids=tool_ids,
@@ -104,7 +130,19 @@ def get_agentic_writer_service(
         )
 
     # 模型/密钥/base_url 同源装配（#758 空默认回退首个 chat provider，镜像 #738，防空 key 500）
-    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
+    # #1298：装配期无 project_id → 显式 project_model=None；项目级回退在 run() 内经
+    # _agent_factory 注入（见 _build_agent）。
+    # 装配期**不得 fail-fast**：本函数是 FastAPI Depends，先于 endpoint 函数体解析——
+    # 全局为空时在此抛 422 会让 run() 永不可达 → 项目级回退永久失效（#1298 核心缺陷）。
+    # 故解析失败降级为 ("", "", "") 兜底值：不造「假可用」客户端，空 model 客户端在真实
+    # 调用时抛 LLMRequestError（#1269 语义）；422 改由 _build_agent 在同一入口抛。
+    try:
+        default_model, default_api_key, default_base_url = resolve_llm_credentials(
+            config.llm_default_model,
+            project_model=None,
+        )
+    except HTTPException:
+        default_model, default_api_key, default_base_url = "", "", ""
     # F59-M4（B7）：全局思考档位（None 项目级 → 全局兜底；全 None → "default"）
     effort = resolve_reasoning_effort(None, None, config.llm_reasoning_effort)
 
