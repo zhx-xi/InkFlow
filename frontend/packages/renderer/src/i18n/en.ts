@@ -216,7 +216,8 @@ export const en: Record<string, string> = {
   'lib.tlCheckWarn': '{n} time conflicts found',
   'lib.tlCheckSkip': 'No time info, skipped',
   'lib.tlCheckEventOK': 'Consistent with context',
-  // F48: knowledge graph tab (specs/f48-knowledge-graph/spec.md §5.4)
+  // #1301 timeline axis (spec f12:621/702 · f43:773 · f19:34); F48: knowledge graph tab (specs/f48-knowledge-graph/spec.md §5.4)
+  'lib.tlAxis': 'Timeline axis', 'lib.tlAxisMain': 'Axis', 'lib.tlAxisSub': 'Marker', 'lib.tlTimeUnknown': 'Unknown', 'lib.tlChapter': 'Ch. {n}',
   'lib.knowledge.newRelation': 'New Relation',
   'lib.knowledge.viewGraph': 'Graph View',
   'lib.knowledge.viewList': 'Relation List',
