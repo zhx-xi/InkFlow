@@ -325,6 +325,12 @@ export function LibraryPage() {
     selectProject(id);
     characterDetailRef.current?.reset(); // 切换项目时卸载角色详情面板
   };
+  // F43 行操作（四处消费方统一形态：打开编辑对话框 / 打开删除确认）；#1302 新增时间线行内入口复用
+  const openEdit = (item: LibraryItemDTO) => {
+    setEditing(item);
+    setCreateOpen(true);
+  };
+  const openDelete = (item: LibraryItemDTO) => setPendingDelete(item);
   // #196 + F43：保存回调——editing 非空 → PATCH 扁平端点；为空 → POST 创建端点（#196 现状保留）
   const handleSave = async (input: Record<string, unknown>) => {
     if (!currentProjectId) return;
@@ -619,11 +625,8 @@ export function LibraryPage() {
                 onWorldCatChange={setActiveWorldCat}
                 collapsedIds={collapsedIds}
                 onToggle={toggleCollapsed}
-                onEdit={(item) => {
-                  setEditing(item);
-                  setCreateOpen(true);
-                }}
-                onDelete={(item) => setPendingDelete(item)}
+                onEdit={openEdit}
+                onDelete={openDelete}
                 onCopy={(item) => setCopyState({ open: true, mode: 'subtree', rootId: item.id })}
                 onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
                 copyTargetOptions={copyTargetOptions}
@@ -641,11 +644,8 @@ export function LibraryPage() {
                 onPageChange={outlineLib.setPage}
                 pageSize={OUTLINE_PAGE_SIZE}
                 onOutlineGenerated={outlineLib.handleOutlineGenerated}
-                onEdit={(item) => {
-                  setEditing(item);
-                  setCreateOpen(true);
-                }}
-                onDelete={(item) => setPendingDelete(item)}
+                onEdit={openEdit}
+                onDelete={openDelete}
                 onAdd={handleOutlineAdd}
               />
             ) : listItems.length === 0 ? (
@@ -704,11 +704,8 @@ export function LibraryPage() {
                         depth={0}
                         collapsed={collapsedIds}
                         onToggle={toggleCollapsed}
-                        onEdit={(item) => {
-                          setEditing(item);
-                          setCreateOpen(true);
-                        }}
-                        onDelete={(item) => setPendingDelete(item)}
+                        onEdit={openEdit}
+                        onDelete={openDelete}
                         onCopy={(item) => setCopyState({ open: true, mode: 'subtree', rootId: item.id })}
                       />
                     ))
@@ -720,6 +717,8 @@ export function LibraryPage() {
                 projectId={currentProjectId}
                 eventTimeline={listItems}
                 narrativeOrder={timelineNarrative}
+                onEdit={openEdit}
+                onDelete={openDelete}
               />
             ) : (
               <>
@@ -727,11 +726,8 @@ export function LibraryPage() {
                   items={listItems}
                   withCharacterExtras={activeCat === 'characters'}
                   projectId={currentProjectId}
-                  onEdit={(item) => {
-                    setEditing(item);
-                    setCreateOpen(true);
-                  }}
-                  onDelete={(item) => setPendingDelete(item)}
+                  onEdit={openEdit}
+                  onDelete={openDelete}
                   onOpenDetail={activeCat === 'characters' ? (item) => characterDetailRef.current?.openDetail(item) : undefined}
                 />
                 {/* #1300：分页分类（characters/world/foreshadow）列表下方分页条；total<=pageSize 时组件仍渲染（prev/next 双禁用） */}
