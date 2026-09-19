@@ -97,7 +97,7 @@ class TestAgenticWriterServiceThreadId:
         agent = AsyncMock()
         agent.invoke.return_value = {"messages": []}
         svc = AgenticWriterService(
-            agent_factory=lambda req: agent,
+            agent_factory=lambda req, model=None: agent,
             draft_service=AsyncMock(),
             audit_service=AsyncMock(),
             run_repo=AsyncMock(),

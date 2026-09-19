@@ -10,9 +10,11 @@ AgenticWriterService 是 agentic 写入闭环的领域编排层（spec §5.1/§5
 - 全部终态经 run_repo.save 一次写回（崩溃可见性: create 先行落 running 记录）
 
 依赖注入（鸭子类型）:
-- agent_factory: Callable[[AgenticWriteRequest], object]——每次 run 调用一次，
-  传入当前请求（#275: 装配层按请求注入 project_id/chapter_id 上下文——系统提示
-  渲染与 save_draft 工具期望上下文同源）
+- agent_factory: Callable[[AgenticWriteRequest, str | None], object]——每次 run 调用一次，
+  传入当前请求 + 本次解析出的模型名（#275: 装配层按请求注入 project_id/chapter_id 上下文
+  ——系统提示渲染与 save_draft 工具期望上下文同源；#1298: 模型名按
+  `项目 config.model > 全局 config.llm_default_model` 解析后注入——装配层是同步依赖、
+  无 project_id，项目级回退只能落在 run() 内的 `_agent_factory` 调用点）
 - draft_service: DraftService（create 兜底落草稿）
 - audit_service: AuditLogService（record）
 - run_repo: AgentRunRepository（create/save）
@@ -40,6 +42,7 @@ from inkflow.domain.models.agent_run import (
     AgentToolCall,
 )
 from inkflow.domain.services._word_count import count_words
+from inkflow.domain.services.model_resolution import resolve_model
 from inkflow.infrastructure.llm.content_text import content_text
 
 # 空 content 重试提示（必须含「请输出正文」——测试契约码点断言）
@@ -140,7 +143,8 @@ class AgenticWriterService:
     def __init__(
         self,
         *,
-        agent_factory: Callable[[AgenticWriteRequest], object],  # 每次 run 调用一次，传入当前请求
+        # 每次 run 调用一次，传入当前请求 + 解析后的模型名（#1298，第二参默认 None 向后兼容）
+        agent_factory: Callable[[AgenticWriteRequest, str | None], object],
         draft_service,  # DraftService（鸭子类型）
         audit_service,  # AuditLogService（鸭子类型）
         run_repo,  # AgentRunRepository（鸭子类型，有 create/save）
@@ -197,7 +201,12 @@ class AgenticWriterService:
             updated_at=now,
         )
 
-        agent = self._agent_factory(request)
+        # #1298：模型解析链 `项目 config.model > 全局 config.llm_default_model`（唯一入口
+        # resolve_model）。装配层（deps_agentic_writer）是同步依赖且无 project_id，项目级
+        # 回退只能在已是 async 的 run() 内经 _agent_factory 注入（两者皆空 → 注入 None，
+        # 由装配层同一入口 fail-fast 422，禁静默放行）
+        model = await self._resolve_request_model(request)
+        agent = self._agent_factory(request, model)
         history: list[object] = []
         # #1231/#1232：异步取真实数据源（列值 / 项目配置）后拼首条 user 消息——
         # 取值失败绝不炸编排（降级为「不注入」，与 book 轨 getter 同语义）
@@ -323,6 +332,17 @@ class AgenticWriterService:
             return await getter(request.project_id)
         except Exception:  # 配置不可达绝不炸编排（镜像 book 轨 getter 兜底）
             return None
+
+    async def _resolve_request_model(self, request: AgenticWriteRequest) -> str | None:
+        """解析本次 run 的模型（#1298）：项目 `config.model` > 全局 `config.llm_default_model`.
+
+        唯一入口 `resolve_model`（禁散落 `or` 回退链，见该模块 docstring）；两者皆空 → None，
+        由装配层工厂按既有 fail-fast 语义抛 422（#821/#929 契约：绝不静默放行）。
+        """
+        from inkflow.core.config import config  # 调用期读全局配置（测试可 patch）
+
+        project_model = _text(_config_value(await self._resolve_project_config(request), "model"))
+        return resolve_model(None, project_model or None, config.llm_default_model or None)
 
     async def _resolve_chapter_requirements(self, request: AgenticWriteRequest) -> str:
         """章级写作要求：#1232 列值（真实数据源）优先，回退请求入参值."""

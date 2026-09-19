@@ -239,7 +239,7 @@ def _make_service(
     # 无参调用形态——既有用例 RED 阶段仍 PASS，新契约用例断言收到真实请求）
     factory_calls: list[Any] = []
     service = AgenticWriterService(
-        agent_factory=lambda request=None: (factory_calls.append(request), agent)[1],
+        agent_factory=lambda request=None, model=None: (factory_calls.append(request), agent)[1],
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],

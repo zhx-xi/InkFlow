@@ -259,7 +259,7 @@ async def test_agentic_invoke_error_failed():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: agent,
+        agent_factory=lambda _request, model=None: agent,
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -322,7 +322,7 @@ async def test_agentic_base_message_object_form():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _ObjAgent(),
+        agent_factory=lambda _request, model=None: _ObjAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -355,7 +355,7 @@ async def test_final_content_empty_history() -> None:
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: AsyncMock(),
+        agent_factory=lambda _request, model=None: AsyncMock(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],

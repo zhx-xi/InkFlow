@@ -44,9 +44,10 @@ def get_agentic_writer_service(
 ) -> AgenticWriterService:
     """获取 AgenticWriterService 实例（agentic 编排，装配 F26/F27 工具）。
 
-    F59-M4（B7）：本轨装配期为同步函数、无 project_id → 只按全局档位解析
-    （与既有 resolve_llm_credentials(config.llm_default_model) 的「该轨模型也
-    只读全局」行为一致）。
+    F59-M4（B7）：本轨装配期为同步函数、无 project_id → 装配期只按全局档位解析
+    （`project_model=None` 显式声明），作为 `_build_agent` 的兜底值；
+    #1298：项目级回退（`项目 config.model > 全局默认`）在 run() 内经 `_agent_factory`
+    第二参注入，非空时在此按同一入口重解析 (model, api_key, base_url)。
     """
     from inkflow.api._llm_resolver import resolve_llm_credentials
     from inkflow.core.config import config
@@ -83,17 +84,33 @@ def get_agentic_writer_service(
     # #1181：写作轨授权（F58 grants + F39 skill 白名单）——内置「写手」Agent 实体同源
     tool_ids, skill_ids = resolve_writer_authorization()
 
-    def _build_agent(request: AgenticWriteRequest) -> object:
-        """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）."""
+    def _build_agent(request: AgenticWriteRequest, model: str | None = None) -> object:
+        """每次 run 构建 agent——系统提示与工具期望上下文按请求注入（#275）.
+
+        #1298：`model` = run() 解析后的模型名（项目 config.model > 全局默认）。
+        非空 → 经同一入口 `resolve_llm_credentials(..., project_model=model)` 重解析
+        (model, api_key, base_url)，覆盖装配期模块级全局值；None → 沿用装配期全局解析
+        兜底（两者皆空时装配期已 fail-fast 422，#929 零扫描契约保留）。
+        """
         system_prompt = build_writer_agent_system_prompt(
             prompt_manager,
             project_id=request.project_id,
             chapter_id=request.chapter_id,
         )
+        if model:
+            resolved_model, resolved_api_key, resolved_base_url = resolve_llm_credentials(
+                config.llm_default_model, project_model=model
+            )
+        else:
+            resolved_model, resolved_api_key, resolved_base_url = (
+                default_model,
+                default_api_key,
+                default_base_url,
+            )
         return build_agentic_writer(
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
+            model=resolved_model,
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
             deps=deps,
             system_prompt=system_prompt,
             tool_ids=tool_ids,
@@ -104,7 +121,12 @@ def get_agentic_writer_service(
         )
 
     # 模型/密钥/base_url 同源装配（#758 空默认回退首个 chat provider，镜像 #738，防空 key 500）
-    model, api_key, base_url = resolve_llm_credentials(config.llm_default_model)
+    # #1298：装配期无 project_id → 显式 project_model=None；项目级回退在 run() 内经
+    # _agent_factory 注入（见 _build_agent）；全局也为空时此处 fail-fast 422（#929 零扫描）
+    default_model, default_api_key, default_base_url = resolve_llm_credentials(
+        config.llm_default_model,
+        project_model=None,
+    )
     # F59-M4（B7）：全局思考档位（None 项目级 → 全局兜底；全 None → "default"）
     effort = resolve_reasoning_effort(None, None, config.llm_reasoning_effort)
 

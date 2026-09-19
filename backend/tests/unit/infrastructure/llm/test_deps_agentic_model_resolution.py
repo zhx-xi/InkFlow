@@ -250,5 +250,5 @@ class TestResolveModelPriority:
         # constructing the service must consult resolve_model
         assert m_resolve.call_count >= 1
         # #929 func-cov（#496 线程盲区）：lazy 工厂同线程直调，触达 _build_agent
-        svc._agent_factory(_build_request())
+        svc._agent_factory(_build_request(), m_resolve.return_value)
         assert m_writer.called, "lazy 工厂被调后必须触达 build_agentic_writer（_build_agent 覆盖）"

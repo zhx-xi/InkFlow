@@ -92,7 +92,7 @@ def _make_service(
 
     agent = FakeAgent(responses if responses is not None else [_history(_ai_msg("正文"))])
     service = AgenticWriterService(
-        agent_factory=lambda request: agent,
+        agent_factory=lambda request, model=None: agent,
         draft_service=AsyncMock(),
         audit_service=AsyncMock(),
         run_repo=AsyncMock(),

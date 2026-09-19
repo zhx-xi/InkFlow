@@ -194,7 +194,7 @@ async def test_agentic_invoke_returns_non_dict():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _WeirdAgent(),
+        agent_factory=lambda _request, model=None: _WeirdAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -241,7 +241,7 @@ async def test_agentic_request_with_context_and_style():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: agent,
+        agent_factory=lambda _request, model=None: agent,
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -302,7 +302,7 @@ async def test_agentic_token_usage_weird_metadata():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _WeirdMetaAgent(),
+        agent_factory=lambda _request, model=None: _WeirdMetaAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -356,7 +356,7 @@ async def test_agentic_tool_result_missing():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _NoResultAgent(),
+        agent_factory=lambda _request, model=None: _NoResultAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -400,7 +400,7 @@ async def test_agentic_token_budget_guardrail():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _TokenHeavyAgent(),
+        agent_factory=lambda _request, model=None: _TokenHeavyAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -461,7 +461,7 @@ async def test_agentic_final_tool_calls_defensive_max_steps():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _LoopingAgent(),
+        agent_factory=lambda _request, model=None: _LoopingAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
@@ -593,7 +593,7 @@ async def test_agentic_final_content_with_tool_history():
         "run_repo": AsyncMock(),
     }
     svc = AgenticWriterService(
-        agent_factory=lambda _request: _ToolThenContentAgent(),
+        agent_factory=lambda _request, model=None: _ToolThenContentAgent(),
         draft_service=deps["draft_service"],
         audit_service=deps["audit_service"],
         run_repo=deps["run_repo"],
