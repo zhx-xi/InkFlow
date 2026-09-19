@@ -180,6 +180,7 @@ async def test_setting_write_tools_coerce_group_and_parent_ids() -> None:
         await tools["create_character"].func(
             project_id=str(project_id),
             name="Name",
+            role_rank="minor",
             group_ids=[group_id, str(group_id)],
         )
     )

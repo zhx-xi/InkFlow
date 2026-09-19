@@ -112,14 +112,25 @@ def build_setting_write_tools(deps: SettingWriteToolDeps) -> list[Tool]:
     async def _create_character(
         project_id: uuid.UUID | str | None = None,
         name: str = "",
-        role_rank: str = "major",
+        role_rank: str | None = None,
         personality: str = "",
         background: str = "",
         goals: str = "",
         group_ids: list[uuid.UUID | str] | None = None,
     ) -> str:
         async with _tool_db_lock_mod.get_tool_db_lock():
-            # #748: 绑定到装配期项目（LLM 无需也不能自报 id，杜绝编造全量 UUID 孤儿数据）
+            # #1303: role_rank 与 schema 一致为必填——缺失即明确报错，
+            # 不静默兜底 major（错误等级比缺失等级更难发现）。
+            if role_rank is None or not role_rank.strip():
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "role_rank 为必填参数"
+                        "（五档: protagonist/major/minor/scene/walkon）",
+                    },
+                    ensure_ascii=False,
+                )
+
             bound_project_id = (
                 deps.expected_project_id if deps.expected_project_id is not None else project_id
             )

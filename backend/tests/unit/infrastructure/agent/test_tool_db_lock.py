@@ -177,7 +177,9 @@ class TestConcurrentSettingWriteNoDbError:
             create = tools["create_character"].func
 
             results = await asyncio.gather(
-                create(name="甲"), create(name="乙"), return_exceptions=True
+                create(name="甲", role_rank="minor"),
+                create(name="乙", role_rank="minor"),
+                return_exceptions=True,
             )
             # 两次调用都必须成功（无锁时失败: "This transaction is closed" 等）
             for r in results:
@@ -206,7 +208,9 @@ class TestToolLockSerializes:
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
         create = tools["create_character"].func
 
-        await asyncio.gather(create(name="A"), create(name="B"))
+        await asyncio.gather(
+            create(name="A", role_rank="minor"), create(name="B", role_rank="minor")
+        )
         assert monitor.max_active == 1, (
             f"工具未串行化——service 调用重叠（max_active={monitor.max_active}）。"
             "锁应让 A/B 依次执行而非交错。"
@@ -229,7 +233,9 @@ class TestToolLockIsModuleSingleton:
         create_a = tools_a["create_character"].func
         create_b = tools_b["create_character"].func
 
-        await asyncio.gather(create_a(name="A"), create_b(name="B"))
+        await asyncio.gather(
+            create_a(name="A", role_rank="minor"), create_b(name="B", role_rank="minor")
+        )
         assert monitor.max_active == 1, (
             f"两次 build 实例未共享模块级锁——service 重叠（max_active={monitor.max_active}）。"
             "锁必须是模块级单例（跨所有工具实例共享），不能每实例一把。"
@@ -270,7 +276,9 @@ class TestAuditChainInsideLock:
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
         create = tools["create_character"].func
 
-        await asyncio.gather(create(name="A"), create(name="B"))
+        await asyncio.gather(
+            create(name="A", role_rank="minor"), create(name="B", role_rank="minor")
+        )
         assert monitor.max_active == 1, (
             f"audit 链未在锁内——业务写+审计记录交错（max_active={monitor.max_active}）。"
             "锁必须覆盖整个 await 链（含 audit_service.record），不能只锁工具开头。"

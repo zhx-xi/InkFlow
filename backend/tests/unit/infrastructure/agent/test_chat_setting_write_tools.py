@@ -60,7 +60,7 @@ class TestBuildSettingWriteTools:
             return_value=SimpleNamespace(id="char-1")
         )
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        result = json.loads(await tools["create_character"].func(name="林晚"))
+        result = json.loads(await tools["create_character"].func(name="林晚", role_rank="major"))
         assert result["ok"] is True
         assert result["character_id"] == "char-1"
 
@@ -72,7 +72,7 @@ class TestBuildSettingWriteTools:
             side_effect=ValueError("同名角色已存在")
         )
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        result = json.loads(await tools["create_character"].func(name="林晚"))
+        result = json.loads(await tools["create_character"].func(name="林晚", role_rank="major"))
         assert result["ok"] is False
         assert "同名角色已存在" in result["error"]
 
@@ -92,7 +92,9 @@ class TestBuildSettingWriteTools:
         deps = _make_deps()
         deps.character_service.create_character = AsyncMock(return_value=SimpleNamespace(id="c1"))
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        await tools["create_character"].func(name="林晚", project_id=FOREIGN_PROJECT_ID)
+        await tools["create_character"].func(
+            name="林晚", role_rank="major", project_id=FOREIGN_PROJECT_ID
+        )
         args, kwargs = deps.character_service.create_character.call_args
         used_project_id = kwargs.get("project_id") or (args[0] if args else None)
         assert str(used_project_id) == str(PROJECT_ID)
@@ -108,7 +110,7 @@ class TestSettingWriteToolAudit:
             return_value=SimpleNamespace(id="char-1")
         )
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        await tools["create_character"].func(name="林晚")
+        await tools["create_character"].func(name="林晚", role_rank="major")
         assert deps.audit_service.record.await_count >= 1
 
     @pytest.mark.asyncio
@@ -116,7 +118,7 @@ class TestSettingWriteToolAudit:
         deps = _make_deps()
         deps.character_service.create_character = AsyncMock(side_effect=ValueError("boom"))
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        await tools["create_character"].func(name="林晚")
+        await tools["create_character"].func(name="林晚", role_rank="major")
         assert deps.audit_service.record.await_count >= 1
 
     @pytest.mark.asyncio
@@ -128,6 +130,6 @@ class TestSettingWriteToolAudit:
         )
         deps.audit_service.record = AsyncMock(side_effect=RuntimeError("audit down"))
         tools = {t.spec.name: t for t in build_setting_write_tools(deps)}
-        result = json.loads(await tools["create_character"].func(name="林晚"))
+        result = json.loads(await tools["create_character"].func(name="林晚", role_rank="major"))
         assert result["ok"] is True
         assert result["character_id"] == "char-1"
