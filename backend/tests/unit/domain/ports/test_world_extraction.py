@@ -348,6 +348,106 @@ class TestWorldExtractor:
         assert result.model == "deepseek/deepseek-chat"
 
 
+class TestWorldExtractorParentAttribution:
+    """#1297 提取新建条目必须归属父级（撞 #849 根单例唯一索引恒 500）。
+
+    机制：`uq_world_settings_root_per_project` 限制「每项目仅 1 条
+    parent_id IS NULL」；提取器新建条目未传 parent_id → 第二根 → IntegrityError。
+
+    归属规则（复用 #641 `WorldService.get_root_setting` 同机制 =
+    `repo.list(top_level_only=True, limit=1)`）：
+      已有根 → 新条目 parent_id = 根.id
+      无根   → 新条目建为根（首条，保持 #849 语义）
+    """
+
+    async def test_new_entry_attaches_to_existing_root(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """已有根 → 新建条目 parent_id == 根.id（不产生第二根）。"""
+        root = _setting(name="大陆地理")
+        # 第一次 list（取根）返回根；后续调用返回无根，避免影响其它断言
+        mock_repo.list = AsyncMock(side_effect=[([root], 1), ([root], 1)])
+        mock_llm.chat.return_value = _ok_response(
+            _payload(settings=[{"name": "北方王国", "category": "", "content": "雪原"}])
+        )
+
+        result = await extractor.extract(
+            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+
+        assert len(result.created) == 1
+        assert result.created[0].parent_id == root.id, "新建条目必须挂到已有根下"
+        # 查根走 top_level_only（与 get_root_setting 同机制）
+        assert mock_repo.list.await_args_list[0].kwargs.get("top_level_only") is True
+
+    async def test_new_entry_becomes_root_when_project_empty(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """无根 → 首条建为根（parent_id is None），保持 #849 单例语义。"""
+        mock_repo.list = AsyncMock(return_value=([], 0))
+        mock_llm.chat.return_value = _ok_response(
+            _payload(settings=[{"name": "首个条目", "category": "", "content": "c"}])
+        )
+
+        result = await extractor.extract(
+            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+
+        assert len(result.created) == 1
+        assert result.created[0].parent_id is None
+
+    async def test_single_batch_creates_at_most_one_root(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """反向断言：一批多条新条目不得产生第二个根（同批内后续条目挂首条）。
+
+        DB 约束不可破：本项目仅允许 1 条 parent_id IS NULL。
+        """
+        mock_repo.list = AsyncMock(return_value=([], 0))  # 项目空
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                settings=[
+                    {"name": "甲", "category": "", "content": "c1"},
+                    {"name": "乙", "category": "", "content": "c2"},
+                    {"name": "丙", "category": "", "content": "c3"},
+                ]
+            )
+        )
+
+        result = await extractor.extract(
+            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+
+        assert len(result.created) == 3
+        roots = [s for s in result.created if s.parent_id is None]
+        assert len(roots) == 1, f"同批只允许 1 条根，实得 {len(roots)}"
+        assert roots[0].name == "甲"
+        assert {s.name: s.parent_id for s in result.created}["乙"] == roots[0].id
+        assert {s.name: s.parent_id for s in result.created}["丙"] == roots[0].id
+
+    async def test_existing_same_name_entry_still_updates(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """归属逻辑不得破坏既有同名更新路径（回归保护）。"""
+        root = _setting(name="大陆地理")
+        existing = _setting(name="灵气复苏", category="旧", content="旧内容")
+        mock_repo.list = AsyncMock(return_value=([root], 1))
+        mock_repo.get_by_name = AsyncMock(return_value=existing)
+        mock_llm.chat.return_value = _ok_response(
+            _payload(settings=[{"name": "灵气复苏", "category": "新", "content": ""}])
+        )
+
+        result = await extractor.extract(
+            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+
+        assert result.created == []
+        assert len(result.updated) == 1
+        assert result.updated[0].id == existing.id
+        assert result.updated[0].parent_id == existing.parent_id  # 更新不改归属
+        assert mock_repo.add.await_count == 0
+
+
 class TestWorldExtractorHelpers:
     """模块级纯函数测试（_first_error）。"""
 

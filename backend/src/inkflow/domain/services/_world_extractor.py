@@ -262,6 +262,11 @@ class WorldExtractor:
 
         created: list[WorldSetting] = []
         updated: list[WorldSetting] = []
+        # #1297: 新建条目必须归属父级 —— 与 WorldService.get_root_setting 同机制，
+        # 仅查一次项目根条目（#849: 每项目仅允许 1 条 parent_id IS NULL）。
+        roots, _ = await self._repo.list(request.project_id, top_level_only=True, limit=1)
+        current_root: WorldSetting | None = roots[0] if roots else None
+
         for es in world_settings:
             existing = await self._repo.get_by_name(pid, es.name)
             if existing is None:
@@ -271,6 +276,7 @@ class WorldExtractor:
                         id=uuid.uuid4(),
                         project_id=request.project_id,
                         name=es.name,
+                        parent_id=current_root.id if current_root is not None else None,
                         category=es.category or "",
                         content=es.content or "",
                         created_at=now,
@@ -278,6 +284,9 @@ class WorldExtractor:
                     )
                 )
                 created.append(new_setting)
+                # 无既有根时首条建为根，同批后续条目挂到该条上（不得各自建根）
+                if current_root is None:
+                    current_root = new_setting
                 continue
 
             merged = _merge_world_fields(existing, es)
