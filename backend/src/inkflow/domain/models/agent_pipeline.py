@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from inkflow.domain.models.context import ContextOverride
 from inkflow.domain.ports.agent_pipeline import PipelineContext as PipelineContext
 from inkflow.domain.ports.agent_pipeline import PipelineStage
 
@@ -77,4 +78,8 @@ class PipelineExecuteRequest(BaseModel):
     )
     supervisor: SupervisorExecuteConfig | None = Field(
         default=None, description="supervisor 模式配置（mode=supervisor 时生效）"
+    )
+    override: ContextOverride | None = Field(
+        default=None,
+        description="上下文注入勾选通道；None=全注入（默认），显式空列表=该源不注入",
     )

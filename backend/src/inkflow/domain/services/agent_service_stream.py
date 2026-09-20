@@ -13,6 +13,7 @@ from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest
+from inkflow.domain.models.context import ContextOverride
 from inkflow.domain.models.project import AgentRelation
 from inkflow.domain.ports.agent_pipeline import (
     PipelineContext,
@@ -79,6 +80,7 @@ class AgentServiceStreamMixin:
             continue_context=(
                 request.pipeline == "builtin:write_continue" and request.chapter_id is not None
             ),
+            override=request.override,
         )
         final_output = ""
         stage_snapshots: list[dict] = []
@@ -232,12 +234,21 @@ class AgentServiceStreamMixin:
             project.config.agent_relations,
         )
 
-    async def _inject_context(self, context: PipelineContext, *, continue_context: bool) -> None:
-        """设定库/前文摘要注入（_run_pipeline 与 stream_pipeline 共用，#366 G1/#318）。"""
+    async def _inject_context(
+        self,
+        context: PipelineContext,
+        *,
+        continue_context: bool,
+        override: ContextOverride | None = None,
+    ) -> None:
+        """设定库/前文摘要注入（_run_pipeline 与 stream_pipeline 共用，#366 G1/#318）。
+
+        #1319：override 透传至 _assemble_setting_context（勾选通道）；前文摘要无 override 面。
+        """
         # #366 G1 设定驱动写作：无条件注入设定库摘要（角色/世界观/大纲）
         try:
             context.variables = await self._assemble_setting_context(
-                context.project_id, context.variables
+                context.project_id, context.variables, override
             )
         except Exception:
             logger.warning("设定注入失败，回退请求变量", exc_info=True)

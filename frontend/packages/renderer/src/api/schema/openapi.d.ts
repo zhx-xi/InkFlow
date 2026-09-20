@@ -4892,6 +4892,8 @@ export interface components {
              * @enum {string}
              */
             mode: "static" | "supervisor";
+            /** @description 上下文注入勾选通道；None=全注入（默认），显式空列表=该源不注入 */
+            override?: components["schemas"]["ContextOverride"] | null;
             /**
              * Pipeline
              * @description 管线模板 ID

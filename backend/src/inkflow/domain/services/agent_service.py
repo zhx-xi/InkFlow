@@ -18,6 +18,7 @@ from inkflow.domain.models.agent_pipeline import (
     SupervisorExecuteConfig,
 )
 from inkflow.domain.models.agent_template import AgentTemplate, RoleTemplate
+from inkflow.domain.models.context import ContextOverride
 from inkflow.domain.models.project import AGENT_DEFAULT_SENTINEL, AgentRelation, ProjectConfig
 from inkflow.domain.ports.agent_pipeline import (
     AgentPipelineProtocol,
@@ -488,6 +489,7 @@ class AgentService(AgentServiceStreamMixin):
                 ),
                 conditional_edges=conditional_edges if request.mode != "supervisor" else [],
                 agent_relations=agent_relations,
+                override=request.override,
             )
         )
         task.add_done_callback(lambda t: t.exception())
@@ -715,12 +717,13 @@ class AgentService(AgentServiceStreamMixin):
         continue_context: bool = False,
         conditional_edges: list[tuple[str, str]] | None = None,
         agent_relations: Sequence[AgentRelation] | None = None,
+        override: ContextOverride | None = None,
     ) -> None:
         """后台执行管线，更新 stages/relations 快照到 ExecutionStore。"""
         pipeline = pipeline or self._pipeline
         # #861：后台任务启动即置 running（此前仅在末尾写终态，慢管线全程 pending 被误判为卡死）
         await self._store.update_status(execution_id=execution_id, status="running")
-        await self._inject_context(context, continue_context=continue_context)
+        await self._inject_context(context, continue_context=continue_context, override=override)
         try:
             if supervisor_config is not None:
                 result: PipelineResult = await pipeline.execute(
@@ -769,22 +772,34 @@ class AgentService(AgentServiceStreamMixin):
             )
 
     async def _assemble_setting_context(
-        self, project_id: str, variables: dict[str, str]
+        self,
+        project_id: str,
+        variables: dict[str, str],
+        override: ContextOverride | None = None,
     ) -> dict[str, str]:
         """设定库摘要注入（#366 G1）：角色/世界观/大纲三源，非空注入 variables["setting"]。
         单源/整体异常 → WARNING + 回退（失败隔离，不阻断管线）。
+
+        #1319：角色/世界观两源按 override 白名单过滤（#1235 三态：显式 [] = 该源零产出，
+        [id...] = 仅命中项）；未显式勾选的源保持全注入（override=None 或该键缺省）。
+        大纲源无 override 面 → 始终全注入。过滤在该源 try 块内，保持单源失败隔离语义不变。
         """
         if self._character_repo is None and self._world_repo is None and self._outline_repo is None:
             return variables
         try:
-            project_int = uuid.UUID(project_id).int
+            project_uuid = uuid.UUID(project_id)
+            project_int = project_uuid.int
             project = await self._project_repo.get(project_int)
             if project is None:
                 return variables
             parts: list[str] = []
             if self._character_repo is not None:
                 try:
-                    characters, _ = await self._character_repo.list(project_int, limit=50)
+                    characters, _ = await self._character_repo.list(project_uuid, limit=50)
+                    # #1319 角色源白名单：仅「显式勾选」通道生效（缺省键 = 该源未覆盖 → 全注入）
+                    if override is not None and "character_ids" in override.model_fields_set:
+                        allowed = {str(i) for i in override.character_ids}
+                        characters = [c for c in characters if str(c.id) in allowed]
                     for ch in characters:
                         content = ch.personality or ch.background or ch.goals
                         if content:
@@ -793,7 +808,11 @@ class AgentService(AgentServiceStreamMixin):
                     logger.warning("角色设定读取失败，跳过该源", exc_info=True)
             if self._world_repo is not None:
                 try:
-                    worlds, _ = await self._world_repo.list(project_int, limit=50)
+                    worlds, _ = await self._world_repo.list(project_uuid, limit=50)
+                    # #1319 世界观源白名单：同角色源三态
+                    if override is not None and "world_ids" in override.model_fields_set:
+                        allowed_worlds = {str(i) for i in override.world_ids}
+                        worlds = [ws for ws in worlds if str(ws.id) in allowed_worlds]
                     for ws in worlds:
                         if ws.content:
                             parts.append(f"【世界观】{ws.name}：{ws.content}")
@@ -801,7 +820,7 @@ class AgentService(AgentServiceStreamMixin):
                     logger.warning("世界观设定读取失败，跳过该源", exc_info=True)
             if self._outline_repo is not None:
                 try:
-                    outlines, _ = await self._outline_repo.list(project_int, limit=50)
+                    outlines, _ = await self._outline_repo.list(project_uuid, limit=50)
                     for o in outlines:
                         if o.description:
                             parts.append(f"【大纲】{o.name}：{o.description}")
