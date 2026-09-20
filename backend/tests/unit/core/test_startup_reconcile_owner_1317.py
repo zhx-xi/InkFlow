@@ -102,7 +102,7 @@ class _Db:
             return row.status, row.progress_reason
 
     async def dispose(self) -> None:
-        await self.engine.dispose()  # type: ignore[attr-defined]
+        await self.engine.dispose()  # type: ignore[attr-defined]  # engine 以 object 存以避开 AsyncEngine 泛型参数
 
 
 async def _make_db() -> _Db:
@@ -303,7 +303,7 @@ async def test_owner_survives_repo_round_trip() -> None:
         await db.seed([(plan_id, "往返", {"max_chapters": 10})])
 
         session = db.factory()
-        repo = SQLiteBookRepository(session)  # type: ignore[arg-type]
+        repo = SQLiteBookRepository(session)  # type: ignore[arg-type]  # factory() 返回 AsyncSession 接口子类
         plan = await repo.get_writing_plan(plan_id)
         assert plan is not None
         plan.limits["kernel_owner_pid"] = 12345  # 生产写入点就是这样写 limits 的
@@ -311,7 +311,7 @@ async def test_owner_survives_repo_round_trip() -> None:
         await session.close()
 
         session2 = db.factory()
-        repo2 = SQLiteBookRepository(session2)  # type: ignore[arg-type]
+        repo2 = SQLiteBookRepository(session2)  # type: ignore[arg-type]  # 同上：factory() 返回 AsyncSession 接口子类
         reloaded = await repo2.get_writing_plan(plan_id)
         assert reloaded is not None
         assert reloaded.limits.get(OWNER_KEY) == 12345, (
