@@ -23,7 +23,7 @@
 6. 审校意见       ``audit_issues``（仅 T4 自主轨，修订必改）
 
 依据: specs/f44-book-orchestrator/spec.md §5.1；
-    .hermes/audit-writing-chain-20260915.md P0-2 / P1-2 / P1-5 / P1-6。
+    docs/evidence/audit-writing-chain-2026-09-15.md P0-2 / P1-2 / P1-5 / P1-6。
 
 writer 消息与生成后偏差记录（#1183）同为本模块职责（三轨共用，防副本漂移）：
 

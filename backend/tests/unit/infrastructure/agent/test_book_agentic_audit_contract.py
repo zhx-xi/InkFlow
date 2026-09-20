@@ -1,6 +1,6 @@
 """F49 T4 agentic 书级轨 · 审计闭环契约 — RED（#1185 盲区2/3 + A6/A7/A8）。
 
-权威来源：`.hermes/audit-writing-chain-20260915.md` P0-1 / P0-4。
+权威来源：`docs/evidence/audit-writing-chain-2026-09-15.md` P0-1 / P0-4。
 
 现有覆盖（本文件要**超越**的）
 ----------------------------

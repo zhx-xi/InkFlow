@@ -1,6 +1,6 @@
 """F44 T2 静态书级轨 · 章 brief 设定注入契约 — RED（#1185 盲区1 + A1/A3/A5/A10）。
 
-权威来源：`.hermes/audit-writing-chain-20260915.md` P0-2 / P1-2 / P1-5 / P1-6。
+权威来源：`docs/evidence/audit-writing-chain-2026-09-15.md` P0-2 / P1-2 / P1-5 / P1-6。
 
 本文件是 `test_book_service.py` 的兄弟文件：`test_book_service.py` 已 896 行
 （`ci_cd/check_file_length.py` 限 900），故新增 describe 独立成文件，并**复用**

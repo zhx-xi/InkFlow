@@ -834,7 +834,7 @@ async def test_extract_final_content_variants():
 async def test_delegate_chapter_skips_fallback_when_agent_saved_975():
     """【R】#975 守卫（book_service 轨）：agent 含 save_draft tool_call -> 兜底 create 跳过。
 
-    契约来源: .hermes/plans/contract-975-976-980-writing-pane.md §1.3 B975-3。
+    契约来源: docs/evidence/contract-975-976-980-writing-pane.md §1.3 B975-3。
     GREEN 实现使用 usage_accounting.draft_fallback_needed + _extract_saved_draft_id；
     RED 期当前无条件 create -> await_count==1 != 0 且返回值 str(draft.id)=="draft-1"。
     """

@@ -13,9 +13,17 @@
 | `FEATURES.md` | 功能清单唯一权威（已实现模块全表 + 规划 + 版本→功能映射） |
 | `adr/README.md` | ADR 索引 + 编号规则 + 当前有效决策速览（改代码前先查） |
 | `backend/pyproject.toml` | 依赖版本、工具配置（Ruff / mypy / pytest） |
+| `docs/evidence/README.md` | **证据归档**：被 ADR/spec/注释引用的历史证据（原 `.hermes/` 散落件） |
 | `CONTRIBUTING.md` | 人类贡献者指南 |
 
 本文件只保留**指针 + 无法从代码推导的纪律**；规范细节一律以权威源为准，不在此复制（复制体必然漂移，见 #1190）。Hermes 上下文 first-match-wins 只自动加载本文件，`.specify/constitution.md` 不在自动上下文中，需主动读取。
+
+🔴 **禁止引用 `.hermes/` 与 `.tmp/` 下的路径**（在 ADR / spec / 源码注释 / 测试 docstring / issue body 里）
+—— 两者都是 **gitignored 工作区草稿目录**：不随仓库分发、**其他协作者拿不到**、且会被定期清理。
+
+- 需要长期引用的证据 → 放 **`docs/evidence/`** 并在其 README 登记
+- 临时契约 / 探针 / 设计稿 → 引用 **GitHub issue（`#NNN`）** 或 **ADR**，不要写本地文件路径
+- 由来：此前大量 RED 契约与审计汇总写在 `.hermes/plans/`，清理后全仓留下 **37 处引用、31 处悬空**（详见 `docs/evidence/README.md`）
 
 ## 1. 项目概览
 **InkFlow** 是一个 AI 辅助小说创作工具。帮助作者使用 AI 规划大纲、撰写章节、修订文本、审阅质量。
