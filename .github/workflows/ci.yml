@@ -244,6 +244,12 @@ jobs:
           uv run python ../ci_cd/check_doc_pointers.py ..
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: "Guardrail: GUI prototype <-> page spec must match"
+        shell: pwsh
+        run: |
+          uv run python ../ci_cd/check_gui_spec_sync.py ..
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run ci_cd guard tests
         shell: pwsh
         run: |
