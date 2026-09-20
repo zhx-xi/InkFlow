@@ -176,10 +176,16 @@ test('世界树黑盒契约：childcount 层级 + desc 数据渲染 + 叶子负�
     const name = `E2E-契约-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
+    // #1321：非根条目须带已存在的分类 → 先建分类实体
+    const catRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-categories`, {
+      method: 'POST',
+      body: { name: '地理' },
+    });
+    expect(catRes.status).toBe(201);
     const ids = await presetWorldNodes(kernel, pid, [
       { name: '九州', category: '' },
-      { name: '中州', category: '', parent: '九州' },
-      { name: '东荒', category: '', parent: '九州' },
+      { name: '中州', category: '地理', parent: '九州' },
+      { name: '东荒', category: '地理', parent: '九州' },
     ]);
 
     await gotoNav(window, '设定库');
