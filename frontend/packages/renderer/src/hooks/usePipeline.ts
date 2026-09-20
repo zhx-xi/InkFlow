@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, type MutableRefObject } from 'react';
 import type { PipelineExecuteRequest } from '../api/pipeline';
+import type { ContextOverride } from '../api/context';
 import { useChapterStore } from '../stores/chapter';
 import { useExecutionPoll, type PipelineRunStatus, type PipelineStreamSink } from './useExecutionPoll';
 
@@ -23,6 +24,8 @@ export interface UsePipelineOptions {
   writingStyle: string;
   chapterTitle: string;
   supervisor?: { hitl_roles?: string[] } | null;
+  /** #1342：上下文注入勾选通道；缺省 = 全注入（后端 override=None 语义） */
+  override?: ContextOverride;
 }
 
 export interface UsePipelineResult {
@@ -76,10 +79,19 @@ export function usePipeline(options: UsePipelineOptions): UsePipelineResult {
         ...(options.supervisor?.hitl_roles?.length
           ? { mode: 'supervisor' as const, supervisor: { hitl_roles: options.supervisor.hitl_roles } }
           : {}),
+        // #1342：勾选通道随请求送达生成链路；缺省（undefined）= 全注入，不传空对象
+        ...(options.override ? { override: options.override } : {}),
       };
       pollState.start(body);
     },
-    [options.projectId, options.chapterId, options.supervisor?.hitl_roles, buildVariables, pollState.start],
+    [
+      options.projectId,
+      options.chapterId,
+      options.supervisor?.hitl_roles,
+      options.override,
+      buildVariables,
+      pollState.start,
+    ],
   );
 
   const confirm = useCallback(

@@ -1,5 +1,6 @@
 /** Agent 管线执行 API 封装（spec §5.6 GUI 写作入口管线化） */
 import { apiFetch, getApiConfig } from './client';
+import type { ContextOverride } from './context';
 
 export interface PipelineExecuteRequest {
   project_id: string;
@@ -8,6 +9,8 @@ export interface PipelineExecuteRequest {
   variables?: Record<string, string>;
   mode?: 'static' | 'supervisor';
   supervisor?: { hitl_roles: string[] };
+  /** #1342：上下文注入勾选通道（#1341 后端已打通）；缺省 = 全注入 */
+  override?: ContextOverride;
 }
 
 export interface PipelineExecuteResponse {

@@ -223,3 +223,36 @@
 
 - N20：编辑态工具栏行最右出现审批入口（计数文案 + `pendingDraftsCount > 0` 圆点）；点击 → 审批弹层打开；`writing-topbar` 不再存在。
 - N21：无选中章节（global chat 页）不渲染审批入口；树双击草稿节点仍可打开审批弹层。
+
+## 10. #1342 上下文注入面板勾选接线到生成链路 + 章级注入记录回显
+
+> 现象：写作页「上下文注入」面板的勾选/取消**对实际生成仍无影响** —— 勾选只喂 assemble 预览端点，生成链路（`/agent/pipelines/stream`）拿不到 override。
+> 后端通道已由 #1341 打通（`PipelineExecuteRequest.override` / `_assemble_setting_context(..., override=)`，角色/世界观两源白名单过滤 + #1235 三态语义）；本节锁**前端上游接线**。
+
+### 10.1 逻辑补充
+
+- `ContextPanel` 新增**可选** prop `onOverrideChange?: (override: ContextOverride) => void`：勾选集合（角色/伏笔/世界观）**外传到父层**。
+  - 上报入口**统一**为「组装完成（`data` 非空）后观察三个 checked 集合」的单一 effect —— 一处覆盖勾选/取消、选择器确认、初始自动注入三条路径。
+  - 仅在有数据时上报：空态/切章瞬间不上报空数组（否则父层把「全注入」误判为「不注入」）。
+  - 未传该 prop → 组件保持内部 state（既有 662 行契约零改动）。
+- `usePipeline` 新增**可选** `override?: ContextOverride`：`start(mode)` 构造 `PipelineExecuteRequest` 时**按需附加** `override` 字段（缺省不传键 = 后端 `override=None` = 全注入）。
+- `api/pipeline.ts` 的 `PipelineExecuteRequest` 新增 `override?: ContextOverride`（复用 `api/context.ts` 既有类型，不新建）。
+- `pages/writing.tsx` 持 `contextOverride` state 并传入 `usePipeline`；`ContextPanel` 的 `onOverrideChange` 接 `setContextOverride`。
+- **三态语义贯通**（#1235）：不勾选任何项 → 不传 override（全注入）≠ 全部取消勾选 → 传空数组（该类零注入）。
+
+### 10.2 章级注入记录回显（本轨范围说明）
+
+- **本章已注入清单回显**：后端**无落库载体** —— `audit_logs` 表 11 个字段均为审计语义（`severity_summary` 承载动作、`note` 为拒绝原因），无「注入了哪些条目」字段；唯一注入点 `agent_service.py` 组 `variables["setting"]` 为运行时内存变量，不落库；`AgentService` 亦无 `AuditLogService` 装配。
+- 故章级精确读回需：① `api/routers/agent.py` 装配 `AuditLogService` + 写入注入快照；② 章级过滤读回 API 面 + OpenAPI 快照 + 前端 `gen:api` 双刷 —— 属**后端轨**，本轨报告说明并建议另开（不擅自扩范围）。
+- 原型侧以 `context-injected` 状态表达该回显的目标形态（`context-injected-echo` chip 列表 + `context-injected-count` 徽章），作为后续后端轨的 UI 基准。
+
+### 10.3 已知边界：伏笔维度
+
+- `ContextOverride.foreshadowing_ids` 前端**保真透传**，但后端 `_assemble_setting_context` **未消费**该字段（该方法只装配角色/世界观/大纲三源，无伏笔源）→ 伏笔分组勾选在生成链路**暂不生效**。
+- 处置：另开后端轨补伏笔源过滤面；本轨不扩后端（冻结范围）。
+
+### 10.4 验收补充
+
+- N22：面板勾选/取消 → `onOverrideChange` 收到对应白名单（角色/世界观分组各验一次）；未传该 prop 时组件行为不变。
+- N23：`usePipeline.start` 构造的请求体：传 `override` → body 含该三字段；不传 → body **无** `override` 键；传显式空数组 → body 保留空数组（不塌缩为「全注入」）。
+- N24：可证伪自证 —— 移除 `usePipeline` 的 override 传参 → N23 的「body 含 override」断言必须失败。
