@@ -261,6 +261,9 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
           <span class="cat-chip" data-testid="world-cat-filter-势力"><span aria-hidden="true">🗺 </span>势力<button class="x" aria-label="删除">×</button></span>
           <span class="cat-chip" data-testid="world-cat-filter-功法"><span aria-hidden="true">🗺 </span>功法<button class="x" aria-label="删除">×</button></span>
           <button class="btn-sm" data-testid="world-cat-add"><span data-ic="plus"></span>新建分类</button>
+          <!-- #1321：恒开分类对话框的入口——world-cat-add 在选中分类时被切成「在该分类下建条目」语义，
+               用户再也找不到建分类入口；本按钮不随选中项改变语义 -->
+          <button class="btn-sm" data-testid="world-cat-add-always"><span data-ic="plus"></span>新建分类（不随选中项）</button>
           <button class="btn-sm" data-testid="map-view-entry"><span data-ic="map"></span>地图视图</button>
           <button class="btn-sm ml-auto" data-testid="world-copy-all"><span data-ic="copy"></span>整体复制</button>
         </div>
@@ -340,6 +343,8 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
         <div class="map-flex">
           <!-- 左栏：地图目录树 -->
           <aside class="map-left">
+            <!-- #1321：地图视图内新建分类入口——地图分支不渲染分类工具栏，此前完全无处建分类 -->
+            <button class="btn-sm" style="width:100%;justify-content:center" data-testid="world-cat-add-always"><span data-ic="plus"></span>新建分类（不随选中项）</button>
             <div class="lib-card" data-testid="library-list">
               <div class="tree-row">
                 <button class="chev open"><span data-ic="chevron-right"></span></button>

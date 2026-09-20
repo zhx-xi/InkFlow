@@ -394,14 +394,19 @@ class TestF35CreateValidationChain:
     async def test_create_with_parent_id_passes_uuid_to_add(self, service, mock_repo) -> None:
         """成功路径：create_setting(pid, name, parent_id=X) → 父校验通过后 add 收到 parent_id=X
         的实体（UUID→int 转换断言）.  # F35
+
+        #1321：非根条目现须带分类 → 本用例补 category（校验链其余断言不变）。
         RED: create_setting 无 parent_id 参数 → TypeError.
         """
         parent = _setting(name="青州")
         mock_repo.get = AsyncMock(return_value=parent)
         mock_repo.list = AsyncMock(return_value=([_setting(name="大越国")], 1))
         mock_repo.get_by_parent_and_name = AsyncMock(return_value=None)
+        mock_repo.get_category_by_name = AsyncMock(return_value=MagicMock())
 
-        created = await service.create_setting(PID, "清河县城", parent_id=parent.id)
+        created = await service.create_setting(
+            PID, "清河县城", category="地理", parent_id=parent.id
+        )
 
         assert created.name == "清河县城"
         # 校验链调用参数：父 id 已转 int、顶层/同级预检走 (pid, parent_int, name)

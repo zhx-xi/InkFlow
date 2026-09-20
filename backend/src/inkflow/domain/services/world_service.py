@@ -186,6 +186,12 @@ class WorldService:
         dup = await self._repo.get_by_parent_and_name(pid_int, parent_int, name)
         if dup is not None:
             raise WorldNameConflictError()
+        # #1321 条件必填：非根条目（有父）必须有分类——根条目走 #722「根无分类」.
+        # 唯一真相源放 service：agent 工具 / CLI / MCP 均直调此处，router DTO 另做前置拦截。
+        # 豁免：AI 提取管线（_world_extractor 直调 repo.add）与跨书复制（copy_service
+        # 自建校验）不经过本方法，故不受影响（issue #1321 D5b）。
+        if parent_int is not None and not category_stripped:
+            raise WorldCategoryMissingError()
         # ③ 循环防护：创建时自身尚无 id，parent 祖先链不可能含自身——语义完整
         #    保留注释（对齐 spec §5.1 顺序；update 改挂时由 _assert_no_cycle 落地）
         now = _utcnow()
@@ -330,6 +336,15 @@ class WorldService:
             )
             if dup is not None and dup.id != existing.id:
                 raise WorldNameConflictError()
+        # #1321：更新侧分类存在性校验——仅在显式传 category 且非空时校验
+        # （"" = 清除为未分类，冻结语义 test_world_api.py:217-222 不得打成 422）
+        if (
+            "category" in update.model_fields_set
+            and update.category
+            and await self._repo.get_category_by_name(existing.project_id, update.category.strip())
+            is None
+        ):
+            raise WorldCategoryMissingError(update.category.strip())
         # F35: parent_id 出现即更新（None=置顶）；其余字段 None=不修改（F10 语义）
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
         if "parent_id" in update.model_fields_set:

@@ -58,7 +58,7 @@ func 签名：async def func(**kwargs) -> str（信封 JSON 字符串，对齐 F
                     delete→DELETE /timeline/events/{id} | check→GET
                     /projects/{pid}/timeline/check
    manage_world:    create→POST /projects/{pid}/world-settings json{name,category,
-                    content,parent} | list→GET /projects/{pid}/world-settings
+                    content,parent_id} | list→GET /projects/{pid}/world-settings
                     params{search,category} | get→GET /world-settings/{id}
                     update→PATCH /world-settings/{id} json | delete→DELETE
                     /world-settings/{id} | restore→POST /world-settings/{id}/restore
@@ -525,12 +525,12 @@ class TestManageWorld:
             name="大炎王朝",
             category="地理",
             content="东域第一王朝",
-            parent="w0",
+            parent_id="w0",
         )
         method, path, _, body = _last_call(fake_env.client)
         assert (method, path) == ("POST", "/projects/p1/world-settings")
         assert body["name"] == "大炎王朝" and body["category"] == "地理"
-        assert body["content"] == "东域第一王朝" and body["parent"] == "w0"
+        assert body["content"] == "东域第一王朝" and body["parent_id"] == "w0"
 
     @pytest.mark.asyncio
     async def test_list(self, fake_env):

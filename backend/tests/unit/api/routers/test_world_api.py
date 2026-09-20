@@ -602,14 +602,14 @@ class TestWorldLocationTreeAPI:
 
         resp1 = client.post(
             f"/api/v1/projects/{PID}/world-settings",
-            json={"name": "清河县城", "parent_id": str(PARENT_ID)},
+            json={"name": "清河县城", "category": "地理", "parent_id": str(PARENT_ID)},
         )
         assert resp1.status_code == 422
         assert resp1.json()["detail"] == "父地点不存在或不在同一项目"
 
         resp2 = client.post(
             f"/api/v1/projects/{PID}/world-settings",
-            json={"name": "清河县城", "parent_id": str(PARENT_ID)},
+            json={"name": "清河县城", "category": "地理", "parent_id": str(PARENT_ID)},
         )
         assert resp2.status_code == 422
         assert resp2.json()["detail"] == "不能将地点挂接到自身或其子孙下"
@@ -687,12 +687,14 @@ class TestWorldRootSingletonAPI:
 
         response = client.post(
             f"/api/v1/projects/{PID}/world-settings",
-            json={"name": "清河县城", "parent_id": str(PARENT_ID)},
+            json={"name": "清河县城", "category": "地理", "parent_id": str(PARENT_ID)},
         )
         assert response.status_code == 201
         assert response.json()["name"] == "清河县城"
         svc.get_root_setting.assert_not_awaited()
-        svc.create_setting.assert_awaited_once_with(PID, "清河县城", "", "", parent_id=PARENT_ID)
+        svc.create_setting.assert_awaited_once_with(
+            PID, "清河县城", "地理", "", parent_id=PARENT_ID
+        )
 
 
 class TestWorldRootCategoryGuardAPI:
@@ -705,7 +707,7 @@ class TestWorldRootCategoryGuardAPI:
         svc.create_setting = AsyncMock(side_effect=WorldRootMissingError())
         response = client.post(
             f"/api/v1/projects/{PID}/world-settings",
-            json={"name": "宗门等级体系", "parent_id": str(uuid.uuid4())},
+            json={"name": "宗门等级体系", "category": "地理", "parent_id": str(uuid.uuid4())},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "请先创建根世界观后再创建条目"

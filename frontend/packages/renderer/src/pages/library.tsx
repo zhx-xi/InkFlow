@@ -623,6 +623,7 @@ export function LibraryPage() {
                 worldCatEntities={worldCatEntities}
                 activeWorldCat={activeWorldCat}
                 onWorldCatChange={setActiveWorldCat}
+                onAddCategory={() => setWorldCatDialogOpen(true)}
                 collapsedIds={collapsedIds}
                 onToggle={toggleCollapsed}
                 onEdit={openEdit}

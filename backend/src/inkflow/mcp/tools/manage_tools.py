@@ -276,7 +276,7 @@ async def _route_world(client: _HTTPClient, params: ManageWorldParams) -> object
                     "name": params.name,
                     "category": params.category,
                     "content": params.content,
-                    "parent": params.parent,
+                    "parent_id": params.parent_id,
                 }
             ),
         )
@@ -295,7 +295,7 @@ async def _route_world(client: _HTTPClient, params: ManageWorldParams) -> object
                     "name": params.name,
                     "category": params.category,
                     "content": params.content,
-                    "parent": params.parent,
+                    "parent_id": params.parent_id,
                 }
             ),
         )

@@ -27,7 +27,7 @@ from collections.abc import Awaitable
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_copy_service, get_db, get_world_service
@@ -100,7 +100,11 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
 
 
 class WorldSettingCreateBody(BaseModel):
-    """创建世界观条目请求体 — project_id 取自路径参数，不在 body（spec §3.1）。"""
+    """创建世界观条目请求体 — project_id 取自路径参数，不在 body（spec §3.1）。
+
+    #1321：(parent_id, category) 条件必填——非根条目（有 parent_id）必须带分类；
+    根条目（无 parent_id）必须无分类（#722 根无分类语义）。
+    """
 
     name: str
     category: str = ""
@@ -124,6 +128,17 @@ class WorldSettingCreateBody(BaseModel):
     def validate_content(cls, v: str) -> str:
         """验证内容：不超过 20000 字符."""
         return _validate_content(v)
+
+    @model_validator(mode="after")
+    def _require_category_for_non_root(self) -> WorldSettingCreateBody:
+        """#1321 条件必填：非根条目（parent_id 非空）必须有分类.
+
+        根条目（parent_id 为空）不在此校验——空串走 #722「根无分类」；
+        分类**存在性**由 service 层判（WorldCategoryMissingError → 422）。
+        """
+        if self.parent_id is not None and not self.category.strip():
+            raise ValueError("非根世界观条目必须指定分类")
+        return self
 
 
 class WorldCategoryCreateBody(BaseModel):

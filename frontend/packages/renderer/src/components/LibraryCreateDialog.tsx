@@ -154,7 +154,14 @@ export function LibraryCreateDialog({
 
   const requiredValue = cat === 'timeline' || cat === 'foreshadow' ? title.trim() : name.trim();
   // F43 P1（D1）：角色分类等级必填无默认——名称/标题 + 等级双必填才 enabled（E13）
-  const canSave = requiredValue !== '' && !saving && (cat !== 'characters' || rank !== '');
+  // #1321：world 非根条目（isRoot !== true）须填分类——与后端 (parent_id, category)
+  // 条件必填对齐（根条目恒无分类，isRoot=true 时不门控）
+  const worldCatRequired = cat === 'world' && isRoot !== true;
+  const canSave =
+    requiredValue !== '' &&
+    !saving &&
+    (cat !== 'characters' || rank !== '') &&
+    (!worldCatRequired || category.trim() !== '');
 
   // #568：world 新建模式下选中分类时用「创建分类」标题（语义 = 在选中分类下创建子条目）
   const titleKey = editing
@@ -291,6 +298,12 @@ export function LibraryCreateDialog({
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                   />
+                  {/* #1321：world 非根条目分类必填提示 */}
+                  {worldCatRequired && category.trim() === '' && (
+                    <span data-testid="library-create-category-required" className="text-[12px] text-err">
+                      {t('lib.create.categoryRequired')}
+                    </span>
+                  )}
                 </Field>
               )}
               <Field label={t('lib.create.content')}>
