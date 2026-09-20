@@ -48,10 +48,12 @@ from inkflow.domain.services.chapter_brief import (
     resolve_brief_setting,
 )
 from inkflow.domain.services.usage_accounting import (
+    ChapterContentEmptyError,  # noqa: F401  # #1316 契约：book_pipeline 须与本模块导出同一异常符号
     _extract_saved_draft_id,
+    accumulate_result_usage,
     draft_fallback_needed,
     extract_total_tokens,
-    result_usage,
+    guard_empty_chapter_content,
 )
 from inkflow.infrastructure.llm.content_text import content_text
 
@@ -808,11 +810,9 @@ class BookService(BookOutlineMixin, BookRunMixin):
     ) -> str:
         """委托契约核心：章 brief → writer_factory → agent.invoke → save_draft 回收.
 
-        Args:
-            plan: 书级计划（project_id / character_ids）; chapter: 章 outline 节点;
-                limits: 合并后的书级上限.
-        Returns:
-            execution_id（Draft.id 字符串）; writer_factory 未装配 → ValueError.
+        plan/chapter/limits = 书级计划 / 章 outline 节点 / 合并后的书级上限；
+        返回 execution_id（Draft.id 字符串）; writer_factory 未装配 → ValueError.
+        #1316：LLM 连续 2 次空产出 → ChapterContentEmptyError，空串不落草稿（含重试）.
         """
         if self._writer_factory is None:
             raise ValueError("writer_factory 未装配")
@@ -830,15 +830,18 @@ class BookService(BookOutlineMixin, BookRunMixin):
         )
         messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
         result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
-        prompt_tokens, completion_tokens, total = result_usage(result)
-        plan.limits["tokens_used"] = plan.limits.get("tokens_used", 0) + total
-        plan.limits["prompt_tokens"] = plan.limits.get("prompt_tokens", 0) + prompt_tokens
-        plan.limits["completion_tokens"] = (
-            plan.limits.get("completion_tokens", 0) + completion_tokens
+        accumulate_result_usage(plan.limits, result, limits.max_tokens)
+
+        async def _invoke_again() -> str:
+            """#1316 空产出重试：重新执行一次单章委托（同口径记账，重试=真实 LLM 调用）."""
+            nonlocal result
+            result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
+            accumulate_result_usage(plan.limits, result, limits.max_tokens)
+            return _extract_final_content(result)
+
+        content = await guard_empty_chapter_content(
+            _extract_final_content(result), invoke=_invoke_again, chapter_name=chapter.name
         )
-        if plan.limits["tokens_used"] > limits.max_tokens:
-            plan.limits["tokens_warning"] = True
-        content = _extract_final_content(result)
         record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter.name)
         if draft_fallback_needed(result):
             # #975 守卫：agent 未显式 save_draft → 兜底建草稿（#976 D3 卷透传）
@@ -867,23 +870,19 @@ class BookService(BookOutlineMixin, BookRunMixin):
 
 
 def _extract_final_content(result: dict[str, Any]) -> str:
-    """从 agent.invoke 结果（dict，含 "messages"）提取最终 message content."""
-    messages = result.get("messages", [])
+    """从 agent.invoke 结果（含 "messages"）提取最终 content（#1262：走 content_text 归一，
+    否则 str() 落库的是 list repr（含 thinking 内部推理文本））.
+    """
+    messages = result.get("messages") or []
     if not messages:
         return ""
     final = messages[-1]
     content = getattr(final, "content", None)
     if content is None and isinstance(final, dict):
         content = final.get("content")
-    if content is None:
-        return ""
-    # #1262：content 可能是 structured content blocks（list[dict]）——必须走统一归一器，
-    # 否则 str() 落库的是 list repr（含 thinking 内部推理文本）。
-    return content_text(content)
+    return content_text(content) if content is not None else ""
 
 
 def _extract_usage_tokens(result: dict[str, Any]) -> int:
-    """总 token 提取（#902 迁移 re-export：#860 helper 迁入 usage_accounting）.
-    守护既有测试 import 语义不变（extract_total_tokens 实现，本函数仅作兼容别名）。
-    """
+    """总 token 提取（#902 迁移 re-export：#860 helper 迁入 usage_accounting）."""
     return extract_total_tokens(result)

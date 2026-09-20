@@ -48,7 +48,11 @@ from inkflow.domain.services.chapter_brief import (
     record_word_deviation,
     resolve_brief_setting,
 )
-from inkflow.domain.services.usage_accounting import chat_response_usage, result_usage
+from inkflow.domain.services.usage_accounting import (
+    chat_response_usage,
+    guard_empty_chapter_content,
+    result_usage,
+)
 from inkflow.infrastructure.agent._audit_bridge import (
     audit_event,
     blocking_update,
@@ -797,7 +801,22 @@ class BookAgenticPipeline:
             messages, config={"configurable": {"thread_id": self._thread_id}}
         )
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
-        content = _extract_final_content(result)
+
+        async def _invoke_again() -> str:
+            """#1316 空产出重试：重新委托一次（token 并入本事件，计费口径不丢）."""
+            nonlocal prompt_tokens, completion_tokens, total_tokens
+            retried = await agent.invoke(  # type: ignore[union-attr]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages, config)（_require_deps 守卫无法收窄 Optional 工厂）
+                messages, config={"configurable": {"thread_id": self._thread_id}}
+            )
+            retry_prompt, retry_completion, retry_total = result_usage(retried)
+            prompt_tokens += retry_prompt
+            completion_tokens += retry_completion
+            total_tokens += retry_total
+            return _extract_final_content(retried)
+
+        content = await guard_empty_chapter_content(
+            _extract_final_content(result), invoke=_invoke_again, chapter_name=chapter["name"]
+        )
         record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter["name"])
         draft = await self._draft_service.create(  # type: ignore[union-attr]  # 鸭子类型：draft_service 按 F27 契约提供 async create
             project_id=plan.project_id,
