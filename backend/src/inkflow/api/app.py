@@ -106,6 +106,7 @@ from inkflow.domain.services.skill_service import (
     ensure_builtin_skills,
     migrate_skills_from_db,
 )
+from inkflow.infrastructure.kernel.state import is_process_alive
 
 
 @asynccontextmanager
@@ -175,7 +176,8 @@ async def lifespan(app: FastAPI):
         await seed_builtin_agents(session)
     # #953：内核启动对账——重启后 writing_plans 残留 running 态 → failed（防 422
     # 「存在进行中的」挡掉重跑）；须在 seed 之后、scheduler 之前执行
-    await reconcile_stale_running_plans(async_session_factory)
+    # #1317：注入存活判据——只释放无归属/归属已死的 running 行，别实例存活的不碰
+    await reconcile_stale_running_plans(async_session_factory, is_alive=is_process_alive)
     # #479 G2: 知识图谱定时提取调度器装配（应用级 session 长活，shutdown 关闭；
     # 手动触发端点与定时触发共用 RelationExtractionService，G1 契约
     # extraction_run_repo=None，run 记录落盘归 #496 承接）

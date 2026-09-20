@@ -40,7 +40,7 @@ from inkflow.domain.models.writing_plan import (
     validate_at_least_one_hard_limit,
 )
 from inkflow.domain.services.book_outline_mixin import BookOutlineMixin
-from inkflow.domain.services.book_run_mixin import BookRunMixin
+from inkflow.domain.services.book_run_mixin import BookRunMixin, mark_run_owner
 from inkflow.domain.services.chapter_brief import (
     build_chapter_brief,
     chapter_write_messages,
@@ -494,6 +494,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
         if action == "resume":
             if plan.status != "paused":
                 raise ValueError("运行未处于可暂停状态")
+            mark_run_owner(plan)  # #1317：resume 亦属 running 写入点，须打实例归属
             plan.status = "running"
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
             return {"run_id": str(plan.id), "status": "running"}
