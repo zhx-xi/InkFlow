@@ -13,6 +13,7 @@ BookService(BookRunMixin) 后 prepare_run/mark_failed 仍为实例方法，既�
 
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Any
 
@@ -20,6 +21,26 @@ from loguru import logger
 
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+
+KERNEL_OWNER_PID_KEY = "kernel_owner_pid"
+"""#1317：writing_plans.limits 的内核实例归属键（int pid）。
+
+读取方 = core/startup_reconcile.py 的启动对账（同键名独立持常量：core 不 import
+domain/infrastructure）。归属为 int pid，判定存活由 api/app.py 注入。
+"""
+
+
+def mark_run_owner(plan: WritingPlan) -> None:
+    """#1317：run 落 running 前打上内核实例归属（``limits['kernel_owner_pid']``）。
+
+    book 主轨 / volume 轨 / agentic 轨（prepare_run）与 resume 动作共用本标记：
+    启动对账据此判定「他实例是否仍存活」——存活则不碰（防跨实例误伤），
+    缺失/畸形/已死则照旧释放。值为本进程 pid，随 update_writing_plan 落 JSON 列。
+
+    Args:
+        plan: 待置 running 的书级计划（就地改 limits，调用方随后落库）.
+    """
+    plan.limits[KERNEL_OWNER_PID_KEY] = os.getpid()
 
 
 class BookRunMixin:
@@ -93,6 +114,7 @@ class BookRunMixin:
                 plan
             )
             return {"run_id": str(plan.id), "status": "completed"}
+        mark_run_owner(plan)
         plan.status = "running"
         await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan
