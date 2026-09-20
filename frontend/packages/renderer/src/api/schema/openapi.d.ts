@@ -6025,6 +6025,9 @@ export interface components {
         /**
          * WorldSettingCreateBody
          * @description 创建世界观条目请求体 — project_id 取自路径参数，不在 body（spec §3.1）。
+         *
+         *     #1321：(parent_id, category) 条件必填——非根条目（有 parent_id）必须带分类；
+         *     根条目（无 parent_id）必须无分类（#722 根无分类语义）。
          */
         WorldSettingCreateBody: {
             /**

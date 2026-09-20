@@ -261,9 +261,15 @@ class TestFilterStillWorksWithRealFk:
         )
         assert root.status_code == 201, root.text[:200]
         root_id = root.json()["id"]
+        # #1321：非根条目须带已存在的分类 → 先建分类（本用例意图是验 parent_id 过滤，非分类）
+        cat = await client.post(
+            f"/api/v1/projects/{pid}/world-categories",
+            json={"name": "地理"},
+        )
+        assert cat.status_code == 201, cat.text[:200]
         child = await client.post(
             f"/api/v1/projects/{pid}/world-settings",
-            json={"name": "层子", "category": "", "content": "", "parent_id": root_id},
+            json={"name": "层子", "category": "地理", "content": "", "parent_id": root_id},
         )
         assert child.status_code == 201, child.text[:200]
         child_id = child.json()["id"]
