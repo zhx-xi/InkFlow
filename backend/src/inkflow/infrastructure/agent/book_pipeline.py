@@ -52,9 +52,11 @@ from inkflow.domain.services.chapter_brief import (
     resolve_brief_setting,
 )
 from inkflow.domain.services.usage_accounting import (
+    ChapterContentEmptyError,  # noqa: F401  # #1316 契约：须与 book_service 导出同一异常符号（is 判定）
     _extract_saved_draft_id,
     chat_response_usage,
     draft_fallback_needed,
+    guard_empty_chapter_content,
     result_usage,
 )
 from inkflow.infrastructure.agent._audit_bridge import blocking_update, report_to_audit_dict
@@ -679,7 +681,20 @@ class BookVolumePipeline:
         messages = chapter_write_messages(system_prompt, chapter, brief_inputs["default_words"])
         result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：agent 按 F27 契约提供 async invoke(messages)
         prompt_tokens, completion_tokens, total_tokens = result_usage(result)
-        content = _extract_final_content(result)
+
+        async def _invoke_again() -> str:
+            """#1316 空产出重试：重新委托一次（token 并入本事件，计费口径不丢）."""
+            nonlocal result, prompt_tokens, completion_tokens, total_tokens
+            result = await agent.invoke(messages)  # type: ignore[attr-defined]  # 鸭子类型：同首次委托（F27 async invoke(messages)）
+            retry_prompt, retry_completion, retry_total = result_usage(result)
+            prompt_tokens += retry_prompt
+            completion_tokens += retry_completion
+            total_tokens += retry_total
+            return _extract_final_content(result)
+
+        content = await guard_empty_chapter_content(
+            _extract_final_content(result), invoke=_invoke_again, chapter_name=chapter["name"]
+        )
         record_word_deviation(content, brief_inputs["default_words"], chapter_name=chapter["name"])
         if draft_fallback_needed(result):
             # #975 守卫：agent 未显式 save_draft → 服务层兜底建草稿（#976 D3 卷透传）

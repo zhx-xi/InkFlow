@@ -17,6 +17,7 @@ test_usage_accounting_902.py（RED 契约）。
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 
@@ -209,3 +210,42 @@ def _extract_saved_draft_id(result: dict[str, Any]) -> str:
         if isinstance(data, dict) and data.get("ok") is True and "draft_id" in data:
             return str(data["draft_id"])
     return ""
+
+
+def accumulate_result_usage(limits: dict[str, Any], result: dict, max_tokens: int) -> None:
+    """#1316：一次 agent.invoke 的用量累加进 limits 三键 + 超限置 tokens_warning.
+
+    多轨同口径单点实现（book_service 首次委托与空产出重试共用）：重试是**真实
+    LLM 调用**，必须计入 token 记账，否则账单失真（agent_calls 口径同理）。
+    超限只写告警键不终止（§7-6 软护栏语义不变）。
+    """
+    prompt_tokens, completion_tokens, total = result_usage(result)
+    limits["tokens_used"] = limits.get("tokens_used", 0) + total
+    limits["prompt_tokens"] = limits.get("prompt_tokens", 0) + prompt_tokens
+    limits["completion_tokens"] = limits.get("completion_tokens", 0) + completion_tokens
+    if limits["tokens_used"] > max_tokens:
+        limits["tokens_warning"] = True
+
+
+class ChapterContentEmptyError(Exception):
+    """#1316：book 轨 LLM 连续空产出（区分于下游 draft_service 的输入校验拒绝）."""
+
+
+async def guard_empty_chapter_content(
+    content: str, *, invoke: Callable[[], Awaitable[str]], chapter_name: str = ""
+) -> str:
+    """空内容守卫 + 有限重试（1 次，总尝试 2）：空产出绝不下传草稿落库.
+
+    content 非空 → 原样返回；空 → 调 ``invoke()``（调用方闭包：重新执行一次单章
+    委托并返回新 content）重取，非空则返回；仍空 → ``ChapterContentEmptyError``。
+    空串传下游会命中 draft_service 的空内容校验（#275 同族 trust-boundary 守卫，
+    不可放宽）→ 整章 failed 且归因错指向下游；故守卫必须在上游调用方。
+    """
+    if content.strip():
+        return content
+    retried = await invoke()
+    if retried.strip():
+        return retried
+    raise ChapterContentEmptyError(
+        f"#1316 章「{chapter_name}」LLM 空产出：连续 2 次空内容，拒绝下传落库"
+    )
