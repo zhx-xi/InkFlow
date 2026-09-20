@@ -3142,6 +3142,17 @@
             "title": "Mode",
             "type": "string"
           },
+          "override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextOverride"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "上下文注入勾选通道；None=全注入（默认），显式空列表=该源不注入"
+          },
           "pipeline": {
             "default": "builtin:write_chapter",
             "description": "管线模板 ID",
