@@ -1,6 +1,6 @@
 """#1185 A9/A11 · 写作轨 factory 授权与上下文注入 — API 装配层 RED 契约。
 
-权威来源：`docs/evidence/audit-writing-chain-2026-09-15.md` P1-4（F58/F39 授权未接）、
+权威来源：`.hermes/audit-writing-chain-20260915.md` P1-4（F58/F39 授权未接）、
 P0-3（F3 轨上下文恒空）。
 
 为什么在 API 层
@@ -16,14 +16,11 @@ P0-3（F3 轨上下文恒空）。
 1. **A9**：两 factory 均须把 `tool_ids` / `skill_ids` 传给 `build_agentic_writer`。
    当前两者 kwargs 均无这两键 → `_WRITER_READER_NAMES` 硬编码兜底、
    `skill_ids` 恒 None → `_append_skills` 永不执行（F39 全写作轨失效）。
-   ⚠️ 两条 A9 用例属 #1181（W2 范畴），2026-09-15 已拆出至
-   `docs/evidence/red-contract-writer-factory-authorization.py`。
 2. **A11**：`get_writing_service`（`api/deps.py`）须注入非 Null 的
    `context_provider`（F6 `ContextService`）。当前不传 → 恒落
    `NullContextProvider`（`writing_service.py:58`）→ F3 轨上下文恒空。
 
-现状（2026-09-15）：A11 已随 W1-B（commit `9192b5c`）转绿；A9 两条已拆出交 W2。
-下方 `_seed` / `_patch_pipelines` 是 A9 用例的装配夹具，保留供 W2 恢复时复用。
+RED 预期：三条断言在当前实现上全部 FAIL。
 """
 
 from __future__ import annotations

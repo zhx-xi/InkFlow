@@ -618,7 +618,7 @@ class TestCoverageGapPipeline2:
 class TestDraftGuard975:
     """#975 唯一草稿守卫（book_pipeline 轨）：agent 已 save_draft -> 服务层兜底 create 跳过。
 
-    契约来源: .hermes/plans/contract-975-976-980-writing-pane.md §1.2/§1.3 B975-1/B975-2。
+    契约来源: docs/evidence/contract-975-976-980-writing-pane.md §1.2/§1.3 B975-1/B975-2。
     与 agentic 轨参考形态 _history_has_tool_call（agentic_writer_service.py:215,281）语义一致；
     GREEN 实现使用 usage_accounting.draft_fallback_needed + _extract_saved_draft_id。
 

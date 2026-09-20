@@ -7,7 +7,7 @@ zhipu 400 1213「未正常接收到prompt参数」→ book run 全章 failed、t
 探针实证（.hermes/tmp_repro_c.py，忠实快照 rc2 keys+DB）：
 CHAT PROBE(litellm chat 客户端 model=embedding-3) = BadRequestError 400 1213（同款）。
 
-用户拍板（2026-09-05，契约 .hermes/plans/contract-929.md）：
+用户拍板（2026-09-05，契约 docs/evidence/contract-929-llm-failfast.md）：
 ① model_routing 改 provider 键 → ProviderDefault{model(裸名), type} 值对象；
 ② 删除最终 fallback——解析不到模型 → logger.error 诊断 + HTTPException 422，
    绝不静默挑一个 provider 的模型；

@@ -6,7 +6,7 @@
 （#735 agent>项目>全局 链在 book 轨断裂）。rc2 中项目明明配了
 deepseek/deepseek-v4-flash，装配却走空全局 → 静默回退捡到 zhipu embedding-3 → 400 1213。
 
-契约（.hermes/plans/contract-929.md §4/§5b）：
+契约（docs/evidence/contract-929-llm-failfast.md §4/§5b）：
 - `_writer_factory` 每次委托：读 `_project_config_getter(expected_project_id).model`
   → `resolve_llm_credentials(config.llm_default_model, project_model=<项目模型>)`；
 - `_build_book_service` 装配期不再 resolve（解析延迟到委托/预检）；

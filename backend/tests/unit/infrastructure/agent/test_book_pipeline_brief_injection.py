@@ -1,6 +1,6 @@
 """F44 T3 卷级轨 · 章 brief 设定注入契约 — RED（#1185 + A3/A4/A5/A10）。
 
-权威来源：`.hermes/audit-writing-chain-20260915.md` P0-2 / P1-1 / P1-2 / P1-5 / P1-6。
+权威来源：`docs/evidence/audit-writing-chain-2026-09-15.md` P0-2 / P1-1 / P1-2 / P1-5 / P1-6。
 
 被测对象：`inkflow/infrastructure/agent/book_pipeline.py::BookVolumePipeline`
 （T3 轨，`books.py:513` mode=volume 入口；brief 为三份逐字复制品之一，
