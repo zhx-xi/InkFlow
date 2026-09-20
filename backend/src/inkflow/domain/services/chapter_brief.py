@@ -49,6 +49,11 @@ ContextBuilder = Callable[[uuid.UUID, object], Awaitable[str] | str]
 ProjectConfigGetter = Callable[[uuid.UUID], Awaitable[object]]
 
 #: 项目级风格缺席时的通用祈使句（保留「风格/偏好」语义，不省略段）。
+# #1318：正文首行不得回声章节标题（三轨共用措辞，改这一处即三轨同源）
+_NO_TITLE_ECHO_HINT = (
+    "【输出约束】正文首行不得重复章节标题（含「第N章 …」、纯标题文本及其"
+    "任何变体），直接以第一个自然段开头。"
+)
 _DEFAULT_STYLE_HINT = "遵循项目写作风格与用户偏好（偏好优先于通用文风）。"
 
 #: 生成字数偏差容忍带（±30%）——带内 info 记录、带外 warning 记录（#1183，不阻断）。
@@ -115,6 +120,7 @@ def build_chapter_brief(
     lines = [
         "你是一位小说章节写作者。请严格按大纲切片撰写本章正文。",
         f"【章节大纲】{_text(_chapter_value(chapter, 'description'))}",
+        _NO_TITLE_ECHO_HINT,
     ]
     if _text(context):
         lines.append(f"【设定注入】\n{context.strip()}")
@@ -147,7 +153,7 @@ def chapter_write_messages(
         ``[{"role": "system", ...}, {"role": "user", ...}]``（agent.invoke 首参）.
     """
     instruction = (
-        f"请撰写章节《{_text(_chapter_value(chapter, 'name'))}》："
+        f"请撰写本章（{_text(_chapter_value(chapter, 'name'))}）正文："
         f"{_text(_chapter_value(chapter, 'description'))}"
     )
     if default_words is not None:

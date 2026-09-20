@@ -414,13 +414,19 @@ async def test_user_message_carries_target_word_count():
     """user 消息须携带目标字数（F2：三轨 user 消息均无字数）。
 
     可证伪性：删掉 user 消息里的字数后缀 → FAIL
-    （现状 `book_service.py:844` 恒为 `请撰写章节《{name}》：{description}`）。
+
+    #1318 语义升级：原断言钉死字面量「请撰写章节《{name}》：{description}」，
+    而该形态把章名摆在句首、直接**诱导模型把标题写进正文首行**（rc4 实测
+    2/9 章标题回声）。措辞改为中性的「请撰写本章（{name}）正文：」后，
+    此处按**语义**断言（仍是「撰写本章正文」的指令 + 章名/大纲在场），
+    不再钉死会诱导回声的具体字面量。
     """
     messages = await _invoke_capture(_plan(), _outline())
 
     user = next(m for m in messages if m["role"] == "user")["content"]
     assert str(TARGET_WORDS) in user, "user 消息须含目标字数"
-    assert "请撰写章节" in user, "原有指令语义不得丢失"
+    assert "请撰写本章" in user, "原有指令语义不得丢失"
+    assert _outline().name in user, "user 消息须携带章名"
 
 
 # ── G2：生成后字数偏差记录（记录，不硬失败）──────────────────────────
