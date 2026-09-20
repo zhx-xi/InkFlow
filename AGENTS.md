@@ -67,6 +67,23 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
 4. 编号顺序递增不复用；决策被取代时旧 ADR 标记 `已弃用` 并指向新 ADR（如 ADR-005 → ADR-005v2）
 5. Constitution §7.3：所有 ADR 保持最新；架构分析文档只保留索引表，不维护内嵌副本
 
+### 4.6 GUI 改动必须同步设计双件套（三件同步）
+
+任何改动 `frontend/**/pages/*.tsx` 或 `frontend/**/components/**` 的 **UI 行为/布局**的 PR，
+必须**同 PR 同步以下三件**：
+
+1. `design/GUI/<page>/<page>.html` —— 交互原型
+2. `design/GUI/<page>/<page>-<state>.png` —— 受影响状态的截图
+3. `specs/f19-gui/<page>.md` —— 页交互规格
+
+⚠️ 原型 HTML 是「设计基准」，页规格是「实现的对照面」。**两者都不更新 = 漂移**（#1326 实测 8 页）。
+⚠️ PNG 由 `design/GUI/_tools/*.cjs` 截图脚本生成（本地 headless，**非 CI**）
+   → **门禁无法自动验证 PNG 内容，只能靠人工自查**。
+⚠️ 门禁 `ci_cd/check_gui_spec_sync.py` 只校验「目录/文件对应 + 孤儿」，
+   **拦不住「改了没同步」**（那靠本纪律 + PR 自查）。
+
+**判据（自查三问）**：本 PR 是否改了 UI 行为/布局？→ 对应页目录是哪个？→ 三件是否都在本 PR diff 里？
+
 ## 5. 开发工作流（SDD + TDD）
 整个开发流程为：**Spec → Test (RED) → Code (GREEN) → Refactor → PR → Merge**
 

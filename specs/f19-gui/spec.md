@@ -1152,6 +1152,8 @@ toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载
 
 > 已按页面拆分为独立规格文件（2026-08-30 #793 ①）。本主 spec 保留壳 / 内核 / 渲染层联合契约（§1-§13）；各页「画面样式 / 动作样式（按钮×状态表）/ 验收」以对应页面规格文件为准：
 
+> ⚠️ 改任一页 UI 必须同 PR 更新三件：本目录对应 `<page>.md` + `design/GUI/<page>/<page>.html` + 状态 PNG（见 `AGENTS.md` §4.6）
+
 - 写作页 → specs/f19-gui/writing.md（design/GUI/writing/）
 - 项目页 → specs/f19-gui/projects.md（design/GUI/projects/）
 - 设定库 → specs/f19-gui/library.md（design/GUI/library/）
@@ -1166,3 +1168,4 @@ toast 体系（三态/2s/aria-live）、骨架屏（项目列表/章节树加载
 - Agent → specs/f19-gui/agent.md（design/GUI/agent/）
 - 记忆 → specs/f19-gui/memory.md（design/GUI/memory/）
 - 设置 → specs/f19-gui/settings.md（design/GUI/settings/）
+- 成书页 → specs/f19-gui/book.md（design/GUI/book/）
