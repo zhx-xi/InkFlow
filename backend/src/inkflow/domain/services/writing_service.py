@@ -189,7 +189,9 @@ class WritingService:
                 + (f"上下文：{context}\n" if context else "")
                 + f"最少字数：{min_words}\n"
                 + "请直接输出正文内容（纯文本，不要 markdown 标题行 / 不要 #、** 等标记，"
-                "不要输出 JSON 或代码块标记，每个自然段以两个全角空格开头）。"
+                + "不要输出 JSON 或代码块标记，每个自然段以两个全角空格开头）。"
+                + "正文首行不得重复章节标题（含「第N章 …」、纯标题文本及其"
+                "任何变体），直接以第一个自然段开头。"
             ),
         )
         return [system_msg, user_msg]

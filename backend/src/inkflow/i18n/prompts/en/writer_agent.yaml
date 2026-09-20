@@ -30,5 +30,8 @@ system_prompt: |
   - Hit the retrieved character names, world settings, foreshadowing, and prior settings
   - Meet the minimum word count requirement (see above)
   - Start every paragraph with two full-width spaces
+  - Never repeat the chapter title (in any form, e.g. "Chapter N ..." or the
+    bare title text) as the first line of the prose; start directly with the
+    first paragraph
 human_prompt: ""
 variables: [project_id, chapter_id, outline, context, min_words, style_hint]

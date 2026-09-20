@@ -23,5 +23,6 @@ system_prompt: |
   - 命中检索到的角色名、世界观条目、伏笔与前文设定
   - 满足最低字数要求（见上）
   - 每个自然段以两个全角空格开头
+  - 正文首行不得重复章节标题（含「第N章 …」、纯标题文本及其任何变体），直接以第一个自然段开头
 human_prompt: ""
 variables: [project_id, chapter_id, outline, context, min_words, style_hint]

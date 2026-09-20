@@ -42,7 +42,7 @@ from inkflow.domain.models.audit import (
     AuditSummary,
     DimensionSummary,
 )
-from inkflow.domain.models.chapter import Chapter
+from inkflow.domain.models.chapter import Chapter, _is_title_echo_line
 from inkflow.domain.models.character import Character, CharacterGroup, CharacterRelation
 from inkflow.domain.models.extraction import ExtractionRun, ExtractionStatus
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
@@ -64,6 +64,9 @@ _PAGE_SIZE = 100
 
 _RUN_ERROR_MAX_CHARS = 500
 """R-X2 run.error 截断上限（spec §7: error 截断 ≤ 500 字符入 data）。"""
+
+_RULE_CHAPTER_TITLE_ECHO = "chapter.title_echo"
+"""R-X3 标题回声残留规则 id（#1318）。"""
 
 # 维度枚举序（spec §6.1: character → timeline → world → foreshadowing → cross）。
 _DIMENSION_ORDER: dict[AuditDimension, int] = {
@@ -543,6 +546,9 @@ class AuditService:
         R-X2: run.status=error → warning「提取失败」（error 截断 ≤ 500 字符
         入 data）；活动章节 id 不在任何 run 的 source_key 中（str(id) 比对，
         source_key="manual" 不参与）→ info「从未执行过提取」。
+        R-X3: 章节正文首行是标题回声（判据同收口 ``strip_first_line_title_echo``）
+        → warning「正文首行残留章节标题」（#1318：格式瑕疵非数据一致性 error）;
+        空 title 的章节跳过（无从判定）。
 
         Args:
             events: 活动事件列表（TimelineService 视图 narrative_order）.
@@ -550,8 +556,9 @@ class AuditService:
             runs: run 记录列表（分页循环全量，全部类型）.
 
         Returns:
-            R-X1/R-X2 审计发现列表.
+            R-X1/R-X2/R-X3 审计发现列表.
         """
+
         chapter_ids = {c.id for c in chapters}
         findings: list[AuditFinding] = []
 
@@ -622,6 +629,57 @@ class AuditService:
                         entity_name=chapter.title,
                     )
                 )
+
+        # R-X3 标题回声残留（#1318: 首行仍是章节标题 → warning）
+        findings.extend(self._audit_title_echo(chapters))
+        return findings
+
+    def _audit_title_echo(self, chapters: list[Chapter]) -> list[AuditFinding]:
+        """R-X3 标题回声残留 — 章节正文首行仍是章节标题（#1318，§5.5）.
+
+        判据与**收口剥离同源**（``strip_first_line_title_echo`` 的命中条件）：
+        首行带空白前导且与 title 满足「章号 + 章名」双条件。这里只**观测**，
+        不改写正文（写侧修复属收口阶段职责，本规则是漏判的可观测性兜底）。
+
+        #1318 现状：``AuditCheckType`` 6 项无格式项、4 条 LLM 检查 prompt 无一提
+        标题、``FormatValidator`` 的 R3 是空实现 —— 收口剥离漏判时**无人发现**。
+        本规则经 ``chapter_audit_service._static_findings`` 映射为
+        ``static_consistency``（无需新增 check_type，前端审计弹层与 F34 spec §2.1
+        零改动）。
+
+        级别为 **warning** 而非 error：格式瑕疵不是数据一致性错误，不应让整库
+        ``consistent=False``（与 R-X2 的 info/warning 档一致，§6.2）。
+
+        Args:
+            chapters: 活动章节列表（分页循环全量，需 id/title/content）.
+
+        Returns:
+            R-X3 审计发现列表（空 title / 空 content 的章节跳过）.
+        """
+        findings: list[AuditFinding] = []
+        for chapter in chapters:
+            if not chapter.title or not chapter.content:
+                continue
+            lines = chapter.content.split("\n")
+            head = 0
+            while head < len(lines) and not lines[head].strip():
+                head += 1
+            if head >= len(lines) or not _is_title_echo_line(lines[head], chapter.title):
+                continue
+            findings.append(
+                AuditFinding(
+                    id=f"chapter.title_echo:{chapter.id}",
+                    rule_id=_RULE_CHAPTER_TITLE_ECHO,
+                    dimension=AuditDimension.CROSS,
+                    severity=AuditSeverity.WARNING,
+                    message=(
+                        f"章节「{chapter.title}」正文首行仍是章节标题（标题回声残留，应剥离该行）"
+                    ),
+                    entity_type="chapter",
+                    entity_id=chapter.id,
+                    entity_name=chapter.title,
+                )
+            )
         return findings
 
     # ── 汇总（spec §2.3/§6.2）─────────────────────────────────────

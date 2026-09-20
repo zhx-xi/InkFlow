@@ -36,6 +36,11 @@ _CN_DIGITS = {
 _CN_NUM_CHARS = "〇零一二两三四五六七八九十百千廿卅"
 _ARABIC_PREFIX_RE = re.compile(r"^第\s*(\d+)\s*章")
 _CHINESE_PREFIX_RE = re.compile(rf"^第\s*([{_CN_NUM_CHARS}]+)\s*章")
+# #1318 判据放宽：正文回声常**丢「第」**（「三章」而非「第三章」）→ 需容忍无「第」前缀。
+# 单独成一组，仅供 _parse_echo_chapter_number 使用，不改动 normalize_chapter_title 语义。
+_LOOSE_ARABIC_PREFIX_RE = re.compile(r"^\s*第?\s*(\d+)\s*章")
+_LOOSE_CHINESE_PREFIX_RE = re.compile(rf"^\s*第?\s*([{_CN_NUM_CHARS}]+?)\s*章")
+_BLANK_RE = re.compile(r"\s+")
 
 
 def _utcnow() -> datetime:
@@ -335,8 +340,57 @@ def normalize_chapter_content(content: str, title: str) -> str:
     return normalized if normalized.strip() else ""
 
 
+def _split_chapter_number(text: str) -> tuple[int | None, str]:
+    """把文本按（可选）「第N章」前缀拆成 (章号, 剩余文本)；无前缀 → (None, 原文).
+
+    #1318 判据放宽用；与 :func:`normalize_chapter_title` 的差异有两点（刻意分离）：
+    ① 前缀的「第」**可缺省**（正文回声常丢「第」：「三章　旧宅旧事一桩」）；
+    ② 对中文序号**宽松**匹配——「十七八章回…」的 `十七` 恰好是可解析章号，故
+       本函数只负责**取号**，「是不是标题行」由 :func:`_title_echo_number` 的
+       双条件判定，不在此处丢弃。
+
+    Args:
+        text: 已去除 markdown 装饰的候选行.
+
+    Returns:
+        (章号, 剩余文本)；无「…章」前缀 → (None, text)；章号无法解析为 int
+        （如「第X章」）→ (None, 剩余文本)，此时按「一侧缺省」放行。
+    """
+    matched = _LOOSE_ARABIC_PREFIX_RE.match(text)
+    if matched:
+        return int(matched.group(1)), text[matched.end() :]
+    matched = _LOOSE_CHINESE_PREFIX_RE.match(text)
+    if matched:
+        raw = matched.group(1)
+        # 允许「十七」这种被误当章号的普通词——取号失败不阻断，仅按缺省处理
+        return _cn_to_int(raw), text[matched.end() :]
+    return None, text
+
+
+def _title_echo_number(text: str) -> tuple[int | None, str]:
+    """行（已剥装饰）的「章号 + 章名」——标题回声双条件判据的取值面（#1318）.
+
+    Returns:
+        (章号, 章名)；章名为**去全部空白**后的剩余文本（ch8「接任理账 柴米艰难」
+        与 title「接任理账柴米艰难」在此对齐）。
+    """
+    number, rest = _split_chapter_number(text)
+    return number, _BLANK_RE.sub("", rest)
+
+
+def _title_echo_numbers_match(line_number: int | None, title_number: int | None) -> bool:
+    """章号条件：相等，或**任一侧缺省**（#1318「章号相等或一侧缺省」）.
+
+    缺省放行是为覆盖两种真实缺口：正文丢「第」导致取号失败、章名本身无章号。
+    误删面由「章名逐字相等」这一必要条件守住（见 :func:`_is_title_echo_line`）。
+    """
+    if line_number is None or title_number is None:
+        return True
+    return line_number == title_number
+
+
 def _is_title_echo_line(line: str, title: str) -> bool:
-    """行是否为「标题回声」——**带缩进**且与 title 等价的页面顶部标题行（#1261）.
+    """行是否为「标题回声」——**带缩进**且与 title 等价的页面顶部标题行（#1261/#1318）.
 
     与 :func:`_is_duplicate_title_line` 的分工（两者刻意分离，不可合并）：
 
@@ -356,8 +410,29 @@ def _is_title_echo_line(line: str, title: str) -> bool:
     两种来源**逐字节同构**，故判据只能落在**流水线阶段**而非内容：确认收口是
     唯一「知道首行是标题回声」的阶段（草稿层当时无 title 可用），因此本函数
     只在收口调用，不得进入通用归一/守卫路径（否则推翻 #1112）。
+
+    #1318 判据放宽
+    --------------
+    #1261 的判据是「归一后逐字相等」，rc4 实测 **2/9 章**未命中（过严）：
+
+    - ch3 正文「三章　旧宅旧事一桩」**丢「第」** → 前缀正则不成立 → 不等
+    - ch8 正文「第8章 接任理账 柴米艰难」**内部多空格** → 归一不动内部空格 → 不等
+
+    改为「**章号 + 章名**」双条件：章名去**全部空白**后逐字相等，且章号相等或
+    一侧缺省。🔴 章名逐字相等是**必要条件**，判据**不是**纯形态判据——后者会把
+    「第8章 接任理账 全书的第一处转折」（章名不等）与「十七八章回小说里…」
+    一并误删（issue 探针 C 实测，故 A-2 被否决）。
     """
-    return bool(_LEADING_WHITESPACE_RE.match(line)) and _is_title_equivalent(line, title)
+    if not _LEADING_WHITESPACE_RE.match(line) or not title:
+        return False
+    candidate = _strip_title_line_decoration(line)
+    if not candidate:
+        return False
+    line_number, line_name = _title_echo_number(candidate)
+    title_number, title_name = _title_echo_number(_strip_title_line_decoration(title))
+    if not title_name or line_name != title_name:
+        return False
+    return _title_echo_numbers_match(line_number, title_number)
 
 
 def strip_first_line_title_echo(content: str, title: str) -> str:
