@@ -24,6 +24,8 @@ export interface ContextPanelProps {
   chapterWritingRequirements?: string | null;
   /** #1017：章级栏失焦保存（null = 清除覆盖回继承） */
   onWritingRequirementsChange?: (value: string | null) => void;
+  /** #1342：勾选集合外传到父层（受控回调）；缺省 = 组件内部 state（既有行为不变） */
+  onOverrideChange?: (override: ContextOverride) => void;
 }
 
 /** source 分组渲染顺序（7 来源；preference 为后端保留来源） */
@@ -115,6 +117,7 @@ export function ContextPanel({
   projectWritingStyle = '',
   chapterWritingRequirements,
   onWritingRequirementsChange,
+  onOverrideChange,
 }: ContextPanelProps) {
   const { t } = useI18n();
   const [data, setData] = useState<ContextAssemblyResult | null>(null);
@@ -201,6 +204,26 @@ export function ContextPanel({
     () => (data ? groupBySource(data.blocks) : new Map<ContextSourceType, ContextBlock[]>()),
     [data],
   );
+
+  /**
+   * #1342：勾选集合外传到父层（生成链路 override 真源）。
+   * 一处覆盖所有入口（勾选/取消 / 选择器确认 / 初始自动注入）——避免在每个 setChecked* 调用点加回调。
+   * 仅在有数据（已完成一次组装）时上报，避免空态/切章瞬间用空数组覆盖父层（会把「全注入」误判为「不注入」）。
+   */
+  useEffect(() => {
+    if (!onOverrideChange || !data) return;
+    onOverrideChange({
+      character_ids: checkedCharacterIds,
+      foreshadowing_ids: checkedForeshadowingIds,
+      world_ids: checkedWorldIds,
+    });
+  }, [
+    onOverrideChange,
+    data,
+    checkedCharacterIds,
+    checkedForeshadowingIds,
+    checkedWorldIds,
+  ]);
 
   /** 勾选/取消 → 白名单 override 重新组装 */
   const handleToggle = (

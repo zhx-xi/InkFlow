@@ -14,6 +14,7 @@ import { createChatConversation, saveChatMessage } from '../api/chat';
 import { analyzeStyle, type StyleReportDto } from '../api/style';
 import { fetchConfig } from '../api/config';
 import { errorMessage } from '../api/client';
+import type { ContextOverride } from '../api/context';
 import { AuditDialog } from '../components/AuditDialog';
 import { AutoAuthorizationDialog } from '../components/AutoAuthorizationDialog';
 import { ChapterEditor } from '../components/ChapterEditor';
@@ -84,6 +85,8 @@ export function WritingPage() {
 
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? projects[0];
   const effectiveProjectId = currentProjectId ?? currentProject?.id ?? '';
+  // #1342：上下文注入勾选 override（ContextPanel 外传）；null = 未组装过 → 不传（全注入）
+  const [contextOverride, setContextOverride] = useState<ContextOverride | null>(null);
   const pipeline = usePipeline({
     projectId: effectiveProjectId,
     chapterId: currentChapterId ?? '',
@@ -92,6 +95,7 @@ export function WritingPage() {
     writingStyle: currentProject?.config?.writing_style ?? '',
     chapterTitle: chapters.find((c) => c.id === currentChapterId)?.title ?? '',
     supervisor: currentProject?.config?.supervisor ?? null,
+    ...(contextOverride ? { override: contextOverride } : {}),
   });
   const {
     status,
@@ -515,6 +519,7 @@ export function WritingPage() {
                   onWritingRequirementsChange={(value) => {
                     if (currentChapterId) void patchWritingRequirements(currentChapterId, value);
                   }}
+                  onOverrideChange={setContextOverride}
                 />
               </div>
               <div
