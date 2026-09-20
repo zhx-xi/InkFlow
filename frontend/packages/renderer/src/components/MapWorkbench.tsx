@@ -7,7 +7,7 @@
  * （PATCH extra.shapes）均在组件内完成（消费方契约 library-p2.test.tsx 覆盖）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, MapPlus, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, MapPlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { ApiError, apiFetch, errorMessage } from '../api/client';
 import { cn } from '../lib/cn';
 import { useI18n } from '../i18n/useI18n';
@@ -89,6 +89,9 @@ export interface MapWorkbenchProps {
   worldCatEntities?: WorldCategoryEntity[];
   activeWorldCat: string | null;
   onWorldCatChange: (cat: string | null) => void;
+  /** #1321：地图视图内打开「新建分类」对话框——地图分支不渲染分类工具栏，
+   *  此前完全没有建分类入口；由 library.tsx 传入 setWorldCatDialogOpen(true)。 */
+  onAddCategory?: () => void;
   collapsedIds: Set<string | number>;
   onToggle: (id: string | number) => void;
   onEdit: (item: LibraryItemDTO) => void;
@@ -133,6 +136,7 @@ export function MapWorkbench({
   onExitWorkbench,
   onClearMap,
   worldCatEntities,
+  onAddCategory,
   collapsedIds,
   onToggle,
   onEdit,
@@ -634,6 +638,18 @@ export function MapWorkbench({
       <div className="flex items-start gap-4">
         {/* 左栏：#378 地图目录树（library-list testid 保留，供 P2 既有契约等待） */}
         <aside className="w-[260px] shrink-0 space-y-3">
+          {/* #1321：地图视图内新建分类入口——此前地图分支不渲染工具栏，完全无处建分类 */}
+          {onAddCategory && (
+            <button
+              type="button"
+              data-testid="world-cat-add-always"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={onAddCategory}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('lib.worldCat.addAlways')}
+            </button>
+          )}
           <div
             data-testid="library-list"
             className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"

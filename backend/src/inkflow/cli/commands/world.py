@@ -92,7 +92,12 @@ def create_setting_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     name: str = typer.Option(..., "--name", "-n", help="条目名"),
-    category: str = typer.Option("", "--category", "-c", help="类别（空串 = 未分类）"),
+    category: str = typer.Option(
+        "",
+        "--category",
+        "-c",
+        help="类别（非根条目必填且须已创建；建根时留空）",
+    ),
     content: str = typer.Option("", "--content", help="条目内容"),
     parent: str | None = typer.Option(None, "--parent", help="父地点 ID (UUID)；缺省 = 顶层"),
 ) -> None:

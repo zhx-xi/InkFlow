@@ -28,7 +28,7 @@ session_tools.py 并列于 mcp/tools/）：
                             project_id, id, title, description, time_value, time_unit,
                             time_display, narrative_position, timeline_flag, search
   ManageWorldParams:        action=create/list/get/update/delete/restore
-                            project_id, id, name, category, content, parent, search, force
+                            project_id, id, name, category, content, parent_id, search, force
   ManageOutlineParams:      action=create/list/get/update/delete/generate
                             project_id, id, name, description, sort_order, search, force,
                             prompt, num_chapters
@@ -154,7 +154,7 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
     ),
     "ManageWorldParams": (
         ["create", "list", "get", "update", "delete", "restore"],
-        ["project_id", "id", "name", "category", "content", "parent", "search", "force"],
+        ["project_id", "id", "name", "category", "content", "parent_id", "search", "force"],
     ),
     "ManageOutlineParams": (
         ["create", "list", "get", "update", "delete", "generate"],

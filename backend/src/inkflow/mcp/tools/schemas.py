@@ -98,7 +98,7 @@ class ManageWorldParams(BaseModel):
     name: str | None = None
     category: str | None = None
     content: str | None = None
-    parent: str | None = None
+    parent_id: str | None = None
     search: str | None = None
     force: bool | None = None
 

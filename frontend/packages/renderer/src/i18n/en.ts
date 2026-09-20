@@ -70,6 +70,7 @@ export const en: Record<string, string> = {
   'lib.create.background': 'Background',
   'lib.create.goals': 'Goals',
   'lib.create.category': 'Category',
+  'lib.create.categoryRequired': 'Category is required for non-root entries',
   'lib.create.content': 'Content',
   'lib.create.timeDisplay': 'Time Display',
   'lib.create.priority': 'Priority',
@@ -89,6 +90,7 @@ export const en: Record<string, string> = {
   'lib.worldCat.label': 'Category',
   // #389: world category CRUD (create dialog + entry)
   'lib.worldCat.add': 'New Category',
+  'lib.worldCat.addAlways': 'New Category (always)',
   'lib.worldCat.name': 'Category name',
   'lib.worldCat.nameEmpty': 'Category name is required',
   'lib.worldNode.childCount': '{count} children',

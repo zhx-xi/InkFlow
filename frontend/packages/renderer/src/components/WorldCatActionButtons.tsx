@@ -15,6 +15,7 @@ export function WorldCatActionButtons({
   showCreate = true,
   showMapEntry = true,
   onCreateWorld,
+  showAddCategoryAlways = false,
 }: {
   onAddCategory: () => void;
   onOpenMapView: () => void;
@@ -23,6 +24,9 @@ export function WorldCatActionButtons({
   showMapEntry?: boolean;
   /** #568：选中分类时 world-cat-add 改开 LibraryCreateDialog（创建子条目）；未提供则保持 onAddCategory（空态建分类实体） */
   onCreateWorld?: () => void;
+  /** #1321：恒显的「新建分类」入口——选中分类时 world-cat-add 被切成建条目语义，
+   *  用户再也找不到建分类入口；本开关额外渲染一个恒开分类对话框的按钮。默认关闭。 */
+  showAddCategoryAlways?: boolean;
 }) {
   const { t } = useI18n();
   return (
@@ -32,6 +36,18 @@ export function WorldCatActionButtons({
         <button type="button" data-testid="world-cat-add" className={BTN_CLS} onClick={onCreateWorld ?? onAddCategory}>
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
           {t('lib.worldCat.add')}
+        </button>
+      )}
+      {/* #1321：恒开分类对话框的入口——不随选中分类改变语义 */}
+      {showAddCategoryAlways && (
+        <button
+          type="button"
+          data-testid="world-cat-add-always"
+          className={BTN_CLS}
+          onClick={onAddCategory}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          {t('lib.worldCat.addAlways')}
         </button>
       )}
       {showMapEntry && (

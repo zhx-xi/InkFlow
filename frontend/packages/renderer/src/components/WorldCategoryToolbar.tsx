@@ -73,6 +73,7 @@ export function WorldCategoryToolbar({
           onOpenMapView={onOpenMapView}
           showMapEntry={showMapEntry}
           onCreateWorld={onCreateWorld}
+          showAddCategoryAlways
         />
         <button
           type="button"

@@ -73,8 +73,8 @@ CREATE_WORLD_SETTING_SPEC = ToolSpec(
     name="create_world_setting",
     description=(
         "创建项目内世界观设定条目并写入设定库，返回新条目 id；必须先创建根世界观"
-        "（一个项目仅一根），创建非根条目必须传 parent_id，带 category 前必须先创建"
-        "该分类；同级同名会失败。"
+        "（一个项目仅一根），创建非根条目**必须传 category**（且该分类须已存在，"
+        "否则先调用分类创建）+ parent_id；建根条目时 category 留空。同级同名会失败。"
     ),
     input_schema=CreateWorldSettingParams.model_json_schema(),
     group="writing",
