@@ -292,3 +292,26 @@ describe('#1342 — 5 可证伪自证', () => {
     expect(body.override?.character_ids).toContain('must-appear');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// 6 · 切章清空（防跨章串用上一章的白名单）
+// ─────────────────────────────────────────────────────────────────────
+describe('#1342 — 6 切章清空 override', () => {
+  it('切章重组装期间不得上报「三字段全空」（会把全注入误杀为不注入）', async () => {
+    // 父层（writing.tsx）在 chapterId 变化时清空自己的 state；组件侧必须保证：
+    // 重组装期间（data 为旧值/空）不上报空数组 —— 否则「全注入」被误判为「不注入」。
+    assembleMock.mockResolvedValue(result([block('character_setting', { character_id: 'c-a' }, '角色甲')]));
+    const onOverrideChange = vi.fn();
+    const { rerender } = render(<ContextPanel {...OPTS} onOverrideChange={onOverrideChange} />);
+    await waitFor(() => expect(onOverrideChange).toHaveBeenCalled());
+
+    onOverrideChange.mockClear();
+    rerender(<ContextPanel {...OPTS} chapterId="c2" onOverrideChange={onOverrideChange} />);
+    for (const call of onOverrideChange.mock.calls) {
+      const ov = call[0] as ContextOverride;
+      const allEmpty =
+        ov.character_ids.length === 0 && ov.foreshadowing_ids.length === 0 && ov.world_ids.length === 0;
+      expect(allEmpty).toBe(false);
+    }
+  });
+});

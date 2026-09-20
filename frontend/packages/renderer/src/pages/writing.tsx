@@ -87,6 +87,11 @@ export function WritingPage() {
   const effectiveProjectId = currentProjectId ?? currentProject?.id ?? '';
   // #1342：上下文注入勾选 override（ContextPanel 外传）；null = 未组装过 → 不传（全注入）
   const [contextOverride, setContextOverride] = useState<ContextOverride | null>(null);
+  // #1342：切章/切项目 → 清空父层 override。ContextPanel 重新组装期间 data 短暂为 null 且不上报
+  // （effect 有 !data 保护），若不在此清空则残留上一章的勾选，生成会用错章的白名单。
+  useEffect(() => {
+    setContextOverride(null);
+  }, [effectiveProjectId, currentChapterId]);
   const pipeline = usePipeline({
     projectId: effectiveProjectId,
     chapterId: currentChapterId ?? '',

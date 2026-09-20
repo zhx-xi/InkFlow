@@ -185,6 +185,10 @@ export function ContextPanel({
     setCheckedCharacterIds([]);
     setCheckedForeshadowingIds([]);
     setCheckedWorldIds([]);
+    // #1342：切章同时清 data —— 三个 checked 清空但 data 仍是上一章的值时，
+    // onOverrideChange 的 effect 会放行并通过「三字段全空」=「该章不注入」（错误语义）。
+    // data 与 checked 必须同帧失效，等新组装结果回来再一起生效。
+    setData(null);
     if (projectId && chapterId && model) {
       if (!writingRequirements.trim()) {
         // #759：写作要求为空 → 不发 assemble，直接显示「未填写写作要求」占位
