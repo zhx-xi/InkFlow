@@ -10,8 +10,7 @@ export const en: Record<string, string> = {
   'nav.collapse': 'Collapse',
   'nav.group.writing': 'Writing Area',
   'nav.group.library': 'Library',
-  'nav.group.system': 'System',
-  'nav.group.sessions': 'Sessions',
+  'nav.group.system': 'System', 'nav.group.sessions': 'Sessions',
   'nav.lib.characters': 'Characters',
   'nav.lib.world': 'World',
   'nav.lib.outline': 'Outline',
@@ -40,8 +39,7 @@ export const en: Record<string, string> = {
   'lib.retry': 'Retry', // #1324: foreshadowing row extras (location shown verbatim, no key needed)
   'lib.fs.status.open': 'Open', 'lib.fs.status.resolved': 'Resolved', 'lib.fs.priority': 'Priority {n}',
   // F43: library CRUD P0 (specs/f43-setting-library-gui/spec.md §6)
-  'lib.edit': 'Edit',
-  'lib.delete': 'Delete',
+  'lib.edit': 'Edit', 'lib.delete': 'Delete',
   'lib.edit.title.characters': 'Edit Character',
   'lib.edit.title.world': 'Edit World Setting',
   'lib.edit.title.outline': 'Edit Outline',
@@ -219,6 +217,8 @@ export const en: Record<string, string> = {
   'lib.tlCheckEventOK': 'Consistent with context',
   // #1301 timeline axis (spec f12:621/702 · f43:773 · f19:34); F48: knowledge graph tab (specs/f48-knowledge-graph/spec.md §5.4)
   'lib.tlGroupNone': 'Unassigned', 'lib.tlChapterUnknown': 'Unknown chapter', 'lib.tlAxis': 'Timeline axis', 'lib.tlAxisMain': 'Axis', 'lib.tlAxisSub': 'Marker', 'lib.tlTimeUnknown': 'Unknown',
+  'lib.knowledge.canvasHint': 'Scroll to zoom · drag nodes',
+  'lib.knowledge.scopeAll': 'Show all entities',
   'lib.knowledge.newRelation': 'New Relation',
   'lib.knowledge.viewGraph': 'Graph View',
   'lib.knowledge.viewList': 'Relation List',

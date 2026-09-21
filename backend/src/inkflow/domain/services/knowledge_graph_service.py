@@ -5,8 +5,10 @@
   → 同键唯一 → 落库（source 恒 manual）；各实体 repo 的「不存在」统一转换
   KnowledgeEntityNotFoundError（图谱域统一错误面，不泄漏 F9-F13 错误类）
 - 图谱聚合: nodes = 六类实体全量（组序 character→world→outline→timeline→
-  foreshadow→map_pin，组内 name ASC）；edges = knowledge_relations 单表全量，
-  created_at ASC；character_relations 已 #495 合并；孤立边跳过 + warning
+  foreshadow→map_pin，组内 name ASC）；scope="related"（默认）只保留参与至少
+  一条关系的实体、无关系时回退角色全集，scope="all" 返回六类全量；edges =
+  knowledge_relations 单表全量，created_at ASC；character_relations 已 #495
+  合并；孤立边跳过 + warning
 - 实体硬删级联清理: cleanup_for_entity 委托 relation_repo（F36 钩子先例，
   默认 None 依赖向后兼容）
 - #479 预留: bulk_create_relations（单事务批量 + 同键幂等跳过）
@@ -22,7 +24,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from pydantic import ValidationError
@@ -67,6 +69,13 @@ def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
     if isinstance(value, int):
         return uuid.UUID(int=value)
     return value
+
+
+async def _list_all_nodes(repo: Any, project_id_uuid: uuid.UUID) -> list[Any]:
+    """#1325：图谱聚合节点走全量方法（不分页），兑现 spec §5.2「每表全量返回」。"""
+    if hasattr(repo, "list_all"):
+        return list(await repo.list_all(project_id_uuid))
+    return list(await repo.list_all_active(project_id_uuid))
 
 
 class KnowledgeGraphService:
@@ -420,15 +429,25 @@ class KnowledgeGraphService:
 
     # ── 图谱聚合（spec §5.2/§5.6）──────────────────────────────────────
 
-    async def graph(self, project_id: uuid.UUID) -> KnowledgeGraphView:
-        """图谱聚合查询：六类实体全量节点 + knowledge_relations 单表边.
+    async def graph(
+        self, project_id: uuid.UUID, scope: Literal["related", "all"] = "related"
+    ) -> KnowledgeGraphView:
+        """图谱聚合查询：节点集（scope 决定）+ knowledge_relations 单表边.
 
         nodes 组序 character→world→outline→timeline→foreshadow→map_pin，组内
         name ASC；edges 单一来源 knowledge_relations（character↔character 已
         #495 合并），按 created_at ASC；孤立边（端点不在 nodes）跳过 + warning。
 
+        scope 语义（#1325）:
+
+        - ``related``（默认）: 只保留「参与至少一条关系的实体」——收窄用的是
+          **未过滤**的关系行（孤立边过滤之前），否则只出现在孤立边里的实体
+          会被自己抹掉；项目内无任何关系时回退「角色全集」。
+        - ``all``: 六类全量（完整体检视图）。
+
         Args:
             project_id: 项目 UUID.
+            scope: 节点集语义（related / all，默认 related）.
 
         Returns:
             KnowledgeGraphView（nodes + edges）.
@@ -446,11 +465,25 @@ class KnowledgeGraphService:
         nodes.extend(await self._collect_nodes(pid_int, EntityType.TIMELINE, lambda e: e.title))
         nodes.extend(await self._collect_nodes(pid_int, EntityType.FORESHADOW, lambda e: e.title))
         nodes.extend(await self._collect_map_pin_nodes(pid_int))
+
+        relations = await self._relation_repo.list_by_project(pid_int)
+        if scope == "related":
+            # #1325: 端点集必须由**未过滤**的原始行算出（孤立边过滤之前）——
+            # 「关系指向未参与其它关系的实体」否则会被自己从节点集里抹掉
+            edge_pairs = {f"{kr.source_type.value}:{kr.source_id}" for kr in relations} | {
+                f"{kr.target_type.value}:{kr.target_id}" for kr in relations
+            }
+            related_ids = {n.id for n in nodes if n.id in edge_pairs}
+            nodes = (
+                [n for n in nodes if n.id in related_ids]
+                if related_ids
+                else [n for n in nodes if n.type is EntityType.CHARACTER]
+            )
         nodes.sort(key=lambda n: (_NODE_TYPE_ORDER.index(n.type), n.name))
         node_ids = {n.id for n in nodes}
 
         kr_edges: list[tuple[datetime, GraphEdge]] = []
-        for kr in await self._relation_repo.list_by_project(pid_int):
+        for kr in relations:
             src = f"{kr.source_type.value}:{kr.source_id}"
             tgt = f"{kr.target_type.value}:{kr.target_id}"
             if src not in node_ids or tgt not in node_ids:
@@ -489,7 +522,7 @@ class KnowledgeGraphService:
         repo = self._repo_for(entity_type)
         if repo is None:
             return []
-        items, _ = await repo.list(project_id_uuid)
+        items = await _list_all_nodes(repo, project_id_uuid)
         nodes: list[GraphNode] = []
         for item in items:
             nodes.append(

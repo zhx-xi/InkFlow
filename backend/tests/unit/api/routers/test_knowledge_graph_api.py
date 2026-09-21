@@ -468,7 +468,7 @@ class TestKnowledgeGraphAPI:
         assert data["edges"][0]["label"] == "属于"
         assert data["edges"][1]["source_table"] == "character_relations"
         assert data["edges"][1]["label"] == "师徒"
-        svc.graph.assert_awaited_once_with(PID)
+        svc.graph.assert_awaited_once_with(PID, scope="related")
 
     @patch("inkflow.api.routers.knowledge_graph.get_knowledge_graph_service")
     def test_get_graph_empty(self, mock_get_svc: MagicMock) -> None:

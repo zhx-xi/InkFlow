@@ -145,12 +145,13 @@ async def list_relations(
 @instrument(caller_type="api")
 async def get_graph(
     project_id: str,
+    scope: Literal["related", "all"] = Query("related"),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取图谱聚合视图（nodes + edges，合并 character_relations 去重，spec §3.1）。"""
+    """获取图谱聚合视图（nodes + edges；scope 默认 related，spec §5.2）。"""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
-    view = await _run_service(svc.graph(pid))
+    view = await _run_service(svc.graph(pid, scope=scope))
     return view.model_dump(mode="json")
 
 

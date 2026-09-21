@@ -2195,7 +2195,7 @@ export interface paths {
         };
         /**
          * Get Graph
-         * @description 获取图谱聚合视图（nodes + edges，合并 character_relations 去重，spec §3.1）。
+         * @description 获取图谱聚合视图（nodes + edges；scope 默认 related，spec §5.2）。
          */
         get: operations["get_graph_api_v1_projects__project_id__knowledge_graph_get"];
         put?: never;
@@ -10871,7 +10871,9 @@ export interface operations {
     };
     get_graph_api_v1_projects__project_id__knowledge_graph_get: {
         parameters: {
-            query?: never;
+            query?: {
+                scope?: "related" | "all";
+            };
             header?: never;
             path: {
                 project_id: string;

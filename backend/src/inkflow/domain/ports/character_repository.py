@@ -96,6 +96,17 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[Character]:
+        """列出项目内全部角色，按 name ASC（#1325：图谱聚合全量节点，不分页）.
+
+        Args:
+            project_id: 项目主键（领域 UUID，见 #1291）.
+
+        Returns:
+            角色列表.
+        """
+        ...
+
     async def update(self, character: Character) -> Character:
         """更新角色（按 id 定位）.
 

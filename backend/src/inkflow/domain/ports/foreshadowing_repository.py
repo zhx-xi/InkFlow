@@ -96,6 +96,17 @@ class ForeshadowingRepositoryProtocol(Protocol):
         """
         ...
 
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[Foreshadowing]:
+        """列出项目内全部伏笔，按 title ASC（#1325：图谱聚合全量节点，不分页）.
+
+        Args:
+            project_id: 项目主键（领域 UUID，见 #1291）.
+
+        Returns:
+            伏笔列表.
+        """
+        ...
+
     async def list_open(self, project_id: uuid.UUID) -> builtins.list[Foreshadowing]:
         """列出项目内全部未回收伏笔（status=open），供 F6 注入消费.
 

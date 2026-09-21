@@ -6,10 +6,9 @@ import { apiFetch, ensureApiReady, errorMessage } from '../api/client';
 import {
   createKnowledgeRelation,
   deleteKnowledgeRelation,
-  listKnowledgeRelations,
   updateKnowledgeRelation,
-  type GraphEdge,
   type GraphNode,
+  type GraphScope,
   type KnowledgeRelation,
 } from '../api/knowledge-graph';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -37,6 +36,7 @@ import { OUTLINE_PAGE_SIZE, useOutlineLibrary } from '../hooks/useOutlineLibrary
 import { LIBRARY_PAGE_SIZE, useLibraryPagedList, type PageableCatKey } from '../hooks/useLibraryPagedList';
 import { useWorldFullList } from '../hooks/useWorldFullList';
 import { useLibraryCategoryData } from '../hooks/useLibraryCategoryData';
+import { useKnowledgeGraphWiring } from '../hooks/useKnowledgeGraphWiring';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -144,7 +144,8 @@ export function LibraryPage() {
   const [workbenchActive, setWorkbenchActive] = useState(false);
   // F48：知识图谱 tab——图谱视图/关系列表切换 + 图谱数据 + 关系增删改表单态
   const [kgView, setKgView] = useState<'graph' | 'list'>('graph');
-  const [relations, setRelations] = useState<KnowledgeRelation[]>([]);
+  // #1325：图谱节点集范围 + 关系表单态（表单/确认框渲染在本文件根部，状态随之一并留在这里）
+  const [kgScope, setKgScope] = useState<GraphScope>('related');
   const [relationFormOpen, setRelationFormOpen] = useState(false);
   const [editingRelation, setEditingRelation] = useState<KnowledgeRelation | null>(null);
   const [pendingRelationDelete, setPendingRelationDelete] = useState<KnowledgeRelation | null>(null);
@@ -177,7 +178,29 @@ export function LibraryPage() {
     activeCat,
     reloadKey,
     CATS,
+    kgScope,
   );
+  // #1325：知识图谱 tab 的接线（关系列表服务端分页 + 画布拉线）——自本文件下沉以守 900 行护栏
+  const kgWiring = useKnowledgeGraphWiring({
+    currentProjectId,
+    active: activeCat === 'knowledge',
+    kgView,
+    onViewChange: setKgView,
+    reloadKey,
+    scope: kgScope,
+    // 切范围 / 去编辑：就地内联（handleKgScopeChange/handleOpenKgEntity 定义在本 hook 之下，
+    // 提到上面会引入前向引用；两者都是单表达式，内联比搬函数更省）
+    onScopeChange: (next) => setKgScope(next),
+    graphNodes: catData.graphNodes,
+    graphEdges: catData.graphEdges,
+    onOpenEntity: (node) => handleTabChange(KG_ENTITY_CAT[node.type]),
+    onOpenRelationForm: (relation) => {
+      setEditingRelation(relation);
+      setRelationFormOpen(true);
+    },
+    onRequestRelationDelete: setPendingRelationDelete,
+    onGoEntities: () => handleTabChange('characters'),
+  });
   // #1300：分页分类用 pagedLib（#1320：world 已移出——整树语义需全量数据，见 worldLib）；其余（timeline/knowledge）由 catData、outline 由 outlineLib 持有
   const isPagedCat = PAGEABLE_CATS.includes(activeCat as PageableCatKey);
   // #1320：world 全量取数（不分页；清 51+ 条静默截断 + 树构建的数据源失真）
@@ -190,7 +213,7 @@ export function LibraryPage() {
       : (catData.items as LibraryItemDTO[]);
   const listLoading = isPagedCat ? pagedLib.loading : isWorldCat ? worldLib.loading : catData.loading;
   const listFailed = isPagedCat ? pagedLib.loadFailed : isWorldCat ? worldLib.loadFailed : catData.loadFailed;
-  const { timelineNarrative, graphNodes, graphEdges } = catData;
+  const { timelineNarrative, graphNodes } = catData;
   // F23 §15.6.2（#1088 批 A3）：数据面变更订阅——外部（CLI/HTTP/MCP/agent）写入 → 事件到达
   // 后 bump reloadKey，复用既有 effect 全量重拉（maps / 分类列表 / 大纲；FR 粒度裁决，不新增局部更新路径）。
   useDataChangeSubscription(LIBRARY_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
@@ -306,30 +329,12 @@ export function LibraryPage() {
     };
   }, [currentProjectId, reloadKey, workbenchActive]);
 
+  // #1325：关系列表服务端分页 —— limit=50 恒定，仅 offset 随页码变（切范围/切项目时归零）
   // URL cat 变化（AppNav 直达）→ 同步激活 tab
   useEffect(() => {
     const p = searchParams.get('cat');
     if (isCatKey(p) && p !== activeCat) setActiveCat(p);
   }, [searchParams, activeCat]);
-
-  // F48 §5.4：关系列表视图激活时拉取（分页响应 {items,...}；增删改后经 reloadKey 局部刷新）
-  useEffect(() => {
-    if (!currentProjectId || activeCat !== 'knowledge' || kgView !== 'list') {
-      setRelations([]);
-      return;
-    }
-    let cancelled = false;
-    void listKnowledgeRelations(currentProjectId)
-      .then((data) => {
-        if (!cancelled) setRelations(data.items ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setRelations([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentProjectId, activeCat, kgView, reloadKey]);
 
   // 卸载清理「已保存」自动隐藏计时器（防卸载后 timer 回调 setState）
   useEffect(
@@ -432,28 +437,6 @@ export function LibraryPage() {
       useToastStore.getState().pushToast('err', errorMessage(err));
     }
   };
-  // F48 §5.4：图谱边 → 关系行（仅 knowledge_relations 可编辑；cr: 行 F9 只读）
-  const relationFromEdge = (edge: GraphEdge): KnowledgeRelation | null => {
-    if (edge.source_table !== 'knowledge_relations') return null;
-    const src = graphNodes.find((n) => n.id === edge.source);
-    const tgt = graphNodes.find((n) => n.id === edge.target);
-    if (!src || !tgt) return null;
-    return {
-      id: edge.id.replace(/^kr:/, ''),
-      project_id: currentProjectId ?? '',
-      source_type: src.type,
-      source_id: src.entity_id,
-      target_type: tgt.type,
-      target_id: tgt.entity_id,
-      relation_type: edge.label,
-      description: edge.description ?? '',
-      source: 'manual',
-      created_at: '',
-      updated_at: '',
-    };
-  };
-  // F48 §5.4：图谱节点「去编辑」→ 对应实体分类 tab（map_pin 归属世界观地图工作台）
-  const handleOpenKgEntity = (node: GraphNode) => handleTabChange(KG_ENTITY_CAT[node.type]);
   // F43 P1（§5.5/§3.3）：复制确认 → POST F37 copy 端点 → 结果 toast；成功关框；失败 err toast + 对话框保持打开可重试（E24）
   const handleCopy = async (targetId: string, selfOnly: boolean, state: CopyState) => {
     if (!currentProjectId) return;
@@ -600,36 +583,8 @@ export function LibraryPage() {
                 </button>
               </div>
             ) : activeCat === 'knowledge' ? (
-              /* F48 §5.4：知识图谱 tab 装配（视图 UI 在独立组件文件，library.tsx 只做状态与回调接线） */
-              <KnowledgeGraphView
-                nodes={graphNodes}
-                edges={graphEdges}
-                relations={relations}
-                view={kgView}
-                onViewChange={setKgView}
-                onCreateRelation={() => {
-                  setEditingRelation(null);
-                  setRelationFormOpen(true);
-                }}
-                onEditRelation={(relation) => {
-                  setEditingRelation(relation);
-                  setRelationFormOpen(true);
-                }}
-                onDeleteRelation={setPendingRelationDelete}
-                onOpenEntity={handleOpenKgEntity}
-                onEditEdge={(edge) => {
-                  const relation = relationFromEdge(edge);
-                  if (relation) {
-                    setEditingRelation(relation);
-                    setRelationFormOpen(true);
-                  }
-                }}
-                onDeleteEdge={(edge) => {
-                  const relation = relationFromEdge(edge);
-                  if (relation) setPendingRelationDelete(relation);
-                }}
-                onGoEntities={() => handleTabChange('characters')}
-              />
+              /* F48 §5.4：知识图谱 tab 装配（视图 UI 在独立组件文件；#1325 接线全部下沉 useKnowledgeGraphWiring） */
+              <KnowledgeGraphView {...kgWiring.viewProps} />
             ) : activeCat === 'world' && workbenchActive && (listItems.length > 0 || maps.length > 0) ? (
               /* F43 P2（§5.8）：地图工作台——左树（#378 目录树 + P1/P2 兼容徽标）+ 右画布/pin 列表；#378：世界条目为空但已有地图时仍进入工作台 */
               <MapWorkbench
@@ -827,7 +782,7 @@ export function LibraryPage() {
       {/* F48 §5.4：新建/编辑关系表单（遮罩弹层；列表/画布视图保持挂载，保存后局部刷新） */}
       {relationFormOpen && (
         <RelationForm
-          mode={editingRelation ? 'edit' : 'create'}
+          mode={editingRelation?.id ? 'edit' : 'create'}
           initial={editingRelation}
           entities={graphNodes}
           onSubmit={(data) => void handleRelationSave(data)}

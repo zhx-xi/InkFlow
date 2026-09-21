@@ -6,8 +6,7 @@ export const zh = {
   'nav.settings': '设置', 'nav.agent': 'Agent',
   'nav.expand': '展开', 'nav.collapse': '折叠',
   'nav.group.writing': '写作区', 'nav.group.library': '设定库',
-  'nav.group.system': '系统',
-  'nav.group.sessions': '会话',
+  'nav.group.system': '系统', 'nav.group.sessions': '会话',
   'nav.lib.characters': '角色',
   'nav.lib.world': '世界观',
   'nav.lib.outline': '大纲',
@@ -37,8 +36,7 @@ export const zh = {
   'lib.retry': '重试',
   'lib.fs.status.open': '未回收', 'lib.fs.status.resolved': '已回收', 'lib.fs.priority': '优先级 {n}', // #1324 伏笔行
   // F43：设定库 CRUD P0（specs/f43-setting-library-gui/spec.md §6）
-  'lib.edit': '编辑',
-  'lib.delete': '删除',
+  'lib.edit': '编辑', 'lib.delete': '删除',
   'lib.edit.title.characters': '编辑角色',
   'lib.edit.title.world': '编辑世界观',
   'lib.edit.title.outline': '编辑大纲',
@@ -216,6 +214,8 @@ export const zh = {
   'lib.tlCheckEventOK': '与上下文一致',
   // #1301 时间轴（spec f12:621/702 · f43:773 · f19:34）；F48：知识图谱 tab（specs/f48-knowledge-graph/spec.md §5.4）
   'lib.tlGroupNone': '未分章', 'lib.tlChapterUnknown': '未知章节', 'lib.tlAxis': '时间轴', 'lib.tlAxisMain': '主轴', 'lib.tlAxisSub': '标记', 'lib.tlTimeUnknown': '未知',
+  'lib.knowledge.canvasHint': '滚轮缩放 · 拖拽节点',
+  'lib.knowledge.scopeAll': '显示全部实体',
   'lib.knowledge.newRelation': '新建关系',
   'lib.knowledge.viewGraph': '图谱视图',
   'lib.knowledge.viewList': '关系列表',

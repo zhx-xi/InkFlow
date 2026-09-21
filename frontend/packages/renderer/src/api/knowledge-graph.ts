@@ -28,6 +28,9 @@ export interface KnowledgeGraphView {
   edges: GraphEdge[];
 }
 
+/** 图谱节点集范围（#1325）：related=参与至少一条关系者（无关系时后端回退角色全集）/ all=六类全量 */
+export type GraphScope = 'related' | 'all';
+
 /** 关系行（spec §2.1/§2.3）：六元组 + description + source + 时间戳 */
 export interface KnowledgeRelation {
   id: string;
@@ -56,12 +59,16 @@ export interface KnowledgeRelationCreateInput {
 /** 更新关系请求体（spec §2.3 KnowledgeRelationUpdate：全可选） */
 export type KnowledgeRelationUpdateInput = Partial<KnowledgeRelationCreateInput>;
 
-/** 关系列表查询参数（spec §3.1：source_type/target_type/relation_type/source 过滤） */
+/** 关系列表查询参数（spec §3.1：source_type/target_type/relation_type/source 过滤 + offset/limit 分页） */
 export interface KnowledgeRelationListParams {
   source_type?: EntityType;
   target_type?: EntityType;
   relation_type?: string;
   source?: 'manual' | 'ai';
+  /** 分页偏移（0 基；#1325 关系列表分页接线） */
+  offset?: number;
+  /** 每页条数（#1325；缺省由后端给默认值） */
+  limit?: number;
 }
 
 /** 关系列表响应（spec §3.1：{items,total,offset,limit}） */
@@ -72,9 +79,15 @@ export interface KnowledgeRelationListResponse {
   limit: number;
 }
 
-/** GET /api/v1/projects/{pid}/knowledge-graph——图谱聚合查询（nodes+edges 一次返回，spec §5.4） */
-export async function fetchKnowledgeGraph(projectId: string): Promise<KnowledgeGraphView> {
-  return apiFetch<KnowledgeGraphView>(`/api/v1/projects/${projectId}/knowledge-graph`);
+/** GET /api/v1/projects/{pid}/knowledge-graph?scope=——图谱聚合查询（nodes+edges 一次返回，spec §5.4）
+ *  #1325：scope 决定节点集（related 默认 / all 六类全量）。 */
+export async function fetchKnowledgeGraph(
+  projectId: string,
+  scope: GraphScope = 'related',
+): Promise<KnowledgeGraphView> {
+  return apiFetch<KnowledgeGraphView>(
+    `/api/v1/projects/${projectId}/knowledge-graph?scope=${scope}`,
+  );
 }
 
 /** GET /api/v1/projects/{pid}/knowledge-relations——关系列表（分页 + 过滤） */

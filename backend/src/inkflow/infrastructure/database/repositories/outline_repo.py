@@ -244,6 +244,17 @@ class SQLiteOutlineRepository:
         orms = result.scalars().all()
         return [_outline_orm_to_domain(o) for o in orms], total
 
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[Outline]:
+        """列出项目内全部大纲，按 name ASC（#1325：图谱聚合全量节点，不分页）."""
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
+        stmt = (
+            select(OutlineORM).where(OutlineORM.project_id == pid).order_by(OutlineORM.name.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [_outline_orm_to_domain(o) for o in result.scalars().all()]
+
     async def update(self, outline: Outline) -> Outline:
         """更新大纲（按 id 定位，updated_at 自动刷新）."""
         outline_id = _uuid_to_int(outline.id)
