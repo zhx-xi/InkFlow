@@ -33,6 +33,13 @@
 - 参考锚点（真实实现）：
   - 端点：GET /api/v1/projects/{pid}/characters（分页 {items,total,offset,limit}）；PATCH /api/v1/characters/{id}；DELETE /api/v1/characters/{id}；GET /api/v1/projects/{pid}/character-groups（分组列表，数组顺序 = 渲染顺序）
   - 等级选项卡（character-rank-tabs，列表顶部 chip 组）：总览 / 主角 / 重要配角 / 配角 / 场景角色 / 一次性角色；激活 = accent 填充（ACTIVE），闲置 surface-3；点击当前等级不取消，需点「全部」恢复
+  - **等级筛选 × 分页（#1320）**：等级筛选**下沉服务端**（`GET .../characters?role_rank=<档>`），故
+    - 筛选态下**页码与 total 均为筛选后口径**——切「主角」（3 人）显示「第 1 / 1 页 · 共 3 条」，不再沿用未筛选的 52 条 / 2 页；
+    - 切等级筛选 → **页码重置到第 1 页**（换数据集不复用上一页码）；
+    - 等级筛选为**受控 prop**（页面持有 `characterRank`，`LibraryItemList` 的 `rank`/`onRankChange`）：受控时组件**不再二次窄化** items（服务端已给筛选后全量），避免跨页项被本地过滤误剪；未传 `rank` 时退化为既有非受控行为（组件内过滤当前页）；
+    - 筛选请求**仍带 `limit`/`offset`**（受控 prop 不把分页退回一次性全量拉取）；
+    - `role_rank` 存 `extra.role_rank` JSON 列 → 后端 JSON 路径过滤（`json_extract` + `json_valid` 守卫，count 与 items 同条件）；**#833 之前创建、无 role_rank 键的历史角色在该筛选下不命中**（只在总览可见）；
+    - 非法等级值 → 422（五档枚举校验）。
   - 分组卡片：组头「{组名} · {n}人」（lib-group-title，12px ink-2）+ 成员行；未分组收尾（lib-group-ungrouped）；空组隐藏
   - 列表行（lib-item，py-2.5 13px）：名称按钮（lib-name-<id>，可点击 → 打开角色详情面板，hover accent）+ 等级徽标（lib-rank-<id>，圆角胶囊，五档分色：主角 accent / 重要配角 accent/40 / 配角 surface-3 / 场景角色 surface-2 / 一次性角色 surface-3 弱化，未知等级中性兜底）+ 标签 chips（lib-tags-<id>，extra.groups，surface-3 胶囊）+ 悬停操作（D12：opacity 0→100，编辑 lib-edit-<id> 铅笔 / 删除 lib-delete-<id> 垃圾桶；focus-within 键盘可见）
   - 创建/编辑对话框（library-create-dialog，520px）：名称（必填）+ 性格/背景/目标（textarea×3）+ 等级下拉（library-create-rank，必填无默认，placeholder「选择等级」）+ 标签编辑器（TagEditor：输入回车添加；建议标签 = 当前项目角色 extra.groups 并集，数据驱动）
@@ -44,7 +51,7 @@
 
 | 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
 |------|--------|--------|--------|------|------|------|
-| 等级选项卡 chip | 总览激活，其余闲置 | 切换 selectedRank → 列表按 extra.role_rank 过滤 | — | 分览渲染（分组卡片同步过滤） | — | 点击当前等级不取消；未知/缺失等级角色只出现在总览；「未分组」仅指分组不含等级 |
+| 等级选项卡 chip | 总览激活，其余闲置 | 切换 selectedRank → 列表按 extra.role_rank 过滤 | 拉取中（筛选请求在途） | 分览渲染（分组卡片同步过滤）+ 页码重置第 1 页 + total 为筛选后总数 | err toast / 页级 error 态 | 点击当前等级不取消；未知/缺失等级角色只出现在总览；「未分组」仅指分组不含等级；#1320 筛选下沉服务端（受控 prop）——受控时组件不二次窄化 |
 | 行名称（lib-name） | 纯文本（flex-1 truncate） | 打开角色详情面板（ref.openDetail） | — | 面板渲染（数据取 items 最新对象） | — | 仅 characters 分类可点；切 tab / 切项目自动关闭面板 |
 | 行编辑（lib-edit） | 悬停显现铅笔图标 | 打开编辑对话框（预填现值） | saving 禁用 | PATCH 成功 → 关框 + 刷新 + 顶部「已保存」 | err toast，对话框保持可改重试 | 旧数据无等级 → 占位重选（E14）；标签整体替换语义 |
 | 行删除（lib-delete） | 悬停显现垃圾桶 | 打开 ConfirmDialog（lib-confirm-dialog） | DELETE 请求 | ok toast + 列表刷新 | err toast + 关框 | 遮罩点击不关闭（#195）；关闭仅 取消/Esc/确认成功 |
@@ -64,3 +71,4 @@
 - N3：行名点击打开详情面板（分组多选 / 关系 CRUD / 分组管理闭环）
 - N4：创建/编辑对话框名称+等级双必填 gate + 顶部保存指示 + 删除二次确认
 - N5：悬停操作按钮 + focus-within 键盘可达（D12）
+- N6（#1320）：等级筛选后**页码与 total 均为筛选后口径**（主角 3 人 → 第 1 / 1 页 · 共 3 条）+ 切筛选页码重置第 1 页 + 跨页不漏项（主角分布跨页时全部可达）

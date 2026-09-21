@@ -38,6 +38,11 @@
 ```
 - 参考锚点（真实实现）：
   - 端点：GET /api/v1/projects/{pid}/world-settings（items 含 parent_id/category/content）；POST 同列表端点 / PATCH /api/v1/world-settings/{id}；DELETE /api/v1/world-settings/{id}?cascade=true；GET /projects/{pid}/maps；POST /projects/{pid}/world-settings/copy（F37）；POST /projects/{pid}/world-categories（分类实体）
+  - **列表取数 = 全量、不分页（#1320）**：整树语义（`buildWorldTree` 按 `parent_id` 建树 + `filterWorldTree` 保留匹配节点及其子树）**需要全量数据**，故
+    - 列表**不做服务端分页**：按 `limit` 上限（100）循环拉全（`collected.length >= total` 或本页不满即收敛），**不渲染分页条**（对整树无意义）；
+    - 修复的缺陷：此前 world 被并入分页分类但走树分支 → 分页条**不可达**，树只用第 1 页 50 条构建 → **51+ 条世界条目静默截断**，且父条目不在本页的子条目被孤儿降级为顶层；#1300 之前的一次性全量拉取语义由此恢复；
+    - **不要为 world 加 `?category=` 服务端筛选**：服务端仅精确匹配，父不在结果集会让子树成孤儿被降级，语义**与 `filterWorldTree`（保留匹配节点+子树）不等价**——分类筛选保持前端整树过滤；
+    - 单个项目上限 2000 条（100×20 页循环上限，防 total 异常死循环）；刷新失败保留已取数据（整树不清空）+ err toast，首拉失败才进页级 error 态。
   - 分类工具栏（WorldCategoryToolbar，mb-3 flex-wrap）：标签「分类」+ 分类 chips（world-cat-filter-<name>：地理类前置 🗺 图标，选中 = accent 边框 + accent/10 淡填充，再点同 chip 取消选中——无「全部」项，未选 = 展示所有）+ chip 内 ×删除（world-cat-delete-<name>，hover err）+ 按钮组（world-cat-add 新建分类 / world-cat-add-always 恒显新建分类 #1321 / map-view-entry 地图视图，共用描边样式）+ 右缘整体复制（world-copy-all：Copy 图标 +「整体复制」，仅项目数 ≥2 时 enabled）
   - 地图视图入口门控（#699）：无选中分类或选中地理类 → 显示「地图视图」；选中抽象类 → 隐藏
   - 树视图（library-list 容器，圆角卡片）：WorldNodeView 递归行——toggle（world-tree-toggle-<id>，仅子节点渲染，ChevronRight 展开旋转 90°）+ 名称（font-medium）+ 描述预览（world-node-desc-<id>，12px ink-2 截断一行）+ 分类徽标（surface-3 胶囊）+ 子条目数徽标（world-node-childcount-<id>「{n} 子条目」）+ 悬停操作（编辑 lib-edit-<id> / 删除 lib-delete-<id> / 复制 world-copy-<id>）；行缩进 depth*18+12
@@ -79,6 +84,7 @@
 - N4：地图工作台进入/退出 + 创建根图 + pin 列表类型筛选 + 未选地图空态
 - N5：新建分类对话框（geo/abstract 二选一 + 空名校验 + 地图入口门控）
 - N6（#1321）：恒显新建分类入口——列表工具栏 world-cat-add-always 在选中分类后仍可开分类对话框；地图工作台左栏头部同款入口（地图分支此前无任何建分类入口）
+- N10（#1320）：列表**全量取数不分页**——51+ 条世界条目时最后一条可达（无静默截断），且**不渲染分页条**；树构建数据源为全量（父子关系完整，无孤儿降级）
 - N7（#1321）：world 非根条目分类必填门控——isRoot 非真时类别为空 → 保存钮 disabled + 红字「非根条目必须填写类别」；根条目（isRoot=true）隐藏类别输入且不门控（#722 根无分类守护）
 - N8（#1322）：地图树显示门控——无挂图条目**不在主树**（`map-tree-main` 内查无该条目名），移入 `map-tree-unmapped` 折叠区；有挂图条目（及有图后代链上的祖先）**在**主树；折叠区默认收起、可展开且展开后 `map-create-child-*` 入口可用；无图条目为零时不渲染折叠区
 - N9（#1322）：左栏左右拖动——拖 `map-tree-resize-handle` 改变 `map-tree-column` 宽度，clamp 240~640px 不越界；mouseup 后监听器摘除（再 mousemove 不变）；`overflow-x-auto`（#728）仍在，两者并存

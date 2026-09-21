@@ -18,7 +18,7 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import update as sa_update
@@ -44,6 +44,57 @@ def _utcnow() -> datetime:
 def _uuid_to_int(value: uuid.UUID | int) -> int:
     """领域 UUID → DB int（F1 映射: uuid.int）."""
     return value.int if isinstance(value, uuid.UUID) else int(value)
+
+
+def _role_rank_match(orm_extra, role_rank: str):
+    """#1320：`extra.role_rank` 等值匹配条件（role_rank 存 JSON 列，非独立列）.
+
+    按 SQLite 版本分两档（kernel/后端共用同一份 SQLite 源码，语义一致）：
+
+    - user_version >= 39（JSON1 内置）：``json_extract(extra, '$.role_rank') = ?``
+      精度准确（等值比较，不受键序/多余空格影响）。前置 ``json_valid`` 守卫是必需项——
+      #261 容错历史行可能是空串/空白/损坏 JSON，无守卫时 json_extract 抛
+      ``malformed JSON`` 让整条查询失败（含 count）。
+    - 更早版本：``extra LIKE ? ESCAPE '\\'``，模式 ``%"role_rank":"<值>"%``。
+      ``{"role_rank": null}`` 等容忍形态不命中（值与 null 拼写不同），与语义相符。
+
+    Args:
+        orm_extra: ``CharacterORM.extra`` 列表达式（JSON 类型）.
+        role_rank: 五档等级值（调用方已校验枚举）.
+
+    Returns:
+        SQLAlchemy 布尔条件表达式.
+    """
+    # 容错行守卫：空串/空白串跳过（LenientJSON 的 fallback 只作用于 result_processor，
+    # SQL 层仍会看到原始 '' → json_extract 抛错）
+    guard = or_(
+        func.json_valid(orm_extra) == 1,
+        orm_extra.is_(None),
+    )
+    version = _sqlite_json1_available()
+    if version:
+        return and_(guard, func.json_extract(orm_extra, "$.role_rank") == role_rank)
+    escaped = role_rank.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return and_(guard, cast(orm_extra, String).like(f'%"role_rank":"{escaped}"%', escape="\\"))
+
+
+def _sqlite_json1_available() -> bool:
+    """当前运行库的 SQLite 是否内置 JSON1（``sqlite_version >= 3.9``，官方 JSON1 并入版本）.
+
+    kernel 与后端嵌入**同一份 SQLite 源码**（实测均为 3.50.x）→ 两进程方言一致，
+    本判据对两侧都成立。``sqlite3`` 导入失败（非 CPython 构建）→ 保守返回 False
+    （回落 LIKE 档，精度略降但语义正确）。
+    """
+    try:
+        import sqlite3
+    except ImportError:  # pragma: no cover - 标准构建必可导入
+        return False
+    try:
+        parts = sqlite3.sqlite_version.split(".")
+        major, minor = int(parts[0]), int(parts[1])
+    except (ValueError, IndexError):  # pragma: no cover - 版本串异常
+        return False
+    return (major, minor) >= (3, 9)
 
 
 def _char_orm_to_domain(orm: CharacterORM, group_ids: list[uuid.UUID] | None = None) -> Character:
@@ -216,8 +267,14 @@ class SQLiteCharacterRepository:
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        role_rank: str | None = None,
     ) -> tuple[builtins.list[Character], int]:
-        """分页查询项目内角色列表，支持搜索与分组过滤.
+        """分页查询项目内角色列表，支持搜索/分组/等级过滤与排序.
+
+        Args:
+            role_rank: #1320 角色等级过滤（可选；None = 不过滤）。role_rank 存
+                ``extra`` JSON 列 → 走 JSON 路径提取（见 ``_role_rank_match``），
+                **count 与 items 同条件**（本方法 base 一次构造、两处消费）。
 
         Returns:
             (当前页角色列表, 符合条件的总记录数).
@@ -241,6 +298,9 @@ class SQLiteCharacterRepository:
                 CharacterGroupMemberORM,
                 CharacterGroupMemberORM.character_id == CharacterORM.id,
             ).where(CharacterGroupMemberORM.group_id == gid)
+        # #1320: 角色等级过滤（extra.role_rank JSON 路径；count 自动同条件——同一 base）
+        if role_rank is not None:
+            base = base.where(_role_rank_match(CharacterORM.extra, role_rank))
 
         # 总数（分页前）
         count_stmt = select(func.count()).select_from(base.subquery())

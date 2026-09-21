@@ -50,19 +50,28 @@ export interface LibraryPageData<T> {
  * @param activeCat        当前分类 key（非分页分类 → 本 hook 不拉取，恒空）
  * @param reloadKey        外部刷新信号（数据面变更 / 增删改后 bump）
  * @param endpoint         列表端点构造器（相对 base_url，含 /api/v1 前缀）
+ * @param extraQuery       #1320 附加查询条件（如 `{ role_rank: 'protagonist' }`）；变化即重拉并重置页码
  */
 export function useLibraryPagedList<T>(
   currentProjectId: string | null,
   activeCat: string,
   reloadKey: number,
   endpoint: (projectId: string) => string,
+  extraQuery?: Record<string, string> | null,
 ): LibraryPageData<T> {
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
-  // 分类/项目切换 → 页码重置（不复用上一个分类的页码）；reloadKey 不重置页码
+  // #1320：筛选条件指纹（与 scope 同档：变化 = 新数据集 → 页码归零 + 首拉重新计数）
+  const extraKey = extraQuery
+    ? Object.entries(extraQuery)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join('&')
+    : '';
+  // 分类/项目/筛选切换 → 页码重置（不复用上一数据集的页码）；reloadKey 不重置页码
   const scopeRef = useRef<string | null>(null);
   // 首拉是否成功过：用于区分「页级失败（error 态）」与「翻页失败（仅 toast，保留原数据）」
   const loadedOnceRef = useRef(false);
@@ -77,13 +86,13 @@ export function useLibraryPagedList<T>(
       scopeRef.current = null;
       return;
     }
-    const scope = `${currentProjectId}/${activeCat}`;
+    const scope = `${currentProjectId}/${activeCat}/${extraKey}`;
     const freshScope = scopeRef.current !== scope;
     if (freshScope) {
       scopeRef.current = scope;
-      loadedOnceRef.current = false; // 换分类/换项目 → 首拉重新计数（失败仍走页级 error 态）
+      loadedOnceRef.current = false; // 换分类/换项目/换筛选 → 首拉重新计数（失败仍走页级 error 态）
     }
-    // 切项目/切分类 → 本次拉取按第 1 页发起（页码 state 同步收敛）
+    // 切项目/切分类/切筛选 → 本次拉取按第 1 页发起（页码 state 同步收敛）
     const effectivePage = freshScope ? 0 : page;
     if (freshScope && page !== 0) setPage(0);
 
@@ -94,8 +103,10 @@ export function useLibraryPagedList<T>(
     setLoadFailed(false);
     const offset = effectivePage * LIBRARY_PAGE_SIZE;
     const sep = endpoint(currentProjectId).includes('?') ? '&' : '?';
+    // #1320：筛选条件随分页一起下发（服务端过滤 → total 为过滤后口径）
+    const filterQs = extraKey ? `&${extraKey}` : '';
     void apiFetch<ListData<T>>(
-      `${endpoint(currentProjectId)}${sep}limit=${LIBRARY_PAGE_SIZE}&offset=${offset}`,
+      `${endpoint(currentProjectId)}${sep}limit=${LIBRARY_PAGE_SIZE}&offset=${offset}${filterQs}`,
     )
       .then((data) => {
         if (cancelled) return;
@@ -125,7 +136,7 @@ export function useLibraryPagedList<T>(
     return () => {
       cancelled = true;
     };
-  }, [currentProjectId, activeCat, reloadKey, page, isPageable, endpoint]);
+  }, [currentProjectId, activeCat, reloadKey, page, isPageable, endpoint, extraKey]);
 
   return { items, loading, loadFailed, page, setPage, total };
 }

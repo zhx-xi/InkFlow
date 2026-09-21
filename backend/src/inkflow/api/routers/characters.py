@@ -35,6 +35,7 @@ from inkflow.domain.models.character import (
     CharacterExtractRequest,
     CharacterRelationCreate,
     CharacterUpdate,
+    RoleRank,
     _validate_name,
     _validate_relation_type,
     _validate_role_rank,
@@ -212,13 +213,18 @@ async def list_characters(
     project_id: str,
     search: str | None = Query(None),
     group_id: str | None = Query(None),
+    role_rank: RoleRank | None = Query(None),
     sort_by: str = Query("updated_at"),
     sort_desc: bool = Query(True),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取项目内角色列表（搜索 + 分组过滤 + 分页，spec §3.2）。"""
+    """获取项目内角色列表（搜索 + 分组过滤 + 等级过滤 + 分页，spec §3.2）。
+
+    #1320：``role_rank`` 可选（五档枚举，非法值 422）。等级存 ``extra.role_rank``
+    JSON 列 → 服务端 JSON 路径过滤，**total 为过滤后总数**（前端分页条据此重算页码）。
+    """
     pid = _parse_id(project_id, detail="项目不存在")
     gid = _parse_id(group_id, detail="分组不存在") if group_id is not None else None
     svc = _get_svc(db)
@@ -231,6 +237,7 @@ async def list_characters(
             sort_desc=sort_desc,
             offset=offset,
             limit=limit,
+            role_rank=role_rank.value if role_rank is not None else None,
         )
     )
     groups = await _run_service(svc.list_groups(pid))

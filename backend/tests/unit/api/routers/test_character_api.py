@@ -217,6 +217,8 @@ class TestCharacterCRUDAPI:
             sort_desc=False,
             offset=0,
             limit=20,
+            # #1320：等级过滤下沉后端（本用例未传 role_rank → None）
+            role_rank=None,
         )
 
     def test_list_characters_invalid_pagination_422(self) -> None:
