@@ -268,6 +268,9 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
           <button class="btn-sm ml-auto" data-testid="world-copy-all"><span data-ic="copy"></span>整体复制</button>
         </div>
 
+        <!-- #1320：本列表【全量取数、不分页】——整树语义（buildWorldTree/filterWorldTree）需全量数据；
+             服务端按 limit≤100 循环拉全，故此处【不渲染分页条】（分页条走树分支不可达，
+             且旧实现只用第 1 页 50 条建树 → 51+ 条静默截断 + 孤儿降级）。见 specs/f19-gui/world.md N10。 -->
         <!-- F43 P1：世界观树视图 -->
         <div class="lib-card" data-testid="library-list">
           <div class="tree-row" data-testid="world-tree-toggle-1">

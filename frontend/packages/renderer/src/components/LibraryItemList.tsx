@@ -45,6 +45,14 @@ export interface LibraryItemListProps {
   characterGroups?: CharacterGroup[];
   /** #679：characters 分类内部拉取角色分组（当 characterGroups 未注入时）所需的项目 id */
   projectId?: string;
+  /**
+   * #1320：等级筛选的**受控值**（提供时组件不再自持 state——筛选需下沉服务端，
+   * 故由页面持有并向列表请求传 ?role_rank=，total 才是筛选后口径）。
+   * 未提供 → 退化为既有的非受控内部 state（组件内过滤当前页）。
+   */
+  rank?: string;
+  /** #1320：等级筛选变更回调（受控模式必配；页面据此重拉 + 页码归零） */
+  onRankChange?: (rank: string) => void;
   onEdit: (item: LibraryItemDTO) => void;
   onDelete: (item: LibraryItemDTO) => void;
   /** #650/#651：characters 分类行名字可点击 → 打开角色详情面板（缺省保持纯 span 展示） */
@@ -76,13 +84,22 @@ export function LibraryItemList({
   withForeshadowExtras = false,
   characterGroups,
   projectId,
+  rank,
+  onRankChange,
   onEdit,
   onDelete,
   onOpenDetail,
 }: LibraryItemListProps) {
   const { t } = useI18n();
   // #679：等级选项卡（'all' = 全部·总览，常驻默认项；点击当前等级不取消，需点「全部」）
-  const [selectedRank, setSelectedRank] = useState<string>('all');
+  // #1320：受控优先（页面持有 → 筛选可下沉服务端）；未提供 rank 时保留既有非受控行为
+  const [innerRank, setInnerRank] = useState<string>('all');
+  const isControlled = rank !== undefined;
+  const selectedRank = isControlled ? rank : innerRank;
+  const selectRank = (next: string) => {
+    if (!isControlled) setInnerRank(next);
+    onRankChange?.(next);
+  };
   // #679：- 分组数据源 = 注入的 characterGroups（测试/受控）或按 projectId 内部拉取（受控缺省）
   const [fetchedGroups, setFetchedGroups] = useState<CharacterGroup[]>([]);
   useEffect(() => {
@@ -106,8 +123,10 @@ export function LibraryItemList({
     label: t('lib.rank.' + key),
   }));
   // #679：分览过滤（'all' 显示全部角色）
-  const visibleItems =
-    selectedRank === 'all'
+  // #1320：服务端已按 role_rank 过滤并返回该等级全量 → 此处不得二次窄化，否则跨页项被误剪
+  const visibleItems = isControlled
+    ? items
+    : selectedRank === 'all'
       ? items
       : items.filter((i) => String((i.extra as Record<string, unknown>)?.role_rank ?? '') === selectedRank);
   // #679：分组卡片（仅 characters；按 characterGroups 数组顺序，空组隐藏；未分组收尾）
@@ -255,7 +274,7 @@ export function LibraryItemList({
             data-testid={`character-rank-tab-${opt.key}`}
             aria-pressed={selectedRank === opt.key}
             className={`rounded-full px-3 py-1 text-[12px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedRank === opt.key ? ACTIVE : IDLE}`}
-            onClick={() => setSelectedRank(opt.key)}
+            onClick={() => selectRank(opt.key)}
           >
             {opt.label}
           </button>

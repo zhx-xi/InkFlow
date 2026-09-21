@@ -35,6 +35,7 @@ import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useWorldCategories, type WorldCategoryEntity } from '../hooks/useWorldCategories';
 import { OUTLINE_PAGE_SIZE, useOutlineLibrary } from '../hooks/useOutlineLibrary';
 import { LIBRARY_PAGE_SIZE, useLibraryPagedList, type PageableCatKey } from '../hooks/useLibraryPagedList';
+import { useWorldFullList } from '../hooks/useWorldFullList';
 import { useLibraryCategoryData } from '../hooks/useLibraryCategoryData';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
@@ -60,7 +61,8 @@ const CATS: Array<{
 ];
 const CAT_KEYS = CATS.map((c) => c.key);
 /** #1300：服务端分页分类（后端支持 ?limit=&offset= 且返回 total；其余分类形态特殊不自带分页） */
-const PAGEABLE_CATS: PageableCatKey[] = ['characters', 'world', 'foreshadow'];
+const PAGEABLE_CATS: PageableCatKey[] = ['characters', 'foreshadow'];
+/** #1320：world 用全量取数（整树语义），不进分页分类 → 只读该分类 */
 /** F43 §3.1：编辑保存 PATCH 扁平端点（按 activeCat，已核实 backend/api/routers） */
 const PATCH_ENDPOINTS: Record<Exclude<CatKey, 'knowledge'>, (id: string | number) => string> = {
   characters: (id) => `/api/v1/characters/${id}`,
@@ -129,6 +131,9 @@ export function LibraryPage() {
   const saveHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // F43 P1：世界观分类筛选（null = 未选 → 展示所有，D3 无「全部」选项）
   const [activeWorldCat, setActiveWorldCat] = useState<string | null>(null);
+  // #1320：角色等级筛选（'all' = 总览）。上提自 LibraryItemList 内部 state —— 筛选需下沉
+  // 服务端（?role_rank=），否则 total 吃未筛选总数、跨页项漏取。
+  const [characterRank, setCharacterRank] = useState<string>('all');
   // F43 P1：世界观树收起集合（默认全部展开；点击 toggle 收起/展开）
   const [collapsedIds, setCollapsedIds] = useState<Set<string | number>>(new Set());
   // F43 P1：复制对话框状态（行内 subtree / 顶部整体 all）
@@ -150,11 +155,21 @@ export function LibraryPage() {
   // #1300：设定库分页分类（characters/world/foreshadow）的服务端分页装配——自本文件拆出
   // （本文件基线 897 行 / 护栏 900，分页逻辑不得内联；同 useOutlineLibrary 先例）
   const catEndpoint = (CATS.find((c) => c.key === activeCat) ?? CATS[0]).endpoint;
+  // #1320：角色等级筛选下沉服务端（extraQuery 变化 → hook 内部重置页码到第 1 页）。
+  // world 不进分页分类（下）→ 恒 null；仅 characters 需要该条件。
+  const pagedExtraQuery = useMemo(
+    () =>
+      activeCat === 'characters' && characterRank !== 'all'
+        ? { role_rank: characterRank }
+        : null,
+    [activeCat, characterRank],
+  );
   const pagedLib = useLibraryPagedList<LibraryItemDTO>(
     currentProjectId,
     activeCat,
     reloadKey,
     catEndpoint,
+    pagedExtraQuery,
   );
   // #1300：timeline / knowledge 分类装配（图谱聚合 / 双数组）——自本文件拆出以守 900 行护栏
   const catData = useLibraryCategoryData<LibraryItemDTO>(
@@ -163,11 +178,18 @@ export function LibraryPage() {
     reloadKey,
     CATS,
   );
-  // #1300：分页分类用 pagedLib；其余（timeline/knowledge）由 catData、outline 由 outlineLib 持有
+  // #1300：分页分类用 pagedLib（#1320：world 已移出——整树语义需全量数据，见 worldLib）；其余（timeline/knowledge）由 catData、outline 由 outlineLib 持有
   const isPagedCat = PAGEABLE_CATS.includes(activeCat as PageableCatKey);
-  const listItems = isPagedCat ? pagedLib.items : (catData.items as LibraryItemDTO[]);
-  const listLoading = isPagedCat ? pagedLib.loading : catData.loading;
-  const listFailed = isPagedCat ? pagedLib.loadFailed : catData.loadFailed;
+  // #1320：world 全量取数（不分页；清 51+ 条静默截断 + 树构建的数据源失真）
+  const worldLib = useWorldFullList<LibraryItemDTO>(currentProjectId, activeCat, reloadKey);
+  const isWorldCat = activeCat === 'world';
+  const listItems = isPagedCat
+    ? pagedLib.items
+    : isWorldCat
+      ? worldLib.items
+      : (catData.items as LibraryItemDTO[]);
+  const listLoading = isPagedCat ? pagedLib.loading : isWorldCat ? worldLib.loading : catData.loading;
+  const listFailed = isPagedCat ? pagedLib.loadFailed : isWorldCat ? worldLib.loadFailed : catData.loadFailed;
   const { timelineNarrative, graphNodes, graphEdges } = catData;
   // F23 §15.6.2（#1088 批 A3）：数据面变更订阅——外部（CLI/HTTP/MCP/agent）写入 → 事件到达
   // 后 bump reloadKey，复用既有 effect 全量重拉（maps / 分类列表 / 大纲；FR 粒度裁决，不新增局部更新路径）。
@@ -728,11 +750,23 @@ export function LibraryPage() {
                   withCharacterExtras={activeCat === 'characters'}
                   withForeshadowExtras={activeCat === 'foreshadow'}
                   projectId={currentProjectId}
+                  rank={activeCat === 'characters' ? characterRank : undefined}
+                  onRankChange={
+                    activeCat === 'characters'
+                      ? (next) => {
+                          // #1320：切等级筛选 = 换数据集 → 页码归零（hook 的 extraQuery scope 也会收敛，
+                          // 此处显式归零保证首帧即第 1 页，不与「翻页失败保留原页」语义混淆）
+                          setCharacterRank(next);
+                          pagedLib.setPage(0);
+                        }
+                      : undefined
+                  }
                   onEdit={openEdit}
                   onDelete={openDelete}
                   onOpenDetail={activeCat === 'characters' ? (item) => characterDetailRef.current?.openDetail(item) : undefined}
                 />
-                {/* #1300：分页分类（characters/world/foreshadow）列表下方分页条；total<=pageSize 时组件仍渲染（prev/next 双禁用） */}
+                {/* #1300：分页分类（characters/foreshadow）列表下方分页条；total<=pageSize 时组件仍渲染（prev/next 双禁用）
+                    #1320：world 已移出分页分类（全量取数），故此处 isPagedCat 天然不含 world */}
                 {isPagedCat && (
                   <Pagination
                     className="mt-4 justify-end"

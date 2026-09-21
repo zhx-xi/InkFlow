@@ -2078,7 +2078,10 @@ export interface paths {
         };
         /**
          * List Characters
-         * @description 获取项目内角色列表（搜索 + 分组过滤 + 分页，spec §3.2）。
+         * @description 获取项目内角色列表（搜索 + 分组过滤 + 等级过滤 + 分页，spec §3.2）。
+         *
+         *     #1320：``role_rank`` 可选（五档枚举，非法值 422）。等级存 ``extra.role_rank``
+         *     JSON 列 → 服务端 JSON 路径过滤，**total 为过滤后总数**（前端分页条据此重算页码）。
          */
         get: operations["list_characters_api_v1_projects__project_id__characters_get"];
         put?: never;
@@ -5408,6 +5411,12 @@ export interface components {
              */
             temperature?: number | null;
         };
+        /**
+         * RoleRank
+         * @description 角色等级五档枚举（#833，存 extra.role_rank）.
+         * @enum {string}
+         */
+        RoleRank: "protagonist" | "major" | "minor" | "scene" | "walkon";
         /**
          * RoleTemplate
          * @description 单个角色子模型（§9.2 roles 元素契约）.
@@ -10596,6 +10605,7 @@ export interface operations {
             query?: {
                 search?: string | null;
                 group_id?: string | null;
+                role_rank?: components["schemas"]["RoleRank"] | null;
                 sort_by?: string;
                 sort_desc?: boolean;
                 offset?: number;

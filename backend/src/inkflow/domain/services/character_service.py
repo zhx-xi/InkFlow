@@ -200,11 +200,15 @@ class CharacterService:
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        role_rank: str | None = None,
     ) -> tuple[list[Character], int]:
-        """分页查询项目内角色列表，支持搜索、分组过滤、排序.
+        """分页查询项目内角色列表，支持搜索、分组过滤、等级过滤、排序.
+
+        Args:
+            role_rank: #1320 角色等级过滤（可选，五档枚举；None = 不过滤）。
 
         Returns:
-            (当前页角色列表, 符合条件的总记录数).
+            (当前页角色列表, 符合条件的总记录数——过滤后口径).
         """
         pid_int = _to_uuid(project_id)
         # #1151: 先判父项目存在——缺失 → 404；顺带防 128 位 int 走到过滤 SQL 绑定
@@ -220,6 +224,7 @@ class CharacterService:
             sort_desc=sort_desc,
             offset=offset,
             limit=limit,
+            role_rank=role_rank,
         )
 
     async def update_character(

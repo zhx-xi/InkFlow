@@ -74,7 +74,7 @@ button{font-family:inherit;cursor:pointer}
 .win-ctrl button.close:hover{background:var(--err);color:#fff}
 
 /* ═══════════ 设定库页骨架 ═══════════ */
-.page-lib{margin:0 auto;max-width:1080px;width:100%;padding:40px 48px;flex:1;min-height:0;overflow-y:auto}
+.page-lib{margin:0 auto;max-width:1080px;width:100%;padding:40px 48px 88px;flex:1;min-height:0;overflow-y:auto}
 .page-lib h1{margin:0;font-family:var(--font-serif);font-size:26px;font-weight:600}
 .lib-ctx{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-top:20px}
 .lib-project{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:6px 12px;height:36px;width:224px;justify-content:space-between;box-shadow:var(--shadow)}
@@ -118,6 +118,18 @@ button{font-family:inherit;cursor:pointer}
 .row-actions button svg{width:14px;height:14px}
 .row-actions button:hover{background:var(--surface-3);color:var(--accent)}
 .row-actions button.del:hover{color:var(--err)}
+/* ── #1320：分页条（列表下方右对齐；页大小 Select + 上一页/信息/下一页） ── */
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:flex-end;margin-top:16px}
+.pager .size{display:flex;flex-direction:column;gap:6px}
+.pager select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 8px;height:30px}
+.pager button{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:6px 12px;transition:background var(--dur)}
+.pager button:hover:not(:disabled){background:var(--surface-3)}
+.pager button:disabled{cursor:not-allowed;opacity:.5}
+.pager .info{font-size:13px;color:var(--ink-2)}
+/* #1320 状态切换：分览态隐藏整个主视图（只用 .app-main —— 若按 [data-testid="library-page"]
+   会与 pager 自身 testid 撞名，命中 pager 而非宿主） */
+body[data-state="rank-protagonist"] .app:not([data-testid="app-rank"]){display:none}
+body:not([data-state="rank-protagonist"]) [data-testid="app-rank"]{display:none}
 
 /* 角色详情面板（CharacterDetailPanel：640px 模态；分组 + 关系） */
 .dialog-overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
@@ -299,6 +311,16 @@ body[data-state="detail"] .dialog-overlay{display:flex}
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
           </li>
         </ul>
+      <!-- #1320：分页条（characters/foreshadow 有；world 全量取数不分页 → 无此条） -->
+      <div class="pager" data-testid="library-page">
+        <div class="size">
+          <select aria-label="每页条数" data-testid="library-page-size-select"><option>10</option><option>25</option><option selected>50</option><option>100</option></select>
+        </div>
+        <button data-testid="library-page-prev" disabled>上一页</button>
+        <span class="info" data-testid="library-page-info">第 1 / 2 页 · 共 52 条</span>
+        <button data-testid="library-page-next">下一页</button>
+      </div>
+
       </div>
     </div>
 
@@ -308,6 +330,120 @@ body[data-state="detail"] .dialog-overlay{display:flex}
       <span>模型: deepseek-chat</span>
       <span>项目: 青云志</span>
       <span>角色 7 条</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ #1320 分览 · 主角筛选态（与主态同构；body[data-state] 切换显隐） ═══ -->
+<div class="app" data-testid="app-rank">
+  <nav class="app-nav" data-testid="app-nav">
+    <div class="nav-brand">
+      <span class="logo"><span data-ic="penline"></span></span>
+      <span>InkFlow</span>
+    </div>
+    <div class="nav-scroll">
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="folderopen"></span>写作区</div>
+        <a class="nav-item"><span data-ic="penline"></span>写作</a>
+        <a class="nav-item"><span data-ic="bookopen"></span>项目</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="library"></span>设定库</div>
+        <a class="nav-item"><span data-ic="library"></span>设定库</a>
+        <a class="nav-item active" data-testid="nav-item-characters"><span data-ic="users"></span>角色</a>
+        <a class="nav-item"><span data-ic="globe"></span>世界观</a>
+        <a class="nav-item"><span data-ic="listtree"></span>大纲</a>
+        <a class="nav-item"><span data-ic="clock"></span>时间线</a>
+        <a class="nav-item"><span data-ic="sparkles"></span>伏笔</a>
+        <a class="nav-item"><span data-ic="database"></span>知识图谱</a>
+        <a class="nav-item"><span data-ic="search"></span>检索</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="history"></span>会话</div>
+        <a class="nav-item"><span data-ic="history"></span>会话</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label"><span data-ic="settings"></span>系统</div>
+        <a class="nav-item"><span data-ic="bot"></span>Agent</a>
+        <a class="nav-item"><span data-ic="brain"></span>记忆</a>
+        <a class="nav-item"><span data-ic="settings"></span>设置</a>
+      </div>
+    </div>
+    <div class="nav-collapse"><button><span data-ic="chevronsleft"></span>折叠</button></div>
+  </nav>
+  <div class="app-main">
+    <header class="topbar" role="banner">
+      <span class="page-title">设定库</span>
+      <span class="spacer"></span>
+      <span class="select"><span data-ic="palette"></span>素笺 · 纸张<span data-ic="chevron-down"></span></span>
+      <span class="select">中文<span data-ic="chevron-down"></span></span>
+      <div class="win-ctrl">
+        <button><span data-ic="minus"></span></button>
+        <button><span data-ic="square"></span></button>
+        <button class="close"><span data-ic="x"></span></button>
+      </div>
+    </header>
+    <div class="page-lib" data-testid="library-page-rank">
+      <h1>设定库</h1>
+      <div class="lib-ctx">
+        <span class="lib-project"><span>青云志</span><span data-ic="chevron-down"></span></span>
+        <span class="lib-breadcrumb">设定库 · 青云志 <span class="sep">/</span> <span class="cur">角色</span></span>
+      </div>
+      <div class="lib-tabs" role="tablist" aria-label="设定库">
+        <button class="lib-tab active" role="tab" aria-selected="true">角色</button>
+        <button class="lib-tab" role="tab" aria-selected="false">世界观</button>
+        <button class="lib-tab" role="tab" aria-selected="false">大纲</button>
+        <button class="lib-tab" role="tab" aria-selected="false">时间线</button>
+        <button class="lib-tab" role="tab" aria-selected="false">伏笔</button>
+        <button class="lib-tab" role="tab" aria-selected="false">知识图谱</button>
+      </div>
+      <div class="lib-toolbar">
+        <button class="btn-primary">去创建</button>
+        <button class="btn-ghost"><span data-ic="filesearch"></span>AI 提取</button>
+      </div>
+      <div class="lib-card" data-testid="library-list">
+        <div class="rank-tabs" data-testid="character-rank-tabs">
+          <button class="rank-chip idle">全部·总览</button>
+          <button class="rank-chip active" data-testid="character-rank-tab-protagonist">主角</button>
+          <button class="rank-chip idle">重要配角</button>
+          <button class="rank-chip idle">配角</button>
+          <button class="rank-chip idle">场景角色</button>
+          <button class="rank-chip idle">一次性角色</button>
+        </div>
+        <div class="group-title">青云宗 · 2人</div>
+        <ul class="divide-y">
+          <li class="lib-row">
+            <button class="name" title="查看详情">苏云舟</button>
+            <span class="badge badge-accent">主角</span>
+            <span class="tag-chip">青云宗</span><span class="tag-chip">剑修</span>
+            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+          </li>
+          <li class="lib-row">
+            <button class="name" title="查看详情">裴照</button>
+            <span class="badge badge-accent">主角</span>
+            <span class="tag-chip">青云宗</span>
+            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+          </li>
+        </ul>
+        <div class="group-title">未分组 · 1人</div>
+        <ul class="divide-y">
+          <li class="lib-row">
+            <button class="name" title="查看详情">谢无衣</button>
+            <span class="badge badge-accent">主角</span>
+            <span class="tag-chip">散修</span>
+            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+          </li>
+        </ul>
+      </div>
+      <!-- 核心语义：筛选后 total/页数随筛选重算（主角 3 人 → 1 页），筛选请求仍带 limit/offset -->
+      <div class="pager" data-testid="library-page">
+        <div class="size">
+          <select aria-label="每页条数"><option>10</option><option>25</option><option selected>50</option><option>100</option></select>
+        </div>
+        <button data-testid="library-page-prev" disabled>上一页</button>
+        <span class="info" data-testid="library-page-info">第 1 / 1 页 · 共 3 条</span>
+        <button data-testid="library-page-next" disabled>下一页</button>
+      </div>
     </div>
   </div>
 </div>

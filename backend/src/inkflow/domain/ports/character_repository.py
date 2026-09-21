@@ -76,6 +76,7 @@ class CharacterRepositoryProtocol(Protocol):
         sort_desc: bool = True,
         offset: int = 0,
         limit: int = 50,
+        role_rank: str | None = None,
     ) -> tuple[builtins.list[Character], int]:
         """分页查询项目内角色列表，支持搜索与分组过滤.
 
@@ -87,6 +88,8 @@ class CharacterRepositoryProtocol(Protocol):
             sort_desc: 是否倒序.
             offset: 分页偏移.
             limit: 分页大小.
+            role_rank: #1320 角色等级过滤（可选；存 ``extra.role_rank`` JSON 列，
+                实现侧走 JSON 路径提取，count 与 items 同条件）.
 
         Returns:
             (角色列表, 总数) 元组.
