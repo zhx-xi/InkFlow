@@ -66,6 +66,9 @@ def get_agent_service(
     from inkflow.infrastructure.database.repositories.character_repo import (
         SQLiteCharacterRepository,
     )
+    from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
+        SQLiteForeshadowingRepository,
+    )
     from inkflow.infrastructure.database.repositories.outline_repo import (
         SQLiteOutlineRepository,
     )
@@ -82,6 +85,7 @@ def get_agent_service(
         character_repo=SQLiteCharacterRepository(db),
         world_repo=SQLiteWorldRepository(db),
         outline_repo=SQLiteOutlineRepository(db),
+        foreshadowing_repo=SQLiteForeshadowingRepository(db),
     )
 
 
