@@ -13,6 +13,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MapDirectoryTree } from './MapDirectoryTree';
 import { WorldNodeView } from './WorldNodeView';
 import type { WorldCategoryEntity } from '../hooks/useWorldCategories';
@@ -32,7 +33,8 @@ const worldCategories: WorldCategoryEntity[] = [
 ];
 
 describe('MapDirectoryTree — #741 缺陷③ 分类标签不盖名字（WorldNodeRow）', () => {
-  it('名字 span 在分类徽标之前（DOM 顺序）且具备截断类（RED：当前名字 span 无 truncate/overflow-hidden → 截断断言 FAIL）', () => {
+  it('名字 span 在分类徽标之前（DOM 顺序）且具备截断类（RED：当前名字 span 无 truncate/overflow-hidden → 截断断言 FAIL）', async () => {
+    const user = userEvent.setup();
     render(
       <MapDirectoryTree
         maps={[]}
@@ -47,6 +49,9 @@ describe('MapDirectoryTree — #741 缺陷③ 分类标签不盖名字（WorldNo
         worldCategories={worldCategories}
       />,
     );
+    // #1322 语义升级：无挂图条目移入「未挂图条目」折叠区（默认收起）——
+    // 本用例断言的 WorldNodeRow 渲染形态不变，仅需先展开折叠区
+    await user.click(screen.getByTestId('map-tree-unmapped-toggle'));
     // 名字 span（L381：min-w-0 flex-1 whitespace-nowrap）；分类徽标 span（L384-388：shrink-0 rounded-full）
     const nameEl = screen.getByText('蜀山派');
     const badgeEl = screen.getByText('国家');

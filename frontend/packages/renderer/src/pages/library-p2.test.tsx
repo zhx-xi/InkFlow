@@ -617,9 +617,13 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     const row = (await screen.findByTestId('world-map-badge-w1')).closest('.tree-row');
     expect(row).not.toBeNull();
     expect(within(row as HTMLElement).getByText('九州舆图')).toBeInTheDocument();
-    // w1a 无地图 → 无徽标；条目名保留显示
+    // w1a 无地图 → 无徽标
     expect(screen.queryByTestId('world-map-badge-w1a')).not.toBeInTheDocument();
-    expect(screen.getByText('中州')).toBeInTheDocument(); // 条目名保留（w1a 无 linkedMap）
+    // #1322 语义升级：w1a 无挂图 → 不再进主树（条目名不再默认显示），
+    // 移入「未挂图条目」折叠区——展开后条目名保留（linkedMap 缺省 → 显示条目名）
+    expect(screen.queryByText('中州')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('map-tree-unmapped-toggle'));
+    expect(screen.getByText('中州')).toBeInTheDocument();
   });
 
   it('#368: 前端树按图层级渲染——子图（parent_map_id）出现在父图节点下', async () => {

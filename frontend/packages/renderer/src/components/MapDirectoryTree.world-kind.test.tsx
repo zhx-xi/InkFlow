@@ -1,6 +1,7 @@
 /** #721 世界观地图树分类/结构错误：按 WorldCategory.kind 分流——geo/无类别进树，abstract 不出现在树中。 */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MapDirectoryTree } from './MapDirectoryTree';
 import type { WorldCategoryEntity } from '../hooks/useWorldCategories';
 import { useThemeStore } from '../stores/theme';
@@ -20,7 +21,8 @@ const worldCategories: WorldCategoryEntity[] = [
 ];
 
 describe('MapDirectoryTree — #721 kind 分流', () => {
-  it('geo/无类别世界进树；abstract 世界（势力）不出现在地图树中', () => {
+  it('geo/无类别世界进树；abstract 世界（势力）不出现在地图树中', async () => {
+    const user = userEvent.setup();
     render(
       <MapDirectoryTree
         maps={[]}
@@ -35,6 +37,9 @@ describe('MapDirectoryTree — #721 kind 分流', () => {
         worldCategories={worldCategories}
       />,
     );
+    // #1322 语义升级：maps=[] ⇒ 无条目挂图 ⇒ 全部移入「未挂图条目」折叠区（默认收起）。
+    // 本用例断言的 #721 kind 分流（abstract 不进树）不变，仅需先展开折叠区。
+    await user.click(screen.getByTestId('map-tree-unmapped-toggle'));
     expect(screen.getByText('蜀山修仙宇宙')).toBeInTheDocument();
     expect(screen.getByText('蜀山派')).toBeInTheDocument();
     expect(screen.queryByText('蜀山势力')).not.toBeInTheDocument();

@@ -44,9 +44,11 @@
   - 创建/编辑对话框（library-create-dialog，cat=world）：名称（必填）+ 类别（根条目 isRoot 时隐藏输入；**非根条目必填** #1321——空值时保存钮 disabled + 红字 library-create-category-required「非根条目必须填写类别」）+ 内容 textarea；选中分类时新建 = 创建子条目（标题「创建分类」，initialCategory 预填，isRoot=false）
   - 新建分类对话框（world-cat-dialog，420px）：分类名（必填，maxLength 100，空值下方红字「分类名不能为空」）+ 类型 radio（world-cat-kind-geo「地理」/ world-cat-kind-abstract「抽象」）+ 类型提示文字
   - 复制对话框（world-copy-dialog，420px）：范围 chips（world-copy-scope-subtree「本体 + 全部子级」默认 / world-copy-scope-self「仅本体」，仅行内 subtree 模式渲染）+ 目标项目 Select（world-copy-target，已排除当前项目）+ 复制按钮（world-copy-ok，目标未选 disabled）
-  - 地图工作台（map-workbench，space-y-3）：四级面包屑（map-bc-lib 设定库 / map-bc-world 世界观 / map-bc-maplist 地图视图 / map-bc-current「🗺 地图名」）+ 创建根图（map-create-root，MapPlus 图标）+ pin 计数（{n} 个标记）+ 左 260px 栏（**顶部 world-cat-add-always 恒显新建分类入口** #1321——地图分支不渲染分类工具栏，此前完全无处建分类；下方为目录树（MapDirectoryTree：地图树 + 世界条目树混排，含 pin 计数徽标、拖拽改挂、重命名、删除）+ 右栏画布（MapCanvas：底图 tab 简图/图片/AI[「即将推出」禁用] + 形状工具 ＋方框/＋椭圆/＋文字 + 点击画布任意位置添加标记）+ pin 列表（类型筛选 chips 地点/角色/事件/其他 + 行：类型徽标/名称/关联名/悬停编辑删除）
+  - 地图工作台（map-workbench，space-y-3）：四级面包屑（map-bc-lib 设定库 / map-bc-world 世界观 / map-bc-maplist 地图视图 / map-bc-current「🗺 地图名」）+ 创建根图（map-create-root，MapPlus 图标）+ pin 计数（{n} 个标记）+ **左栏 260px 可拖宽**（#1322：`map-tree-column` 宽度受控，初始 260px；右缘 `map-tree-resize-handle` 手柄 `cursor-col-resize`，拖动 clamp **240~640px**——地图行含徽标+分类+4 按钮，写作页 160~360 不够；内存态不持久化，同 #702/#720；拖动**不替代** `overflow-x-auto`，#728 契约并存。**顶部 world-cat-add-always 恒显新建分类入口** #1321——地图分支不渲染分类工具栏，此前完全无处建分类）+ 下方目录树（MapDirectoryTree）+ 右栏画布（MapCanvas：底图 tab 简图/图片/AI[「即将推出」禁用] + 形状工具 ＋方框/＋椭圆/＋文字 + 点击画布任意位置添加标记）+ pin 列表（类型筛选 chips 地点/角色/事件/其他 + 行：类型徽标/名称/关联名/悬停编辑删除）
+  - **地图树显示门控（#1322）**：`map-tree-main` 主树**只容纳已挂图的世界观条目**（`root_location_id` 命中 `mapByLocation`）及其**有图后代链上的祖先**（祖先仅为承载路径，不显示为独立条目行）；其余无图条目移入下方 **`map-tree-unmapped` 未挂图条目折叠区**（`map-tree-unmapped-toggle` 切换，**默认收起**，`aria-expanded` 反映态；**折叠而非隐藏**——展开后仍保留 `map-create-child-<条目id>` 建首张图入口）。无图条目一个都没有时折叠区不渲染。该过滤仅在地图工作台面生效（`buildWorldTree` 传 `isMapped`）；列表页 `WorldNodeView` 树不受影响（一项目一根 #834 + 后端 #641 自动挂根语义**不变**）
+  - **world 创建带父（#1322）**：`LibraryCreateDialog` cat=world 的 body 含 `parent_id`（取 `initialParentId ?? null`）——地图视图内新建条目显式挂指定父，不依赖后端自动挂根兜底；未传时 `parent_id: null` → 后端 #641 兜底行为不变
   - 空态（library-tab-empty）：「还没有世界观，去创建」+ CTA + 额外 WorldCatActionButtons（新建分类 + 地图视图）
-- 布局说明：列表视图 = 分类工具栏 → 树卡片；地图工作台 = 面包屑 → 左右两栏（左树 260px / 右画布弹性）；全部弹层挂页面根部
+- 布局说明：列表视图 = 分类工具栏 → 树卡片；地图工作台 = 面包屑 → 左右两栏（左树 260px 可拖至 240~640px #1322 / 右画布弹性）；全部弹层挂页面根部
 
 ## 2. 动作样式（按钮 × 状态表）
 
@@ -78,3 +80,5 @@
 - N5：新建分类对话框（geo/abstract 二选一 + 空名校验 + 地图入口门控）
 - N6（#1321）：恒显新建分类入口——列表工具栏 world-cat-add-always 在选中分类后仍可开分类对话框；地图工作台左栏头部同款入口（地图分支此前无任何建分类入口）
 - N7（#1321）：world 非根条目分类必填门控——isRoot 非真时类别为空 → 保存钮 disabled + 红字「非根条目必须填写类别」；根条目（isRoot=true）隐藏类别输入且不门控（#722 根无分类守护）
+- N8（#1322）：地图树显示门控——无挂图条目**不在主树**（`map-tree-main` 内查无该条目名），移入 `map-tree-unmapped` 折叠区；有挂图条目（及有图后代链上的祖先）**在**主树；折叠区默认收起、可展开且展开后 `map-create-child-*` 入口可用；无图条目为零时不渲染折叠区
+- N9（#1322）：左栏左右拖动——拖 `map-tree-resize-handle` 改变 `map-tree-column` 宽度，clamp 240~640px 不越界；mouseup 后监听器摘除（再 mousemove 不变）；`overflow-x-auto`（#728）仍在，两者并存

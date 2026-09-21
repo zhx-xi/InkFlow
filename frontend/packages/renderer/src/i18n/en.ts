@@ -146,7 +146,7 @@ export const en: Record<string, string> = {
   'lib.map.deleteHasChildren': 'This map has child maps — move them away or use cascade delete',
   'lib.map.renameTitle': 'Rename Map',
   'lib.map.renamePlaceholder': 'Map name',
-  'lib.map.renameSave': 'Save',
+  'lib.map.renameSave': 'Save', 'lib.map.unmappedSection': 'Unmapped entries ({n})',
   // F43 P3+P4 (specs/f43-setting-library-gui/spec.md §6): outline tree + chapter link + timeline dual view
   'lib.level.overall': 'Overall',
   'lib.level.volume': 'Volume',

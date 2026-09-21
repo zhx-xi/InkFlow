@@ -144,7 +144,7 @@ export const zh = {
   'lib.map.deleteHasChildren': '该地图有子图，请先移走子图或使用级联删除',
   'lib.map.renameTitle': '重命名地图',
   'lib.map.renamePlaceholder': '地图名称',
-  'lib.map.renameSave': '保存',
+  'lib.map.renameSave': '保存', 'lib.map.unmappedSection': '未挂图条目（{n}）',
   // F43 P3+P4（specs/f43-setting-library-gui/spec.md §6）：大纲三级树 + 章关联 + 时间线双序/两级检查
   'lib.level.overall': '整体',
   'lib.level.volume': '卷',

@@ -341,39 +341,58 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
           </span>
         </div>
         <div class="map-flex">
-          <!-- 左栏：地图目录树 -->
-          <aside class="map-left">
+          <!-- 左栏：地图目录树（#1322：宽度受控可拖 + 主树只显示图 + 未挂图条目折叠区） -->
+          <aside class="map-left" style="position:relative">
             <!-- #1321：地图视图内新建分类入口——地图分支不渲染分类工具栏，此前完全无处建分类 -->
             <button class="btn-sm" style="width:100%;justify-content:center" data-testid="world-cat-add-always"><span data-ic="plus"></span>新建分类（不随选中项）</button>
             <div class="lib-card" data-testid="library-list">
-              <div class="tree-row">
-                <button class="chev open"><span data-ic="chevron-right"></span></button>
-                <span class="tcol"><span class="tname">🗺 青云山</span><span class="tdesc">根图 · 3 标记</span></span>
-                <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-              </div>
-              <div class="tree-row" style="padding-left:30px">
-                <button class="chev"><span data-ic="chevron-right"></span></button>
-                <span class="tcol"><span class="tname">🗺 剑冢区域</span><span class="tdesc">子图 · 2 标记</span></span>
-                <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-              </div>
-              <div class="tree-row" style="padding-left:30px">
-                <span style="width:20px;flex:none"></span>
-                <span class="tcol"><span class="tname">🗺 天墉城</span><span class="tdesc">根图 · 0 标记</span></span>
-                <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-              </div>
-              <div class="divide-y" style="border-top:1px solid var(--line)">
+              <!-- 主树：只容纳已挂图的世界观条目（root_location_id 命中）及其有图后代链上的祖先 -->
+              <div data-testid="map-tree-main">
                 <div class="tree-row">
-                  <span style="width:20px;flex:none"></span>
-                  <span class="tcol"><span class="tname">青云宗</span><span class="tdesc">势力 · 世界条目</span></span>
-                  <span class="badge">势力</span>
+                  <button class="chev open"><span data-ic="chevron-right"></span></button>
+                  <span class="tcol"><span class="tname">🗺 青云山</span><span class="tdesc">根图 · 3 标记</span></span>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
                 </div>
-                <div class="tree-row">
+                <div class="tree-row" style="padding-left:30px">
+                  <button class="chev"><span data-ic="chevron-right"></span></button>
+                  <span class="tcol"><span class="tname">🗺 剑冢区域</span><span class="tdesc">子图 · 2 标记</span></span>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="tree-row" style="padding-left:30px">
                   <span style="width:20px;flex:none"></span>
-                  <span class="tcol"><span class="tname">剑冢</span><span class="tdesc">秘境 · 世界条目</span></span>
+                  <span class="tcol"><span class="tname">🗺 天墉城</span><span class="tdesc">根图 · 0 标记</span></span>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+              </div>
+              <!-- #1322：未挂图条目折叠区（默认收起）——无图条目不再污染主树；展开后仍可建首张图 -->
+              <div style="border-top:1px solid var(--line)" data-testid="map-tree-unmapped">
+                <button class="tree-row" style="width:100%;text-align:left;color:var(--ink-2)" data-testid="map-tree-unmapped-toggle" aria-expanded="false">
+                  <span class="chev"><span data-ic="chevron-right"></span></span>
+                  <span class="tcol"><span class="tname">未挂图条目（2）</span></span>
+                </button>
+              </div>
+              <!-- 展开态示意（原型：折叠区展开后，无图条目仍带「创建子图」入口） -->
+              <div style="border-top:1px solid var(--line);opacity:.55">
+                <div class="tree-row" style="color:var(--ink-2)">
+                  <span class="chev open"><span data-ic="chevron-right"></span></span>
+                  <span class="tcol"><span class="tname">未挂图条目（2）</span></span>
+                </div>
+                <div class="tree-row" style="padding-left:30px">
+                  <span style="width:20px;flex:none"></span>
+                  <span class="tcol"><span class="tname">🗺 青云宗</span><span class="tdesc">尚未建图 · 可创建首张图</span></span>
+                  <span class="badge">势力</span>
+                  <span class="row-actions"><button title="创建子图"><span data-ic="mapplus"></span></button><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="tree-row" style="padding-left:30px">
+                  <span style="width:20px;flex:none"></span>
+                  <span class="tcol"><span class="tname">🗺 剑冢</span><span class="tdesc">尚未建图 · 可创建首张图</span></span>
                   <span class="badge">秘境</span>
+                  <span class="row-actions"><button title="创建子图"><span data-ic="mapplus"></span></button><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
                 </div>
               </div>
             </div>
+            <!-- #1322：左右拖动改宽手柄（240~640px clamp；拖动不替代 overflow-x-auto，#728 契约） -->
+            <div data-testid="map-tree-resize-handle" style="position:absolute;top:0;bottom:0;right:-4px;width:8px;cursor:col-resize"></div>
           </aside>
           <!-- 右栏：画布 + pin 列表 -->
           <div class="map-right">

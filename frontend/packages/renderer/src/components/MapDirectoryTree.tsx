@@ -44,8 +44,14 @@ export interface MapDirectoryTreeProps {
   pinCounts?: Record<string, number>;
 }
 
-/** F43 P1（§5.3）：items → 树（顶层 = parent_id null/缺失；孤儿降级顶层；按 items 顺序保序） */
-function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
+/** F43 P1（§5.3）：items → 树（顶层 = parent_id null/缺失；孤儿降级顶层；按 items 顺序保序）
+ *  #1322：`isMapped` 提供「该条目已挂图」判据——逐节点过滤，主树只保留「已挂图」节点及其
+ *  **有图后代链上的祖先**（祖先仅为承载路径而保留）；其余无图节点收进 unmappedNodes（折叠区，
+ *  仍可建首张图）。缺省 isMapped → 不过滤（保留 P1 全量树语义，供非地图面复用）。 */
+function buildWorldTree(
+  items: LibraryItemDTO[],
+  isMapped?: (id: string) => boolean,
+): { roots: WorldTreeNode[]; unmappedNodes: WorldTreeNode[] } {
   const nodes = new Map<string | number, WorldTreeNode>();
   for (const item of items) {
     nodes.set(item.id, { item, children: [] });
@@ -61,7 +67,45 @@ function buildWorldTree(items: LibraryItemDTO[]): WorldTreeNode[] {
       roots.push(node);
     }
   }
-  return roots;
+  if (!isMapped) return { roots, unmappedNodes: [] };
+
+  // 自底向上收集「主树保留集」：已挂图节点 + 其全部祖先
+  const keep = new Set<string | number>();
+  const markAncestors = (item: LibraryItemDTO) => {
+    const parentId = item.parent_id;
+    if (parentId === null || parentId === undefined) return;
+    const parentNode = nodes.get(parentId);
+    if (!parentNode || keep.has(parentId)) return;
+    keep.add(parentId);
+    markAncestors(parentNode.item);
+  };
+  for (const item of items) {
+    if (isMapped(String(item.id))) {
+      keep.add(item.id);
+      markAncestors(item);
+    }
+  }
+  return { roots: buildFilteredTree(roots, keep), unmappedNodes: collectUnmapped(roots, keep) };
+}
+
+/** 按 keep 集重建树（丢弃不在 keep 的节点；保留集内节点的后代仍按 keep 递归） */
+function buildFilteredTree(nodes: WorldTreeNode[], keep: Set<string | number>): WorldTreeNode[] {
+  return nodes
+    .filter((node) => keep.has(node.item.id))
+    .map((node) => ({ item: node.item, children: buildFilteredTree(node.children, keep) }));
+}
+
+/** 收集未挂图节点（自身不在 keep；不含其有图后代——那些已进主树） */
+function collectUnmapped(nodes: WorldTreeNode[], keep: Set<string | number>): WorldTreeNode[] {
+  const out: WorldTreeNode[] = [];
+  for (const node of nodes) {
+    if (keep.has(node.item.id)) {
+      out.push(...collectUnmapped(node.children, keep));
+    } else {
+      out.push({ item: node.item, children: collectUnmapped(node.children, keep) });
+    }
+  }
+  return out;
 }
 
 /** 地图树节点行：map-tree-node-<id> 行（缩进 = depth*18+12）+ 拖拽把手 + 🗺 徽标 + hover 操作 */
@@ -576,6 +620,8 @@ export function MapDirectoryTree({
   const { t } = useI18n();
   const dragSourceRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  // #1322：未挂图条目折叠区默认收起（主树显示图，条目按需展开）
+  const [unmappedOpen, setUnmappedOpen] = useState(false);
 
   // parent_map_id → 子图列表（Map 缓存；递归渲染，深度不限）
   const childrenByParent = useMemo(() => {
@@ -615,7 +661,11 @@ export function MapDirectoryTree({
     });
   }, [worldItems, worldCategories]);
 
-  const worldRoots = useMemo(() => buildWorldTree(visibleWorldItems), [visibleWorldItems]);
+  // #1322：主树只显示图——无图条目出主树、进下方折叠区；有图条目的祖先链保留（承载路径）。
+  const { roots: worldRoots, unmappedNodes } = useMemo(
+    () => buildWorldTree(visibleWorldItems, (id) => mapByLocation.has(id)),
+    [visibleWorldItems, mapByLocation],
+  );
   const worldItemIds = useMemo(
     () => new Set(visibleWorldItems.map((i) => String(i.id))),
     [visibleWorldItems],
@@ -693,7 +743,7 @@ export function MapDirectoryTree({
 
   return (
     <div data-testid="map-directory-tree" className="flex min-h-0 flex-col overflow-x-auto">
-      <div className="min-h-0 flex-1">
+      <div data-testid="map-tree-main" className="min-h-0 flex-1">
         {worldRoots.length === 0 && orphanMaps.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-ink-2">{t('common.empty')}</div>
         ) : (
@@ -719,6 +769,40 @@ export function MapDirectoryTree({
           </>
         )}
       </div>
+      {/* #1322：未挂图条目折叠区（默认收起）——主树只显示图；此处保留 map-create-child-* 建首张图入口 */}
+      {unmappedNodes.length > 0 && (
+        <div className="border-t border-line" data-testid="map-tree-unmapped">
+          <button
+            type="button"
+            data-testid="map-tree-unmapped-toggle"
+            aria-expanded={unmappedOpen}
+            className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[12px] text-ink-2 transition-colors duration-150 hover:bg-surface-2/60 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            onClick={() => setUnmappedOpen((v) => !v)}
+          >
+            <ChevronRight
+              className={cn('h-3.5 w-3.5 shrink-0 transition-transform duration-180', unmappedOpen && 'rotate-90')}
+              aria-hidden="true"
+            />
+            {t('lib.map.unmappedSection', { n: unmappedNodes.length })}
+          </button>
+          {unmappedOpen &&
+            unmappedNodes.map((node) => (
+              <WorldNodeRow
+                key={String(node.item.id)}
+                node={node}
+                depth={0}
+                mapByLocation={mapByLocation}
+                childrenByParent={childrenByParent}
+                collapsedIds={collapsedIds}
+                onToggle={onToggle}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onCopy={onCopy}
+                {...dragProps}
+              />
+            ))}
+        </div>
+      )}
       {/* 空白区：拖到此处 = parent_map_id=null（变根图） */}
       <div
         data-testid="map-tree-drop-zone"
