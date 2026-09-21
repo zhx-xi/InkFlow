@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/agent/agent.html + agent-<state>.png（Agent 链卡片 / 角色池展开 / 依赖编辑器 / Agent 列表 / 编辑弹窗 / 模板列表 / 模板编辑弹窗 / 风险确认框等状态截图）
+- 原型引用：design/GUI/agent/agent.html + agent-<state>.png（main/risk-confirm/template-dialog/templates）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 

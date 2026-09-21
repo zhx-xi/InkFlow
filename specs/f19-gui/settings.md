@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/settings/settings.html + settings-<state>.png（分类导航 / 常规面板 / 保存指示 / 模型分类（含 F59 思考档位）/ 模板分类等状态截图）
+- 原型引用：design/GUI/settings/settings.html + settings-<state>.png（account/general/models/reasoning/saved）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 

@@ -1,7 +1,8 @@
-"""契约测试（#1326 PR 1）：ci_cd/check_gui_spec_sync.py 纯函数面 + main 退出码。
+"""契约测试（#1326 PR 1 + #1338 扩展）：ci_cd/check_gui_spec_sync.py 纯函数面 + main 退出码。
 
 护栏职责：校验 `design/GUI/<page>/` 原型目录集 ↔ `specs/f19-gui/<page>.md` 页规格集
-**双向一一对应**，防止再出现孤儿（有原型无规格）/ 幽灵（有规格无原型）。
+**双向一一对应**，防止再出现孤儿（有原型无规格）/ 幽灵（有规格无原型）；
+并校验页规格 L4 头部含自指指针 `> 对应 design/GUI/<page>/`（#1338）。
 
 脚本位于仓库根 ci_cd/、不属于 backend 包，故经 importlib.util 按路径动态加载
 （与 ci_cd/tests/test_check_doc_pointers.py 同法；文件缺失 → exec_module 抛
@@ -11,14 +12,18 @@ FileNotFoundError，无收集期 ImportError）。
 1. check_gui_spec_sync(repo_root: str) -> list[tuple[str, str]]
    - 页面目录集 = design/GUI/ 下全部子目录，排除 `_tools`。
    - 页规格集 = specs/f19-gui/*.md 的 stem，排除 `spec.md`。
-   - 返回不匹配项 [(kind, page)]，kind ∈ {"orphan", "ghost"}，按 page 排序；空列表 = 一一对应。
+   - 返回不匹配项 [(kind, page)]，kind ∈ {"orphan", "ghost", "pointer"}，按 page 排序；
+     空列表 = 一一对应且指针自指。
    - orphan = 有原型目录无页规格；ghost = 有页规格无原型目录。
+   - pointer = 页规格第 4 行（0-based 索引 3）非 `> 对应 design/GUI/<page>/` 形态
+     （缺失 / 指向他页 / 文件不足 4 行均算）；只对 `specs ∩ dirs` 判 pointer，
+     不与 ghost 重复报同一根因。
    - 目录/规格根不存在 → 视为空集（不抛异常）。
 2. main() 退出码语义（任意 stdout 编码下同约束）：
-   - 全部对应 → 打印 `[check_gui_spec_sync] OK: N page(s) matched prototype <-> spec` 后 return 0。
-   - 存在不匹配 → 打印 `[check_gui_spec_sync] M mismatch(es):` + 每行含 `orphan:`/`ghost:`
-     与 page 名后 return 1；非 UTF-8 stdout 下不得抛 UnicodeEncodeError
-     （sys.stdout.reconfigure(errors="replace") 兜底）。
+   - 全部通过 → 打印 `[check_gui_spec_sync] OK: N page(s) matched prototype <-> spec` 后 return 0。
+   - 存在不匹配 → 打印 `[check_gui_spec_sync] M mismatch(es):` + 每行含
+     `orphan:`/`ghost:`/`pointer:` 与 page 名后 return 1；非 UTF-8 stdout 下不得抛
+     UnicodeEncodeError（sys.stdout.reconfigure(errors="replace") 兜底）。
    - 缺参数（argv 只有脚本名）→ 打印模块 `__doc__` 后 return 2。
 
 测试全部用 tmp 构造假仓库，零真实仓库依赖（正例基线口径由验收命令在主仓根实测 = 15 页）。
@@ -44,8 +49,45 @@ def _load_script():
     return module
 
 
-def _make_repo(root: Path, pages: list[str], specs: list[str]) -> Path:
-    """构造假仓库：pages 建 design/GUI/<p>/ 目录，specs 建 specs/f19-gui/<s>.md 文件。"""
+# 合法头部 L4 指针（#1338：15 页统一形态，门禁严格校验）
+def _header(page: str) -> str:
+    return (
+        f"# {page}\n\n> 页面: {page}\n"
+        f"> 对应 design/GUI/{page}/（官方简图 {page}.html + {page}-<state>.png）\n"
+    )
+
+
+def _make_repo(
+    root: Path, pages: list[str], specs: list[str], *, pointers: dict[str, str | None] | None = None
+) -> Path:
+    """构造假仓库：pages 建 design/GUI/<p>/ 目录，specs 建 specs/f19-gui/<s>.md 文件。
+
+    specs 默认写入合法 L4 指针（自指）；pointers 可逐页覆盖 L4 内容
+    （值 None = 不写 L4 行，用于构造「无指针」反例）。
+    """
+    proto = root / "design" / "GUI"
+    proto.mkdir(parents=True, exist_ok=True)
+    for page in pages:
+        (proto / page).mkdir(parents=True, exist_ok=True)
+    spec_dir = root / "specs" / "f19-gui"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    overrides = pointers or {}
+    for name in specs:
+        if name not in overrides:
+            (spec_dir / f"{name}.md").write_text(_header(name), encoding="utf-8")
+        elif overrides[name] is None:
+            # 只有 3 行头部，无 L4
+            (spec_dir / f"{name}.md").write_text(f"# {name}\n\n> 页面: {name}\n", encoding="utf-8")
+        else:
+            (spec_dir / f"{name}.md").write_text(
+                f"# {name}\n\n> 页面: {name}\n> 对应 design/GUI/{overrides[name]}/（…）\n",
+                encoding="utf-8",
+            )
+    return root
+
+
+def _make_repo_legacy(root: Path, pages: list[str], specs: list[str]) -> Path:
+    """旧形态：specs 只写 `# <name>`（无头部指针）——保留给「无指针必红」用例。"""
     proto = root / "design" / "GUI"
     proto.mkdir(parents=True, exist_ok=True)
     for page in pages:
@@ -164,3 +206,89 @@ def test_main_survives_cp1252_stdout_with_cjk_path(monkeypatch, tmp_path: Path) 
     _cp1252_stdout(monkeypatch)
     monkeypatch.setattr(sys, "argv", ["check_gui_spec_sync.py", str(root)])
     assert module.main() == 1
+
+
+# ─────────────────────────── #1338 头部指针（L4）契约 ───────────────────────────
+
+
+def test_valid_header_pointer_passes(monkeypatch, tmp_path: Path, capsys) -> None:
+    """正例（#1338 基线形态）：L4 自指 → 无问题 + main 退出码 0。"""
+    module = _load_script()
+    _make_repo(tmp_path, ["memory", "writing"], ["memory", "writing"])
+    assert module.check_gui_spec_sync(str(tmp_path)) == []
+    monkeypatch.setattr(sys, "argv", ["check_gui_spec_sync.py", str(tmp_path)])
+    assert module.main() == 0
+    assert "header pointer self-reference" in capsys.readouterr().out
+
+
+def test_missing_header_pointer_reports_and_main_exits_one(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """反例（核心，#1338 可证伪 A）：删掉 L4 指针行 → pointer + 退出码 1。"""
+    module = _load_script()
+    _make_repo(tmp_path, ["memory", "writing"], ["memory", "writing"], pointers={"memory": None})
+    assert module.check_gui_spec_sync(str(tmp_path)) == [("pointer", "memory")]
+    monkeypatch.setattr(sys, "argv", ["check_gui_spec_sync.py", str(tmp_path)])
+    assert module.main() == 1
+    out = capsys.readouterr().out
+    assert "[check_gui_spec_sync] 1 mismatch(es):" in out
+    assert "pointer:" in out
+    assert "line 4" in out
+
+
+def test_cross_page_header_pointer_reports(monkeypatch, tmp_path: Path) -> None:
+    """反例（#1338 可证伪 B）：L4 存在但指向他页 → pointer（不因「有指针」而放过）。"""
+    module = _load_script()
+    _make_repo(
+        tmp_path, ["memory", "writing"], ["memory", "writing"], pointers={"memory": "writing"}
+    )
+    assert module.check_gui_spec_sync(str(tmp_path)) == [("pointer", "memory")]
+
+
+def test_header_pointer_requires_line_four(tmp_path: Path) -> None:
+    """行位敏感：L4 正确但写在第 1 行（非第 4 行）→ 仍报 pointer。"""
+    module = _load_script()
+    _make_repo(tmp_path, ["memory"], ["memory"])
+    spec = tmp_path / "specs" / "f19-gui" / "memory.md"
+    spec.write_text(
+        "> 对应 design/GUI/memory/（…）\n# memory\n\n> 页面: memory\n", encoding="utf-8"
+    )
+    assert module.check_gui_spec_sync(str(tmp_path)) == [("pointer", "memory")]
+
+
+def test_legacy_spec_without_header_reports_pointer(tmp_path: Path) -> None:
+    """存量形态：规格只有 `# <name>`（无头部）→ pointer（#1338 前的 14 页旧形态）。"""
+    module = _load_script()
+    _make_repo_legacy(tmp_path, ["memory"], ["memory"])
+    assert module.check_gui_spec_sync(str(tmp_path)) == [("pointer", "memory")]
+
+
+def test_ghost_page_is_not_double_reported_as_pointer(tmp_path: Path) -> None:
+    """去重：无原型目录的规格只报 ghost，不叠加 pointer（同一根因不报两次）。
+
+    memory 有目录 + 合法 L4 → 无问题；writing 无目录 → 只报 ghost（不因「无目录」
+    连带报 pointer，否则同一根因报两次、报告计数虚高）。
+    """
+    module = _load_script()
+    _make_repo(tmp_path, ["memory"], ["memory", "writing"])
+    assert module.check_gui_spec_sync(str(tmp_path)) == [("ghost", "writing")]
+
+
+def test_orphan_and_pointer_reported_together(monkeypatch, tmp_path: Path, capsys) -> None:
+    """orphan 与 pointer 可同时存在 → 计数 2 + 两类报告行都在 + 退出码 1。"""
+    module = _load_script()
+    _make_repo(tmp_path, ["memory", "book"], ["memory"], pointers={"memory": None})
+    assert module.check_gui_spec_sync(str(tmp_path)) == [("orphan", "book"), ("pointer", "memory")]
+    monkeypatch.setattr(sys, "argv", ["check_gui_spec_sync.py", str(tmp_path)])
+    assert module.main() == 1
+    out = capsys.readouterr().out
+    assert "[check_gui_spec_sync] 2 mismatch(es):" in out
+    assert "orphan:" in out
+    assert "pointer:" in out
+
+
+def test_pointer_kind_is_exported() -> None:
+    """kind 常量导出：POINTER == "pointer"（报告行前缀以此为准）。"""
+    module = _load_script()
+    assert module.POINTER == "pointer"
+    assert module.POINTER_LINE_INDEX == 3

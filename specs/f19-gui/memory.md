@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/memory/memory.html + memory-<state>.png
+- 原型引用：design/GUI/memory/memory.html + memory-<state>.png（add-form/extracting/stats）
 > 低保真排版示意简图（区块+标签，非精确像素）：
 
 ```text

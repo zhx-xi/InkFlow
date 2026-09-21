@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/projects/projects.html + projects-<state>.png（卡片网格 / 加载骨架 / 空态 / 新建对话框 / 卡片菜单 / 重命名 / 删除确认 / 导出对话框等状态截图）
+- 原型引用：design/GUI/projects/projects.html + projects-<state>.png（empty/grid/menu-open/new-dialog）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 

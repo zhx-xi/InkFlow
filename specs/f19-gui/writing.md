@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/writing/writing.html + writing-<state>.png（三栏布局 / 骨架加载 / 流式生成中 / 右栏折叠 / 无项目空态等状态截图）
+- 原型引用：design/GUI/writing/writing.html + writing-<state>.png（collapsed/context-injected/context-no-record/delete-auth/delete-hitl/editor-idle/empty/global-chat/reasoning/streaming/thinking-level）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 

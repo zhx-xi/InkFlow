@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/sessions/sessions.html + sessions-<state>.png
+- 原型引用：design/GUI/sessions/sessions.html + sessions-<state>.png（archived/delete-dialog/directory/empty/rename）
 > 低保真排版示意简图（区块+标签，非精确像素）：
 
 ```text
