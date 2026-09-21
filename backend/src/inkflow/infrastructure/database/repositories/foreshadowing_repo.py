@@ -202,6 +202,20 @@ class SQLiteForeshadowingRepository:
         orms = result.scalars().all()
         return [_orm_to_domain(o) for o in orms], total
 
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[Foreshadowing]:
+        """列出项目内全部伏笔，按 title ASC（#1325：图谱聚合全量节点，不分页）."""
+        # #1166: 过滤值超 int64 范围 → 空结果，防 128 位 int 绑定抛 OverflowError
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
+        stmt = (
+            select(ForeshadowingORM)
+            .where(ForeshadowingORM.project_id == pid)
+            .order_by(ForeshadowingORM.title.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [_orm_to_domain(o) for o in result.scalars().all()]
+
     async def list_open(self, project_id: uuid.UUID) -> builtins.list[Foreshadowing]:
         """列出项目内全部未回收伏笔（status=open），供 F6 注入消费.
 

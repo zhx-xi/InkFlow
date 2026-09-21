@@ -107,6 +107,17 @@ class OutlineRepositoryProtocol(Protocol):
         """
         ...
 
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[Outline]:
+        """列出项目内全部大纲，按 name ASC（#1325：图谱聚合全量节点，不分页）.
+
+        Args:
+            project_id: 项目主键（领域 UUID，见 #1291）.
+
+        Returns:
+            大纲列表.
+        """
+        ...
+
     async def update(self, outline: Outline) -> Outline:
         """更新大纲（按 id 定位）.
 

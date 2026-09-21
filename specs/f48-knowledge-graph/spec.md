@@ -1,7 +1,9 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.3 | **日期**: 2026-09-17 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **Spec 版本**: 1.4 | **日期**: 2026-09-21 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+>
+> **Spec 变更**（1.3 → 1.4，2026-09-21 #1325）：**图谱聚合新增 `scope` 节点集语义（默认 `related`）+ 节点集改走全量方法 + 画布交互补全**——§5.2（scope 语义 + 顺序约束 + 每表全量 + C3 修复）、§5.4（样式表 import / Handle / 拉线建关系 / 全量视图开关 / 画布提示 / 关系列表分页）、§12 决策 4（状态演进）、§13 验收 M6、§14.1 端点状态流。**触发缺陷**：C1 `@xyflow/react/dist/style.css` 从未 import → 边 `stroke` 无值（不可见）+ 节点失 `position:absolute`（堆叠）＝ 用户「看得到块、看不到线」；C3 节点走 `repo.list()` 默认 `limit=50` → 实测 217/438 节点、8 条边被当孤立边丢弃（与 v1.3 §5.2「每表全量返回」冲突）。**归因修正**：C2（无 Handle）**不是**「无线」成因——React Flow v12 无 Handle 会回退节点中心锚点，边仍可渲染；C2 是「拉线建关系」的前置。
 >
 > **Spec 变更**（1.2 → 1.3，2026-09-17 #495 落地）：**`character_relations` 表已废弃删除，角色关系数据面统一到 `knowledge_relations` 的 character↔character 子空间**（六元组 `source_type='character'` + `target_type='character'`）——§1 核心交付/§1.1、§1.2 边界（双轨写入 → 单轨）、§2.1 规则 3b、§2.4 GraphEdge（`id` 恒 `kr:<uuid>`、`source_table` 恒 `knowledge_relations`）、§2.6 决策论证表、§3.1-§3.2 端点与示例、§5.2 聚合（单表，去重逻辑废止）、§5.5.1、§5.6 排序、§6 deps、§8 文件结构、§9 关键测试场景、§10 归属、§11 依赖、§12 决策 1/4/9/12 状态留痕、§13 验收、§14.1 端点状态流、待澄清 Q1 同步。**F9→F48 契约零变更**（`CharacterRelation` 领域模型 / 四端点 / CLI / GUI 保留，仅底层存储换表）；Q1-C 最终以「反向合并（character_relations → knowledge_relations）+ 契约零变更」形态实施。
 >
@@ -424,26 +426,54 @@ delete_relation:  ① 关系存在 ② 真删单行
 list_relations:   过滤（source_type/target_type/relation_type/source）+ 分页（offset/limit，created_at DESC）
 ```
 
-### 5.2 图谱聚合查询（`graph(project_id)`）
+### 5.2 图谱聚合查询（`graph(project_id, scope)`）
 
 **数据源（#495 起单表）**：
 
 ```text
-nodes:  = 六类实体全部条目（characters + world_settings + outlines + timeline_events
-          + foreshadowings + map_pins，按项目过滤，每表全量返回）
-          ——实体条目即使无边也作为节点显示（图谱完整视图，用户可从此建关系）
+nodes:  = 六类实体节点（characters + world_settings + outlines + timeline_events
+          + foreshadowings + map_pins，按项目过滤，**每表全量返回**——不走分页 list()）
+          ——节点集范围由 scope 决定（见下）
 edges:  = knowledge_relations（本项目全部，含 source=ai 预留；角色↔角色关系即
           source_type='character' AND target_type='character' 子空间行，同表）
 去重:   —（#495 后单表 + 六元组全唯一索引，已无跨表同键行，原「两表去重、
         knowledge 优先」逻辑随 cr_edges 段一并删除，2026-09-17）
 ```
 
+**`scope` 节点集语义（v1.4，#1325 拍板）**：
+
+```text
+scope="related"（**默认**）:
+  nodes = 参与至少一条 knowledge_relations 的实体
+          （端点 ∈ 节点集者；即「有关系才上图」）
+  ——无任何关系时**回退「角色全集」**（新项目首屏只看到角色块）
+scope="all":
+  nodes = 六类实体全量节点（完整体检视图；本地个人项目量级可达数百块）
+端点级 scope: GET /projects/{pid}/knowledge-graph?scope=related|all（缺省 related）
+```
+
+> **设计动机**（#1325 用户诉求）：旧实现把六类实体全量灌进画布（438 块），用户「默认只看
+> 到角色块、添加关系后才在线上和关联块显示地点/设定/伏笔」的预期落空。
+> `related` 让图谱随关系增长而展开；`all` 保留完整体检能力。
+>
+> ⚠️ **顺序约束（实现纪律）**：`related` 收窄必须发生在「孤立边过滤」**之前**，
+> 且必须用**未过滤**的关系行计算关联集。否则「只在孤立边里出现的实体」会被自己从
+> 节点集抹掉（例：`幽灵→乙` 与 `甲→乙`，若先用已过滤边集算，乙会因幽灵边被过滤而失联）。
+
 **实现要点**：
 
 - 节点 ID 格式 `"<entity_type>:<entity_uuid>"`（跨表唯一）；图谱边引用节点 ID（GraphNode.id）
-- 查询 = 各实体 repo `list_by_project`（F9-F13/F36 既有方法，只读复用）+ knowledge_relations repo `list_by_project`（**单表读取全部边，含角色↔角色子空间行**；#495 后不再注入 CharacterRepositoryProtocol 读关系——2026-09-17）；服务层组装 GraphNode/GraphEdge
-- **性能**：单项目实体量级（本地个人项目，数百~数千条目）——列表查询即可，不做图数据库/缓存（F36 §2.2 同款「本地量级」论证）
+- 查询 = 各实体 repo **全量方法**（`character_repo.list_all` / `world_repo.list_all_active` /
+  `outline_repo.list_all` / `timeline_repo.list_all` / `foreshadow_repo.list_all`，均为 F9-F13/F10
+  既有或 #1325 新增的只读方法）+ knowledge_relations repo `list_by_project`（**单表读取全部边**；
+  #495 后不再注入 CharacterRepositoryProtocol 读关系——2026-09-17）；服务层组装 GraphNode/GraphEdge
+- **性能**：单项目实体量级（本地个人项目，数百~数千条目）——列表查询即可，不做图数据库/缓存
+  （F36 §2.2 同款「本地量级」论证）。`scope=all` 在 438 块量级下由前端 React Flow 承担，
+  渲染性能如需优化见 #1325 报告（暂不引入虚拟化）
 - **孤立边防御**：knowledge_relations 中指向已不存在实体的行（实体硬删清理遗漏）——图谱查询时**跳过该边**（不 500），并记 loguru warning（与 F36 场景 6 同款容错）
+- **#1325 修 C3**：旧实现走 `repo.list(project_id)` 取默认 `limit=50` → 实测 217/438 节点
+  （timeline 50/215、foreshadow 50/94），并连带丢弃 8 条端点落在第 51+ 位的边。改走全量方法后
+  `scope=all` 拿到真实 438 节点
 
 ### 5.3 实体硬删 → 关系级联清理（D3）
 
@@ -470,10 +500,24 @@ tab 改造:   CATS 中 key='rag' → key='knowledge'（labelKey nav.lib.rag → 
             PATCH/DELETE_ENDPOINTS 继续排除 knowledge（图谱关系编辑走画布内交互，非列表行编辑）
             空态 CTA 从 navigate('/writing') → 图谱建关系引导（无实体时引导去各实体页创建）
 图谱画布:   @xyflow/react（Q2=A 拍板定稿）——节点=实体（类型着色 + 图标），边=关系（label=relation_type，有向箭头）
-交互:       拖拽节点（布局自由排布）/ 滚轮缩放 / 点击节点 → 详情抽屉（只读摘要 + 「去编辑」跳转实体页）
+交互:       拖拽节点（布局自由排布 + 位置持久化）/ 滚轮缩放 / 点击节点 → 详情抽屉（只读摘要 + 「去编辑」跳转实体页）
             点击边 → 详情（关系类型/描述/来源）+ 编辑/删除按钮
+            全量视图开关（#1325）：「显示全部实体」→ `?scope=all`（缺省 related，见 §5.2）
+            拉线建关系（#1325）：从节点 Handle 拖到另一节点 → 本地即时成边 + 弹关系表单预填两端
+            （落库走既有 POST /knowledge-relations；保存后随 graph 重拉收敛，失败不留幽灵边）
+            画布提示（#1325，对齐 design/GUI/knowledge/knowledge.html）：「滚轮缩放 · 拖拽节点」
+样式表:     `@xyflow/react/dist/style.css` 必须在 `src/main.tsx` 显式 import（#1325 修 C1）——
+            库 CSS 提供 `.react-flow__node{position:absolute}`（缺 → 节点堆叠）、
+            `.react-flow__edges{position:absolute}`、`.react-flow__edge-path{stroke:...}`
+            （缺 → 边 stroke 无值 = SVG 默认 none = 边不可见）
+Handle:     自定义节点 `KgNode` 必须渲染 `<Handle type="target" position={Position.Left}>` 与
+            `<Handle type="source" position={Position.Right}>`（#1325 修 C2）——
+            React Flow v12 无 Handle 会回退节点中心锚点（边仍可渲染），但 Handle 是
+            **拉线建关系**的前置，不可省
             工具栏「新建关系」→ 表单（起点类型+搜索实体 / 关系类型 / 终点类型+搜索实体 / 描述）
 关系列表:   tab 内可切换「图谱视图 / 关系列表」——列表模式复用 F9 角色关系管理交互（筛选/编辑/删除）
+            分页（#1325）：列表请求带 `?limit=&offset=`，下方渲染 Pagination（testIdPrefix
+            `library-kg-page`）——旧实现不带分页参数，后端默认 limit=50 使第 51 条起永久不可见
 ```
 
 > **前端数据流**：图谱视图加载调 `GET /projects/{pid}/knowledge-graph`（一次拿 nodes+edges）；增删改后**局部刷新**（重拉 graph 或本地 patch 边列表——实现期定，测试契约见 §9）。
@@ -698,11 +742,15 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 
 ```text
 单元（repo）:    knowledge_relations CRUD 往返 + 六元组唯一约束 + 过滤 + 真删 + delete_by_entity   ~14 cases
+                实体全量方法（character/outline/foreshadowing list_all；world/timeline 既有）      ~6 cases（#1325）
 单元（service）: 校验链（实体不存在/跨项目/自环/同键冲突）+ 图谱聚合（单表全量，含角色↔角色子空间行）+ 清理回调
                 + 孤立边防御 + bulk_create_relations 预留（#479 面）                              ~20 cases
-API（集成）:     CRUD 端点 + 错误映射 + 图谱聚合响应形状                                           ~12 cases
+                + scope 节点集语义（related/all/回退角色全集/收窄先于孤立边过滤）               ~10 cases（#1325）
+API（集成）:     CRUD 端点 + 错误映射 + 图谱聚合响应形状 + ?scope= 透传                            ~13 cases
 CLI:             knowledge 组命令 + graph 输出                                                      ~10 cases
 前端:            图谱 tab 渲染/空态/建关系表单/边编辑删除（library-kg.test.tsx）                    ~8 cases
+                + 画布契约（样式表 import/Handle/拖拽保持/持久化/拉线/scope 开关/提示）           ~9 cases（#1325）
+                + 关系列表分页（limit·offset/分页条/跨页可达/末页禁用）                            ~6 cases（#1325）
 ```
 
 ### 关键测试场景
@@ -720,6 +768,10 @@ CLI:             knowledge 组命令 + graph 输出                             
 11. **Pydantic 边界**：relation_type 空白/21 字符 → 422；description 501 字符 → 422
 12. **空图谱**：无实体无关系 → 200 `{"nodes": [], "edges": []}`
 13. **前端图谱 tab**：mock graph API → 画布渲染节点/边；点击边 → 详情 + 删除；空态引导（RTL + vi.mock，同 library-p*.test.tsx 模式）
+14. **scope 节点集（#1325）**：`scope=all` → 六类全量且**分页 `list()` 一次都不被调用**；`scope=related`（默认）→ 只留参与关系的实体；无关系 → 回退角色全集；无关系且无角色 → 空；🔴 **收窄先于孤立边过滤**（`幽灵→乙` + `甲→乙` → 乙必须保留、幽灵边被跳过）
+15. **画布契约（#1325）**：`main.tsx` 含 `@xyflow/react/dist/style.css` import（可证伪：删则 FAIL）；每节点 source/target 两个 `.kg-handle`；拖拽后位置不被网格覆盖；拖拽结束写 `localStorage`；连线 → 关系表单预填两端；`library-kg-scope-all` 反映 scope
+16. **关系列表分页（#1325）**：首屏 `?limit=50&offset=0`；`library-kg-page-*` 三件套；next → `offset=50` 且第 51 条可见；首页 prev 禁用 / 末页 next 禁用
+17. **自动化盲区（#1325 已知）**：jsdom 无真实指针几何与 SVG 布局测量 → **拖拽位移/缩放/边可见性/线条避让只能靠真实浏览器（人工或 Playwright）复验**；本层契约只证明「结构/接线/props」正确
 
 ### 覆盖率
 
@@ -777,7 +829,7 @@ F48 被依赖:
 | 1 | **新建通用关系表 knowledge_relations** | 六元组（source_type+source_id / target_type+target_id）+ relation_type + description + source；project_id 冗余 | 表达六类实体任意对；与 F9 character_relations 并存零破坏；图谱聚合单一查询面 | 扩展 character_relations（破坏 F9）；每对实体一张表（表爆炸）；实体加 JSON 列（双份真相）；迁移合并（破坏已交付）——**状态演进**：#495（2026-09-17）已完成 character_relations → knowledge_relations 合并，本决策方向成立（F9 契约零变更） |
 | 2 | **跨实体无 DB FK，服务层显式校验** | source_id/target_id 无 ForeignKey；实体存在 + 同项目由 knowledge_graph_service 分派各实体 repo 校验；各实体错误类转换 KnowledgeEntityNotFoundError | 跨 6 张表无法单列 FK；服务层统一错误面（跨模块调用方只面对图谱契约）；F35/F36 同款 | 每实体对建 FK（不可行）；透传各实体错误类（错误面分散） |
 | 3 | **实体硬删 → 关系清理走可选回调（F36 钩子先例）** | knowledge_graph_service.cleanup_for_entity + deps 注入各实体 service 删除路径 + project hard_delete 钩子 | 不修改各实体 service 公共契约（默认 None 向后兼容）；防悬空边 + 唯一键残留 | 修改各实体 service 硬编码清理（破坏 F9-F13 契约）；依赖 DB FK（跨表无 FK） |
-| 4 | **图谱聚合 = 合并两表 + 去重**（**#495 后已单表化**） | graph 端点 nodes（六类实体全量）+ edges（knowledge_relations ∪ character_relations，同键去重，knowledge 优先）——**状态演进**：#495（2026-09-17）删除 cr_edges 段，edges 单一来源 knowledge_relations，去重逻辑废止 | 图谱显示完整（含 F9 既有角色边）；单一图谱查询面（前端零二次聚合）；角色页与图谱页展示一致（合并后仍成立：同表读写） | 图谱只显示 knowledge_relations（既有角色边不可见——信息缺失） |
+| 4 | **图谱聚合 = 合并两表 + 去重**（**#495 后已单表化**） | graph 端点 nodes（六类实体全量，**范围由 scope 决定**：`related`（默认，参与关系者；无关系回退角色全集）/ `all`（六类全量））+ edges（knowledge_relations ∪ character_relations，同键去重，knowledge 优先）——**状态演进**：#495（2026-09-17）删除 cr_edges 段，edges 单一来源 knowledge_relations，去重逻辑废止；**#1325（2026-09-21）新增 scope**，默认从「全量」改为「related」 | 图谱显示完整（含 F9 既有角色边）；单一图谱查询面（前端零二次聚合）；角色页与图谱页展示一致（合并后仍成立：同表读写）；**#1325 起图谱随关系增长而展开**（用户「默认只有角色块，加了关系才出现地点/设定/伏笔」） | 图谱只显示 knowledge_relations（既有角色边不可见——信息缺失）；~~实体条目即使无边也作为节点显示~~（#1325 起改为 `scope=all` 显式切换——438 块裸奔可用性存疑） |
 | 5 | **真删语义（无 is_deleted）** | knowledge_relations 新表无软删列；DELETE 物理删除 | 普通实体删除收敛真删（F36 D1=B/D7、#211 统一登记）；新表零历史包袱 | 带 is_deleted（F10 同款——被否决） |
 | 6 | **source 列预留 #479** | manual/ai 枚举 + 唯一索引 = AI 幂等去重键；bulk_create_relations(project_id, relations, source=ai) 写入端口 | 数据面先行（用户拍板「关系来源：手动创建 + 预留 #479」）；#479 实现零 schema 变更 | #479 时再加列（F48 已发布，加列迁移成本） |
 | 7 | **图谱可视化选型 @xyflow/react** | React Flow v12（37.9K stars，MIT，React 19 兼容）——节点/边渲染 + 拖拽/缩放/自定义节点开箱即用 | 最成熟 React 图可视化库；零布局自研；社区活跃（xyflow 官方维护） | 手写 SVG/Canvas（拖拽/缩放/布局全自研，工作量翻倍）；antv G6（重依赖，非 React 原生）；d3-force（无现成交互） |
@@ -798,7 +850,7 @@ F48 被依赖:
 | M3 | API 契约（CRUD + 图谱聚合 + 错误映射） | `pytest backend/tests/unit/api/routers/test_knowledge_graph_api.py -v` 全绿 |
 | M4 | 图谱聚合（**单表**）+ 孤立边防御 + 清理回调 | service 聚合测试全绿（edges 全量来自 knowledge_relations 含角色↔角色子空间/孤立边跳过/cleanup_for_entity 回调；#495 后合并去重用例废止） |
 | M5 | CLI knowledge 组 | `pytest ../tests/cli/test_cli_knowledge_graph.py -v` 全绿（**且已追加 ci.yml integration-cli-backend job**） |
-| M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest library-kg.test.tsx 全绿（@xyflow/react 渲染，Q2=A 定稿）；手工验证：切到知识图谱 tab → 画布渲染节点/边 → 拖拽/缩放 → 点击边详情 → 新建关系 → 删除 |
+| M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest `library-kg.test.tsx` + `library-kg-canvas-1325.test.tsx` + `library-kg-page-1325.test.tsx` 全绿（@xyflow/react 渲染，Q2=A 定稿）；手工验证：切到知识图谱 tab → 画布渲染节点 + **连线可见** → 拖拽/缩放（位置保持）→ 从节点 Handle **拉线** → 关系表单预填两端 → 保存 → 边出现 → 点击边详情 → 删除 → 「显示全部实体」切 `scope=all`（#1325 补） |
 | M7 | 手工验证闭环 | 建角色+世界观 → 图谱建「属于」关系 → 图谱显示 → 角色页建角色关系 → 图谱页显示该边（**#495 后同表，无需合并**）→ 删关系 → 删实体 → 关系被清理（无悬空边） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（先跑 coverage-backend 等价命令实测留 buffer）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过；前端 `pnpm lint` + `tsc --noEmit` |
 
@@ -828,7 +880,7 @@ F48 被依赖:
 |------|---------|--------------|------|------|------|
 | POST /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 校验链（项目存在 → 自环 → 六元组字段 → source/target 实体存在 + 同项目 → 同键唯一）→ 落库（source 恒 manual） | 201 完整实体 | 404（项目不存在）；422（自环/实体不存在/同键冲突/字段非法） | character→character 合法（Q1=A）；六元组唯一索引兜底 |
 | GET /api/v1/projects/{project_id}/knowledge-relations | 项目存在 | 过滤（source_type/target_type/relation_type/source）+ 分页（offset/limit，created_at DESC） | 200 {items, total} | 404 | 含全部本表行（**#495 后角色↔角色关系亦为本表行**；已无独立的 character_relations 行） |
-| GET /api/v1/projects/{project_id}/knowledge-graph | 项目存在 | 聚合：六类实体全量 nodes + edges **单表 knowledge_relations 全量**（#495 后无跨表合并/去重） | 200 {nodes, edges} | 404 | 空图谱 → 200 空数组（前端空态引导）；孤立边跳过 + loguru warning（不 500）；节点 ID 格式 entity_type:entity_uuid；边 ID 恒 kr:<uuid> |
+| GET /api/v1/projects/{project_id}/knowledge-graph | 项目存在 | 聚合：六类实体 nodes（**scope 决定范围**：`related` 默认=参与至少一条关系的实体，无关系回退角色全集 / `all`=六类全量）+ edges **单表 knowledge_relations 全量**（#495 后无跨表合并/去重） | 200 {nodes, edges} | 404 | `?scope=related\|all` 缺省 related（#1325）；空图谱 → 200 空数组（前端空态引导）；孤立边跳过 + loguru warning（不 500）；节点 ID 格式 entity_type:entity_uuid；边 ID 恒 kr:<uuid>；节点集**每表全量**（不走分页 list，#1325 修 C3） |
 | GET /api/v1/knowledge-relations/{relation_id} | 关系存在 | 详情 | 200 完整实体 | 404（关系不存在） | — |
 | PATCH /api/v1/knowledge-relations/{relation_id} | 关系存在 | 变更字段重新校验（自环/实体存在/同项目/同键唯一）→ 落库 | 200 完整实体 | 404；422（改键后冲突/字段非法） | source 字段不可改（#479 写入方才能置 ai）；未传字段不动 |
 | DELETE /api/v1/knowledge-relations/{relation_id} | 关系存在 | 真删单行（无 restore） | 204 | 404 | 与 F9/F36 删除语义一致（#211 统一登记） |

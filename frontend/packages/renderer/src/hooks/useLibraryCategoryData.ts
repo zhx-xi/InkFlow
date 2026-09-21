@@ -13,7 +13,12 @@
  */
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../api/client';
-import { fetchKnowledgeGraph, type GraphEdge, type GraphNode } from '../api/knowledge-graph';
+import {
+  fetchKnowledgeGraph,
+  type GraphEdge,
+  type GraphNode,
+  type GraphScope,
+} from '../api/knowledge-graph';
 
 /** timeline 列表端点响应（TimelineView 双数组；非分页） */
 export interface TimelineViewData {
@@ -39,13 +44,14 @@ export interface LibraryCategoryData<T> {
  * 拉取 timeline / knowledge 分类数据。
  *
  * @param cats 分类表（用于取当前分类的端点构造器；调用方传入以保持单一事实来源）
- * @param isActiveCat 当前分类是否由本 hook 负责（false → 清空全部 state 不拉取）
+ * @param scope 图谱节点集范围（knowledge 分类用；#1325，默认 related 保证既有调用零改动）
  */
 export function useLibraryCategoryData<T>(
   currentProjectId: string | null,
   activeCat: string,
   reloadKey: number,
   cats: CatEndpoint[],
+  scope: GraphScope = 'related',
 ): LibraryCategoryData<T> {
   const [items, setItems] = useState<T[]>([]);
   const [timelineNarrative, setTimelineNarrative] = useState<T[]>([]);
@@ -73,7 +79,7 @@ export function useLibraryCategoryData<T>(
     if (current.key === 'knowledge') {
       // F48 §5.4：图谱视图一次拉取 nodes+edges（非列表端点；不动 loading——列表局部刷新不 unmount）
       setLoadFailed(false);
-      void fetchKnowledgeGraph(currentProjectId)
+      void fetchKnowledgeGraph(currentProjectId, scope)
         .then((view) => {
           if (cancelled) return;
           setGraphNodes(view.nodes ?? []);
@@ -119,7 +125,7 @@ export function useLibraryCategoryData<T>(
     return () => {
       cancelled = true;
     };
-  }, [currentProjectId, activeCat, reloadKey, owned, current]);
+  }, [currentProjectId, activeCat, reloadKey, owned, current, scope]);
 
   return { items, timelineNarrative, graphNodes, graphEdges, loading, loadFailed };
 }

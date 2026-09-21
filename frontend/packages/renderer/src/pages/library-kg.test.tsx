@@ -148,13 +148,14 @@ beforeEach(() => {
     const method = init?.method ?? 'GET';
     if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
     if (path === '/api/v1/projects/p1/maps') return { items: [] };
-    if (path === '/api/v1/projects/p1/knowledge-graph') {
+    if (path.startsWith('/api/v1/projects/p1/knowledge-graph')) {
+      // #1325：图谱请求带 ?scope=related|all —— 契约只锁「拿到 nodes+edges」，两 scope 同种子
       return {
         nodes: GRAPH_SEED.nodes.map((n) => ({ ...n })),
         edges: GRAPH_SEED.edges.map((e) => ({ ...e })),
       };
     }
-    if (path === '/api/v1/projects/p1/knowledge-relations') {
+    if (path.startsWith('/api/v1/projects/p1/knowledge-relations')) {
       if (method === 'POST') {
         const created = {
           id: '10', project_id: 'p1', source: 'manual',
@@ -164,7 +165,16 @@ beforeEach(() => {
         relations.unshift(created);
         return created;
       }
-      return { items: relations.map((r) => ({ ...r })), total: relations.length, offset: 0, limit: 50 };
+      // #1325：关系列表带 ?limit=&offset= —— 按分页语义切片（total 恒全量）
+      const q = new URL(path, 'http://localhost').searchParams;
+      const offset = Number(q.get('offset') ?? 0);
+      const limit = Number(q.get('limit') ?? 50);
+      return {
+        items: relations.slice(offset, offset + limit).map((r) => ({ ...r })),
+        total: relations.length,
+        offset,
+        limit,
+      };
     }
     if (path.startsWith('/api/v1/knowledge-relations/')) {
       const rid = path.slice('/api/v1/knowledge-relations/'.length);

@@ -237,13 +237,15 @@ body[data-state="relation-form"] .dialog-overlay{display:flex}
         <button class="lib-tab active" role="tab" aria-selected="true">知识图谱</button>
       </div>
 
-      <!-- 工具栏：新建关系 + 图谱/列表切换 -->
+      <!-- 工具栏：新建关系 + 图谱/列表切换 + 全量实体开关（#1325） -->
       <div class="kg-toolbar">
         <button class="btn-primary" data-testid="library-kg-new-relation"><span data-ic="plus"></span>新建关系</button>
         <div class="kg-seg">
           <button class="active" data-testid="library-kg-view-graph">图谱视图</button>
           <button data-testid="library-kg-view-list">关系列表</button>
         </div>
+        <!-- #1325：节点集范围开关（related 默认 = 只显示参与关系者；切 all = 六类全量） -->
+        <button data-testid="library-kg-scope-all" aria-pressed="false">显示全部实体</button>
       </div>
 
       <!-- 图谱画布视图 -->

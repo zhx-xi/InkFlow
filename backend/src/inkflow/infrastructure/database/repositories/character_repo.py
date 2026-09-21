@@ -317,6 +317,22 @@ class SQLiteCharacterRepository:
         group_ids_map = await self._list_group_ids([o.id for o in orms])
         return [_char_orm_to_domain(o, group_ids_map.get(o.id, [])) for o in orms], total
 
+    async def list_all(self, project_id: uuid.UUID) -> builtins.list[Character]:
+        """列出项目内全部角色，按 name ASC（#1325：图谱聚合全量节点，不分页）."""
+        # #1162: 项目 FK 过滤值超 int64 → 不可能命中任何行 → 空结果
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return []
+        stmt = (
+            select(CharacterORM)
+            .where(CharacterORM.project_id == pid)
+            .order_by(CharacterORM.name.asc())
+        )
+        result = await self._session.execute(stmt)
+        orms = result.scalars().all()
+        group_ids_map = await self._list_group_ids([o.id for o in orms])
+        return [_char_orm_to_domain(o, group_ids_map.get(o.id, [])) for o in orms]
+
     async def update(self, character: Character) -> Character:
         """更新角色（按 id 定位；group_ids 全量替换关联表，先删后插）."""
         char_id = _uuid_to_int(character.id)

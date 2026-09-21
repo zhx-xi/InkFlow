@@ -5,14 +5,29 @@
  *   （「去编辑」跳转目标由父级 onOpenEntity 提供，本组件不硬编码路由）
  * - 无障碍/降级：@xyflow 边渲染依赖真实 DOM 测量（jsdom 不渲染 SVG 边），容器内渲染
  *   sr-only 图数据摘要（节点名 + 「起点 label 终点」），屏幕阅读器可读且契约测试可断言
+ *
+ * #1325 升级（spec §5.2/§5.4）：
+ * - 受控节点/边 state（useState + applyNodeChanges/applyEdgeChanges）→ 拖拽后位置不被网格覆盖
+ * - KgNode 挂 source/target 两个 Handle → 可拖线建关系（onConnect 本地即时成边 + 上报父级落库）
+ * - 拖拽结束按 project_id 把位置写入 localStorage（存储不可用时静默降级为会话内）
+ * - 画布右下角「滚轮缩放 · 拖拽节点」提示（对齐 design/GUI/knowledge/knowledge.html）
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   BaseEdge,
   getBezierPath,
+  Handle,
   MarkerType,
+  Position,
   ReactFlow,
+  ReactFlowProvider,
+  type Connection,
+  type EdgeChange as RFEdgeChange,
   type EdgeProps,
+  type NodeChange as RFNodeChange,
   type NodeProps,
 } from '@xyflow/react';
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
@@ -42,16 +57,64 @@ const TYPE_STYLES: Record<EntityType, { bg: string; border: string; text: string
 type KgNodeData = { name: string; type: EntityType };
 type KgRFNode = RFNode<KgNodeData>;
 
-/** 自定义节点：类型着色 + 名称标签 */
+/** 位置持久化 localStorage 基键（#1325）；带 project_id 时以 `:<project_id>` 后缀隔离 */
+const KG_POSITIONS_STORAGE_KEY = 'inkflow:kg:positions';
+
+/** 位置记忆键：`<基键>` 或 `<基键>:<project_id>`（跨项目位置互不污染） */
+function kgPositionsKey(persistKey?: string): string {
+  return persistKey ? `${KG_POSITIONS_STORAGE_KEY}:${persistKey}` : KG_POSITIONS_STORAGE_KEY;
+}
+
+/** 读取位置记忆（jsdom / 隐私模式双守卫：存储不可用或 JSON 异常 → {}，不抛错） */
+function readSavedPositions(persistKey?: string): Record<string, { x: number; y: number }> {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(kgPositionsKey(persistKey));
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    return parsed as Record<string, { x: number; y: number }>;
+  } catch {
+    return {};
+  }
+}
+
+/** 写入位置记忆（同上双守卫：存储不可用 → 静默，位置记忆退化为会话内） */
+function writeSavedPositions(
+  persistKey: string | undefined,
+  positions: Record<string, { x: number; y: number }>,
+): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(kgPositionsKey(persistKey), JSON.stringify(positions));
+  } catch {
+    // 存储不可用（隐私模式 / 配额）→ 静默
+  }
+}
+
+/** 自定义节点：类型着色 + 名称标签 + 左右两个连线锚点（#1325：拉线建关系前置） */
 function KgNode({ data }: NodeProps<KgRFNode>) {
+  const { t } = useI18n();
   const style = TYPE_STYLES[data.type] ?? TYPE_STYLES.character;
   return (
     <div
       className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium shadow-card"
       style={{ backgroundColor: style.bg, borderColor: style.border, color: style.text }}
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="kg-handle"
+        aria-label={t('lib.knowledge.form.targetType')}
+      />
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: style.dot }} aria-hidden="true" />
       <span className="whitespace-nowrap">{data.name}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="kg-handle"
+        aria-label={t('lib.knowledge.form.sourceType')}
+      />
     </div>
   );
 }
@@ -80,6 +143,10 @@ const edgeTypes = { kgEdge: KgEdge };
 export interface KnowledgeGraphCanvasProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** 位置持久化键（父级传 currentProjectId；缺省用常量基键） */
+  persistKey?: string;
+  /** 拉线建关系：拖拽 Handle 连线时回调（source/target 为节点 id "<type>:<uuid>"） */
+  onConnectNodes?: (source: string, target: string) => void;
   /** 点击节点（详情卡已内建；父级可追加抽屉等） */
   onSelectNode?: (node: GraphNode) => void;
   /** 点击边（详情卡已内建；父级可追加抽屉等） */
@@ -92,9 +159,20 @@ export interface KnowledgeGraphCanvasProps {
   onDeleteEdge?: (edge: GraphEdge) => void;
 }
 
-export function KnowledgeGraphCanvas({
+/** 画布对外入口：包一层 ReactFlowProvider（画布内的 @xyflow hooks 需要该上下文） */
+export function KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function CanvasInner({
   nodes,
   edges,
+  persistKey,
+  onConnectNodes,
   onSelectNode,
   onSelectEdge,
   onOpenEntity,
@@ -105,7 +183,12 @@ export function KnowledgeGraphCanvas({
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
 
-  const rfNodes = useMemo<KgRFNode[]>(
+  /** 受控画布 state（#1325）：拖拽/连线只改 state，不再每次渲染按固定网格重算 */
+  const [rfNodes, setRfNodes] = useState<KgRFNode[]>([]);
+  const [rfEdges, setRfEdges] = useState<RFEdge[]>([]);
+
+  /** 初始布局：固定网格（仅首次/节点集变化时用；拖拽后由 state 保持） */
+  const layoutNodes = useMemo<KgRFNode[]>(
     () =>
       nodes.map((n, i) => ({
         id: n.id,
@@ -116,7 +199,7 @@ export function KnowledgeGraphCanvas({
     [nodes],
   );
 
-  const rfEdges = useMemo<RFEdge[]>(
+  const dataEdges = useMemo<RFEdge[]>(
     () =>
       edges.map((e) => ({
         id: e.id,
@@ -128,6 +211,68 @@ export function KnowledgeGraphCanvas({
       })),
     [edges],
   );
+
+  /** 持久化位置（localStorage，按 project_id 键）——挂载/切项目时读一次 */
+  const savedPositions = useRef<Record<string, { x: number; y: number }>>({});
+  useEffect(() => {
+    savedPositions.current = readSavedPositions(persistKey);
+  }, [persistKey]);
+
+  /** 节点集变化 → 用「记忆位置 → 端到端 localStorage → 网格」三级回退重建（保留已拖拽位置） */
+  useEffect(() => {
+    const persisted = readSavedPositions(persistKey);
+    setRfNodes(
+      layoutNodes.map((n) => ({
+        ...n,
+        position: savedPositions.current[n.id] ?? persisted[n.id] ?? n.position,
+      })),
+    );
+  }, [layoutNodes, persistKey]);
+
+  /** 业务边变化 → 同步进 state（本地 addEdge 的「待落库」边随后被覆盖，保存失败不留幽灵边） */
+  useEffect(() => {
+    setRfEdges(dataEdges);
+  }, [dataEdges]);
+
+  /** 最近一次渲染的节点集：拖拽结束读位置用（避免在 render 期调用 @xyflow hooks） */
+  const nodesRef = useRef<KgRFNode[]>([]);
+  nodesRef.current = rfNodes;
+
+  // 钉住变更类型参数（NodeChange/EdgeChange 的 add/replace 变体带 node/edge 泛型）：
+  // 默认泛型会让 applyNodeChanges 把 state 退化成 NodeBase[]，此处显式对齐自定义节点/边类型
+  const handleNodesChange = useCallback((changes: RFNodeChange<KgRFNode>[]) => {
+    setRfNodes((prev) => applyNodeChanges(changes, prev));
+  }, []);
+  const handleEdgesChange = useCallback((changes: RFEdgeChange<RFEdge>[]) => {
+    setRfEdges((prev) => applyEdgeChanges(changes, prev));
+  }, []);
+  /** 拉线建关系（#1325 P2）：本地即时成边 + 上报父级（父级弹 RelationForm 落库） */
+  const handleConnect = useCallback(
+    (conn: Connection) => {
+      if (!conn.source || !conn.target) return;
+      setRfEdges((prev) =>
+        addEdge(
+          {
+            ...conn,
+            type: 'kgEdge',
+            label: '',
+            markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--ink-3)' },
+          },
+          prev,
+        ),
+      );
+      onConnectNodes?.(conn.source, conn.target);
+    },
+    [onConnectNodes],
+  );
+  /** 拖拽结束 → 位置落 localStorage（按 project_id 键） */
+  const handleNodeDragStop = useCallback(() => {
+    const map: Record<string, { x: number; y: number }> = {};
+    for (const n of nodesRef.current) map[n.id] = { ...n.position };
+    // 同步刷新内存记忆：否则后续「节点集变化重建」会用挂载时的旧快照覆盖刚拖出的位置
+    savedPositions.current = map;
+    writeSavedPositions(persistKey, map);
+  }, [persistKey]);
 
   /** sr-only 数据摘要：节点名 + 边「起点 label 终点」（无障碍 + jsdom 断言兜底） */
   const summary = useMemo(
@@ -155,6 +300,10 @@ export function KnowledgeGraphCanvas({
         edgeTypes={edgeTypes}
         minZoom={0.2}
         maxZoom={2}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
+        onConnect={handleConnect}
+        onNodeDragStop={handleNodeDragStop}
         onNodeClick={(_, rfNode) => {
           const node = nodes.find((n) => n.id === rfNode.id);
           if (!node) return;
@@ -174,6 +323,10 @@ export function KnowledgeGraphCanvas({
           setSelectedEdge(null);
         }}
       />
+      {/* #1325：拖拽/缩放提示（对齐 design/GUI/knowledge/knowledge.html 的「滚轮缩放 · 拖拽节点」） */}
+      <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md border border-line bg-surface/90 px-2 py-0.5 text-[11px] text-ink-3">
+        {t('lib.knowledge.canvasHint')}
+      </span>
       <div className="sr-only" data-testid="library-kg-summary">
         {t('lib.knowledge.graphSummary')}：{summary}
       </div>

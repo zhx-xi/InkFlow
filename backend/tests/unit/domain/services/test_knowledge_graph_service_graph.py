@@ -200,6 +200,7 @@ def mock_character_repo() -> MagicMock:
     repo = MagicMock(spec=CharacterRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))
+    repo.list_all = AsyncMock(return_value=[])
     repo.list_relations = AsyncMock(return_value=[])
     return repo
 
@@ -210,6 +211,7 @@ def mock_world_repo() -> MagicMock:
     repo = MagicMock(spec=WorldRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))
+    repo.list_all_active = AsyncMock(return_value=[])
     return repo
 
 
@@ -219,6 +221,7 @@ def mock_outline_repo() -> MagicMock:
     repo = MagicMock(spec=OutlineRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))
+    repo.list_all = AsyncMock(return_value=[])
     return repo
 
 
@@ -228,6 +231,7 @@ def mock_timeline_repo() -> MagicMock:
     repo = MagicMock(spec=TimelineRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))
+    repo.list_all = AsyncMock(return_value=[])
     return repo
 
 
@@ -237,6 +241,7 @@ def mock_foreshadow_repo() -> MagicMock:
     repo = MagicMock(spec=ForeshadowingRepositoryProtocol)
     repo.get = AsyncMock(return_value=None)
     repo.list = AsyncMock(return_value=([], 0))
+    repo.list_all = AsyncMock(return_value=[])
     return repo
 
 
@@ -281,7 +286,7 @@ class TestGraph:
 
     async def test_empty_project_returns_empty_graph(self, service):
         """空项目图谱 → nodes=[] + edges=[]（§7 边界 14，空图谱合法）."""
-        view = await service.graph(PID)
+        view = await service.graph(PID, scope="all")
         assert isinstance(view, KnowledgeGraphView)
         assert view.nodes == []
         assert view.edges == []
@@ -306,15 +311,15 @@ class TestGraph:
         wm = _map("大陆图")
         pin_b, pin_a = _pin("B地", map_id=wm.id), _pin("A地", map_id=wm.id)
 
-        mock_character_repo.list = AsyncMock(return_value=([char_b, char_a], 2))
-        mock_world_repo.list = AsyncMock(return_value=([world], 1))
-        mock_outline_repo.list = AsyncMock(return_value=([outline_b, outline_a], 2))
-        mock_timeline_repo.list = AsyncMock(return_value=([event], 1))
-        mock_foreshadow_repo.list = AsyncMock(return_value=([foreshadow], 1))
+        mock_character_repo.list_all = AsyncMock(return_value=[char_b, char_a])
+        mock_world_repo.list_all_active = AsyncMock(return_value=[world])
+        mock_outline_repo.list_all = AsyncMock(return_value=[outline_b, outline_a])
+        mock_timeline_repo.list_all = AsyncMock(return_value=[event])
+        mock_foreshadow_repo.list_all = AsyncMock(return_value=[foreshadow])
         mock_map_repo.list_maps_by_project = AsyncMock(return_value=[wm])
         mock_map_repo.list_pins = AsyncMock(return_value=[pin_b, pin_a])
 
-        view = await service.graph(PID)
+        view = await service.graph(PID, scope="all")
 
         assert [n.type for n in view.nodes] == [
             EntityType.CHARACTER,
@@ -346,7 +351,7 @@ class TestGraph:
         assert view.nodes[-1].entity_id == pin_b.id
         assert view.nodes[3].name == "A大纲"  # Outline.name 映射
         assert view.nodes[5].name == "序章"  # TimelineEvent.title 映射
-        mock_character_repo.list.assert_awaited_once_with(PID)
+        mock_character_repo.list_all.assert_awaited_once_with(PID)
         mock_map_repo.list_maps_by_project.assert_awaited_once_with(PID)
         mock_map_repo.list_pins.assert_awaited_once_with(wm.id)
 
@@ -362,8 +367,8 @@ class TestGraph:
         不再调 character_repo.list_relations（port 方法保留，图谱侧不再使用）。"""
         char_a, char_b = _char("林尘"), _char("阿澈")
         world_w = _world("清河县")
-        mock_character_repo.list = AsyncMock(return_value=([char_a, char_b], 2))
-        mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
+        mock_character_repo.list_all = AsyncMock(return_value=[char_a, char_b])
+        mock_world_repo.list_all_active = AsyncMock(return_value=[world_w])
         kr_pair = _kr(
             source_type="character",
             source_id=char_a.id,
@@ -379,7 +384,7 @@ class TestGraph:
             return_value=[_cr(char_b, char_a, relation_type="宿敌")]
         )
 
-        view = await service.graph(PID)
+        view = await service.graph(PID, scope="all")
 
         assert len(view.edges) == 2
         assert {e.source_table for e in view.edges} == {"knowledge_relations"}
@@ -404,7 +409,7 @@ class TestGraph:
         """单表化（#495）后同键双行不可能再出现（kr 六元组唯一索引）→ 聚合层去重逻辑删除。
         本用例锁定：旧 F9 数据源即使返回同键行，也不得产生第二条边。"""
         char_a, char_b = _char("林尘"), _char("阿澈")
-        mock_character_repo.list = AsyncMock(return_value=([char_a, char_b], 2))
+        mock_character_repo.list_all = AsyncMock(return_value=[char_a, char_b])
         kr = _kr(
             source_type="character",
             source_id=char_a.id,
@@ -416,7 +421,7 @@ class TestGraph:
         mock_relation_repo.list_by_project = AsyncMock(return_value=[kr])
         mock_character_repo.list_relations = AsyncMock(return_value=[cr])
 
-        view = await service.graph(PID)
+        view = await service.graph(PID, scope="all")
 
         assert len(view.edges) == 1
         assert view.edges[0].id == f"kr:{kr.id}"
@@ -434,8 +439,8 @@ class TestGraph:
         None/空）."""
         char_a = _char("林尘")
         world_w = _world("清河县")
-        mock_character_repo.list = AsyncMock(return_value=([char_a], 1))
-        mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
+        mock_character_repo.list_all = AsyncMock(return_value=[char_a])
+        mock_world_repo.list_all_active = AsyncMock(return_value=[world_w])
         valid_kr = _kr(source_id=char_a.id, target_id=world_w.id, relation_type="属于")
         orphan_kr = _kr(
             source_type="character",
@@ -447,7 +452,7 @@ class TestGraph:
         mock_relation_repo.list_by_project = AsyncMock(return_value=[valid_kr, orphan_kr])
         mock_character_repo.list_relations = AsyncMock(return_value=[])
 
-        view = await service.graph(PID)  # 不 500
+        view = await service.graph(PID, scope="all")  # 不 500
 
         assert [e.id for e in view.edges] == [f"kr:{valid_kr.id}"]
 
@@ -461,8 +466,8 @@ class TestGraph:
         """边排序：单表全量按 created_at ASC（#495 双轨分段排序删除；mock 注入乱序验证）."""
         char_a, char_b = _char("林尘"), _char("阿澈")
         world_w = _world("清河县")
-        mock_character_repo.list = AsyncMock(return_value=([char_a, char_b], 2))
-        mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
+        mock_character_repo.list_all = AsyncMock(return_value=[char_a, char_b])
+        mock_world_repo.list_all_active = AsyncMock(return_value=[world_w])
         kr_early = _kr(
             source_type="character",
             source_id=char_a.id,
@@ -488,7 +493,7 @@ class TestGraph:
         # 注入乱序（服务层需按 created_at ASC 重排）
         mock_relation_repo.list_by_project = AsyncMock(return_value=[kr_late, kr_early, kr_mid])
 
-        view = await service.graph(PID)
+        view = await service.graph(PID, scope="all")
 
         assert [e.id for e in view.edges] == [
             f"kr:{kr_early.id}",
@@ -596,14 +601,14 @@ class TestGraphCoverageGap:
         （§7 边界 10；kr 孤立边既有用例已覆盖，本用例补 cr 段）。"""
         char_a = _char("林尘")
         world_w = _world("清河县")
-        mock_character_repo.list = AsyncMock(return_value=([char_a], 1))
-        mock_world_repo.list = AsyncMock(return_value=([world_w], 1))
+        mock_character_repo.list_all = AsyncMock(return_value=[char_a])
+        mock_world_repo.list_all_active = AsyncMock(return_value=[world_w])
         ghost_a = _char("幽灵甲")
         ghost_b = _char("幽灵乙")
         orphan_cr = _cr(ghost_a, ghost_b, relation_type="悬空师徒")
         mock_relation_repo.list_by_project = AsyncMock(return_value=[])
         mock_character_repo.list_relations = AsyncMock(return_value=[orphan_cr])
 
-        view = await service.graph(PID)  # 不 500
+        view = await service.graph(PID, scope="all")  # 不 500
 
         assert view.edges == []
