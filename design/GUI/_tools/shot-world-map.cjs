@@ -2,10 +2,15 @@
  * 用法: node shot-world-map.cjs
  * - file:// 打开 world.html → setState('map') → data-shot=1 隐藏 demo-bar → 截图 1280x800@DPR1
  * - 跑计算样式/几何断言（视觉模型不可用时的主验证），失败 exit 1
+ *
+ * 路径自解析（ROOT / playwright 均从脚本位置推导），见 _shared.cjs。
  */
 const path = require('path');
-const { chromium } = require('D:/develop/projects/InkFlow/frontend/packages/electron/node_modules/@playwright/test');
-const ROOT = path.join(__dirname, '..');
+const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.cjs');
+
+const ROOT = assertGuiRoot();
+const chromium = requirePlaywright();
+assertPageDir('world', ROOT);
 const FILE = 'world/world.html';
 
 async function runChecks(page) {

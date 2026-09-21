@@ -4,13 +4,14 @@
  *   -> evaluate setState -> data-shot=1 隐藏 demo-bar -> waitForTimeout -> screenshot
  * - 每状态跑计算样式/几何断言（视觉模型不可用时的主验证），失败 exit 1
  *
- * ⚠️ 与 shot-writing-and-settings-reasoning.cjs 的差异：ROOT 指向**本 worktree**（原脚本写死 f59-m6 的绝对路径，
- * 在别的 worktree 跑会把图出到别处）。
+ * 路径自解析（ROOT / playwright 均从脚本位置推导），见 _shared.cjs。
  */
 const path = require('path');
-const { chromium } = require('D:/develop/projects/InkFlow/frontend/packages/electron/node_modules/@playwright/test');
+const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.cjs');
 
-const ROOT = 'D:/develop/projects/InkFlow-ft/w23-1349/design/GUI';
+const ROOT = assertGuiRoot();
+const chromium = requirePlaywright();
+assertPageDir('writing', ROOT);
 const PAGES = {
   writing: {
     file: 'writing/writing.html',

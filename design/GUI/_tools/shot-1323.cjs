@@ -1,11 +1,13 @@
 /* #1323 timeline 原型截图 + 断言：章分组容器（每事件一次）+ 真实章节标题 + 未分章。
- * 用法: node shot-1323.cjs
- * playwright 复用 electron 包内依赖（与 _tools/shot-1320.cjs 同款）。
+ * 用法: node design/GUI/_tools/shot-1323.cjs
+ * playwright 复用 electron 包内依赖（路径自解析，见 _shared.cjs）。
  */
 const path = require('path');
-const { chromium } = require('D:/develop/projects/InkFlow-ft/w23-1323/frontend/packages/electron/node_modules/@playwright/test');
+const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.cjs');
 
-const ROOT = 'D:/develop/projects/InkFlow-ft/w23-1323/design/GUI';
+const ROOT = assertGuiRoot();
+const chromium = requirePlaywright();
+assertPageDir('timeline', ROOT);
 const PAGE = { file: 'timeline/timeline.html', states: ['narrative', 'world'] };
 
 async function checks(page, state) {
