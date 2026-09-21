@@ -1,11 +1,11 @@
 # 检索页 — 交互规格
 
 > 页面: search | 路由: /search | 组件: frontend/packages/renderer/src/pages/search.tsx（SearchPage，nav 项 search，lucide Search 图标）
-> 对应 design/GUI/search/（官方简图 search.html + search-<state>.png，见后续补图；当前目录仅 .gitkeep 占位）
+> 对应 design/GUI/search/（官方简图 search.html + search-<state>.png）
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/search/search.html + search-<state>.png（后续补图，目录已建）
+- 原型引用：design/GUI/search/search.html + search-<state>.png
 > 低保真排版示意简图（区块+标签，非精确像素）：
 
 ```text
@@ -25,6 +25,7 @@
 │Agent 　　　　　│　│［章节］　第 12 章 剑心蒙尘　　　　　0.93 │　│
 │记忆　　　　　　│　│苏云舟夜访剑冢，石门开启的刹那…　　　　　│　│
 │设置　　　　　　│　│［角色］　苏云舟　　　　　　　　　　　0.91│　│
+│　　　　　　　　│　│　上一页　第 1 / 1 页 · 共 5 条　下一页　│　│
 │［折叠］　　　　│　└─────────────────────┘　│
 ├────────┼─────────────────────────┤
 │　　　　　　　　│　内核已连接・模型: deepseek-chat・项目: 青云志 　│
@@ -43,6 +44,7 @@
   - 检索区（mt-6）：模式 Select（w-32）→ 项目 Select（w-56）→ 输入框（max-w-xs 弹性）→ 检索按钮
   - 索引维护卡（mt-8）：标题 + 描述 + 双 Select 行 + 重建按钮 + 反馈块（loading/ok/err 三态）
   - 结果区（mt-8）：loading / error / results / empty 四态互斥展示
+- 结果分页条（#1300 / PR #1314，公共组件 `components/Pagination.tsx`）：结果列表下方，`search-page` 前缀，容器 `mt-6 justify-center`；「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→「下一页」，默认 20/页（`SEARCH_PAGE_SIZE`，`search.tsx:41`）。**服务端分页**（`limit/offset`，`:116-117`）——翻页会**重新发起检索请求**，非本地切片；total 来自后端 `result.total`
 
 ## 2. 动作样式（按钮 × 状态表，逐控件）
 
@@ -56,6 +58,7 @@
 | 确认弹窗（rebuild-confirm-dialog） | 标题「确认重建索引？」+ API 费用提示 +「取消/确定重建」 | 确定 → postIndexRebuild；取消 → 关闭 | — | 启动任务 + 立即查一次 + 每 2s 轮询 | 请求失败 → 页面内 err 块（后端缺席 404 不炸 UI） | 范围=当前项目且已选 → project_ids=[currentProjectId]；全部项目/未选 → null（后端默认全部）；Esc 关闭，遮罩点击不关闭 |
 | 轮询反馈（rebuild-loading） | 不渲染 | — | spinner + 「正在重建索引… · 步骤（全文/向量） · 进度 {done}/{total} 项目」 | status=done → 停止轮询，绿块「索引重建完成 · rebuilt_at · {n} 个项目」 | status=failed 或单次轮询异常 → 停止轮询，红块「索引重建失败：{原因}」 | 组件卸载 clearInterval；done/failed 均停止轮询；单次轮询异常不保持 loading |
 | 索引范围/类型 Select | 默认「当前项目」「两者」 | 展开选项 | — | 选择即生效，决定重建参数 | — | 范围：current/all；类型：both/fulltext/vector |
+| 结果分页条（search-page） | 首页 prev 禁用；信息「第 1 / {m} 页 · 共 {k} 条」 | 「下一页」→ handlePageChange(p+1) → **重发检索请求**（`offset=(p+1)*20`）；「上一页」→ p-1 | 结果区 loading「检索中…」 | 结果列表换页 + 信息更新 | 请求失败 → 错误块「检索失败，请重试：{原因}」 | 仅 results 态渲染（loading/error/empty 态不渲染）；m=1 时双向禁用；total ≤ 20 → 双向禁用 |
 
 ## 3. 验收
 
@@ -66,4 +69,5 @@
 - N5：索引维护卡齐全（范围/类型/重建按钮），默认「当前项目」+「两者」；点重建先出确认弹窗（含 API 费用提示），确定才发请求
 - N6：重建三态闭环：running 轮询（2s 间隔，spinner+步骤+进度）→ done 绿块（rebuilt_at + 项目数）/ failed 红块（原因）；轮询异常或 404 落入 err 块且页面其余交互不受影响
 - N7：参数映射：范围=当前项目且已选项目 → project_ids=[id]；全部项目/未选 → null；索引类型 both/fulltext/vector 直传
+- N8（#1300 / PR #1314）：结果列表下方渲染分页条（`search-page` 前缀，居中）——首页 prev 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 20/页）；点「下一页」→ **重新发起检索请求**（服务端 `offset` 切片）且结果列表与信息同步更新；loading/error/empty 三态**不**渲染分页条
 > 说明（#802）：本页重建走异步端点 POST /api/v1/index/rebuild（#659，202 异步 + task_id 轮询）为主；遗留同步端点 POST /api/v1/search/rebuild（routers/search.py:158）无 scope 参数、返回 rebuilt_at（非 task_id），标记 deprecated，不作为本页路径。

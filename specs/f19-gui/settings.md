@@ -1,7 +1,7 @@
 # 设置页 — 交互规格
 
 > 页面: settings | 路由: /settings（?cat=general|models|agent|templates|skills|account）| 组件: pages/settings.tsx
-> 对应 design/GUI/settings/（官方简图 settings.html + settings-<state>.png，见后续补图）
+> 对应 design/GUI/settings/（官方简图 settings.html + settings-<state>.png）
 
 ## 1. 画面样式（简图/原型）
 

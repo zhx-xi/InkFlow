@@ -1,7 +1,7 @@
 # 设定库（主视图） — 交互规格
 
 > 页面: library | 路由: /library（无 cat 参数 → 默认 characters 分类） | 组件: pages/library.tsx（cat 未指定 → activeCat='characters'）
-> 对应 design/GUI/library/（官方简图 library.html + library-<state>.png，见后续补图）
+> 对应 design/GUI/library/（官方简图 library.html + library-<state>.png）
 
 ## 1. 画面样式
 
@@ -25,6 +25,7 @@
 │ │   大纲 → 三级树 + 故事弧 / 时间线 → 双序事件列表         │ │
 │ │   伏笔 → 平铺列表 / knowledge → 图谱画布 + 关系列表      │ │
 │ │ 三态：加载骨架（3 行）/ 失败重试 / 无项目空态引导卡片    │ │
+│ │ 列表下方分页条：每页 Select + 上一页/信息/下一页         │ │
 │ │ 弹层：创建/编辑对话框、删除确认、详情面板挂页面根部      │ │
 │ └──────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────┘
@@ -38,6 +39,7 @@
   - 内容区三态：加载骨架（library-list 容器内 3 行 Skeleton）/ 加载失败（library-error + library-retry 重试按钮）/ 按 activeCat 分派视图（knowledge → KnowledgeGraphView；world 工作台 → MapWorkbench；outline → OutlineTree；world → WorldCategoryToolbar+WorldNodeView 树；timeline → TimelineView；其余 → LibraryItemList）
   - 无项目空态（library-empty）：虚线圆角卡片居中，Library 图标 +「选择或新建项目开始构建设定」+ 前往项目页按钮（library-go-projects）
 - 布局说明：纵向单栏——标题 → 项目上下文行 → tab 栏 → 内容区；弹层（创建/编辑对话框、删除确认、角色详情、复制、关系表单等）统一挂页面根部；全局反馈走 toast 三态（ok/err/warn，§14.2 约定）
+- 分页条（#1300 / PR #1314，公共组件 `components/Pagination.tsx`）：仅 **characters / foreshadow**（`PageableCatKey`）分页列表下方渲染；`library-page` 前缀，容器 `mt-4 justify-end`；左「每页条数」Select（默认 50 = `LIBRARY_PAGE_SIZE`）→ 「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→ 「下一页」。服务端切片（`useLibraryPagedList`，`limit/offset`，`hooks/useLibraryPagedList.ts:27`）；**world 全量取数不分页**；首页 prev 禁用 / 末页 next 禁用；total ≤ pageSize 时组件仍渲染（双向禁用）
 - 分类内容区细节见各分类规格：characters.md / world.md / outline.md / timeline.md / foreshadow.md / knowledge.md
 
 ## 2. 动作样式（按钮 × 状态表）
@@ -52,6 +54,7 @@
 | 顶部保存指示（lib-save-indicator） | 不渲染（idle） | 编辑保存发起 → saving | 「保存中…」 | 「已保存」2s 自动隐藏（timer 清理防重叠） | 失败回 idle + err toast | 仅编辑（PATCH）路径驱动；创建/删除保持 toast 语义 |
 | 加载骨架 | 3 行 Skeleton | — | — | 数据到达渲染列表 | — | 骨架保持至请求 settle |
 | 失败重试（library-retry） | 「加载失败，请重试」+ 重试按钮 | reloadKey+1 重新拉取 | 骨架 | 列表渲染 | 再次失败仍错误态 | 重试不丢当前分类与 URL |
+| 分页条（library-page） | 首页：prev 禁用 / next 可用（total > pageSize 时）；信息「第 1 / {m} 页 · 共 {k} 条」 | 「下一页」→ setPage(p+1) → 服务端按 `offset=(p+1)*50` 重拉；「上一页」→ setPage(p-1) | 列表区保持骨架/旧数据（hook 内部 loading） | 列表换页 + 信息更新 | 拉取失败 → 走既有错误态（library-error） | 仅 characters/foreshadow 渲染；末页 next 禁用；total ≤ 50 → 双向禁用；「每页条数」Select 变档（默认 50） |
 
 ## 3. 验收
 
@@ -60,3 +63,4 @@
 - N3：项目选择器切换 → 内容按新项目重载 + 面包屑项目名同步
 - N4：加载骨架 / 失败重试闭环
 - N5：「去创建」与「AI 提取」按分类可见性规则正确显隐（knowledge 无创建；world 需选中分类；outline 树内创建）
+- N6（#1300 / PR #1314）：characters / foreshadow 分类列表下方渲染分页条（`library-page` 前缀）——首页 prev 禁用、末页 next 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 50/页）；点「下一页」→ 服务端按 offset 重拉且 total 不变；world 分类**不**渲染分页条（全量取数）

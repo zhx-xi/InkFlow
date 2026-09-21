@@ -1,7 +1,7 @@
 # Agent 配置/模板 — 交互规格
 
 > 页面: agent | 路由: /settings?cat=agent（+ /settings?cat=templates）| 组件: pages/settings.tsx（AgentPanel / TemplatesPanel）+ components/AgentChainCard、AgentList、AgentEditDialog、TemplateDialog、AgentRelationEditor
-> 对应 design/GUI/agent/（官方简图 agent.html + agent-<state>.png，见后续补图）
+> 对应 design/GUI/agent/（官方简图 agent.html + agent-<state>.png）
 
 ## 1. 画面样式（简图/原型）
 

@@ -105,6 +105,14 @@ button{font-family:inherit;cursor:pointer}
 .dir-card .meta-right{margin-left:auto;font-size:12px;color:var(--ink-3)}
 .dir-card .last-msg{margin:8px 0 0;font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dir-card .actions{display:flex;gap:8px;margin-top:12px}
+/* #1300：#1314 目录分页条（列表下方右对齐；页大小 Select + 上一页/信息/下一页） */
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:flex-end;margin-top:16px}
+.pager .size{display:flex;flex-direction:column;gap:6px}
+.pager select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 8px;height:30px}
+.pager button{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:6px 12px;transition:background var(--dur)}
+.pager button:hover:not(:disabled){background:var(--surface-3)}
+.pager button:disabled{cursor:not-allowed;opacity:.5}
+.pager .info{font-size:13px;color:var(--ink-2)}
 .badge{display:inline-block;border-radius:4px;background:var(--surface-3);padding:2px 8px;font-size:11px;font-weight:500;color:var(--ink-2)}
 .badge.weak{font-weight:400;color:var(--ink-3)}
 .btn-ghost{height:28px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:0 12px;transition:background var(--dur)}
@@ -138,6 +146,7 @@ body[data-state="archived"] .chip[data-key="archived"]{border-color:var(--accent
 body[data-state="archived"] .dir-card[data-archived="false"]{display:none}
 body[data-state="delete"] .dialog-overlay{display:flex}
 body[data-state="empty"] .dir-list{display:none}
+body[data-state="empty"] .pager{display:none}
 body[data-state="empty"] .empty-box{display:block}
 
 /* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
@@ -375,6 +384,15 @@ body[data-shot="1"] .demo-bar{display:none}
               <span class="updated">2026-08-25 10:08</span>
             </li>
           </ul>
+          <!-- #1314：目录分页条（#1300 公共组件；右对齐，客户端切片默认 20/页） -->
+          <div class="pager" data-testid="sessions-page">
+            <div class="size">
+              <select aria-label="每页条数" data-testid="sessions-page-size-select"><option>10</option><option>25</option><option selected>20</option><option>50</option><option>100</option></select>
+            </div>
+            <button data-testid="sessions-page-prev" disabled>上一页</button>
+            <span class="info" data-testid="sessions-page-info">第 1 / 1 页 · 共 10 条</span>
+            <button data-testid="sessions-page-next" disabled>下一页</button>
+          </div>
           <div class="empty-box" data-testid="sessions-empty">暂无会话</div>
         </div>
       </div>

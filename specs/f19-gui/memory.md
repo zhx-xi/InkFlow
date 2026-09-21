@@ -1,11 +1,11 @@
 # 记忆页 — 交互规格
 
 > 页面: memory | 路由: /memory | 组件: frontend/packages/renderer/src/pages/memory.tsx（MemoryPage，nav 项 memory，lucide Brain 图标）
-> 对应 design/GUI/memory/（官方简图 memory.html + memory-<state>.png，见后续补图；当前目录仅 .gitkeep 占位）
+> 对应 design/GUI/memory/（官方简图 memory.html + memory-<state>.png）
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/memory/memory.html + memory-<state>.png（后续补图，目录已建）
+- 原型引用：design/GUI/memory/memory.html + memory-<state>.png
 > 低保真排版示意简图（区块+标签，非精确像素）：
 
 ```text

@@ -1,7 +1,7 @@
 # 设定库·知识图谱 — 交互规格
 
 > 页面: knowledge | 路由: /library?cat=knowledge | 组件: pages/library.tsx（cat=knowledge）+ KnowledgeGraphView + KnowledgeGraphCanvas + RelationList + RelationForm
-> 对应 design/GUI/knowledge/（官方简图 knowledge.html + knowledge-<state>.png，见后续补图）
+> 对应 design/GUI/knowledge/（官方简图 knowledge.html + knowledge-<state>.png）
 
 ## 1. 画面样式
 

@@ -1,7 +1,7 @@
 # 写作页 — 交互规格
 
 > 页面: writing | 路由: /writing | 组件: pages/writing.tsx
-> 对应 design/GUI/writing/（官方简图 writing.html + writing-<state>.png，见后续补图）
+> 对应 design/GUI/writing/（官方简图 writing.html + writing-<state>.png）
 
 ## 1. 画面样式（简图/原型）
 
