@@ -1,0 +1,130 @@
+name: ui-spec-sync-reminder
+
+# GUI 图纸同步提醒（#1338 项 2）
+#
+# 职责：PR 改了 renderer 的**真 UI 源码**（*.tsx，非测试）却未同步
+#       `design/GUI/<page>/` 或 `specs/f19-gui/<page>.md` → 在 PR 上留一条**评论警告**。
+#
+# 🔴 本 workflow **不阻断合并**（不产出 required check 结论），原因：
+#   跨切面改动（i18n 本地化 / 测试补强 / 泄漏修复 / 纯 CSS 微调）会触碰 tsx
+#   但不属「UI 行为改动」；实测误报率 ~17%（详见 #1338 评论的探针报告）。
+#   阻断 = 用 17% 的噪声拦真实交付，代价高于收益。故只做提醒，由人判断。
+#
+# 能力边界（不检测什么）：
+#   - 不检测「改了 design/GUI 但漏改 specs/f19-gui」（反向）——门禁脚本
+#     ci_cd/check_gui_spec_sync.py 只管目录对应与 L4 指针，两处都靠人自查。
+#   - 不检测「图纸内容是否真反映新 UI」（要读 HTML/PNG 语义，脚本做不到）。
+#   - 不检测跨 PR 的补偿性同步：本 PR 未同步、**后续 PR 补同步**是既有惯例
+#     （#1314/#1315 → #1366 即此例），故提醒文案明确写「后续 PR 补同步可忽略」。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  remind:
+    name: ui-spec-sync-reminder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect UI change without design/spec sync
+        id: detect
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # 三方比对：base...head（PR 引入的全部改动）
+          mapfile -t CHANGED < <(git diff --name-only "$BASE_SHA...$HEAD_SHA" || true)
+          echo "changed files: ${#CHANGED[@]}"
+
+          UI_RE='^frontend/packages/renderer/src/.*\.tsx$'
+          # 测试文件排除：.test.tsx / .spec.tsx / tests/ 下
+          TEST_RE='(\.test\.tsx$|\.spec\.tsx$|/tests/|(^|/)test_)'
+          SYNC_RE='^(design/GUI/|specs/f19-gui/)'
+
+          UI_SRC=()
+          SYNC=()
+          for f in "${CHANGED[@]}"; do
+            [[ "$f" =~ $SYNC_RE ]] && SYNC+=("$f")
+            if [[ "$f" =~ $UI_RE ]] && ! [[ "$f" =~ $TEST_RE ]]; then
+              UI_SRC+=("$f")
+            fi
+          done
+
+          echo "ui_src=${#UI_SRC[@]} sync=${#SYNC[@]}"
+          if [[ ${#UI_SRC[@]} -eq 0 ]]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            echo "无真 UI 源码改动 → 不提醒"
+            exit 0
+          fi
+          if [[ ${#SYNC[@]} -gt 0 ]]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            echo "已同步 design/GUI 或 specs/f19-gui → 不提醒"
+            exit 0
+          fi
+
+          echo "skip=0" >> "$GITHUB_OUTPUT"
+          {
+            echo "ui_files<<EOF_UI"
+            printf '%s\n' "${UI_SRC[@]}"
+            echo "EOF_UI"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post reminder comment (non-blocking)
+        if: steps.detect.outputs.skip == '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          UI_FILES: ${{ steps.detect.outputs.ui_files }}
+          MARKER: "<!-- ui-spec-sync-reminder -->"
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+
+          # 幂等：同 PR 已发过提醒则不重复刷屏（synchronize 会重复触发）
+          EXISTING=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "[.[] | select(.body | contains(\"$MARKER\"))] | length")
+          if [[ "$EXISTING" != "0" ]]; then
+            echo "已有提醒评论（$EXISTING 条）→ 跳过，避免刷屏"
+            exit 0
+          fi
+
+          {
+            echo "$MARKER"
+            echo "## 📐 图纸同步提醒（不阻断合并）"
+            echo
+            echo "本 PR 改动了 renderer 的真 UI 源码，但**未同步** \`design/GUI/\` 或 \`specs/f19-gui/\`："
+            echo
+            echo '```'
+            echo "$UI_FILES"
+            echo '```'
+            echo
+            echo "按 \`AGENTS.md §4.6\`「三件同步」纪律，UI 改动应同 PR 同步："
+            echo "1. \`design/GUI/<page>/<page>.html\`（交互原型）"
+            echo "2. \`design/GUI/<page>/<page>-<state>.png\`（状态截图）"
+            echo "3. \`specs/f19-gui/<page>.md\`（页交互规格）"
+            echo
+            echo "### 可忽略本提醒的情形"
+            echo
+            echo "- 改动**不涉及** UI 行为/布局/状态（i18n 文案抽取、测试补强、内存泄漏修复、纯 CSS 微调等）"
+            echo "- 图纸同步**由后续 PR 补偿**（既有惯例，如 #1314/#1315 → #1366）"
+            echo
+            echo "> 本提醒由 \`.github/workflows/ui-spec-sync-reminder.yml\` 自动生成，"
+            echo "> **仅评论、不阻断**（实测误报率约 17%，阻断代价高于收益）。"
+            echo "> 配套门禁（目录对应 + L4 头部指针）见 \`ci_cd/check_gui_spec_sync.py\`。"
+          } > /tmp/body.md
+
+          gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+            -F body=@/tmp/body.md --jq '.html_url'

@@ -79,8 +79,14 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
 ⚠️ 原型 HTML 是「设计基准」，页规格是「实现的对照面」。**两者都不更新 = 漂移**（#1326 实测 8 页）。
 ⚠️ PNG 由 `design/GUI/_tools/*.cjs` 截图脚本生成（本地 headless，**非 CI**）
    → **门禁无法自动验证 PNG 内容，只能靠人工自查**。
-⚠️ 门禁 `ci_cd/check_gui_spec_sync.py` 只校验「目录/文件对应 + 孤儿」，
-   **拦不住「改了没同步」**（那靠本纪律 + PR 自查）。
+⚠️ 门禁 `ci_cd/check_gui_spec_sync.py` 校验三件：① `design/GUI/` 目录 ↔ `specs/f19-gui/*.md`
+   **双向一一对应**（防孤儿/幽灵）② 页规格 **L4 头部必含自指指针** `> 对应 design/GUI/<page>/`
+   （#1338）③ 页规格 L8 统一为「目录 + 主文件名 + 状态枚举」形态（#1338 已统一 15 页）。
+   **仍拦不住「改了没同步」**——那条靠本纪律 + 下面的 PR 提醒 + 人工自查。
+⚠️ PR 提醒：`.github/workflows/ui-spec-sync-reminder.yml` 在「改了 renderer 真 UI 源码
+   （`*.tsx` 非测试）却未同步 `design/GUI/` 或 `specs/f19-gui/`」时**评论警告**。
+   **不阻断合并**（实测误报率约 17%：i18n 抽取/测试补强/泄漏修复等会触碰 tsx 但无 UI 语义）
+   → 收到提醒后自行判断；若同步由**后续 PR 补偿**（#1314/#1315 → #1366 惯例）可忽略。
 
 **判据（自查三问）**：本 PR 是否改了 UI 行为/布局？→ 对应页目录是哪个？→ 三件是否都在本 PR diff 里？
 

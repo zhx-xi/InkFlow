@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/library/（设定库六 tab + 项目选择器；各分类数据页见 design/GUI/characters/ 等六个目录）
+- 原型引用：design/GUI/library/library.html + library-<state>.png（main/noproject/tab-empty）
 > 低保真排版示意简图（区块+标签，非精确像素）
 
 ```text
