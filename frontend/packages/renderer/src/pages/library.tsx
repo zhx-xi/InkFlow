@@ -740,6 +740,7 @@ export function LibraryPage() {
                 projectId={currentProjectId}
                 eventTimeline={listItems}
                 narrativeOrder={timelineNarrative}
+                chapterTitles={outlineLib.chapterTitles}
                 onEdit={openEdit}
                 onDelete={openDelete}
               />

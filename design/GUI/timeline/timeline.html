@@ -107,9 +107,20 @@ button{font-family:inherit;cursor:pointer}
 .check-one{flex:none;border:1px solid var(--line);border-radius:6px;background:none;font-size:11px;color:var(--ink-2);padding:4px 10px;transition:border-color var(--dur),color var(--dur)}
 .check-one:hover{border-color:var(--accent);color:var(--accent)}
 
+/* #1323 章分组容器（轴线 + 分组 header） */
+.tl-group{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:12px 16px}
+.tl-group + .tl-group{margin-top:12px}
+.tl-group::before{content:"";position:absolute;left:7px;top:36px;bottom:20px;width:1px;background:var(--line)}
+.tl-gtitle{padding-left:20px;margin-bottom:8px;font-size:12px;font-weight:500;color:var(--ink-2)}
+.tl-node{position:relative;display:flex;align-items:center;gap:12px;padding-left:20px;font-size:12px;color:var(--ink)}
+.tl-node + .tl-node{margin-top:8px}
+.tl-node::before{content:"";position:absolute;left:4px;top:50%;width:7px;height:7px;border-radius:999px;background:var(--accent);transform:translateY(-50%)}
+.tl-main{flex:none;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
+.tl-node .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
+
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
-body[data-state="empty"] .tl-toolbar,body[data-state="empty"] .lib-card{display:none}
+body[data-state="empty"] .tl-toolbar,body[data-state="empty"] [data-testid="tl-axis"]{display:none}
 body[data-state="empty"] .lib-empty{display:flex}
 .lib-empty p{margin:0;font-size:13px;color:var(--ink-2)}
 .lib-empty button{margin-top:16px}
@@ -208,20 +219,24 @@ body[data-state="empty"] .lib-empty{display:flex}
           <span class="tl-legend" data-testid="tl-legend">点=叙事顺序 · 时间轴=世界内时间</span>
         </div>
 
-        <!-- 事件列表（默认叙事序） -->
-        <div class="lib-card" data-testid="library-list">
-          <div class="divide-y" data-testid="tl-list-narrative">
-            <div class="tl-row"><span class="tname">师父闭关前夜，问苏云舟「剑心为何物」</span><span class="badge">第 11 章</span><button class="check-one" data-testid="tl-check-one-1">单事件检查</button></div>
-            <div class="tl-row"><span class="tname">苏云舟下山，林晚照追随</span><span class="badge">第 12 章</span><button class="check-one" data-testid="tl-check-one-2">单事件检查</button></div>
-            <div class="tl-row"><span class="tname">夜访剑冢，发现二十年前异动痕迹</span><span class="badge">第 12 章</span><button class="check-one" data-testid="tl-check-one-3">单事件检查</button></div>
-            <div class="tl-row"><span class="tname">剑心蒙尘，断剑于山门</span><span class="badge">第 13 章</span><button class="check-one" data-testid="tl-check-one-4">单事件检查</button></div>
+        <!-- #1323 时间轴 = 章分组容器（每事件恰好渲染一次；组内含轴线+节点圆点） -->
+        <div data-testid="tl-axis">
+          <div class="tl-group" data-testid="tl-group-c11">
+            <div class="tl-gtitle" data-testid="tl-group-title-c11">第十一章 剑心为何物</div>
+            <div class="tl-node" data-testid="tl-axis-node-1"><span class="tl-main" data-testid="tl-axis-main-1">三百年前</span><span class="tname">师父闭关前夜，问苏云舟「剑心为何物」</span><button class="check-one" data-testid="tl-check-one-1">单事件检查</button></div>
           </div>
-          <!-- 世界序（时间升序，倒叙前移） -->
-          <div class="divide-y" data-testid="tl-list-world" style="display:none">
-            <div class="tl-row"><span class="tname">二十年前，剑冢异动，守陵人失踪</span><span class="badge">二十年前</span><button class="check-one">单事件检查</button></div>
-            <div class="tl-row"><span class="tname">师父闭关前夜，问苏云舟「剑心为何物」</span><span class="badge">第 11 章</span><button class="check-one">单事件检查</button></div>
-            <div class="tl-row"><span class="tname">夜访剑冢，发现二十年前异动痕迹</span><span class="badge">第 12 章</span><button class="check-one">单事件检查</button></div>
-            <div class="tl-row"><span class="tname">剑心蒙尘，断剑于山门</span><span class="badge">第 13 章</span><button class="check-one">单事件检查</button></div>
+          <div class="tl-group" data-testid="tl-group-c12">
+            <div class="tl-gtitle" data-testid="tl-group-title-c12">第十二章 夜访剑冢</div>
+            <div class="tl-node" data-testid="tl-axis-node-2"><span class="tl-main" data-testid="tl-axis-main-2">一百年前</span><span class="tname">苏云舟下山，林晚照追随</span><button class="check-one" data-testid="tl-check-one-2">单事件检查</button></div>
+            <div class="tl-node" data-testid="tl-axis-node-3"><span class="tl-main" data-testid="tl-axis-main-3">二十年前</span><span class="tname">夜访剑冢，发现二十年前异动痕迹</span><button class="check-one" data-testid="tl-check-one-3">单事件检查</button></div>
+          </div>
+          <div class="tl-group" data-testid="tl-group-c13">
+            <div class="tl-gtitle" data-testid="tl-group-title-c13">第十三章 剑心蒙尘</div>
+            <div class="tl-node" data-testid="tl-axis-node-4"><span class="tl-main" data-testid="tl-axis-main-4">三年前</span><span class="tname">剑心蒙尘，断剑于山门</span><button class="check-one" data-testid="tl-check-one-4">单事件检查</button></div>
+          </div>
+          <div class="tl-group" data-testid="tl-group-__none__">
+            <div class="tl-gtitle" data-testid="tl-group-title-__none__">未分章</div>
+            <div class="tl-node" data-testid="tl-axis-node-5"><span class="tl-main" data-testid="tl-axis-main-5">未知</span><span class="tname">守陵人失踪（手工录入，未归章）</span><button class="check-one" data-testid="tl-check-one-5">单事件检查</button></div>
           </div>
         </div>
 
@@ -305,22 +320,41 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
   el.appendChild(svg);
 });
 
-/* ── 状态机：叙事序 / 世界序 / 空态 ── */
+/* ── 状态机：叙事序 / 世界序 / 空态（#1323：章分组由 source_chapter_id 决定，与序无关） ── */
 const STATES = ['narrative','world','empty'];
+/* 叙事序（章内按叙事位置） vs 世界序（章内按世界内时间）——仅**组内**顺序不同，分组不变 */
+const ORDER_NARRATIVE = {
+  c11: ['1'],
+  c12: ['2','3'],
+  c13: ['4'],
+  __none__: ['5'],
+};
+const ORDER_WORLD = {
+  c11: ['1'],
+  c12: ['3','2'],
+  c13: ['4'],
+  __none__: ['5'],
+};
+function applyOrder(order){
+  for (const [gid, ids] of Object.entries(order)) {
+    const group = document.querySelector(`[data-testid="tl-group-${gid}"]`);
+    if (!group) continue;
+    for (const id of ids) {
+      const node = group.querySelector(`[data-testid="tl-axis-node-${id}"]`);
+      if (node) group.appendChild(node);
+    }
+  }
+}
 function setState(s){
   document.body.dataset.state = s;
   document.getElementById('stateSel').value = s;
-  const narr = document.querySelector('[data-testid="tl-list-narrative"]');
-  const world = document.querySelector('[data-testid="tl-list-world"]');
   const segBtns = document.querySelectorAll('.tl-seg button');
   if (s === 'world') {
-    narr.style.display = 'none';
-    world.style.display = '';
+    applyOrder(ORDER_WORLD);
     segBtns[0].classList.remove('active');
     segBtns[1].classList.add('active');
   } else if (s === 'narrative') {
-    narr.style.display = '';
-    world.style.display = 'none';
+    applyOrder(ORDER_NARRATIVE);
     segBtns[1].classList.remove('active');
     segBtns[0].classList.add('active');
   }

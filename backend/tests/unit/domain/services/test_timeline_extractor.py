@@ -4,8 +4,8 @@
 遵循 ADR-015）」全部场景:
 合法 JSON 全量落库 / 同名同章更新与幂等性 / None 未知值不覆盖 / 空串明确
 值覆盖 / 非法条目跳过 / 围栏输出 / 修复重试与
-异常透传 / 空条目列表 / 模板与模型参数断言 / narrative_position=None 走
-next_position 追加语义。
+异常透传 / 空条目列表 / 模板与模型参数断言 / #1323 合成叙事序（章基址 + 章内序，
+跨章不碰撞、章内相对次序保留）。
 
 实现镜像 F10 test_world_extraction.py（同 F9 test_character_extraction.py
 骨架），仅替换领域实体（TimelineEvent ↔ WorldSetting）、合并匹配键
@@ -174,8 +174,11 @@ class TestTimelineExtractor:
         assert mock_repo.add.await_count == 2
         # 每个提取事件各拉取一次同章候选集（按 title 比对在服务层完成）
         mock_repo.list_by_chapter.assert_awaited_with(PID, CID)
-        # narrative_position 均有 LLM 输出 → 不调 next_position
-        mock_repo.next_position.assert_not_awaited()
+        # #1323 G4：合成序需要章基址 → 即便 LLM 给了章内序，也要取一次 next_position
+        # （语义升级：旧契约断言「LLM 有输出 → 不调 next_position」，那正是跨章碰撞的根因）
+        mock_repo.next_position.assert_awaited_once_with(PID)
+        # 章内相对次序必须与 LLM 给出的章内序一致（1 < 2）
+        assert result.created[0].narrative_position < result.created[1].narrative_position
 
     async def test_existing_same_title_same_chapter_updated(
         self, extractor, mock_llm, mock_repo
@@ -265,7 +268,12 @@ class TestTimelineExtractor:
         assert merged.timeline_flag == ""
 
     async def test_missing_creates_with_next_position(self, extractor, mock_llm, mock_repo) -> None:
-        """narrative_position=None → 调 repo.next_position（F12 追加语义）。"""
+        """#1323：narrative_position=None → 合成序仍落在 repo.next_position 基址之上（保证不碰撞）。
+
+        语义升级（#1323 G4）：旧契约断言「落库 == next_position 原值」（7）；
+        现契约 = 合成序（章基址 + 章内序）× 章内步长 ⇒ 起点为 ``base + stride``。
+        关键不变式 = **同一章内严格递增且以 next_position 为基准**（不再原样透传）。
+        """
         mock_repo.next_position.return_value = 7
         mock_llm.chat.return_value = _ok_response(
             _payload(events=[{"title": "新事件", "narrative_position": None}])
@@ -275,7 +283,8 @@ class TestTimelineExtractor:
             default_model=DEFAULT_MODEL,
         )
         assert len(result.created) == 1
-        assert result.created[0].narrative_position == 7
+        # 合成序以 next_position(7) 为基址、章内首条落 +stride
+        assert result.created[0].narrative_position > 7
         mock_repo.next_position.assert_awaited_once_with(PID)
 
     async def test_idempotent_second_extract(self, extractor, mock_llm, mock_repo) -> None:

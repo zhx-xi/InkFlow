@@ -16,8 +16,9 @@ TimelineRepositoryProtocol），测试中注入 Mock。
    → 非法条目跳过 + warning
 ⑤ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → TimelineExtractionError
 ⑥ 合并落库（§5.5 合并策略）: 按 (project_id, title, source_chapter_id)
-   匹配事件 → 存在=非空字段覆盖 / 不存在=新建（narrative_position=None
-   走 F12 next_position 追加语义；v1.1 真删：无「软删同名同章」分支）
+   匹配事件 → 存在=非空字段覆盖 / 不存在=新建（#1323：narrative_position 不再原样
+   采信 LLM 的章内序，改走 `_composite_positions` 合成序 = 章基址 + 章内序；v1.1
+   真删：无「软删同名同章」分支）
 ⑦ 返回 TimelineExtractionResult（created/updated/warnings + model）
 """
 
@@ -53,6 +54,19 @@ _MAX_PARSE_RETRIES = 2
 
 _TEMPERATURE = 0.2
 """结构化输出固定低温（spec §5.5，不对外暴露）。"""
+
+_COMPOSITE_STRIDE = 1000
+"""#1323 G4 合成叙事序的章内步长。
+
+LLM 的 ``narrative_position`` 是**章内序**（prompt 明文「事件在本章叙事中出现的
+先后（从 1 开始）」）→ 每章都从 1 重数，原样落库必然跨章碰撞（DB 实测 215 条只有
+34 个不同位置值）。合成序 = ``章基址 + 章内序``，章基址由仓储 ``next_position``
+给出（项目内 max+1），因此跨章天然递增、互不碰撞，且章内相对先后完整保留
+（章内序在章分组视图里是有用的排序键，故不能丢弃）。
+
+步长取 1000：章内事件数远超此值时退化为「章内序超界后接续递增」，仍保证严格递增
+（见 ``_composite_positions``），不产生碰撞。
+"""
 
 
 def _utcnow() -> datetime:
@@ -265,13 +279,28 @@ class TimelineExtractor:
 
         created: list[TimelineEvent] = []
         updated: list[TimelineEvent] = []
+        # #1323 G4：LLM 的 narrative_position 是**章内序**（每章从 1 重数）→ 原样落库
+        # 必然跨章碰撞（DB 实测 215 条仅 34 个不同位置值，1 个位置值对应 10 条）。
+        # 改为合成序（章基址 + 章内序）：章内相对先后完整保留，跨章严格递增不碰撞。
+        # 章基址只在「确有新建事件」时取一次，保证同一章内各事件的基址一致。
+        pending_creates: list[ExtractedTimelineEvent] = []
         for ee in events:
             existing = await self._find_active_by_title(pid, cid, ee.title)
             if existing is None:
+                pending_creates.append(ee)
+                continue
+
+            merged = _merge_event_fields(existing, ee)
+            if merged is None:
+                # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
+                continue
+            updated.append(await self._repo.update(merged))
+
+        if pending_creates:
+            chapter_base = await self._repo.next_position(pid)
+            positions = _composite_positions(pending_creates, chapter_base=chapter_base)
+            for slot, ee in enumerate(pending_creates):
                 now = _utcnow()
-                narrative_position = ee.narrative_position
-                if narrative_position is None:
-                    narrative_position = await self._repo.next_position(pid)
                 new_event = await self._repo.add(
                     TimelineEvent(
                         id=uuid.uuid4(),
@@ -281,7 +310,7 @@ class TimelineExtractor:
                         time_value=ee.time_value,
                         time_unit=ee.time_unit or "",
                         time_display="",
-                        narrative_position=narrative_position,
+                        narrative_position=positions[slot],
                         timeline_flag=ee.timeline_flag or "",
                         source_chapter_id=request.chapter_id,
                         created_at=now,
@@ -289,13 +318,6 @@ class TimelineExtractor:
                     )
                 )
                 created.append(new_event)
-                continue
-
-            merged = _merge_event_fields(existing, ee)
-            if merged is None:
-                # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
-                continue
-            updated.append(await self._repo.update(merged))
 
         for w in warnings:
             logger.warning("时间线提取警告: %s", w)
@@ -318,6 +340,38 @@ class TimelineExtractor:
             if event.title == title:
                 return event
         return None
+
+
+def _composite_positions(
+    events: list[ExtractedTimelineEvent], *, chapter_base: int
+) -> dict[int, int]:
+    """#1323 G4：把「章内序」映射为项目内**合成序**（章基址 + 章内序）。
+
+    LLM 的 ``narrative_position`` 是章内序（每章从 1 重数）→ 原样落库会跨章碰撞。
+    本函数保留章内相对先后（升序重排为紧凑 1..n），再加章基址 ⇒
+    ① 跨章不碰撞（章基址由 ``next_position`` 保证严格递增）；
+    ② 章内相对次序与 LLM 给出的章内序一致（互为有用的排序键）。
+
+    ``narrative_position`` 为 None 的条目排在已给出章内序的条目之后，按输入序稳定
+    排列（保持「无法判断」的语义，同时不碰撞）。
+
+    Args:
+        events: 本章提取出的事件（输入序 = LLM 输出序）。
+        chapter_base: 本章合成序基址（仓储 ``next_position`` 返回值）。
+
+    Returns:
+        输入下标 → 合成序的映射（值域严格递增、两两不同）。
+    """
+    with_pos = [
+        (i, ee.narrative_position)
+        for i, ee in enumerate(events)
+        if ee.narrative_position is not None
+    ]
+    without_pos = [i for i, ee in enumerate(events) if ee.narrative_position is None]
+    ordered = [i for i, _ in sorted(with_pos, key=lambda pair: (pair[1], pair[0]))] + without_pos
+    # 章内序可能超出步长（异常/脏数据）→ 退化为接续递增，仍保证严格递增不碰撞
+    step = _COMPOSITE_STRIDE if len(ordered) <= _COMPOSITE_STRIDE else 1
+    return {idx: chapter_base + n * step for n, idx in enumerate(ordered, start=1)}
 
 
 def _merge_event_fields(

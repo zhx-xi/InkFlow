@@ -88,6 +88,7 @@ from inkflow.core.database import (
     ensure_project_watermark_column,
     ensure_projects_drop_legacy_genre_column,
     ensure_provider_builtin_key_column,
+    ensure_timeline_composite_positions,
     ensure_timeline_drop_is_deleted,
     ensure_user_preference_superseded_column,
     ensure_world_categories,
@@ -147,6 +148,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_characters_brief_column)
         await conn.run_sync(ensure_chapters_writing_requirements_column)
         await conn.run_sync(ensure_outline_drop_is_deleted)
+        # #1323：时间线叙事序一次性回填为合成序（幂等；旧库自动修正跨章碰撞）
+        await conn.run_sync(ensure_timeline_composite_positions)
         await conn.run_sync(ensure_timeline_drop_is_deleted)
         await conn.run_sync(ensure_foreshadowing_drop_is_deleted)
         await conn.run_sync(ensure_chat_messages_is_deleted_column)
