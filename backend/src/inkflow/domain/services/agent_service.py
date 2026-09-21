@@ -425,6 +425,7 @@ class AgentService(AgentServiceStreamMixin):
         character_repo: Any = None,
         world_repo: Any = None,
         outline_repo: Any = None,
+        foreshadowing_repo: Any = None,
         agent_repo: Any = None,
     ):
         # 延迟导入避免循环依赖
@@ -448,6 +449,7 @@ class AgentService(AgentServiceStreamMixin):
         self._character_repo = character_repo
         self._world_repo = world_repo
         self._outline_repo = outline_repo
+        self._foreshadowing_repo = foreshadowing_repo
         self._store = store or ExecutionStore(db_session)
         self._project_repo = project_repo or SQLiteProjectRepository(db_session)
         self._chapter_repo = chapter_repo or SQLiteChapterRepository(db_session)
@@ -777,14 +779,21 @@ class AgentService(AgentServiceStreamMixin):
         variables: dict[str, str],
         override: ContextOverride | None = None,
     ) -> dict[str, str]:
-        """设定库摘要注入（#366 G1）：角色/世界观/大纲三源，非空注入 variables["setting"]。
+        """设定库摘要注入（#366 G1）：角色/伏笔/世界观/大纲四源，非空注入 variables["setting"]。
         单源/整体异常 → WARNING + 回退（失败隔离，不阻断管线）。
 
         #1319：角色/世界观两源按 override 白名单过滤（#1235 三态：显式 [] = 该源零产出，
         [id...] = 仅命中项）；未显式勾选的源保持全注入（override=None 或该键缺省）。
+        #1344：伏笔源同三态（F6 注入集合 = list_open，与 _apply_override 的
+        FORESHADOWING 源同源，两路径能力对齐）。
         大纲源无 override 面 → 始终全注入。过滤在该源 try 块内，保持单源失败隔离语义不变。
         """
-        if self._character_repo is None and self._world_repo is None and self._outline_repo is None:
+        if (
+            self._character_repo is None
+            and self._world_repo is None
+            and self._outline_repo is None
+            and self._foreshadowing_repo is None
+        ):
             return variables
         try:
             project_uuid = uuid.UUID(project_id)
@@ -806,6 +815,24 @@ class AgentService(AgentServiceStreamMixin):
                             parts.append(f"【角色】{ch.name}：{content}")
                 except Exception:
                     logger.warning("角色设定读取失败，跳过该源", exc_info=True)
+            if self._foreshadowing_repo is not None:
+                try:
+                    # #1344 伏笔源：F6 注入集合 = list_open（status=open，priority DESC）
+                    # ——与 ForeshadowingSource.collect（sources.py:249）同源，保证
+                    # assemble 预览路径（_apply_override）与本路径产出同一集合。
+                    open_fs = await self._foreshadowing_repo.list_open(project_uuid)
+                    # #1344 伏笔源白名单：同角色源三态（None/缺省 = 全注入，显式 [] = 删空）
+                    if override is not None and "foreshadowing_ids" in override.model_fields_set:
+                        allowed_fs = {str(i) for i in override.foreshadowing_ids}
+                        open_fs = [f for f in open_fs if str(f.id) in allowed_fs]
+                    for f in open_fs:
+                        parts.append(
+                            f"【伏笔】{f.title}：{f.description}"
+                            if f.description
+                            else f"【伏笔】{f.title}"
+                        )
+                except Exception:
+                    logger.warning("伏笔设定读取失败，跳过该源", exc_info=True)
             if self._world_repo is not None:
                 try:
                     worlds, _ = await self._world_repo.list(project_uuid, limit=50)

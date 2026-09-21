@@ -47,6 +47,9 @@ def _svc(db: AsyncSession) -> AgentService:
     from inkflow.infrastructure.database.repositories.character_repo import (
         SQLiteCharacterRepository,
     )
+    from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
+        SQLiteForeshadowingRepository,
+    )
     from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
     from inkflow.infrastructure.database.repositories.world_repo import SQLiteWorldRepository
 
@@ -61,6 +64,7 @@ def _svc(db: AsyncSession) -> AgentService:
         character_repo=SQLiteCharacterRepository(db),
         world_repo=SQLiteWorldRepository(db),
         outline_repo=SQLiteOutlineRepository(db),
+        foreshadowing_repo=SQLiteForeshadowingRepository(db),
         supervisor_pipeline=_supervisor_pipeline,
     )
 
