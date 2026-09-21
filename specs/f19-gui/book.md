@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/book/book-run.html + book-run-<state>.png（completed/degraded-expanded/degraded/failed/running）
+- 原型引用：design/GUI/book/book-run.html + book-run-<state>.png（completed/degraded/degraded-expanded/failed/running）
 - ⚠️ **命名说明**：本页原型文件名为 `book-run.html`（非其它 14 页的 `<page>.html` 形态），与其它页命名不统一。本规格沿用现状、**不做改名**（改名会同时动原型资产与 `design/GUI/_tools/` 截图脚本，收益低于风险）。一致性门禁 `ci_cd/check_gui_spec_sync.py` 只校验**目录级**对应（`design/GUI/book/` ↔ `specs/f19-gui/book.md`），对目录内文件命名无语义要求。
 - ⚠️ **本页无侧边栏入口**（`AppNav.tsx` 无 book 项），仅 `App.tsx:169` 保留路由 `<Route path="/book" element={<BookPage />} />`。用户当前无法从导航点入本页；本规格按「已合入实现」记录现状，**不新增入口**（是否启用另议）。
 > 低保真排版示意简图（区块+标签，非精确像素）
