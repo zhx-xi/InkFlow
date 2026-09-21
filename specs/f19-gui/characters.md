@@ -1,7 +1,7 @@
 # 设定库·角色 — 交互规格
 
 > 页面: characters | 路由: /library?cat=characters | 组件: pages/library.tsx（cat=characters）+ LibraryItemList（withCharacterExtras）+ CharacterDetailPanel + LibraryCreateDialog（cat=characters）
-> 对应 design/GUI/characters/（官方简图 characters.html + characters-<state>.png，见后续补图）
+> 对应 design/GUI/characters/（官方简图 characters.html + characters-<state>.png）
 
 ## 1. 画面样式
 

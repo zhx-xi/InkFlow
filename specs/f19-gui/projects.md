@@ -1,7 +1,7 @@
 # 项目页 — 交互规格
 
 > 页面: projects | 路由: /projects（根路由 / 重定向同页）| 组件: pages/projects.tsx
-> 对应 design/GUI/projects/（官方简图 projects.html + projects-<state>.png，见后续补图）
+> 对应 design/GUI/projects/（官方简图 projects.html + projects-<state>.png）
 
 ## 1. 画面样式（简图/原型）
 
@@ -31,7 +31,7 @@
 ```
 - 参考锚点（以真实组件为准：pages/projects.tsx + components/ProjectCard、NewProjectDialog、RenameProjectDialog、ConfirmDialog、ExportDialog）：
   - 布局：max-w-[1080px] 居中滚动容器（px-12 py-10）；顶部标题区（h1 书名 + 副标题）右侧「新建项目」主按钮（new-project-btn）
-  - 网格：grid-cols-3 gap-5 项目卡片 + 末位虚线新建卡片（new-project-card，min-h 168px）；加载中显示 3 张骨架卡片（role=status）；加载失败显示错误横幅；无项目显示空态引导（BookOpen + 标题/副文案 + CTA）
+  - 网格：grid-cols-3 gap-5 项目卡片 + 末位虚线新建卡片（new-project-card，min-h 168px）；加载中显示 3 张骨架卡片（role=status）；加载失败显示错误横幅（projects-error）+「重试」按钮（projects-retry，`projects.tsx:168`，`#883`）→ 点重试重跑 loadProjects；无项目显示空态引导（见 §1 三态）（BookOpen + 标题/副文案 + CTA）
   - 项目卡片：书名 + 标签全拼（逗号分隔，空标签不渲染行）+ 目标字数 + 章节进度 n/m + 相对更新时间（刚刚/n 分钟前/n 小时前/n 天前/n 周前）+ 进度条（role=progressbar）+ 右上角卡片菜单（MoreHorizontal）；当前写作项目 → accent 边框 + 「写作中」角标
   - 卡片菜单：修改 / 重命名 / 导出 / 删除 四项（点击外部关闭；Enter/Space 可达）
   - 对话框族：新建（NewProjectDialog，遮罩点击不关闭 #195）/ 重命名（轻量单字段）/ 删除（ConfirmDialog danger）/ 导出（ExportDialog）——均遮罩不关闭，关闭仅 取消/Esc/成功
@@ -53,7 +53,7 @@
 | 重命名对话框 | 单字段输入（预填当前名）+ 取消/保存 | 保存 → renameProject | saving 中保存禁用、ESC 不关闭 | ok toast「已保存」+ 关闭 | err toast + 对话框保持可改重试 | strip 后空 → 保存按钮 disabled；Esc/取消/成功三路径关闭；遮罩点击不关闭（#195） |
 | 删除确认框 | ConfirmDialog danger（标题含项目名 + 数据范围说明） | 确认 → deleteProject（DELETE） | 删除请求在途 | 成功/失败均关闭确认框；成功 ok toast，卡片由 store 驱动消失 | 失败 err toast（store rethrow 不吞错） | 遮罩点击不关闭（#195）；取消 → 不删除 |
 | 导出对话框 | 范围勾选（设定档案附录）+ 导出位置 + 文件名 + 导出按钮 | 导出 → exportProjectFile fetch 文本 → Electron IPC 写盘 | saving 中 | ok toast「导出成功」+ 关闭 | err toast + 保持打开 | 遮罩点击不关闭；关闭 = 取消/成功 |
-| 页面加载/错误 | 首挂载 ensureApiReady（Electron preload 时序防 401）→ loadProjects | — | 3 张骨架卡片（role=status aria-label=加载中） | 卡片网格渲染 | 错误横幅（err 边框 + 文案） | 有缓存列表时加载不显示骨架（仅 projects.length===0 且 loading） |
+| 页面加载/错误 | 首挂载 ensureApiReady（Electron preload 时序防 401）→ loadProjects | — | 3 张骨架卡片（role=status aria-label=加载中） | 卡片网格渲染 | 错误横幅（err 边框 + 文案）+「重试」按钮（projects-retry）→ 重跑 loadProjects | 有缓存列表时加载不显示骨架（仅 projects.length===0 且 loading） |
 
 ## 3. 验收
 
@@ -62,3 +62,4 @@
 - N3：卡片聚合展示书名/标签/目标字数/章节进度/相对更新时间/进度条；写作中项目 accent 边框 + 角标
 - N4：卡片菜单四项（修改→/settings/project、重命名、导出、删除）各自对话框行为符合上表；删除有二次确认且遮罩不关闭
 - N5：重命名成功 ok toast、失败 err toast 且对话框保持可改；删除失败 err toast
+- N6（#883）：页面三态 —— ① `projects.length===0 && loading` → 3 张骨架卡片（role=status）；② 加载失败 → 错误横幅（`projects-error`）+「重试」按钮（`projects-retry`），点重试重跑 loadProjects；③ 无项目 → 空态引导；④ 有缓存列表时加载不显示骨架

@@ -120,6 +120,14 @@ button{font-family:inherit;cursor:pointer}
 .hit .score{margin-left:auto;font-size:12px;color:var(--ink-3)}
 .hit h3{margin:8px 0 0;font-family:var(--font-serif);font-size:15px;font-weight:600;color:var(--ink)}
 .hit p{margin:4px 0 0;font-size:13px;color:var(--ink-2)}
+/* #1300：#1314 结果分页条（列表下方居中；页大小 Select + 上一页/信息/下一页） */
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:center;margin-top:24px}
+.pager .size{display:flex;flex-direction:column;gap:6px}
+.pager select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 8px;height:30px}
+.pager button{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:13px;padding:6px 12px;transition:background var(--dur)}
+.pager button:hover:not(:disabled){background:var(--surface-3)}
+.pager button:disabled{cursor:not-allowed;opacity:.5}
+.pager .info{font-size:13px;color:var(--ink-2)}
 .badge{display:inline-block;border-radius:4px;background:var(--surface-3);padding:2px 8px;font-size:11px;font-weight:500;color:var(--ink-2)}
 
 .empty-box{margin-top:32px;display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
@@ -294,7 +302,16 @@ body[data-shot="1"] .demo-bar{display:none}
                 <p>剑冢异动之夜，前代掌门失踪；青云宗封山三日，此后剑冢列为禁地。</p>
               </li>
             </ul>
-          </div>
+            <!-- #1314：结果分页条（#1300 公共组件；居中，服务端分页默认 20/页） -->
+            <div class="pager" data-testid="search-page">
+              <div class="size">
+                <select aria-label="每页条数" data-testid="search-page-size-select"><option>10</option><option selected>20</option><option>25</option><option>50</option><option>100</option></select>
+              </div>
+              <button data-testid="search-page-prev" disabled>上一页</button>
+              <span class="info" data-testid="search-page-info">第 1 / 1 页 · 共 5 条</span>
+              <button data-testid="search-page-next" disabled>下一页</button>
+            </div>
+            </div>
 
           <!-- 空态 -->
           <div class="empty-box" data-testid="search-empty">

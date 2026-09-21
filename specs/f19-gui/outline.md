@@ -1,7 +1,7 @@
 # 设定库·大纲 — 交互规格
 
 > 页面: outline | 路由: /library?cat=outline | 组件: pages/library.tsx（cat=outline）+ OutlineTree + outline-dialogs（PlotPointDialog / ArcDialog / GenerateOutlineDialog / ChapterLinkDialog）+ LibraryCreateDialog（cat=outline）
-> 对应 design/GUI/outline/（官方简图 outline.html + outline-<state>.png，见后续补图）
+> 对应 design/GUI/outline/（官方简图 outline.html + outline-<state>.png）
 
 ## 1. 画面样式
 

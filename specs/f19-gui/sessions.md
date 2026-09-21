@@ -1,11 +1,11 @@
 # 会话页 — 交互规格
 
 > 页面: sessions | 路由: /sessions | 组件: frontend/packages/renderer/src/pages/sessions.tsx（SessionsPage，nav 项 sessions，lucide History 图标）
-> 对应 design/GUI/sessions/（官方简图 sessions.html + sessions-<state>.png，见后续补图；当前目录仅 .gitkeep 占位）
+> 对应 design/GUI/sessions/（官方简图 sessions.html + sessions-<state>.png）
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/sessions/sessions.html + sessions-<state>.png（后续补图，目录已建）
+- 原型引用：design/GUI/sessions/sessions.html + sessions-<state>.png
 > 低保真排版示意简图（区块+标签，非精确像素）：
 
 ```text
@@ -50,6 +50,12 @@
   - chips 行（mt-3）：全部/活动/已归档
   - 目录（mt-6）：卡片列表 space-y-3，每卡 p-4 圆角边框；访谈卡只读（无操作按钮），执行卡与 AI 对话卡有归档/恢复/删除
   - 删除确认：z-50 遮罩弹窗，居中 max-w-sm
+- 目录分页条（#1300 / PR #1314，公共组件 `components/Pagination.tsx`）：目录列表下方，`sessions-page` 前缀，容器 `mt-4 justify-end`；「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→「下一页」，默认 20/页（`SESSION_PAGE_SIZE`，`sessions.tsx:46`）。**客户端分页**——对已过滤的 `directoryItems` 做内存 `slice`（`:229`），**不重发请求**；total = `directoryItems.length`（随项目/检索/chips 过滤实时变化）
+- 目录四态互斥（#883，`sessions.tsx:404-435`，优先级自上而下）：
+  - `sessions-error`（`role=alert`）：加载失败 → err 边框卡片 + 文案（`lib.loadFailed`）+「重试」按钮（`sessions-retry`，`handleRetry` 重跑三路拉取）
+  - `sessions-loading`（`role=status`）：`!allLoaded` → 虚线卡片「加载中…」（`common.loading`）
+  - `sessions-empty`：三态拉取完成后 `directoryItems.length === 0` → 虚线卡片「暂无会话」
+  - 目录列表（`session-directory`）：有数据 → 卡片 + 分页条
 
 ## 2. 动作样式（按钮 × 状态表，逐控件）
 
@@ -67,6 +73,8 @@
 | 删除确认「取消」（session-delete-cancel） | 对话框内次按钮 | 关闭对话框 | — | 卡片不变 | — | 不调任何 API | — |
 | 删除确认「确定删除」（session-delete-confirm） | 对话框内主按钮（accent） | deleteSession(id) / deleteChatConversation(id)（force 真删） | — | 卡片从目录移除 + ok toast「已删除」 | err toast「原因」 | 描述「此操作将永久删除会话，不可恢复」；删除后不可撤销 | — |
 | 访谈卡片 | 只读：访谈徽标 + 状态 +「已确认 {n} 项」+ 标题 + 可选「已生成写作计划」徽标 | 无操作按钮 | — | — | — | 无归档/恢复/删除入口 | — |
+| 目录分页条（sessions-page） | 首页 prev 禁用；信息「第 1 / {m} 页 · 共 {k} 条」（k = 过滤后条目数） | 「下一页」→ setPage(p+1)（内存 slice，**不发请求**）；「上一页」→ p-1 | —（本地切片无网络等待） | 目录展示该页 20 条 | — | 仅目录有卡片时渲染；m=1 双向禁用；**过滤（项目/检索/chips）后 total 重算**，当前页超界自动收敛到末页（`:232-236`） | 新增（#1300 / #1314） |
+| 目录加载失败 · 重试（sessions-retry） | 加载失败时随 `sessions-error` 卡片渲染（err 边框 + `lib.loadFailed` 文案） | 点「重试」（`lib.retry`）→ handleRetry 重跑三路拉取 | 卡片切换为 `sessions-loading` | 拉取成功 → 目录列表渲染 | 再次失败 → 仍 `sessions-error` | 与 `sessions-loading` / `sessions-empty` / 目录列表**四态互斥**（`sessions.tsx:404-435`） | 新增（#883） |
 
 ## 3. 验收
 
@@ -77,6 +85,8 @@
 - N5：执行会话与 AI 对话归档/恢复闭环：活动态可归档（ok toast）→ 归档态显示「已归档」徽标 + 恢复按钮 → 恢复后回活动态；失败均 err toast 且列表状态不变
 - N6：删除需经确认对话框（含永久删除提示）；确定 → 卡片移除 + ok toast「已删除」；取消 → 无副作用
 - N10（#825 UI 元素必须出现）：左侧会话栏（SessionBar）渲染时——① mock 会话列表返回含「蜀山，我是掌门」等条目 → 断言 `session-item-<id>` / `getByText('蜀山，我是掌门')` **出现**（非「暂无数据」）；② 每个条目断言**仅一个清晰标题**（无冗余底部小 title）；③ 折叠按钮 `session-bar-toggle` 断言位于「会话」标题行最右（justify-between，或在分组 header 内右对齐）；④ 无会话 → 断言空态「暂无数据」文案出现（`session-bar-empty`）。⑤ 按项目过滤：mock 含项目 p1/p2 线程，`projectId='p1'` 时仅显示 p1 条目、p2 条目不出现。
+- N25（#1300 / PR #1314）：目录分页条（`sessions-page` 前缀，右对齐）——① >20 条时渲染且首页 prev 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确；② 点「下一页」展示次页且**不发网络请求**（客户端 slice）；③ ≤20 条时双向禁用；④ 过滤（项目/检索/chips）后 total 重算且当前页超界自动收敛到末页。
+- N26（#883）：目录四态互斥（`sessions.tsx:404-435`）——① 加载失败 → `sessions-error`（role=alert）+ `sessions-retry`，点重试重跑三路拉取；② `!allLoaded` → `sessions-loading`（role=status）；③ 拉取完成且 `directoryItems.length===0` → `sessions-empty`；④ 有数据 → 目录列表 + 分页条。
 
 ## 4. #770 会话页架构增量（会话标题/改名/导航）
 
@@ -102,6 +112,7 @@
 │        │  （点击卡片：title 匹配章节 → /writing?    │
 │        │    chapter_id=..；匹配不到 → /writing?    │
 │        │    conversation_id=.. 全局 chat 页）      │
+│        │  上一页  第 1 / 1 页 · 共 10 条  下一页    │
 ├────────┼──────────────────────────────────────────┤
 │        │  内核已连接 · 模型: deepseek-chat · 会话:N │
 └────────┴──────────────────────────────────────────┘

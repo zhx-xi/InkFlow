@@ -1,7 +1,7 @@
 # 设定库·世界观 — 交互规格
 
 > 页面: world | 路由: /library?cat=world | 组件: pages/library.tsx（cat=world）+ WorldCategoryToolbar + WorldNodeView + WorldCategoryDialog + CopyDialog + MapWorkbench（MapDirectoryTree / MapCanvas / PinDialog / MapCreateDialog）+ LibraryCreateDialog（cat=world）
-> 对应 design/GUI/world/（官方简图 world.html + world-<state>.png，见后续补图）
+> 对应 design/GUI/world/（官方简图 world.html + world-<state>.png）
 
 ## 1. 画面样式
 

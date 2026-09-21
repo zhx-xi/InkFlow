@@ -1,7 +1,7 @@
 # 设定库·伏笔 — 交互规格
 
 > 页面: foreshadow | 路由: /library?cat=foreshadow | 组件: pages/library.tsx（cat=foreshadow）+ LibraryItemList（无角色扩展）+ LibraryCreateDialog（cat=foreshadow）
-> 对应 design/GUI/foreshadow/（官方简图 foreshadow.html + foreshadow-<state>.png，见后续补图）
+> 对应 design/GUI/foreshadow/（官方简图 foreshadow.html + foreshadow-<state>.png）
 
 ## 1. 画面样式
 
