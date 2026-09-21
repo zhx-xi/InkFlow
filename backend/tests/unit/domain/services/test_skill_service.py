@@ -574,3 +574,54 @@ class TestBuiltinSkillContentContract:
         """每个内置 content 含「## 示例」小节（应用示例）。"""
         for spec in BUILTIN_SKILL_SPECS:
             assert "## 示例" in spec["content"], f"{spec['name']} content 缺「示例」小节"
+
+
+class TestBuiltinSkillContentDepth:
+    """#1327 内置方法论 skill 内容深度契约（#550 之后第二次充实）。
+
+    背景（#1327 实测）：6 个方法论 skill 合计 3,420 字符（单个 517-649），而
+    `i18n/skills/zh/` 的 24 个操作类 skill 合计约 70KB → 方法论类 : 操作类
+    ≈ 1:20，方法论显然过薄。本契约把「过薄」变成可证伪的下限。
+
+    RED 形态：#550 只锁 ≥20 行 + 三小节存在，内容仍可极短（当前 517-649 字符
+    → 本类断言全 FAIL）。
+    """
+
+    MIN_CHARS_PER_SKILL = 1500
+
+    def test_each_builtin_content_meets_char_floor(self) -> None:
+        """每个内置 content ≥ 1500 字符（当前 517-649 → FAIL）。"""
+        for spec in BUILTIN_SKILL_SPECS:
+            n = len(spec["content"])
+            assert n >= self.MIN_CHARS_PER_SKILL, (
+                f"{spec['name']} content 仅 {n} 字符（应 ≥{self.MIN_CHARS_PER_SKILL}）"
+            )
+
+    def test_builtin_content_total_meets_floor(self) -> None:
+        """6 个内置 content 合计 ≥ 6800 字符（#1327 实测起点 3,420 → 至少翻倍）。
+
+        口径说明：本阈值为「比原状翻倍」的下限，非目标值（实际交付 11,030）。
+        定得过紧（如 12000）会退化为「按字数填空」的反向激励。
+        """
+        total = sum(len(s["content"]) for s in BUILTIN_SKILL_SPECS)
+        assert total >= 6800, (
+            f"6 个内置 skill 合计仅 {total} 字符（应 ≥6800，约为原状 3420 的两倍）"
+        )
+
+    def test_each_builtin_content_covers_journey_pitfall_families(self) -> None:
+        """每个方法论 skill 须覆盖本轮用户旅程暴露的缺陷族（防「凑字数」）。
+
+        缺陷族锚点（W24 批 issue）：设定漂移 / 伏笔管理 / 时间线管理。
+        断言方式为「至少命中 2 族」，避免把 skill 正文写成同一套模板。
+        """
+        families = {
+            "设定漂移": ("设定漂移", "漂移", "矛盾", "设定冲突"),
+            "伏笔管理": ("伏笔",),
+            "时间线管理": ("时间线", "时序", "时间顺序"),
+        }
+        for spec in BUILTIN_SKILL_SPECS:
+            content = spec["content"]
+            hit = [fam for fam, kws in families.items() if any(k in content for k in kws)]
+            assert len(hit) >= 2, (
+                f"{spec['name']} 仅覆盖缺陷族 {hit}，应 ≥2 族（设定漂移/伏笔管理/时间线管理）"
+            )
