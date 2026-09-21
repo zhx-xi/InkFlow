@@ -11,6 +11,12 @@ system_prompt: |
   （纪元 era / 年 year / 月 month / 日 day / 时 hour）.
   narrative_position = the order in which the event appears in this chapter's narration
   (starting from 1); output null when undeterminable.
+  narrative_position is **meaningful within this chapter only** (an in-chapter ordinal; the
+  system converts it to a global order). Do not continue numbering across chapters.
+  timeline_flag must be exactly one of the following (output an empty string when unmarked):
+  "" (normal order, default), "倒叙" (flashback: narration order earlier than the event's
+  in-world time), "插叙" (interjection/flashforward: narration order later than the event's
+  in-world time).
   Output strict JSON and nothing else, in this format:
   {
     "events": [

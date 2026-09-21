@@ -16,13 +16,24 @@ from sqlalchemy.sql.type_api import TypeEngineMixin
 from sqlalchemy.types import TypeEngine
 
 from inkflow.core.config import config
+from inkflow.core.migrations_agent_executions import (
+    ensure_agent_executions_hitl_payload_column,
+    ensure_agent_executions_relations_column,
+    ensure_agent_executions_thread_id_column,
+    ensure_agent_executions_trace_column,
+)
 from inkflow.core.migrations_chapter import ensure_chapters_writing_requirements_column
 
-# 列/表迁移已抽至 core/migrations_{chapter,project,character_relation}.py（900 行护栏）。
+# 列/表迁移已抽至 core/migrations_{chapter,project,timeline_position,character_relation}.py
+# （900 行护栏）。
 from inkflow.core.migrations_character_relation import (
     ensure_character_relations_merged_into_knowledge,
 )
 from inkflow.core.migrations_project import ensure_projects_drop_legacy_genre_column
+from inkflow.core.migrations_timeline_position import (
+    ensure_timeline_composite_positions,
+    rollback_timeline_composite_positions,
+)
 from inkflow.core.migrations_uuid import (
     ENTITY_UUID_TABLES,
     ensure_entity_uuid_columns,
@@ -31,12 +42,19 @@ from inkflow.core.migrations_uuid import (
 
 __all__ = [
     "ENTITY_UUID_TABLES",
+    "ensure_agent_executions_hitl_payload_column",
+    "ensure_agent_executions_relations_column",
+    "ensure_agent_executions_thread_id_column",
+    "ensure_agent_executions_trace_column",
     "ensure_chapters_writing_requirements_column",
     "ensure_character_relations_merged_into_knowledge",
     "ensure_entity_uuid_columns",
     "ensure_projects_drop_legacy_genre_column",
+    "ensure_timeline_composite_positions",
     "rollback_entity_uuid_columns",
+    "rollback_timeline_composite_positions",
 ]
+
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
 
 
@@ -162,55 +180,6 @@ def ensure_provider_builtin_key_column(conn: Connection) -> None:
         return
     if "builtin_key" not in names:
         conn.execute(text("ALTER TABLE provider_configs ADD COLUMN builtin_key VARCHAR(50)"))
-
-
-def ensure_agent_executions_hitl_payload_column(conn: Connection) -> None:
-    """#161：为既有库 agent_executions 补 hitl_payload 列（幂等，配合 conn.run_sync 调用）.
-    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表。
-    """
-    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
-    names = {row[1] for row in cols}
-    if not names:
-        return
-    if "hitl_payload" not in names:
-        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN hitl_payload TEXT"))
-
-
-def ensure_agent_executions_relations_column(conn: Connection) -> None:
-    """F46 #270：为既有库 agent_executions 补 relations 列（幂等，配合 conn.run_sync 调用）。
-    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表。
-    """
-    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
-    names = {row[1] for row in cols}
-    if not names:
-        return
-    if "relations" not in names:
-        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN relations TEXT"))
-
-
-def ensure_agent_executions_trace_column(conn: Connection) -> None:
-    """F47 #379：为存量库 agent_executions 补 trace 列（幂等，配合 conn.run_sync 调用）。
-    PRAGMA 检缺列才 ALTER；表不存在（全新环境）→ no-op，等 create_all 建新表。
-    """
-    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
-    names = {row[1] for row in cols}
-    if not names:
-        return
-    if "trace" not in names:
-        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN trace TEXT"))
-
-
-def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
-    """F44 阶段 4（#338）：为存量库 agent_executions 补 thread_id 列（幂等）.
-    镜像 ensure_agent_executions_trace_column：PRAGMA 检缺列才 ALTER；表不存在
-    （全新环境）→ no-op，等 create_all 建新表（ORM 已含该列）。
-    """
-    cols = conn.execute(text("PRAGMA table_info(agent_executions)")).fetchall()
-    names = {row[1] for row in cols}
-    if not names:
-        return
-    if "thread_id" not in names:
-        conn.execute(text("ALTER TABLE agent_executions ADD COLUMN thread_id TEXT"))
 
 
 def ensure_agent_role_key_column(conn: Connection) -> None:

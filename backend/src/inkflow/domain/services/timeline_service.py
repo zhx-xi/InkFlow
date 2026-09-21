@@ -79,13 +79,46 @@ def _to_ref(event: TimelineEvent) -> TimelineEventRef:
     )
 
 
+def _has_flag(flag: str | None, *needles: str) -> bool:
+    """#1323 G6：``timeline_flag`` 是**自由文本**，用包含式匹配判定语义。
+
+    真实数据为中文自由文本（DB 实测：``''=181, 倒叙=29, 插叙=3, 梦境=1, 回忆=1``），
+    此前用字面量等值比较（``== "flashback"``）→ 33 条已声明倒叙/插叙被当作「未标记」，
+    直接产 ``order_conflict``（error 级 finding）串到审计报告。
+
+    包含式匹配对既有英文值零破坏（``flashback`` 含 ``flashback``），
+    且能覆盖带修饰的自由文本（``倒叙（回忆片段）``）。
+
+    Args:
+        flag: 事件的 timeline_flag 原值（可能为 None / 空串）.
+        needles: 语义等价词表（中英并列）.
+
+    Returns:
+        任一 needle 作为子串出现 → True.
+    """
+    if not flag:
+        return False
+    lowered = flag.lower()
+    return any(n.lower() in lowered for n in needles)
+
+
+_FLASHBACK_WORDS = ("flashback", "倒叙", "回忆")
+"""倒叙语义词表（#1323：prompt 枚举 + 中文自由文本兼容）。"""
+
+_FLASHFORWARD_WORDS = ("flashforward", "插叙", "预叙")
+"""插叙/预叙语义词表（#1323：prompt 枚举 + 中文自由文本兼容）。"""
+
+
 def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict | None:
     """分类相邻事件对（spec §5.4）——check_consistency 与 check_event 共用.
 
     仅当双方 time_value 均已知且 prev.time_value > next.time_value（逆序对）时
-    返回 TimelineConflict：next 标记 flashback → flashback；prev 标记
-    flashforward → flashforward；否则 → order_conflict。正序/同时刻/任一时间
-    未知 → None（不参与比较）。
+    返回 TimelineConflict：next 标记倒叙 → flashback；prev 标记插叙 →
+    flashforward；否则 → order_conflict。正序/同时刻/任一时间未知 → None
+    （不参与比较）。
+
+    🔴 #1323 G6：标记判定为**包含式**（``_has_flag``），兼容中文自由文本
+    （真实数据「倒叙/插叙」）与既有英文值（flashback/flashforward）。
 
     Args:
         prev: 叙事序中靠前的事件.
@@ -98,7 +131,7 @@ def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict 
     nxt_tv = nxt.time_value
     if prev_tv is None or nxt_tv is None or prev_tv <= nxt_tv:
         return None
-    if nxt.timeline_flag == "flashback":
+    if _has_flag(nxt.timeline_flag, *_FLASHBACK_WORDS):
         return TimelineConflict(
             conflict_type="flashback",
             prev=_to_ref(prev),
@@ -110,7 +143,7 @@ def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict 
                 f"（{_time_label(prev)}），已标记，判定合法。"
             ),
         )
-    if prev.timeline_flag == "flashforward":
+    if _has_flag(prev.timeline_flag, *_FLASHFORWARD_WORDS):
         return TimelineConflict(
             conflict_type="flashforward",
             prev=_to_ref(prev),
