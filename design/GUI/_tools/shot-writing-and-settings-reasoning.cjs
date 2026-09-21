@@ -2,11 +2,15 @@
  * 用法: node shot-f59.cjs
  * - 对 writing/settings 每个状态: file:// 打开 -> evaluate setState -> data-shot=1 隐藏 demo-bar -> waitForTimeout -> screenshot 1280x800@DPR1
  * - 每状态跑计算样式/几何断言（视觉模型不可用时的主验证），失败 exit 1
+ *
+ * 路径自解析（ROOT / playwright 均从脚本位置推导），见 _shared.cjs。
  */
 const path = require('path');
-const { chromium } = require('D:/develop/projects/InkFlow/frontend/packages/electron/node_modules/@playwright/test');
+const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.cjs');
 
-const ROOT = 'D:/develop/projects/InkFlow-ft/f59-m6-governance/design/GUI';
+const ROOT = assertGuiRoot();
+const chromium = requirePlaywright();
+['writing', 'settings'].forEach((p) => assertPageDir(p, ROOT));
 const PAGES = {
   writing: {
     file: 'writing/writing.html',

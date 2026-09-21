@@ -1,36 +1,16 @@
 /* knowledge 原型截图 + 断言：#1325 图谱/列表/空态 + 全量实体开关（工具栏新增）。
  * 用法: node design/GUI/_tools/shot-knowledge-graph-scope.cjs
- * playwright 复用 electron 包内依赖（与 _tools/ 既有脚本同款）。
+ * playwright 复用 electron 包内依赖（路径自解析，见 _shared.cjs）。
  *
- * 🔴 本脚本自解析 ROOT（从脚本位置向上找 design/GUI）——不写死 worktree 绝对路径，
- *    否则在别的 worktree 跑会把图出到主仓（既有脚本 shot-1320.cjs 的 ROOT 就是写死的）。
+ * 🔴 ROOT / playwright 均自解析——不写死 worktree 绝对路径，
+ *    否则在别的 worktree 跑会把图出到主仓（#1361 统一到 _shared.cjs）。
  */
 const path = require('path');
-const fs = require('fs');
+const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.cjs');
 
-/** 从脚本位置向上找 design/GUI（本文件位于 design/GUI/_tools/） */
-function findGuiRoot() {
-  let dir = __dirname;
-  for (let i = 0; i < 8; i += 1) {
-    if (path.basename(dir) === 'GUI' && fs.existsSync(path.join(dir, 'knowledge'))) return dir;
-    dir = path.dirname(dir);
-  }
-  throw new Error('找不到 design/GUI（从 ' + __dirname + ' 上溯 8 层）');
-}
-
-/** electron 包内 playwright（自解析仓库根，不写死 worktree） */
-function requirePlaywright() {
-  let dir = __dirname;
-  for (let i = 0; i < 8; i += 1) {
-    const candidate = path.join(dir, 'frontend', 'packages', 'electron', 'node_modules', '@playwright', 'test');
-    if (fs.existsSync(candidate)) return require(candidate).chromium;
-    dir = path.dirname(dir);
-  }
-  throw new Error('找不到 @playwright/test（需先在 frontend/ 跑 pnpm install）');
-}
-
-const ROOT = findGuiRoot();
+const ROOT = assertGuiRoot();
 const chromium = requirePlaywright();
+assertPageDir('knowledge', ROOT);
 const PAGE = { file: 'knowledge/knowledge.html', states: ['graph', 'list', 'empty'] };
 const VIEWPORT_H = 800;
 

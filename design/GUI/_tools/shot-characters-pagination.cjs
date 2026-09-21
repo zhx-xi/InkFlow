@@ -1,11 +1,13 @@
 /* #1320 characters 原型截图 + 断言：主态分页条 / 分览态 total 随筛选重算。
- * 用法: node shot-1320.cjs
- * playwright 复用 electron 包内依赖（与 _tools/shot-770.cjs 同款）。
+ * 用法: node design/GUI/_tools/shot-characters-pagination.cjs
+ * playwright 复用 electron 包内依赖（路径自解析，见 _shared.cjs）。
  */
 const path = require('path');
-const { chromium } = require('D:/develop/projects/InkFlow-ft/w22-1320/frontend/packages/electron/node_modules/@playwright/test');
+const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.cjs');
 
-const ROOT = 'D:/develop/projects/InkFlow-ft/w22-1320/design/GUI';
+const ROOT = assertGuiRoot();
+const chromium = requirePlaywright();
+assertPageDir('characters', ROOT);
 const PAGE = { file: 'characters/characters.html', states: ['main', 'rank-protagonist'] };
 
 async function checks(page, state) {
