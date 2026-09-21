@@ -19,6 +19,7 @@ from inkflow.mcp.tools.schemas import (
     ManageChapterParams,
     ManageCharacterParams,
     ManageForeshadowingParams,
+    ManageKnowledgeRelationParams,
     ManageOutlineParams,
     ManageProjectParams,
     ManageRelationParams,
@@ -231,6 +232,61 @@ async def _route_relation(client: _HTTPClient, params: ManageRelationParams) -> 
             ),
         )
     return await client.delete(f"/characters/{params.character_id}/relations/{params.id}")
+
+
+async def _route_knowledge_relation(
+    client: _HTTPClient, params: ManageKnowledgeRelationParams
+) -> object:
+    """manage_knowledge_relation action 路由（#1359，F48 六端点）。
+
+    与 ``_route_relation``（F9 角色↔角色三端点）并存：本函数打
+    ``knowledge_relations`` 表 —— 跨实体图谱关系（character↔world 等）。
+
+    端点形态沿用 ``api/routers/knowledge_graph.py``：创建/列表/图谱聚合
+    嵌套项目路径，详情/更新/删除扁平。六元组校验在服务层
+    （``knowledge_graph_service.create_relation`` 校验链 ①-⑥），MCP 侧薄转发。
+    """
+    six_tuple = (
+        "source_type",
+        "source_id",
+        "target_type",
+        "target_id",
+        "relation_type",
+        "description",
+    )
+    if params.action == "create":
+        return await client.post(
+            f"/projects/{params.project_id}/knowledge-relations",
+            json=_compact({field: getattr(params, field) for field in six_tuple}),
+        )
+    if params.action == "list":
+        return await client.get(
+            f"/projects/{params.project_id}/knowledge-relations",
+            params=_compact(
+                {
+                    "source_type": params.source_type,
+                    "target_type": params.target_type,
+                    "relation_type": params.relation_type,
+                    "source": params.source,
+                    "offset": params.offset,
+                    "limit": params.limit,
+                }
+            ),
+        )
+    if params.action == "graph":
+        return await client.get(
+            f"/projects/{params.project_id}/knowledge-graph",
+            params=_compact({"scope": params.scope}),
+        )
+    if params.action == "get":
+        return await client.get(f"/knowledge-relations/{params.id}")
+    if params.action == "update":
+        # exclude None 语义：未传字段不出现（REST 侧同款 exclude_unset 契约）
+        return await client.patch(
+            f"/knowledge-relations/{params.id}",
+            json=_compact({field: getattr(params, field) for field in six_tuple}),
+        )
+    return await client.delete(f"/knowledge-relations/{params.id}")
 
 
 async def _route_timeline(client: _HTTPClient, params: ManageTimelineParams) -> object:
@@ -746,6 +802,58 @@ def build_manage_foreshadowing_tool() -> MCPTool:
             name="manage_foreshadowing",
             description="伏笔管理：创建/列出/查看/更新/删除伏笔 + 回收/重开",
             input_schema=ManageForeshadowingParams.model_json_schema(),
+        ),
+        func=_impl,
+    )
+
+
+def build_manage_knowledge_relation_tool() -> MCPTool:
+    """跨实体图谱关系管理：创建/列出/图谱视图/查看/更新/删除（#1359）。
+
+    与 ``manage_relation`` 的边界：后者只打 F9 角色↔角色三端点
+    （``/characters/{id}/relations``）；本工具打 ``knowledge_relations``
+    表，覆盖 character↔world / →foreshadow / →timeline / →outline / →map_pin。
+    """
+
+    @instrument(caller_type="mcp")
+    async def _impl(**kwargs: object) -> str:
+        try:
+            params = ManageKnowledgeRelationParams.model_validate(kwargs)
+        except ValidationError as exc:
+            return _error(
+                "INVALID_ARGS",
+                str(exc),
+                "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
+            )
+        try:
+            from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+            from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
+
+            handle = await ensure_kernel()
+            async with InkFlowHTTPClient(handle) as client:
+                data = await _route_knowledge_relation(client, params)
+            return _ok(_serialize_data(data))
+        except HttpApiError as exc:
+            code, message = map_http_error(exc.status_code, exc.detail, exc.code)
+            return _error(code, message, _hint_for(code))
+        except KernelStartupError as exc:
+            return _error("KERNEL_ERROR", f"内核启动失败: {exc}", "请重新拉起内核再试")
+        except Exception as exc:
+            return _error(
+                "INTERNAL_ERROR",
+                str(exc) or f"{type(exc).__name__}: 内核调用失败",
+                "请携带完整上下文重试；若持续失败报告 API 层",
+            )
+
+    return MCPTool(
+        spec=ToolSpec(
+            name="manage_knowledge_relation",
+            description=(
+                "知识图谱关系管理（跨实体）：创建/列出/图谱视图/查看/更新/删除"
+                "角色-世界观/伏笔/时间线/大纲/地图标记间的关系"
+                "（角色↔角色关系请用 manage_relation）"
+            ),
+            input_schema=ManageKnowledgeRelationParams.model_json_schema(),
         ),
         func=_impl,
     )

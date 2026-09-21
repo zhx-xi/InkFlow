@@ -183,9 +183,9 @@ def _mcp_zip_version_row(zip_path: Path, tag: str) -> tuple[bool, str]:
     )
 
 
-#: #1036 契约：MCP 工具面 15→18（与 backend/src/inkflow/mcp/tools/__init__.py
-#: MCP_TOOL_REGISTRY 同源）。
-MCP_EXPECTED_TOOLS = 18
+#: #1036 契约：MCP 工具面 15→18；#1359 追加第 19 项 manage_knowledge_relation
+#: （与 backend/src/inkflow/mcp/tools/__init__.py MCP_TOOL_REGISTRY 同源）。
+MCP_EXPECTED_TOOLS = 19
 
 
 def mcp_stdio_row(

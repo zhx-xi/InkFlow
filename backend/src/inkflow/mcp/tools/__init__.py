@@ -1,4 +1,4 @@
-"""F20 MCP 工具注册表 —— 18 个聚合工具（spec §4.1/§4.2，Issue #49/#933）。
+"""F20 MCP 工具注册表 —— 19 个聚合工具（spec §4.1/§4.2，Issue #49/#933/#1359）。
 
 MCPTool 必须先于子模块工厂 import 定义（工厂模块顶层 from inkflow.mcp.tools
 import MCPTool，依赖包初始化期间该名字已绑定，避免循环导入）。
@@ -31,6 +31,7 @@ from inkflow.mcp.tools.manage_tools import (  # noqa: E402  # 工厂模块顶层
     build_manage_chapter_tool,
     build_manage_character_tool,
     build_manage_foreshadowing_tool,
+    build_manage_knowledge_relation_tool,
     build_manage_outline_tool,
     build_manage_project_tool,
     build_manage_relation_tool,
@@ -68,6 +69,7 @@ MCP_TOOL_REGISTRY: list[MCPTool] = [
     build_manage_book_tool(),
     build_manage_config_tool(),
     build_manage_log_tool(),
+    build_manage_knowledge_relation_tool(),
 ]
 
 

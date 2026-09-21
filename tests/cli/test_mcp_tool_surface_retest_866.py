@@ -1,11 +1,11 @@
-"""#866 MCP 工具面系统性复测——间歇性 INTERNAL_ERROR 采样（0.13.0 rc 轨；#933 后 18 工具）。
+"""#866 MCP 工具面系统性复测——间歇性 INTERNAL_ERROR 采样（0.13.0 rc 轨；#933/#1359 后 19 工具）。
 
 背景：rc3 曾观测 `manage_project action=list` 返回 INTERNAL_ERROR（空 error detail），
 08-24 / 08-30 复测恢复，判定为 MCP↔内核 token/数据目录不一致的间歇性隐患。本文件把
 「系统性复测」固化为可重跑的采样用例（issue #866 验收）：
 
-1. tools/list → 恰好 18 工具（面完整性）；
-2. 18 工具各跑一遍**只读/无外部依赖动作**，每次调用三连发（协议层采样）；
+1. tools/list → 恰好 19 工具（面完整性）；
+2. 19 工具各跑一遍**只读/无外部依赖动作**，每次调用三连发（协议层采样）；
 3. `manage_project list` 压力连发 10 次（rc3 缺陷动作的直接复现锚点）；
 4. 🔴 核心判据 = **rc3 指纹断言**：任何采样的失败信封不得是
    `code == "INTERNAL_ERROR" 且 message 为空`——复现即 FAIL（按 issue 要求升级为
@@ -213,7 +213,7 @@ def _assert_rc3_signature_free(envelope: dict, tool: str, params: dict) -> None:
 
 
 def _tool_call_matrix(env: SimpleNamespace) -> list[tuple[str, dict]]:
-    """18 工具 → 只读/无外部依赖动作矩阵（与 MCP_TOOL_REGISTRY 一一对应）。"""
+    """19 工具 → 只读/无外部依赖动作矩阵（与 MCP_TOOL_REGISTRY 一一对应）。"""
     pid = env.project_id
     export_out = str(env.data_dir / "retest-export.txt")
     return [
@@ -256,16 +256,18 @@ def _tool_call_matrix(env: SimpleNamespace) -> list[tuple[str, dict]]:
         ),
         ("manage_config", {"action": "provider_list"}),
         ("manage_log", {"action": "query", "limit": 5}),
+        # #1359 新工具：图谱关系只读列表（空项目 → 空列表信封，非 rc3 指纹）
+        ("manage_knowledge_relation", {"action": "list", "project_id": pid}),
     ]
 
 
 @pytest.mark.skipif(_skip_ci(), reason="GitHub Actions 沙箱拉内核秒退；#866 为本地 rc 复测轨")
 class TestMcpToolSurfaceRetest866:
-    """0.13.0 里程碑系统性复测（tools/list + 18 工具×3 + manage_project list×10）。"""
+    """0.13.0 里程碑系统性复测（tools/list + 19 工具×3 + manage_project list×10）。"""
 
     @pytest.mark.asyncio
     async def test_tools_list_exactly_18(self, retest_env: SimpleNamespace) -> None:
-        """tools/list 面完整性：恰好 18 个工具（F20 契约基线，#933 扩充后）。"""
+        """tools/list 面完整性：恰好 19 个工具（F20 契约基线，#933/#1359 扩充后）。"""
         from mcp.client.session import ClientSession
         from mcp.client.stdio import stdio_client
 
@@ -277,13 +279,13 @@ class TestMcpToolSurfaceRetest866:
             assert init.server_info.name == "inkflow"
             result = await session.list_tools()
         names = sorted(t.name for t in result.tools)
-        assert len(names) == 18, names
+        assert len(names) == 19, names
 
     @pytest.mark.asyncio
     async def test_all_18_tools_sampled_rc3_free(self, retest_env: SimpleNamespace) -> None:
-        """18 工具各三连发：任何一次失败都不得命中 rc3 指纹（空 detail INTERNAL_ERROR）。"""
+        """19 工具各三连发：任何一次失败都不得命中 rc3 指纹（空 detail INTERNAL_ERROR）。"""
         matrix = _tool_call_matrix(retest_env)
-        assert len(matrix) == 18
+        assert len(matrix) == 19
         for tool, params in matrix:
             for attempt in range(_ATTEMPTS_PER_TOOL):
                 envelope = await _call_tool(retest_env, tool, params)

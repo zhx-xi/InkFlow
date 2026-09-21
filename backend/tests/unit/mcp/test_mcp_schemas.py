@@ -1,10 +1,10 @@
 """F20 MCP 工具参数模型 schema 契约（M1 验收）— spec §2.2/§9（Issue #49，RED 阶段测试契约）。
 
-18 个 MCP 工具参数模型（Q1=A 聚合 manage_*，action 枚举路由子操作；#933 扩充）：
+19 个 MCP 工具参数模型（Q1=A 聚合 manage_*，action 枚举路由子操作；#933/#1359 扩充）：
 manage_project / manage_chapter / manage_character / manage_relation /
 manage_timeline / manage_world / manage_outline / manage_foreshadowing /
 write / audit / extract / export / search / manage_session / tool_search /
-manage_book / manage_config / manage_log。
+manage_book / manage_config / manage_log / manage_knowledge_relation。
 
 每个模型：action: Literal[...]（必填，枚举路由）+ 领域可选字段（str | None = None，
 对某 action 无效的字段 LLM 不传）。模型生成 JSON Schema（model_json_schema()）
@@ -55,6 +55,10 @@ session_tools.py 并列于 mcp/tools/）：
                             plan_confirm/run/status/confirm/intervene/summary（#933）
   ManageConfigParams:       action=provider_list/llm_status（#933，只读）
   ManageLogParams:          action=query（#933）
+  ManageKnowledgeRelationParams: action=create/list/graph/get/update/delete（#1359）
+                            project_id, id, source_type, source_id, target_type,
+                            target_id, relation_type, description, source, scope,
+                            offset, limit
 - action 字段类型 Literal[...]（str 子集，model_json_schema 生成 enum 数组）。
 - 领域字段全部可选（str | int | bool | None，默认 None）；id/project_id 等 ID 字段
   为 str（LLM 透传 JSON 字符串，工具层直接拼端点路径）。
@@ -88,6 +92,7 @@ from inkflow.mcp.tools.schemas import (
     ManageCharacterParams,
     ManageConfigParams,
     ManageForeshadowingParams,
+    ManageKnowledgeRelationParams,
     ManageLogParams,
     ManageOutlineParams,
     ManageProjectParams,
@@ -281,6 +286,23 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
         ["list"],
         [],
     ),
+    "ManageKnowledgeRelationParams": (
+        ["create", "list", "graph", "get", "update", "delete"],
+        [
+            "project_id",
+            "id",
+            "source_type",
+            "source_id",
+            "target_type",
+            "target_id",
+            "relation_type",
+            "description",
+            "source",
+            "scope",
+            "offset",
+            "limit",
+        ],
+    ),
 }
 
 _MODEL_ATTR: dict[str, Any] = {
@@ -302,16 +324,17 @@ _MODEL_ATTR: dict[str, Any] = {
     "ManageBookParams": ManageBookParams,
     "ManageConfigParams": ManageConfigParams,
     "ManageLogParams": ManageLogParams,
+    "ManageKnowledgeRelationParams": ManageKnowledgeRelationParams,
 }
 
 
 class TestSchemasContract:
-    """18 参数模型：action 枚举 + 关键字段 + JSON Schema 生成（M1）。"""
+    """19 参数模型（#1359：18→19）：action 枚举 + 关键字段 + JSON Schema 生成（M1）。"""
 
     def test_all_models_present(self):
-        """ALL_SCHEMAS 恰好 18 个模型名，与契约表一致。"""
+        """ALL_SCHEMAS 恰好 19 个模型名（#1359：18→19），与契约表一致。"""
         assert set(ALL_SCHEMAS) == set(_CONTRACT)
-        assert len(ALL_SCHEMAS) == 18
+        assert len(ALL_SCHEMAS) == 19
 
     @pytest.mark.parametrize("model_name", list(_CONTRACT))
     def test_action_enum_valid_values(self, model_name):
