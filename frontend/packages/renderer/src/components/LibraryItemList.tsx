@@ -1,6 +1,7 @@
 /** 设定库扁平分类通用列表（角色/伏笔；F43 P1：角色等级徽标 + 标签 chips + 行内编辑/删除，D12 悬停显示；
  *  2026-08-19 自 pages/library.tsx 机械搬移——900 行护栏 #88；
- *  #679：characters 分类等级选项卡（总览/分览）+ group_id 分组卡片 + 五档等级徽标分色） */
+ *  #679：characters 分类等级选项卡（总览/分览）+ group_id 分组卡片 + 五档等级徽标分色）；
+ *  #1324：foreshadow 分类行扩展（状态徽标 + 优先级 + 位置徽标，对齐 design/GUI/foreshadow/foreshadow.html） */
 import { useEffect, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { listCharacterGroups, type CharacterGroup } from '../api/character';
@@ -13,6 +14,12 @@ type LibraryItemWithGroup = LibraryItemDTO & {
   group_ids?: (string | number)[] | null;
 };
 
+/** #1324：伏笔行状态/回收时间；API 已返回（routers/foreshadowings.py:171 f.model_dump），DTO 未声明 */
+type LibraryItemForeshadow = LibraryItemDTO & {
+  status?: string;
+  resolved_at?: string | null;
+};
+
 /** #701：角色归属分组 ids —— group_ids 数组优先（N:M 权威）；缺失时兜底旧单选 group_id */
 const groupIdsOf = (item: LibraryItemDTO): (string | number)[] => {
   const withGroup = item as LibraryItemWithGroup;
@@ -20,10 +27,20 @@ const groupIdsOf = (item: LibraryItemDTO): (string | number)[] => {
   return withGroup.group_id == null ? [] : [withGroup.group_id];
 };
 
+/** #1324：回收时间显示（ADR-055：存储 UTC → GUI 本地时区；仅取日期，无效值原样透传） */
+const formatResolvedAt = (raw: string): string => {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 export interface LibraryItemListProps {
   items: LibraryItemDTO[];
   /** characters 分类渲染等级徽标 + 标签 chips（其余分类缺省不渲染） */
   withCharacterExtras?: boolean;
+  /** #1324：foreshadow 分类渲染状态徽标 + 优先级 + 位置徽标（缺省不渲染） */
+  withForeshadowExtras?: boolean;
   /** #679：角色分组列表（characters 分类分组卡片数据源；数组顺序 = 分组渲染顺序）。可注入（测试）或经 projectId 内部拉取。 */
   characterGroups?: CharacterGroup[];
   /** #679：characters 分类内部拉取角色分组（当 characterGroups 未注入时）所需的项目 id */
@@ -43,6 +60,12 @@ const RANK_BADGE: Record<string, string> = {
   walkon: 'bg-surface-3 text-ink-3/60',
 };
 
+/** #1324：伏笔状态徽标分色（未回收 = accent-weak，已回收 = 中性 surface-3；对齐原型 .fs-status） */
+const FS_STATUS_BADGE: Record<string, string> = {
+  resolved: 'bg-surface-3 text-ink-2',
+  open: 'bg-accent/20 text-accent-ink',
+};
+
 /** #679：等级选项卡激活 / 闲置样式（chip） */
 const ACTIVE = 'bg-accent text-accent-ink';
 const IDLE = 'bg-surface-3 text-ink-2';
@@ -50,6 +73,7 @@ const IDLE = 'bg-surface-3 text-ink-2';
 export function LibraryItemList({
   items,
   withCharacterExtras = false,
+  withForeshadowExtras = false,
   characterGroups,
   projectId,
   onEdit,
@@ -99,6 +123,40 @@ export function LibraryItemList({
     ? visibleItems.filter((i) => groupIdsOf(i).length === 0)
     : [];
 
+  // #1324：伏笔行扩展节点（标题之后渲染 —— 标题仍 flex-1 truncate，不被挤掉；缺省返回 null 不渲染）
+  const renderForeshadowExtras = (item: LibraryItemDTO) => {
+    if (!withForeshadowExtras) return null;
+    const fs = item as LibraryItemForeshadow;
+    const resolved = fs.status === 'resolved';
+    const resolvedAt = resolved && fs.resolved_at ? formatResolvedAt(fs.resolved_at) : '';
+    return (
+      <>
+        <span
+          data-testid={`lib-fs-status-${item.id}`}
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+            FS_STATUS_BADGE[fs.status ?? 'open'] ?? FS_STATUS_BADGE.open
+          }`}
+        >
+          {t(resolved ? 'lib.fs.status.resolved' : 'lib.fs.status.open')}
+          {resolvedAt !== '' && (
+            <span data-testid={`lib-fs-resolved-at-${item.id}`}> · {resolvedAt}</span>
+          )}
+        </span>
+        <span data-testid={`lib-fs-priority-${item.id}`} className="shrink-0 text-[11px] text-ink-3">
+          {t('lib.fs.priority', { n: fs.priority ?? 0 })}
+        </span>
+        {fs.location !== '' && fs.location != null && (
+          <span
+            data-testid={`lib-fs-location-${item.id}`}
+            className="shrink-0 max-w-[14rem] truncate rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2"
+          >
+            {fs.location}
+          </span>
+        )}
+      </>
+    );
+  };
+
   // F43 P1（§5.1/§5.2）：角色行等级徽标 + 标签 chips（缺省不渲染）
   const renderRow = (item: LibraryItemDTO) => {
     const rank = withCharacterExtras ? String(item.extra?.role_rank ?? '') : '';
@@ -125,6 +183,7 @@ export function LibraryItemList({
         ) : (
           <span className="min-w-0 flex-1 truncate">{item.title ?? item.name ?? ''}</span>
         )}
+        {renderForeshadowExtras(item)}
         {rank !== '' && (
           <span
             data-testid={`lib-rank-${item.id}`}

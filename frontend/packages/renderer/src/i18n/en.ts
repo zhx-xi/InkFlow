@@ -37,7 +37,8 @@ export const en: Record<string, string> = {
   'lib.empty.tab': 'No {name} yet, create one',
   'lib.empty.create': 'Create',
   'lib.loadFailed': 'Loading failed, please retry',
-  'lib.retry': 'Retry',
+  'lib.retry': 'Retry', // #1324: foreshadowing row extras (location shown verbatim, no key needed)
+  'lib.fs.status.open': 'Open', 'lib.fs.status.resolved': 'Resolved', 'lib.fs.priority': 'Priority {n}',
   // F43: library CRUD P0 (specs/f43-setting-library-gui/spec.md §6)
   'lib.edit': 'Edit',
   'lib.delete': 'Delete',
