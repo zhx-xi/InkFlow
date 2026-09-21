@@ -45,9 +45,9 @@ export interface MapDirectoryTreeProps {
 }
 
 /** F43 P1（§5.3）：items → 树（顶层 = parent_id null/缺失；孤儿降级顶层；按 items 顺序保序）
- *  #1322：`isMapped` 提供「该条目已挂图」判据（地图工作台使用面传入）——逐节点过滤，
- *  主树只保留「已挂图」节点及其**有图后代链上的祖先**（祖先仅为承载路径而保留）；
- *  其余无图节点收进 unmappedNodes（折叠区，仍可建首张图）。缺省 isMapped → 不过滤（P1 列表页行为不变）。 */
+ *  #1322：`isMapped` 提供「该条目已挂图」判据——逐节点过滤，主树只保留「已挂图」节点及其
+ *  **有图后代链上的祖先**（祖先仅为承载路径而保留）；其余无图节点收进 unmappedNodes（折叠区，
+ *  仍可建首张图）。缺省 isMapped → 不过滤（保留 P1 全量树语义，供非地图面复用）。 */
 function buildWorldTree(
   items: LibraryItemDTO[],
   isMapped?: (id: string) => boolean,
@@ -618,9 +618,6 @@ export function MapDirectoryTree({
   pinCounts = {},
 }: MapDirectoryTreeProps) {
   const { t } = useI18n();
-  // #1322：是否启用「主树只显示图」过滤——地图工作台（MapWorkbench）传 onCreateChild，
-  // 列表页（WorldNodeView 走另一组件）不受影响。过滤开启时无图条目进折叠区。
-  const isMapped = Boolean(onCreateChild);
   const dragSourceRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   // #1322：未挂图条目折叠区默认收起（主树显示图，条目按需展开）
@@ -664,12 +661,10 @@ export function MapDirectoryTree({
     });
   }, [worldItems, worldCategories]);
 
-  // #1322：地图工作台使用面（传 onCreateChild）启用「主树只显示图」过滤——
-  // 无图条目出主树、进折叠区；有图条目的祖先链保留（承载路径）。
-  // isMapped=undefined 时不过滤（P1 列表页 worldRoots 语义不变）。
+  // #1322：主树只显示图——无图条目出主树、进下方折叠区；有图条目的祖先链保留（承载路径）。
   const { roots: worldRoots, unmappedNodes } = useMemo(
-    () => buildWorldTree(visibleWorldItems, isMapped ? (id) => mapByLocation.has(id) : undefined),
-    [visibleWorldItems, isMapped, mapByLocation],
+    () => buildWorldTree(visibleWorldItems, (id) => mapByLocation.has(id)),
+    [visibleWorldItems, mapByLocation],
   );
   const worldItemIds = useMemo(
     () => new Set(visibleWorldItems.map((i) => String(i.id))),
