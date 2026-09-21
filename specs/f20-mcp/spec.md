@@ -14,6 +14,8 @@
 
 > **Spec 变更**（v1.1 → v1.2，2026-09-09，#933）：工具面 **15 → 18**——新增 `manage_book`（F44 书级编排：plan start/respond/auto/show/confirm + run/status/confirm/intervene/summary）、`manage_config`（只读自检：provider_list/llm_status）、`manage_log`（只读巡检：query），`write` 扩 actions（confirm_draft/reject_draft/draft_list，转 `/agent/drafts*`）。动机：rc2 用户旅程实证外部 agent 经 MCP 走不完创作主线（book 域零覆盖/草稿确认缺失/配置不可见/只读巡检缺失），被迫回落 CLI（issue #933）。**零新增 REST 端点**（全部转既有端点，§2.2 映射表）。同批落地 #923 契约防漂移护栏扩展（新工具 inputSchema ⊇ 对应 DTO 字段面，§13 A8）。
 
+> **Spec 变更**（v1.2 → v1.3，2026-09-21，#1359）：工具面 **18 → 19**——新增 `manage_knowledge_relation`（跨实体图谱关系：create/list/graph/get/update/delete，转 F48 六端点 `/projects/{pid}/knowledge-relations`、`/projects/{pid}/knowledge-graph`、`/knowledge-relations/{id}`）。动机：既有 `manage_relation` 只打 F9 角色关系三端点（`/characters/{id}/relations`），而 `knowledge_relations` 才是图谱关系的真实承载表（#495 后 character↔character 并入其子空间）——跨实体关系（character→world / →foreshadow / →timeline / →outline / →map_pin）在 MCP 面**完全不可达**，而 GUI/CLI/HTTP 三面已有完整能力。**零新增 REST 端点**（全部转既有端点，§2.2 映射表）；**不改** `manage_relation`（F9 面向后兼容，两工具并存，描述中明示边界）。
+
 > **模块类型声明**: 本模块为 **第 19 变体「MCP 表现层（薄客户端经 HTTP）型」**——InkFlow 第三表现层（与 `api/` REST、`cli/` 并列），对外部 agent 提供 MCP 行业标准 stdio 接口。编号依据 AGENTS.md 模块类型谱系（**F38=第 18 变体为最新无冲突基线**，接续编号）；⚠️ 历史变体编号存在漂移（f24/f27 均自述第 11、f30/f29 均自述第 13、f21/f36 均自述第 15），本 spec 以 F38=18 为基线声明第 19，冲突以 ADR-019 v5+ 为准。
 
 ---
@@ -50,7 +52,7 @@ F20 交付 InkFlow 的 **MCP Server**（Model Context Protocol）：外部 AI ag
 ### 1.2 与样板差异
 
 - 非 F9 实体 CRUD（无新增表/端点/命令）、非 F38 传输层改造（F38 改 CLI 调用路径，本模块新建表现层）、非 F26 工具定义（F26 为 deepagents 内部工具，本模块为 MCP 外部工具）。
-- 本质是「**表现层适配器 + 工具面装配**」：把既有 REST 端点面（F38 §3.1 消费清单）按 PRD §6.4 F20 的聚合工具语义重新装配为 MCP 工具（18 个，#933 扩充后），工具执行经 HTTP 转发到内核——**零领域逻辑、零新数据面**。
+- 本质是「**表现层适配器 + 工具面装配**」：把既有 REST 端点面（F38 §3.1 消费清单）按 PRD §6.4 F20 的聚合工具语义重新装配为 MCP 工具（19 个，#933/#1359 扩充后），工具执行经 HTTP 转发到内核——**零领域逻辑、零新数据面**。
 
 ### 1.3 边界声明
 
@@ -78,7 +80,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 
 ### 2.2 MCP 工具参数模型（`mcp/tools/` 新增）
 
-18 个工具的参数模型采用 **「action 枚举 + 领域字段」聚合形态**（Q1 已拍板：选项 A，2026-08-16）：每个 `manage_*` 工具一个参数模型，`action: str`（枚举）路由子操作，领域字段按需可选（对某 action 无效的字段 LLM 不传）。
+19 个工具的参数模型采用 **「action 枚举 + 领域字段」聚合形态**（Q1 已拍板：选项 A，2026-08-16）：每个 `manage_*` 工具一个参数模型，`action: str`（枚举）路由子操作，领域字段按需可选（对某 action 无效的字段 LLM 不传）。
 
 | 工具名 | action 枚举 | 关键参数（除 action 外） | 对应内核端点（复用，零新增） |
 |--------|-------------|--------------------------|------------------------------|
@@ -86,6 +88,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | `manage_chapter` | create / list / get / update / delete / move | project_id, volume_id, title, content, status, id, to_volume | POST `/projects/{pid}/volumes` · POST/GET `/projects/{pid}/chapters` · GET/PATCH/DELETE `/chapters/{cid}` · POST `/chapters/{cid}/move` |
 | `manage_character` | create / list / get / update / delete | project_id, name, search, group_id, id, extra, brief | POST/GET `/projects/{pid}/characters` · GET/PATCH/DELETE `/characters/{id}` · character-groups 端点（**v1.1/#211 移除 restore action 与端点**） |
 | `manage_relation` | create / list / get / update / delete | project_id, source_id, target_id, relation_type, id | relations 三端点（`/characters/{id}/relations` 等，F9） |
+| `manage_knowledge_relation` | create / list / graph / get / update / delete | project_id, source_type, source_id, target_type, target_id, relation_type, description, source, scope, offset, limit, id | POST/GET `/projects/{pid}/knowledge-relations` · GET `/projects/{pid}/knowledge-graph`（`?scope=related\|all`）· GET/PATCH/DELETE `/knowledge-relations/{rid}`（F48，零新增端点；六元组校验在服务层 `knowledge_graph_service` 校验链 ①-⑥，MCP 侧薄转发。**与 `manage_relation` 边界**：本工具覆盖 character↔world / →foreshadow / →timeline / →outline / →map_pin 等跨实体关系；角色↔角色关系走 `manage_relation`） |
 | `manage_timeline` | create / list / get / update / delete / check | project_id, event fields, id | POST/GET `/projects/{pid}/timeline/events` · GET `/projects/{pid}/timeline` · GET `/projects/{pid}/timeline/check` · GET/PATCH/DELETE `/timeline/events/{id}` |
 | `manage_world` | create / list / get / update / delete | project_id, category, name, id | POST/GET `/projects/{pid}/world-settings` · GET `/projects/{pid}/world-settings/categories` · GET/PATCH/DELETE `/world-settings/{id}`（**v1.1/#211 移除 restore action 与端点**） |
 | `manage_outline` | create / list / get / update / delete / generate | project_id, name, description, sort_order, level, parent_id, volume_id, chapter_id, search, force, prompt, num_chapters | POST/GET `/projects/{pid}/outlines` · GET/PATCH/DELETE `/outlines/{id}` · plot-points / story-arcs 端点 · POST `/outlines/generate` |
@@ -109,7 +112,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 |------|------|------|
 | ToolSpec 承载 | 复用 F26 `domain/models/agent_tools.py`（import，不复制） | 单一真相；工具契约（name/description/input_schema）与 agent 内部工具同源，避免双份漂移（ADR-023「与 CLI/F26 同源」） |
 | 工具参数模型归属 | `mcp/tools/` 表现层内（不进 domain） | MCP 工具参数是表现层 DTO，非领域模型；领域层零 MCP 感知（ADR-015） |
-| 工具粒度 | 聚合 `manage_*`（action 枚举）**18 工具**（Q1 已拍板 A；#933 扩充 15→18） | PRD §6.4 F20 列 15 个聚合工具名（≥15 可超）；LLM 工具选择友好（18 vs 50+）；细粒度备选见 §12 |
+| 工具粒度 | 聚合 `manage_*`（action 枚举）**19 工具**（Q1 已拍板 A；#933 扩充 15→18，#1359 追加第 19） | PRD §6.4 F20 列 15 个聚合工具名（≥15 可超）；LLM 工具选择友好（19 vs 50+）；细粒度备选见 §12 |
 | 工具面扩充（#933） | 新增 `manage_book`/`manage_config`/`manage_log` + `write` 扩 3 草稿 actions | 外部 agent 走完创作主线（书级编排/草稿确认/环境自检/日志巡检）不再回落 CLI；全部转既有端点，零新增 REST | 独立 `manage_draft`（工具数 +1 且与 `write` 同域，否决）；`manage_config` 暴露 set-key（凭据纪律否决，宿主侧自管） |
 | 工具返回形态 | MCP 协议 result（对齐 F26 `_ok`/`_fail` 信封：`{"ok": True, "data": ...}` / `{"ok": False, "error": ...}`） | agent 消费一致；成功/失败结构对称；MCP `isError` 标记失败（§3.2） |
 | 工具执行路径 | `InkFlowHTTPClient`（F38）→ 内核 HTTP | ADR-023 v2 薄客户端：冷启动快、单数据源、复用冷启动协议（不直连 domain） |
@@ -168,7 +171,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 
 ## 4. 工具面清单与渐进式发现
 
-### 4.1 工具面完整清单（18，#933 扩充；PRD §6.4 F20 ≥15）
+### 4.1 工具面完整清单（19，#933/#1359 扩充；PRD §6.4 F20 ≥15）
 
 | # | 工具名 | 一句话描述（LLM 工具选择依据） |
 |---|--------|-------------------------------|
@@ -190,16 +193,19 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | 16 | `manage_book` | 书级编排：访谈式 Planner（start/respond/auto/show/confirm）+ 书级运行（run/status/confirm/intervene/summary） |
 | 17 | `manage_config` | 环境自检（只读）：Provider 注册表 + key_saved/embedding 注册态/向量状态摘要 |
 | 18 | `manage_log` | 日志巡检（只读）：结构化日志查询（level/caller_type/correlation/trace 过滤） |
+| 19 | `manage_knowledge_relation` | 跨实体知识图谱关系管理：创建/列出/图谱视图/查看/更新/删除角色-世界观/伏笔/时间线/大纲/地图标记间的关系（角色↔角色关系请用 `manage_relation`） |
 
 > **≥15 工具**：上表为 PRD §6.4 F20 明确定义的工具面。实施时工具数**不得少于 15**；可在既有语义内**拆分**某 `manage_*` 为子工具（如 relation 并入 character 则须以拆分补偿），但不得**合并**减少。拆分须保持工具名与 CLI 命令语义对应（ADR-023「工具名与 CLI 命令语义一一对应」）。
 >
 > **#933 扩充（15 → 18）**：16-18 为 2026-09-04 旅程缺口补齐（book 域/草稿确认/配置自检/日志巡检），登记见 §12 决策 11 与 ADR-023 影响节。数量口径由「恰好 15」改为「**恰好 18**」（tools/list 与 `MCP_TOOL_REGISTRY` 同源，§4.2）。
+>
+> **#1359 扩充（18 → 19）**：第 19 项为跨实体图谱关系补齐（MCP 面此前只达 F9 角色↔角色子空间，跨实体关系不可达），登记见 §12 决策 12。数量口径更新为「**恰好 19**」。
 
 ### 4.2 渐进式工具发现（tools/list 动态装配）
 
 - `tools/list` 返回**当前实际装配**的工具面（非硬编码常量）——装配逻辑读取 `mcp/tools/` 静态注册表（§8）动态生成，与 F26 `TOOL_REGISTRY` 同源机制。
-- **装配时机**：server 启动时装配一次（18 工具全量）；`tools/list` 从装配结果返回。
-- **动态性边界**：本期工具面**静态 18 工具**，不做按内核能力的运行时裁剪（如「某 provider 未配置 LLM → write 工具不可用」的探测裁剪）——**登记 §10**（0.9.0 静态面；云端 Streamable HTTP 时评估动态装配）。
+- **装配时机**：server 启动时装配一次（19 工具全量）；`tools/list` 从装配结果返回。
+- **动态性边界**：本期工具面**静态 19 工具**，不做按内核能力的运行时裁剪（如「某 provider 未配置 LLM → write 工具不可用」的探测裁剪）——**登记 §10**（0.9.0 静态面；云端 Streamable HTTP 时评估动态装配）。
 - `tool_search` 工具 = 运行时「工具面自描述」入口，供 agent 在不依赖宿主 `tools/list` 的场景（如经 skills 文档描述）查询可用工具及各自 action 枚举——**与 `tools/list` 同源**（同一注册表），语义互补（协议级发现 vs 工具级查询）。
 
 ### 4.3 与 CLI 语义一一对应（ADR-023 契约）
@@ -315,8 +321,8 @@ backend/src/inkflow/
 │   ├── __init__.py                   ← CREATE: 导出 run / build_mcp_server
 │   ├── server.py                     ← CREATE: MCP server 装配（StdioServerTransport + 工具注册 + tools/list·tools/call handler）
 │   ├── tools/
-│   │   ├── __init__.py               ← CREATE: MCP_TOOL_REGISTRY（18 工具静态注册表）+ build_mcp_tools 工厂
-│   │   ├── schemas.py                ← CREATE: 18 工具 Pydantic 参数模型（§2.2 action 枚举 + 领域字段）
+│   │   ├── __init__.py               ← CREATE: MCP_TOOL_REGISTRY（19 工具静态注册表）+ build_mcp_tools 工厂
+│   │   ├── schemas.py                ← CREATE: 19 工具 Pydantic 参数模型（§2.2 action 枚举 + 领域字段）
 │   │   ├── manage_tools.py           ← CREATE: 8 个 manage_* 工具工厂（action 路由 → InkFlowHTTPClient 端点）
 │   │   ├── operation_tools.py        ← CREATE: write/audit/extract/export/search 工具工厂
 │   │   ├── session_tools.py          ← CREATE: manage_session + tool_search 工具工厂
@@ -351,7 +357,7 @@ tests/cli/
 单元测试（unit-test-backend 自动覆盖，mock 轨）:
   test_mcp_schemas.py    — 18 参数模型 schema（action 枚举合法值/可选字段/JSON Schema 生成）  ~36 cases
   test_mcp_tools.py      — 工具工厂端点映射（mock InkFlowHTTPClient：断言 method/path/body 透传、
-                           响应序列化、错误映射、18 工具 func 各 1 正例 + 1 异常）            ~46 cases
+                           响应序列化、错误映射、19 工具 func 各 1 正例 + 1 异常）            ~48 cases
   test_mcp_server.py     — server 装配（tools/list 返回 18 项 + name/description/inputSchema 非空）、
                            tool_search、错误映射（isError）、import 面收敛断言（sys.modules）  ~15 cases
   test_mcp_schema_drift_923.py — #923 防漂移护栏（Params ⊇ 对应 DTO 字段面）
@@ -365,9 +371,9 @@ CLI/集成测试（显式加 ci.yml integration-cli-backend，真实内核轨）
 
 ### 关键测试场景
 
-1. **参数模型**：18 工具各 schema 生成（action 枚举、字段名与端点 DTO 对齐）；非法 action → 校验失败
+1. **参数模型**：19 工具各 schema 生成（action 枚举、字段名与端点 DTO 对齐）；非法 action → 校验失败
 2. **端点映射**：mock `InkFlowHTTPClient`，断言 `manage_project create` → `POST /projects` + body 字段；`manage_character list` → `GET /projects/{pid}/characters` + params；错误响应 → 错误码映射（复用 `map_http_error`）
-3. **工具面装配**：`tools/list` 返回**恰好 18 项**，name/description/inputSchema 非空；`tool_search` 返回同源工具面
+3. **工具面装配**：`tools/list` 返回**恰好 19 项**，name/description/inputSchema 非空；`tool_search` 返回同源工具面
 4. **冷启动**：mock `ensure_kernel` 断言被调用且结果注入 client；真实内核轨验证「无内核 → 自动拉起」
 5. **import 面收敛**：`import inkflow.mcp.server` 后 `sys.modules` 无 `inkflow.domain.services` / `inkflow.infrastructure.llm` / `inkflow.infrastructure.database`（§5.1 纪律，F38 §13 M1 同族断言）
 6. **stdio 协议**：协议帧独占 stdout（mock 断言日志走 stderr）
@@ -383,7 +389,7 @@ CLI/集成测试（显式加 ci.yml integration-cli-backend，真实内核轨）
 | 项 | 归属/原因 |
 |----|-----------|
 | 云端 Streamable HTTP 传输 | ADR-023 后移 P2 评估（2.0.0 云端随评估）；本期仅 stdio 本地传输 |
-| 按内核能力的运行时工具裁剪（动态装配） | §4.2 边界——本期静态 18 工具面；云端时评估 |
+| 按内核能力的运行时工具裁剪（动态装配） | §4.2 边界——本期静态 19 工具面；云端时评估 |
 | MCP 层结构化错误码字段 | §3.3——`error` 纯文本已够；云端需要时扩展（F38 §3.3「全量扩展」同族评估） |
 | skills 包 mcp-setup.md | #70 联动（ADR-022「MCP 发布后补 mcp-setup.md」），非本模块代码 |
 | GUI 内嵌 MCP / MCP 客户端 | 本模块是 server 侧；客户端（外部 agent）由用户生态提供 |
@@ -425,12 +431,13 @@ F20 被依赖:
 | 1 | MCP 接入方式 | **薄客户端经 HTTP**（ADR-023 v2 D3=A，2026-08-07 拍板） | 冷启动快（重组件在内核）、单数据源（无 SQLite WAL 竞争）、复用 F30 冷启动协议 | 直连 domain（每次 stdio 冷加载 chromadb/BGE + 双数据源）；包装 CLI 子进程（进程启动开销 + stdout 解析脆弱）；经 REST 转发（多一跳） |
 | 2 | MCP SDK | 官方 `mcp` 包（ADR-023） | 跟随 MCP 标准演进；未来 Streamable HTTP 只换传输层 | 自研 JSON-RPC 解析（重复造轮子） |
 | 3 | 传输 | stdio 本地传输（ADR-023 + p0-11 MCPTransport） | 本地 agent 场景标准；零端口/鉴权依赖 | Streamable HTTP（云端 P2 评估，后移） |
-| 4 | 工具粒度 | 聚合 `manage_*`（action 枚举）**18 工具**（Q1 已拍板 A；#933 扩充 15→18） | PRD §6.4 F20 列 15 聚合名（≥15 可超）；LLM 工具选择友好 | 细粒度每命令一工具（50+，工具选择负担重） |
+| 4 | 工具粒度 | 聚合 `manage_*`（action 枚举）**19 工具**（Q1 已拍板 A；#933 扩充 15→18，#1359 追加第 19） | PRD §6.4 F20 列 15 聚合名（≥15 可超）；LLM 工具选择友好 | 细粒度每命令一工具（50+，工具选择负担重） |
 | 5 | 与 F26 同源 | 契约同源（复用 ToolSpec + 信封语义 + 底层 service 语义），非实现同源（新建 HTTP 工具工厂）（Q2 已拍板 A） | 粒度不同（聚合 vs 精细）、路径不同（HTTP vs 直连） | 直接复用 build_reader_tools（func 直连 service，违背薄客户端） |
 | 6 | 冷启动 | 复用 F30 `ensure_kernel()`（MCP 层零冷启动逻辑） | ADR-030 ④ 明确 MCP 薄客户端冷启动复用 | MCP 层重实现拉起逻辑（重复 + 漂移） |
 | 7 | 工具返回 | MCP `result` 对齐 F26 `_ok`/`_fail` 信封 + `isError` 标记失败 | agent 消费一致；与 deepagents ToolMessage 语义同族 | 返回裸数据（失败无结构化标记，agent 难感知） |
 | 8 | 错误映射 | 复用 F38 `map_http_error`（HTTP 状态 → F7 错误码） | 不重定义错误码表；与 CLI 行为一致 | MCP 层自建错误码表（双份漂移） |
-| 9 | 工具面装配 | 静态 18 工具（tools/list 从注册表动态生成，不做能力裁剪） | 0.9.0 面稳定；能力裁剪留云端评估 | 运行时能力探测裁剪（复杂度 + 本期无消费场景） |
+| 9 | 工具面装配 | 静态 19 工具（tools/list 从注册表动态生成，不做能力裁剪） | 0.9.0 面稳定；能力裁剪留云端评估 | 运行时能力探测裁剪（复杂度 + 本期无消费场景） |
+| 12 | 跨实体图谱关系工具（#1359） | 新增 `manage_knowledge_relation`（18 → 19），转 F48 六端点；`manage_relation` 不动 | 既有 `manage_relation` 只达 F9 角色↔角色子空间，`knowledge_relations` 真实承载表里的跨实体关系在 MCP 面不可达；GUI/CLI/HTTP 三面已有能力 | 并入 `manage_relation`（破坏 F9 向后兼容 + 端点半径不同）；复用 `/characters/{id}/relations`（该端点打的是 character_relations 语义，非图谱六元组） |
 | 10 | write 流式语义 | 同步返回拼接结果（走非流式端点 `/writing/generate\|continue\|revise`）（Q3 已拍板 A） | MCP 工具模型天然同步；agent 一次拿到全文；避免 stdio 会话内流式帧与 JSON-RPC 响应交织 | SSE 流式透传（MCP 协议层无法逐 delta 推送，对 agent 无协议级收益） |
 | 11 | 工具面扩充（#933） | 15 → 18（`manage_book` + `manage_config` + `manage_log`；`write` 扩草稿 actions），全部转既有端点 | rc2 旅程实证外部 agent 走不完创作主线；PRD「≥15」不封顶；零新增 REST/领域方法（纯表现层装配） | 独立 `manage_draft`（工具数 +1、与 write 同域）；`manage_config` 写面（凭据纪律） |
 
@@ -444,7 +451,7 @@ F20 被依赖:
 |--------|------|------|
 | M1 | 18 参数模型 schema 契约 | `pytest backend/tests/unit/mcp/test_mcp_schemas.py -v` 全绿（action 枚举/字段/JSON Schema） |
 | M2 | 工具工厂端点映射 | `pytest backend/tests/unit/mcp/test_mcp_tools.py -v` 全绿（mock InkFlowHTTPClient：method/path/body 透传 + 错误映射） |
-| M3 | server 装配 + tools/list 18 项 | `pytest backend/tests/unit/mcp/test_mcp_server.py -v` 全绿（tools/list 恰好 18 项 + import 面收敛断言） |
+| M3 | server 装配 + tools/list 19 项 | `pytest backend/tests/unit/mcp/test_mcp_server.py -v` 全绿（tools/list 恰好 19 项 + import 面收敛断言） |
 | M4 | stdio 协议 + 冷启动链路 | `pytest tests/cli/test_cli_mcp.py -v` 全绿（真实内核轨，**已登记 ci.yml integration-cli-backend**）——initialize → tools/list → tools/call 端到端 + 无内核自动拉起 |
 | M5 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check` + mypy 通过 |
 
@@ -452,7 +459,7 @@ F20 被依赖:
 
 | # | 验证项 | 标准 |
 |---|--------|------|
-| M6-a | **打包版 stdio 真实启动** | `inkflow-mcp.exe`（PyInstaller 产物）真实启动，`initialize` + `tools/list` 返回 18 工具 |
+| M6-a | **打包版 stdio 真实启动** | `inkflow-mcp.exe`（PyInstaller 产物）真实启动，`initialize` + `tools/list` 返回 19 工具 |
 | M6-b | **工具面完整（≥15 同源核对）** | 打包产物 tools/list 与源码 `mcp/tools/` 注册表逐项核对一致（≥15，ADR-023 v2 薄客户端经 HTTP） |
 | M6-c | **冷启动链路** | 内核未运行 → MCP 工具调用 → 自动拉起内核 → 调用成功（ADR-030；复用 F30 M6 手工验证脚本模式） |
 | M6-d | **外部 agent 端到端** | 真实外部 agent（Hermes 等）经 MCP 配置调用 InkFlow 工具，真实可用（非 mock） |
@@ -464,7 +471,7 @@ F20 被依赖:
 
 | # | 验收项 | 标准 | 测试落点 |
 |---|--------|------|----------|
-| A7 | tools/list 数量与 spec 一致 | `tools/list` / `build_mcp_tools()` / `ALL_SCHEMAS` 恰好 18，名称与 §4.1 表逐项一致 | `test_mcp_tools.py` / `test_mcp_server.py` / `test_mcp_schemas.py` |
+| A7 | tools/list 数量与 spec 一致 | `tools/list` / `build_mcp_tools()` / `ALL_SCHEMAS` 恰好 19，名称与 §4.1 表逐项一致 | `test_mcp_tools.py` / `test_mcp_server.py` / `test_mcp_schemas.py` |
 | A8 | 新工具 inputSchema ⊇ 对应 DTO 字段面（#923 护栏扩展） | `ManageBookParams ⊇ {PlannerStartRequest, PlannerRespondRequest, BookRunRequest, ConfirmRunRequest, InterveneRequest}`（`action` 因路由冲突豁免）；`WriteParams ⊇ ConfirmRequest`；`ManageLogParams ⊇ /logs 查询参数面` | `test_mcp_tool_surface_933.py` |
 | A9 | `manage_book` plan start/respond/confirm/run + book status 经 MCP stdio 全链路可用 | 真实内核 stdio：plan_start → plan_respond(auto) → run → status/summary；plan_confirm 路由 + 错误信封 | `test_mcp_book_surface_933.py`（LLM 门禁轨 + 非 LLM 轨） |
 | A10 | `write confirm_draft` 与 CLI `agent draft confirm` 语义一致 | 同端点 `POST /agent/drafts/{id}/confirm` + 同 body 字段（chapter_id/source_outline_id/title，None 剔除）→ 草稿 draft→confirmed | `test_mcp_tool_surface_933.py` |
@@ -518,7 +525,7 @@ F20 被依赖:
 
 ### 1.1 模块定位
 
-F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（15，#933 后 18——`inkflow-mcp` 薄客户端经 HTTP 直连常驻内核，ADR-030 D3=A / ADR-023 v2）。**但「可发现性为零」**——agent 与其他宿主不知道 InkFlow 有 MCP 能力、客户端在哪、怎么配置。本模块补齐分发引导，**不改 MCP 集成本身**，只补「可发现性/可配置性」面。
+F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（15，#933 后 18，#1359 后 19——`inkflow-mcp` 薄客户端经 HTTP 直连常驻内核，ADR-030 D3=A / ADR-023 v2）。**但「可发现性为零」**——agent 与其他宿主不知道 InkFlow 有 MCP 能力、客户端在哪、怎么配置。本模块补齐分发引导，**不改 MCP 集成本身**，只补「可发现性/可配置性」面。
 
 **不做的事**（见 §10）：不重写 CLI 为 MCP 函数、不写 GUI 一键写入宿主配置、不做云端 MCP、不发布 PyPI uvx 通道。
 
@@ -728,7 +735,7 @@ F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（
 | 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
 | initialize | agent 拉起 inkflow-mcp（stdio 会话） | 能力协商 | 返回 server 能力（tools + 协议版本） | — | 对齐 MCP 规范版本 |
-| tools/list | server 启动装配完成 | 从 mcp/tools/ 静态注册表动态装配返回工具面 | 恰好 18 工具（name/description/inputSchema 非空） | — | 不触发 ensure_kernel（纯装配无 HTTP）；本期静态 18 工具不按内核能力裁剪（§10 登记） |
+| tools/list | server 启动装配完成 | 从 mcp/tools/ 静态注册表动态装配返回工具面 | 恰好 19 工具（name/description/inputSchema 非空） | — | 不触发 ensure_kernel（纯装配无 HTTP）；本期静态 19 工具不按内核能力裁剪（§10 登记） |
 | tools/call | agent 传工具名 + 参数 | Pydantic schema 校验 → ensure_kernel → InkFlowHTTPClient 转发 → 序列化 result | isError:false + {ok:true, data:...} | isError:true + {ok:false, error:...} | 序列化 ensure_ascii=False（中文不转义） |
 | ping | — | 保活 | 立即响应 | — | — |
 | tool_search | — | 本地装配结果返回（与 tools/list 同源注册表） | 工具面自描述（工具名 + action 枚举） | — | 不经 HTTP（同 tools/list 豁免先例） |
@@ -752,9 +759,9 @@ F20（#49，0.9.0 已交付）让 InkFlow 通过 MCP 协议暴露聚合工具（
 
 ### 14.3 验收锚点（写入 §13 验收标准）
 
-- A1：tools/list 返回恰好 18 项（name/description/inputSchema 非空）→ M3
+- A1：tools/list 返回恰好 19 项（name/description/inputSchema 非空）→ M3
 - A2：无内核 → MCP 工具调用 → 自动拉起内核 → 调用成功 → M4/M6-c
 - A3：manage_project create → POST /projects + body 字段透传（mock InkFlowHTTPClient 断言）→ M2
 - A4：错误响应 → 错误码映射（复用 map_http_error）→ M2
 - A5：import inkflow.mcp.server 后 sys.modules 无 domain.services / llm / database → M3
-- A6：打包版 inkflow-mcp.exe 真实启动 → initialize + tools/list 返回 18 工具 → M6-a
+- A6：打包版 inkflow-mcp.exe 真实启动 → initialize + tools/list 返回 19 工具 → M6-a

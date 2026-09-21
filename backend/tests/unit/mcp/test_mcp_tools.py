@@ -211,13 +211,14 @@ def _last_call(client: FakeClient) -> tuple[str, str, object, object]:
 
 
 class TestRegistryContract:
-    """注册表 + 工厂面（spec §4.1 18 工具 / §4.2 同源）。"""
+    """注册表 + 工厂面（spec §4.1 19 工具 / §4.2 同源）。"""
 
     def test_registry_has_18_tools(self):
-        assert len(MCP_TOOL_REGISTRY) == 18
+        """#1359：18→19（新增 manage_knowledge_relation）。"""
+        assert len(MCP_TOOL_REGISTRY) == 19
 
     def test_build_mcp_tools_returns_18(self):
-        assert len(build_mcp_tools()) == 18
+        assert len(build_mcp_tools()) == 19
 
     def test_registry_names_match_spec(self):
         expected = [
@@ -239,6 +240,7 @@ class TestRegistryContract:
             "manage_book",
             "manage_config",
             "manage_log",
+            "manage_knowledge_relation",
         ]
         assert [t.spec.name for t in MCP_TOOL_REGISTRY] == expected
 

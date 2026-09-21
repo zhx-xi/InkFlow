@@ -1,4 +1,4 @@
-"""F20 MCP 工具参数模型 —— 18 个工具 action 枚举 + 领域可选字段（Issue #49/#933）。
+"""F20 MCP 工具参数模型 —— 19 个工具 action 枚举 + 领域可选字段（Issue #49/#933/#1359）。
 
 每个模型：action: Literal[...] 必填（路由子操作）+ 领域可选字段默认 None；
 model_json_schema() 产物直接映射 MCP 协议 inputSchema（spec §2.2，Q1=A）。
@@ -71,6 +71,31 @@ class ManageRelationParams(BaseModel):
     target_id: str | None = None
     relation_type: str | None = None
     description: str | None = None
+
+
+class ManageKnowledgeRelationParams(BaseModel):
+    """跨实体图谱关系管理工具参数：create/list/graph/get/update/delete（#1359）。
+
+    与 ``manage_relation``（F9 角色↔角色三端点）**边界区分**：本工具打
+    ``knowledge_relations`` 表（图谱关系真实承载表，六类实体源/目标），
+    即 character↔world / →foreshadow / →timeline / →outline / →map_pin。
+    """
+
+    action: Literal["create", "list", "graph", "get", "update", "delete"]
+    project_id: str | None = None
+    id: str | None = None
+    # 六元组字段名与 KnowledgeRelationCreate 逐字对齐（防 schema 漂移静默丢数据）
+    source_type: str | None = None
+    source_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    relation_type: str | None = None
+    description: str | None = None
+    # list 过滤（source 为 #479 预留）+ graph scope + 分页
+    source: str | None = None
+    scope: str | None = None
+    offset: int | None = None
+    limit: int | None = None
 
 
 class ManageTimelineParams(BaseModel):
@@ -285,6 +310,7 @@ ALL_SCHEMAS: dict[str, type[BaseModel]] = {
     "ManageChapterParams": ManageChapterParams,
     "ManageCharacterParams": ManageCharacterParams,
     "ManageRelationParams": ManageRelationParams,
+    "ManageKnowledgeRelationParams": ManageKnowledgeRelationParams,
     "ManageTimelineParams": ManageTimelineParams,
     "ManageWorldParams": ManageWorldParams,
     "ManageOutlineParams": ManageOutlineParams,

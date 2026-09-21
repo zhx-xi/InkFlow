@@ -46,7 +46,10 @@ http_mod = importlib.import_module("inkflow.infrastructure.http")
 #: 新增工具名（spec §4.1 #16-18）
 _NEW_TOOL_NAMES = ("manage_book", "manage_config", "manage_log")
 
-#: 注册表全量顺序（spec §4.1 表；前 15 为既有面，16-18 为 #933 追加）
+#: #1359 追加的工具名（第 19 项）
+_NEW_TOOL_NAME_1359 = "manage_knowledge_relation"
+
+#: 注册表全量顺序（spec §4.1 表；前 15 为既有面，16-18 为 #933 追加；19 为 #1359 追加）
 _EXPECTED_NAMES = [
     "manage_project",
     "manage_chapter",
@@ -66,6 +69,7 @@ _EXPECTED_NAMES = [
     "manage_book",
     "manage_config",
     "manage_log",
+    "manage_knowledge_relation",
 ]
 
 
@@ -151,16 +155,18 @@ class TestRegistrySurface933:
     """spec §4.1/§13 A7：注册表 18 项 + 新增工具名。"""
 
     def test_registry_has_18_tools(self):
-        assert len(MCP_TOOL_REGISTRY) == 18
+        """#1359：18→19（追加 manage_knowledge_relation）。"""
+        assert len(MCP_TOOL_REGISTRY) == 19
 
     def test_build_mcp_tools_returns_18(self):
-        assert len(build_mcp_tools()) == 18
+        assert len(build_mcp_tools()) == 19
 
     def test_registry_names_match_spec_order(self):
         assert [t.spec.name for t in MCP_TOOL_REGISTRY] == _EXPECTED_NAMES
 
     def test_all_schemas_has_18_models(self):
-        assert len(schemas_mod.ALL_SCHEMAS) == 18
+        """#1359：18→19（新增 ManageKnowledgeRelationParams）。"""
+        assert len(schemas_mod.ALL_SCHEMAS) == 19
 
     def test_new_schemas_registered(self):
         for name in ("ManageBookParams", "ManageConfigParams", "ManageLogParams"):

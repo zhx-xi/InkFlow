@@ -10,7 +10,7 @@ stdin 即关 → exit 0 + stdout 空 → #1075 的版本断言恒 FAIL（rc2 发
 
 RED 预期：`mcp_stdio_row` / `MCP_EXPECTED_TOOLS` 不存在 → 用例失败。
 GREEN 义务（以本文件断言为准）：
-  W1. `MCP_EXPECTED_TOOLS` == 18（#1036 契约：15→18）
+  W1. `MCP_EXPECTED_TOOLS` == 19（#1036 契约：15→18，#1359 追加第 19 项）
   W2. `mcp_stdio_row(mcp_exe: Path, expected: set[str] | None = None) -> tuple[bool, str]`
       - 对可握手的 MCP 入口（用本仓 venv 的 inkflow-mcp 或其模块入口）→ True
       - 不存在的 exe → (False, 说明)；不抛异常
@@ -53,9 +53,9 @@ def _load_script():
 
 
 def test_mcp_expected_tools_is_18() -> None:
-    """#1036 契约：MCP 工具面 15→18。"""
+    """#1036 契约：MCP 工具面 15→18；#1359 追加第 19 项。"""
     module = _load_script()
-    assert module.MCP_EXPECTED_TOOLS == 18
+    assert module.MCP_EXPECTED_TOOLS == 19
 
 
 def test_mcp_expected_tools_matches_registry() -> None:
@@ -90,12 +90,12 @@ def test_mcp_stdio_row_missing_exe(tmp_path: Path) -> None:
     reason="dev venv 无 inkflow-mcp.exe（CI 环境可能未建 venv）",
 )
 def test_mcp_stdio_row_real_handshake() -> None:
-    """对真实 MCP 入口做 stdio 握手 → tools/list 应返回 18 个工具。"""
+    """对真实 MCP 入口做 stdio 握手 → tools/list 应返回 19 个工具（#1359）。"""
     module = _load_script()
     exe = BACKEND / ".venv" / "Scripts" / "inkflow-mcp.exe"
     ok, detail = module.mcp_stdio_row(exe)
     assert ok is True, detail
-    assert "18" in detail
+    assert "19" in detail
 
 
 def test_mcp_stdio_row_detects_tool_shortfall(

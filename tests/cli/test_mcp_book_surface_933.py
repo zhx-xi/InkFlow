@@ -183,7 +183,7 @@ class TestMcpNewSurfaceStdio933:
     @pytest.mark.asyncio
     async def test_tools_list_18(self, stdio_env):
         names = await _list_tools(stdio_env)
-        assert len(names) == 18, names
+        assert len(names) == 19, names
         for name in _NEW_TOOL_NAMES:
             assert name in names
 
