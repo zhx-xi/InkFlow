@@ -85,6 +85,15 @@ function postMapCalls() {
   );
 }
 
+/**
+ * #1322 语义升级：无挂图条目的「创建子图」入口移入主树下方的**未挂图条目折叠区**
+ * （默认收起——主树只显示图）。本文件 3 个用例的契约（物化根图 → 子图挂物化图）
+ * 不变，仅需先展开折叠区才能点到入口。
+ */
+async function expandUnmappedSection(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('map-tree-unmapped-toggle'));
+}
+
 /** 默认 mock：任何 POST /maps 都返回创建成功的物化图（id=m100，root_location_id=w1） */
 function mockPostReturnsMaterializedMap() {
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
@@ -109,6 +118,8 @@ describe('MapWorkbench — #741 缺陷② 创建子图时父图不存在（proje
     const user = userEvent.setup();
 
     // 无挂载图条目渲染「创建子图」入口（#721：🗺 图标 + map-create-child-<条目id>）
+    // #1322：入口在未挂图条目折叠区内（默认收起）→ 先展开
+    await expandUnmappedSection(user);
     await user.click(screen.getByTestId('map-create-child-w1'));
 
     // ① RED：点击瞬间应物化根图——第一次 POST /maps body 含 root_location_id='w1' 且无 parent_map_id。
@@ -156,6 +167,7 @@ describe('MapWorkbench — #741 缺陷② 创建子图时父图不存在（proje
     renderWorkbench(leakedWorldItems);
     const user = userEvent.setup();
 
+    await expandUnmappedSection(user);
     await user.click(screen.getByTestId('map-create-child-w1'));
     // 对话框打开（物化成功是对话框打开的前置条件——修复后先 await 物化 POST 再 setCreateDialog）
     await screen.findByTestId('map-create-name');
@@ -169,6 +181,7 @@ describe('MapWorkbench — #741 缺陷② 创建子图时父图不存在（proje
     renderWorkbench(cleanWorldItems);
     const user = userEvent.setup();
 
+    await expandUnmappedSection(user);
     await user.click(screen.getByTestId('map-create-child-w1'));
 
     // 干净条目 'project_id' in target=false → 当前实现已走物化路径 → 本用例 PASS（守卫）

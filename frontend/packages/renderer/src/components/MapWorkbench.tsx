@@ -7,6 +7,7 @@
  * （PATCH extra.shapes）均在组件内完成（消费方契约 library-p2.test.tsx 覆盖）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronRight, MapPlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { ApiError, apiFetch, errorMessage } from '../api/client';
 import { cn } from '../lib/cn';
@@ -171,6 +172,28 @@ export function MapWorkbench({
     timeline: Array<{ id: string | number; name?: string; title?: string }>;
   }>({ characters: [], timeline: [] });
   const shapeIdCounterRef = useRef(0);
+  // #1322：左栏宽度受控（col-resize 手柄）+ 拖拽起点；clamp 240~640 ——
+  // 地图行含 🗺 徽标 + 分类 + 4 个行操作，写作页的 160~360 不够宽。内存态不持久化（同 #702/#720）。
+  const [treeWidth, setTreeWidth] = useState(260);
+  const treeDragStartRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  const startTreeColResize = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    treeDragStartRef.current = { startX: e.clientX, startW: treeWidth };
+    const onMove = (ev: MouseEvent) => {
+      const drag = treeDragStartRef.current;
+      if (!drag) return;
+      const next = Math.max(240, Math.min(640, drag.startW + (ev.clientX - drag.startX)));
+      setTreeWidth(next);
+    };
+    const onUp = () => {
+      treeDragStartRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   useEffect(() => {
     setLocalMaps(maps);
@@ -636,8 +659,13 @@ export function MapWorkbench({
       </div>
 
       <div className="flex items-start gap-4">
-        {/* 左栏：#378 地图目录树（library-list testid 保留，供 P2 既有契约等待） */}
-        <aside className="w-[260px] shrink-0 space-y-3">
+        {/* 左栏：#378 地图目录树（library-list testid 保留，供 P2 既有契约等待）
+            #1322：宽度受控 + 右缘 col-resize 手柄（形态照抄写作页 #702/#720，内存态不持久化） */}
+        <aside
+          data-testid="map-tree-column"
+          style={{ width: treeWidth }}
+          className="relative shrink-0 space-y-3"
+        >
           {/* #1321：地图视图内新建分类入口——此前地图分支不渲染工具栏，完全无处建分类 */}
           {onAddCategory && (
             <button
@@ -673,6 +701,12 @@ export function MapWorkbench({
               pinCounts={pinCounts}
             />
           </div>
+          <div
+            data-testid="map-tree-resize-handle"
+            className="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize select-none"
+            onMouseDown={startTreeColResize}
+            aria-hidden="true"
+          />
         </aside>
 
         {/* 右栏：画布 + pin 列表 / 未选地图空态 */}

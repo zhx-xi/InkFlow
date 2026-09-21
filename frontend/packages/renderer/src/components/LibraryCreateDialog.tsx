@@ -46,7 +46,8 @@ export interface LibraryCreateDialogProps {
   initialCategory?: string;
   /** #675：outline 创建上下文——层级预填（overall/volume/chapter） */
   initialLevel?: 'overall' | 'volume' | 'chapter';
-  /** #675：outline 创建上下文——父级 id（＋卷 → parent=overall；＋章细纲 → parent=volume；＋整本 → null） */
+  /** #675：outline 创建上下文——父级 id（＋卷 → parent=overall；＋章细纲 → parent=volume；＋整本 → null）
+   *  #1322：world 创建同样消费（地图视图内新建条目 → 挂指定父，不落根） */
   initialParentId?: string | number | null;
   /** F43：onCreate 改名 onSave——语义 = 保存回调，父级分支 PATCH/POST */
   onSave: (input: Record<string, unknown>) => Promise<void>;
@@ -182,7 +183,9 @@ export function LibraryCreateDialog({
           extra: { role_rank: rank, groups: rankTags },
         };
       case 'world':
-        return { name: name.trim(), category, content };
+        // #1322：带显式父级（地图视图内新建 = 选中分类的子条目 → 挂根条目下）；
+        // 缺失时 null → 后端 #641「自动挂项目根」兜底不变（与 #834 一项目一根耦合，不改后端语义）
+        return { name: name.trim(), category, content, parent_id: initialParentId ?? null };
       case 'outline':
         return { name: name.trim(), description, level, parent_id: initialParentId ?? null };
       case 'timeline':
