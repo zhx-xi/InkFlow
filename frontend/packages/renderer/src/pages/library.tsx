@@ -726,6 +726,7 @@ export function LibraryPage() {
                 <LibraryItemList
                   items={listItems}
                   withCharacterExtras={activeCat === 'characters'}
+                  withForeshadowExtras={activeCat === 'foreshadow'}
                   projectId={currentProjectId}
                   onEdit={openEdit}
                   onDelete={openDelete}

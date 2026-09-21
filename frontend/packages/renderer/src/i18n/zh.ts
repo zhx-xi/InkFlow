@@ -25,8 +25,7 @@ export const zh = {
   'sb.autosave': '自动保存',
   'sb.modelUnset': '未设置',
   // 启动门控（#384）
-  'gate.booting': '正在启动内核…',
-  'gate.failed': '内核连接失败',
+  'gate.booting': '正在启动内核…', 'gate.failed': '内核连接失败',
   // 设定库页
   'lib.title': '设定库',
   'lib.projectSelect': '当前项目',
@@ -36,6 +35,7 @@ export const zh = {
   'lib.empty.create': '去创建',
   'lib.loadFailed': '加载失败，请重试',
   'lib.retry': '重试',
+  'lib.fs.status.open': '未回收', 'lib.fs.status.resolved': '已回收', 'lib.fs.priority': '优先级 {n}', // #1324 伏笔行
   // F43：设定库 CRUD P0（specs/f43-setting-library-gui/spec.md §6）
   'lib.edit': '编辑',
   'lib.delete': '删除',
