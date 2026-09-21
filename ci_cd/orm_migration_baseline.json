@@ -26,6 +26,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "injected_context": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "pipeline": {
         "has_server_default": false,
         "nullable": false

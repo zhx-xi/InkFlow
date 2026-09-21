@@ -201,6 +201,20 @@ async def list_executions(
     return await svc.list_executions(project_id, limit)
 
 
+@router.get("/chapters/{chapter_id}/injections")
+@instrument(caller_type="api")
+async def get_chapter_injections(
+    chapter_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """#1349：章级注入记录回读 —— 该章最新一次生成**实际**注入了哪些设定条目。
+
+    无记录 → ``injected_context: null``（前端据此回退 assemble 预览态）。
+    """
+    svc = _svc(db)
+    return await svc.list_chapter_injections(chapter_id)
+
+
 @router.post("/pipelines/validate")
 @instrument(caller_type="api")
 async def validate_pipeline(

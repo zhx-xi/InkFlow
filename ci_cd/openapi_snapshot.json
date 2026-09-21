@@ -6649,6 +6649,47 @@
         ]
       }
     },
+    "/api/v1/agent/chapters/{chapter_id}/injections": {
+      "get": {
+        "description": "#1349：章级注入记录回读 —— 该章最新一次生成**实际**注入了哪些设定条目。\n\n无记录 → ``injected_context: null``（前端据此回退 assemble 预览态）。",
+        "operationId": "get_chapter_injections_api_v1_agent_chapters__chapter_id__injections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chapter_id",
+            "required": true,
+            "schema": {
+              "title": "Chapter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Chapter Injections",
+        "tags": [
+          "Agent"
+        ]
+      }
+    },
     "/api/v1/agent/drafts": {
       "get": {
         "description": "草稿列表（用户确认入口）→ {\"items\": [...], \"total\": N}.",

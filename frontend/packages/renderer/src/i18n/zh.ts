@@ -507,7 +507,7 @@ export const zh = {
   'write.context.outline': '大纲',
   'write.context.foreshadow': '伏笔',
   'write.context.expand': '展开上下文',
-  'write.context.inject': '注入',
+  'write.context.inject': '注入', 'write.context.injected': '本章已注入', 'write.context.injectedCount': '{n} 条', 'write.context.injectedEmpty': '本章尚无生成记录', 'write.context.injectedFrom': '来自执行 {id}',
   'write.context.required': '写作要求',
   'write.context.emptyRequired': '未填写写作要求',
   'write.context.dropped': '已裁剪',
