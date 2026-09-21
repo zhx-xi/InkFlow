@@ -148,7 +148,7 @@ AgentEditDialog 表单「工具 checkbox 分组」替换为 **scope 矩阵**：
 - 行 = ToolDomain（i18n 词条：`agent.scope.domain.outline` 等，F57 双层键体系）；列 = read/write/delete。
 - 列头 tooltip 说明删除列语义（"暴露删除工具；每次删除仍需会话确认"）。
 - 详情弹窗展示勾选矩阵回显 + resolved 工具数（不展示展开后的工具名清单，防噪声；可展开查看）。
-- 内置 Agent 卡片沿用现状，但其 `tool_ids` 定义同步改 grants（内置模板 `agent_entity_service.py:79-154`）。
+- 内置 Agent 卡片沿用现状，但其 `tool_ids` 定义同步改 grants（内置模板 `agent_entity_service.py:79-154`）。**#1327 起**：内置 6 Agent 的 grants 出厂值以 `specs/f39-multi-agent/spec.md §5.3` 的 grants 表为契约锚点；同表的 `tool_ids` 列标记为**历史字面值、不再同步维护**（该列是弃用别名，写入路径只写 grants）。
 - 旧数据兼容：grants 缺失但 tool_ids 存在 → 反查推断后渲染。
 
 ---

@@ -557,23 +557,94 @@ class TestSeedAgents:
 
 
 GRANTS_WHITELIST_MAP = {
-    "架构师": {"character": {"read"}, "foreshadowing": {"read"}, "writing": {"read"}},
+    # #1327（2026-09-21 权限修正）：架构师职责 =「章节结构/大纲规划」却无 OUTLINE 域
+    # → 补 OUTLINE.READ。只 READ 不 WRITE：规划≠落库，OUTLINE.WRITE 会把
+    # create/update_*_outline 7 个写工具交给架构师（越权落库）。
+    "架构师": {
+        "character": {"read"},
+        "foreshadowing": {"read"},
+        "writing": {"read"},
+        "outline": {"read"},
+    },
     # #1180（2026-09-16 显式扩权）：写手加 WORLD.READ——世界观在写作轨原为
     # 双重锁死（P1-3），主路径 resolve_writer_authorization 由此拿到 world 工具。
+    # #1327：写手补 OUTLINE.READ——按既定大纲写正文须能读卷纲/章纲/情节点。
     "写手": {
         "character": {"read"},
         "foreshadowing": {"read"},
         "writing": {"read", "write"},
         "world": {"read"},
+        "outline": {"read"},
     },
-    "审校员": {"writing": {"read"}, "character": {"read"}},
-    "修订师": {"writing": {"read", "write"}},
-    "世界观顾问": {"character": {"read"}, "foreshadowing": {"read"}},
+    # #1327：审校员职责含「设定漂移」检测，无 WORLD.READ 则世界观矛盾检不出。
+    "审校员": {"writing": {"read"}, "character": {"read"}, "world": {"read"}},
+    # #1327：修订师需核对设定才能改对，补 CHARACTER/WORLD 只读。
+    "修订师": {
+        "writing": {"read", "write"},
+        "character": {"read"},
+        "world": {"read"},
+    },
+    # #1327：最严重——「世界观顾问」拿不到世界观工具（职责即校验是否符合世界观）。
+    "世界观顾问": {
+        "character": {"read"},
+        "foreshadowing": {"read"},
+        "world": {"read"},
+    },
+    # 润色师：文笔层面收尾，只读前文即可 → 不变（#1327 明确不动）。
     "润色师": {"writing": {"read"}},
 }
-"""内置 6 Agent 出厂 grants 字面值（contract-954 §3 表格逐字；
-
+"""内置 6 Agent 出厂 grants 字面值（contract-954 §3 表格逐字 + #1327 权限修正；
 比较形态 {domain: set(ops)} 防序脆弱）。"""
+
+
+# ── #1327 权限修正 — 职责↔授权域一致性断言（上表已含修正值，本段锁定理由） ─────
+
+
+# 职责必须拿到的域（缺此域 = 该 agent 无法完成本职，结构性问题）
+_ROLE_REQUIRED_GRANTS: dict[str, dict[str, set[str]]] = {
+    "架构师": {"outline": {"read"}},
+    "写手": {"outline": {"read"}},
+    "审校员": {"world": {"read"}},
+    "修订师": {"character": {"read"}, "world": {"read"}},
+    "世界观顾问": {"world": {"read"}},
+}
+
+# 明确不得授予的域·操作（反向断言：防「顺手多加一格」把越权引入内置出厂）
+_ROLE_FORBIDDEN_GRANTS: dict[str, dict[str, set[str]]] = {
+    # 架构师规划不落库 → 不得有 OUTLINE.WRITE（否则 create/update_*_outline 全给）
+    "架构师": {"outline": {"write"}},
+    # 审校员/世界观顾问只产出清单，不改档案 → 不得有写权
+    "审校员": {"world": {"write"}},
+    "世界观顾问": {"world": {"write"}},
+}
+
+
+def test_builtin_grants_role_requirement_alignment():
+    """#1327：职责必须的域全部授予（5 agent 逐条）。
+
+    架构师/写手 → outline.read；审校员/修订师/世界观顾问 → world.read；
+    修订师另需 character.read。
+    """
+    from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+
+    by_name = {s["name"]: _grants_to_map(s["grants"]) for s in BUILTIN_AGENT_SPECS}
+    for name, required in _ROLE_REQUIRED_GRANTS.items():
+        actual = by_name[name]
+        for domain, ops in required.items():
+            missing = ops - actual.get(domain, set())
+            assert not missing, f"#1327 {name} 缺少 {domain}.{missing}（职责无法完成）"
+
+
+def test_builtin_grants_no_overgrant():
+    """#1327 反向断言：明确越权的域·操作不得出现在内置出厂 grants。"""
+    from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+
+    by_name = {s["name"]: _grants_to_map(s["grants"]) for s in BUILTIN_AGENT_SPECS}
+    for name, forbidden in _ROLE_FORBIDDEN_GRANTS.items():
+        actual = by_name[name]
+        for domain, ops in forbidden.items():
+            granted = ops & actual.get(domain, set())
+            assert not granted, f"#1327 {name} 越权：不应有 {domain}.{granted}"
 
 
 def _grants_to_map(grants) -> dict:

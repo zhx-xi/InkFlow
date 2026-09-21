@@ -84,6 +84,11 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
+            # #1327（2026-09-21）：职责是「章节结构/大纲规划」却拿不到大纲工具
+            # （read 缺 list_outlines/get_outline/list_plot_points）。
+            # 只 READ 不 WRITE：规划 ≠ 落库；OUTLINE.WRITE 会连带
+            # create/update_*_outline + plot_point 共 7 个写工具交给架构师。
+            GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.READ]),
         ],
         "tool_ids": ["search_characters", "check_foreshadowing", "get_prior_summary"],
         "skill_name": "architecture-methodology",
@@ -107,6 +112,9 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             # 结构性不可避免（世界观在写作轨双重锁死，P1-3）。主路径
             # （agentic_writer.resolve_writer_authorization）由此拿到 world 只读工具。
             GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
+            # #1327（2026-09-21）：按既定大纲写正文须能读大纲（卷纲/章纲/情节点），
+            # 否则「大纲已确认」的写作前提在工具层不成立。只 READ。
+            GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.READ]),
         ],
         "tool_ids": [
             "search_characters",
@@ -133,6 +141,9 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "grants": [
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
+            # #1327（2026-09-21）：审校员职责明写「设定漂移」，却无 WORLD 域
+            # → 世界观设定矛盾检不出。#1180 已证明写手需 WORLD.READ，审计更需。
+            GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
         "tool_ids": ["audit_chapter", "count_words", "search_characters"],
         "skill_name": "audit-methodology",
@@ -151,6 +162,10 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         ),
         "grants": [
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ, ToolOp.WRITE]),
+            # #1327（2026-09-21）：修订要「依设定改对」须先能读出当前设定，
+            # 否则只能凭正文反推（正是设定漂移的温床）。补两域只读。
+            GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
+            GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
         "tool_ids": ["get_prior_summary", "count_words", "save_draft"],
         "skill_name": "revision-methodology",
@@ -169,6 +184,10 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "grants": [
             GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
+            # #1327（2026-09-21）本轮最严重的结构缺口：名为「世界观顾问」、
+            # 职责即「校验是否符合世界观设定」，却完全拿不到 WORLD 域工具
+            # → 只能凭角色/伏笔间接推断。补 WORLD.READ（只读，不授予写权）。
+            GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
         "tool_ids": ["search_characters", "check_foreshadowing"],
         "skill_name": "worldview-methodology",

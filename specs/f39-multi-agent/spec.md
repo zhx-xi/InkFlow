@@ -301,6 +301,27 @@ def build_agentic_writer(
 | 世界观顾问 | 世界观一致 | search_characters, check_foreshadowing | worldview-methodology |
 | 润色师 | 文笔润色 | count_words, get_prior_summary | polishing-methodology |
 
+> ⚠️ **`tool_ids` 列已弃用**（F58 §2.1/ADR-050：写入路径只写 `grants`，`tool_ids` 仅作兼容读取口）。
+> 上表 tool_ids 为历史出厂字面值，**不再随权限调整同步维护**（#1327 起）。运行期工具面的
+> 唯一真相源是 **grants**（见下表）；tool_ids 的清理/派生与上表退役另见后续 issue。
+
+**内置 Agent 出厂 grants（6 个，#1327 权限修正后的运行时真源）**：
+
+| Agent | 出厂 grants（domain: ops） | #1327 变动 |
+|-------|---------------------------|-----------|
+| 架构师 | character:read, foreshadowing:read, writing:read, **outline:read** | ➕ outline.read（只读：规划≠落库） |
+| 写手 | character:read, foreshadowing:read, writing:read+write, world:read, **outline:read** | ➕ outline.read |
+| 审校员 | writing:read, character:read, **world:read** | ➕ world.read（设定漂移检测） |
+| 修订师 | writing:read+write, **character:read**, **world:read** | ➕ character.read + world.read（核对设定） |
+| 世界观顾问 | character:read, foreshadowing:read, **world:read** | ➕ world.read（原本拿不到世界观工具） |
+| 润色师 | writing:read | 不变 |
+
+> 每条域·操作展开为的工具名见 F58 §2.2 `GRANT_TOOL_MAP`（唯一真相源）。展开示例：
+> `outline:read` → `list_outlines` / `get_outline` / `list_plot_points`；
+> `world:read` → `list_maps` / `list_world_settings` / `get_world_setting`。
+> 反向断言（#1327）：架构师不得有 `outline:write`（否则 `create/update_*_outline` 共 7 个
+> 写工具落入规划角色），审校员/世界观顾问不得有 `world:write`。
+
 **内置 Skill 出厂配置（6 个，目录名 ∈ BUILTIN_SKILL_NAMES → `source="builtin"` 只读）**：与上表「出厂 skill」一一对应（架构/写作/审校/修订/世界观/润色六份方法论 SKILL.md，content 含 frontmatter name=slug + 中文正文，须通过 `parse_skill_metadata` 校验）。出厂 prompt 与 skill 正文为 ensure 内容（实现期编写，非契约字段），契约只定「6 Agent + 6 Skill slug + 上表白名单映射」。
 
 ### 5.4 F40 skill 上传与绑定（前端交互，#259）
