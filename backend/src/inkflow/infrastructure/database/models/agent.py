@@ -72,6 +72,16 @@ class AgentExecutionORM(Base):
     thread_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     """LangGraph checkpoint thread_id（书级运行 ↔ 图 checkpoint 一一映射；None = 非书级运行）"""
 
+    injected_context: Mapped[dict | None] = mapped_column(
+        LenientJSON(fallback=None), nullable=True, default=None
+    )
+    """#1349：本次执行**实际**注入的设定条目 id 明细（章级回执面）.
+
+    形态 {"character_ids": [...], "world_ids": [...], "foreshadowing_ids": [...]}；
+    与 ``_assemble_setting_context`` 实际产出同源（白名单过滤后真正进 setting 的条目）。
+    None = 未落库（旧记录 / 非设定注入类管线）/ 未注入任何条目时为空列表。
+    """
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     """记录创建时间（UTC）."""
 

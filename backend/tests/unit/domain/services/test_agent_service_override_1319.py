@@ -387,7 +387,7 @@ class TestOverrideDefaultAndGuards:
 
         captured: dict[str, object] = {}
 
-        async def _spy(project_id, variables, override=None):
+        async def _spy(project_id, variables, override=None, injected=None):
             captured["override"] = override
             return variables
 

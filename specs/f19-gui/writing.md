@@ -224,7 +224,7 @@
 - N20：编辑态工具栏行最右出现审批入口（计数文案 + `pendingDraftsCount > 0` 圆点）；点击 → 审批弹层打开；`writing-topbar` 不再存在。
 - N21：无选中章节（global chat 页）不渲染审批入口；树双击草稿节点仍可打开审批弹层。
 
-## 10. #1342 上下文注入面板勾选接线到生成链路 + 章级注入记录回显
+## 10. #1342 上下文注入面板勾选接线到生成链路 + #1349 章级注入记录回显
 
 > 现象：写作页「上下文注入」面板的勾选/取消**对实际生成仍无影响** —— 勾选只喂 assemble 预览端点，生成链路（`/agent/pipelines/stream`）拿不到 override。
 > 后端通道已由 #1341 打通（`PipelineExecuteRequest.override` / `_assemble_setting_context(..., override=)`，角色/世界观两源白名单过滤 + #1235 三态语义）；本节锁**前端上游接线**。
@@ -240,11 +240,36 @@
 - `pages/writing.tsx` 持 `contextOverride` state 并传入 `usePipeline`；`ContextPanel` 的 `onOverrideChange` 接 `setContextOverride`。
 - **三态语义贯通**（#1235）：不勾选任何项 → 不传 override（全注入）≠ 全部取消勾选 → 传空数组（该类零注入）。
 
-### 10.2 章级注入记录回显（本轨范围说明）
+### 10.2 章级注入记录回显（#1349 已落地）
 
-- **本章已注入清单回显**：后端**无落库载体** —— `audit_logs` 表 11 个字段均为审计语义（`severity_summary` 承载动作、`note` 为拒绝原因），无「注入了哪些条目」字段；唯一注入点 `agent_service.py` 组 `variables["setting"]` 为运行时内存变量，不落库；`AgentService` 亦无 `AuditLogService` 装配。
-- 故章级精确读回需：① `api/routers/agent.py` 装配 `AuditLogService` + 写入注入快照；② 章级过滤读回 API 面 + OpenAPI 快照 + 前端 `gen:api` 双刷 —— 属**后端轨**，本轨报告说明并建议另开（不擅自扩范围）。
-- 原型侧以 `context-injected` 状态表达该回显的目标形态（`context-injected-echo` chip 列表 + `context-injected-count` 徽章），作为后续后端轨的 UI 基准。
+> **#1342 时本节声明「后端无落库载体、另开后端轨」；#1349 即该后端轨，本节同步为已实现形态。**
+
+面板承载**两个并列区块**，语义必须可区分：
+
+| 区块 | 角色 | 内容 | 缺省/空态 |
+|------|------|------|-----------|
+| 上方：写作要求 / 大纲 / 角色 / 世界观 / 伏笔 | **控制面**（预览） | assemble 预览结果；勾选框在此 | 未填写作要求 → 「未填写写作要求」占位 |
+| 下方：**本章已注入**（`context-injected-echo`） | **回执面**（只读） | 上一章生成时**实际**注入的条目 id 明细 | 无记录 → 「本章尚无生成记录」 |
+
+落库与读回（后端，同 PR）：
+
+- 载体 = `agent_executions.injected_context`（`LenientJSON`，该表第 5 个 JSON 列；`core/database.py` 走既有 `PRAGMA 检缺列 → ALTER TABLE ADD COLUMN` 零迁移路径）。
+- 写入点 = `agent_service_stream._inject_context` 回传明细 → `_persist_injection_detail` 落库；**两条执行路径（`stream_pipeline` / `_run_pipeline`）都写**，同一语义不放过。
+- 明细与 `_assemble_setting_context` 的 `variables["setting"]` **同源**：只记「已通过内容非空判定、即将 append」的条目；被白名单剔除或内容为空的条目**不计入**（回执面不撒谎）。
+- 三源 = 角色 / 世界观 / 伏笔。**大纲源不进回执面**（无 override 面且非用户可选；面板勾选面也只有三类）。
+- 读端点 = `GET /api/v1/agent/chapters/{chapter_id}/injections` → `{chapter_id, execution_id, injected_context}`；取该章 `created_at` 降序**第一条已有明细**的执行记录，全无 → `injected_context: null`。
+
+前端消费面（`ContextPanel`）：
+
+- `injected_context` 非 null → 渲染 `context-injected-count`（三源合计徽章，如「3 项」）+ `context-injected-execution`（「来自执行 …」）+ 折叠明细 `context-injected-<source_key>` 分组与 `context-injected-item-<id>` chip（**id 粒度**，供回溯）。
+- `injected_context` 为 null → 渲染 `context-injected-empty`（「本章尚无生成记录」），**不**渲染计数徽章与明细。
+- **反向边界（必须保持）**：三源全为空数组 = 「有记录，但本次确实没注入任何条目」= 事实回执，渲染「0 项」**并非**回退态；两者不可混淆。
+- **回执面只读**：明细区**不含**勾选框（控制面只在预览区块）。读端点失败 → 静默降级为回退态，不阻塞预览主路径。
+- 切章 → 重取该章记录（`chapterId` 为 effect 依赖）；无 `chapterId` → 不发请求。
+
+原型基准：`design/GUI/writing/writing.html` 的 `context-injected`（有记录）与
+`context-no-record`（无记录回退）两个状态；截图见同目录
+`writing-context-injected.png` / `writing-context-no-record.png`。
 
 ### 10.3 已知边界：伏笔维度
 
@@ -256,3 +281,12 @@
 - N22：面板勾选/取消 → `onOverrideChange` 收到对应白名单（角色/世界观分组各验一次）；未传该 prop 时组件行为不变。
 - N23：`usePipeline.start` 构造的请求体：传 `override` → body 含该三字段；不传 → body **无** `override` 键；传显式空数组 → body 保留空数组（不塌缩为「全注入」）。
 - N24：可证伪自证 —— 移除 `usePipeline` 的 override 传参 → N23 的「body 含 override」断言必须失败。
+
+### 10.5 #1349 验收补充（章级注入回执面）
+
+- N25：该章有注入记录 → 面板渲染 `context-injected-echo` 明细块 + `context-injected-count` 计数 + `context-injected-item-<id>` 条目 chip；明细 id 与当次 `_assemble_setting_context` 实际产出同源（白名单剔除项不出现）。
+- N26：该章无记录（`injected_context: null`）→ 渲染 `context-injected-empty` 回退提示，**不**渲染计数徽章与明细分组；预览区块（`context-block-*`）不受影响。
+- N27：三源全空数组（有记录但零条目）→ 渲染「0 项」，**不**判为回退态（两态互斥可区分）。
+- N28：回执面只读 —— 明细区无 `input[type=checkbox]`；控制面勾选框仍只在预览区块。
+- N29：读端点失败 → 静默降级为回退态，不阻塞预览主路径；无 `chapterId` → 不发请求。
+- N30：可证伪自证 —— 剥掉 `_persist_injection_detail` 的 store 落库调用 → 落库接线契约必须 FAIL（实测 2 例红），还原后复绿。

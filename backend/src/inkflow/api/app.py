@@ -62,6 +62,7 @@ from inkflow.core.database import (
     create_tables,
     engine,
     ensure_agent_executions_hitl_payload_column,
+    ensure_agent_executions_injected_context_column,
     ensure_agent_executions_relations_column,
     ensure_agent_executions_thread_id_column,
     ensure_agent_executions_trace_column,
@@ -125,6 +126,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_agent_executions_relations_column)
         await conn.run_sync(ensure_agent_executions_thread_id_column)
         await conn.run_sync(ensure_agent_executions_trace_column)
+        await conn.run_sync(ensure_agent_executions_injected_context_column)
         await conn.run_sync(ensure_agent_role_key_column)
         await conn.run_sync(ensure_agents_grants_column)
         await conn.run_sync(ensure_provider_builtin_key_column)

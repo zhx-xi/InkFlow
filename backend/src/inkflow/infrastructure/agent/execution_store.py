@@ -62,8 +62,13 @@ class ExecutionStore:
         total_duration_ms: int = 0,
         relations: list | None = None,
         trace: list | None = None,
+        injected_context: dict | None = None,
     ) -> None:
-        """更新 stages 快照和整体状态（F47 #379：trace 轨迹快照一并落库）。"""
+        """更新 stages 快照和整体状态（F47 #379：trace 轨迹快照一并落库）。
+
+        #1349：injected_context 落「本次实际注入」的 id 明细；不传（None）= 该字段
+        保持原值不动（既有调用零改动，且不在管线失败路径上误清已写入的明细）。
+        """
         execution = await self.get_execution(execution_id)
         if execution is None:
             return
@@ -74,6 +79,25 @@ class ExecutionStore:
         execution.total_duration_ms = total_duration_ms
         execution.relations = relations if relations is not None else []
         execution.trace = trace if trace is not None else []
+        if injected_context is not None:
+            execution.injected_context = injected_context
+        await self._session.commit()
+
+    async def update_injected_context(
+        self,
+        execution_id: str,
+        injected_context: dict,
+    ) -> None:
+        """#1349：单独落「本次实际注入」明细（注入发生在管线执行**之前**）。
+
+        与 update_stages 分开写：注入在 stage 流开始前就已完成（`_inject_context`
+        早于 `pipeline.stream`），单列写入保证「管线中途异常」时明细仍已落库
+        —— 回执面不因运行结果而丢失。
+        """
+        execution = await self.get_execution(execution_id)
+        if execution is None:
+            return
+        execution.injected_context = injected_context
         await self._session.commit()
 
     async def update_status(
@@ -113,6 +137,29 @@ class ExecutionStore:
         result = await self._session.execute(
             select(AgentExecutionORM)
             .where(AgentExecutionORM.project_id == project_id)
+            .order_by(AgentExecutionORM.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all()), total or 0
+
+    async def list_chapter_executions(
+        self,
+        chapter_id: str,
+        limit: int = 20,
+    ) -> tuple[list[AgentExecutionORM], int]:
+        """#1349：按 chapter_id 查执行记录（created_at 降序，最新在前）。
+
+        章级注入回显的取数口：调用方按序取**第一条已有 injected_context** 的记录
+        （最新一次生成的实际注入明细）。
+        """
+        total = await self._session.scalar(
+            select(func.count())
+            .select_from(AgentExecutionORM)
+            .where(AgentExecutionORM.chapter_id == chapter_id)
+        )
+        result = await self._session.execute(
+            select(AgentExecutionORM)
+            .where(AgentExecutionORM.chapter_id == chapter_id)
             .order_by(AgentExecutionORM.created_at.desc())
             .limit(limit)
         )

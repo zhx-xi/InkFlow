@@ -521,7 +521,7 @@ export const en: Record<string, string> = {
   'write.context.outline': 'Outline',
   'write.context.foreshadow': 'Foreshadowing',
   'write.context.expand': 'Expand context',
-  'write.context.inject': 'Inject',
+  'write.context.inject': 'Inject', 'write.context.injected': 'Injected for this chapter', 'write.context.injectedCount': '{n} items', 'write.context.injectedEmpty': 'No generation record for this chapter yet', 'write.context.injectedFrom': 'From execution {id}',
   'write.context.required': 'Writing requirements',
   'write.context.emptyRequired': 'Writing requirements not filled',
   'write.context.dropped': 'Dropped',

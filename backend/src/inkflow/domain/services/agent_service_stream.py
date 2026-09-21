@@ -75,13 +75,15 @@ class AgentServiceStreamMixin:
             project_id=str(request.project_id),
             chapter_id=str(request.chapter_id) if request.chapter_id else None,
         )
-        await self._inject_context(
+        # #1349：注入明细落库（写回锚点紧跟 create_execution，注入先于 stage 流）
+        injection_detail = await self._inject_context(
             context,
             continue_context=(
                 request.pipeline == "builtin:write_continue" and request.chapter_id is not None
             ),
             override=request.override,
         )
+        await self._persist_injection_detail(execution.id, injection_detail)
         final_output = ""
         stage_snapshots: list[dict] = []
         try:
@@ -234,21 +236,70 @@ class AgentServiceStreamMixin:
             project.config.agent_relations,
         )
 
+    @staticmethod
+    def _empty_injection_detail() -> dict[str, list[str]]:
+        """#1349：注入明细骨架（三源各一 id 列表）。
+
+        只收「三源」——大纲源无 override 面且非用户可选，不进回执面（issue §UI 语义
+        要点只列角色/世界观/伏笔三类；面板勾选面亦只此三类）。
+        """
+        return {"character_ids": [], "world_ids": [], "foreshadowing_ids": []}
+
+    async def _persist_injection_detail(
+        self,
+        execution_id: str,
+        detail: dict[str, list[str]],
+    ) -> None:
+        """#1349：把「本次实际注入」明细落到执行记录（章级回执面取数源）。
+
+        失败 → WARNING + 吞掉：回执面是**观测**能力，绝不因落库异常阻断生成主链路
+        （镜像 _inject_context 的失败隔离语义）。store 可能无该方法（旧 fake/mock）
+        → getattr 防御，保持既有单测零改动。
+        """
+        persist = getattr(self._store, "update_injected_context", None)
+        if persist is None:
+            return
+        try:
+            await persist(execution_id, detail)
+        except Exception:
+            logger.warning("注入明细落库失败（回执面降级，不影响生成）", exc_info=True)
+
+    async def list_chapter_injections(self, chapter_id: str) -> dict:
+        """#1349：章级注入记录回读 —— 最新一次**已有明细**的执行记录。
+
+        取数规则：按 created_at 降序取该章执行记录，返回第一条 injected_context
+        非 None 的（旧记录 / 非设定注入类管线无明细 → 继续往前找）。
+        全无 → injected_context=None（前端据此回退 assemble 预览态）。
+        """
+        executions, _ = await self._store.list_chapter_executions(chapter_id)
+        for execution in executions:
+            if getattr(execution, "injected_context", None) is not None:
+                return {
+                    "chapter_id": chapter_id,
+                    "execution_id": execution.id,
+                    "injected_context": execution.injected_context,
+                }
+        return {"chapter_id": chapter_id, "execution_id": None, "injected_context": None}
+
     async def _inject_context(
         self,
         context: PipelineContext,
         *,
         continue_context: bool,
         override: ContextOverride | None = None,
-    ) -> None:
+    ) -> dict[str, list[str]]:
         """设定库/前文摘要注入（_run_pipeline 与 stream_pipeline 共用，#366 G1/#318）。
 
         #1319：override 透传至 _assemble_setting_context（勾选通道）；前文摘要无 override 面。
+        #1349：回传「本次**实际**注入」的三源 id 明细（供调用方落库 → 章级回执面）。
+        明细与 setting 实际产出同源；注入失败/无源装配 → 三键空列表（不是 None，
+        调用方无需判空）。
         """
+        detail = self._empty_injection_detail()
         # #366 G1 设定驱动写作：无条件注入设定库摘要（角色/世界观/大纲）
         try:
             context.variables = await self._assemble_setting_context(
-                context.project_id, context.variables, override
+                context.project_id, context.variables, override, detail
             )
         except Exception:
             logger.warning("设定注入失败，回退请求变量", exc_info=True)
@@ -259,3 +310,4 @@ class AgentServiceStreamMixin:
                 )
             except Exception:
                 logger.warning("前文摘要组装失败，回退请求变量", exc_info=True)
+        return detail

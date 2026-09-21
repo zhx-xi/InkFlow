@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listProjectCharacters } from '../api/character';
 import {
   assembleContext,
+  fetchChapterInjections,
   listProjectForeshadowings,
   listProjectWorldSettings,
+  type ChapterInjectionDto,
   type ContextAssemblyResult,
   type ContextBlock,
   type ContextOverride,
@@ -47,6 +49,23 @@ const SOURCE_TITLE_KEYS: Partial<Record<ContextSourceType, string>> = {
   world_setting: 'write.context.world',
   foreshadowing: 'write.context.foreshadow',
 };
+
+/**
+ * #1349 章级回执面：三源渲染顺序 + 标题 i18n key。
+ * 只含「面板可勾选」的三源 —— 大纲源无 override 面且非用户可选，不进回执面。
+ */
+const INJECTED_SECTIONS: Array<{ key: keyof ContextOverride; titleKey: string }> = [
+  { key: 'character_ids', titleKey: 'write.context.characters' },
+  { key: 'world_ids', titleKey: 'write.context.world' },
+  { key: 'foreshadowing_ids', titleKey: 'write.context.foreshadow' },
+];
+
+/** 明细总条数（回执面徽章） */
+function countInjected(detail: ContextOverride): number {
+  return (
+    detail.character_ids.length + detail.world_ids.length + detail.foreshadowing_ids.length
+  );
+}
 
 /** 按 source 分组 blocks（保持出现顺序） */
 function groupBySource(blocks: ContextBlock[]): Map<ContextSourceType, ContextBlock[]> {
@@ -132,6 +151,8 @@ export function ContextPanel({
   const [pickerSelection, setPickerSelection] = useState<string[]>([]);
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerError, setPickerError] = useState<string | null>(null);
+  // #1349：章级注入记录（回执面取数源）；null = 无记录/未取到 → 回退态
+  const [injectionRecord, setInjectionRecord] = useState<ChapterInjectionDto | null>(null);
   // #1017：章级写作要求本地草稿（初始值 = 章级覆盖原文，null=继承 → 空）
   const [requirementsDraft, setRequirementsDraft] = useState(() => chapterWritingRequirements ?? '');
   /** 上次同步的章级覆盖值（用于切章时重播草稿，避免用户输入中被回写打断） */
@@ -180,6 +201,29 @@ export function ContextPanel({
     [projectId, chapterId, model, writingRequirements],
   );
 
+  /**
+   * #1349：章级注入记录（回执面）——「上一章生成时**实际**注入了什么」。
+   * 只读观测面，不参与勾选控制面。失败静默降级为回退态（不阻塞预览主路径）。
+   */
+  useEffect(() => {
+    if (!chapterId) {
+      setInjectionRecord(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const record = await fetchChapterInjections(chapterId);
+        if (!cancelled) setInjectionRecord(record);
+      } catch {
+        if (!cancelled) setInjectionRecord(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chapterId]);
+
   // 挂载 / projectId / chapterId 变化 → 自动注入；任缺 → 空态且不调用
   useEffect(() => {
     setCheckedCharacterIds([]);
@@ -203,6 +247,9 @@ export function ContextPanel({
       setError(null);
     }
   }, [runAssemble, projectId, chapterId, model, writingRequirements]);
+
+  const injectedDetail = injectionRecord?.injected_context ?? null;
+  const injectedCount = injectedDetail === null ? 0 : countInjected(injectedDetail);
 
   const groups = useMemo(
     () => (data ? groupBySource(data.blocks) : new Map<ContextSourceType, ContextBlock[]>()),
@@ -548,6 +595,60 @@ export function ContextPanel({
                 ))}
               </section>
             )}
+            {/* #1349 回执面：本章**实际**已注入（与上方预览态并列且可区分）。
+                有记录但三源全空 = 「确实没注入任何条目」的事实回执，仍渲染 0 计数；
+                无记录 = 回退提示，两者不混淆。明细只读，勾选框只在预览区块。 */}
+            <section
+              data-testid="context-injected-echo"
+              className="rounded-md border border-line bg-surface p-3"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] font-medium">{t('write.context.injected')}</span>
+                {injectedDetail !== null && (
+                  <span
+                    data-testid="context-injected-count"
+                    className="shrink-0 rounded bg-surface-3 px-1.5 py-0.5 text-[11px] text-ink-2"
+                  >
+                    {t('write.context.injectedCount', { n: injectedCount })}
+                  </span>
+                )}
+              </div>
+              {injectedDetail === null ? (
+                <div
+                  data-testid="context-injected-empty"
+                  className="mt-2 text-[12px] leading-relaxed text-ink-3"
+                >
+                  {t('write.context.injectedEmpty')}
+                </div>
+              ) : (
+                <>
+                  <div
+                    data-testid="context-injected-execution"
+                    className="mt-1 text-[11px] text-ink-3"
+                  >
+                    {t('write.context.injectedFrom', {
+                      id: injectionRecord?.execution_id ?? '',
+                    })}
+                  </div>
+                  {INJECTED_SECTIONS.map(({ key, titleKey }) =>
+                    injectedDetail[key].length === 0 ? null : (
+                      <div key={key} data-testid={`context-injected-${key}`} className="mt-2">
+                        <div className="text-[12px] font-medium text-ink-2">{t(titleKey)}</div>
+                        {injectedDetail[key].map((id) => (
+                          <div
+                            key={id}
+                            data-testid={`context-injected-item-${id}`}
+                            className="mt-0.5 truncate text-[12px] leading-relaxed text-ink-3"
+                          >
+                            {id}
+                          </div>
+                        ))}
+                      </div>
+                    ),
+                  )}
+                </>
+              )}
+            </section>
             <div className="text-[11px] text-ink-3">
               {t('write.context.tokens', { total: data.total_tokens, budget: data.budget_tokens })}
             </div>

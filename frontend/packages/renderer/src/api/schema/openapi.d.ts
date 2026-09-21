@@ -293,6 +293,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/chapters/{chapter_id}/injections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Chapter Injections
+         * @description #1349：章级注入记录回读 —— 该章最新一次生成**实际**注入了哪些设定条目。
+         *
+         *     无记录 → ``injected_context: null``（前端据此回退 assemble 预览态）。
+         */
+        get: operations["get_chapter_injections_api_v1_agent_chapters__chapter_id__injections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/drafts": {
         parameters: {
             query?: never;
@@ -6701,6 +6723,37 @@ export interface operations {
             header?: never;
             path: {
                 run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chapter_injections_api_v1_agent_chapters__chapter_id__injections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chapter_id: string;
             };
             cookie?: never;
         };

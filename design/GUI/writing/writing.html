@@ -207,6 +207,15 @@ button{font-family:inherit;cursor:pointer}
 .ctx-injected-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
 .ctx-chip{border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:11px;color:var(--ink-2);padding:2px 8px}
 .ctx-chip-off{border-style:dashed;color:var(--ink-3);text-decoration:line-through}
+.ctx-from{margin-top:4px;font-size:11px;color:var(--ink-3)}
+.ctx-injected-detail{margin-top:6px}
+.ctx-detail-summary{cursor:pointer;font-size:12px;color:var(--ink-2);list-style:none}
+.ctx-detail-summary::-webkit-details-marker{display:none}
+.ctx-detail-summary::before{content:"▸ ";color:var(--ink-3)}
+.ctx-injected-detail[open] .ctx-detail-summary::before{content:"▾ "}
+.ctx-injected-group{margin-top:6px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.ctx-group-title{font-size:12px;color:var(--ink-2);flex:none}
+.ctx-empty-hint{margin-top:6px;font-size:12px;color:var(--ink-3)}
 .summary-content{white-space:pre-wrap;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;font-size:12px;line-height:1.7;color:var(--ink-2)}
 .summary-empty{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;font-size:12px;color:var(--ink-3)}
 .rail-collapsed-only{display:none}
@@ -536,18 +545,41 @@ body[data-shot="1"] .demo-bar{display:none}
                 <div class="card-head"><span class="card-title">伏笔</span><button class="pick-btn">＋ 选择注入</button></div>
                 <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">师父闭关的真相</span><span class="c">与二十年前剑冢异动有关；卷末揭晓。</span></span></label>
               </div>
-              <!-- #1342：本章已注入清单回显（勾选生效的落地证据） -->
+              <!-- #1349：本章已注入（回执面）——「上一章生成时**实际**注入了什么」。
+                   与上方预览态（控制面，勾选框在此）并列且可区分；明细只读。
+                   有记录 → 计数徽章 + 执行记录 id + 三源 id 明细（可折叠）；
+                   无记录 → 回退提示（不渲染空明细）。 -->
               <div class="ctx-card ctx-injected" data-testid="context-injected-echo" style="display:none">
                 <div class="card-head">
                   <span class="card-title">本章已注入</span>
+                  <!-- 有记录态：计数徽章（三源合计；有记录但零条目 = 「0 项」事实回执） -->
                   <span class="ctx-badge" data-testid="context-injected-count">3 项</span>
                 </div>
-                <div class="ctx-injected-list">
-                  <span class="ctx-chip" data-testid="context-injected-0">角色 · 苏云舟</span>
-                  <span class="ctx-chip" data-testid="context-injected-1">世界观 · 青云宗</span>
-                  <span class="ctx-chip" data-testid="context-injected-2">世界观 · 剑冢</span>
-                  <span class="ctx-chip ctx-chip-off" data-testid="context-injected-off">角色 · 林晚照（已取消）</span>
-                </div>
+                <!-- 有记录态：来源执行记录（可回溯到 pipeline 执行） -->
+                <div class="ctx-from" data-testid="context-injected-execution">来自执行 9f3c1a7e-…-4b21</div>
+                <details class="ctx-injected-detail" open>
+                  <summary class="ctx-detail-summary">明细（3 条）</summary>
+                  <!-- 三源分组：仅渲染非空分组；chip 为 id 粒度（回执面 = 实际注入了哪些 id） -->
+                  <div class="ctx-injected-group" data-testid="context-injected-character_ids">
+                    <span class="ctx-group-title">角色</span>
+                    <span class="ctx-injected-list">
+                      <span class="ctx-chip" data-testid="context-injected-item-c-7d18">c-7d18</span>
+                    </span>
+                  </div>
+                  <div class="ctx-injected-group" data-testid="context-injected-world_ids">
+                    <span class="ctx-group-title">世界观</span>
+                    <span class="ctx-injected-list">
+                      <span class="ctx-chip" data-testid="context-injected-item-w-2fa0">w-2fa0</span>
+                      <span class="ctx-chip" data-testid="context-injected-item-w-91bc">w-91bc</span>
+                    </span>
+                  </div>
+                </details>
+              </div>
+              <!-- #1349 无记录回退态（state=context-no-record）：同一区块，只渲染回退提示，
+                   计数徽章与明细均不出现 —— 「无记录」与「有记录但零条目」是两回事。 -->
+              <div class="ctx-card ctx-injected" data-testid="context-injected-echo-empty" style="display:none">
+                <div class="card-head"><span class="card-title">本章已注入</span></div>
+                <div class="ctx-empty-hint" data-testid="context-injected-empty">本章尚无生成记录</div>
               </div>
               <div class="ctx-card" data-testid="context-dropped">
                 <div class="card-head"><span class="card-title">已裁剪</span></div>
@@ -599,6 +631,8 @@ body[data-shot="1"] .demo-bar{display:none}
       <option value="global-chat">全局 chat 页（无章节）</option>
       <option value="thinking-level">思考级别选择器（展开七档）</option>
       <option value="reasoning">流式思考区块（reasoning）</option>
+      <option value="context-injected">上下文注入 · 本章已注入（有记录）</option>
+      <option value="context-no-record">上下文注入 · 本章已注入（无记录回退）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -679,7 +713,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected'];
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record'];
 function setState(s){
   document.body.dataset.state = s;
   const streaming = s === 'streaming';
@@ -708,9 +742,11 @@ function setState(s){
   });
   document.querySelectorAll('[data-testid="chat-reasoning-value"]').forEach(v => { v.textContent = levelLabel; });
   document.querySelectorAll('[data-testid="chat-reasoning-0"]').forEach(b => { b.style.display = s === 'reasoning' ? '' : 'none'; });
-  // #1342：上下文注入面板 — 勾选生效 + 本章已注入清单回显
+  // #1349：上下文注入面板 — 勾选生效（#1342）+ 本章已注入回执面两态（#1349）
   const ctxInjected = s === 'context-injected';
+  const ctxNoRecord = s === 'context-no-record';
   document.querySelectorAll('[data-testid="context-injected-echo"]').forEach(el => { el.style.display = ctxInjected ? '' : 'none'; });
+  document.querySelectorAll('[data-testid="context-injected-echo-empty"]').forEach(el => { el.style.display = ctxNoRecord ? '' : 'none'; });
   if (ctxInjected) {
     // 「林晚照」取消勾选：复选框取消 + 名称划线，与回显 chip 的 line-through 呼应
     document.querySelectorAll('[data-testid="context-block-character_setting"] .ctx-item').forEach((item, i) => {

@@ -115,3 +115,17 @@ export async function refreshChapterSummary(chapterId: string): Promise<ChapterS
     method: 'POST',
   });
 }
+
+/** #1349 章级注入记录（回执面）：本次生成**实际**注入了哪些设定条目 id */
+export interface ChapterInjectionDto {
+  chapter_id: string;
+  /** 产生该明细的执行记录 id；无记录时为 null */
+  execution_id: string | null;
+  /** 三源 id 明细；无记录时为 null（前端据此回退 assemble 预览态） */
+  injected_context: ContextOverride | null;
+}
+
+/** 章级注入记录回读（GET /api/v1/agent/chapters/{chapterId}/injections） */
+export async function fetchChapterInjections(chapterId: string): Promise<ChapterInjectionDto> {
+  return apiFetch<ChapterInjectionDto>(`/api/v1/agent/chapters/${chapterId}/injections`);
+}

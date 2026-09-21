@@ -45,3 +45,11 @@ def ensure_agent_executions_trace_column(conn: Connection) -> None:
 def ensure_agent_executions_thread_id_column(conn: Connection) -> None:
     """F44 阶段 4（#338）：为存量库 agent_executions 补 thread_id 列（幂等）."""
     _ensure_agent_executions_column(conn, "thread_id", "VARCHAR(64)")
+
+
+def ensure_agent_executions_injected_context_column(conn: Connection) -> None:
+    """#1349：为存量库 agent_executions 补 injected_context 列（幂等）.
+
+    承载「本次生成实际注入的设定条目 id 明细」（章级回显回执面）。
+    """
+    _ensure_agent_executions_column(conn, "injected_context", "TEXT")

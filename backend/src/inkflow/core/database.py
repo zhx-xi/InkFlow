@@ -18,6 +18,8 @@ from sqlalchemy.types import TypeEngine
 from inkflow.core.config import config
 from inkflow.core.migrations_agent_executions import (
     ensure_agent_executions_hitl_payload_column,
+    # #1349 re-export：consumer 在 api/app.py（本模块内不调用）→ 显式标注
+    ensure_agent_executions_injected_context_column,  # noqa: F401  # 供 api/app.py 导入
     ensure_agent_executions_relations_column,
     ensure_agent_executions_thread_id_column,
     ensure_agent_executions_trace_column,
