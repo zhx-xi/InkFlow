@@ -86,10 +86,10 @@ export const en: Record<string, string> = {
   'lib.tags.suggest': 'Suggestions',
   'lib.tags.add': '+ {tag}',
   'lib.worldCat.label': 'Category',
-  // #389: world category CRUD (create dialog + entry)
-  'lib.worldCat.add': 'New Category', 'lib.worldCat.addAlways': 'New Category (always)',
-  'lib.worldCat.name': 'Category name',
-  'lib.worldCat.nameEmpty': 'Category name is required',
+  // #389: world category CRUD (create dialog + entry); #1375 ①A/②A: button semantics split + union pending
+  'lib.worldCat.add': 'New Category', 'lib.worldCat.addEntry': 'New Entry', 'lib.worldCat.selectFirst': 'Select a category first',
+  'lib.worldCat.addEntryTitle': 'Create an entry under "{name}"', 'lib.worldCat.pending': 'Unregistered', 'lib.worldCat.register': 'Register category "{name}"',
+  'lib.worldCat.registered': 'Category "{name}" registered', 'lib.worldCat.name': 'Category name', 'lib.worldCat.nameEmpty': 'Category name is required',
   'lib.worldNode.childCount': '{count} children',
   'lib.copy.title': 'Copy to Project',
   'lib.copy.scope': 'Copy scope',

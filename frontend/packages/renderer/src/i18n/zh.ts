@@ -83,10 +83,10 @@ export const zh = {
   'lib.tags.suggest': '建议',
   'lib.tags.add': '+ {tag}',
   'lib.worldCat.label': '分类',
-  // #389：世界观分类 CRUD（新建对话框 + 入口）
-  'lib.worldCat.add': '新建分类', 'lib.worldCat.addAlways': '新建分类（不随选中项）',
-  'lib.worldCat.name': '分类名',
-  'lib.worldCat.nameEmpty': '分类名不能为空',
+  // #389：世界观分类 CRUD（新建对话框 + 入口）；#1375 ①A/②A：按钮语义拆分 + 并集待注册
+  'lib.worldCat.add': '新建分类', 'lib.worldCat.addEntry': '新建条目', 'lib.worldCat.selectFirst': '请先选择分类',
+  'lib.worldCat.addEntryTitle': '在「{name}」下创建条目', 'lib.worldCat.pending': '待注册', 'lib.worldCat.register': '注册分类「{name}」',
+  'lib.worldCat.registered': '已注册分类「{name}」', 'lib.worldCat.name': '分类名', 'lib.worldCat.nameEmpty': '分类名不能为空',
   'lib.worldNode.childCount': '{count} 子条目',
   'lib.copy.title': '复制到项目',
   'lib.copy.scope': '复制范围',

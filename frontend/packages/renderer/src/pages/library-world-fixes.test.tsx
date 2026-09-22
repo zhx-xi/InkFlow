@@ -1,8 +1,9 @@
 /**
  * #641 世界观分类批修复契约（rc4 GUI 三缺陷）：
  * ① 分类重复列出（world-categories 返回同名时 chips 不重复）
- * ② 分类栏「去创建」（world-cat-add）在选中分类时打开「该分类下新建具体条目」表单（library-create-dialog），
- *    而非「新建分类」表单（world-cat-dialog）。
+ * ② 建条目入口：选中分类 chip 后点 world-cat-add-entry → 打开「新建具体条目」表单（library-create-dialog）——
+ *    #1375 ①A 语义升级：该入口自 world-cat-add（#568 随选中态切换语义）迁出，world-cat-add 恒为「新建分类」；
+ *    ② 的完整四处契约见 library-world-1375.test.tsx。
  * ③ 已创建分类有删除入口（world-cat-delete-<name>），调用 DELETE /api/v1/world-categories/{id}，成功后从列表移除。
  *
  * ⚠️ 本文件 = #641 契约（前端组件测试，TDD RED→GREEN）。当前实现 FAIL，GREEN 实现必须匹配。
@@ -86,7 +87,7 @@ describe('设定库页 — 世界观分类批修复（#641）', () => {
     expect(chips).toHaveLength(1);
   });
 
-  it('② 分类栏「去创建」：选中分类 chip 后点 world-cat-add → 打开「新建具体条目」表单（library-create-dialog）而非「新建分类」（world-cat-dialog）', async () => {
+  it('②（#1375 ①A 升级）建条目入口迁移：选中分类 chip 后点 world-cat-add-entry → 打开「新建具体条目」表单（library-create-dialog）', async () => {
     seedWorldCategories([{ id: 'wc1', name: '秘境', count: 1 }]);
     const user = userEvent.setup();
     renderLibrary();
@@ -94,10 +95,9 @@ describe('设定库页 — 世界观分类批修复（#641）', () => {
 
     // 选中「秘境」分类 chip → activeWorldCat 置位
     await user.click(screen.getByTestId('world-cat-filter-秘境'));
-    // 分类栏「去创建」= world-cat-add（工具栏 + 按钮），选中分类时语义 = 建该分类下具体条目
-    await user.click(screen.getByTestId('world-cat-add'));
+    // #1375 ①A：world-cat-add 恒为「新建分类」；建条目由独立钮 world-cat-add-entry 承担（选中分类时启用）
+    await user.click(screen.getByTestId('world-cat-add-entry'));
 
-    // RED：当前实现 onAddCategory 恒开 world-cat-dialog（创建分类）→ 下面断言 FAIL
     expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
     expect(screen.queryByTestId('world-cat-dialog')).not.toBeInTheDocument();
   });

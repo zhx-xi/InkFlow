@@ -675,7 +675,7 @@ export function MapWorkbench({
               onClick={onAddCategory}
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              {t('lib.worldCat.addAlways')}
+              {t('lib.worldCat.add')}
             </button>
           )}
           <div

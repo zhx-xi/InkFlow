@@ -92,15 +92,74 @@ button{font-family:inherit;cursor:pointer}
 /* ── 世界观分类工具栏（#699：chips + 地图入口门控 + 整体复制） ── */
 .cat-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
 .cat-toolbar .lbl{font-size:12px;color:var(--ink-2)}
-.cat-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;color:var(--ink-2);background:none;transition:border-color var(--dur),color var(--dur)}
-.cat-chip:hover{border-color:var(--accent);color:var(--accent)}
-.cat-chip.active{border-color:var(--accent);background:var(--accent-weak);color:var(--accent)}
-.cat-chip .x{margin-left:2px;border:none;background:none;color:var(--ink-3);font-size:13px;line-height:1;padding:0}
-.cat-chip .x:hover{color:var(--err)}
 .btn-sm{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:4px 12px;transition:border-color var(--dur),color var(--dur)}
 .btn-sm:hover{border-color:var(--accent);color:var(--accent)}
 .btn-sm svg{width:13px;height:13px}
 .btn-sm.ml-auto{margin-left:auto}
+/* #1375 ①A：未选中分类时「新建条目」禁用态（提示先选分类） */
+.btn-sm:disabled{opacity:.45;cursor:not-allowed}
+.btn-sm:disabled:hover{border-color:var(--line);color:var(--ink-2)}
+
+/* ── #1375 ①：创建按钮组三变体（A 明确文案 / B ＋新建 下拉 / legacy 现状对照） ── */
+.create-group{display:none;align-items:center;gap:8px}
+body[data-btns="A"] .create-group[data-variant="A"],
+body[data-btns="B"] .create-group[data-variant="B"],
+body[data-btns="legacy"] .create-group[data-variant="legacy"]{display:inline-flex}
+.menu-wrap{position:relative;display:inline-flex}
+.create-menu{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:120;min-width:168px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:4px;flex-direction:column;gap:2px}
+body[data-btns="B"] .create-menu{display:flex}
+body[data-btns="B"][data-menu-closed="1"] .create-menu{display:none}
+.menu-item{display:flex;align-items:center;gap:8px;border:none;background:none;border-radius:6px;padding:6px 10px;font-size:13px;color:var(--ink);text-align:left;white-space:nowrap}
+.menu-item:hover{background:var(--surface-2)}
+.menu-item:disabled{color:var(--ink-3);cursor:not-allowed}
+.menu-item:disabled:hover{background:none}
+.menu-item svg{width:14px;height:14px}
+.menu-item .menu-hint{margin-left:auto;padding-left:12px;font-size:11px;color:var(--ink-3)}
+
+/* ── #1375 ④：分类 chip（新结构——边框在容器上，× 在框内，hover 显示） ── */
+.chips-new{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px}
+.cat-chip{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 12px;font-size:12px;color:var(--ink-2);background:none;transition:border-color var(--dur),color var(--dur),background var(--dur)}
+.cat-chip:hover{border-color:var(--accent)}
+.cat-chip.active{border-color:var(--accent);background:var(--accent-weak);color:var(--accent)}
+.cat-chip .chip-name{display:inline-flex;align-items:center;gap:4px;border:none;background:none;color:inherit;font-size:12px;padding:0}
+.cat-chip:hover .chip-name{color:var(--accent)}
+.cat-chip .chip-x{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border:none;background:none;border-radius:50%;color:var(--ink-3);font-size:13px;line-height:1;padding:0;opacity:0;transition:opacity var(--dur)}
+.cat-chip:hover .chip-x{opacity:1}
+.cat-chip .chip-x:hover{color:var(--err);background:var(--surface-3)}
+/* #1375 ②A：未注册类别（待注册态）——虚线 + 「待注册」注记 + 一键注册 ＋ */
+.cat-chip.pending{border-style:dashed;border-color:var(--ink-3);color:var(--ink-2)}
+.cat-chip.pending:hover{border-color:var(--accent)}
+.cat-chip.pending:hover .chip-name{color:var(--ink)}
+.cat-chip.pending .chip-note{display:inline;font-size:11px;color:var(--ink-2);margin:0 3px;white-space:nowrap}
+.cat-chip.pending .chip-plus{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border:none;background:none;border-radius:50%;color:var(--accent);font-size:13px;line-height:1;padding:0}
+.cat-chip.pending .chip-plus:hover{background:var(--accent-weak)}
+/* ②A 产品形态下 × 不可见（实现为不渲染）；仅 ②B 备选演示「可删」差异时显示 */
+.cat-chip.pending .chip-x{display:none}
+.chip-note,.chip-plus{display:none}
+/* #1375 ②B：提取自动注册语义——pending 走正常 chip（无待注册注记，可删） */
+body[data-catplan="B"] .cat-chip.pending{border-style:solid;color:var(--ink-2)}
+body[data-catplan="B"] .cat-chip.pending .chip-note,
+body[data-catplan="B"] .cat-chip.pending .chip-plus{display:none}
+body[data-catplan="B"] .cat-chip.pending .chip-x{display:inline-flex}
+/* #1375 ②C / legacy：不显示未注册类别 chip */
+body[data-catplan="C"] .cat-chip.pending,
+body[data-catplan="legacy"] .cat-chip.pending{display:none}
+/* #1375 对照：legacy chips（复刻现状——边框在筛选按钮上，× 在框外、恒显） */
+.chips-legacy{display:none;align-items:center;flex-wrap:wrap;gap:8px}
+body[data-catplan="legacy"] .chips-legacy{display:inline-flex}
+body[data-catplan="legacy"] .chips-new{display:none}
+.chip-legacy-wrap{display:inline-flex;align-items:center;gap:4px}
+.chip-legacy-name{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;color:var(--ink-2);background:none;transition:border-color var(--dur),color var(--dur)}
+.chip-legacy-name:hover{border-color:var(--accent);color:var(--accent)}
+.chip-legacy-x{border:none;background:none;padding:2px 6px;font-size:12px;color:var(--ink-3)}
+.chip-legacy-x:hover{color:var(--err)}
+
+/* ── #1375 ②：方案说明条（评审辅助——仅 ②B/②C 形态显示，非页面 UI） ── */
+.plan-note{display:none;align-items:flex-start;gap:8px;border:1px dashed var(--line);border-radius:8px;background:var(--surface-2);padding:8px 12px;font-size:12px;color:var(--ink-2);margin-bottom:12px;line-height:1.6}
+.plan-note b{color:var(--ink)}
+.plan-note .tag{flex:none;border-radius:4px;background:var(--surface-3);padding:1px 6px;font-size:11px;color:var(--ink-2)}
+body[data-catplan="B"] .plan-note[data-plan="B"],
+body[data-catplan="C"] .plan-note[data-plan="C"]{display:flex}
 
 /* ── 世界观树（WorldNodeView：两行式信息卡行） ── */
 .tree-row{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:13px;color:var(--ink);transition:background var(--dur)}
@@ -147,6 +206,10 @@ button{font-family:inherit;cursor:pointer}
 .pin-row .ptype{flex:none;border-radius:999px;background:var(--surface-3);padding:2px 8px;font-size:11px;color:var(--ink-2)}
 .pin-row .pname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pin-row .pref{flex:none;font-size:12px;color:var(--ink-3)}
+/* #1375 ①：地图分支「新建分类」入口文案随变体切换（A/B 简化文案 / legacy 保留旧注释） */
+.map-add-legacy{display:none}
+body[data-btns="legacy"] .map-add-new{display:none}
+body[data-btns="legacy"] .map-add-legacy{display:inline}
 
 /* 复制对话框（CopyDialog） */
 .dialog-overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
@@ -170,13 +233,31 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
 /* 状态栏 */
 .statusbar{display:flex;align-items:center;gap:20px;flex:none;padding:6px 16px;border-top:1px solid var(--line);background:var(--surface);font-size:11px;color:var(--ink-3)}
 
+/* #1375 ②A：一键注册反馈 toast（ok 语义） */
+.toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%) translateY(8px);z-index:300;border:1px solid var(--ok);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);color:var(--ok);font-size:12px;padding:8px 14px;opacity:0;pointer-events:none;transition:opacity var(--dur),transform var(--dur)}
+.toast.show{opacity:1;transform:translateX(-50%)}
+
 /* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
-.demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+.demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2);flex-wrap:wrap;max-width:720px;justify-content:flex-end}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
+body[data-shot="1"] .demo-bar{display:none}
 </style>
 </head>
-<body data-state="main">
+<body data-state="main" data-btns="A" data-catplan="A">
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     #1375 原型阶段更新（四处设计点）：
+     ① 创建按钮：A 明确文案（新建分类 / 新建条目，条目钮选中分类时启用）
+                  B ＋新建 下拉菜单（菜单项同语义）
+                  legacy 对照（现实现状：两个「新建分类」同款按钮）
+     ② 分类栏：A 并集（已注册 ∪ 条目实际使用类别）+ 待注册 + 一键注册
+               B 提取自动注册（UI 无待注册态；pending chip 走正常样式）
+               C 提取时拒绝（分类栏只含已注册；影响面见说明条）
+               legacy 对照（只含已注册）
+     ③ 建条目分类前提 check 与 ② 联动 —— 见 specs/f19-gui/world.md 方案节
+     ④ 分类 chip 的 × 删除按钮移入框内（hover 显示，见 .cat-chip .chip-x）
+     ═══════════════════════════════════════════════════════════════════════════ -->
 
 <div class="app">
   <!-- ═══ 侧边导航 AppNav（设定库分组，世界观激活） ═══ -->
@@ -252,20 +333,91 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
 
       <!-- 列表视图（main 状态） -->
       <div class="view-list">
-        <!-- #699：分类工具栏 -->
+        <!-- #699 + #1375：分类工具栏 -->
         <div class="cat-toolbar" data-testid="world-cat-toolbar">
           <span class="lbl">分类</span>
-          <span class="cat-chip" data-testid="world-cat-filter-地理"><span aria-hidden="true">🗺 </span>地理<button class="x" aria-label="删除">×</button></span>
-          <span class="cat-chip" data-testid="world-cat-filter-城市"><span aria-hidden="true">🗺 </span>城市<button class="x" aria-label="删除">×</button></span>
-          <span class="cat-chip" data-testid="world-cat-filter-秘境"><span aria-hidden="true">🗺 </span>秘境<button class="x" aria-label="删除">×</button></span>
-          <span class="cat-chip" data-testid="world-cat-filter-势力"><span aria-hidden="true">🗺 </span>势力<button class="x" aria-label="删除">×</button></span>
-          <span class="cat-chip" data-testid="world-cat-filter-功法"><span aria-hidden="true">🗺 </span>功法<button class="x" aria-label="删除">×</button></span>
-          <button class="btn-sm" data-testid="world-cat-add"><span data-ic="plus"></span>新建分类</button>
-          <!-- #1321：恒开分类对话框的入口——world-cat-add 在选中分类时被切成「在该分类下建条目」语义，
-               用户再也找不到建分类入口；本按钮不随选中项改变语义 -->
-          <button class="btn-sm" data-testid="world-cat-add-always"><span data-ic="plus"></span>新建分类（不随选中项）</button>
+
+          <!-- #1375 ④：新 chips 结构——边框在容器上（× 在框内，hover 显示）；②A/B/C 共用，pending 可见性由 data-catplan 控制 -->
+          <span class="chips-new">
+            <span class="cat-chip" data-cat="地理" data-testid="world-cat-chip-地理">
+              <button class="chip-name" data-testid="world-cat-filter-地理" aria-pressed="false"><span aria-hidden="true">🗺 </span>地理</button>
+              <button class="chip-x" data-testid="world-cat-delete-地理" aria-label="删除">×</button>
+            </span>
+            <span class="cat-chip" data-cat="城市" data-testid="world-cat-chip-城市">
+              <button class="chip-name" data-testid="world-cat-filter-城市" aria-pressed="false">城市</button>
+              <button class="chip-x" data-testid="world-cat-delete-城市" aria-label="删除">×</button>
+            </span>
+            <span class="cat-chip" data-cat="秘境" data-testid="world-cat-chip-秘境">
+              <button class="chip-name" data-testid="world-cat-filter-秘境" aria-pressed="false">秘境</button>
+              <button class="chip-x" data-testid="world-cat-delete-秘境" aria-label="删除">×</button>
+            </span>
+            <span class="cat-chip" data-cat="势力" data-testid="world-cat-chip-势力">
+              <button class="chip-name" data-testid="world-cat-filter-势力" aria-pressed="false">势力</button>
+              <button class="chip-x" data-testid="world-cat-delete-势力" aria-label="删除">×</button>
+            </span>
+            <span class="cat-chip" data-cat="功法" data-testid="world-cat-chip-功法">
+              <button class="chip-name" data-testid="world-cat-filter-功法" aria-pressed="false">功法</button>
+              <button class="chip-x" data-testid="world-cat-delete-功法" aria-label="删除">×</button>
+            </span>
+            <!-- #1375 ②A：未注册类别（条目上已出现、分类栏缺失者）——虚线 + 待注册 + 一键注册（无 ×：未注册无删除语义） -->
+            <span class="cat-chip pending" data-cat="文化" data-testid="world-cat-chip-文化">
+              <button class="chip-name" data-testid="world-cat-filter-文化" aria-pressed="false">文化</button>
+              <span class="chip-note">待注册</span>
+              <button class="chip-plus" data-testid="world-cat-register-文化" aria-label="注册分类 文化" title="注册为分类">＋</button>
+              <button class="chip-x" data-testid="world-cat-delete-文化" aria-label="删除">×</button>
+            </span>
+            <span class="cat-chip pending" data-cat="科技" data-testid="world-cat-chip-科技">
+              <button class="chip-name" data-testid="world-cat-filter-科技" aria-pressed="false">科技</button>
+              <span class="chip-note">待注册</span>
+              <button class="chip-plus" data-testid="world-cat-register-科技" aria-label="注册分类 科技" title="注册为分类">＋</button>
+              <button class="chip-x" data-testid="world-cat-delete-科技" aria-label="删除">×</button>
+            </span>
+          </span>
+
+          <!-- 对照用：legacy chips（复刻现状——× 在框外、恒显；无待注册项） -->
+          <span class="chips-legacy" data-testid="world-cat-chips-legacy">
+            <span class="chip-legacy-wrap"><button class="chip-legacy-name"><span aria-hidden="true">🗺 </span>地理</button><button class="chip-legacy-x" aria-label="删除">×</button></span>
+            <span class="chip-legacy-wrap"><button class="chip-legacy-name"><span aria-hidden="true">🗺 </span>城市</button><button class="chip-legacy-x" aria-label="删除">×</button></span>
+            <span class="chip-legacy-wrap"><button class="chip-legacy-name"><span aria-hidden="true">🗺 </span>秘境</button><button class="chip-legacy-x" aria-label="删除">×</button></span>
+            <span class="chip-legacy-wrap"><button class="chip-legacy-name"><span aria-hidden="true">🗺 </span>势力</button><button class="chip-legacy-x" aria-label="删除">×</button></span>
+            <span class="chip-legacy-wrap"><button class="chip-legacy-name"><span aria-hidden="true">🗺 </span>功法</button><button class="chip-legacy-x" aria-label="删除">×</button></span>
+          </span>
+
+          <!-- #1375 ①A：两按钮明确文案——「新建分类」恒为建分类；「新建条目」选中分类时启用（testid 与产品实现同名） -->
+          <span class="create-group" data-variant="A">
+            <button class="btn-sm" data-testid="world-cat-add"><span data-ic="plus"></span>新建分类</button>
+            <button class="btn-sm" data-testid="world-cat-add-entry" disabled title="请先选择分类"><span data-ic="plus"></span>新建条目</button>
+          </span>
+          <!-- #1375 ①B：合并为「＋ 新建」下拉（菜单项：新建分类 / 新建条目） -->
+          <span class="create-group" data-variant="B">
+            <span class="menu-wrap">
+              <button class="btn-sm" id="createMenuBtn" data-testid="world-create-menu-btn"><span data-ic="plus"></span>新建<span data-ic="chevron-down"></span></button>
+              <div class="create-menu" data-testid="world-create-menu">
+                <button class="menu-item" data-testid="world-create-menu-cat"><span data-ic="folderopen"></span>新建分类</button>
+                <button class="menu-item" id="menuEntryBtn" data-testid="world-create-menu-entry" disabled><span data-ic="fileplus"></span>新建条目<span class="menu-hint">请先选择分类</span></button>
+              </div>
+            </span>
+          </span>
+          <!-- 对照用：legacy 按钮组（复刻现状——两个同款「新建分类」） -->
+          <span class="create-group" data-variant="legacy">
+            <button class="btn-sm" data-testid="world-cat-add-legacy"><span data-ic="plus"></span>新建分类</button>
+            <button class="btn-sm" data-testid="world-cat-add-always-legacy"><span data-ic="plus"></span>新建分类（不随选中项）</button>
+          </span>
+
           <button class="btn-sm" data-testid="map-view-entry"><span data-ic="map"></span>地图视图</button>
           <button class="btn-sm ml-auto" data-testid="world-copy-all"><span data-ic="copy"></span>整体复制</button>
+        </div>
+
+        <!-- #1375 ②B / ②C：方案影响说明条（评审辅助，非页面 UI） -->
+        <div class="plan-note" data-plan="B">
+          <span class="tag">②B</span>
+          <span><b>提取管线自动注册</b>：提取产出的新类别（如「文化」「科技」）由管线自动注册为正式分类 → 分类栏无「待注册」态。
+            ⇒ 取舍：根治新数据不一致；但 LLM 产出的类别为自由文本（质量参差、可能细碎），且<b>存量未注册类别仍需一次性处理</b>。</span>
+        </div>
+        <div class="plan-note" data-plan="C">
+          <span class="tag">②C</span>
+          <span><b>提取时拒绝未注册类别</b>：提取产出的类别须已注册，否则拒绝写入 → 分类栏只含正式分类。
+            ⇒ 与诉求 ③ 最贴；<b>但会中断既有提取链路</b>（提取失败 / 条目丢失，影响面大，需评估）。存量不一致数据（历史遗留）仍需一次性清理。</span>
         </div>
 
         <!-- #1320：本列表【全量取数、不分页】——整树语义（buildWorldTree/filterWorldTree）需全量数据；
@@ -312,6 +464,19 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
             <span class="badge">地理</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
+          <!-- #1375 ②：演示「有条目类别、无注册分类」的存量不一致数据（类别「文化」「科技」均未注册） -->
+          <div class="tree-row" data-testid="world-node-culture">
+            <span style="width:20px;flex:none"></span>
+            <span class="tcol"><span class="tname">祭剑大典</span><span class="tdesc">每十二年一届的宗门祭剑盛会，各方修士云集。</span></span>
+            <span class="badge">文化</span>
+            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
+          </div>
+          <div class="tree-row" data-testid="world-node-tech">
+            <span style="width:20px;flex:none"></span>
+            <span class="tcol"><span class="tname">传音符阵</span><span class="tdesc">以灵石驱动的短距传讯阵，百里内即时可达。</span></span>
+            <span class="badge">科技</span>
+            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
+          </div>
           <div class="tree-row">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">青云剑诀</span><span class="tdesc">宗门镇派剑法，共九式，修至第九式可御剑千里。</span></span>
@@ -346,8 +511,10 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
         <div class="map-flex">
           <!-- 左栏：地图目录树（#1322：宽度受控可拖 + 主树只显示图 + 未挂图条目折叠区） -->
           <aside class="map-left" style="position:relative">
-            <!-- #1321：地图视图内新建分类入口——地图分支不渲染分类工具栏，此前完全无处建分类 -->
-            <button class="btn-sm" style="width:100%;justify-content:center" data-testid="world-cat-add-always"><span data-ic="plus"></span>新建分类（不随选中项）</button>
+            <!-- #1321 + #1375 ①：地图视图内新建分类入口——文案随 ① 变体切换（A/B 简化，legacy 保留旧注释） -->
+            <button class="btn-sm" style="width:100%;justify-content:center" data-testid="world-cat-add-always">
+              <span data-ic="plus"></span><span class="map-add-new">新建分类</span><span class="map-add-legacy">新建分类（不随选中项）</span>
+            </button>
             <div class="lib-card" data-testid="library-list">
               <!-- 主树：只容纳已挂图的世界观条目（root_location_id 命中）及其有图后代链上的祖先 -->
               <div data-testid="map-tree-main">
@@ -446,7 +613,7 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
       <span>项目: 青云志</span>
-      <span>世界条目 8 条 · 地图 3 张</span>
+      <span>世界条目 10 条 · 地图 3 张</span>
     </div>
   </div>
 </div>
@@ -473,6 +640,9 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
   </div>
 </div>
 
+<!-- #1375 ②A：一键注册反馈 toast -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <!-- ═══ 演示切换条 ═══ -->
 <div class="demo-bar">
   <label>状态
@@ -480,6 +650,22 @@ body[data-state="copy-dialog"] .dialog-overlay{display:flex}
       <option value="main">列表 · 分类 chips + 树</option>
       <option value="map">地图工作台</option>
       <option value="copy-dialog">复制对话框</option>
+    </select>
+  </label>
+  <span class="sep"></span>
+  <label>①按钮
+    <select id="btnSel">
+      <option value="A">A 明确文案（推荐）</option>
+      <option value="B">B ＋新建 下拉</option>
+      <option value="legacy">现状对照</option>
+    </select>
+  </label>
+  <label>②分类栏
+    <select id="catplanSel">
+      <option value="A">A 并集＋待注册（推荐）</option>
+      <option value="B">B 提取自动注册</option>
+      <option value="C">C 提取时拒绝</option>
+      <option value="legacy">现状对照</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -523,6 +709,7 @@ const ICONS = {
   copy:'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   map:'<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
   mapplus:'<path d="m14 9-2.5 2L9 14"/><path d="M9 3.236v15"/><path d="M15 5.764v15"/><path d="M15 13v4"/><path d="M13 15h4"/>',
+  'fileplus':'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 12v6"/><path d="M9 15h6"/>',
 };
 document.querySelectorAll('[data-ic]').forEach(el=>{
   const name = el.getAttribute('data-ic');
@@ -549,8 +736,95 @@ function setTheme(th){
   document.documentElement.dataset.theme = th;
   document.body.dataset.theme = th;
 }
+
+/* ── #1375 ①/②：变体切换（原型演示用） ── */
+const BTNS = ['A','B','legacy'];
+const CATPLANS = ['A','B','C','legacy'];
+function setBtns(v){
+  if(!BTNS.includes(v)) return;
+  document.body.dataset.btns = v;
+  document.getElementById('btnSel').value = v;
+}
+function setCatplan(v){
+  if(!CATPLANS.includes(v)) return;
+  document.body.dataset.catplan = v;
+  document.getElementById('catplanSel').value = v;
+}
+
+/* ── #1375 ①A：选中分类 → 「新建条目」启用（未选中 → 禁用 + 提示「请先选择分类」） ── */
+function setActiveCat(name){
+  document.querySelectorAll('.cat-chip').forEach((c)=>{
+    c.classList.remove('active');
+    const nb = c.querySelector('.chip-name');
+    if(nb) nb.setAttribute('aria-pressed','false');
+  });
+  const chip = name ? document.querySelector('.cat-chip[data-cat="'+name+'"]') : null;
+  if(chip){
+    chip.classList.add('active');
+    const nb = chip.querySelector('.chip-name');
+    if(nb) nb.setAttribute('aria-pressed','true');
+  }
+  const enabled = Boolean(chip);
+  const entryBtn = document.querySelector('[data-testid="world-cat-add-entry"]');
+  if(entryBtn){ entryBtn.disabled = !enabled; entryBtn.title = enabled ? '在「'+name+'」下创建条目' : '请先选择分类'; }
+  const menuEntry = document.getElementById('menuEntryBtn');
+  if(menuEntry){
+    menuEntry.disabled = !enabled;
+    const hint = menuEntry.querySelector('.menu-hint');
+    if(hint) hint.style.display = enabled ? 'none' : '';
+  }
+  return enabled;
+}
+
+/* ── #1375 ②A：一键注册（原型演示：pending chip → 正常 chip + ok toast） ── */
+let toastTimer = null;
+function showToast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.classList.remove('show'); }, 2400);
+}
+function registerPending(name, btn){
+  const chip = btn.closest('.cat-chip.pending');
+  if(!chip) return;
+  chip.classList.remove('pending');
+  showToast('已注册分类「'+name+'」（默认抽象类）');
+}
+
+/* ── #1375 ①B：＋新建 下拉开合（默认展开；点按钮 toggle，点外部收起） ── */
+function toggleCreateMenu(){
+  document.body.dataset.menuClosed = document.body.dataset.menuClosed === '1' ? '0' : '1';
+}
+
+/* ── chips 交互（筛选高亮 / 一键注册） ── */
+document.querySelectorAll('.cat-chip[data-cat]').forEach((chip)=>{
+  const name = chip.dataset.cat;
+  const nameBtn = chip.querySelector('.chip-name');
+  if(nameBtn){
+    nameBtn.addEventListener('click', ()=>{
+      const isActive = chip.classList.contains('active');
+      setActiveCat(isActive ? null : name);
+    });
+  }
+  const plusBtn = chip.querySelector('.chip-plus');
+  if(plusBtn){
+    plusBtn.addEventListener('click', (e)=>{ e.stopPropagation(); registerPending(name, plusBtn); });
+  }
+});
+const createMenuBtn = document.getElementById('createMenuBtn');
+if(createMenuBtn){
+  createMenuBtn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleCreateMenu(); });
+}
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('.menu-wrap')) document.body.dataset.menuClosed = '1';
+});
+
+/* ── 选择器绑定 ── */
 document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
 document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
+document.getElementById('btnSel').addEventListener('change',e=>setBtns(e.target.value));
+document.getElementById('catplanSel').addEventListener('change',e=>setCatplan(e.target.value));
 const init = location.hash.replace('#','');
 if (STATES.includes(init)) { setState(init); document.getElementById('stateSel').value = init; }
 window.addEventListener('hashchange', () => {

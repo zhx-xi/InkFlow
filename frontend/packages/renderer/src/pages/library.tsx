@@ -226,7 +226,7 @@ export function LibraryPage() {
   const createCat = activeCat === 'knowledge' ? null : activeCat;
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
   // #389：世界观分类实体列表 + 新建分类（state/加载/保存逻辑集中在 hook）
-  const { worldCategoryList, worldCatDialogOpen, setWorldCatDialogOpen, handleWorldCatSave, handleWorldCatDelete } = useWorldCategories(currentProjectId, activeCat, reloadKey, () => {
+  const { worldCategoryList, worldCatDialogOpen, setWorldCatDialogOpen, handleWorldCatSave, handleWorldCatDelete, handleWorldCatRegister } = useWorldCategories(currentProjectId, activeCat, reloadKey, () => {
     setReloadKey((k) => k + 1);
     setActiveWorldCat(null);
   });
@@ -241,6 +241,21 @@ export function LibraryPage() {
     });
   }, [activeCat, worldCategoryList]);
   const worldCategories = useMemo(() => worldCatEntities.map((c) => c.name), [worldCatEntities]);
+  // #1375 ②A：分类栏并集——条目使用但未注册的类别（待注册清单）；
+  // 「地图」为地图工作台保留类别（#389 契约：列表页不渲染该 chip），故不入并集
+  const pendingWorldCatNames = useMemo(() => {
+    if (activeCat !== 'world') return [];
+    const registered = new Set(worldCatEntities.map((c) => c.name));
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of listItems) {
+      const name = (item.category ?? '').trim();
+      if (!name || name === '地图' || registered.has(name) || seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+    }
+    return out;
+  }, [activeCat, worldCatEntities, listItems]);
   // F43 P1 §5.3 世界观树；#588：已有根条目（parent_id===null）时仍保留「创建」入口，允许创建子分类
   const worldRoots = useMemo(
     () => (activeCat === 'world' ? buildWorldTree(listItems) : []),
@@ -550,10 +565,10 @@ export function LibraryPage() {
           </div>
 
           <div className="mt-5">
-            {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表；world 根态隐藏、选中分类显示） */}
+            {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表）；#1375：world 分支不再渲染此钮（入口 = 工具栏「新建条目」） */}
             {currentProjectId !== null && (
               <div className="mb-3 flex items-center justify-end gap-2">
-                {createCat !== null && !viewLoading && !viewFailed && listItems.length > 0 && !(activeCat === 'world' && workbenchActive) && (activeCat !== 'world' || activeWorldCat !== null) && activeCat !== 'outline' && (
+                {createCat !== null && !viewLoading && !viewFailed && listItems.length > 0 && activeCat !== 'world' && activeCat !== 'outline' && (
                   <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
                     {t('lib.empty.create')}
                   </button>
@@ -655,12 +670,14 @@ export function LibraryPage() {
                 {/* #699：世界观分类工具栏（chips kind 图标 + 地图入口门控 + 整体复制）拆至 WorldCategoryToolbar */}
                 <WorldCategoryToolbar
                   categories={worldCatEntities}
+                  pendingCategories={pendingWorldCatNames}
                   activeWorldCat={activeWorldCat}
                   onSelect={setActiveWorldCat}
                   onDelete={(id) => void handleWorldCatDelete(id)}
+                  onRegisterPending={(name) => void handleWorldCatRegister(name)}
                   onAddCategory={() => setWorldCatDialogOpen(true)}
                   onOpenMapView={() => setWorkbenchActive(true)}
-                  onCreateWorld={activeWorldCat ? () => setCreateOpen(true) : undefined}
+                  onCreateWorld={() => setCreateOpen(true)}
                   copyDisabled={copyTargetOptions.length === 0}
                   copyNeedTwoTitle={copyTargetOptions.length === 0 ? t('lib.copy.needTwo') : undefined}
                   onCopyAll={() => setCopyState({ open: true, mode: 'all' })}
