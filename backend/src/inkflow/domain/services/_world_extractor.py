@@ -310,7 +310,11 @@ def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> Wo
     """非空字段覆盖合并（category/content 独立判断）.
 
     无任何变化时返回 None（幂等跳过，不更新 updated_at）；否则
-    保留 existing 的 id / extra / 时间戳等无关字段。
+    保留 existing 的 id / parent_id / extra / 时间戳等无关字段。
+
+    #1372: parent_id 必须原样保留 —— 漏传时数据类默认 None，会把该条
+    写成同项目第二个根，撞 ``uq_world_settings_root_per_project``
+    部分唯一索引 → IntegrityError → API 500（提取半途中断）。
 
     Args:
         existing: 库中同名条目.
@@ -327,6 +331,7 @@ def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> Wo
         id=existing.id,
         project_id=existing.project_id,
         name=existing.name,
+        parent_id=existing.parent_id,
         category=new_category,
         content=new_content,
         extra=existing.extra,
