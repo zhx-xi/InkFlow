@@ -32,6 +32,14 @@ import { Skeleton } from '../components/ui/skeleton';
 import { usePipeline } from '../hooks/usePipeline';
 import { useDataChangeSubscription } from '../hooks/useDataChangeSubscription';
 import { useI18n } from '../i18n/useI18n';
+import {
+  clampRailSplit,
+  clampRailWidth,
+  DEFAULT_RAIL_SPLIT,
+  DEFAULT_RAIL_WIDTH,
+  readRailLayout,
+  writeRailLayout,
+} from '../lib/railLayout';
 import { useChapterStore } from '../stores/chapter';
 import { ensureModelReady } from '../stores/models';
 import { useProjectStore } from '../stores/project';
@@ -144,60 +152,83 @@ export function WritingPage() {
   const [autoAuthOpen, setAutoAuthOpen] = useState(false);
   const dirtyRef = useRef(false);
   const loadedRef = useRef<string | null>(null);
-  // #702：左栏宽度受控（ProjectTree col-resize 手柄回调）；#703：右栏面板高度
+  // #702：左栏宽度受控（ProjectTree col-resize 手柄回调）
   const [treeWidth, setTreeWidth] = useState(208);
-  const [contextPanelH, setContextPanelH] = useState(240);
-  const [summaryPanelH, setSummaryPanelH] = useState(160);
+  // #703 → #1378：右栏两面板由「固定 px 高」改「比例」语义 —— flex-grow 分配右栏上下显示区，
+  //   默认 2:1 即铺满（原 px 定值会在右栏下方留一块固定空白）。split = context 占两面板合计高度的比例。
+  const [railSplit, setRailSplit] = useState(DEFAULT_RAIL_SPLIT);
   // #720：右栏整栏收起/展开 + 宽度受控（col-resize 边界手柄，镜像 #702 左栏）
-  const [railWidth, setRailWidth] = useState(240);
+  const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  // #1378：两面板盒高 → row-resize 拖拽的比例换算基准（未布局时为 0 → 忽略本次拖拽）
+  const contextPanelRef = useRef<HTMLDivElement | null>(null);
+  const summaryPanelRef = useRef<HTMLDivElement | null>(null);
   // #724：全局默认模型（配置无项目级 model 时，上下文注入等回退到它）
   const [globalDefaultModel, setGlobalDefaultModel] = useState('');
 
 
-  // #703：右栏 row-resize 拖拽 — target 指定被拖高的上一面板（context / summary）
+  // #1378：右栏布局记忆按项目隔离 —— 首挂载与切项目都从存储回读（拖拽 / 调宽在 mouseup 落盘）。
+  //   railLayoutProjectRef 每实例重置，故「同一项目内重挂载」也走这条回读路径。
+  const railLayoutProjectRef = useRef('');
+  useEffect(() => {
+    if (effectiveProjectId === '' || railLayoutProjectRef.current === effectiveProjectId) return;
+    railLayoutProjectRef.current = effectiveProjectId;
+    const stored = readRailLayout(effectiveProjectId);
+    setRailSplit(stored.split);
+    setRailWidth(stored.width);
+  }, [effectiveProjectId]);
+
+  // #703 → #1378：右栏 row-resize 拖拽 —— 调的是**两面板比例**（非绝对 px）。
+  //   换算基准 = 两面板当前合计盒高（真实浏览器恒可测）；未布局（挂载前 / 无盒模型环境）→ 忽略本次拖拽。
+  //   拖拽过程实时改比例，mouseup 落盘 → 切页 / 切章重挂载后保持。
   const startRailResize = useCallback(
-    (target: 'context' | 'summary') => (e: ReactMouseEvent) => {
+    (e: ReactMouseEvent) => {
       e.preventDefault();
       const startY = e.clientY;
-      const startH = target === 'context' ? contextPanelH : summaryPanelH;
-      const setH = target === 'context' ? setContextPanelH : setSummaryPanelH;
+      const contextH = contextPanelRef.current?.offsetHeight ?? 0;
+      const summaryH = summaryPanelRef.current?.offsetHeight ?? 0;
+      const span = contextH + summaryH;
+      if (span <= 0) return;
+      let next = railSplit;
       document.body.style.userSelect = 'none';
       const onMove = (ev: MouseEvent) => {
-        const next = Math.max(90, Math.min(540, startH + (ev.clientY - startY)));
-        setH(next);
+        next = clampRailSplit((contextH + (ev.clientY - startY)) / span);
+        setRailSplit(next);
       };
       const onUp = () => {
         document.body.style.userSelect = '';
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        writeRailLayout(effectiveProjectId, { split: next });
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [contextPanelH, summaryPanelH],
+    [railSplit, effectiveProjectId],
   );
 
-  // #720：右栏 col-resize 拖拽调宽（镜像 ProjectTree 左栏；90~540px）
+  // #720 → #1378：右栏 col-resize 拖拽调宽（镜像 ProjectTree 左栏；90~540px），mouseup 落盘
   const startRailColResize = useCallback(
     (e: ReactMouseEvent) => {
       e.preventDefault();
       const startX = e.clientX;
       const startW = railWidth;
+      let next = startW;
       document.body.style.userSelect = 'none';
       const onMove = (ev: MouseEvent) => {
-        const next = Math.max(90, Math.min(540, startW + (startX - ev.clientX)));
+        next = clampRailWidth(startW + (startX - ev.clientX));
         setRailWidth(next);
       };
       const onUp = () => {
         document.body.style.userSelect = '';
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        writeRailLayout(effectiveProjectId, { width: next });
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [railWidth],
+    [railWidth, effectiveProjectId],
   );
 
   const save = useCallback(async () => {
@@ -510,9 +541,12 @@ export function WritingPage() {
           {railCollapsed ? null : (
             <>
               <div
+                ref={contextPanelRef}
                 data-testid="rail-panel-context"
-                style={{ height: `${contextPanelH}px` }}
-                className="min-h-0 shrink-0 flex flex-col"
+                // #1378：纯 flex 比例分配（basis 归零 + grow = split）→ 与 summary 合计铺满右栏上下显示区，
+                //   不再写固定 px 高（旧形态在右栏下方留死白且不随容器 resize 缩放）。
+                style={{ flexGrow: railSplit, flexShrink: 0, flexBasis: '0%' }}
+                className="min-h-0 flex flex-col"
               >
                 <ContextPanel
                   projectId={effectiveProjectId}
@@ -530,13 +564,15 @@ export function WritingPage() {
               <div
                 data-testid="rail-resize-handle-0"
                 className="h-2 shrink-0 cursor-row-resize select-none border-t border-line bg-surface-3"
-                onMouseDown={startRailResize('context')}
+                onMouseDown={startRailResize}
                 aria-hidden="true"
               />
               <div
+                ref={summaryPanelRef}
                 data-testid="rail-panel-summary"
-                style={{ height: `${summaryPanelH}px` }}
-                className="min-h-0 shrink-0 flex flex-col"
+                // #1378：与 context 互补的 flex 比例（1 - split）→ 两面板合计吃满剩余高度，默认 2:1。
+                style={{ flexGrow: 1 - railSplit, flexShrink: 0, flexBasis: '0%' }}
+                className="min-h-0 flex flex-col"
               >
                 <ChapterSummaryPanel projectId={effectiveProjectId} chapterId={currentChapterId} />
               </div>

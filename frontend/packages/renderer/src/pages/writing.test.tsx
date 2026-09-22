@@ -690,17 +690,12 @@ describe('写作页 — 右栏两面板拖拽分隔（#703 + #764）', () => {
     expect(sp0.className).toMatch(/row-resize/);
   });
 
-  it('拖拽分隔条调整上一面板高度（mousedown→mousemove）', () => {
-    renderWritingPage();
-    const sp0 = screen.getByTestId('rail-resize-handle-0');
-    const context = screen.getByTestId('rail-panel-context');
-    const before = parseInt(context.style.height, 10) || 0;
-    fireEvent.mouseDown(sp0, { clientY: 100 });
-    fireEvent.mouseMove(window, { clientY: 200 });
-    const after = parseInt(context.style.height, 10) || 0;
-    // 向下拖 100px → 上一面板高度增加
-    expect(after).toBeGreaterThan(before);
-  });
+  // #1378 语义升级：原「拖拽分隔条调整上一面板高度（px）」用例随两面板改 flex 比例语义而失效
+  //   —— style.height 不再是契约面（改回固定 px 会让 #1378 的「默认铺满」断言 FAIL）。
+  //   拖拽契约升级为「改比例 + 夹值 [0.2, 0.8] + mouseup 落盘 / 重挂载回读」，并**迁至**同页
+  //   兄弟文件 writing-right-rail.test.tsx 的「#1378 拖拽分隔条 → 比例跟随」用例
+  //   （该文件即 #1014 为本类右栏契约拆出的落点，避免同一契约两处断言）。
+  //   结构契约（两面板 + 全栏仅一个 row-resize 分隔条）仍由上方用例恒定覆盖。
 });
 
 describe('写作页 — #724 项目无 model 回退全局默认（上下文注入）', () => {
