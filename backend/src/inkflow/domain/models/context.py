@@ -223,3 +223,38 @@ class ContextAssemblyResult(BaseModel):
     total_tokens: int
     model: str
     dropped: list[DroppedItem]
+
+
+class ContextPreselectRequest(BaseModel):
+    """上下文预选请求（#1379）— 进入空章时由 GUI 按本章大纲预挑相关条目.
+
+    Attributes:
+        project_id: 项目 ID.
+        chapter_id: 目标章节 ID（大纲匹配与候选收集都按它定位）.
+        model: 目标模型名（与 assemble 同口径）.
+        writing_requirements: 写作要求 / 任务指令（min_length=1，与 assemble 同口径）.
+    """
+
+    project_id: uuid.UUID
+    chapter_id: uuid.UUID | None = None
+    model: str
+    writing_requirements: str = Field(..., min_length=1)
+
+
+class ContextPreselectResult(BaseModel):
+    """上下文预选结果（#1379）— 三类 id 子集 + 产生方式.
+
+    Attributes:
+        character_ids / world_ids / foreshadowing_ids: 预选出的 id 子集.
+        mode: 产生方式 —— ``"agent"``（LLM 预选）/ ``"fallback"``
+            （回退全选：无大纲 / 预选未接线 / LLM 失败 / 输出不可解析）.
+
+    Note:
+        ``mode="fallback"`` 时三类 id 即「全量候选」——前端直接采用即等价于
+        既有「全选」行为，无需再调 assemble 取全量。
+    """
+
+    character_ids: list[uuid.UUID] = Field(default_factory=list)
+    world_ids: list[uuid.UUID] = Field(default_factory=list)
+    foreshadowing_ids: list[uuid.UUID] = Field(default_factory=list)
+    mode: str = "agent"

@@ -6,10 +6,12 @@ import {
   fetchChapterInjections,
   listProjectForeshadowings,
   listProjectWorldSettings,
+  preselectContext,
   type ChapterInjectionDto,
   type ContextAssemblyResult,
   type ContextBlock,
   type ContextOverride,
+  type ContextPreselectResult,
   type ContextSourceType,
 } from '../api/context';
 import { ApiError, errorMessage } from '../api/client';
@@ -153,6 +155,14 @@ export function ContextPanel({
   const [pickerError, setPickerError] = useState<string | null>(null);
   // #1349：章级注入记录（回执面取数源）；null = 无记录/未取到 → 回退态
   const [injectionRecord, setInjectionRecord] = useState<ChapterInjectionDto | null>(null);
+  // #1379：Agent 预选状态（idle=未发起 / pending=进行中 / applied=已应用 / fallback=回退全选）
+  const [preselectStatus, setPreselectStatus] = useState<
+    'idle' | 'pending' | 'applied' | 'fallback'
+  >('idle');
+  /** #1379：初次「无 override 组装」记录的全量候选 —— 「全选」的恢复基准 */
+  const fullIdsRef = useRef<ContextOverride | null>(null);
+  /** #1379：用户是否已手动改过勾选（预选结果晚到时不覆盖用户操作） */
+  const userTouchedRef = useRef(false);
   // #1017：章级写作要求本地草稿（初始值 = 章级覆盖原文，null=继承 → 空）
   const [requirementsDraft, setRequirementsDraft] = useState(() => chapterWritingRequirements ?? '');
   /** 上次同步的章级覆盖值（用于切章时重播草稿，避免用户输入中被回写打断） */
@@ -182,9 +192,20 @@ export function ContextPanel({
         });
         setData(result);
         // 勾选状态 = 当前响应中已注入的角色/伏笔条目（初始全注入）
-        setCheckedCharacterIds(collectIds(result.blocks, 'character_setting', 'character_id'));
-        setCheckedForeshadowingIds(collectIds(result.blocks, 'foreshadowing', 'foreshadowing_id'));
-        setCheckedWorldIds(collectIds(result.blocks, 'world_setting', 'world_setting_id'));
+        const characterIds = collectIds(result.blocks, 'character_setting', 'character_id');
+        const foreshadowingIds = collectIds(result.blocks, 'foreshadowing', 'foreshadowing_id');
+        const worldIds = collectIds(result.blocks, 'world_setting', 'world_setting_id');
+        if (override === undefined) {
+          // #1379：无 override = 全量组装 → 记录「全选」恢复基准（预选/清除后可一键恢复）
+          fullIdsRef.current = {
+            character_ids: characterIds,
+            foreshadowing_ids: foreshadowingIds,
+            world_ids: worldIds,
+          };
+        }
+        setCheckedCharacterIds(characterIds);
+        setCheckedForeshadowingIds(foreshadowingIds);
+        setCheckedWorldIds(worldIds);
       } catch (err) {
         setData(null);
         // #759：空写作要求被后端 min_length 拒（422 string_too_short）→ 优雅占位，不渲染原始 JSON
@@ -200,6 +221,44 @@ export function ContextPanel({
     },
     [projectId, chapterId, model, writingRequirements],
   );
+
+  /**
+   * #1379：Agent 按大纲预选 —— 进入空章时并发发起（不阻塞面板渲染）。
+   * 成功（mode="agent"）→ 用子集覆盖初始全选并按其重新组装；
+   * 失败 / 不可用 / mode="fallback" → 静默回退全选（与既有行为一致）+ 状态提示。
+   * 用户已手动改过勾选时丢弃晚到的预选结果（不覆盖用户操作）。
+   */
+  const runPreselect = useCallback(async () => {
+    if (!projectId || !chapterId || !model || !writingRequirements.trim()) return;
+    setPreselectStatus('pending');
+    let picked: ContextPreselectResult | null;
+    try {
+      picked = await preselectContext({
+        project_id: projectId,
+        chapter_id: chapterId,
+        model,
+        writing_requirements: writingRequirements,
+      });
+    } catch {
+      // 预选是增强项：调用失败 / 该函数不可用（既有契约 mock 形态）一律回退全选
+      picked = null;
+    }
+    if (userTouchedRef.current) return;
+    if (picked === null || picked.mode !== 'agent') {
+      setPreselectStatus('fallback');
+      return;
+    }
+    setPreselectStatus('applied');
+    const next: ContextOverride = {
+      character_ids: picked.character_ids,
+      foreshadowing_ids: picked.foreshadowing_ids,
+      world_ids: picked.world_ids,
+    };
+    setCheckedCharacterIds(next.character_ids);
+    setCheckedForeshadowingIds(next.foreshadowing_ids);
+    setCheckedWorldIds(next.world_ids);
+    void runAssemble(next);
+  }, [projectId, chapterId, model, writingRequirements, runAssemble]);
 
   /**
    * #1349：章级注入记录（回执面）——「上一章生成时**实际**注入了什么」。
@@ -224,7 +283,7 @@ export function ContextPanel({
     };
   }, [chapterId]);
 
-  // 挂载 / projectId / chapterId 变化 → 自动注入；任缺 → 空态且不调用
+  // 挂载 / projectId / chapterId 变化 → 自动注入 + Agent 预选；任缺 → 空态且不调用
   useEffect(() => {
     setCheckedCharacterIds([]);
     setCheckedForeshadowingIds([]);
@@ -233,6 +292,10 @@ export function ContextPanel({
     // onOverrideChange 的 effect 会放行并通过「三字段全空」=「该章不注入」（错误语义）。
     // data 与 checked 必须同帧失效，等新组装结果回来再一起生效。
     setData(null);
+    // #1379：预选状态 / 全量基准 / 用户操作标记随章重置
+    setPreselectStatus('idle');
+    userTouchedRef.current = false;
+    fullIdsRef.current = null;
     if (projectId && chapterId && model) {
       if (!writingRequirements.trim()) {
         // #759：写作要求为空 → 不发 assemble，直接显示「未填写写作要求」占位
@@ -241,12 +304,14 @@ export function ContextPanel({
       } else {
         // #1235：初始不传 override（缺省 = 全注入）；显式空数组在新语义下 = 全不注入
         void runAssemble(undefined);
+        // #1379：并发发起预选（不阻塞面板）；成功则用子集覆盖初始全选
+        void runPreselect();
       }
     } else {
       setData(null);
       setError(null);
     }
-  }, [runAssemble, projectId, chapterId, model, writingRequirements]);
+  }, [runAssemble, runPreselect, projectId, chapterId, model, writingRequirements]);
 
   const injectedDetail = injectionRecord?.injected_context ?? null;
   const injectedCount = injectedDetail === null ? 0 : countInjected(injectedDetail);
@@ -281,6 +346,7 @@ export function ContextPanel({
     source: 'character_setting' | 'world_setting' | 'foreshadowing',
     id: string,
   ) => {
+    userTouchedRef.current = true; // #1379：用户手动改过 → 丢弃晚到的预选结果
     if (source === 'character_setting') {
       const next = checkedCharacterIds.includes(id)
         ? checkedCharacterIds.filter((candidate) => candidate !== id)
@@ -364,6 +430,7 @@ export function ContextPanel({
 
   /** #704：确认 → 覆盖对应 override 白名单并重新 assemble（token 数 / 分组条目随之刷新） */
   const confirmPicker = () => {
+    userTouchedRef.current = true; // #1379：用户确认选择 → 丢弃晚到的预选结果
     if (pickerSource === 'character_setting') {
       setCheckedCharacterIds(pickerSelection);
       void runAssemble({
@@ -415,6 +482,29 @@ export function ContextPanel({
     onWritingRequirementsChange?.(null);
   };
 
+  /**
+   * #1379：一键清除 —— 三类勾选清空 + 外传三类**空列表**重新组装。
+   * 空列表语义（#1235）：显式空 = 该类不注入；「全注入」只由缺省 override 表达。
+   */
+  const clearAllChecks = () => {
+    userTouchedRef.current = true;
+    setCheckedCharacterIds([]);
+    setCheckedForeshadowingIds([]);
+    setCheckedWorldIds([]);
+    void runAssemble({ character_ids: [], foreshadowing_ids: [], world_ids: [] });
+  };
+
+  /** #1379：全选 —— 恢复到初次全量组装的候选集（预选/清除后的一键恢复） */
+  const selectAllChecks = () => {
+    const full = fullIdsRef.current;
+    if (!full) return;
+    userTouchedRef.current = true;
+    setCheckedCharacterIds(full.character_ids);
+    setCheckedForeshadowingIds(full.foreshadowing_ids);
+    setCheckedWorldIds(full.world_ids);
+    void runAssemble(full);
+  };
+
   return (
     <aside
       data-testid="context-panel"
@@ -422,6 +512,26 @@ export function ContextPanel({
     >
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <span className="text-[13px] font-semibold">{t('write.context.title')}</span>
+        {/* #1379：一键清除 / 全选（全量恢复）—— 与「＋ 选择注入」同一工具带 */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="context-clear-all"
+            className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            onClick={clearAllChecks}
+          >
+            {t('write.context.clearAll')}
+          </button>
+          <button
+            type="button"
+            data-testid="context-select-all"
+            disabled={fullIdsRef.current === null}
+            className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60"
+            onClick={selectAllChecks}
+          >
+            {t('write.context.selectAll')}
+          </button>
+        </div>
       </div>
       {/* #1017：章级写作要求栏（项目级 ∥ 章级 三层；blur 提交，null=继承） */}
       <div className="flex items-start gap-2 border-b border-line px-3 py-2">
@@ -452,6 +562,25 @@ export function ContextPanel({
         data-testid="context-panel-content"
         className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3"
       >
+        {/* #1379：预选状态提示（Agent 预选中 / 已按大纲预选 / 预选未生效已全选） */}
+        {preselectStatus !== 'idle' && (
+          <div
+            data-testid={
+              preselectStatus === 'pending'
+                ? 'context-preselect-pending'
+                : preselectStatus === 'applied'
+                  ? 'context-preselect-applied'
+                  : 'context-preselect-fallback'
+            }
+            className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-relaxed text-ink-3"
+          >
+            {preselectStatus === 'pending'
+              ? t('write.context.preselectPending')
+              : preselectStatus === 'applied'
+                ? t('write.context.preselectApplied')
+                : t('write.context.preselectFallback')}
+          </div>
+        )}
         {/* #1017 入口常驻（D5）：空态/错误态仍无条件渲染三组「＋ 选择注入」入口（不依赖 assemble）；
             正常分支复用同一 GroupHeader 内嵌于 context-block-<source>，避免重复渲染两组按钮 */}
         {(error !== null || data === null) && projectId

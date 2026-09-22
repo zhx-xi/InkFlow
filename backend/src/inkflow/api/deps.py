@@ -272,6 +272,7 @@ def get_context_service(
     from inkflow.domain.models.context import ContextSourceType, TokenBudgetConfig
     from inkflow.infrastructure.context import summary_background_refresh as sbr
     from inkflow.infrastructure.context.preference_source import PreferenceSource
+    from inkflow.infrastructure.context.preselect import LlmContextPreselector
     from inkflow.infrastructure.context.sources import (  # 折行超 100 列
         CharacterSettingSource,
         ForeshadowingSource,
@@ -329,6 +330,9 @@ def get_context_service(
     return ContextService(
         sources=sources,
         summary_repo=summary_repo,
+        preselect_fn=LlmContextPreselector(
+            llm_client=LangChainLLMClient(), prompt_manager=LangChainPromptManager()
+        ),
     )
 
 

@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/writing/writing.html + writing-<state>.png（collapsed/context-injected/context-no-record/delete-auth/delete-hitl/drafts-approval/editor-idle/empty/global-chat/reasoning/streaming/thinking-level）
+- 原型引用：design/GUI/writing/writing.html + writing-<state>.png（collapsed/context-injected/context-no-record/context-preselect/context-preselect-loading/delete-auth/delete-hitl/drafts-approval/editor-idle/empty/global-chat/reasoning/streaming/thinking-level）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 
@@ -322,3 +322,48 @@
 - N33：驳回失败 → `drafts-drawer-error` 透传错误文案且弹层不关；进行中该钮 `disabled`。
 - N34：可证伪自证 —— 移除驳回钮 → N31-N33 断言必须 FAIL（实测 4 例红），按备份字节还原后复绿。
 - 确认路径不劣化：既有 `DraftApprovalDrawer.test.tsx` 用例**零翻转**（实测 10 例仍绿）。
+
+## 12. #1379 上下文注入「Agent 按大纲预选」+ 一键清除 / 全选
+
+> 现象（v0.15.0-rc5 GUI 目视）：进入空章时面板把**全部**候选条目默认勾上（初始全注入回显），
+> 用户期望默认勾选 = 与本章相关的子集；且条目区无「一键清除」——想清空只能逐条取消。
+> 本节锁两件事：① 预选的触发/应用/回退语义；② 「清除」「全选」两枚工具钮的形态与语义。
+
+### 12.1 画面/布局补充
+
+- 标题行（`.panel-head`）右侧新增工具带：`清除`（`context-clear-all`）→ `全选`（`context-select-all`），
+  描边次要钮（`.pbtn`），与各卡「＋ 选择注入」同一视觉层级。**常驻渲染**（空态/错误态/加载态均可见）。
+- 面板内容区顶部新增预选状态条（`.ctx-preselect`，三态互斥；`idle` 不渲染）：
+  - `context-preselect-pending` —— 「Agent 预选中…」（`write.context.preselectPending`）
+  - `context-preselect-applied` —— 「已按大纲预选」（`write.context.preselectApplied`）
+  - `context-preselect-fallback` —— 「预选未生效，已全选」（`write.context.preselectFallback`）
+- 预选**不阻塞面板**：与首次组装并发发起；面板先按全量渲染，预选返回且 `mode="agent"` 时用子集覆盖（二次组装）。
+
+原型基准：`design/GUI/writing/writing.html` 的 `context-preselect` / `context-preselect-loading` 两状态；
+截图 `writing-context-preselect.png`（子集勾选：苏云舟保留 / 林晚照排除 + 标题行「清除」「全选」同框）、
+`writing-context-preselect-loading.png`（加载态状态条 + 面板暂为全选）；
+生成/断言脚本 `design/GUI/_tools/shot-writing-context-preselect.cjs`（结构/几何断言全绿）。
+
+### 12.2 动作样式补充
+
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 一键清除（`context-clear-all`） | 描边次要钮，`t('write.context.clearAll')` | 三类勾选清空 + 以**三类空列表** override 重新组装 → 外传 `onOverrideChange` 三类空数组 | 无独立 loading（组装结果回写勾选） | 三类空 = 该类不注入（#1235 语义；复用既有后端通道，**零后端改动**） | 组装失败走既有 `context-error` 错误态 | 未组装（`data=null`）时点击等同空转；清除后「全选」可恢复 |
+| 全选（`context-select-all`） | 描边次要钮；首次全量组装未返回（`fullIdsRef=null`）时 `disabled` | 恢复**首次全量组装**记录的候选集 → 重新组装 + 外传 | 同上 | 三类恢复全量 | 同上 | 恢复基准不随预选/清除收窄而缩水 |
+| 智能预选（自动，无按钮） | 进入章节（`projectId/chapterId/model` 齐 + 写作要求非空）**并发**发起 `POST /api/v1/context/preselect` | — | 状态条 `pending`；**不阻塞**勾选/选择器/清除 | `mode="agent"` → 子集覆盖初始全选 + 二次组装（面板 blocks 随之收窄） | 调用失败 / `mode="fallback"` / 预选函数不可用 → 保持全选 + `fallback` 状态条 | 用户已手动改过勾选（toggle / 选择器确认 / 清除 / 全选）→ 丢弃晚到结果；切章重置状态与全量基准 |
+| 章级写作要求「恢复继承」（#1017 既有） | 不受本节影响 | 同既有 | 同既有 | 同既有 | 同既有 | 与清除/全选互不干涉（不同维度） |
+
+**回退语义（后端契约，`POST /api/v1/context/preselect`）**：无大纲 / 预选未接线 / LLM 失败 / 输出不可解析
+→ `mode="fallback"` 且三类 id 为**全量候选**（前端直接采用即等价既有「全选」，无需再取全量）；
+预选结果与候选集求交（幻觉 id 被过滤）；无候选 → 空集 + `mode="agent"`（没得选，不算回退）。
+
+**不做**：预选结果持久化（每次进章实时算）、预选专用微调 UI（沿用既有勾选与「＋ 选择注入」）。
+
+### 12.3 验收补充
+
+- N35：进入章节 → 恰一次预选请求；`mode="agent"` 返回子集 → 面板三类勾选 = 该子集（**非全量**），且随后的组装请求体带该子集 override。
+- N36：预选 reject / `mode="fallback"` / 预选函数不可用 → 三类勾选保持全量（既有行为不变），状态条显示回退态。
+- N37：点「清除」→ 三类勾选为空 + 外传 `onOverrideChange` 三类**空数组** + 重组装请求体 `override` 三字段均为 `[]`。
+- N38：清除后点「全选」→ 三类恢复全量（与首次全量组装一致）；清除后 ≠ 全量（反向断言）。
+- N39：用户手动勾选后预选结果晚到 → 不覆盖用户选择（touched 守卫）。
+- N40：可证伪自证 —— 移除清除路径的「空 override 重组装」→ N37/N38 断言必须 FAIL（实测红），还原后复绿。

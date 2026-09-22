@@ -129,3 +129,30 @@ export interface ChapterInjectionDto {
 export async function fetchChapterInjections(chapterId: string): Promise<ChapterInjectionDto> {
   return apiFetch<ChapterInjectionDto>(`/api/v1/agent/chapters/${chapterId}/injections`);
 }
+
+/** #1379 预选请求：进入空章时按本章大纲预挑相关条目（输入面与 assemble 同口径） */
+export interface PreselectContextRequest {
+  project_id: string;
+  chapter_id: string;
+  model: string;
+  writing_requirements: string;
+}
+
+/**
+ * #1379 预选结果（POST /api/v1/context/preselect）：
+ * `mode="agent"` = LLM 按大纲预选出的三类 id 子集；
+ * `mode="fallback"` = 回退全选（无大纲 / 预选失败），此时三类即全量候选。
+ */
+export interface ContextPreselectResult {
+  character_ids: string[];
+  world_ids: string[];
+  foreshadowing_ids: string[];
+  mode: 'agent' | 'fallback';
+}
+
+/** 按本章大纲预选相关条目（失败/不可用 → 调用方回退全选） */
+export async function preselectContext(
+  body: PreselectContextRequest,
+): Promise<ContextPreselectResult> {
+  return apiFetch<ContextPreselectResult>('/api/v1/context/preselect', { method: 'POST', body });
+}

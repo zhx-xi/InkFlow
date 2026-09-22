@@ -1321,6 +1321,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/context/preselect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preselect Context
+         * @description Agent 预选（#1379）— 按本章大纲预挑相关条目 id 子集.
+         *
+         *     mode="fallback" 时三类 id 即全量候选（前端据此回退全选）。
+         */
+        post: operations["preselect_context_api_v1_context_preselect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events/stream": {
         parameters: {
             query?: never;
@@ -4260,6 +4282,29 @@ export interface components {
             foreshadowing_ids?: string[];
             /** World Ids */
             world_ids?: string[];
+        };
+        /**
+         * ContextPreselectRequest
+         * @description 上下文预选请求（#1379）— 进入空章时由 GUI 按本章大纲预挑相关条目.
+         *
+         *     Attributes:
+         *         project_id: 项目 ID.
+         *         chapter_id: 目标章节 ID（大纲匹配与候选收集都按它定位）.
+         *         model: 目标模型名（与 assemble 同口径）.
+         *         writing_requirements: 写作要求 / 任务指令（min_length=1，与 assemble 同口径）.
+         */
+        ContextPreselectRequest: {
+            /** Chapter Id */
+            chapter_id?: string | null;
+            /** Model */
+            model: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Writing Requirements */
+            writing_requirements: string;
         };
         /**
          * ContextRequest
@@ -8906,6 +8951,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preselect_context_api_v1_context_preselect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextPreselectRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

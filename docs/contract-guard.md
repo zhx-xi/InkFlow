@@ -90,6 +90,9 @@
 | `backend/src/inkflow/domain/services/book_service.py` | 章 brief 构造 | `backend/tests/unit/domain/services/test_book_service.py` |
 | `backend/src/inkflow/infrastructure/agent/book_pipeline.py` | 章 brief 构造 | `backend/tests/unit/infrastructure/agent/test_book_pipeline.py` |
 | `backend/src/inkflow/domain/services/context_service.py` | `render_system_prompt` | `backend/tests/unit/domain/services/test_context_service.py` |
+| `backend/src/inkflow/domain/services/context_service.py` | `preselect_context` / `PreselectFn`（#1379） | `backend/tests/unit/domain/services/test_context_preselect_1379.py` |
+| `backend/src/inkflow/api/routers/context.py` | `preselect` 端点 / `ContextPreselectRequest`·`ContextPreselectResult`（#1379） | `backend/tests/unit/api/routers/test_context_preselect_api_1379.py` |
+| `backend/src/inkflow/i18n/prompts/{zh,en}/context_preselect.yaml` | 模板变量 `outline` / `requirements` / `candidates`（#1379） | `backend/tests/unit/api/routers/test_context_preselect_api_1379.py`（端到端经真模板渲染） |
 | `backend/src/inkflow/domain/services/writing_service.py` | 写作链编排 | `backend/tests/unit/domain/services/test_writing_service.py` |
 | `backend/src/inkflow/api/routers/books.py` | writer factory 装配 | `tests/api/test_books_api.py`（另见 `test_books_api_v12.py` / `test_books_api_stage4.py` / `test_books_api_background.py` / `test_books_api_start_mode.py`） |
 
