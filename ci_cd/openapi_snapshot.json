@@ -13673,7 +13673,7 @@
     },
     "/api/v1/projects/{project_id}/vector/reindex": {
       "post": {
-        "description": "全量重建索引（spec §3.3 + #276 四步协议）— 前置刷新单例.\n\n① 刷新向量存储单例（失败 → RAGUnavailableError 500，reindex 拒绝执行）；\n② 委托服务层（锁 + reindexing 指纹 + 维度探测 + upsert + 差集删除 +\nfresh commit-last）；entity_types 缺省 = 全部 5 种（幂等 upsert）。",
+        "description": "全量重建索引（spec §3.3 + #276 四步协议）— 前置刷新单例.\n\n① 刷新向量存储单例（失败 → RAGUnavailableError 503 + Retry-After，\nreindex 拒绝执行；#1381 语义升级）；\n② 委托服务层（锁 + reindexing 指纹 + 维度探测 + upsert + 差集删除 +\nfresh commit-last）；entity_types 缺省 = 全部 5 种（幂等 upsert）。",
         "operationId": "reindex_project_api_v1_projects__project_id__vector_reindex_post",
         "parameters": [
           {

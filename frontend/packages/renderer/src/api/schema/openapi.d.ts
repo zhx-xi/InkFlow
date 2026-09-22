@@ -2431,7 +2431,8 @@ export interface paths {
          * Reindex Project
          * @description 全量重建索引（spec §3.3 + #276 四步协议）— 前置刷新单例.
          *
-         *     ① 刷新向量存储单例（失败 → RAGUnavailableError 500，reindex 拒绝执行）；
+         *     ① 刷新向量存储单例（失败 → RAGUnavailableError 503 + Retry-After，
+         *     reindex 拒绝执行；#1381 语义升级）；
          *     ② 委托服务层（锁 + reindexing 指纹 + 维度探测 + upsert + 差集删除 +
          *     fresh commit-last）；entity_types 缺省 = 全部 5 种（幂等 upsert）。
          */

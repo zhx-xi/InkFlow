@@ -215,6 +215,39 @@ class TestLogStructured:
         assert rec["extra"]["correlation_id"] == "corr-1"
         assert rec["extra"]["event"] == "create_chapter"
 
+    def test_exc_flag_attaches_native_exception(self):
+        """#1381：exc= 真异常 → record['exception'] 非空（走 loguru 原生栈渲染机制）。
+
+        log_structured 的 stack（str）只进 extra（结构化字段，store 依赖）；
+        exc 走 logger.opt(exception=...) 让所有文本 sink 自动渲染 traceback。
+        """
+
+        def _raise_schema_exc() -> None:
+            raise RuntimeError("schema exc 1381")
+
+        records, sid = _capture_records("ERROR")
+        try:
+            try:
+                _raise_schema_exc()
+            except RuntimeError as exc:
+                log_structured(
+                    level="ERROR",
+                    caller_type="api",
+                    caller_name="x.y",
+                    event="e",
+                    message_key="log.call.e",
+                    message="e failed",
+                    stack="<stack-str>",
+                    exc=exc,
+                )
+        finally:
+            logger.remove(sid)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec["exception"] is not None, "exc= 未走 loguru 原生 exception 机制（#1381）"
+        assert rec["exception"].type is RuntimeError
+        assert rec["extra"]["stack"] == "<stack-str>"
+
     def test_rejects_invalid_caller_type(self):
         with pytest.raises(ValidationError):
             log_structured(

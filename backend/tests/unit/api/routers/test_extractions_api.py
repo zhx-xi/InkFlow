@@ -490,8 +490,8 @@ class TestExtractAPI:
         assert "伏笔提取失败" in response.json()["detail"]
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
-    def test_extract_rag_unavailable_500(self, mock_get_svc: MagicMock) -> None:
-        """RAG 不可用（vector_store 未装配）→ 500「向量检索服务不可用」."""
+    def test_extract_rag_unavailable_503(self, mock_get_svc: MagicMock) -> None:
+        """RAG 不可用 → 503 + Retry-After「向量检索服务不可用」（#1381 语义升级）."""
         svc = _mock_svc(mock_get_svc)
         svc.extract = AsyncMock(side_effect=RAGUnavailableError())
 
@@ -504,7 +504,8 @@ class TestExtractAPI:
                 "index": True,
             },
         )
-        assert response.status_code == 500
+        assert response.status_code == 503
+        assert response.headers.get("retry-after") == "5"
         assert response.json()["detail"] == "向量检索服务不可用"
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
@@ -680,13 +681,14 @@ class TestVectorReindexAPI:
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
     @patch("inkflow.api.routers.extractions.refresh_vector_store", new=AsyncMock())
-    def test_reindex_rag_unavailable_500(self, mock_get_svc: MagicMock) -> None:
-        """RAG 不可用（未装配）→ 500「向量检索服务不可用」."""
+    def test_reindex_rag_unavailable_503(self, mock_get_svc: MagicMock) -> None:
+        """RAG 不可用（未装配）→ 503 + Retry-After（#1381 语义升级）."""
         svc = _mock_svc(mock_get_svc)
         svc.reindex = AsyncMock(side_effect=RAGUnavailableError())
 
         response = client.post(f"/api/v1/projects/{PID}/vector/reindex", json={})
-        assert response.status_code == 500
+        assert response.status_code == 503
+        assert response.headers.get("retry-after") == "5"
         assert response.json()["detail"] == "向量检索服务不可用"
 
 
@@ -812,8 +814,8 @@ class TestVectorRetrieveAPI:
         assert response.json()["detail"] == "项目不存在"
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
-    def test_retrieve_rag_unavailable_500(self, mock_get_svc: MagicMock) -> None:
-        """RAG 不可用（未装配）→ 500「向量检索服务不可用」."""
+    def test_retrieve_rag_unavailable_503(self, mock_get_svc: MagicMock) -> None:
+        """RAG 不可用（未装配）→ 503 + Retry-After（#1381 语义升级）."""
         svc = _mock_svc(mock_get_svc)
         svc.retrieve = AsyncMock(side_effect=RAGUnavailableError())
 
@@ -821,7 +823,8 @@ class TestVectorRetrieveAPI:
             f"/api/v1/projects/{PID}/vector/retrieve",
             json={"query": "q"},
         )
-        assert response.status_code == 500
+        assert response.status_code == 503
+        assert response.headers.get("retry-after") == "5"
         assert response.json()["detail"] == "向量检索服务不可用"
 
 

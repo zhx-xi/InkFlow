@@ -116,7 +116,11 @@ def _log_failed(
     func: Callable[..., Any],
     exc: Exception,
 ) -> None:
-    """记录未捕获异常 ERROR 日志（带耗时 + stack + 入参摘要），须在 except 块内调用。"""
+    """记录未捕获异常 ERROR 日志（带耗时 + stack + 入参摘要），须在 except 块内调用。
+
+    #1381：stack（str）进 extra 供结构化 store；exc（真异常对象）走 loguru
+    原生 exception 机制 → 文本 sink（内核 stderr/文件）渲染 traceback。
+    """
     log_structured(
         level="ERROR",
         caller_type=caller_type,
@@ -127,6 +131,7 @@ def _log_failed(
         duration_ms=(time.perf_counter() - start) * 1000,
         stack=traceback.format_exc(),
         error_code="X_UNCAUGHT",
+        exc=exc,
         params={
             **_scalar_summary(args, kwargs, func),
             "error_type": type(exc).__name__,

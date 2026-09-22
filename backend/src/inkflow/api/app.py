@@ -280,9 +280,15 @@ app.add_middleware(EventSourceMiddleware)
 
 
 # ---- 全局异常处理：RAG 向量库不可用（#341，覆盖端点构造期与前置刷新冒泡）----
+# #1381 语义升级：500 → 503 + Retry-After（暂时不可用、可重试语义，与
+# extractions._run_service 的映射一致；detail 保留具体原因）。
 @app.exception_handler(RAGUnavailableError)
 async def _rag_unavailable_handler(request: Request, exc: RAGUnavailableError) -> JSONResponse:
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc)},
+        headers={"Retry-After": "5"},
+    )
 
 
 # ---- 注册路由 ----

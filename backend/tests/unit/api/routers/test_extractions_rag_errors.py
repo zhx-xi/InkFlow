@@ -3,11 +3,16 @@
 背景：test_extractions_api.py 因追加 #341 契约超 900 行护栏（907>900），
 本批 2 个 RAGUnavailableError 错误路径测试独立成文件（对齐 #281 拆分先例）。
 
-覆盖（#341 修复目标）：
+覆盖（#341 修复目标 + #1381 语义升级）：
 - reindex 前置 refresh_vector_store 抛 RAGUnavailableError
-  → 500 + detail 含「未配置 embedding 模型」
+  → 503 + Retry-After + detail 含「未配置 embedding 模型」
 - retrieve 服务装配（_get_svc 构造期 get_vector_store）抛 RAGUnavailableError
-  → 500 + detail 不丢失
+  → 503 + Retry-After + detail 不丢失
+
+#1381（2026-09-22）：RAGUnavailableError 由裸 500 升级为 503 + Retry-After——
+「RAG 向量库暂时不可用」（未装配/未配置/模型加载失败）属于服务侧能力未就绪，
+调用方可区分「暂时不可用（可重试）」与「请求错误」；detail 文本保留具体原因。
+其他错误（VectorStoreError / ExtractionRunError / 业务错误）仍按原映射。
 """
 
 from __future__ import annotations
@@ -46,17 +51,19 @@ class TestVectorReindexRagUnavailable:
             "未配置 embedding 模型，请先在 Provider 配置中添加 embedding 模型"
         ),
     )
-    def test_reindex_refresh_unconfigured_embedding_500(
+    def test_reindex_refresh_unconfigured_embedding_503(
         self, mock_refresh: MagicMock, mock_get_svc: MagicMock
     ) -> None:
-        """#341: 未配置 embedding 时 refresh_vector_store 抛错 → 500 且 detail 不丢失.
+        """#341 + #1381: 未配置 embedding → 503 + Retry-After，detail 不丢失.
 
-        端点前置刷新（L210）在 _run_service 之外——构造期 RAGUnavailableError
-        冒泡成裸 500（detail=Internal Server Error）是 #330 修复不完整的残留；
-        修复后应返回 500 + detail 含「未配置 embedding 模型」。
+        端点前置刷新（L273）在 _run_service 之外——RAGUnavailableError 经
+        全局处理器（app.py）返回；#341 修复 detail 不丢失（裸 500 →
+        detail=Internal Server Error），#1381 升级状态码为 503 + Retry-After
+        （暂时不可用、可重试语义）。
         """
         response = client.post(f"/api/v1/projects/{PID}/vector/reindex", json={})
-        assert response.status_code == 500
+        assert response.status_code == 503
+        assert response.headers.get("retry-after") == "5"
         assert "未配置 embedding 模型" in response.json()["detail"]
 
 
@@ -69,19 +76,19 @@ class TestVectorRetrieveRagUnavailable:
             "未配置 embedding 模型，请先在 Provider 配置中添加 embedding 模型"
         ),
     )
-    def test_retrieve_unconfigured_embedding_500(self, mock_get_svc: MagicMock) -> None:
-        """#341: 未配置 embedding 时服务装配抛错 → 500 且 detail 不丢失.
+    def test_retrieve_unconfigured_embedding_503(self, mock_get_svc: MagicMock) -> None:
+        """#341 + #1381: 未配置 embedding → 503 + Retry-After，detail 不丢失.
 
         _get_svc（构造期 get_vector_store 装配）在 _run_service 之外——
-        RAGUnavailableError 冒泡成裸 500（detail=Internal Server Error）是
-        #330 修复不完整的残留；修复后应返回 500 + detail 含「未配置
-        embedding 模型」。
+        RAGUnavailableError 经全局处理器（app.py）返回；#341 修复 detail 不丢失，
+        #1381 升级状态码为 503 + Retry-After（暂时不可用、可重试语义）。
         """
         response = client.post(
             f"/api/v1/projects/{PID}/vector/retrieve",
             json={"query": "q"},
         )
-        assert response.status_code == 500
+        assert response.status_code == 503
+        assert response.headers.get("retry-after") == "5"
         assert "未配置 embedding 模型" in response.json()["detail"]
 
 
