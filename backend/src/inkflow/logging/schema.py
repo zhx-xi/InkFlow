@@ -136,6 +136,7 @@ def log_structured(
     duration_ms: float | None = None,
     error_code: str | None = None,
     stack: str | None = None,
+    exc: BaseException | None = None,
 ) -> None:
     """构建 StructuredLogRecord → 脱敏 params → logger.bind(extra).log(level, message)。
 
@@ -145,6 +146,9 @@ def log_structured(
     trace_id/span_id/parent_span_id 解析链：显式参数 > contextvar
     （logging.trace，#931）> None（exclude_none 剔除——无 trace 上下文时
     不注入空串假值，#888 零回归）。
+    exc 解析链（#1381）：真异常对象 > None。非 None 时经 logger.opt(exception=...)
+    走 loguru 原生 exception 机制（record["exception"]）——文本 sink（stderr/文件）
+    自动渲染 traceback；stack（str）仍进 extra 供结构化 store（原契约保持）。
     """
     masked_params = cast(dict, mask_fields(params or {}))
     trace_ctx = get_trace_context()
@@ -187,4 +191,10 @@ def log_structured(
     # loguru 内建警告级别名是 "WARNING"（无 "WARN"）：仅在 .log 前映射；
     # StructuredLogRecord.level 仍按 spec 存原始 "WARN"。
     loguru_level = "WARNING" if level == "WARN" else level
-    logger.bind(**bound).log(loguru_level, message)
+    emitter = logger.bind(**bound)
+    if exc is not None:
+        # #1381：走 loguru 原生 exception 机制（record["exception"]）——
+        # 文本 sink（内核 stderr / 文件）自动追加 traceback；此前 stack 只进
+        # extra，而各 sink format 均不引用 extra[stack] → 210 次故障现场全丢。
+        emitter = emitter.opt(exception=(type(exc), exc, exc.__traceback__))
+    emitter.log(loguru_level, message)

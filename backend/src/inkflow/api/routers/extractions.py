@@ -22,8 +22,8 @@
 - 提取/生成管线解析失败（CharacterExtractionError / WorldExtractionError /
   OutlineGenerationError / ForeshadowingExtractionError /
   TimelineExtractionError）→ 500（消息即 detail）
-- RAGUnavailableError / VectorStoreError / ExtractionRunError → 500
-  （消息即 detail）
+- RAGUnavailableError → 503 + Retry-After（暂时不可用、可重试语义，#1381）；
+  VectorStoreError / ExtractionRunError → 500（消息即 detail）
 
 依据: specs/f14-extraction/spec.md §3/§5/§7 +
 specs/f16-style-analysis/spec.md §3.3/§8.2（StyleValidationError 映射）。
@@ -113,7 +113,10 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         TimelineExtractionError,
     ) as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
-    except (RAGUnavailableError, VectorStoreError, ExtractionRunError) as e:
+    except RAGUnavailableError as e:
+        # #1381：503 + Retry-After（暂时不可用、可重试语义）；detail 保留具体原因
+        raise HTTPException(status_code=503, detail=str(e), headers={"Retry-After": "5"}) from e
+    except (VectorStoreError, ExtractionRunError) as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -264,12 +267,13 @@ async def reindex_project(
 ):
     """全量重建索引（spec §3.3 + #276 四步协议）— 前置刷新单例.
 
-    ① 刷新向量存储单例（失败 → RAGUnavailableError 500，reindex 拒绝执行）；
+    ① 刷新向量存储单例（失败 → RAGUnavailableError 503 + Retry-After，
+    reindex 拒绝执行；#1381 语义升级）；
     ② 委托服务层（锁 + reindexing 指纹 + 维度探测 + upsert + 差集删除 +
     fresh commit-last）；entity_types 缺省 = 全部 5 种（幂等 upsert）。
     """
     pid = _parse_id(project_id)
-    # ① 刷新单例（失败 → RAGUnavailableError 500，reindex 拒绝执行）
+    # ① 刷新单例（失败 → RAGUnavailableError 503，reindex 拒绝执行；全局处理器映射）
     await refresh_vector_store()
     svc = await _get_svc(db)
     result = await _run_service(svc.reindex(pid, entity_types=data.entity_types if data else None))

@@ -49,7 +49,10 @@ RED 预期：当前 _log_failed/_log_expected/_log_stream_broken 不填 params �
 from __future__ import annotations
 
 import asyncio
+import importlib
 import inspect
+import io
+import re
 import sys
 
 import pytest
@@ -383,3 +386,111 @@ class TestInstrumentPydanticBody:
         assert "detail" in params
         assert "body" not in params  # 模型对象本身不入 params
         assert "description" not in params  # 大文本字段排除
+
+
+# ── #1381：失败栈必须落到「渲染后的日志文本」 ──
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """剥离 ANSI 颜色码（stderr sink colorize=True；内核日志文件同源带色）。"""
+    return _ANSI_RE.sub("", text)
+
+
+class TestInstrumentFailureStackRendering:
+    """#1381：@instrument 失败栈必须在文本 sink 渲染输出中可见（内核日志 = stderr 重定向）。
+
+    背景（取证 2026-09-22，r1）：210 次 /vector/retrieve 间歇 500 的内核日志
+    （%TEMP%/inkflow-kernel.log = stderr sink 重定向）只有单行
+    `ERROR | inkflow.logging.schema:NNN - retrieve_entities failed`，traceback 全丢。
+    机制：_log_failed 的 stack 只进 record['extra']['stack']（str），未走 loguru
+    原生 exception 机制（record['exception']）；而 stderr / 文件 sink 的 format
+    都不引用 extra[stack] → 恒不渲染。本契约锁定「渲染文本含栈」这一用户可见行为。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolated_log_paths(self, monkeypatch, tmp_path):
+        """config.* 与 resolve_log_dir 全部隔离到 tmp_path（铁律：不写真实 logs/data_dir）。"""
+        cfg_mod = importlib.import_module("inkflow.core.config")
+        monkeypatch.setattr(cfg_mod.config, "data_dir", tmp_path)
+        monkeypatch.setattr(cfg_mod.config, "debug", False)
+        monkeypatch.setattr(cfg_mod.config, "log_level", "INFO")
+        log_mod = importlib.import_module("inkflow.core.log")
+        monkeypatch.setattr(log_mod, "resolve_log_dir", lambda: tmp_path / "logs")
+        return tmp_path
+
+    def test_failure_traceback_renders_into_stderr_sink(self, _isolated_log_paths):
+        """【R】stderr sink（内核日志同源）渲染文本含 traceback + 异常类型。"""
+        log_mod = importlib.import_module("inkflow.core.log")
+        buf = io.StringIO()
+        real_stderr = sys.stderr  # try/finally 显式恢复：防 _restore_loguru teardown 绑到已失效 buf
+        sys.stderr = buf
+        try:
+            log_mod.setup_logging()
+
+            @instrument(caller_type="api")
+            async def retrieve_entities() -> None:
+                """真实形态：内层异常 → HTTPException(500) 上抛（同 extractions._run_service）。"""
+                from fastapi import HTTPException
+
+                def _inner() -> None:
+                    raise RuntimeError("vector boom 1381")
+
+                try:
+                    _inner()
+                except RuntimeError as e:
+                    raise HTTPException(status_code=500, detail=str(e)) from e
+
+            with pytest.raises(Exception, match="vector boom 1381"):
+                asyncio.run(retrieve_entities())
+        finally:
+            sys.stderr = real_stderr
+
+        text = _strip_ansi(buf.getvalue())
+        assert "Traceback (most recent call last)" in text, (
+            "stderr 渲染文本缺 traceback（stack 只进 extra 不进渲染，#1381）"
+        )
+        assert "HTTPException" in text  # 当前异常类型入栈
+        assert "RuntimeError: vector boom 1381" in text  # 因果链（__cause__）入栈
+        assert "retrieve_entities failed" in text  # 原有单行文案保持
+
+    def test_failure_traceback_renders_into_file_sink(self, _isolated_log_paths):
+        """【R】文件 sink（loguru 默认 format）渲染文本同样含 traceback。"""
+        log_mod = importlib.import_module("inkflow.core.log")
+        log_mod.setup_logging()
+
+        @instrument(caller_type="api")
+        async def style_analyze() -> None:
+            raise ValueError("file sink boom 1381")
+
+        with pytest.raises(ValueError, match="file sink boom 1381"):
+            asyncio.run(style_analyze())
+
+        log_files = sorted((_isolated_log_paths / "logs").glob("inkflow_*.log"))
+        assert log_files, "文件 sink 未产出日志文件"
+        text = log_files[0].read_text(encoding="utf-8")
+        assert "Traceback (most recent call last)" in text, (
+            "文件 sink 渲染文本缺 traceback（#1381）"
+        )
+        assert "ValueError: file sink boom 1381" in text
+
+    def test_failure_record_carries_native_exception(self):
+        """【R】record['exception'] 非空（loguru 原生机制）—— 任意 sink 自动渲染栈的保证。"""
+
+        @instrument(caller_type="api")
+        async def boom_native() -> None:
+            raise RuntimeError("native boom 1381")
+
+        records, sid = _capture_records("ERROR")
+        try:
+            with pytest.raises(RuntimeError, match="native boom 1381"):
+                asyncio.run(boom_native())
+        finally:
+            logger.remove(sid)
+        err = _find(records, "ERROR", "boom_native")
+        assert err["exception"] is not None, (
+            "record['exception'] 为空 → 文本 sink 不会渲染栈（#1381）"
+        )
+        assert err["exception"].type is RuntimeError
+        assert err["extra"]["stack"]  # 原 extra 契约保持（结构化 store 依赖）

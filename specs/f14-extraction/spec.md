@@ -628,7 +628,8 @@ POST /api/v1/projects/3f2e1d4a-.../vector/retrieve
 | LLM 调用失败 | 500 | 透传 `LLMRequestError`（F5 重试耗尽，不消耗解析重试；router 转 500，同 F9-F11） |
 | 提取解析重试耗尽（character/setting/foreshadowing/timeline） | 500 | 透传 `CharacterExtractionError` / `WorldExtractionError` / `ForeshadowingExtractionError` / `TimelineExtractionError` |
 | 生成解析重试耗尽（outline） | 500 | 透传 `OutlineGenerationError` |
-| RAG 不可用（vector_store 未装配 / BGE 模型加载失败 / chroma 错误） | 500 | `RAGUnavailableError` / `VectorStoreError`（消息含「RAG 向量库不可用」前缀） |
+| RAG 暂时不可用（vector_store 未装配 / BGE 模型加载失败） | **503 + Retry-After** | `RAGUnavailableError`（消息含「RAG 向量库不可用」前缀；#1381 语义升级——调用方可区分「暂时不可用（可重试）」与「请求错误」） |
+| chroma 存储层错误（hnsw 段读取失败等） | 500 | `VectorStoreError`（消息即 detail，服务层自愈重试后仍失败） |
 | run 记录 DB 错误 | 500 | 全局处理器（loguru，ADR-012/016） |
 
 > **与 F9-F13 的差异**: F14 是首个**同时携带** LLM 错误（LLM_ERROR）、管线错误（EXTRACTION_ERROR）与 RAG 错误（RAG_ERROR）的模块；「类型未实现」作为 422 业务错误表达（区别于 404/501，见 §12 决策表——STYLE 占位 422 已被 F16 取代，仅剩防御性「未注册类型」分支）。
@@ -1052,8 +1053,8 @@ class LangChainVectorStore:
 
 | 场景 | 行为 |
 |------|------|
-| vector_store 未装配（deps 初始化失败） | `RAGUnavailableError`（500）——不影响非 RAG 功能（extract 不带 index 照常工作） |
-| BGE 模型首次下载（~100MB，需网络） | 懒加载：首次 index/retrieve 时初始化（deps 层模块级单例缓存）；失败 → RAGUnavailableError（消息提示联网/重试） |
+| vector_store 未装配（deps 初始化失败） | `RAGUnavailableError`（**503 + Retry-After**，#1381）——不影响非 RAG 功能（extract 不带 index 照常工作） |
+| BGE 模型首次下载（~100MB，需网络） | 懒加载：首次 index/retrieve 时初始化（deps 层模块级单例缓存）；失败 → RAGUnavailableError（**503 + Retry-After**，消息提示联网/重试） |
 | chroma 持久化目录不可写 / 损坏 | `VectorStoreError`（500，loguru 记录） |
 | retrieve 无结果 | 200 + 空 items（正常路径，同 F9 空搜索） |
 
@@ -1283,7 +1284,8 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | timeline 提取时事件不再出现于章节 | **不删除**（只增改不删除；自动删除归 Phase 2+，§10） |
 | 手动模式重复提交同一文本 | 200 + status=skipped（source_key="manual" 同 hash） |
 | --force 重跑未变更源 | 200 + status=success（强制执行，run hash 更新） |
-| RAG：vector_store 未装配 / BGE 下载失败 / chroma 错误 | 500: "RAG 向量库不可用: ..."（RAGUnavailableError / VectorStoreError）；**不影响非 RAG 功能**（修改履历 2026-08-31：retrieve 优雅降级防吞空 INTERNAL_ERROR——chroma hnsw 段读取失败不再吞成「内部错误（无详情）」） |
+| RAG：vector_store 未装配 / BGE 下载失败 | **503 + Retry-After: "RAG 向量库不可用: ..."**（RAGUnavailableError；#1381 语义升级）；**不影响非 RAG 功能**（修改履历 2026-08-31：retrieve 优雅降级防吞空 INTERNAL_ERROR——chroma hnsw 段读取失败不再吞成「内部错误（无详情）」） |
+| chroma 存储层错误（hnsw 段读取失败等，自愈重试后仍失败） | 500: "向量检索失败：..."（VectorStoreError，清晰可定位，**不吞空**） |
 | extract 带 index=true 但类型为 outline / timeline（关闭时） | 200 + indexed=false + warning "outline/timeline 类型不支持自动索引"（不报错；timeline 开启时 index 生效） |
 | vector retrieve 无结果 / min_score 过滤全空 | 200 + 空 items（正常路径） |
 | vector retrieve query 空白（空串/纯空格，#929 R4） | store 层确定性降级：`logger.warning` + 返回 `[]`（不调 embed_query、不打 chroma；外部 zhipu 400 1213 家族根治，端点契约不变仍 200 空 items） |
@@ -1324,7 +1326,7 @@ backend/src/inkflow/
 │   │   ├── extraction_errors.py ← CREATE: ExtractionServiceError(422 基类) /
 │   │   │                              ExtractionValidationError(422) / UnsupportedExtractionTypeError(422) /
 │   │   │                              ChapterNotFoundError(422) /
-│   │   │                              ChapterNotInProjectError(422) / RAGUnavailableError(500) /
+│   │   │                              ChapterNotInProjectError(422) / RAGUnavailableError(503) /
 │   │   │                              VectorStoreError(500) / ExtractionRunError(500)
 │   │   ├── extraction_run_repository.py ← CREATE: ExtractionRunRepositoryProtocol
 │   │   │                              （get/upsert/list，见 §8.1）
@@ -1517,7 +1519,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 - timeline 开启语义：章节/文本源增量 skip 判定同 character；提取事件 → TimelineExtractionResult 归一计数
 - STYLE：成功路径（F16 已注册——Mock StyleService 委托断言 + 归一 created=0/updated=0；占位测试已随 F16 同步，见 F16 spec §9）
 - index=true：Mock vector_store.index_batch 收到本次 created/updated 实体转成的 IndexableEntity（content 投影正确、metadata 含 project_id）；章节模式额外收到 chapter_chunk 块；outline / timeline（关闭时）→ indexed=false + warning；timeline（开启时）→ 提取事件索引为 timeline_event（metadata 含 chapter_id=source_chapter_id）
-- RAG 未装配（vector_store=None）+ index=true → RAGUnavailableError
+- RAG 未装配（vector_store=None）+ index=true → RAGUnavailableError（503 + Retry-After，#1381）
 - 结果归一：各类型 created/updated 计数口径（§5.3）；detail 保留首个执行源原始结果
 
 **伏笔提取管线（Mock LLM）**: 合法 JSON → 合并落库 / 代码块围栏 → `_extract_json_fragment` / 修复重试 ≤2 → ForeshadowingExtractionError（raw_output 截断 500）/ 条目级非法 → 跳过 + warning / 同名活动伏笔 → 非空覆盖且 **status 不重置** / 软删同名 → 新建 + warning / 幂等：同文本二次提取 → 空 diff / 自环与关系逻辑不适用（伏笔无关系）
@@ -1536,7 +1538,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 
 **RAG（真实 chroma + FakeEmbeddings，tmp 目录）**: index → collection upsert（id 幂等：同 id 二次 index 覆盖）/ index_batch / retrieve 按 project_id where 过滤（跨项目不可见）/ entity_types 过滤 / cosine 分数 = 1 - distance（FakeEmbeddings 固定向量可断言排序）/ min_score 过滤 / top_k 截断 / delete 单实体 / delete_project 返回删除数 / 空库 retrieve → 空列表 / **FakeEmbeddings 维度一致性**（size=384，与 BGE 输出维度同）/ **timeline_event 投影**（metadata 含 chapter_id=source_chapter_id——来自章节提取的事件；手工事件省略该键，§5.6 表）
 
-**API（Mock ExtractionService）**: 4 端点成功路径（含 extract 全字段、style 成功（F16 已注册）、auto_extract 透传、runs 分页、reindex 缺省类型、retrieve 参数校验）/ 404 项目不存在 / 422 全路径（互斥、缺失、类型不匹配、timeline 未开启带文本、top_k 越界）/ 500 透传（LLM/管线/RAG）/ 无效 UUID → 404 / 信封序列化（ExtractionResult.model_dump(mode="json")）
+**API（Mock ExtractionService）**: 4 端点成功路径（含 extract 全字段、style 成功（F16 已注册）、auto_extract 透传、runs 分页、reindex 缺省类型、retrieve 参数校验）/ 404 项目不存在 / 422 全路径（互斥、缺失、类型不匹配、timeline 未开启带文本、top_k 越界）/ 500 透传（LLM/管线）与 **503 + Retry-After 透传（RAGUnavailableError，#1381）** / 无效 UUID → 404 / 信封序列化（ExtractionResult.model_dump(mode="json")）
 
 **CLI（Mock ExtractionService）**: extract run 各类型参数透传（--text/--text-file/--chapters 三选一、--prompt、--num-chapters、--no-save、--auto-extract/--no-auto-extract、--index、--force）/ status 人类可读与 --json / vector reindex 缺省与多 --type / vector retrieve 参数与排序输出 / 信封格式与退出码 0/1/2 / STYLE → 成功信封（退出码 0，F16 已注册）/ NOT_FOUND / RAG_ERROR 信封 / --text 与 --text-file 同时 → 退出码 2 / --type 非法值 → 退出码 2
 
@@ -1641,7 +1643,7 @@ F14 被依赖:
 | RAG 落地范围 | 基础设施（LangChainVectorStore）+ 索引编排（index=true 增量 / reindex 全量）+ 检索入口（API/CLI）；**不接 F3/F6** | 验收标准 ③ 是「向量存储落地」——可演示闭环（索引 + 检索）即达标；写作链路注入涉及预算分配/触发策略（F6 领域），归 Phase 2+ 联调（§10）；MVP 聚焦基础设施正确性 |
 | collection 组织 | 每 EntityType 一个 collection（`f"inkflow_{type}"`，对齐 config.vector_store_collections）+ metadata.project_id 过滤 | config 已声明 5 个 collection（P0-11 定稿）；单 collection 混合类型会导致 where 过滤组合（type + project）复杂度上升且类型维度被稀释；每类型 collection 与 EntityType 一一对应（检索 entity_types 过滤 = 查对应 collection） |
 | embedding 注入 | `LangChainVectorStore(embeddings)` 构造注入：生产 HuggingFaceBgeEmbeddings，测试 FakeEmbeddings | BGE 下载 ~100MB 不能进 CI/测试（无网络约束，§9）；注入使 chroma 真实库测试可行（FakeEmbeddings size=384 对齐 BGE 维度）；生产装配在 deps 层懒加载（首次 index/retrieve 才初始化） |
-| RAG 可用性降级 | 未装配/模型加载失败 → RAGUnavailableError（500），**不影响非 RAG 功能** | RAG 是增强能力（写作链路尚未接入）；extract 不带 index 照常工作；错误消息提示联网/重试（§5.6 策略表） |
+| RAG 可用性降级 | 未装配/模型加载失败 → RAGUnavailableError（**503 + Retry-After**，#1381），**不影响非 RAG 功能** | RAG 是增强能力（写作链路尚未接入）；extract 不带 index 照常工作；错误消息提示联网/重试（§5.6 策略表） |
 | 索引内容投影 | 各档案字段拼装纯文本 content（姓名/性格/背景…）+ metadata 透传关键字段 | 检索匹配的是 content 文本（embedding 对象）；metadata 供过滤/展示（name/status/title）；投影为确定性纯函数（可单测，§5.6 表） |
 | 分块 | `_chunk_text` 纯函数：~500 字/块、标点边界回溯、无重叠；块 id = `{chapter_id}:{idx}` | 与 ADR-013「~500 字/chunk」一致；无重叠简化检索去重；块 id 稳定 → upsert 幂等（章节更新后同 id 覆盖） |
 | 项目删除与向量 | 项目硬删 → run 表 FK CASCADE；chroma 向量**不自动清理**（孤儿不可见，reindex 覆盖） | 向量库生命周期管理（delete_project 协议已有，但触发时机/级联语义归 Phase 2+）；MVP 不把项目删除与向量清理耦合（YAGNI），Protocol 的 delete_project 方法已留好能力 |
