@@ -616,7 +616,7 @@ test('设定库：时间线双序切换（E2E-A8）——默认叙事序 → 世
     await expect(window.getByTestId('timeline-toolbar')).toBeVisible({ timeout: 15_000 });
     await expect(window.getByTestId('tl-view-narrative')).toHaveAttribute('aria-pressed', 'true');
     await expect(window.getByTestId('tl-view-world')).toHaveAttribute('aria-pressed', 'false');
-    await expect(window.getByTestId('tl-legend')).toHaveText('点=叙事顺序 · 时间轴=世界内时间');
+    await expect(window.getByTestId('tl-legend')).toHaveText('轴=章 · 事件按章推进排列；行内小字=世界内时间');
     // 默认叙事序：narrative_position 升序（T1）
     await expect.poll(async () => timelineRowIds(window), { timeout: 15_000 }).toEqual([evB, evC, evA]);
     // 切世界序：time_value 升序、None 末尾（T2；本地切换零请求由单测 T2/T3 覆盖）

@@ -22,9 +22,17 @@ import { useToastStore } from '../stores/toast';
 export const OUTLINE_PAGE_SIZE = 10;
 /** #1002：全量路单页上限（后端 limit 最大 100） */
 const OUTLINE_FULL_LIMIT = 100;
+/** #1374：章节全量路单页上限（后端 /chapters limit 最大 100） */
+const CHAPTER_FULL_LIMIT = 100;
 
 interface OutlineListData {
   items?: OutlineItemDTO[];
+  total?: number;
+}
+
+/** #1374：章节列表端点响应（章标题映射 + 章序） */
+interface ChapterListData {
+  items?: Array<{ id: string | number; title?: string }>;
   total?: number;
 }
 
@@ -56,6 +64,8 @@ function keepOverallPageItem(item: OutlineItemDTO): boolean {
 
 export interface OutlineLibraryData {
   chapterTitles: Record<string, string>;
+  /** #1374：章序（章节列表顺序）——时间线叙事序组顺序与章筛选项列表由此决定 */
+  chapterOrder: string[];
   treeItems: OutlineItemDTO[];
   sortDesc: boolean;
   setSortDesc: (desc: boolean) => void;
@@ -73,6 +83,7 @@ export function useOutlineLibrary(
   reloadKey: number,
 ): OutlineLibraryData {
   const [chapterTitles, setChapterTitles] = useState<Record<string, string>>({});
+  const [chapterOrder, setChapterOrder] = useState<string[]>([]);
   const [sortDesc, setSortDesc] = useState(false);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -97,28 +108,51 @@ export function useOutlineLibrary(
     pidRef.current = null;
   }, [currentProjectId]);
 
-  // F43 P3：章标题映射（章关联徽标；outline tab 拉取，搬自 library.tsx 行为不变）
+  // F43 P3：章标题映射（章关联徽标 / #1374 时间线章刻度与来源章胶囊）
+  // #1374：① timeline tab 也拉取（此前仅 outline → 时间线下映射恒空 → 章刻度全落「未知章节」，
+  //           rc5 用户实测现象成因之一）；② **翻全量**（后端 /chapters 默认 50/页
+  //           （api/routers/chapter.py limit 默认 50）→ 215 章级项目只映射前 50 章）。
   useEffect(() => {
-    if (currentProjectId === null || activeCat !== 'outline') {
+    if (currentProjectId === null || (activeCat !== 'outline' && activeCat !== 'timeline')) {
       setChapterTitles({});
+      setChapterOrder([]);
       return;
     }
+    const pid = currentProjectId;
     let cancelled = false;
-    void apiFetch<{ items?: Array<{ id: string | number; title?: string }> }>(
-      `/api/v1/projects/${currentProjectId}/chapters`,
-    )
-      .then((data) => {
+    void (async () => {
+      try {
+        // 首页不带 query（保持既有端点形状）；total 缺失时按单页收口（旧 mock / 旧后端兜底）
+        const first = await apiFetch<ChapterListData>(`/api/v1/projects/${pid}/chapters`);
         if (cancelled) return;
+        const items = [...(first.items ?? [])];
+        const total = first.total ?? items.length;
+        while (items.length > 0 && items.length < total) {
+          const next = await apiFetch<ChapterListData>(
+            `/api/v1/projects/${pid}/chapters?offset=${items.length}&limit=${CHAPTER_FULL_LIMIT}`,
+          );
+          if (cancelled) return;
+          const page = next.items ?? [];
+          if (page.length === 0) break;
+          items.push(...page);
+        }
         const map: Record<string, string> = {};
-        for (const ch of data.items ?? []) {
+        const order: string[] = [];
+        for (const ch of items) {
+          const id = String(ch.id);
           const title = ch.title?.trim();
-          if (title) map[String(ch.id)] = title;
+          if (title) map[id] = title;
+          order.push(id);
         }
         setChapterTitles(map);
-      })
-      .catch(() => {
-        if (!cancelled) setChapterTitles({});
-      });
+        setChapterOrder(order);
+      } catch {
+        if (!cancelled) {
+          setChapterTitles({});
+          setChapterOrder([]);
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -213,6 +247,7 @@ export function useOutlineLibrary(
 
   return {
     chapterTitles,
+    chapterOrder,
     treeItems,
     sortDesc,
     setSortDesc,
