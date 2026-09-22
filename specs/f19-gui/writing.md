@@ -5,7 +5,7 @@
 
 ## 1. 画面样式（简图/原型）
 
-- 原型引用：design/GUI/writing/writing.html + writing-<state>.png（collapsed/context-injected/context-no-record/delete-auth/delete-hitl/editor-idle/empty/global-chat/reasoning/streaming/thinking-level）
+- 原型引用：design/GUI/writing/writing.html + writing-<state>.png（collapsed/context-injected/context-no-record/delete-auth/delete-hitl/drafts-approval/editor-idle/empty/global-chat/reasoning/streaming/thinking-level）
 
 > 低保真排版示意简图（区块+标签，非精确像素）
 
@@ -200,7 +200,7 @@
 
 ## 9. 草稿审批入口（#976 常显 → #1003 移入工具栏行最右）
 
-> 本节锁**位置与可见性**契约；草稿确认/拒绝/展开全文等行为见 f44/f27 草稿域，不在此重复。
+> 本节锁**入口的位置与可见性**契约；**弹层内控件形态与接线**见 §11（#1377 驳回钮）与 f44/f27（后端草稿域：确认自动建章/建卷——不含前端控件）。
 
 ### 9.1 画面/布局补充
 
@@ -290,3 +290,35 @@
 - N28：回执面只读 —— 明细区无 `input[type=checkbox]`；控制面勾选框仍只在预览区块。
 - N29：读端点失败 → 静默降级为回退态，不阻塞预览主路径；无 `chapterId` → 不发请求。
 - N30：可证伪自证 —— 剥掉 `_persist_injection_detail` 的 store 落库调用 → 落库接线契约必须 FAIL（实测 2 例红），还原后复绿。
+
+## 11. #1377 草稿审批弹层「驳回」入口
+
+> 现象：弹层内每条待审批草稿只有「取消」+「确认」，**没有驳回入口** → 用户无法在 GUI 否掉不满意的草稿。
+> 后端能力齐备：`POST /api/v1/agent/drafts/{id}/reject` 已可用，前端 `api/drafts.ts` 的 `rejectDraft` 亦已封装但**零消费**（纯前端接线缺口）；本节锁**弹层内控件形态与接线**。
+
+### 11.1 画面/布局补充
+
+- 弹层 `drafts-drawer` 由 `pages/writing.tsx` 挂载（`open = draftsOpen \|\| approvalRequest !== null`）→ 归属**本页**，非独立页。
+- 每条草稿行的动作行（右对齐 `justify-end`）**自左向右**为：`取消` → `drafts-drawer-reject-{id}` → `drafts-drawer-confirm-{id}`（次要动作在左、主行动在右）。取消钮与实现侧一致**无 testid**。
+- 视觉层级：确认 = accent 实心主行动；驳回 = **描边**次要钮（`border-line`），悬停转 err 色调提示否定语义。两者不得同形同色。
+- **不做**：二次确认弹窗、批量「全部驳回」（拍板：驳回非破坏性——草稿可重跑再生成，且驳回不删正文）。
+
+原型基准：`design/GUI/writing/writing.html` 的 `drafts-approval` 状态（弹层：遮罩 + 两行草稿 + 动作行 `取消 / 拒绝 / 确认`）；截图见同目录 `writing-drafts-approval.png`；生成/断言脚本 `design/GUI/_tools/shot-writing-drafts-approval.cjs`（结构/几何断言全绿）。
+
+⚠️ **工具栏入口 `drafts-approval-button`（#1003）尚未进本原型** —— 存量缺口：补它会使工具栏可见的 **9 张既有状态图全部过期**（实测 `writing-editor-idle.png` 工具栏右侧为空，新增右对齐按钮即位移），故不在本 PR 范围（只回填弹层本身）；原型同步门禁见 #1330。
+
+### 11.2 动作样式补充
+
+| 控件 | 初始态 | 点击后 | 边界 |
+|------|--------|--------|------|
+| 驳回（`drafts-drawer-reject-{id}`） | X 图标 + 文案 `t('write.drafts.reject')`（「拒绝」）；描边次要钮，悬停转 err 色 | `rejectDraft(draft.id)` 成功 → `pushToast('ok', t('write.drafts.rejectDone'))` + 卷章树/草稿双轨重拉（同确认钮）+ `onClose()` | 进行中 `rejectingId === draft.id` 禁用；失败 → 框内 `drafts-drawer-error` 透传且**不关框**；不触碰确认接口 |
+
+- i18n：复用既有 `write.drafts.reject`（zh「拒绝」/ en「Reject」，此前定义但零消费）；新增 `write.drafts.rejectDone`（zh「草稿已驳回」/ en「Draft rejected」）落 `i18n/writing-ux.ts` —— zh.ts / en.ts 贴 900 行护栏，**净增 0 行**。
+
+### 11.3 验收补充
+
+- N31：每条草稿行渲染 `drafts-drawer-reject-{id}`，且在动作行内位于 `drafts-drawer-confirm-{id}` **之前**（同父、DOM 序在前）。
+- N32：点驳回 → `rejectDraft(id)` 调用（页面级实测 `POST /api/v1/agent/drafts/{id}/reject`，**无 body**）→ 成功 toast + 双轨重拉 + 关框。
+- N33：驳回失败 → `drafts-drawer-error` 透传错误文案且弹层不关；进行中该钮 `disabled`。
+- N34：可证伪自证 —— 移除驳回钮 → N31-N33 断言必须 FAIL（实测 4 例红），按备份字节还原后复绿。
+- 确认路径不劣化：既有 `DraftApprovalDrawer.test.tsx` 用例**零翻转**（实测 10 例仍绿）。

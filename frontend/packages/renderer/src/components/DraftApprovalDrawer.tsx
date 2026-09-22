@@ -4,13 +4,16 @@
  * - 行内确认钮 → confirmDraft API → 成功 toast + onClose + 树/草稿双轨重拉；
  *   失败 → 框内 drafts-drawer-error 透传错误文案（409 等）；
  * - Esc / 遮罩点击 = onClose；
+ * - #1377 行内驳回钮（置「确认」左侧，次要动作在左）→ rejectDraft API → 同款成功
+ *   toast / onClose / 双轨重拉；失败同款透传 error；进行中该钮禁用。
+ *   不做二次确认与批量驳回（驳回非破坏性：草稿可重跑再生成，且不删正文）；
  * - #988 确认面来源锚定：draft.source_outline_id 已记录 → 直接回传；
  *   未记录且未绑章 → 反查项目 outline 树（唯一精确 > 唯一包含，
  *   无命中/多义不上传）；已绑章 → options={}（均不拉树或仅反查兜底）。
  */
 import { useEffect, useState, type JSX } from 'react';
 import { Check, X } from 'lucide-react';
-import { confirmDraft, listDrafts, type DraftDto } from '../api/drafts';
+import { confirmDraft, listDrafts, rejectDraft, type DraftDto } from '../api/drafts';
 import { apiFetch, errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { useChapterStore } from '../stores/chapter';
@@ -73,6 +76,8 @@ export function DraftApprovalDrawer({ open, onClose }: DraftApprovalDrawerProps)
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  /** #1377 驳回进行中态（镜像 confirmingId） */
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
   // open/projectId 变化 → 重载列表（关闭即静默；旧请求经 cancelled 丢弃）
   useEffect(() => {
@@ -132,6 +137,23 @@ export function DraftApprovalDrawer({ open, onClose }: DraftApprovalDrawerProps)
       setError(errorMessage(err));
     } finally {
       setConfirmingId(null);
+    }
+  };
+
+  /** #1377 驳回：镜像确认路径（无二次确认；驳回非破坏性，草稿可重跑再生成） */
+  const handleReject = async (draft: DraftDto): Promise<void> => {
+    setError(null);
+    setRejectingId(draft.id);
+    try {
+      await rejectDraft(draft.id);
+      useToastStore.getState().pushToast('ok', t('write.drafts.rejectDone'));
+      // 驳回后该草稿离开待审批集合 → 卷章树 + 草稿双轨重拉（同 handleConfirm）
+      if (projectId) void useChapterStore.getState().loadChapterTree(projectId);
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRejectingId(null);
     }
   };
 
@@ -220,6 +242,16 @@ export function DraftApprovalDrawer({ open, onClose }: DraftApprovalDrawerProps)
                       onClick={onClose}
                     >
                       {t('dlg.cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`drafts-drawer-reject-${draft.id}`}
+                      disabled={rejectingId === draft.id}
+                      className="inline-flex items-center gap-1 rounded-md border border-line px-3 py-1 text-[13px] text-ink-2 transition duration-180 hover:border-err/40 hover:bg-err/5 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-40"
+                      onClick={() => void handleReject(draft)}
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      {t('write.drafts.reject')}
                     </button>
                     <button
                       type="button"
