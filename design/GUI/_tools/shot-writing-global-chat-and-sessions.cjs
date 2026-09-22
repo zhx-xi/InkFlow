@@ -28,6 +28,23 @@ function rect(r) {
   return r ? { top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height) } : null;
 }
 
+/**
+ * #1378：右栏两面板「铺满 + 默认 2:1」几何断言（视觉验证的主判据；仅展开态适用）。
+ * - 铺满：summary 底缘贴 rail 底缘（±2px 取整容差）→ 面板下方不留固定空白
+ * - 2:1：context 高 / summary 高 ≈ 2（±0.06 取整容差；固定 px 430/230=1.87 会 FAIL）
+ */
+function pushRailFill(push, rail, state) {
+  if (!rail || !rail.box || !rail.ctx || !rail.sum) {
+    push(`[${state}] 右栏两面板存在`, false);
+    return;
+  }
+  push(
+    `[${state}] 面板铺满右栏（summary 底缘 = rail 底缘，不留固定空白）`,
+    Math.abs(rail.sum.bottom - rail.box.bottom) <= 2,
+  );
+  push(`[${state}] context:summary ≈ 2:1`, rail.sum.height > 0 && Math.abs(rail.ctx.height / rail.sum.height - 2) <= 0.06);
+}
+
 async function runChecks(page, pageName, state) {
   const fails = [];
   const push = (label, ok) => { if (!ok) fails.push(label); };
@@ -48,6 +65,21 @@ async function runChecks(page, pageName, state) {
       send: rectOf('[data-testid="chat-send"]'),
       messages: rectOf('.chat-panel.gc .chat-messages'),
       railWidth: rectOf('[data-testid="right-rail"]') ? Math.round(rectOf('[data-testid="right-rail"]').width) : -1,
+      // #1378：右栏两面板几何（铺满 + 2:1 比例）——DOMRect 不可序列化，逐项转普通对象
+      rail: (() => {
+        const r = (sel) => {
+          const node = document.querySelector(sel);
+          if (!node) return null;
+          const b = node.getBoundingClientRect();
+          return { top: Math.round(b.top), bottom: Math.round(b.bottom), height: Math.round(b.height) };
+        };
+        return {
+          box: r('[data-testid="right-rail"]'),
+          ctx: r('[data-testid="rail-panel-context"]'),
+          sum: r('[data-testid="rail-panel-summary"]'),
+          handle: r('[data-testid="rail-resize-handle-0"]'),
+        };
+      })(),
       pageWriting: cs('.page-writing'),
       writingEmpty: cs('.writing-empty'),
       title1: (document.querySelector('[data-testid="session-title-conv-1"]') || {}).textContent,
@@ -92,6 +124,10 @@ async function runChecks(page, pageName, state) {
       push('send aligns with input', d.input !== null && d.send !== null && Math.abs(d.send.bottom - d.input.bottom) <= 4);
       push('messages fill middle (>=300px)', d.messages !== null && d.messages.height >= 300);
       push('rail 240', d.railWidth === 240);
+    }
+    // #1378：右栏展开态恒定校验两面板铺满 + 2:1（collapsed/empty 态面板不渲染，不适用）
+    if (state === 'editor-idle' || state === 'streaming' || state === 'global-chat') {
+      pushRailFill(push, d.rail, state);
     }
   } else if (pageName === 'sessions') {
     if (state === 'directory') {

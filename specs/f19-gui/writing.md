@@ -33,7 +33,7 @@
   - 布局：全高 flex 三栏 — 左项目树（aside project-tree）/ 中编辑器区（main）/ 右上下文栏（aside right-rail）
   - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
   - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用 + 输入行下方 ThinkingLevelSelect 思考级别选择器（F59 spec §3.4）+ ChatStreamBlocks 流式思考/工具折叠块（#727））；工具栏行**最右**为草稿审批入口（`drafts-approval-button`，`ml-auto` 右对齐分组，无选中章节不渲染 —— 见 §9）
-  - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel，面板高度各自 90~540px
+  - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel。**两面板按 flex 比例分配右栏上下显示区**（`flex-grow` + `flex-basis: 0%`，默认 context : summary = **2 : 1**，合计铺满不留固定空白；#1378）——row-resize 拖拽改的是该**比例**（夹在 0.2~0.8，任一面板不塌陷为 0），比例与栏宽一并按项目持久化（`inkflow.rail_layout.<projectId>`），跨切页/切章重挂载保持
   - 空态：无任何项目 → WritingEmptyState（Compass 图标 + 文案 + 「返回项目页」按钮 navigate('/projects')）
   - 流式时序：续写/生成 → ensureModelReady 前置校验（未配置 warn toast「模型未配置」不启动）→ 创建 chat 会话（失败静默降级）→ start(mode) → SSE 流式（status=running）→ done 帧 finalOutput 落章（setContent）+ 归档 AI chat 消息；error 帧展示错误
   - 状态栏 StatusBar（只读）：内核连接态 / 模型 / 字数 / 自动保存时间
@@ -56,7 +56,7 @@
 | 卷新建/重命名/删除 | 「+ 新建卷」/ hover Pencil/Trash2 | 同章节 inline 模式；删除 → VolumeDeleteDialog（章节数 + 其他卷迁移选项） | — | 卷创建/更名/删除（含章节迁移） | — | Esc 取消；标题空 → 默认「新卷」 | — |
 | 章节拖拽移动 | 章节行 draggable（effectAllowed=move） | 拖到卷区/未分组区 drop → moveChapter | 拖经卷高亮 ring-accent | 树内章节归属更新 | — | 数据经 dataTransfer text/plain 传递 | — |
 | 左栏宽度拖拽 | col-resize 手柄（tree-resize-handle） | mousedown 拖拽调宽 | — | 宽度 160~360px 实时更新 | — | 拖拽中 body userSelect 锁定；mouseup 结束 | — |
-| 右栏折叠/调宽/调高 | 折叠按钮 right-col-toggle + col-resize 手柄 + row-resize 手柄 | 折叠 → 26px 展开条（PanelLeftOpen+展开 文案），再点展开恢复 | — | 宽度 90~540px / 面板高度 90~540px 实时更新 | — | 折叠态隐藏两面板与全部手柄 | — |
+| 右栏折叠/调宽/调高 | 折叠按钮 right-col-toggle + col-resize 手柄 + row-resize 手柄 | 折叠 → 26px 展开条（PanelLeftOpen+展开 文案），再点展开恢复 | — | 宽度 90~540px 实时更新；面板**比例**实时更新（默认 2:1 铺满，夹 0.2~0.8） | — | 折叠态隐藏两面板与全部手柄；鼠标松开才落盘持久化 | 2026-09-23：#1378 面板高度由固定 px 改 flex 比例（2:1 铺满）+ 比例/宽度按项目持久化 |
 | ChatPanel 发送/停止 | 输入框 + 发送按钮（chat-send） | 发送 → streamChat 流式对话 | streaming 中发送按钮替换为「停止」（chat-interrupt，方块图标） | done → AI 消息落地 + 意图解析（onDone） | error → 错误文案不插入正文 | in-flight 再发不触发第二次流；停止 → abortChatRun(run_id) + 本地 abort 保留已生成前文；卸载 abort 清理 | — |
 | 思考级别选择器（ThinkingLevelSelect） | 输入行下方原生 Select（chat-reasoning-effort），值=localStorage 记忆（缺省「跟随模型默认」）；当前模型能力 false → 禁用 + tooltip | 展开七档（chat-reasoning-effort-option-<value>）选择 → 写 localStorage per-project + state | — | 仅下一轮发送带 `reasoning_effort`（default 不发参数键） | 能力数据未载 → 按可支持处理（未知/null 不禁用，软降级） | 七档顺序 关闭思考/最低/低/中/高/极高/跟随模型默认；能力 false → opacity-60 + cursor-not-allowed + tooltip「当前模型不支持思考」；切换不影响进行中一轮；记忆键 inkflow.reasoning_effort.<projectId>（Q2 拍板 B）；行为/降级明细见 F59 spec §2.1/§3.4/§5.5/§12 D8 | 2026-09-09：新增（F59-M3） |
 | 流式思考折叠块（ChatStreamBlocks） | 无（未收到 reasoning 帧不渲染） | reasoning 帧到达 → 消息流内灰底 muted 折叠块（chat-reasoning-<n>，标签「思考过程」）；点 toggle 展开/收起正文 | 多帧逐条渲染（chat-reasoning-0/1…，不合并不丢失） | 展开可见思考全文；收起仅标题行 | 思考输出为空 → 无 reasoning 帧即无块（与 default 档一致） | 思考内容不插入正文/草稿（仅 trace 存档）；折叠块交互键与 #727 契约一致；SSE 帧协议不变（F59 spec §3.2） | 2026-09-09：新增（F59-M3） |
@@ -70,7 +70,7 @@
 - N2：工具栏默认 opacity 0.35、hover 编辑器区域全显；Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+Enter / Ctrl+Shift+Enter 五组快捷键生效
 - N3：续写/生成四触发点（工具栏按钮×2 + 快捷键×2）共享模型未配置守卫：未配置 → warn toast 且不启动生成
 - N4：生成中续写/生成禁用 + Sparkles 脉冲动画；SSE 停止按钮仅流式中出现，停止后保留已生成前文
-- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板高度拖拽均生效
+- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（#1378：默认 2:1 铺满、拖拽改比例、跨重挂载保持）
 - N6：自动保存 2s 防抖落盘 + 状态栏自动保存时间更新；SSE done 帧落章不触发防抖保存
 - N7：删除授权三态分段控件（delete-mode-manual/ask-once/auto）渲染三按钮，默认 manual 选中（data-selected=true / aria-pressed）；点击一次确认/全自动 → updateChatDeletePermission(conversationId, mode) PATCH 生效；conversation 缺失先建再 PATCH
 - N8：interrupt SSE 帧到达 → HITL 确认弹窗（delete-confirm-dialog 显示实体名 + confirmTitle）；点确认删除 → resumeChatRun({approved:true}) 续跑删除；点取消 → {approved:false} 拒绝不删除；弹窗打开期间分段控件 disabled
@@ -367,3 +367,60 @@
 - N38：清除后点「全选」→ 三类恢复全量（与首次全量组装一致）；清除后 ≠ 全量（反向断言）。
 - N39：用户手动勾选后预选结果晚到 → 不覆盖用户选择（touched 守卫）。
 - N40：可证伪自证 —— 移除清除路径的「空 override 重组装」→ N37/N38 断言必须 FAIL（实测红），还原后复绿。
+
+## 13. #1378 右栏两面板 2:1 铺满 + 拖拽比例持久化
+
+> 现象（v0.15.0-rc5 GUI 目视）：右栏「上下文注入」「章节摘要」高度为**固定 px**（`useState(240)` /
+> `useState(160)` 直接写 `style.height`）→ ① 默认在右栏下方留一块固定空白；② 高度只存页面组件
+> state，**切页/切章重挂载即丢**，用户每次进来都要重新拖大。
+> 本节锁三件事：① 默认铺满 + 2:1 的比例语义；② row-resize 拖的是**比例**（含夹值）；③ 拖拽结果按项目持久化。
+
+### 13.1 画面/布局补充
+
+- 两面板改 **flex 比例**分配右栏上下显示区：`flex-grow: split` / `flex-grow: 1 - split` +
+  `flex-basis: 0%`（`split` = context 占两面板合计高度的比例，默认 `2/3` ⇒ **2 : 1**）——两面板合计
+  吃满右栏剩余高度，**不留固定空白**；容器 / 窗口 resize 时按比例等比缩放（不存在负高）。
+- 面板上**不再写** `style.height`（固定 px 即本次要移除的旧形态）。
+- 比例夹在 **[0.2, 0.8]**：任一面板不得被拖成 0 高（镜像旧 px 形态的「留得住」语义）。
+
+### 13.2 动作样式补充
+
+| 控件 | 初始态 | 拖拽中 | 成功 | 边界 |
+|------|--------|--------|------|------|
+| row-resize 手柄（`rail-resize-handle-0`） | 两面板 2:1 铺满 | 按「指针位移 ÷ **两面板合计盒高**」换算比例，实时改 `flex-grow` | mouseup → 写 `localStorage['inkflow.rail_layout.<projectId>']`（`{split, width}`） | 比例夹 [0.2, 0.8]；未布局（合计盒高为 0）→ 忽略本次拖拽；无当前项目（`projectId === ''`）→ 不落盘 |
+| col-resize 手柄（`right-col-drag`，#720 既有） | 默认 240px | 90~540px 实时改宽 | mouseup → 同上落盘（`width` 字段） | 与比例同键存储；部分写不覆盖另一字段 |
+
+### 13.3 持久化语义
+
+- 载体：`localStorage['inkflow.rail_layout.<projectId>']` = `{"split": number, "width": number}`（JSON），
+  **按项目隔离**（镜像 #964 思考档位的 `inkflow.reasoning_effort.<projectId>` 形态）。
+- 读侧**不信任**存储内容：越界 → 夹到合法区间；非数字 / 缺字段 / JSON 损坏 / 存储不可用（隐私模式）→
+  该项回退默认（`2/3` / `240`），不抛错、不崩 UI。
+- 回读时机：**首挂载** + **切项目**（`effectiveProjectId` 变化）；同一项目内的重挂载（切页/切章回来）走首挂载路径。
+- 存**比例**而非 px：窗口 resize 语义等比缩放；也避免「存了 px 但容器变小」导致的负高 / 塌陷。
+
+### 13.4 验收补充
+
+- N41：挂载后两面板无固定 px 高、以 flex 比例分配（`flex-basis: 0%` + 两面板 `flex-grow` 占比 = **2:1**）→ 合计铺满右栏上下显示区（不留固定空白）。
+- N42：拖拽 `rail-resize-handle-0` → 比例跟随（向下拖 context 占比变大）；猛拖到底 / 到顶分别夹在 0.8 / 0.2，任一面板不为 0。
+- N43：拖拽结束（mouseup）→ 落盘 `inkflow.rail_layout.<projectId>`；**卸载后重挂载比例保持**（清掉记忆则回默认 2:1）。
+- N44：`right-col-drag` 调宽同样落盘并跨重挂载保持（#720 拖拽结果原本同样只存组件 state，本单**一并覆盖**）。
+- N45：可证伪自证 —— 两面板改回固定 px 高（旧形态）→ N41 必须 FAIL，「重挂载保持」同时失效（实测红，还原后复绿）。
+
+**不做**（范围拍板）：
+
+- 不引入 split-pane 类依赖 —— 既有受控手柄形态已够用；
+- **左栏** `treeWidth`（#702）不持久化：本条诉求是右栏（#1378 正文只点右栏宽度「一并核实」），左栏另议；
+- `railCollapsed`（整栏收起）不持久化：它是临时视图态，不是拖拽结果。
+
+原型基准：`design/GUI/writing/writing.html`（两面板 flex 2:1 铺满）；受影响状态 PNG **全量重出** ——
+`writing-editor-idle / writing-streaming / writing-global-chat / writing-thinking-level / writing-reasoning /
+writing-context-injected / writing-context-no-record / writing-context-preselect /
+writing-context-preselect-loading / writing-drafts-approval / writing-delete-auth / writing-delete-hitl`
+（`collapsed` / `empty` 两态右栏面板不渲染，无需重出）。
+其中 `delete-auth` / `delete-hitl` 此前**无 shot 脚本**（孤儿 PNG，改原型后无法再生成）→ 本单补
+`design/GUI/_tools/shot-writing-delete-auth.cjs` 纳入可重生成集合；`shot-writing-global-chat-and-sessions.cjs`
+增「面板铺满（summary 底缘 = rail 底缘）+ context:summary ≈ 2:1」几何断言（断言全绿）。
+
+⚠️ **视觉复验边界**：jsdom 无盒模型 → 前端契约只锁 flex 结构 / 占比 / 持久化读写；真实像素呈现
+（铺满、2:1、拖拽手感、窗口 resize 行为）由上述 PNG 几何断言 + 人工目视确认，**无**浏览器自动化回归。
