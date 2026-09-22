@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -161,7 +162,11 @@ def _acquire_lifetime_mutex(kind: str, state_file: Path) -> object | None:
 
 
 def _spawn_kernel(cmd: list[str], log_file: Path) -> subprocess.Popen:
-    """拉起内核进程（detach 语义，spec §5.5）：stdout/stderr 追加写日志文件。"""
+    """拉起内核进程（detach 语义，spec §5.5）：stdout/stderr 追加写日志文件。
+
+    打开日志句柄前先做启动期归档（spec §6.3）：内核全量输出才会落进空的新文件。
+    """
+    _rotate_kernel_log(log_file)
     log_handle = open(log_file, "a", encoding="utf-8")  # noqa: SIM115  # 句柄需跨 Popen 生命周期保持打开（子进程继承写入）
     creationflags = 0
     if sys.platform == "win32":
@@ -270,9 +275,88 @@ def _read_lenient(path: Path) -> state.KernelState | None:
     )
 
 
+# ── 内核日志归档（#1380）─────────────────────────────────────────────
+
+_KERNEL_LOG_NAME = "inkflow-kernel.log"
+# 单文件上限 50MB（#1380 实测：918MB / 421 万行 / 8826 次启动累积）
+_KERNEL_LOG_MAX_BYTES = 50 * 1024 * 1024
+# 归档保留份数：.1（次新）… .2（最旧）
+_KERNEL_LOG_BACKUPS = 2
+
+
+def kernel_log_path() -> Path:
+    """内核日志路径（%TEMP%/inkflow-kernel.log）；调用时解析 %TEMP%（非 import 快照）。"""
+    return Path(tempfile.gettempdir()) / _KERNEL_LOG_NAME
+
+
+def _backup_path(log_file: Path, index: int) -> Path:
+    """归档路径 <log>.N（N=1 最新 … N=backups 最旧）。"""
+    return log_file.with_name(f"{log_file.name}.{index}")
+
+
+def _rotate_kernel_log(
+    log_file: Path, *, max_bytes: int | None = None, backups: int | None = None
+) -> bool:
+    """超大则归档为 .1/.2（最旧被删）；返回是否发生轮转。任何失败都不抛。
+
+    阈值 / 份数默认取模块全局，**调用时**读取（module 全局可被调用方覆盖）。
+    归档链（spec §6.3）：删最旧 .N → .N-1 → .N → … → .1 → .2 → log → .1；
+    未超限（含文件不存在 / stat 失败）→ 不动任何文件并返回 False。
+
+    并发/幂等（#1380 §5.2）：全程吞 OSError——多内核同时启动时先 rename 的一方胜出，
+    后到者源文件已不在（FileNotFoundError）→ 跳过本次归档，绝不阻塞启动、绝不截断。
+    os.replace 是原子的，故并发下不会产生半截文件。
+
+    「胜出者独占归档链」的实现要点：先 `os.replace` 把超限文件认领到同目录临时名，
+    认领成功才动 `.N` 归档链（认领失败即源文件已被他人归档 → 直接跳过）。若先归档链
+    再搬源文件，后到者的 `.1 → .2` 推移会把胜出方刚落下的最新归档顶下去（丢最新一代）。
+    """
+    if max_bytes is None:
+        max_bytes = _KERNEL_LOG_MAX_BYTES
+    if backups is None:
+        backups = _KERNEL_LOG_BACKUPS
+    try:
+        if log_file.stat().st_size <= max_bytes:
+            return False
+    except OSError:
+        return False  # 不存在 / 不可读 → 无需归档
+    try:
+        fd, claim_name = tempfile.mkstemp(dir=log_file.parent, prefix=f"{log_file.name}.rotating-")
+    except OSError:
+        return False  # 拿不到认领名 → 不归档（不阻塞启动）
+    os.close(fd)
+    claim = Path(claim_name)
+    try:
+        os.replace(log_file, claim)
+    except OSError:
+        with suppress(OSError):
+            claim.unlink()  # 认领失败：清掉临时名，原文件未动
+        return False
+    try:
+        oldest = _backup_path(log_file, backups)
+        if oldest.exists():
+            with suppress(OSError):
+                oldest.unlink()
+            # 归档件可能被运行中的内核持有 → 删除失败不阻塞下推
+        for index in range(backups - 1, 0, -1):
+            src = _backup_path(log_file, index)
+            if not src.exists():
+                continue
+            with suppress(OSError):
+                os.replace(src, _backup_path(log_file, index + 1))
+        os.replace(claim, _backup_path(log_file, 1))
+    except OSError:
+        # 归档链失败：尽力把已认领的内容放回原路径（内容不丢），仍失败则留在临时名
+        with suppress(OSError):
+            os.replace(claim, log_file)
+        return False  # 归档失败不阻塞启动
+    return True
+
+
 def _log_kernel_event(msg: str) -> None:
-    """追加写 %TEMP%/inkflow-kernel.log（带时间戳，spec §6.2）。"""
-    log_file = Path(tempfile.gettempdir()) / "inkflow-kernel.log"
+    """追加写 %TEMP%/inkflow-kernel.log（带时间戳，spec §6.2，写前归档 §6.3）。"""
+    log_file = kernel_log_path()
+    _rotate_kernel_log(log_file)
     try:
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat(timespec='seconds')}] {msg}\n")
@@ -481,7 +565,7 @@ async def ensure_kernel(
         while True:
             attempts += 1
             cmd = spawn_cmd if spawn_cmd is not None else _default_spawn_cmd(state_file)
-            log_file = Path(tempfile.gettempdir()) / "inkflow-kernel.log"
+            log_file = kernel_log_path()
             proc = _spawn_kernel(cmd, log_file)
             _log_kernel_event(f"拉起内核（第 {attempts} 次）pid={proc.pid} cmd={' '.join(cmd)}")
             st = _poll_state_file(state_file, timeout)
