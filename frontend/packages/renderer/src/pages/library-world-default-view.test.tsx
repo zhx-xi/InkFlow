@@ -124,7 +124,7 @@ describe('设定库页 — 世界观默认视图重设计（#568）', () => {
     expect(screen.getByTestId('map-view-entry')).toBeInTheDocument();
   });
 
-  it('入口：选中分类 chip → 显示「去创建」；点击打开对话框且类别预填选中分类名', async () => {
+  it('入口：选中分类 chip → 「新建条目」启用；点击打开对话框且类别预填选中分类名', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -135,12 +135,13 @@ describe('设定库页 — 世界观默认视图重设计（#568）', () => {
     await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
     // 点击「秘境」分类 chip → 选中态
     await user.click(screen.getByTestId('world-cat-filter-秘境'));
-    // 选中分类 → 工具栏「去创建」library-create-btn 显示（创建子条目入口）
-    expect(screen.getByTestId('library-create-btn')).toBeInTheDocument();
-    // 新建分类实体（world-cat-add）恒显示
+    // #1375 ①A：world 分支移除「去创建」（library-create-btn）；建条目入口 = world-cat-add-entry
+    expect(screen.queryByTestId('library-create-btn')).not.toBeInTheDocument();
+    // 新建分类实体（world-cat-add）恒显示（恒开分类对话框，不随选中态切换语义）
     expect(screen.getByTestId('world-cat-add')).toBeInTheDocument();
-    // 点击「去创建」→ 创建对话框打开，类别输入预填「秘境」，标题用 worldCategory
-    await user.click(screen.getByTestId('library-create-btn'));
+    // 选中分类 → 新建条目启用；点击 → 创建对话框打开，类别输入预填「秘境」，标题用 worldCategory
+    expect(screen.getByTestId('world-cat-add-entry')).not.toBeDisabled();
+    await user.click(screen.getByTestId('world-cat-add-entry'));
     await waitFor(() => expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument());
     expect(screen.getByLabelText('类别')).toHaveValue('秘境');
     expect(screen.getByTestId('library-create-dialog')).toHaveTextContent('创建分类');

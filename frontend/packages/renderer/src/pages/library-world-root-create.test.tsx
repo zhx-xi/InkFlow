@@ -99,9 +99,9 @@ describe('设定库页 — 根世界观创建隐藏「类别」输入框（#741 
     const user = userEvent.setup();
     renderLibrary();
     await goWorldTab(user);
-    // 选中分类 chip → activeWorldCat 置位 → 顶部「去创建」按钮出现（items.length>0 分支）
+    // 选中分类 chip → activeWorldCat 置位 → #1375 ①A 建条目入口 world-cat-add-entry 启用
     await user.click(screen.getByTestId('world-cat-filter-秘境'));
-    await user.click(screen.getByTestId('library-create-btn'));
+    await user.click(screen.getByTestId('world-cat-add-entry'));
 
     expect(screen.getByTestId('library-create-dialog')).toBeInTheDocument();
     // 非根创建（activeWorldCat 非空）→ 类别输入框必须存在（修复实现不得误伤此路径）

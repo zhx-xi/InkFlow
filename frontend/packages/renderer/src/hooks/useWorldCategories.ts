@@ -89,11 +89,31 @@ export function useWorldCategories(
     [t],
   );
 
+  // #1375 ②A：一键注册待注册类别（默认抽象类）→ POST world-categories → 乐观追加 + ok toast
+  const handleWorldCatRegister = useCallback(
+    async (name: string) => {
+      if (!currentProjectId) return;
+      try {
+        const created = await apiFetch<{ id: string | number }>(
+          `/api/v1/projects/${currentProjectId}/world-categories`,
+          { method: 'POST', body: { name, kind: 'abstract' } },
+        );
+        optimisticRef.current = true;
+        setWorldCategoryList((prev) => [...prev, { id: created.id, name, kind: 'abstract', count: 0 }]);
+        useToastStore.getState().pushToast('ok', t('lib.worldCat.registered', { name }));
+      } catch (err) {
+        useToastStore.getState().pushToast('err', errorMessage(err));
+      }
+    },
+    [currentProjectId, t],
+  );
+
   return {
     worldCategoryList,
     worldCatDialogOpen,
     setWorldCatDialogOpen,
     handleWorldCatSave,
     handleWorldCatDelete,
+    handleWorldCatRegister,
   };
 }

@@ -36,20 +36,20 @@ const SCENES = [
           const el = q(s);
           return !!(el && el.offsetParent !== null);
         };
-        const chipGeo = q('[data-testid="world-cat-filter-地理"]');
-        const chipCulture = q('[data-testid="world-cat-filter-文化"]');
+        const chipGeo = q('[data-testid="world-cat-chip-地理"]');
+        const chipCulture = q('[data-testid="world-cat-chip-文化"]');
         const xGeo = q('[data-testid="world-cat-delete-地理"]');
         const xCulture = q('[data-testid="world-cat-delete-文化"]');
-        const entry = q('[data-testid="world-cat-new-entry"]');
+        const entry = q('[data-testid="world-cat-add-entry"]');
         return {
-          newCatText: ((q('[data-testid="world-cat-new-cat"]') || {}).textContent || '').trim(),
+          newCatText: ((q('[data-testid="world-cat-add"]') || {}).textContent || '').trim(),
           entryText: (entry ? entry.textContent : '').trim(),
           entryDisabled: entry ? entry.disabled : 'MISSING',
-          entryVisible: vis('[data-testid="world-cat-new-entry"]'),
+          entryVisible: vis('[data-testid="world-cat-add-entry"]'),
           chipsNewDisplay: cs(q('.chips-new')) ? cs(q('.chips-new')).display : 'MISSING',
           chipsLegacyDisplay: cs(q('.chips-legacy')) ? cs(q('.chips-legacy')).display : 'MISSING',
-          cultureVisible: vis('[data-testid="world-cat-filter-文化"]'),
-          techVisible: vis('[data-testid="world-cat-filter-科技"]'),
+          cultureVisible: vis('[data-testid="world-cat-chip-文化"]'),
+          techVisible: vis('[data-testid="world-cat-chip-科技"]'),
           cultureBorderStyle: chipCulture ? cs(chipCulture).borderTopStyle : 'MISSING',
           geoBorderStyle: chipGeo ? cs(chipGeo).borderTopStyle : 'MISSING',
           // ④：× 是否在 chip 容器内（框内 = DOM 内嵌），以及未 hover 时隐藏
@@ -58,11 +58,11 @@ const SCENES = [
           xDisplayInPending: xCulture ? cs(xCulture).display : 'MISSING',
           pendingPlusVisible: vis('[data-testid="world-cat-register-文化"]'),
           pendingNoteDisplay: (() => {
-            const n = q('[data-testid="world-cat-filter-文化"] .chip-note');
+            const n = q('[data-testid="world-cat-chip-文化"] .chip-note');
             return n ? getComputedStyle(n).display : 'MISSING';
           })(),
           pendingNoteText: (() => {
-            const n = q('[data-testid="world-cat-filter-文化"] .chip-note');
+            const n = q('[data-testid="world-cat-chip-文化"] .chip-note');
             return n ? n.textContent.trim() : 'MISSING';
           })(),
           treeHasCulture: !!q('[data-testid="world-node-culture"]'),
@@ -109,9 +109,9 @@ const SCENES = [
     cfg: { state: 'main', btns: 'A', catplan: 'A', active: '势力', hover: '[data-testid="world-cat-filter-势力"]' },
     check: async (page) => {
       const d = await page.evaluate(() => {
-        const chip = document.querySelector('[data-testid="world-cat-filter-势力"]');
+        const chip = document.querySelector('[data-testid="world-cat-chip-势力"]');
         const x = chip ? chip.querySelector('.chip-x') : null;
-        const entry = document.querySelector('[data-testid="world-cat-new-entry"]');
+        const entry = document.querySelector('[data-testid="world-cat-add-entry"]');
         return {
           active: chip ? chip.classList.contains('active') : 'MISSING',
           ariaPressed: chip ? chip.querySelector('.chip-name').getAttribute('aria-pressed') : 'MISSING',
@@ -142,7 +142,7 @@ const SCENES = [
     cfg: { state: 'main', btns: 'A', catplan: 'A', click: '[data-testid="world-cat-register-文化"]' },
     check: async (page) => {
       const d = await page.evaluate(() => {
-        const chip = document.querySelector('[data-testid="world-cat-filter-文化"]');
+        const chip = document.querySelector('[data-testid="world-cat-chip-文化"]');
         const toast = document.getElementById('toast');
         return {
           stillPending: chip ? chip.classList.contains('pending') : 'MISSING',
@@ -204,7 +204,7 @@ const SCENES = [
     cfg: { state: 'main', btns: 'A', catplan: 'B' },
     check: async (page) => {
       const d = await page.evaluate(() => {
-        const chip = document.querySelector('[data-testid="world-cat-filter-文化"]');
+        const chip = document.querySelector('[data-testid="world-cat-chip-文化"]');
         const noteB = document.querySelector('.plan-note[data-plan="B"]');
         const noteC = document.querySelector('.plan-note[data-plan="C"]');
         return {
@@ -238,7 +238,7 @@ const SCENES = [
     cfg: { state: 'main', btns: 'A', catplan: 'C' },
     check: async (page) => {
       const d = await page.evaluate(() => {
-        const chip = document.querySelector('[data-testid="world-cat-filter-文化"]');
+        const chip = document.querySelector('[data-testid="world-cat-chip-文化"]');
         const noteC = document.querySelector('.plan-note[data-plan="C"]');
         const noteB = document.querySelector('.plan-note[data-plan="B"]');
         return {
@@ -283,7 +283,7 @@ const SCENES = [
           addText: addBtn ? addBtn.textContent.trim() : 'MISSING',
           addAlwaysText: addAlways ? addAlways.textContent.trim() : 'MISSING',
           pendingVisible: (() => {
-            const c = document.querySelector('[data-testid="world-cat-filter-文化"]');
+            const c = document.querySelector('[data-testid="world-cat-chip-文化"]');
             return !!(c && c.offsetParent !== null);
           })(),
         };

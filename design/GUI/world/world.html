@@ -133,6 +133,7 @@ body[data-btns="B"][data-menu-closed="1"] .create-menu{display:none}
 .cat-chip.pending .chip-note{display:inline;font-size:11px;color:var(--ink-2);margin:0 3px;white-space:nowrap}
 .cat-chip.pending .chip-plus{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border:none;background:none;border-radius:50%;color:var(--accent);font-size:13px;line-height:1;padding:0}
 .cat-chip.pending .chip-plus:hover{background:var(--accent-weak)}
+/* ②A 产品形态下 × 不可见（实现为不渲染）；仅 ②B 备选演示「可删」差异时显示 */
 .cat-chip.pending .chip-x{display:none}
 .chip-note,.chip-plus{display:none}
 /* #1375 ②B：提取自动注册语义——pending 走正常 chip（无待注册注记，可删） */
@@ -336,37 +337,37 @@ body[data-shot="1"] .demo-bar{display:none}
         <div class="cat-toolbar" data-testid="world-cat-toolbar">
           <span class="lbl">分类</span>
 
-          <!-- #1375 ④：新 chips 结构——边框在容器上，× 在框内（hover 显示）；②A/B/C 共用，pending 可见性由 data-catplan 控制 -->
+          <!-- #1375 ④：新 chips 结构——边框在容器上（× 在框内，hover 显示）；②A/B/C 共用，pending 可见性由 data-catplan 控制 -->
           <span class="chips-new">
-            <span class="cat-chip" data-cat="地理" data-testid="world-cat-filter-地理">
-              <button class="chip-name" aria-pressed="false"><span aria-hidden="true">🗺 </span>地理</button>
+            <span class="cat-chip" data-cat="地理" data-testid="world-cat-chip-地理">
+              <button class="chip-name" data-testid="world-cat-filter-地理" aria-pressed="false"><span aria-hidden="true">🗺 </span>地理</button>
               <button class="chip-x" data-testid="world-cat-delete-地理" aria-label="删除">×</button>
             </span>
-            <span class="cat-chip" data-cat="城市" data-testid="world-cat-filter-城市">
-              <button class="chip-name" aria-pressed="false">城市</button>
+            <span class="cat-chip" data-cat="城市" data-testid="world-cat-chip-城市">
+              <button class="chip-name" data-testid="world-cat-filter-城市" aria-pressed="false">城市</button>
               <button class="chip-x" data-testid="world-cat-delete-城市" aria-label="删除">×</button>
             </span>
-            <span class="cat-chip" data-cat="秘境" data-testid="world-cat-filter-秘境">
-              <button class="chip-name" aria-pressed="false">秘境</button>
+            <span class="cat-chip" data-cat="秘境" data-testid="world-cat-chip-秘境">
+              <button class="chip-name" data-testid="world-cat-filter-秘境" aria-pressed="false">秘境</button>
               <button class="chip-x" data-testid="world-cat-delete-秘境" aria-label="删除">×</button>
             </span>
-            <span class="cat-chip" data-cat="势力" data-testid="world-cat-filter-势力">
-              <button class="chip-name" aria-pressed="false">势力</button>
+            <span class="cat-chip" data-cat="势力" data-testid="world-cat-chip-势力">
+              <button class="chip-name" data-testid="world-cat-filter-势力" aria-pressed="false">势力</button>
               <button class="chip-x" data-testid="world-cat-delete-势力" aria-label="删除">×</button>
             </span>
-            <span class="cat-chip" data-cat="功法" data-testid="world-cat-filter-功法">
-              <button class="chip-name" aria-pressed="false">功法</button>
+            <span class="cat-chip" data-cat="功法" data-testid="world-cat-chip-功法">
+              <button class="chip-name" data-testid="world-cat-filter-功法" aria-pressed="false">功法</button>
               <button class="chip-x" data-testid="world-cat-delete-功法" aria-label="删除">×</button>
             </span>
-            <!-- #1375 ②A：未注册类别（条目上已出现、分类栏缺失者）——虚线 + 待注册 + 一键注册 -->
-            <span class="cat-chip pending" data-cat="文化" data-testid="world-cat-filter-文化">
-              <button class="chip-name" aria-pressed="false">文化</button>
+            <!-- #1375 ②A：未注册类别（条目上已出现、分类栏缺失者）——虚线 + 待注册 + 一键注册（无 ×：未注册无删除语义） -->
+            <span class="cat-chip pending" data-cat="文化" data-testid="world-cat-chip-文化">
+              <button class="chip-name" data-testid="world-cat-filter-文化" aria-pressed="false">文化</button>
               <span class="chip-note">待注册</span>
               <button class="chip-plus" data-testid="world-cat-register-文化" aria-label="注册分类 文化" title="注册为分类">＋</button>
               <button class="chip-x" data-testid="world-cat-delete-文化" aria-label="删除">×</button>
             </span>
-            <span class="cat-chip pending" data-cat="科技" data-testid="world-cat-filter-科技">
-              <button class="chip-name" aria-pressed="false">科技</button>
+            <span class="cat-chip pending" data-cat="科技" data-testid="world-cat-chip-科技">
+              <button class="chip-name" data-testid="world-cat-filter-科技" aria-pressed="false">科技</button>
               <span class="chip-note">待注册</span>
               <button class="chip-plus" data-testid="world-cat-register-科技" aria-label="注册分类 科技" title="注册为分类">＋</button>
               <button class="chip-x" data-testid="world-cat-delete-科技" aria-label="删除">×</button>
@@ -382,10 +383,10 @@ body[data-shot="1"] .demo-bar{display:none}
             <span class="chip-legacy-wrap"><button class="chip-legacy-name"><span aria-hidden="true">🗺 </span>功法</button><button class="chip-legacy-x" aria-label="删除">×</button></span>
           </span>
 
-          <!-- #1375 ①A：两按钮明确文案——「新建分类」恒为建分类；「新建条目」选中分类时启用 -->
+          <!-- #1375 ①A：两按钮明确文案——「新建分类」恒为建分类；「新建条目」选中分类时启用（testid 与产品实现同名） -->
           <span class="create-group" data-variant="A">
-            <button class="btn-sm" data-testid="world-cat-new-cat"><span data-ic="plus"></span>新建分类</button>
-            <button class="btn-sm" data-testid="world-cat-new-entry" disabled title="请先选择分类"><span data-ic="plus"></span>新建条目</button>
+            <button class="btn-sm" data-testid="world-cat-add"><span data-ic="plus"></span>新建分类</button>
+            <button class="btn-sm" data-testid="world-cat-add-entry" disabled title="请先选择分类"><span data-ic="plus"></span>新建条目</button>
           </span>
           <!-- #1375 ①B：合并为「＋ 新建」下拉（菜单项：新建分类 / 新建条目） -->
           <span class="create-group" data-variant="B">
@@ -764,7 +765,7 @@ function setActiveCat(name){
     if(nb) nb.setAttribute('aria-pressed','true');
   }
   const enabled = Boolean(chip);
-  const entryBtn = document.querySelector('[data-testid="world-cat-new-entry"]');
+  const entryBtn = document.querySelector('[data-testid="world-cat-add-entry"]');
   if(entryBtn){ entryBtn.disabled = !enabled; entryBtn.title = enabled ? '在「'+name+'」下创建条目' : '请先选择分类'; }
   const menuEntry = document.getElementById('menuEntryBtn');
   if(menuEntry){
