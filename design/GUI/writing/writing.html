@@ -270,6 +270,30 @@ body[data-state="global-chat"] .editor > .chat-panel.inline-chat{display:none}
 .chat-panel.gc .gc-spacer{flex:1}
 .chat-panel.gc .chat-input-row{margin-top:auto}
 
+/* ── 草稿审批弹层（#976 弹层；#1377 补「驳回」钮） ── */
+.drafts-dialog{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
+body[data-state="drafts-approval"] .drafts-dialog{display:flex}
+.drafts-dialog .drafts-card{display:flex;max-height:78vh;width:560px;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover)}
+.drafts-dialog .drafts-head{display:flex;flex:none;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 18px}
+.drafts-dialog .drafts-head h2{margin:0;font-family:var(--font-serif);font-size:16px;font-weight:600}
+.drafts-dialog .drafts-head button{display:flex;border:none;border-radius:4px;background:none;padding:3px;color:var(--ink-3)}
+.drafts-dialog .drafts-head button:hover{background:var(--surface-3);color:var(--ink)}
+.drafts-dialog .drafts-head svg{width:16px;height:16px}
+.drafts-dialog .drafts-body{display:flex;min-height:0;flex-direction:column;gap:10px;overflow-y:auto;padding:14px}
+.drafts-dialog .draft-item{border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:12px}
+.drafts-dialog .draft-title{font-size:13px;font-weight:500;color:var(--ink)}
+.drafts-dialog .draft-text{margin-top:4px;white-space:pre-wrap;font-size:12px;line-height:1.7;color:var(--ink-2)}
+.drafts-dialog .draft-expand{margin-top:4px;border:1px solid var(--line);border-radius:4px;background:none;padding:1px 8px;font-size:12px;color:var(--ink-3)}
+.drafts-dialog .draft-actions{margin-top:12px;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.drafts-dialog .draft-actions button{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:4px 12px;font-size:13px}
+.drafts-dialog .draft-actions button svg{width:14px;height:14px;flex:none}
+.drafts-dialog .draft-actions .draft-cancel{border:1px solid var(--line);background:var(--surface);color:var(--ink-2)}
+.drafts-dialog .draft-actions .draft-cancel:hover{background:var(--surface-3)}
+.drafts-dialog .draft-actions button[data-testid^="drafts-drawer-reject-"]{border:1px solid var(--line);background:var(--surface);color:var(--ink-2)}
+.drafts-dialog .draft-actions button[data-testid^="drafts-drawer-reject-"]:hover{border-color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent);color:var(--err)}
+.drafts-dialog .draft-actions button[data-testid^="drafts-drawer-confirm-"]{border:none;background:var(--accent);color:var(--accent-ink)}
+.drafts-dialog .draft-actions button[data-testid^="drafts-drawer-confirm-"]:hover{background:var(--accent-hover)}
+
 /* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
@@ -633,6 +657,7 @@ body[data-shot="1"] .demo-bar{display:none}
       <option value="reasoning">流式思考区块（reasoning）</option>
       <option value="context-injected">上下文注入 · 本章已注入（有记录）</option>
       <option value="context-no-record">上下文注入 · 本章已注入（无记录回退）</option>
+      <option value="drafts-approval">草稿审批弹层（#1377 驳回钮）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -653,6 +678,43 @@ body[data-shot="1"] .demo-bar{display:none}
     <div class="delete-hitl-actions">
       <button type="button" data-testid="delete-confirm-cancel">取消</button>
       <button type="button" data-testid="delete-confirm-approve">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 草稿审批弹层（#976；#1377 补「驳回」钮）—— drafts-approval 状态显示。
+     ⚠️ 工具栏入口 drafts-approval-button（#1003）尚未进本原型 —— 存量缺口：补它会令 9 张既有状态图
+        （工具栏可见）全部过期，故本 PR 只回填弹层本身，入口回填另计（原型同步门禁见 #1330）。
+     ⚠️ data-testid 与实现 frontend/.../components/DraftApprovalDrawer.tsx 逐字对齐：
+        drafts-overlay / drafts-drawer / drafts-drawer-item-<id> /
+        drafts-drawer-reject-<id> / drafts-drawer-confirm-<id>；取消钮实现侧无 testid（class=draft-cancel）。
+     草稿文案取自既有契约种子（DraftApprovalDrawer.test.tsx），不新增创作素材。 -->
+<div class="drafts-dialog" data-testid="drafts-overlay" role="presentation">
+  <div class="drafts-card" data-testid="drafts-drawer" role="dialog" aria-modal="true" aria-label="草稿审批">
+    <div class="drafts-head">
+      <h2>草稿审批</h2>
+      <button type="button" aria-label="取消"><span data-ic="x"></span></button>
+    </div>
+    <div class="drafts-body">
+      <section class="draft-item" data-testid="drafts-drawer-item-d1">
+        <div class="draft-title">第3章 渡口夜雾</div>
+        <div class="draft-text">AI 生成的章节草稿正文…</div>
+        <button type="button" class="draft-expand">展开看全文</button>
+        <div class="draft-actions">
+          <button type="button" class="draft-cancel">取消</button>
+          <button type="button" data-testid="drafts-drawer-reject-d1"><span data-ic="x"></span>拒绝</button>
+          <button type="button" data-testid="drafts-drawer-confirm-d1"><span data-ic="check"></span>确认</button>
+        </div>
+      </section>
+      <section class="draft-item" data-testid="drafts-drawer-item-d2">
+        <div class="draft-title">第4章 山中客栈</div>
+        <div class="draft-text">第二份草稿正文</div>
+        <div class="draft-actions">
+          <button type="button" class="draft-cancel">取消</button>
+          <button type="button" data-testid="drafts-drawer-reject-d2"><span data-ic="x"></span>拒绝</button>
+          <button type="button" data-testid="drafts-drawer-confirm-d2"><span data-ic="check"></span>确认</button>
+        </div>
+      </section>
     </div>
   </div>
 </div>
@@ -693,6 +755,8 @@ const ICONS = {
   'chevron-right':'<path d="m9 18 6-6-6-6"/>',
   plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
   x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  filetext:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   minus:'<path d="M5 12h14"/>',
   square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
   pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
@@ -713,7 +777,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record'];
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record','drafts-approval'];
 function setState(s){
   document.body.dataset.state = s;
   const streaming = s === 'streaming';

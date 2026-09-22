@@ -6,6 +6,7 @@ export const writingUxZh: Record<string, string> = {
   'write.drafts.pendingBadge': '草稿/未审批',
   'write.drafts.openApprove': '审批草稿',
   'write.drafts.confirmDone': '草稿已确认',
+  'write.drafts.rejectDone': '草稿已驳回',
 };
 
 export const writingUxEn: Record<string, string> = {
@@ -15,4 +16,5 @@ export const writingUxEn: Record<string, string> = {
   'write.drafts.pendingBadge': 'Draft',
   'write.drafts.openApprove': 'Approve draft',
   'write.drafts.confirmDone': 'Draft confirmed',
+  'write.drafts.rejectDone': 'Draft rejected',
 };

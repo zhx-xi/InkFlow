@@ -8,7 +8,8 @@
  * - drafts-overlay（遮罩）/ drafts-drawer（面板）
  * - drafts-drawer-item-{draftId}（草稿行）
  * - drafts-drawer-confirm-{draftId}（确认钮 → confirmDraft）
- * - drafts-drawer-error（确认失败错误）
+ * - drafts-drawer-reject-{draftId}（驳回钮 → rejectDraft；#1377，位于确认钮左侧）
+ * - drafts-drawer-error（确认/驳回失败错误）
  *
  * 行为契约：
  * - open=false → 不渲染（queryByTestId('drafts-drawer') 为 null，不发 listDrafts）
@@ -16,6 +17,8 @@
  * - 点确认钮 → confirmDraft(draftId, options) 成功 → onClose() 关框
  *   （#988 契约升级：第二参恒为 options 对象；无来源可传时为 {}）
  * - 确认失败 → drafts-drawer-error 展示
+ * - 点驳回钮（#1377）→ rejectDraft(draftId) 成功 → toast(ok) + 双轨重拉 + onClose()；
+ *   失败 → drafts-drawer-error 透传且不关框；进行中该钮禁用
  * - Esc → onClose()
  *
  * #988 确认面来源锚定 fallback（handleConfirm 前置计算，按优先级）:
@@ -36,10 +39,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DraftApprovalDrawer } from './DraftApprovalDrawer';
-import { listDrafts, confirmDraft } from '../api/drafts';
+import { listDrafts, confirmDraft, rejectDraft } from '../api/drafts';
 import { apiFetch } from '../api/client';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useToastStore } from '../stores/toast';
 
 vi.mock('../api/drafts', () => ({
   listDrafts: vi.fn(),
@@ -56,6 +60,7 @@ vi.mock('../api/client', async (importOriginal) => {
 
 const listDraftsMock = vi.mocked(listDrafts);
 const confirmDraftMock = vi.mocked(confirmDraft);
+const rejectDraftMock = vi.mocked(rejectDraft);
 const apiFetchMock = vi.mocked(apiFetch);
 
 /** RED 期契约种子：与 api/drafts.ts DraftDto 对齐（status='draft'，volume_id/source_outline_id 可选） */
@@ -108,7 +113,9 @@ function mockOutlineRoute(items: Array<{ id: string; name: string; level: string
 beforeEach(() => {
   listDraftsMock.mockReset();
   confirmDraftMock.mockReset();
+  rejectDraftMock.mockReset();
   apiFetchMock.mockReset();
+  useToastStore.setState({ toasts: [] });
   // loadChapterTree 等内部 apiFetch 调用安全吸收（返回空列表，不触发真实 fetch）
   apiFetchMock.mockResolvedValue({ items: [], total: 0 } as never);
   useProjectStore.setState({
@@ -246,5 +253,79 @@ describe('DraftApprovalDrawer — #988 来源锚定 fallback', () => {
     expect(
       apiFetchMock.mock.calls.some((c) => String(c[0]).includes('/outlines')),
     ).toBe(false);
+  });
+});
+
+/**
+ * #1377：草稿审批弹层「驳回」入口（rejectDraft 已在 api/drafts.ts 封装但 UI 未接入）。
+ *
+ * 契约：每条草稿行的动作行内在「确认」**左侧**渲染 drafts-drawer-reject-{id}；
+ * 点击 → rejectDraft(id) 成功 → toast(ok) + 树/草稿双轨重拉（镜像 confirm 成功路径）
+ * + onClose()；失败 → drafts-drawer-error 透传且不关框；进行中该钮禁用。
+ * 不做（拍板）：二次确认、批量驳回（驳回非破坏性，草稿可重跑再生成）。
+ */
+describe('DraftApprovalDrawer — #1377 驳回入口', () => {
+  it('【R】每条草稿行渲染驳回钮，且位于确认钮左侧（次要动作在左、主行动在右）', async () => {
+    listDraftsMock.mockResolvedValue({ items: [seedDraft1, seedDraft2], total: 2 });
+    render(<DraftApprovalDrawer open onClose={() => {}} />);
+    const reject = await screen.findByTestId('drafts-drawer-reject-d1');
+    const confirm = screen.getByTestId('drafts-drawer-confirm-d1');
+    expect(reject).toBeInTheDocument();
+    expect(screen.getByTestId('drafts-drawer-reject-d2')).toBeInTheDocument();
+    // 同一动作行内的兄弟顺序：驳回在确认之前
+    expect(reject.parentElement).toBe(confirm.parentElement);
+    const row = reject.parentElement as HTMLElement;
+    expect(Array.from(row.children).indexOf(reject)).toBeLessThan(
+      Array.from(row.children).indexOf(confirm),
+    );
+  });
+
+  it('【R】点驳回 → rejectDraft(d1) 成功 → toast(ok) + 双轨重拉 + onClose（确认路径未被误触）', async () => {
+    listDraftsMock.mockResolvedValue({ items: [seedDraft1], total: 1 });
+    rejectDraftMock.mockResolvedValue({ draft_id: 'd1', status: 'rejected' });
+    const onClose = vi.fn();
+    render(<DraftApprovalDrawer open onClose={onClose} />);
+    const btn = await screen.findByTestId('drafts-drawer-reject-d1');
+    apiFetchMock.mockClear();
+    fireEvent.click(btn);
+    await waitFor(() => expect(rejectDraftMock).toHaveBeenCalledWith('d1'));
+    expect(confirmDraftMock).not.toHaveBeenCalled();
+    // 成功 toast（镜像 confirm 的 write.drafts.confirmDone 形态）
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.some((x) => x.type === 'ok')).toBe(true),
+    );
+    // 双轨重拉：卷章树轨（loadChapterTree → volumes + chapters）+ 草稿轨（loadPendingDrafts）
+    await waitFor(() => {
+      const paths = apiFetchMock.mock.calls.map((c) => String(c[0]));
+      expect(paths).toContain('/api/v1/projects/p1/volumes');
+      expect(paths).toContain('/api/v1/projects/p1/chapters');
+      expect(paths.some((p) => p.startsWith('/api/v1/agent/drafts?'))).toBe(true);
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('【R】驳回失败 → drafts-drawer-error 透传错误文案且不关框', async () => {
+    listDraftsMock.mockResolvedValue({ items: [seedDraft1], total: 1 });
+    rejectDraftMock.mockRejectedValue(new Error('草稿已被处理'));
+    render(<DraftApprovalDrawer open onClose={() => {}} />);
+    fireEvent.click(await screen.findByTestId('drafts-drawer-reject-d1'));
+    expect(await screen.findByTestId('drafts-drawer-error')).toHaveTextContent('草稿已被处理');
+    expect(screen.getByTestId('drafts-drawer')).toBeInTheDocument();
+  });
+
+  it('【R】驳回进行中 → 该行驳回钮禁用（防重复提交）', async () => {
+    listDraftsMock.mockResolvedValue({ items: [seedDraft1], total: 1 });
+    let release!: (v: { draft_id: string; status: string }) => void;
+    rejectDraftMock.mockImplementation(
+      () => new Promise<{ draft_id: string; status: string }>((res) => { release = res; }),
+    );
+    render(<DraftApprovalDrawer open onClose={() => {}} />);
+    const btn = await screen.findByTestId('drafts-drawer-reject-d1');
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getByTestId('drafts-drawer-reject-d1')).toBeDisabled());
+    release({ draft_id: 'd1', status: 'rejected' });
+    // 收束：成功后正常回到可用态（不残留禁用）
+    await waitFor(() => expect(useToastStore.getState().toasts.length).toBeGreaterThan(0));
   });
 });
