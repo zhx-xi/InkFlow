@@ -142,8 +142,8 @@ class MemoryEvent(BaseModel):
 
 | 表 | 关键列 | 说明 |
 |----|--------|------|
-| `project_preferences` | id(String36 PK) / project_id(String36 idx) / category(String20) / pattern(Text) / value(Text) / confidence(Float) / count(Integer) / source_events(JSON) / created_at / updated_at | 结构化偏好表（adr/memory-skills/ADR-037.md）；project_id 无 FK（镜像 agent_runs/drafts 先例） |
-| `memory_events` | id(String36 PK) / project_id(String36 idx) / draft_id(String36) / chapter_id(String36) / agent_run_id(String36) / event_type(String20) / before_content(Text) / after_content(Text) / diff_chars(Integer) / created_at | diff 事件表（Q2 独立表）；全部 FK 可空且无 FK 声明（镜像 drafts 先例，级联由服务层承担） |
+| `project_preferences` | id(String36 PK) / project_id(String36 idx) / category(String20) / pattern(Text) / value(Text) / confidence(Float) / count(Integer) / source_events(JSON) / created_at / updated_at | 结构化偏好表（adr/memory-skills/ADR-037.md）；project_id 无 FK（镜像 agent_runs/drafts 先例；项目硬删由 `project_repo` 显式清理，#1371） |
+| `memory_events` | id(String36 PK) / project_id(String36 idx) / draft_id(String36) / chapter_id(String36) / agent_run_id(String36) / event_type(String20) / before_content(Text) / after_content(Text) / diff_chars(Integer) / created_at | diff 事件表（Q2 独立表）；全部 FK 可空且无 FK 声明（镜像 drafts 先例；项目硬删由 `project_repo` 显式清理，#1371） |
 
 > 决策论证：`source_events` 用 **JSON 数组**（事件 id 字符串列表）——只读消费、一次写入，与 agent_runs.steps JSON 快照先例一致（F27 §2.3）；事件详情可经 memory_events 表查询（可追溯性）。
 

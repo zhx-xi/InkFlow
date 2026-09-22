@@ -111,8 +111,19 @@ class Draft(BaseModel):
 
 | 表 | 关键列 | 说明 |
 |----|--------|------|
-| `agent_runs` | id / project_id(FK) / chapter_id(FK?) / mode / status / steps(JSON) / final_content / model / token_usage_total / terminated_by / created_at / updated_at | steps JSON 快照（AgentStep 序列，决策轨迹全量）——F28 与可观测性打底 |
-| `drafts` | id / project_id(FK) / chapter_id(FK?) / agent_run_id(FK?) / content / status / summary / created_at / confirmed_at | 草稿表；FK 级联语义与 audit_logs 对齐（F34 先例） |
+| `agent_runs` | id / project_id(String36 无 FK) / chapter_id(String36?) / mode / status / steps(JSON) / final_content / model / token_usage_total / terminated_by / created_at / updated_at | steps JSON 快照（AgentStep 序列，决策轨迹全量）——F28 与可观测性打底 |
+| `drafts` | id / project_id(String36 无 FK) / chapter_id(String36?) / agent_run_id(String36?) / volume_id(String36?) / content / status / summary / created_at / confirmed_at | 草稿表；project_id 存 `str(uuid)`（`projects.id` 是 int → 列类型不匹配无法加 FK）**无 DB 级联** |
+| `agent_stage_results` | id(int PK) / execution_id(FK→agent_executions，无 ondelete=RESTRICT) / stage_id / status / output / error / retry_count / duration_ms | F4 阶段结果表；随所属 execution 一并清理 |
+
+> **无 FK 子表族的项目硬删语义（#1371）**：`agent_executions` / `agent_runs` / `drafts` /
+> `memory_events` / `planner_sessions` / `project_preferences` / `semantic_summaries` /
+> `writing_plans` 的 `project_id` 均为 String(36)（存 `str(uuid)`，无 FK）→ DB 级
+> `ON DELETE CASCADE`（#327）覆盖不到，项目硬删由
+> `infrastructure/database/repositories/project_repo.py` 的
+> `_purge_string_pid_children` **显式按 project_id 清理**（清单常量 `STRING_PID_CHILD_TABLES`，
+> 漂移由 `backend/tests/unit/infrastructure/database/test_project_cascade.py` 的元数据守护断言拦截）。
+> `agent_stage_results` 无 project_id 列，须按 `execution_id` 先清（FK RESTRICT）；
+> `semantic_summaries` 的 `scope=user` 行 project_id 为 NULL（用户级总结）→ 硬删项目时保留。
 
 > 决策论证：steps 用 **JSON 快照**（非独立子表）——与 AgentExecutionORM.stages JSON 先例一致（F4），决策轨迹一次写入、只读消费；F28 如需要结构化查询再拆子表（YAGNI，不过早规范化）。
 

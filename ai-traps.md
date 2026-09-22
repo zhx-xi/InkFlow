@@ -21,6 +21,7 @@
 | 8 | **软删除后 get() 仍返回数据** | Repository.get() 必须过滤 `is_deleted=False` |
 | 18 | **UUID.int 128 位 vs SQLite INTEGER 64 位** | 跨实体引用（project_id/event_id 等 FK 值）必须用**持久化返回对象的 id**（小整数映射 UUID），不是调用方随机 uuid4()——否则 OverflowError |
 | 19 | **冒烟负例的前置条件** | 测「跨项目事件 422」必须**先建第二个存在项目**再用其 id；负例要命中目标校验分支，前置校验必须已通过 |
+| 28 | **无 FK 子表不被 DB 级联清理（孤儿行残留）** | `project_id` 为 String(36)（存 `str(uuid)`）的表 —— drafts / agent_runs / agent_executions / planner_sessions / project_preferences / memory_events / semantic_summaries / writing_plans —— 因列类型与 `projects.id`(int) 不匹配**无法加 FK** → DB 级 CASCADE 不覆盖；硬删项目必须显式按 project_id 清理（`project_repo._purge_string_pid_children`，清单常量 `STRING_PID_CHILD_TABLES`）。`agent_stage_results` 无 project_id，须按 `execution_id` 先清（FK RESTRICT）。新增此类表时 `test_project_cascade.py` 的元数据守护断言立即 FAIL（#1371） |
 
 ## 测试
 

@@ -14,26 +14,36 @@ foreshadowing / story_arc / volume / chapter / map / map_pin。
 
 from __future__ import annotations
 
+import importlib
+import pkgutil
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import inkflow.infrastructure.database.models as models_pkg
 from inkflow.core.database import Base, apply_sqlite_pragma
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.services.project_service import ProjectService
+from inkflow.infrastructure.database.models.agent import AgentExecutionORM, AgentStageResultORM
+from inkflow.infrastructure.database.models.agent_run import AgentRunORM, DraftORM
 from inkflow.infrastructure.database.models.chapter import ChapterORM, VolumeORM
 from inkflow.infrastructure.database.models.character import CharacterORM
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.map import MapORM, MapPinORM
 from inkflow.infrastructure.database.models.outline import OutlineORM, StoryArcORM
+from inkflow.infrastructure.database.models.planner_session import PlannerSessionORM
+from inkflow.infrastructure.database.models.preference import MemoryEventORM, ProjectPreferenceORM
 from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.models.semantic_summary import SemanticSummaryORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
 from inkflow.infrastructure.database.models.world import WorldSettingORM
+from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
 from inkflow.infrastructure.database.repositories.project_repo import (
+    STRING_PID_CHILD_TABLES,
     SQLiteProjectRepository,
 )
 
@@ -199,3 +209,173 @@ async def test_hard_delete_map_cleanup_failure_does_not_block(
     svc = ProjectService(db_session, map_cleanup=fail_cleanup)
     assert await svc.hard_delete(pid) is True
     fail_cleanup.assert_awaited_once_with(uuid.UUID(int=pid))
+
+
+# ===== #1371：无 FK 子表族（String(36) project_id）显式清理 =====
+#
+# projects.id 是 int；下表 project_id 是 String(36) 存 str(uuid) → 列类型不匹配，无法加 FK
+# → #327 的 DB 级 CASCADE 覆盖不到，项目硬删后整族残留（实测 8 张表全部残留）。
+# agent_stage_results 无 project_id 列，经 execution_id（FK 无 ondelete → RESTRICT）挂在
+# agent_executions 下：不按 execution_id 先清，则删 agent_executions 被 FK 拦截。
+
+_STRING_PID_CHILD_MODELS = [
+    (AgentExecutionORM, "agent_executions"),
+    (AgentRunORM, "agent_runs"),
+    (DraftORM, "drafts"),
+    (MemoryEventORM, "memory_events"),
+    (PlannerSessionORM, "planner_sessions"),
+    (ProjectPreferenceORM, "project_preferences"),
+    (SemanticSummaryORM, "semantic_summaries"),
+    (WritingPlanORM, "writing_plans"),
+]
+
+
+async def _seed_string_pid_children(db: AsyncSession, pid_str: str) -> str:
+    """每张无 FK 子表各建 1 行（project_id 存 str(uuid)），返回 execution id."""
+    execution = AgentExecutionORM(pipeline="builtin:write_chapter", project_id=pid_str)
+    db.add_all(
+        [
+            execution,
+            AgentRunORM(project_id=pid_str),
+            DraftORM(project_id=pid_str, content="草稿甲"),
+            MemoryEventORM(project_id=pid_str, event_type="edit"),
+            PlannerSessionORM(project_id=pid_str, one_liner="一句话甲"),
+            ProjectPreferenceORM(
+                project_id=pid_str, category="addressing", pattern="她", value="角色甲"
+            ),
+            SemanticSummaryORM(
+                scope="project",
+                project_id=pid_str,
+                content="总结甲",
+                anchor_hash="hash-a",
+                model="gpt-4o",
+            ),
+            WritingPlanORM(project_id=pid_str, title="计划甲"),
+        ]
+    )
+    await db.flush()
+    db.add(AgentStageResultORM(execution_id=execution.id, stage_id="outline", status="completed"))
+    await db.commit()
+    return execution.id
+
+
+async def _count_string_pid(db: AsyncSession, model, pid_str: str) -> int:
+    """按 project_id（字符串）统计无 FK 子表行数."""
+    stmt = select(func.count()).select_from(model).where(model.project_id == pid_str)
+    return (await db.execute(stmt)).scalar_one()
+
+
+async def _count_stage_results_for(db: AsyncSession, pid_str: str) -> int:
+    """统计归属该项目的 agent_stage_results（经 executions 子查询）."""
+    stmt = (
+        select(func.count())
+        .select_from(AgentStageResultORM)
+        .where(
+            AgentStageResultORM.execution_id.in_(
+                select(AgentExecutionORM.id).where(AgentExecutionORM.project_id == pid_str)
+            )
+        )
+    )
+    return (await db.execute(stmt)).scalar_one()
+
+
+async def test_hard_delete_clears_string_pid_child_family_1371(
+    db_session: AsyncSession,
+) -> None:
+    """#1371 主契约：硬删项目后 8 张无 FK 子表 + agent_stage_results 全清.
+
+    RED（无显式清理）→ 行数仍为 1 → FAIL；GREEN（按 project_id 显式清理）→ 0 → PASS。
+    """
+    _, pid = await _create_project(db_session)
+    pid_str = str(uuid.UUID(int=pid))
+    await _seed_string_pid_children(db_session, pid_str)
+    for model, table in _STRING_PID_CHILD_MODELS:
+        assert await _count_string_pid(db_session, model, pid_str) == 1, f"{table} 前置不成立"
+    assert await _count_stage_results_for(db_session, pid_str) == 1  # 前置成立
+
+    assert await ProjectService(db_session).hard_delete(uuid.UUID(int=pid)) is True
+
+    for model, table in _STRING_PID_CHILD_MODELS:
+        assert await _count_string_pid(db_session, model, pid_str) == 0, f"{table} 残留孤儿行"
+    assert await _count_stage_results_for(db_session, pid_str) == 0, "agent_stage_results 残留"
+
+
+async def test_hard_delete_keeps_other_project_string_pid_children_1371(
+    db_session: AsyncSession,
+) -> None:
+    """反向断言：只清目标项目 —— 另一项目的同族行必须全部存活（不得误删）."""
+    _, pid = await _create_project(db_session)
+    _, other_pid = await _create_project(db_session)
+    pid_str, other_str = str(uuid.UUID(int=pid)), str(uuid.UUID(int=other_pid))
+    await _seed_string_pid_children(db_session, pid_str)
+    await _seed_string_pid_children(db_session, other_str)
+
+    assert await ProjectService(db_session).hard_delete(uuid.UUID(int=pid)) is True
+
+    for model, table in _STRING_PID_CHILD_MODELS:
+        assert await _count_string_pid(db_session, model, other_str) == 1, f"{table} 误删他项目行"
+    assert await _count_stage_results_for(db_session, other_str) == 1, "他项目 stage_result 被误删"
+
+
+async def test_hard_delete_keeps_user_scope_summary_1371(db_session: AsyncSession) -> None:
+    """用户级语义总结（scope=user，project_id=NULL）不属于任何项目 → 不得被清理."""
+    _, pid = await _create_project(db_session)
+    pid_str = str(uuid.UUID(int=pid))
+    await _seed_string_pid_children(db_session, pid_str)
+    db_session.add(
+        SemanticSummaryORM(
+            scope="user",
+            project_id=None,
+            content="用户级总结",
+            anchor_hash="hash-user",
+            model="gpt-4o",
+        )
+    )
+    await db_session.commit()
+
+    assert await ProjectService(db_session).hard_delete(uuid.UUID(int=pid)) is True
+
+    stmt = (
+        select(func.count())
+        .select_from(SemanticSummaryORM)
+        .where(SemanticSummaryORM.project_id.is_(None))
+    )
+    assert (await db_session.execute(stmt)).scalar_one() == 1, "用户级总结被误删"
+
+
+async def test_soft_delete_and_restore_keep_string_pid_children_1371(
+    db_session: AsyncSession,
+) -> None:
+    """既有语义不破：软删/恢复不动无 FK 子表行（仅硬删清理）."""
+    _, pid = await _create_project(db_session)
+    pid_str = str(uuid.UUID(int=pid))
+    await _seed_string_pid_children(db_session, pid_str)
+    svc = ProjectService(db_session)
+
+    assert await svc.soft_delete(uuid.UUID(int=pid)) is True
+    for model, table in _STRING_PID_CHILD_MODELS:
+        assert await _count_string_pid(db_session, model, pid_str) == 1, f"软删动了 {table}"
+
+    assert await svc.restore(uuid.UUID(int=pid)) is not None
+    for model, table in _STRING_PID_CHILD_MODELS:
+        assert await _count_string_pid(db_session, model, pid_str) == 1, f"恢复动了 {table}"
+
+
+def test_string_pid_child_registry_matches_metadata_1371() -> None:
+    """漂移守护：metadata 中所有「String 类型 project_id 且无 FK」的表必须登记在
+    STRING_PID_CHILD_TABLES —— 新增此类表却未纳入清理时本断言立即 FAIL."""
+    for mod in pkgutil.iter_modules(models_pkg.__path__):
+        importlib.import_module(f"{models_pkg.__name__}.{mod.name}")
+
+    discovered = {
+        tname
+        for tname, tb in Base.metadata.tables.items()
+        if "project_id" in tb.columns
+        and not tb.columns["project_id"].foreign_keys
+        and isinstance(tb.columns["project_id"].type, String)
+    }
+    registered = set(STRING_PID_CHILD_TABLES)
+    assert discovered == registered, (
+        f"未登记（漏清理）: {sorted(discovered - registered)}；"
+        f"已登记但 metadata 不存在: {sorted(registered - discovered)}"
+    )

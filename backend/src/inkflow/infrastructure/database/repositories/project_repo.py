@@ -10,12 +10,19 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.project import Project, ProjectConfig
+from inkflow.infrastructure.database.models.agent import AgentExecutionORM, AgentStageResultORM
+from inkflow.infrastructure.database.models.agent_run import AgentRunORM, DraftORM
+from inkflow.infrastructure.database.models.planner_session import PlannerSessionORM
+from inkflow.infrastructure.database.models.preference import MemoryEventORM, ProjectPreferenceORM
 from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.models.semantic_summary import SemanticSummaryORM
+from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
 from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
 
@@ -50,6 +57,24 @@ def _get_config_dict(config: Any) -> dict:
     if isinstance(config, dict):
         return config
     return {}
+
+
+# #1371：无 FK 子表族表名 —— project_id 是 String(36) 存 str(uuid)，而 projects.id 是 int
+# （列类型不匹配 → 无法加 FK），故 #327 的 DB 级 CASCADE 覆盖不到，硬删项目须显式清理。
+# 新增此类表（project_id 为 String 且无 FK）时必须同步登记：漂移由
+# tests/unit/infrastructure/database/test_project_cascade.py 的元数据守护断言拦截。
+STRING_PID_CHILD_TABLES: frozenset[str] = frozenset(
+    {
+        "agent_executions",
+        "agent_runs",
+        "drafts",
+        "memory_events",
+        "planner_sessions",
+        "project_preferences",
+        "semantic_summaries",
+        "writing_plans",
+    }
+)
 
 
 class SQLiteProjectRepository:
@@ -203,8 +228,49 @@ class SQLiteProjectRepository:
 
         return await self.get(project_id)
 
+    async def _purge_string_pid_children(self, pid: int) -> None:
+        """按 project_id 清理无 FK 子表族（#1371）.
+
+        - 列存 ``str(uuid)`` → 删除条件用 ``str(uuid.UUID(int=pid))``（与写入同源）；
+        - ``agent_stage_results`` 无 project_id，经 ``execution_id``（FK 无 ondelete →
+          RESTRICT）挂在 agent_executions 下：必须先按 execution_id 清，否则 DB FK 拦截；
+        - ``semantic_summaries`` 的 scope=user 行 project_id 为 NULL（用户级总结）→
+          条件不匹配，天然保留；
+        - 覆盖表集与模块常量 ``STRING_PID_CHILD_TABLES`` 一致。
+        """
+        key = str(uuid.UUID(int=pid))
+        execution_ids = select(AgentExecutionORM.id).where(AgentExecutionORM.project_id == key)
+        await self._session.execute(
+            sa_delete(AgentStageResultORM).where(
+                AgentStageResultORM.execution_id.in_(execution_ids)
+            )
+        )
+        await self._session.execute(
+            sa_delete(AgentExecutionORM).where(AgentExecutionORM.project_id == key)
+        )
+        await self._session.execute(sa_delete(AgentRunORM).where(AgentRunORM.project_id == key))
+        await self._session.execute(sa_delete(DraftORM).where(DraftORM.project_id == key))
+        await self._session.execute(
+            sa_delete(MemoryEventORM).where(MemoryEventORM.project_id == key)
+        )
+        await self._session.execute(
+            sa_delete(PlannerSessionORM).where(PlannerSessionORM.project_id == key)
+        )
+        await self._session.execute(
+            sa_delete(ProjectPreferenceORM).where(ProjectPreferenceORM.project_id == key)
+        )
+        await self._session.execute(
+            sa_delete(SemanticSummaryORM).where(SemanticSummaryORM.project_id == key)
+        )
+        await self._session.execute(
+            sa_delete(WritingPlanORM).where(WritingPlanORM.project_id == key)
+        )
+
     async def hard_delete(self, project_id: uuid.UUID) -> bool:
         """物理删除项目（从数据库中永久移除）.
+
+        先按 project_id 清理无 FK 子表族（#1371，见 ``_purge_string_pid_children``），
+        再删 projects 行；其余 int+FK 子表由 DB 级 ON DELETE CASCADE 处理（#327）。
 
         Returns:
             True 表示成功删除一条记录，False 表示未找到记录.
@@ -218,6 +284,7 @@ class SQLiteProjectRepository:
         if orm is None:
             return False
 
+        await self._purge_string_pid_children(pid)
         await self._session.delete(orm)
         await self._session.commit()
         return True
