@@ -1716,6 +1716,44 @@
         "title": "ContextOverride",
         "type": "object"
       },
+      "ContextPreselectRequest": {
+        "description": "上下文预选请求（#1379）— 进入空章时由 GUI 按本章大纲预挑相关条目.\n\nAttributes:\n    project_id: 项目 ID.\n    chapter_id: 目标章节 ID（大纲匹配与候选收集都按它定位）.\n    model: 目标模型名（与 assemble 同口径）.\n    writing_requirements: 写作要求 / 任务指令（min_length=1，与 assemble 同口径）.",
+        "properties": {
+          "chapter_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "writing_requirements": {
+            "minLength": 1,
+            "title": "Writing Requirements",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "model",
+          "writing_requirements"
+        ],
+        "title": "ContextPreselectRequest",
+        "type": "object"
+      },
       "ContextRequest": {
         "description": "上下文组装请求 — API 输入 / F3 调用参数.\n\nAttributes:\n    project_id: 项目 ID.\n    chapter_id: 目标章节 ID（正在写作的章节）.\n    model: 目标模型名（provider/model_name 格式）.\n    writing_requirements: 必填，写作要求 / 任务指令.\n    max_tokens: 覆盖预算；None = 模型窗口 × max_ratio.\n    override: 显式勾选通道（v1.1 #593）；None = 全部注入（默认行为）.",
         "properties": {
@@ -9650,6 +9688,50 @@
           }
         },
         "summary": "Refresh Chapter Summary",
+        "tags": [
+          "上下文管理"
+        ]
+      }
+    },
+    "/api/v1/context/preselect": {
+      "post": {
+        "description": "Agent 预选（#1379）— 按本章大纲预挑相关条目 id 子集.\n\nmode=\"fallback\" 时三类 id 即全量候选（前端据此回退全选）。",
+        "operationId": "preselect_context_api_v1_context_preselect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextPreselectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preselect Context Api V1 Context Preselect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preselect Context",
         "tags": [
           "上下文管理"
         ]

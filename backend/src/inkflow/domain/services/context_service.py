@@ -22,6 +22,8 @@ from inkflow.domain.models.context import (
     ContextItem,
     ContextLayer,
     ContextOverride,
+    ContextPreselectRequest,
+    ContextPreselectResult,
     ContextRequest,
     ContextSourceType,
     DroppedItem,
@@ -30,6 +32,33 @@ from inkflow.domain.models.context import (
 from inkflow.domain.ports.context_errors import ContextBudgetExceededError
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
 from inkflow.domain.ports.summary_repository import SummaryRepositoryProtocol
+
+PreselectFn = Callable[[list[ContextItem], str, str, str], Awaitable[ContextOverride]]
+"""预选函数签名（#1379，infrastructure 注入）.
+
+参数顺序: ``(candidates, outline_text, writing_requirements, model)``
+
+- ``candidates``: 三类候选条目（character_setting / world_setting / foreshadowing）
+- ``outline_text``: 本章大纲文本（overall + 命中的卷纲/章纲分块）
+- ``writing_requirements``: 本章写作要求
+- ``model``: 目标模型名（provider/model_name）
+
+返回: 预选出的三类 id 子集（``ContextOverride`` 形状，由服务侧做候选集过滤）。
+"""
+
+_PRESELECT_SOURCES: tuple[ContextSourceType, ...] = (
+    ContextSourceType.CHARACTER_SETTING,
+    ContextSourceType.WORLD_SETTING,
+    ContextSourceType.FORESHADOWING,
+)
+"""可预选的三类来源（与 override 通道一致）；顺序即结果字段顺序。"""
+
+_PRESELECT_ID_KEYS: dict[ContextSourceType, str] = {
+    ContextSourceType.CHARACTER_SETTING: "character_id",
+    ContextSourceType.WORLD_SETTING: "world_setting_id",
+    ContextSourceType.FORESHADOWING: "foreshadowing_id",
+}
+"""来源 → 条目 metadata 中的 id 键（与 `_apply_override` 同口径）。"""
 
 
 class ContextService:
@@ -48,11 +77,13 @@ class ContextService:
         summary_repo: SummaryRepositoryProtocol | None = None,
         count_tokens: Callable[[str, str], Awaitable[int]] | None = None,
         compress_fn: (Callable[[ContextItem, float], Awaitable[ContextItem]] | None) = None,
+        preselect_fn: PreselectFn | None = None,
     ) -> None:
         self._sources = sources
         self._summary_repo = summary_repo
         self._count_tokens = count_tokens or (lambda text, model: _char_count(text))
         self._compress_fn = compress_fn
+        self._preselect_fn = preselect_fn
 
     # ── 公共 API ──────────────────────────────────────────────────
 
@@ -106,6 +137,68 @@ class ContextService:
         result = await self._allocate(all_items, budget, request.model)
         result.model = request.model
         return result
+
+    async def preselect_context(
+        self,
+        request: ContextPreselectRequest,
+    ) -> ContextPreselectResult:
+        """按本章大纲预选相关条目（#1379）.
+
+        流程:
+            ① 全量组装（override=None）→ 三类候选 + 本章大纲文本
+            ② 无候选 → 空集（没得选，不是回退）
+            ③ 无大纲 / 预选未接线 → 回退全选（mode="fallback"），不发起 LLM 调用
+            ④ 一次预选调用（``preselect_fn``）→ 结果 ∩ 候选集（防幻觉 id 污染 override）
+            ⑤ 预选抛错 / 输出不可解析 → 回退全选（增强项不得阻断面板）
+
+        Args:
+            request: 预选请求（project_id / chapter_id / model / writing_requirements）.
+
+        Returns:
+            预选结果；``mode="fallback"`` 时三类 id 为全量候选（前端采用即全选）.
+
+        Raises:
+            ValueError: writing_requirements 为空（与 build_context 同口径）.
+            ContextBudgetExceededError: protected 层超预算（端点映射 400）.
+        """
+        full = await self.build_context(
+            ContextRequest(
+                project_id=request.project_id,
+                chapter_id=request.chapter_id,
+                model=request.model,
+                writing_requirements=request.writing_requirements,
+            )
+        )
+        candidates = [
+            block.item for block in full.blocks if block.item.source in _PRESELECT_SOURCES
+        ]
+        if not candidates:
+            return ContextPreselectResult(mode="agent")
+        all_ids = {src: _collect_source_ids(candidates, src) for src in _PRESELECT_SOURCES}
+        outline_text = "\n".join(
+            block.item.content
+            for block in full.blocks
+            if block.item.source == ContextSourceType.OUTLINE
+        )
+        if not outline_text.strip() or self._preselect_fn is None:
+            return _preselect_result(all_ids, mode="fallback")
+        try:
+            picked = await self._preselect_fn(
+                candidates, outline_text, request.writing_requirements, request.model
+            )
+        except Exception:  # 预选是增强项：任何失败都回退全选（不阻断面板主路径）
+            return _preselect_result(all_ids, mode="fallback")
+        picked_map = {
+            ContextSourceType.CHARACTER_SETTING: picked.character_ids,
+            ContextSourceType.WORLD_SETTING: picked.world_ids,
+            ContextSourceType.FORESHADOWING: picked.foreshadowing_ids,
+        }
+        allowed = {src: set(ids) for src, ids in all_ids.items()}
+        selected = {
+            src: [item_id for item_id in picked_map[src] if item_id in allowed[src]]
+            for src in _PRESELECT_SOURCES
+        }
+        return _preselect_result(selected, mode="agent")
 
     async def get_context(
         self,
@@ -328,6 +421,52 @@ class ContextService:
 
 
 # ── 辅助 ────────────────────────────────────────────────────────────
+
+
+def _collect_source_ids(
+    candidates: list[ContextItem], source: ContextSourceType
+) -> list[uuid.UUID]:
+    """按候选顺序收集某来源条目的 id（metadata 键见 `_PRESELECT_ID_KEYS`）；缺失/非法值跳过.
+
+    Args:
+        candidates: 三类候选条目（混合列表）.
+        source: 目标来源类型.
+
+    Returns:
+        该来源的 id 列表（保持候选顺序，可直接作为「全选」载荷）.
+    """
+    meta_key = _PRESELECT_ID_KEYS[source]
+    ids: list[uuid.UUID] = []
+    for item in candidates:
+        if item.source != source:
+            continue
+        try:
+            ids.append(uuid.UUID(str(item.metadata.get(meta_key, ""))))
+        except ValueError:
+            continue
+    return ids
+
+
+def _preselect_result(
+    ids: dict[ContextSourceType, list[uuid.UUID]],
+    *,
+    mode: str,
+) -> ContextPreselectResult:
+    """三类 id 映射 → 预选结果 DTO（缺类补空）.
+
+    Args:
+        ids: 来源 → id 列表.
+        mode: 产生方式（"agent" / "fallback"）.
+
+    Returns:
+        预选结果.
+    """
+    return ContextPreselectResult(
+        character_ids=ids.get(ContextSourceType.CHARACTER_SETTING, []),
+        world_ids=ids.get(ContextSourceType.WORLD_SETTING, []),
+        foreshadowing_ids=ids.get(ContextSourceType.FORESHADOWING, []),
+        mode=mode,
+    )
 
 
 def _apply_override(

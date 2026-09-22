@@ -189,6 +189,10 @@ button{font-family:inherit;cursor:pointer}
 .panel-head .pt{font-size:13px;font-weight:600}
 .panel-head .pbtn{border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:2px 8px}
 .panel-head .pbtn:hover{background:var(--surface-3)}
+/* #1379：标题行右侧工具带（一键清除 / 全选恢复） */
+.panel-head .ctx-head-actions{display:flex;align-items:center;gap:6px}
+/* #1379：Agent 按大纲预选状态条（pending / applied） */
+.ctx-preselect{border:1px solid var(--line);border-radius:6px;background:var(--surface-2);font-size:12px;color:var(--ink-3);padding:6px 10px;flex:none}
 .panel-body{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
 .ctx-card{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;flex:none}
 .ctx-card .card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -545,8 +549,20 @@ body[data-shot="1"] .demo-bar{display:none}
           <button class="rail-toggle rail-toggle-open" style="display:none"><span data-ic="panelleftopen"></span><span class="lbl">展开</span></button>
           <!-- ContextPanel -->
           <div class="rail-panel context" data-testid="rail-panel-context">
-            <div class="panel-head"><span class="pt">上下文注入</span></div>
+            <!-- #1379：标题行右侧「一键清除 / 全选」——与各卡片「＋ 选择注入」同一工具带；
+                 清除 = 三类勾选清空（外传三类空列表 → 该类不注入）；全选 = 恢复全量候选 -->
+            <div class="panel-head">
+              <span class="pt">上下文注入</span>
+              <div class="ctx-head-actions">
+                <button class="pbtn" data-testid="context-clear-all">清除</button>
+                <button class="pbtn" data-testid="context-select-all">全选</button>
+              </div>
+            </div>
             <div class="panel-body" data-testid="context-panel-content">
+              <!-- #1379：Agent 按大纲预选状态条 —— pending（发起中，不阻塞面板）/ applied（已用子集覆盖全选）；
+                   fallback（无大纲/预选失败 → 回退全选）语义见 specs/f19-gui/writing.md §12 -->
+              <div class="ctx-preselect" data-testid="context-preselect-pending" style="display:none">Agent 预选中…</div>
+              <div class="ctx-preselect" data-testid="context-preselect-applied" style="display:none">已按大纲预选（仅勾选与本章相关条目）</div>
               <div class="ctx-card" data-testid="context-block-writing_requirements">
                 <div class="card-head"><span class="card-title">写作要求</span></div>
                 <div class="ctx-outline">文风古朴，节奏明快，对话简洁有力；避免现代词汇与网络用语；场景描写以感官细节为主。</div>
@@ -657,6 +673,8 @@ body[data-shot="1"] .demo-bar{display:none}
       <option value="reasoning">流式思考区块（reasoning）</option>
       <option value="context-injected">上下文注入 · 本章已注入（有记录）</option>
       <option value="context-no-record">上下文注入 · 本章已注入（无记录回退）</option>
+      <option value="context-preselect">上下文注入 · Agent 按大纲预选（子集勾选）</option>
+      <option value="context-preselect-loading">上下文注入 · Agent 预选中（加载态）</option>
       <option value="drafts-approval">草稿审批弹层（#1377 驳回钮）</option>
     </select>
   </label>
@@ -777,7 +795,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record','drafts-approval'];
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record','context-preselect','context-preselect-loading','drafts-approval'];
 function setState(s){
   document.body.dataset.state = s;
   const streaming = s === 'streaming';
@@ -819,6 +837,26 @@ function setState(s){
         item.querySelector('.t').style.textDecoration = 'line-through';
         item.querySelector('.t').style.opacity = '0.6';
       }
+    });
+  }
+  // #1379：Agent 按大纲预选两态 —— loading（状态条「Agent 预选中…」，面板暂为全选，不阻塞操作）
+  // / applied（状态条 + 按本章大纲收窄为子集勾选）。一键清除/全选按钮为标题行常驻（两态均可见）。
+  const ctxPreselect = s === 'context-preselect';
+  const ctxPreselectLoading = s === 'context-preselect-loading';
+  document.querySelectorAll('[data-testid="context-preselect-pending"]').forEach(el => { el.style.display = ctxPreselectLoading ? '' : 'none'; });
+  document.querySelectorAll('[data-testid="context-preselect-applied"]').forEach(el => { el.style.display = ctxPreselect ? '' : 'none'; });
+  if (ctxPreselect) {
+    // 预选子集演示：本章大纲为「第 12 章 · 苏云舟夜访剑冢」→ 保留 苏云舟 / 青云宗 / 剑冢 /
+    // 师父闭关的真相；排除「林晚照」（章纲未涉及）。显式复位勾选与划线，防跨状态残留。
+    const keepChar = 0;
+    document.querySelectorAll('[data-testid="context-block-character_setting"] .ctx-item').forEach((item, i) => {
+      const keep = i === keepChar;
+      item.querySelector('input[type=checkbox]').checked = keep;
+      item.querySelector('.t').style.textDecoration = keep ? '' : 'line-through';
+      item.querySelector('.t').style.opacity = keep ? '' : '0.6';
+    });
+    document.querySelectorAll('[data-testid="context-block-world_setting"] .ctx-item, [data-testid="context-block-foreshadowing"] .ctx-item').forEach((item) => {
+      item.querySelector('input[type=checkbox]').checked = true;
     });
   }
 }

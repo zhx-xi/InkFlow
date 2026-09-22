@@ -5,6 +5,7 @@ F6 是内部服务，正常写作路径由 F3 直接调用（无 HTTP）。
 
 端点:
     POST   /api/v1/context/assemble      — 组装上下文（调试）
+    POST   /api/v1/context/preselect     — Agent 预选相关条目（#1379）
     GET    /api/v1/context/chapters/{id}/summary       — 查看摘要缓存
     POST   /api/v1/context/chapters/{id}/summary/refresh — 强制重新生成摘要
 
@@ -27,7 +28,7 @@ from inkflow.api.deps import (
     get_summary_service,
 )
 from inkflow.core.config import config as app_config
-from inkflow.domain.models.context import ContextRequest
+from inkflow.domain.models.context import ContextPreselectRequest, ContextRequest
 from inkflow.domain.ports.context_errors import ContextBudgetExceededError
 from inkflow.logging import instrument
 
@@ -56,6 +57,29 @@ async def assemble_context(
     svc = get_context_service(db)
     try:
         result = await svc.build_context(request)
+        return result.model_dump()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ContextBudgetExceededError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# ── Agent 预选 ────────────────────────────────────────────────────
+
+
+@router.post("/preselect")
+@instrument(caller_type="api")
+async def preselect_context(
+    request: ContextPreselectRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Agent 预选（#1379）— 按本章大纲预挑相关条目 id 子集.
+
+    mode="fallback" 时三类 id 即全量候选（前端据此回退全选）。
+    """
+    svc = get_context_service(db)
+    try:
+        result = await svc.preselect_context(request)
         return result.model_dump()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
