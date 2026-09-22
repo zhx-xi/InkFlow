@@ -1,26 +1,27 @@
 /**
- * #1301 时间线时间轴渲染 —— 组件级契约。
+ * #1301 时间线时间轴渲染 + **#1374 双序轴向语义分流** —— 组件级契约。
  *
  * 【spec 依据】
+ * - specs/f19-gui/timeline.md §1.1（双序轴向定义）+ §3 N1/N5/N7/N10
  * - specs/f12-timeline/spec.md:621/702「事件时间线（世界内时间轴）」排序键 time_value
  * - specs/f43-setting-library-gui/spec.md:773「图例 tl-legend」
- * - specs/f19-gui/timeline.md（#1323 后：章分组容器 + 真实章节标题）
  *
- * 【#1323 语义升级（本文件 A2/A3/A4 改写）】
- * 旧契约把副标记写成 `narrative_position` 拼的「第 N 章」。该字段是**单一线性序号**
- * （domain/models/timeline.py:158；specs/f12-timeline/spec.md:91 明确不携带章节语义）
- * → DB 实测 215 条只有 34 个不同位置值，同一「第 7 章」重复 10 次。
- * 现契约：
- * - 主轴（tl-axis-main-<id>）= 世界内时间（两序一致，时间才是有信息量的那一维）
- * - 副标记（tl-axis-sub-<id>）**不再渲染章号**（章节信息由章分组 header 承载）
- * 章分组契约见 TimelineView.grouping.test.tsx（B1-B6）。
+ * 【#1374 语义升级（本文件 A2/A3/A5 改写）】
+ * 旧契约（#1301/#1323）：两序共用章分组容器，主轴 = 世界内时间。
+ * 现契约（issue #1374 拍板「A 拆半」+ spec §1.1）：
+ * - **叙事序**：轴刻度 = **章**（章刻度 tl-chtick-<chapterId>，真实章节标题）；
+ *   事件行内世界内时间**降级为小字**（ink-3 降级）
+ * - **世界序**：轴刻度 = **世界内时间**（行内主轴即刻度）；**无章分组容器**；
+ *   行尾 = 来源章胶囊（tl-src-<id>）
+ * - 双序切换仍为本地切换显示数组（零额外请求）
  *
- * 【testid 契约】
- * - tl-axis            分组容器（轴线本体）
- * - library-list       单一列表容器（**全页恰好一个**，不再重复渲染）
- * - tl-axis-node-<id>  每个事件一个节点（每个事件恰好一次）
- * - tl-axis-main-<id>  主轴文本
- * - tl-group-<chapterId> / tl-group-title-<chapterId>  章分组与其 header
+ * 【testid 契约（GREEN 必须提供）】
+ * - tl-axis                轴容器（保留；两序各一个）
+ * - tl-axis-node-<id>      每个事件一个节点（每个事件恰好一次）
+ * - tl-axis-main-<id>      主轴文本（= 世界内时间；叙事序带 ink-3 降级类）
+ * - tl-chtick-<chapterId>  叙事序章刻度（-__none__ = 未分章）
+ * - tl-src-<id>            世界序行尾来源章胶囊
+ * - tl-view-narrative / tl-view-world / tl-check-all / tl-check-one-<id> / tl-legend 保留
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -37,7 +38,7 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 /**
- * Seed 事件（与 library-p4.test.tsx 同形，双序可严格区分）：
+ * Seed 事件（双序可严格区分）：
  * - 世界序（time_value 升序、未知末尾）：evC(100) → evA(300) → evB(未知)
  * - 叙事序（narrative_position 升序）：evB(1) → evC(2) → evA(3)
  */
@@ -57,9 +58,21 @@ const evC: TimelineEventDTO = {
   source_chapter_id: 'c12',
 };
 
-function renderView() {
+const CHAPTER_TITLES: Record<string, string> = {
+  c11: '第十一章 剑心为何物',
+  c12: '第十二章 夜访剑冢',
+};
+
+function renderView(props: Partial<Parameters<typeof TimelineView>[0]> = {}) {
   return render(
-    <TimelineView projectId="p1" eventTimeline={[evC, evA, evB]} narrativeOrder={[evB, evC, evA]} />,
+    <TimelineView
+      projectId="p1"
+      eventTimeline={[evC, evA, evB]}
+      narrativeOrder={[evB, evC, evA]}
+      chapterTitles={CHAPTER_TITLES}
+      chapterOrder={['c11', 'c12']}
+      {...props}
+    />,
   );
 }
 
@@ -69,8 +82,8 @@ beforeEach(() => {
   useThemeStore.setState({ lang: 'zh' });
 });
 
-describe('#1301 时间线时间轴渲染（spec f12:621/702 · f43:773 · f19:34）', () => {
-  it('A1 时间轴元素存在：渲染后有 tl-axis 容器 + 每个事件一个 tl-axis-node-<id>', async () => {
+describe('#1301 + #1374 时间线双序轴向渲染', () => {
+  it('A1 轴容器存在：tl-axis + 每个事件一个 tl-axis-node-<id>', async () => {
     renderView();
     expect(screen.getByTestId('tl-axis')).toBeInTheDocument();
     expect(screen.getByTestId('tl-axis-node-evA')).toBeInTheDocument();
@@ -78,31 +91,26 @@ describe('#1301 时间线时间轴渲染（spec f12:621/702 · f43:773 · f19:34
     expect(screen.getByTestId('tl-axis-node-evC')).toBeInTheDocument();
   });
 
-  it('A2 主轴 = 世界内时间（time_display），两序一致；副标记不承载章号', async () => {
+  it('A2 世界序：主轴 = 世界内时间（非降级）；叙事序：时间降为行内小字（#1374 分流）', async () => {
     renderView();
+    // 叙事序（默认）：主轴 = 世界内时间 + ink-3 降级类（行内小字）
+    await waitFor(() => expect(screen.getByTestId('tl-axis-main-evC')).toHaveTextContent('100 年'));
+    expect(screen.getByTestId('tl-axis-main-evC').className).toContain('text-ink-3');
+    // 世界序：主轴 = 世界内时间（刻度态，非降级）
     const user = userEvent.setup();
     await user.click(screen.getByTestId('tl-view-world'));
-    // 主轴：世界内时间
     await waitFor(() => expect(screen.getByTestId('tl-axis-main-evC')).toHaveTextContent('100 年'));
-    expect(screen.getByTestId('tl-axis-main-evA')).toHaveTextContent('300 年');
-    // #1323 语义升级：副标记不再输出 narrative_position 拼成的章号
-    expect(screen.queryByTestId('tl-axis-sub-evC')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('tl-axis-sub-evA')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tl-axis-main-evC').className).not.toContain('text-ink-3');
   });
 
-  it('A3 叙事序主轴同样是世界内时间（反向断言：主轴绝不出章号）', async () => {
+  it('A3 叙事序：轴刻度 = 章（tl-chtick-<chapterId> = 真实章节标题）；主轴不含伪章号', async () => {
     renderView();
-    const user = userEvent.setup();
-    // 默认即叙事序
-    expect(screen.getByTestId('tl-view-narrative')).toHaveAttribute('aria-pressed', 'true');
-    await waitFor(() => expect(screen.getByTestId('tl-axis-main-evC')).toHaveTextContent('100 年'));
-    expect(screen.getByTestId('tl-axis-main-evA')).toHaveTextContent('300 年');
-    // 反向断言：主轴绝不含「第{n}章」形式的伪章号
+    // 章刻度存在且用真实章节标题（来自 chapterTitles 映射）
+    expect(screen.getByTestId('tl-chtick-c11')).toHaveTextContent('第十一章 剑心为何物');
+    expect(screen.getByTestId('tl-chtick-c12')).toHaveTextContent('第十二章 夜访剑冢');
+    // 反向断言：主轴（tl-axis-main）绝不承载 narrative_position 拼出的「第 N 章」
     const mains = screen.getAllByTestId(/^tl-axis-main-/).map((el) => el.textContent ?? '').join('|');
     expect(mains).not.toMatch(/第\s*[0-9]+\s*章/);
-    // 切序后主轴仍是世界内时间（不再主/副互换）
-    await user.click(screen.getByTestId('tl-view-world'));
-    await waitFor(() => expect(screen.getByTestId('tl-axis-main-evC')).toHaveTextContent('100 年'));
   });
 
   it('A4 时间未知事件（time_value=null）在轴上用「未知」占位，不消失', async () => {
@@ -115,25 +123,40 @@ describe('#1301 时间线时间轴渲染（spec f12:621/702 · f43:773 · f19:34
     expect(screen.getByTestId('tl-axis-main-evB')).toHaveTextContent('未知');
   });
 
-  it('A5 既有行为不破：双序 chips / tl-check-all / tl-check-one-<id> / tl-legend 仍存在可用', async () => {
+  it('A5 既有行为不破：双序 chips / tl-check-all / tl-check-one / tl-legend 仍存在可用', async () => {
     renderView();
     expect(screen.getByTestId('timeline-toolbar')).toBeInTheDocument();
     expect(screen.getByTestId('tl-view-narrative')).toBeInTheDocument();
     expect(screen.getByTestId('tl-view-world')).toBeInTheDocument();
     expect(screen.getByTestId('tl-check-all')).toBeInTheDocument();
-    expect(screen.getByTestId('tl-legend')).toHaveTextContent('点=叙事顺序 · 时间轴=世界内时间');
+    // 图例随序切换（#1374：拆两 key —— 叙事序「轴=章…」/ 世界序「轴=世界内时间…」）
+    expect(screen.getByTestId('tl-legend')).toHaveTextContent('轴=章');
     expect(screen.getByTestId('tl-check-one-evA')).toBeInTheDocument();
     expect(screen.getByTestId('library-list')).toBeInTheDocument();
     // #1323：每事件恰好一个节点（单一容器，不再重复渲染）
     expect(screen.getAllByTestId(/^tl-axis-node-/)).toHaveLength(3);
-    // 轴节点顺序随序切换（世界序：evC → evA → evB）
     const user = userEvent.setup();
     await user.click(screen.getByTestId('tl-view-world'));
+    // 轴节点顺序随序切换（世界序：evC → evA → evB）
     await waitFor(() => {
       const ids = screen
         .getAllByTestId(/^tl-axis-node-/)
         .map((el) => el.getAttribute('data-testid')!.replace('tl-axis-node-', ''));
       expect(ids).toEqual(['evC', 'evA', 'evB']);
     });
+    expect(screen.getByTestId('tl-legend')).toHaveTextContent('轴=世界内时间');
+  });
+
+  it('A6 世界序：无章分组容器（反向断言 tl-chgroup 不存在）；行尾 = 来源章胶囊 tl-src-<id>', async () => {
+    renderView();
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('tl-view-world'));
+    await waitFor(() => expect(screen.getByTestId('tl-axis-node-evC')).toBeInTheDocument());
+    // 反向断言：世界序不再按章分组（#1374 拍板「含世界序去章分组」）
+    expect(screen.queryAllByTestId(/^tl-chgroup-/)).toHaveLength(0);
+    // 行尾来源章胶囊：已归章 = 章节标题；未归章 = 「未分章」
+    expect(screen.getByTestId('tl-src-evC')).toHaveTextContent('第十二章 夜访剑冢');
+    expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 剑心为何物');
+    expect(screen.getByTestId('tl-src-evB')).toHaveTextContent('未分章');
   });
 });

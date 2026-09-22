@@ -713,6 +713,7 @@ export function LibraryPage() {
                 eventTimeline={listItems}
                 narrativeOrder={timelineNarrative}
                 chapterTitles={outlineLib.chapterTitles}
+                chapterOrder={outlineLib.chapterOrder}
                 onEdit={openEdit}
                 onDelete={openDelete}
               />

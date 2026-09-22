@@ -2,7 +2,17 @@
 <html lang="zh" data-theme="paper">
 <head>
 <meta charset="utf-8" />
-<title>InkFlow 设定库 · 时间线 — 官方简图原型</title>
+<title>InkFlow 设定库 · 时间线 — 双序轴向语义重构原型（#1374）</title>
+<!--
+  #1374 时间线「叙事序/世界序」轴向语义重构原型（0.15.0 原型阶段，不写实现）
+  状态集（demo-bar 切换）：
+    narrative        叙事序 · 章为轴（新）——修掉「两序轴完全相同」
+    narrative-filter 叙事序 + 按章筛选面板展开（已选第十二章）
+    world            世界序 · 方案 A 拆半（世界内时间单轴，无章分组）
+    world-b          世界序 · 方案 B 全做（纪元多泳道 + 轴选择器，需 0.16.0 数据面）
+    empty            空态
+  A/B 拆法说明见左下角 review-note（截图时隐藏）。
+-->
 <style>
 /* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
 :root{
@@ -86,13 +96,11 @@ button{font-family:inherit;cursor:pointer}
 .lib-tab{border:none;background:none;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;padding:8px 14px;font-size:13px;color:var(--ink-2);transition:color var(--dur),border-color var(--dur)}
 .lib-tab:hover{color:var(--ink)}
 .lib-tab.active{border-bottom-color:var(--accent);color:var(--accent);font-weight:500}
-.lib-card{border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
-.divide-y>*+*{border-top:1px solid var(--line)}
 .btn-primary{border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:6px 16px;transition:background var(--dur)}
 .btn-primary:hover{background:var(--accent-hover)}
 
-/* ── 时间线（F43 P4：双序 chips + 整体检查 + 图例 + 行内单事件检查） ── */
-.tl-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+/* ═══════════ 时间线（#1374 双序轴向语义重构原型） ═══════════ */
+.tl-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .tl-seg{display:flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px;background:var(--surface);box-shadow:var(--shadow)}
 .tl-seg button{border:none;border-radius:999px;padding:4px 12px;font-size:12px;color:var(--ink-2);background:none;transition:background var(--dur),color var(--dur)}
 .tl-seg button.active{background:var(--accent);color:var(--accent-ink)}
@@ -100,23 +108,76 @@ button{font-family:inherit;cursor:pointer}
 .check-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:4px 12px;transition:border-color var(--dur),color var(--dur)}
 .check-btn:hover{border-color:var(--accent);color:var(--accent)}
 .check-btn svg{width:13px;height:13px}
-.tl-legend{font-size:12px;color:var(--ink-3)}
-.tl-row{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:13px;color:var(--ink)}
-.tl-row .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.badge{flex:none;border-radius:999px;background:var(--surface-3);padding:2px 8px;font-size:11px;color:var(--ink-2);white-space:nowrap}
+
+/* 筛选（#1374 新增：按章 / 按类型；世界/角色维度留 0.16.0） */
+.tl-filter{position:relative}
+.tl-filter-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:4px 12px;transition:border-color var(--dur),color var(--dur),background var(--dur)}
+.tl-filter-btn:hover{border-color:var(--accent);color:var(--accent)}
+.tl-filter-btn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-weak)}
+.tl-filter-btn svg{width:11px;height:11px}
+.tl-filter-panel{position:absolute;left:0;top:calc(100% + 6px);z-index:60;min-width:250px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:6px;display:none}
+body[data-state="narrative-filter"] .tl-filter-panel{display:block}
+.tl-fp-title{padding:4px 8px 6px;font-size:11px;color:var(--ink-3)}
+.tl-fp-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--ink);cursor:pointer}
+.tl-fp-item:hover{background:var(--surface-2)}
+.tl-fp-item .cb{flex:none;display:flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid var(--ink-3);border-radius:4px;color:var(--accent-ink)}
+.tl-fp-item.sel .cb{background:var(--accent);border-color:var(--accent)}
+.tl-fp-item .cb svg{width:10px;height:10px;display:none}
+.tl-fp-item.sel .cb svg{display:block}
+
+/* 纪元轴选择器（方案 B） */
+.tl-axis-picker{display:none;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+body[data-state="world-b"] .tl-axis-picker{display:inline-flex}
+.axis-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11.5px;color:var(--ink-3);background:var(--surface)}
+.axis-chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-weak)}
+.axis-chip .ck{display:flex;align-items:center;justify-content:center;width:12px;height:12px;color:var(--accent)}
+.axis-chip .ck svg{width:9px;height:9px;display:none}
+.axis-chip.on .ck svg{display:block}
+
+.tl-legend{width:100%;margin:4px 0 14px;font-size:12px;color:var(--ink-3)}
+
+/* 轴容器（叙事序 = 章轴；世界序 = 时间轴）——统一 padding-left，轴线居中于 7px */
+.tl-axis{position:relative;padding-left:26px}
+.tl-axis--chapter::before{content:"";position:absolute;left:6px;top:14px;bottom:14px;width:2px;border-radius:1px;background:var(--line)}
+.tl-axis--time::before{content:"";position:absolute;left:6px;top:12px;bottom:12px;width:2px;border-radius:1px;background:var(--line)}
+
+/* 章刻度（叙事序：轴的刻度 = 章） */
+.tl-chgroup{position:relative}
+.tl-chgroup + .tl-chgroup{margin-top:16px}
+.tl-chtick{position:relative;display:flex;align-items:center;gap:8px;padding:2px 0}
+.tl-chtick .tickdot{position:absolute;left:-24px;top:50%;width:10px;height:10px;border-radius:2px;background:var(--accent);transform:translateY(-50%) rotate(45deg)}
+.tl-chtick--none .tickdot{background:var(--surface);border:1.5px solid var(--ink-3)}
+.tl-chlabel{font-size:13px;font-weight:500;color:var(--ink)}
+.tl-chtick--none .tl-chlabel{color:var(--ink-2)}
+.tl-chcount{font-size:11px;color:var(--ink-3)}
+.tl-chbody{margin-top:8px}
+
+/* 事件节点（两序共用） */
+.tl-node{position:relative;display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px}
+.tl-node + .tl-node{margin-top:6px}
+.tl-node::before{content:"";position:absolute;left:-23px;top:50%;width:8px;height:8px;border-radius:999px;background:var(--surface);border:1.5px solid var(--accent);transform:translateY(-50%)}
+.tl-axis--time .tl-node::before{background:var(--accent)}
+.tl-main{flex:none;width:84px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
+.tl-main--dim{width:66px;font-weight:400;color:var(--ink-3)}
+.tl-node .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.tl-node--demo .tname{color:var(--ink-2)}
+.tl-src{flex:none;border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--ink-3);white-space:nowrap}
+.tl-demo{flex:none;border:1px dashed var(--warn);border-radius:4px;padding:0 4px;font-size:10px;color:var(--warn);white-space:nowrap}
 .check-one{flex:none;border:1px solid var(--line);border-radius:6px;background:none;font-size:11px;color:var(--ink-2);padding:4px 10px;transition:border-color var(--dur),color var(--dur)}
 .check-one:hover{border-color:var(--accent);color:var(--accent)}
+.tl-actions{display:flex;flex:none;align-items:center;gap:1px;opacity:0;transition:opacity var(--dur)}
+.tl-node:hover .tl-actions{opacity:1}
+.tl-actions button{display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;padding:3px;color:var(--ink-3)}
+.tl-actions button svg{width:13px;height:13px}
+.tl-actions button:hover{background:var(--surface-3);color:var(--accent)}
 
-/* #1323 章分组容器（轴线 + 分组 header） */
-.tl-group{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:12px 16px}
-.tl-group + .tl-group{margin-top:12px}
-.tl-group::before{content:"";position:absolute;left:7px;top:36px;bottom:20px;width:1px;background:var(--line)}
-.tl-gtitle{padding-left:20px;margin-bottom:8px;font-size:12px;font-weight:500;color:var(--ink-2)}
-.tl-node{position:relative;display:flex;align-items:center;gap:12px;padding-left:20px;font-size:12px;color:var(--ink)}
-.tl-node + .tl-node{margin-top:8px}
-.tl-node::before{content:"";position:absolute;left:4px;top:50%;width:7px;height:7px;border-radius:999px;background:var(--accent);transform:translateY(-50%)}
-.tl-main{flex:none;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
-.tl-node .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
+/* 纪元泳道（方案 B） */
+.tl-lanes{display:flex;flex-direction:column;gap:12px}
+.tl-lane{border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:10px 16px 12px}
+.tl-lane-head{display:flex;align-items:center;gap:8px;padding:0 0 8px;margin-bottom:6px;border-bottom:1px dashed var(--line)}
+.lane-dot{flex:none;width:8px;height:8px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+.tl-lane-name{font-size:12.5px;font-weight:500;color:var(--ink)}
+.tl-lane-meta{font-size:11px;color:var(--ink-3)}
 
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
@@ -128,10 +189,14 @@ body[data-state="empty"] .lib-empty{display:flex}
 /* 状态栏 */
 .statusbar{display:flex;align-items:center;gap:20px;flex:none;padding:6px 16px;border-top:1px solid var(--line);background:var(--surface);font-size:11px;color:var(--ink-3)}
 
-/* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
+/* ═══════════ 演示切换条 + 评审说明卡（截图前隐藏） ═══════════ */
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
+.review-note{position:fixed;left:14px;bottom:14px;z-index:200;max-width:460px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:10px 14px;font-size:12px;line-height:1.7;color:var(--ink-2)}
+.review-note b{color:var(--ink)}
+.review-note code{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:var(--surface-2);border-radius:4px;padding:0 4px}
+body[data-shot="1"] .demo-bar,body[data-shot="1"] .review-note{display:none}
 </style>
 </head>
 <body data-state="narrative">
@@ -209,36 +274,34 @@ body[data-state="empty"] .lib-empty{display:flex}
       </div>
 
       <div style="margin-top:20px">
-        <!-- F43 P4：双序切换 + 整体检查 + 图例 -->
+        <!-- 工具栏：双序 chips + 筛选 + 轴选择器(B) + 整体检查 -->
         <div class="tl-toolbar" data-testid="timeline-toolbar">
           <div class="tl-seg">
-            <button class="active" data-testid="tl-view-narrative">叙事序</button>
-            <button data-testid="tl-view-world">世界序</button>
+            <button id="segNarrative" class="active" data-testid="tl-view-narrative">叙事序</button>
+            <button id="segWorld" data-testid="tl-view-world">世界序</button>
           </div>
+          <div class="tl-filter">
+            <button class="tl-filter-btn" id="filterChapterBtn" data-testid="tl-filter-chapter">
+              <span data-ic="filter"></span><span id="filterChapterLabel">章：全部</span><span data-ic="chevron-down"></span>
+            </button>
+            <div class="tl-filter-panel" id="filterChapterPanel" data-testid="tl-filter-panel">
+              <div class="tl-fp-title">按章筛选（数据面 ✅ source_chapter_id）</div>
+              <div id="fpChapterItems"></div>
+            </div>
+          </div>
+          <button class="tl-filter-btn" data-testid="tl-filter-type"><span data-ic="filter"></span>类型：全部<span data-ic="chevron-down"></span></button>
+          <span class="tl-axis-picker" data-testid="tl-axis-picker">
+            <span>纪元轴：</span>
+            <button class="axis-chip on" data-testid="tl-axis-chip-qingyuan"><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg></span>青云界 · 青元历</button>
+            <button class="axis-chip on" data-testid="tl-axis-chip-xianjie"><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg></span>仙界 · 仙历</button>
+            <button class="axis-chip" data-testid="tl-axis-chip-mingjie"><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg></span>幽冥界 · 冥历</button>
+          </span>
           <button class="check-btn" data-testid="tl-check-all"><span data-ic="scansearch"></span>一致性检查</button>
-          <span class="tl-legend" data-testid="tl-legend">点=叙事顺序 · 时间轴=世界内时间</span>
+          <span class="tl-legend" id="tlLegend" data-testid="tl-legend">轴=章 · 事件按章推进；行内小字=世界内时间</span>
         </div>
 
-        <!-- #1323 时间轴 = 章分组容器（每事件恰好渲染一次；组内含轴线+节点圆点） -->
-        <div data-testid="tl-axis">
-          <div class="tl-group" data-testid="tl-group-c11">
-            <div class="tl-gtitle" data-testid="tl-group-title-c11">第十一章 剑心为何物</div>
-            <div class="tl-node" data-testid="tl-axis-node-1"><span class="tl-main" data-testid="tl-axis-main-1">三百年前</span><span class="tname">师父闭关前夜，问苏云舟「剑心为何物」</span><button class="check-one" data-testid="tl-check-one-1">单事件检查</button></div>
-          </div>
-          <div class="tl-group" data-testid="tl-group-c12">
-            <div class="tl-gtitle" data-testid="tl-group-title-c12">第十二章 夜访剑冢</div>
-            <div class="tl-node" data-testid="tl-axis-node-2"><span class="tl-main" data-testid="tl-axis-main-2">一百年前</span><span class="tname">苏云舟下山，林晚照追随</span><button class="check-one" data-testid="tl-check-one-2">单事件检查</button></div>
-            <div class="tl-node" data-testid="tl-axis-node-3"><span class="tl-main" data-testid="tl-axis-main-3">二十年前</span><span class="tname">夜访剑冢，发现二十年前异动痕迹</span><button class="check-one" data-testid="tl-check-one-3">单事件检查</button></div>
-          </div>
-          <div class="tl-group" data-testid="tl-group-c13">
-            <div class="tl-gtitle" data-testid="tl-group-title-c13">第十三章 剑心蒙尘</div>
-            <div class="tl-node" data-testid="tl-axis-node-4"><span class="tl-main" data-testid="tl-axis-main-4">三年前</span><span class="tname">剑心蒙尘，断剑于山门</span><button class="check-one" data-testid="tl-check-one-4">单事件检查</button></div>
-          </div>
-          <div class="tl-group" data-testid="tl-group-__none__">
-            <div class="tl-gtitle" data-testid="tl-group-title-__none__">未分章</div>
-            <div class="tl-node" data-testid="tl-axis-node-5"><span class="tl-main" data-testid="tl-axis-main-5">未知</span><span class="tname">守陵人失踪（手工录入，未归章）</span><button class="check-one" data-testid="tl-check-one-5">单事件检查</button></div>
-          </div>
-        </div>
+        <!-- 轴主体（JS 按状态渲染：章轴 / 时间轴 / 纪元泳道） -->
+        <div class="tl-body" id="tlBody" data-testid="tl-body"></div>
 
         <!-- 空态 -->
         <div class="lib-empty" data-testid="library-tab-empty">
@@ -253,17 +316,22 @@ body[data-state="empty"] .lib-empty{display:flex}
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
       <span>项目: 青云志</span>
-      <span>事件 4 条</span>
+      <span>事件 5 条</span>
     </div>
   </div>
 </div>
+
+<!-- ═══ 评审说明卡（随状态更新；截图前隐藏） ═══ -->
+<aside class="review-note" id="reviewNote"></aside>
 
 <!-- ═══ 演示切换条 ═══ -->
 <div class="demo-bar">
   <label>状态
     <select id="stateSel">
-      <option value="narrative">叙事序</option>
-      <option value="world">世界序</option>
+      <option value="narrative">叙事序 · 章轴（新）</option>
+      <option value="narrative-filter">叙事序 · 筛选展开</option>
+      <option value="world">世界序 · A 拆半（时间轴）</option>
+      <option value="world-b">世界序 · B 全做（纪元泳道）</option>
       <option value="empty">空态</option>
     </select>
   </label>
@@ -298,6 +366,7 @@ const ICONS = {
   chevronsleft:'<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
   'chevron-down':'<path d="m6 9 6 6 6-6"/>',
   'chevron-right':'<path d="m9 18 6-6-6-6"/>',
+  filter:'<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>',
   plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
   minus:'<path d="M5 12h14"/>',
   square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
@@ -319,57 +388,204 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
   svg.innerHTML = ICONS[name] || '';
   el.appendChild(svg);
 });
+const CK_SVG = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg>';
 
-/* ── 状态机：叙事序 / 世界序 / 空态（#1323：章分组由 source_chapter_id 决定，与序无关） ── */
-const STATES = ['narrative','world','empty'];
-/* 叙事序（章内按叙事位置） vs 世界序（章内按世界内时间）——仅**组内**顺序不同，分组不变 */
-const ORDER_NARRATIVE = {
-  c11: ['1'],
-  c12: ['2','3'],
-  c13: ['4'],
-  __none__: ['5'],
+/* ── 演示数据（沿用本页原型既有数据集；演示数据 = 假想结构，非真实项目素材） ── */
+const DEMO = {
+  chapters: [
+    { key:'c11', title:'第十一章 剑心为何物' },
+    { key:'c12', title:'第十二章 夜访剑冢' },
+    { key:'c13', title:'第十三章 剑心蒙尘' },
+  ],
+  noneKey: '__none__',
+  noneTitle: '未分章',
+  /* axis = 纪元轴（仅方案 B 演示用；真实数据面暂无该字段，见说明卡） */
+  /* 时间文案 = 纪年式（用户 2026-09-22 拍板：不用相对时间「xx 年前」；纪年式如「青元历 317 年」/「始皇三年」） */
+  events: [
+    { id:'1', ch:'c11', time:17,  timeText:'青元历 17 年',  title:'师父闭关前夜，问苏云舟「剑心为何物」', axis:'qingyuan' },
+    { id:'2', ch:'c12', time:217, timeText:'青元历 217 年', title:'苏云舟下山，林晚照追随', axis:'qingyuan' },
+    { id:'3', ch:'c12', time:297, timeText:'青元历 297 年', title:'夜访剑冢，发现二十年前异动痕迹', axis:'qingyuan' },
+    { id:'4', ch:'c13', time:314, timeText:'青元历 314 年', title:'剑心蒙尘，断剑于山门', axis:'qingyuan' },
+    { id:'5', ch:null,  time:null, timeText:'未知',          title:'守陵人失踪（手工录入，未归章）', axis:'qingyuan' },
+    { id:'6', ch:null,  time:1024, timeText:'仙历 1024 年', title:'仙界法旨降下（演示：另一纪元轴事件）', axis:'xianjie', demo:true },
+  ],
+  axes: [
+    { key:'qingyuan', name:'青云界 · 青元历', on:true },
+    { key:'xianjie',  name:'仙界 · 仙历',    on:true },
+    { key:'mingjie',  name:'幽冥界 · 冥历',  on:false },
+  ],
 };
-const ORDER_WORLD = {
-  c11: ['1'],
-  c12: ['3','2'],
-  c13: ['4'],
-  __none__: ['5'],
+const chTitle = (key) => {
+  if (key === null || key === undefined) return DEMO.noneTitle;
+  const c = DEMO.chapters.find((x) => x.key === key);
+  return c ? c.title : '未知章节';
 };
-function applyOrder(order){
-  for (const [gid, ids] of Object.entries(order)) {
-    const group = document.querySelector(`[data-testid="tl-group-${gid}"]`);
-    if (!group) continue;
-    for (const id of ids) {
-      const node = group.querySelector(`[data-testid="tl-axis-node-${id}"]`);
-      if (node) group.appendChild(node);
-    }
-  }
+const ALL_EVENTS = DEMO.events.map((ev) => Object.assign({}, ev, { chTitle: chTitle(ev.ch) }));
+/* 非演示事件（叙事序 / 世界序 A 视作现有数据面；「另一纪元」演示事件仅方案 B 泳道展示） */
+const NON_DEMO = ALL_EVENTS.filter((ev) => !ev.demo);
+
+const STATES = ['narrative','narrative-filter','world','world-b','empty'];
+const LEGENDS = {
+  'narrative':        '轴=章 · 事件按章推进排列；行内小字=世界内时间',
+  'narrative-filter': '轴=章 · 已筛选：第十二章（筛选对两序共用）',
+  'world':            '轴=世界内时间（升序，未知末尾）· 不再按章分组；行尾=来源章',
+  'world-b':          '轴=纪元 · 每轴独立时间刻度 · 勾选控制显示哪几条轴',
+  'empty':            '',
+};
+const NOTES = {
+  'narrative':
+    '<b>叙事序（新）</b>：轴的刻度 = <b>章</b>（章节标题原样，#999 归一化保证「第 N 章」序号）；排序 = 章序 → 章内叙事序；世界内时间降为行内小字。未归章事件落「未分章」章刻度。',
+  'narrative-filter':
+    '<b>按章筛选（新）</b>：数据面 ✅（source_chapter_id + 章节列表）。已选「第十二章」→ 列表仅显示该章事件。按事件类型（正叙/倒叙/插叙）同样可做；<b>按世界 / 按角色关联 = 0.16.0</b>（无字段，见 B 版缺口说明）。',
+  'world':
+    '<b>世界序 · 方案 A（拆半，推荐）</b>：轴 = <b>世界内时间</b>，全局升序、未知末尾，<b>不再按章分组</b>；行尾小字 = 来源章。<b>纪元分轴（多纪元）留 0.16.0</b>（#1353，需 era 数据面）——避免与多纪元体系二次重构。',
+  'world-b':
+    '<b>世界序 · 方案 B（全做）</b>：轴 = <b>纪元（多泳道）</b> + 轴选择器（勾选显示哪几条轴）。⚠ <b>数据面缺口</b>：事件无 era/world 字段、time_value 为单标量（f12:84 曾否决复合键）→ 0.15.0 落地须先把 #1353 的 <code>extra.era</code> 最小落点提前，并先改 f12:84 否决记录（spec 级决策前置）。',
+  'empty':
+    '<b>空态</b>：无变化（「还没有时间线，去创建」+ CTA）。',
+};
+
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* 事件行模板：timeMode = 'dim'(叙事序行内小字) | 'tick'(时间轴刻度) */
+function nodeHTML(ev, opts){
+  const o = opts || {};
+  const timeCls = o.timeMode === 'tick' ? 'tl-main' : 'tl-main tl-main--dim';
+  const src = o.showSrc ? `<span class="tl-src" data-testid="tl-src-${ev.id}">${esc(ev.chTitle)}</span>` : '';
+  const demo = ev.demo ? '<span class="tl-demo">演示</span>' : '';
+  return `<div class="tl-node${ev.demo ? ' tl-node--demo' : ''}" data-testid="tl-axis-node-${ev.id}">
+    <span class="${timeCls}" data-testid="tl-axis-main-${ev.id}">${esc(ev.timeText)}</span>
+    <span class="tname">${esc(ev.title)}</span>${demo}${src}
+    <button class="check-one" data-testid="tl-check-one-${ev.id}">单事件检查</button>
+    <span class="tl-actions">
+      <button data-testid="tl-edit-${ev.id}" aria-label="编辑 ${esc(ev.title)}"><span data-ic2="pencil"></span></button>
+      <button data-testid="tl-delete-${ev.id}" aria-label="删除 ${esc(ev.title)}"><span data-ic2="trash"></span></button>
+    </span>
+  </div>`;
 }
-function setState(s){
-  document.body.dataset.state = s;
-  document.getElementById('stateSel').value = s;
-  const segBtns = document.querySelectorAll('.tl-seg button');
-  if (s === 'world') {
-    applyOrder(ORDER_WORLD);
-    segBtns[0].classList.remove('active');
-    segBtns[1].classList.add('active');
-  } else if (s === 'narrative') {
-    applyOrder(ORDER_NARRATIVE);
-    segBtns[1].classList.remove('active');
-    segBtns[0].classList.add('active');
+
+/* 叙事序 = 章轴：章刻度（tick）+ 章下事件；组顺序 = 章序，末尾「未分章」 */
+function renderNarrative(evs){
+  const groups = DEMO.chapters.map((c) => ({ key:c.key, title:c.title, evs:[] }));
+  groups.push({ key:DEMO.noneKey, title:DEMO.noneTitle, evs:[] });
+  for (const ev of evs) {
+    const key = ev.ch === null || ev.ch === undefined ? DEMO.noneKey : ev.ch;
+    const g = groups.find((x) => x.key === key);
+    if (g) g.evs.push(ev);
   }
+  const body = groups.filter((g) => g.evs.length > 0).map((g) => `
+    <div class="tl-chgroup" data-testid="tl-chgroup-${g.key}">
+      <div class="tl-chtick${g.key === DEMO.noneKey ? ' tl-chtick--none' : ''}" data-testid="tl-chtick-${g.key}">
+        <span class="tickdot"></span>
+        <span class="tl-chlabel">${esc(g.title)}</span>
+        <span class="tl-chcount">${g.evs.length} 个事件</span>
+      </div>
+      <div class="tl-chbody">${g.evs.map((ev) => nodeHTML(ev, { timeMode:'dim' })).join('')}</div>
+    </div>`).join('');
+  return `<div class="tl-axis tl-axis--chapter" data-testid="tl-axis">${body}</div>`;
+}
+
+/* 世界序 A = 世界内时间单轴：全局升序（未知末尾），不分组，行尾来源章 */
+function renderWorldA(){
+  const evs = NON_DEMO.slice().sort((a, b) => {
+    if (a.time === null && b.time === null) return 0;
+    if (a.time === null) return 1;
+    if (b.time === null) return -1;
+    return a.time - b.time;
+  });
+  return `<div class="tl-axis tl-axis--time" data-testid="tl-axis">${evs
+    .map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true })).join('')}</div>`;
+}
+
+/* 世界序 B = 纪元泳道（每轴独立时间刻度） */
+function renderWorldB(){
+  const lanes = DEMO.axes.filter((a) => a.on).map((a) => {
+    const evs = ALL_EVENTS.filter((ev) => ev.axis === a.key).sort((x, y) => {
+      if (x.time === null && y.time === null) return 0;
+      if (x.time === null) return 1;
+      if (y.time === null) return -1;
+      return x.time - y.time;
+    });
+    return `<section class="tl-lane" data-testid="tl-lane-${a.key}">
+      <header class="tl-lane-head">
+        <span class="lane-dot"></span>
+        <span class="tl-lane-name">${esc(a.name)}</span>
+        <span class="tl-lane-meta">${evs.length} 个事件</span>
+      </header>
+      <div class="tl-axis tl-axis--time">${evs.map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true })).join('')}</div>
+    </section>`;
+  }).join('');
+  return `<div class="tl-lanes">${lanes}</div>`;
+}
+
+/* 筛选面板（按章）：narrative-filter 态演示「已选第十二章」 */
+function renderFilterPanel(state){
+  const items = [{ key:'all', title:'全部章节' }]
+    .concat(DEMO.chapters.map((c) => ({ key:c.key, title:c.title })))
+    .concat([{ key:DEMO.noneKey, title:DEMO.noneTitle }]);
+  const isFiltered = state === 'narrative-filter';
+  document.getElementById('fpChapterItems').innerHTML = items.map((it) => {
+    const sel = isFiltered ? it.key === 'c12' : it.key === 'all';
+    return `<div class="tl-fp-item${sel ? ' sel' : ''}" data-testid="tl-fp-item-${it.key}"><span class="cb">${CK_SVG}</span>${esc(it.title)}</div>`;
+  }).join('');
+  const btn = document.getElementById('filterChapterBtn');
+  btn.classList.toggle('on', isFiltered);
+  document.getElementById('filterChapterLabel').textContent = isFiltered ? '章：第十二章' : '章：全部';
+}
+
+function renderBody(state){
+  if (state === 'narrative' || state === 'narrative-filter') {
+    const evs = state === 'narrative-filter'
+      ? NON_DEMO.filter((ev) => (ev.ch === null ? DEMO.noneKey : ev.ch) === 'c12')
+      : NON_DEMO;
+    return renderNarrative(evs);
+  }
+  if (state === 'world') return renderWorldA();
+  if (state === 'world-b') return renderWorldB();
+  return '';
+}
+
+/* 渲染出的行内 pencil/trash 图标（data-ic2 在动态节点上二次挂载） */
+function mountDynIcons(){
+  document.querySelectorAll('#tlBody [data-ic2]').forEach((el) => {
+    const name = el.getAttribute('data-ic2');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 24 24');
+    svg.setAttribute('fill','none');
+    svg.setAttribute('stroke','currentColor');
+    svg.setAttribute('stroke-width','2');
+    svg.setAttribute('stroke-linecap','round');
+    svg.setAttribute('stroke-linejoin','round');
+    svg.innerHTML = ICONS[name] || '';
+    el.appendChild(svg);
+  });
+}
+
+function setState(s){
+  if (!STATES.includes(s)) s = 'narrative';
+  document.body.dataset.state = s;
+  const sel = document.getElementById('stateSel');
+  if (sel) sel.value = s;
+  const isWorld = s === 'world' || s === 'world-b';
+  document.getElementById('segNarrative').classList.toggle('active', !isWorld);
+  document.getElementById('segWorld').classList.toggle('active', isWorld);
+  document.getElementById('tlLegend').textContent = LEGENDS[s] || '';
+  document.getElementById('tlBody').innerHTML = renderBody(s);
+  mountDynIcons();
+  renderFilterPanel(s);
+  document.getElementById('reviewNote').innerHTML = NOTES[s] || '';
 }
 function setTheme(th){
   document.documentElement.dataset.theme = th;
   document.body.dataset.theme = th;
 }
-document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
-document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
+document.getElementById('stateSel').addEventListener('change', (e) => setState(e.target.value));
+document.getElementById('themeSel').addEventListener('change', (e) => setTheme(e.target.value));
 const init = location.hash.replace('#','');
-if (STATES.includes(init)) { setState(init); document.getElementById('stateSel').value = init; }
+setState(STATES.includes(init) ? init : 'narrative');
 window.addEventListener('hashchange', () => {
   const s = location.hash.replace('#','');
-  if (STATES.includes(s)) { setState(s); document.getElementById('stateSel').value = s; }
+  if (STATES.includes(s)) setState(s);
 });
 </script>
 </body>

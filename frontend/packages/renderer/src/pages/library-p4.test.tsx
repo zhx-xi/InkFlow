@@ -24,7 +24,9 @@
  * 整体检查按钮：tl-check-all（点击 → GET /projects/{pid}/timeline/check → 结果 toast）
  * 行内单事件检查按钮：tl-check-one-<id>（每个事件行渲染一个，<id> = 事件 id，
  *   如 tl-check-one-evA；行序断言以这些按钮的 DOM 顺序为准）
- * 图例：tl-legend（文本「点=叙事顺序 · 时间轴=世界内时间」，lib.tlLegend）
+ * 图例：tl-legend（文本随序切换 —— #1374 拆两 key：叙事序「轴=章 · 事件按章推进排列；行内小字=世界内时间」
+ *   lib.tlLegend.narrative / 世界序「轴=世界内时间（升序，未知末尾）· 不再按章分组；行尾=来源章」
+ *   lib.tlLegend.world）
  *
  * 【端点 + 响应形状】
  * GET /api/v1/projects/{pid}/timeline/check
@@ -40,7 +42,7 @@
  *
  * 【i18n key（zh/en §6 P3+P4 表，GREEN 补）】
  * lib.tlView.narrative（叙事序）/ lib.tlView.world（世界序）/ lib.tlCheck（一致性检查）/
- *   lib.tlCheckOne（单事件检查）/ lib.tlLegend（图例文案）/
+ *   lib.tlCheckOne（单事件检查）/ lib.tlLegend.narrative / lib.tlLegend.world（图例文案，随序切换）/
  *   lib.tlCheckOK（未发现矛盾事件）/ lib.tlCheckWarn（发现 {n} 处时间矛盾）/
  *   lib.tlCheckSkip（该事件无时间信息，跳过检查）/ lib.tlCheckEventOK（与上下文一致）
  *
@@ -218,8 +220,8 @@ describe('设定库页 — F43 P4 时间线双序 + 两级检查（spec §5.16-5
     expect(screen.getByTestId('timeline-toolbar')).toBeInTheDocument();
     expect(screen.getByTestId('tl-view-narrative')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('tl-view-world')).toHaveAttribute('aria-pressed', 'false');
-    // 图例（lib.tlLegend）
-    expect(screen.getByTestId('tl-legend')).toHaveTextContent('点=叙事顺序 · 时间轴=世界内时间');
+    // 图例（#1374 拆两 key：默认叙事序 → lib.tlLegend.narrative）
+    expect(screen.getByTestId('tl-legend')).toHaveTextContent('轴=章 · 事件按章推进排列；行内小字=世界内时间');
     // 默认显示叙事序数组（narrative_position 升序）
     await waitFor(() => expect(rowIds()).toEqual(['evB', 'evC', 'evA']));
   });
