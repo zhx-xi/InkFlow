@@ -98,10 +98,10 @@ uv run inkflow serve
 | 文档 | 内容 | 读者 |
 |------|------|------|
 | [`FEATURES.md`](FEATURES.md) | **功能清单（当前 + 规划，唯一权威）** | 所有人 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更日志（0.1.0 → 0.14.0） | 所有人 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更日志（0.1.0 → 0.15.0） | 所有人 |
 | [`design/`](design/) | 产品规格（PRD）、架构分析、里程碑评审、开发工作流 | 开发者 |
 | [`specs/`](specs/) | 功能规格书（每 feature 一份，SDD 真相来源） | 开发者 |
-| [`adr/`](adr/README.md) | 架构决策记录（38 条 + 索引） | 开发者 |
+| [`adr/`](adr/README.md) | 架构决策记录（60 条 + 索引） | 开发者 |
 | [`backend/README.md`](backend/README.md) | 后端包说明（结构 / 开发环境 / 版本号机制） | 开发者 |
 | [`docs/`](docs/README.md) | 使用说明（用户手册 / CLI 参考 / API 文档，建设中） | 用户 |
 | [`AGENTS.md`](AGENTS.md) | AI 编码助手说明书（项目总约定 + 治理规则） | AI agent |
@@ -126,6 +126,7 @@ uv run inkflow serve
 | 0.12.1 | 0.12.0 rc10 GUI 反馈 + 后续修复批 | ✅（v0.12.1 正式发布，77/77 issues 全关） |
 | 0.13.0 | Chat Agent 工具矩阵 + Scope 授权（F58）+ 写章链路根治（F44：唯一草稿守卫/树常显审批/锚点传递/同章幂等）+ planner 质量 + 地图/写作页修复 | ✅（v0.13.0 正式发布，61/61 issues 全关） |
 | 0.14.0 | 变更推送 F23 + 写章链路根治 F44 + 思考档位 F59 + 首启引导页改造 + 内核并发约束 | ✅（v0.14.0 正式发布，99/99 issues 全关） |
+| 0.15.0 | 写作链上下文注入（三轨真实生效）+ 审计闭环（F34 阻断消费方）+ UUID 身份键（ADR-060）+ 内核单例与并发 + GUI 收口 + 工程治理（三件同步纪律 + 双件套门禁） | ✅（v0.15.0 正式发布，110 issues 全关 + 3 关联 PR） |
 | 1.0.0 | 本地完全可用（CLI + GUI + skills + MCP） | 🔜 |
 | 2.0.0 | 云端（云存档 + 异地写作） | 🔜 |
 
