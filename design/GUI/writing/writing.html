@@ -85,6 +85,9 @@ button{font-family:inherit;cursor:pointer}
 .cols{display:flex;flex:1;min-height:0}
 
 /* ── 左栏 project-tree（w-[208px] bg-surface-2） ── */
+/* #1397：左栏宽度**可变且按项目持久化** —— col-resize 拖拽 160~360px（默认 208px）；
+   载体与右栏同键 inkflow.rail_layout.<projectId> 的 treeWidth 字段（部分写，与 split/width 互不覆盖）。
+   静态简图按默认宽度 208px 呈现，拖拽后的宽度由运行时 treeWidth 受控（见 specs/f19-gui/writing.md §14）。 */
 .project-tree{display:flex;flex-direction:column;flex:none;width:208px;border-right:1px solid var(--line);background:var(--surface-2);min-height:0}
 .tree-seal{display:flex;align-items:center;gap:10px;padding:12px 16px}
 .tree-seal .seal{display:flex;width:40px;height:40px;flex:none;align-items:center;justify-content:center;border:2px solid var(--accent);border-radius:50%;color:var(--accent);font-family:var(--font-serif);font-size:18px}

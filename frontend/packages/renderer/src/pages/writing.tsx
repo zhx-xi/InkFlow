@@ -37,6 +37,7 @@ import {
   clampRailWidth,
   DEFAULT_RAIL_SPLIT,
   DEFAULT_RAIL_WIDTH,
+  DEFAULT_TREE_WIDTH,
   readRailLayout,
   writeRailLayout,
 } from '../lib/railLayout';
@@ -152,8 +153,8 @@ export function WritingPage() {
   const [autoAuthOpen, setAutoAuthOpen] = useState(false);
   const dirtyRef = useRef(false);
   const loadedRef = useRef<string | null>(null);
-  // #702：左栏宽度受控（ProjectTree col-resize 手柄回调）
-  const [treeWidth, setTreeWidth] = useState(208);
+  // #702 → #1397：左栏宽度受控（ProjectTree col-resize 手柄回调）——默认值与区间在 lib/railLayout 单点定义
+  const [treeWidth, setTreeWidth] = useState(DEFAULT_TREE_WIDTH);
   // #703 → #1378：右栏两面板由「固定 px 高」改「比例」语义 —— flex-grow 分配右栏上下显示区，
   //   默认 2:1 即铺满（原 px 定值会在右栏下方留一块固定空白）。split = context 占两面板合计高度的比例。
   const [railSplit, setRailSplit] = useState(DEFAULT_RAIL_SPLIT);
@@ -167,8 +168,9 @@ export function WritingPage() {
   const [globalDefaultModel, setGlobalDefaultModel] = useState('');
 
 
-  // #1378：右栏布局记忆按项目隔离 —— 首挂载与切项目都从存储回读（拖拽 / 调宽在 mouseup 落盘）。
-  //   railLayoutProjectRef 每实例重置，故「同一项目内重挂载」也走这条回读路径。
+  // #1378 → #1397：工作区布局记忆按项目隔离 —— 首挂载与切项目都从存储回读
+  //   （拖拽 / 调宽在 mouseup 落盘）。railLayoutProjectRef 每实例重置，
+  //   故「同一项目内重挂载」也走这条回读路径（左栏宽度 #1397 与右栏共用同一时机）。
   const railLayoutProjectRef = useRef('');
   useEffect(() => {
     if (effectiveProjectId === '' || railLayoutProjectRef.current === effectiveProjectId) return;
@@ -176,6 +178,7 @@ export function WritingPage() {
     const stored = readRailLayout(effectiveProjectId);
     setRailSplit(stored.split);
     setRailWidth(stored.width);
+    setTreeWidth(stored.treeWidth);
   }, [effectiveProjectId]);
 
   // #703 → #1378：右栏 row-resize 拖拽 —— 调的是**两面板比例**（非绝对 px）。
@@ -229,6 +232,13 @@ export function WritingPage() {
       window.addEventListener('mouseup', onUp);
     },
     [railWidth, effectiveProjectId],
+  );
+
+  // #1397：左栏 col-resize 拖拽（镜像右栏 #720；160~360px 由 ProjectTree 内部夹值）——
+  //   拖拽过程实时改宽，mouseup 才落盘（与右栏同一时机）→ 切页 / 切章重挂载后保持。
+  const handleTreeResizeEnd = useCallback(
+    (w: number) => writeRailLayout(effectiveProjectId, { treeWidth: w }),
+    [effectiveProjectId],
   );
 
   const save = useCallback(async () => {
@@ -441,7 +451,11 @@ export function WritingPage() {
               </div>
             </div>
           ) : (
-            <ProjectTree width={treeWidth} onResizeWidth={setTreeWidth} />
+            <ProjectTree
+              width={treeWidth}
+              onResizeWidth={setTreeWidth}
+              onResizeEnd={handleTreeResizeEnd}
+            />
           )}
         </aside>
         <main data-testid="editor" className="group flex min-w-0 flex-1 flex-col bg-surface">
