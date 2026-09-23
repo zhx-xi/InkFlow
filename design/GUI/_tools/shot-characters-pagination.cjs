@@ -8,7 +8,7 @@ const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.c
 const ROOT = assertGuiRoot();
 const chromium = requirePlaywright();
 assertPageDir('characters', ROOT);
-const PAGE = { file: 'characters/characters.html', states: ['main', 'rank-protagonist'] };
+const PAGE = { file: 'characters/characters.html', states: ['main', 'rank-protagonist', 'detail'] };
 
 async function checks(page, state) {
   const fails = [];
@@ -41,6 +41,8 @@ async function checks(page, state) {
       svgs: document.querySelectorAll('[data-ic] svg').length,
       scrollW: document.documentElement.scrollWidth,
       innerW: window.innerWidth,
+      // #1402：截图态（data-shot=1）必须已隐藏演示控制条
+      demoBar: cs('.demo-bar'),
       appMain: mainApp ? getComputedStyle(mainApp).display : 'MISSING',
       rankBlock: rankApp ? getComputedStyle(rankApp).display : 'MISSING',
       mainPagers: pagerIn('.app:not([data-testid="app-rank"])'),
@@ -50,6 +52,8 @@ async function checks(page, state) {
 
   if (d.svgs !== d.icons) { push(`icons ${d.svgs}/${d.icons}`, false); }
   if (d.scrollW > d.innerW) { push(`horizontal scroll ${d.scrollW}>${d.innerW}`, false); }
+  // #1402：截图态必须已隐藏演示控制条（否则混进设计基准图）
+  push('截图态 demo-bar 已隐藏', d.demoBar === 'none');
 
   if (state === 'main') {
     push('主视图可见', d.appMain !== 'none');
@@ -87,7 +91,7 @@ async function checks(page, state) {
   for (const state of PAGE.states) {
     await page.evaluate((s) => { setState(s); document.body.dataset.shot = '1'; }, state);
     await page.waitForTimeout(400);
-    const out = path.join(ROOT, 'characters', `characters-${state === 'main' ? 'main' : 'rank-protagonist'}.png`);
+    const out = path.join(ROOT, 'characters', `characters-${state}.png`);
     await page.screenshot({ path: out });
     const fails = await checks(page, state);
     if (fails.length) { totalFails += fails.length; console.log(`[${state}] FAIL: ${fails.join(' | ')}`); }
