@@ -309,6 +309,8 @@ body[data-state="drafts-approval"] .drafts-dialog{display:flex}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
 body[data-shot="1"] .demo-bar{display:none}
+/* #1400：截图态同时**冻结动效** —— 动画/过渡会让同一次重出落在不同相位（PNG 字节不稳定 → 重出判据失真） */
+body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
 </style>
 </head>
 <body data-state="editor-idle">
