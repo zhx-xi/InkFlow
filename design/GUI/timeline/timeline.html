@@ -197,6 +197,8 @@ body[data-state="empty"] .lib-empty{display:flex}
 .review-note b{color:var(--ink)}
 .review-note code{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:var(--surface-2);border-radius:4px;padding:0 4px}
 body[data-shot="1"] .demo-bar,body[data-shot="1"] .review-note{display:none}
+/* #1400：截图态同时**冻结动效** —— 动画/过渡会让同一次重出落在不同相位（PNG 字节不稳定 → 重出判据失真） */
+body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
 </style>
 </head>
 <body data-state="narrative">
