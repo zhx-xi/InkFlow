@@ -162,6 +162,9 @@ body[data-state="detail"] .dialog-overlay{display:flex}
 
 /* ═══════════ 演示切换条（截图前隐藏） ═══════════ */
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+/* #1402：截图态隐藏 demo-bar（此前缺该规则 → PNG 右下角混入演示控制条）；第二行 = #1400 冻结动效 */
+body[data-shot="1"] .demo-bar{display:none}
+body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
 </style>

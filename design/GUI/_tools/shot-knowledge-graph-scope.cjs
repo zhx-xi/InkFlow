@@ -11,7 +11,7 @@ const { assertGuiRoot, requirePlaywright, assertPageDir } = require('./_shared.c
 const ROOT = assertGuiRoot();
 const chromium = requirePlaywright();
 assertPageDir('knowledge', ROOT);
-const PAGE = { file: 'knowledge/knowledge.html', states: ['graph', 'list', 'empty'] };
+const PAGE = { file: 'knowledge/knowledge.html', states: ['graph', 'list', 'empty', 'relation-form'] };
 const VIEWPORT_H = 800;
 
 async function checks(page, state) {
@@ -31,6 +31,8 @@ async function checks(page, state) {
       svgs: document.querySelectorAll('[data-ic] svg').length,
       scrollW: document.documentElement.scrollWidth,
       innerW: window.innerWidth,
+      // #1402：截图态（data-shot=1）必须已隐藏演示控制条
+      demoBar: cs('.demo-bar'),
       // #1325 新增控件：全量实体开关
       scopeBtn: cs('[data-testid="library-kg-scope-all"]'),
       scopePressed: (q('[data-testid="library-kg-scope-all"]') || {}).getAttribute
@@ -58,6 +60,8 @@ async function checks(page, state) {
 
   if (d.svgs !== d.icons) push(`icons ${d.svgs}/${d.icons}`, false);
   if (d.scrollW > d.innerW) push(`horizontal scroll ${d.scrollW}>${d.innerW}`, false);
+  // #1402：截图态必须已隐藏演示控制条（否则混进设计基准图）
+  push('截图态 demo-bar 已隐藏', d.demoBar === 'none');
 
   // ── 三个 state 共有：#1325 新增的全量实体开关必须在工具栏可见 ──
   push('全量实体开关存在且可见', d.scopeBtn !== 'none' && d.scopeBtn !== 'MISSING');
