@@ -21,6 +21,8 @@ export interface ProjectTreeProps {
   width?: number;
   /** 拖拽调宽回调（仅传入时生效） */
   onResizeWidth?: (w: number) => void;
+  /** #1397：拖拽结束（mouseup）回调，携带本次最终宽度 —— 供写作页落盘持久化 */
+  onResizeEnd?: (w: number) => void;
 }
 
 /** #999：弹窗暂存的待提交动作（create=新建章节 / patch=章节重命名） */
@@ -28,7 +30,7 @@ type PendingChapterCommit =
   | { kind: 'create'; title: string; volumeId: string | null }
   | { kind: 'patch'; chapter: ChapterMeta; title: string };
 
-export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
+export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: ProjectTreeProps) {
   const { t } = useI18n();
   const volumes = useChapterStore((s) => s.volumes);
   const chapters = useChapterStore((s) => s.chapters);
@@ -66,20 +68,26 @@ export function ProjectTree({ width = 208, onResizeWidth }: ProjectTreeProps) {
   const [pendingCommit, setPendingCommit] = useState<PendingChapterCommit | null>(null);
   // #702：col-resize 拖拽起点（clientX + 起点宽度），mouseup 清空
   const dragStartRef = useRef<{ startX: number; startW: number } | null>(null);
+  // #1397：拖拽中最后一次算出的宽度 —— mouseup 时交给 onResizeEnd（父层不读自己的陈旧 state）
+  const lastWidthRef = useRef(width);
 
   const startResize = (e: ReactMouseEvent) => {
     e.preventDefault();
     dragStartRef.current = { startX: e.clientX, startW: width };
+    lastWidthRef.current = width;
     const onMove = (ev: MouseEvent) => {
       const drag = dragStartRef.current;
       if (!drag) return;
       const newW = Math.max(RESIZE_MIN, Math.min(RESIZE_MAX, drag.startW + (ev.clientX - drag.startX)));
+      lastWidthRef.current = newW;
       onResizeWidth?.(newW);
     };
     const onUp = () => {
       dragStartRef.current = null;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      // #1397：拖拽结束才落盘（与右栏 mouseup 落盘同一时机）
+      onResizeEnd?.(lastWidthRef.current);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);

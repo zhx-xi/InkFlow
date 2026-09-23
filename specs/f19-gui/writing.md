@@ -31,7 +31,7 @@
 ```
 - 参考锚点（以真实组件为准：pages/writing.tsx + components/ProjectTree、EditorToolbar、ContextPanel、ChatPanel、ChatDeleteAuthControl、ThinkingLevelSelect、ChatStreamBlocks、StatusBar、ChapterSummaryPanel、AuditDialog、StyleAnalyzeDialog、AIExtractDialog、AutoAuthorizationDialog）：
   - 布局：全高 flex 三栏 — 左项目树（aside project-tree）/ 中编辑器区（main）/ 右上下文栏（aside right-rail）
-  - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
+  - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；**拖拽结果按项目持久化**（同一键 `inkflow.rail_layout.<projectId>` 的 `treeWidth` 字段，跨切页/切章重挂载保持；#1397）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
   - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用 + 输入行下方 ThinkingLevelSelect 思考级别选择器（F59 spec §3.4）+ ChatStreamBlocks 流式思考/工具折叠块（#727））；工具栏行**最右**为草稿审批入口（`drafts-approval-button`，`ml-auto` 右对齐分组，无选中章节不渲染 —— 见 §9）
   - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel。**两面板按 flex 比例分配右栏上下显示区**（`flex-grow` + `flex-basis: 0%`，默认 context : summary = **2 : 1**，合计铺满不留固定空白；#1378）——row-resize 拖拽改的是该**比例**（夹在 0.2~0.8，任一面板不塌陷为 0），比例与栏宽一并按项目持久化（`inkflow.rail_layout.<projectId>`），跨切页/切章重挂载保持
   - 空态：无任何项目 → WritingEmptyState（Compass 图标 + 文案 + 「返回项目页」按钮 navigate('/projects')）
@@ -55,7 +55,7 @@
 | 章节重命名/删除 | hover 显示 Pencil/Trash2（opacity 0→1） | 行内 input（Enter 提交 / Esc 取消）；删除 → ConfirmDialog 二次确认 | — | 标题更新 / 章节移除 | — | 重命名空串或未变更 → 跳过不 PATCH | — |
 | 卷新建/重命名/删除 | 「+ 新建卷」/ hover Pencil/Trash2 | 同章节 inline 模式；删除 → VolumeDeleteDialog（章节数 + 其他卷迁移选项） | — | 卷创建/更名/删除（含章节迁移） | — | Esc 取消；标题空 → 默认「新卷」 | — |
 | 章节拖拽移动 | 章节行 draggable（effectAllowed=move） | 拖到卷区/未分组区 drop → moveChapter | 拖经卷高亮 ring-accent | 树内章节归属更新 | — | 数据经 dataTransfer text/plain 传递 | — |
-| 左栏宽度拖拽 | col-resize 手柄（tree-resize-handle） | mousedown 拖拽调宽 | — | 宽度 160~360px 实时更新 | — | 拖拽中 body userSelect 锁定；mouseup 结束 | — |
+| 左栏宽度拖拽 | col-resize 手柄（tree-resize-handle） | mousedown 拖拽调宽 | — | 宽度 160~360px 实时更新；mouseup 落盘 | — | 拖拽中 body userSelect 锁定；mouseup 结束并落盘（与右栏同一时机）；越界夹 160~360；无当前项目不落盘 | 2026-09-23：#1397 拖拽结果按项目持久化（同键 treeWidth 字段，部分写不覆盖右栏两项） |
 | 右栏折叠/调宽/调高 | 折叠按钮 right-col-toggle + col-resize 手柄 + row-resize 手柄 | 折叠 → 26px 展开条（PanelLeftOpen+展开 文案），再点展开恢复 | — | 宽度 90~540px 实时更新；面板**比例**实时更新（默认 2:1 铺满，夹 0.2~0.8） | — | 折叠态隐藏两面板与全部手柄；鼠标松开才落盘持久化 | 2026-09-23：#1378 面板高度由固定 px 改 flex 比例（2:1 铺满）+ 比例/宽度按项目持久化 |
 | ChatPanel 发送/停止 | 输入框 + 发送按钮（chat-send） | 发送 → streamChat 流式对话 | streaming 中发送按钮替换为「停止」（chat-interrupt，方块图标） | done → AI 消息落地 + 意图解析（onDone） | error → 错误文案不插入正文 | in-flight 再发不触发第二次流；停止 → abortChatRun(run_id) + 本地 abort 保留已生成前文；卸载 abort 清理 | — |
 | 思考级别选择器（ThinkingLevelSelect） | 输入行下方原生 Select（chat-reasoning-effort），值=localStorage 记忆（缺省「跟随模型默认」）；当前模型能力 false → 禁用 + tooltip | 展开七档（chat-reasoning-effort-option-<value>）选择 → 写 localStorage per-project + state | — | 仅下一轮发送带 `reasoning_effort`（default 不发参数键） | 能力数据未载 → 按可支持处理（未知/null 不禁用，软降级） | 七档顺序 关闭思考/最低/低/中/高/极高/跟随模型默认；能力 false → opacity-60 + cursor-not-allowed + tooltip「当前模型不支持思考」；切换不影响进行中一轮；记忆键 inkflow.reasoning_effort.<projectId>（Q2 拍板 B）；行为/降级明细见 F59 spec §2.1/§3.4/§5.5/§12 D8 | 2026-09-09：新增（F59-M3） |
@@ -70,7 +70,7 @@
 - N2：工具栏默认 opacity 0.35、hover 编辑器区域全显；Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+Enter / Ctrl+Shift+Enter 五组快捷键生效
 - N3：续写/生成四触发点（工具栏按钮×2 + 快捷键×2）共享模型未配置守卫：未配置 → warn toast 且不启动生成
 - N4：生成中续写/生成禁用 + Sparkles 脉冲动画；SSE 停止按钮仅流式中出现，停止后保留已生成前文
-- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（#1378：默认 2:1 铺满、拖拽改比例、跨重挂载保持）
+- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（#1378：默认 2:1 铺满、拖拽改比例、跨重挂载保持；#1397：左栏宽度同样按项目持久化、跨重挂载保持）
 - N6：自动保存 2s 防抖落盘 + 状态栏自动保存时间更新；SSE done 帧落章不触发防抖保存
 - N7：删除授权三态分段控件（delete-mode-manual/ask-once/auto）渲染三按钮，默认 manual 选中（data-selected=true / aria-pressed）；点击一次确认/全自动 → updateChatDeletePermission(conversationId, mode) PATCH 生效；conversation 缺失先建再 PATCH
 - N8：interrupt SSE 帧到达 → HITL 确认弹窗（delete-confirm-dialog 显示实体名 + confirmTitle）；点确认删除 → resumeChatRun({approved:true}) 续跑删除；点取消 → {approved:false} 拒绝不删除；弹窗打开期间分段控件 disabled
@@ -392,8 +392,9 @@
 
 ### 13.3 持久化语义
 
-- 载体：`localStorage['inkflow.rail_layout.<projectId>']` = `{"split": number, "width": number}`（JSON），
+- 载体：`localStorage['inkflow.rail_layout.<projectId>']` = `{"split": number, "width": number, "treeWidth": number}`（JSON），
   **按项目隔离**（镜像 #964 思考档位的 `inkflow.reasoning_effort.<projectId>` 形态）。
+  `treeWidth`（左栏宽度）由 #1397 并入同一键，见 §14；写入为**部分写**（只覆盖传入字段）。
 - 读侧**不信任**存储内容：越界 → 夹到合法区间；非数字 / 缺字段 / JSON 损坏 / 存储不可用（隐私模式）→
   该项回退默认（`2/3` / `240`），不抛错、不崩 UI。
 - 回读时机：**首挂载** + **切项目**（`effectiveProjectId` 变化）；同一项目内的重挂载（切页/切章回来）走首挂载路径。
@@ -410,7 +411,7 @@
 **不做**（范围拍板）：
 
 - 不引入 split-pane 类依赖 —— 既有受控手柄形态已够用；
-- **左栏** `treeWidth`（#702）不持久化：本条诉求是右栏（#1378 正文只点右栏宽度「一并核实」），左栏另议；
+- **左栏** `treeWidth`（#702）不持久化 → ~~本条诉求是右栏（#1378 正文只点右栏宽度「一并核实」），左栏另议~~ **已由 #1397 覆盖**（同一键并入 `treeWidth`，见 §14）；#1378 自身范围仍只锁右栏；
 - `railCollapsed`（整栏收起）不持久化：它是临时视图态，不是拖拽结果。
 
 原型基准：`design/GUI/writing/writing.html`（两面板 flex 2:1 铺满）；受影响状态 PNG **全量重出** ——
@@ -424,3 +425,52 @@ writing-context-preselect-loading / writing-drafts-approval / writing-delete-aut
 
 ⚠️ **视觉复验边界**：jsdom 无盒模型 → 前端契约只锁 flex 结构 / 占比 / 持久化读写；真实像素呈现
 （铺满、2:1、拖拽手感、窗口 resize 行为）由上述 PNG 几何断言 + 人工目视确认，**无**浏览器自动化回归。
+
+## 14. #1397 左栏宽度拖拽结果持久化
+
+> 现象（#1378 收尾核实的同族缺口）：左栏宽度自 #702 起是页面 state（`writing.tsx` 的 `useState(208)`），
+> **无任何存储读写** → 拖完切页 / 切章 / 重挂载即回默认 208px。与 #1378 修掉的右栏是同一类缺陷。
+> 本节锁三件事：① 复用同一份工作区布局记忆（不另建键 / 不抽 hook）；② 落盘时机与右栏一致（mouseup）；
+> ③ 区间与容错口径沿用左栏既有形态（160~360，越界夹值 / 损坏回退）。
+
+### 14.1 画面/布局补充
+
+- 左栏宽度仍由 `treeWidth` 受控（`aside project-tree` 的 `style.width`）——形态不变；
+- col-resize 手柄（`tree-resize-handle`）拖拽中**实时**改宽，**mouseup 才落盘**（与右栏同一时机；避免拖拽途中高频写存储）；
+- 默认值 / 区间单点定义在 `lib/railLayout.ts`（`DEFAULT_TREE_WIDTH = 208` / `TREE_WIDTH_MIN = 160` / `TREE_WIDTH_MAX = 360`），与 `ProjectTree` 既有 `RESIZE_MIN/RESIZE_MAX` **同值**（不另立一套；组件内仍由自身常量夹值）。
+
+### 14.2 动作样式补充
+
+| 控件 | 初始态 | 拖拽中 | 成功 | 边界 |
+|------|--------|--------|------|------|
+| col-resize 手柄（`tree-resize-handle`） | 左栏默认 208px（或该项目上次的记忆宽） | 160~360px 实时改宽（既有 `onResizeWidth`） | mouseup → 经新增可选 prop `onResizeEnd(w)` 落盘 `localStorage['inkflow.rail_layout.<projectId>'].treeWidth`（**部分写**） | 越界由 `ProjectTree` 夹到 160~360；无当前项目（`projectId === ''`）→ 不落盘；拖拽中 body userSelect 锁定（既有） |
+
+- `ProjectTree` 新增**可选** prop `onResizeEnd?: (w: number) => void`（未传 → 行为与 #702 完全一致，既有调用点零影响）；携带手柄内部算出的**最终宽度**（父层不读自己的陈旧 state）。
+
+### 14.3 持久化语义
+
+- 载体 = **同一键** `inkflow.rail_layout.<projectId>` 的 `treeWidth` 字段（与 `split` / `width` 并列，见 §13.3）——单键、单读回时机、一份容错逻辑；
+- 回读时机与右栏**完全共用**（`writing.tsx` 既有回读 effect：#1378 建立，首挂载 + 切项目）：同一 effect 内一并 `setRailSplit / setRailWidth / setTreeWidth`；
+- 读侧不信任存储：越界 → 夹 160~360；非数字 / 缺字段 / JSON 损坏 / 存储不可用 → 该项回退 208（**不影响**右栏两项读回）；
+- #1378 旧数据（无 `treeWidth` 字段）→ 仅该项取默认，右栏两项照读（向前兼容）。
+
+### 14.4 验收补充
+
+- N46：无记忆挂载 → 左栏宽 208px；拖 `tree-resize-handle` → 宽度实时跟随，mouseup 落盘 `inkflow.rail_layout.<projectId>.treeWidth`；
+- N47：卸载重挂载 → 宽度保持（清掉记忆则回默认 208）；切项目 → 读回该项目自己的 `treeWidth`（项目隔离）；
+- N48：越界猛拖 → 夹在 160 / 360；存储损坏 / 非数字 → 回退 208，不崩 UI；
+- N49：**部分写互不覆盖**（反向断言）—— 左栏落盘不得把同键的 `split` / `width` 打回默认；反之亦然；
+- N50：可证伪自证 —— ① 删除回读 effect 里的 `setTreeWidth(stored.treeWidth)` → N47 必须 FAIL（实测 2 例红）；
+  ② `onResizeEnd` 落盘断链 → N46/N47/N49 必须 FAIL（实测 3 例红）；两者还原后复绿。
+
+**不做**（范围拍板）：
+
+- ❌ 不抽公共 `usePersistedNumber(key, default, min, max)` hook：「左一 + 右一」两次重复未达 Rule of Three，属提前抽象（AGENTS.md §10.2）；
+- ❌ 不改存储键名（`rail_layout` 名不副实只在注释层；改键名会作废已落盘数据且零收益）→ 只把 `lib/railLayout.ts` 文件头措辞升为「写作页工作区布局」；
+- ❌ 不另建姊妹键（`inkflow.tree_layout.<projectId>`）：同一 JSON 扩字段更省（单键、单读回时机、一份容错）。
+
+原型基准：`design/GUI/writing/writing.html` 的 `.project-tree`（注释层补「宽度可拖拽且持久化」的语义表达）。
+**本轨原型改动为注释级、零像素变化** → 无「受影响状态」需重出：以
+`design/GUI/_tools/shot-writing-global-chat-and-sessions.cjs` 重出核对，writing 5 态中 4 张字节**完全一致**
+（`writing-streaming` 为流式态动画帧——同一 HTML 连跑两次字节亦不同，属既有非确定性渲染），
+故未提交任何 PNG 变更（避免把动画噪声当作本轨产物）。
