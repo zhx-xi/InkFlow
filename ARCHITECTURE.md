@@ -29,7 +29,7 @@ D:\develop\projects\
 │   ├── ai-traps.md                  # AI 编码常见陷阱完整清单（AGENTS.md §9 引用）
 │   ├── README.md / FEATURES.md / LICENSE
 │   ├── adr\                         # ★ ADR 决策记录（索引见 adr/README.md）
-│   │   ├── README.md                #   ADR 索引 + 编号规则（38 条有效，2026-08-16）
+│   │   ├── README.md                #   ADR 索引 + 编号规则（60 条记录，2026-09-23）
 │   │   └── ADR-NNN.md               #   单个决策记录（Nygard 格式）
 │   ├── design\                      # ★ 产品/架构设计文档
 │   │   ├── prd-inkflow-v2.1-2026-07-30.md   #   PRD（文件名 v2.1，内容 v2.2 修订）
@@ -91,7 +91,7 @@ D:\develop\projects\
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
-| **core** | `src/inkflow/core/` | 配置（pydantic-settings）、数据库引擎/会话、日志（Loguru）、模型注册表 |
+| **core** | `src/inkflow/core/` | 配置（pydantic-settings）、数据库引擎/会话、日志（Loguru）、模型注册表、UUID 身份生成（`uuid_gen.py`，ADR-060）、内核启动对账（`startup_reconcile.py`） |
 | **domain/models** | `src/inkflow/domain/models/` | 纯 Pydantic 聚合/实体/值对象（零框架依赖） |
 | **domain/services** | `src/inkflow/domain/services/` | 业务编排；`_*_extractor`/`_*_generator`/`_*_analyzer` 私有实现 |
 | **domain/ports** | `src/inkflow/domain/ports/` | 出站端口 Protocol（仓储/LLM/向量库/云接口）；`cloud/` = P0-11 |
