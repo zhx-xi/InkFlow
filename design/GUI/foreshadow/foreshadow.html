@@ -2,7 +2,7 @@
 <html lang="zh" data-theme="paper">
 <head>
 <meta charset="utf-8" />
-<title>InkFlow 设定库 · 伏笔 — 官方简图原型</title>
+<title>InkFlow 设定库 · 伏笔 — 官方简图原型（#1376 筛选/排序）</title>
 <style>
 /* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
 :root{
@@ -39,6 +39,7 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:13px;line-height:1.5;overflow:hidden}
+[data-ic]{display:inline-flex;align-items:center}
 [data-ic] svg{width:16px;height:16px;display:block;flex:none}
 button{font-family:inherit;cursor:pointer}
 ::selection{background:var(--ring)}
@@ -109,6 +110,49 @@ button{font-family:inherit;cursor:pointer}
 .fs-open{background:var(--accent-weak);color:var(--accent)}
 .fs-resolved{background:var(--surface-3);color:var(--ink-3)}
 .fs-pri{flex:none;border-radius:999px;background:var(--surface-3);padding:2px 8px;font-size:11px;color:var(--ink-2);white-space:nowrap}
+.fs-resolved-at{flex:none;font-size:11px;color:var(--ink-3);white-space:nowrap}
+
+/* ═══════════ #1376 筛选 / 排序条 ═══════════ */
+.fs-filters{border-bottom:1px solid var(--line);background:var(--surface-2)}
+body[data-bar="legacy"] .fs-filters{display:none}
+.fs-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px}
+.fs-bar-b{display:none}
+body[data-bar="B"] .fs-bar-a{display:none}
+body[data-bar="B"] .fs-bar-b{display:flex}
+.fs-group{display:inline-flex;align-items:center;gap:6px}
+.fs-group-label{font-size:11px;color:var(--ink-3);white-space:nowrap}
+.fs-sep{width:1px;height:18px;background:var(--line);flex:none}
+.fs-spacer{flex:1;min-width:8px}
+.chip-group{display:inline-flex;flex-wrap:wrap;gap:4px}
+.rank-chip{border:none;border-radius:999px;padding:4px 12px;font-size:12px;transition:background var(--dur),color var(--dur)}
+.rank-chip.active{background:var(--accent);color:var(--accent-ink)}
+.rank-chip.idle{background:var(--surface-3);color:var(--ink-2)}
+.rank-chip.idle:hover{color:var(--ink)}
+.fs-input{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:4px 10px;height:26px;width:220px;font-family:inherit;outline:none}
+.fs-input:focus{border-color:var(--accent)}
+.fs-input::placeholder{color:var(--ink-3)}
+.fs-select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 8px;height:26px;font-family:inherit;outline:none}
+.fs-num{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px;height:26px;width:64px;font-family:inherit;outline:none}
+.fs-tilde{color:var(--ink-3);font-size:12px}
+.fs-tag{flex:none;border-radius:999px;background:var(--surface-3);padding:1px 7px;font-size:10px;color:var(--ink-3);white-space:nowrap}
+.fs-tag.warn{color:var(--warn)}
+.fs-count{font-size:11px;color:var(--ink-3);white-space:nowrap}
+.fs-sort{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-2);font-size:12px;padding:4px 10px;height:26px;transition:border-color var(--dur),color var(--dur)}
+.fs-sort:hover{border-color:var(--accent);color:var(--accent)}
+.fs-sort [data-ic] svg{width:13px;height:13px}
+/* 口径 2（结构化章节关联）——默认隐藏，切到 struct 才出现。⚠️ 显示规则必须显式声明 display */
+.fs-chapter-struct{display:none}
+body[data-chapter="struct"] .fs-chapter-text{display:none}
+body[data-chapter="struct"] .fs-chapter-struct{display:inline-flex}
+
+/* 筛选无结果 */
+.fs-noresult{display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px 24px;text-align:center}
+.fs-noresult p{margin:0;font-size:13px;color:var(--ink-2)}
+
+/* 🔴 设计注释条（原型专有：供给评审读取舍，实现时**不得**做进产品 UI） */
+.design-note{display:none;align-items:flex-start;gap:8px;margin:8px 12px 10px;border:1px dashed var(--warn);border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;color:var(--ink-2)}
+.design-note .dn-tag{flex:none;border-radius:999px;background:var(--surface-3);padding:1px 8px;font-size:10px;color:var(--ink-3);white-space:nowrap;margin-top:1px}
+.design-note b{color:var(--warn);font-weight:600}
 
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
@@ -137,9 +181,10 @@ body[data-state="create-dialog"] .dialog-overlay{display:flex}
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
+body[data-shot="1"] .demo-bar{display:none}
 </style>
 </head>
-<body data-state="main">
+<body data-state="main" data-bar="A" data-chapter="text">
 
 <div class="app">
   <!-- ═══ 侧边导航 AppNav（设定库分组，伏笔激活） ═══ -->
@@ -218,51 +263,129 @@ body[data-state="create-dialog"] .dialog-overlay{display:flex}
         <button class="btn-ghost" data-testid="extract-entry-lib"><span data-ic="filesearch"></span>AI 提取</button>
       </div>
 
-      <!-- 伏笔列表：标题 + 状态徽标 + 优先级 + 埋设位置 + 悬停操作 -->
-      <div class="lib-card" data-testid="library-list">
-        <div class="divide-y">
-          <div class="lib-row">
-            <span class="tname">师父闭关的真相</span>
-            <span class="fs-status fs-open" data-testid="fs-status-1">未回收</span>
-            <span class="fs-pri">优先级 90</span>
-            <span class="badge">第 11 章 · 闭关</span>
-            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+      <!-- 伏笔列表：筛选/排序条（#1376）+ 行 = 标题 / 状态徽标 / 优先级 / 位置 / 悬停操作 -->
+      <div class="lib-card" data-testid="library-list" id="fsCard">
+
+        <!-- ══ #1376 筛选/排序条：方案 A（chip 组） / 方案 B（下拉 + 区间） ══ -->
+        <div class="fs-filters" data-testid="foreshadow-filters">
+          <!-- ── 形态 A：chip 组 + 位置文本 + 排序切换 ── -->
+          <div class="fs-bar fs-bar-a" data-testid="fs-bar-a">
+            <span class="fs-group">
+              <span class="fs-group-label">回收状态</span>
+              <span class="chip-group" data-testid="fs-status-chips">
+                <button class="rank-chip idle" data-testid="fs-status-chip-all">全部</button>
+                <button class="rank-chip idle" data-testid="fs-status-chip-open">未回收</button>
+                <button class="rank-chip idle" data-testid="fs-status-chip-resolved">已回收</button>
+              </span>
+            </span>
+            <span class="fs-sep"></span>
+            <span class="fs-group fs-chapter-text" data-testid="fs-chapter-text">
+              <span class="fs-group-label">检索</span>
+              <input class="fs-input" id="fsSearchInput" data-testid="fs-search-input" placeholder="检索标题或位置，如：剑 / 第 2 章" />
+              <span class="fs-tag">标题 + 位置</span>
+            </span>
+            <span class="fs-group fs-chapter-struct" data-testid="fs-chapter-struct">
+              <span class="fs-group-label">出现章节</span>
+              <span class="chip-group" data-testid="fs-chapter-selected"></span>
+              <button class="fs-sort" data-testid="fs-chapter-picker"><span data-ic="plus"></span>选择章节</button>
+              <span class="fs-tag warn">结构化关联</span>
+            </span>
+            <span class="fs-spacer"></span>
+            <span class="fs-count" id="fs-count" data-testid="fs-count">显示 8 / 共 8 条</span>
+            <button class="fs-sort" data-testid="fs-sort-toggle">
+              <span data-ic="arrowdown" id="fsSortIc"></span>
+              <span id="fsSortLabel" data-testid="fs-sort-label">优先级 高→低</span>
+            </button>
           </div>
-          <div class="lib-row">
-            <span class="tname">断剑的秘密</span>
-            <span class="fs-status fs-open" data-testid="fs-status-2">未回收</span>
-            <span class="fs-pri">优先级 75</span>
-            <span class="badge">第 13 章 · 山门</span>
-            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+
+          <!-- ── 形态 B：下拉 + 优先级区间 ── -->
+          <div class="fs-bar fs-bar-b" data-testid="fs-bar-b">
+            <span class="fs-group">
+              <span class="fs-group-label">回收状态</span>
+              <select class="fs-select" data-testid="fs-status-select">
+                <option>全部</option>
+                <option>未回收</option>
+                <option>已回收</option>
+              </select>
+            </span>
+            <span class="fs-sep"></span>
+            <span class="fs-group">
+              <span class="fs-group-label">优先级</span>
+              <input class="fs-num" type="number" min="0" max="100" value="0" data-testid="fs-priority-min" />
+              <span class="fs-tilde">–</span>
+              <input class="fs-num" type="number" min="0" max="100" value="100" data-testid="fs-priority-max" />
+            </span>
+            <span class="fs-sep"></span>
+            <span class="fs-group">
+              <span class="fs-group-label">位置</span>
+              <select class="fs-select" data-testid="fs-location-select">
+                <option>全部位置</option>
+                <option>第 11 章 · 闭关</option>
+                <option>第 13 章 · 山门</option>
+                <option>第 2 章 · 初见</option>
+                <option>第 10 章 · 剑冢</option>
+                <option>开篇 · 序章梦境</option>
+              </select>
+              <span class="fs-tag">位置枚举</span>
+            </span>
+            <span class="fs-spacer"></span>
+            <span class="fs-count" id="fs-count-b" data-testid="fs-count-b">显示 8 / 共 8 条</span>
+            <select class="fs-select" data-testid="fs-sort-select">
+              <option>优先级 高→低</option>
+              <option>优先级 低→高</option>
+            </select>
           </div>
-          <div class="lib-row">
-            <span class="tname">林晚照的旧玉佩</span>
-            <span class="fs-status fs-open" data-testid="fs-status-3">未回收</span>
-            <span class="fs-pri">优先级 60</span>
-            <span class="badge">第 2 章 · 初见</span>
-            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-          </div>
-          <div class="lib-row">
-            <span class="tname">守陵人的来历</span>
-            <span class="fs-status fs-open" data-testid="fs-status-4">未回收</span>
-            <span class="fs-pri">优先级 55</span>
-            <span class="badge">第 10 章 · 剑冢</span>
-            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-          </div>
-          <div class="lib-row">
-            <span class="tname">白眉道人袖中的剑穗</span>
-            <span class="fs-status fs-resolved" data-testid="fs-status-5">已回收</span>
-            <span class="fs-pri">优先级 40</span>
-            <span class="badge">第 8 章 · 藏经阁</span>
-            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-          </div>
-          <div class="lib-row">
-            <span class="tname">青云剑诀第九式的缺失</span>
-            <span class="fs-status fs-resolved" data-testid="fs-status-6">已回收</span>
-            <span class="fs-pri">优先级 30</span>
-            <span class="badge">第 6 章 · 剑阁</span>
-            <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-          </div>
+        </div>
+
+        <!-- 🔴 设计注释条（原型专有，实现时删除；每态一条，标注推荐与取舍） -->
+        <div class="design-note" data-design-annotation="1" data-plan="main" data-testid="fs-note-main">
+          <span class="dn-tag">方案 A · 推荐</span>
+          <span><b>chip 组</b>（复用角色等级 chip 先例）：状态三态即可覆盖「多选」语义（只有 open/resolved 两值）。<b>状态走后端已有 <code>?status=</code>，排序走已有 <code>?sort_by=priority&amp;sort_desc=</code>，标题检索走已有 <code>?search=</code>（title icontains）→ 三者零后端改动</b>。输入框 = <b>实时检索</b>（边输边筛，无需 Enter），匹配面 = <b>条目标题 OR 位置文本</b>。⚠️ 位置面若要服务端化需新增 <code>?location=</code>（已拍板采纳）；在此之前纯前端只能过滤「当前页」（#1320 同因）。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="filter-a" data-testid="fs-note-filter-a">
+          <span class="dn-tag">方案 A · 激活态</span>
+          <span>选中「未回收」→ 8 条收窄到 6 条；计数行同步显示 <b>显示 6 / 共 8 条</b>。分页 total 跟随筛选口径（不选 = 全部）。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="filter-b" data-testid="fs-note-filter-b">
+          <span class="dn-tag">方案 B · 备选</span>
+          <span><b>下拉 + 优先级区间</b>：更紧凑、支持优先级区间；位置用<b>枚举下拉</b>（无输入错误，但只能精确匹配既有 location 值，不能像文本那样以「第 2 章」子串跨多条命中）。⚠️ 若采纳 B：检索框须与位置枚举下拉<b>并存</b>（标题检索不可省）；区间/多选若要正确的 total 与跨页结果，需后端补 <code>?priority_min/max</code> 等参数。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="search-title" data-testid="fs-note-search-title">
+          <span class="dn-tag">检索 · 标题面</span>
+          <span>输入「剑」→ 命中 <b>5 条</b>：<b>4 条命中标题</b>（断剑的秘密 / 无名剑客的遗言 / 白眉道人袖中的剑穗 / 青云剑诀第九式的缺失）+ <b>1 条命中位置</b>（守陵人的来历 · 第 10 章 · 剑冢）。标题面 = 后端已有 <code>?search=</code>（title icontains，零改动、可服务端化）；位置面见口径 1 取舍。标签「标题 + 位置」如实标注匹配面。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="chapter-match-text" data-testid="fs-note-chapter-match-text">
+          <span class="dn-tag">口径 1 · 位置文本</span>
+          <span>检索「第 2 章」在标题面/位置面均无标题命中 → <b>1 条</b>（位置面）。⚠️ 另有 <b>2 条</b>结构上同属第 2 章（「无名剑客的遗言」location 写的是「开篇 · 序章梦境」、「未署名的旧信」location 为空）→ <b>口径 1 必然漏掉</b>；location 为空的条目不命中位置面。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="chapter-match-struct" data-testid="fs-note-chapter-match-struct">
+          <span class="dn-tag">口径 2 · 结构化</span>
+          <span>选「第 2 章」→ 命中 <b>3 条</b>（含口径 1 漏掉的两条），<b>无漏项</b>。⚠️ 需 F14 提取侧补 <code>foreshadowing ↔ chapter</code> 关联字段（跨 F12/F14）→ <b>本期不可用，本图仅形态演示</b>。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="sort-asc" data-testid="fs-note-sort-asc">
+          <span class="dn-tag">排序 · 升序</span>
+          <span>同一控件的对侧形态：<code>?sort_by=priority&amp;sort_desc=false</code>，后端已支持、零改动；同优先级按 <code>updated_at DESC</code> 兜底稳定排序（F13 spec §6.2）。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="noresult" data-testid="fs-note-noresult">
+          <span class="dn-tag">边界 · 无结果</span>
+          <span>筛选组合命中 0 条时的形态：给出原因 + <b>「清除筛选」入口</b>，避免用户困在空列表（不显示「还没有伏笔，去创建」——那会误导为数据为空）。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="legacy" data-testid="fs-note-legacy">
+          <span class="dn-tag">现状 · before</span>
+          <span>无筛选/排序控件，仅展示 状态徽标 / 优先级 / 位置（#1324 已交付的形态）。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="empty" data-testid="fs-note-empty">
+          <span class="dn-tag">空态</span>
+          <span>无任何伏笔时隐藏筛选栏（无数据可筛）；保持「还没有伏笔，去创建」+ CTA 原样。</span>
+        </div>
+
+        <!-- 行容器（JS 按筛选/排序结果渲染） -->
+        <div class="divide-y" data-testid="fs-rows" id="fsRows"></div>
+
+        <!-- 筛选无结果 -->
+        <div class="fs-noresult" data-testid="fs-noresult">
+          <p>当前筛选条件下没有匹配的伏笔</p>
+          <button class="btn-ghost2" data-testid="fs-clear-filters">清除筛选</button>
         </div>
       </div>
 
@@ -278,7 +401,7 @@ body[data-state="create-dialog"] .dialog-overlay{display:flex}
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
       <span>项目: 青云志</span>
-      <span>伏笔 6 条 · 未回收 4</span>
+      <span>伏笔 8 条 · 未回收 6</span>
     </div>
   </div>
 </div>
@@ -317,9 +440,17 @@ body[data-state="create-dialog"] .dialog-overlay{display:flex}
 <div class="demo-bar">
   <label>状态
     <select id="stateSel">
-      <option value="main">伏笔列表 · 状态徽标</option>
-      <option value="create-dialog">创建伏笔对话框</option>
+      <option value="main">筛选 A（chip 组）· 推荐</option>
+      <option value="filter-a">筛选 A · 激活（未回收）</option>
+      <option value="filter-b">筛选 B（下拉 + 区间）</option>
+      <option value="search-title">检索 · 标题面（输入「剑」）</option>
+      <option value="chapter-match-text">出现章节 · 口径 1 位置文本</option>
+      <option value="chapter-match-struct">出现章节 · 口径 2 结构化</option>
+      <option value="sort-asc">排序 · 优先级升序</option>
+      <option value="noresult">筛选无结果</option>
+      <option value="legacy">现状对照（无筛选栏）</option>
       <option value="empty">空态</option>
+      <option value="create-dialog">创建伏笔对话框</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -361,37 +492,186 @@ const ICONS = {
   trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
   filesearch:'<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M4.268 21a2 2 0 0 0 2 1h9a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/><path d="M4.268 21A2 2 0 0 1 2 19v-3"/><circle cx="17" cy="17" r="3"/><path d="m21 21-1.9-1.9"/>',
+  arrowdown:'<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  arrowup:'<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
 };
-document.querySelectorAll('[data-ic]').forEach(el=>{
-  const name = el.getAttribute('data-ic');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('viewBox','0 0 24 24');
-  svg.setAttribute('fill','none');
-  svg.setAttribute('stroke','currentColor');
-  svg.setAttribute('stroke-width','2');
-  svg.setAttribute('stroke-linecap','round');
-  svg.setAttribute('stroke-linejoin','round');
-  svg.innerHTML = ICONS[name] || '';
-  el.appendChild(svg);
-});
 
-/* ── 状态机 ── */
-const STATES = ['main','create-dialog','empty'];
+const NS = 'http://www.w3.org/2000/svg';
+/** 图标注入（可重复调用：先清空既有 svg，防重复渲染） */
+function injectIcons(root){
+  root.querySelectorAll('[data-ic]').forEach(el=>{
+    el.querySelectorAll('svg').forEach(s=>s.remove());
+    const svg = document.createElementNS(NS,'svg');
+    svg.setAttribute('viewBox','0 0 24 24');
+    svg.setAttribute('fill','none');
+    svg.setAttribute('stroke','currentColor');
+    svg.setAttribute('stroke-width','2');
+    svg.setAttribute('stroke-linecap','round');
+    svg.setAttribute('stroke-linejoin','round');
+    svg.innerHTML = ICONS[el.getAttribute('data-ic')] || '';
+    el.appendChild(svg);
+  });
+}
+
+/* ── 数据（原型演示数据；字段与 GET /projects/{pid}/foreshadowings 响应一致。
+       chapters 为口径 2 演示专用字段：真实后端**尚无**该关联（本轮标注为需后端先行） ── */
+const DATA = [
+  { id:1, title:'师父闭关的真相',        status:'open',     priority:90, location:'第 11 章 · 闭关',      chapters:['第 11 章'] },
+  { id:2, title:'断剑的秘密',            status:'open',     priority:75, location:'第 13 章 · 山门',      chapters:['第 13 章'] },
+  { id:3, title:'林晚照的旧玉佩',        status:'open',     priority:60, location:'第 2 章 · 初见',       chapters:['第 2 章'] },
+  { id:4, title:'守陵人的来历',          status:'open',     priority:55, location:'第 10 章 · 剑冢',      chapters:['第 10 章'] },
+  { id:5, title:'无名剑客的遗言',        status:'open',     priority:45, location:'开篇 · 序章梦境',      chapters:['第 2 章'] },
+  { id:6, title:'白眉道人袖中的剑穗',    status:'resolved', priority:40, location:'第 8 章 · 藏经阁',     chapters:['第 8 章'],  resolvedAt:'2026-08-30' },
+  { id:7, title:'青云剑诀第九式的缺失',  status:'resolved', priority:30, location:'第 6 章 · 剑阁',       chapters:['第 6 章'],  resolvedAt:'2026-09-02' },
+  { id:8, title:'未署名的旧信',          status:'open',     priority:20, location:'',                     chapters:['第 2 章'] },
+];
+
+/** 每状态预设（形态 / 口径 / 检索词 / 排序方向） */
+const PRESETS = {
+  'legacy':              { bar:'legacy', chapter:'text',   status:'all',      q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'main':                { bar:'A',      chapter:'text',   status:'all',      q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'filter-a':            { bar:'A',      chapter:'text',   status:'open',     q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'filter-b':            { bar:'B',      chapter:'text',   status:'all',      q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'search-title':        { bar:'A',      chapter:'text',   status:'all',      q:'剑',     chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'chapter-match-text':  { bar:'A',      chapter:'text',   status:'all',      q:'第 2 章', chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'chapter-match-struct':{ bar:'A',      chapter:'struct', status:'all',      q:'',       chapterSel:'第 2 章', pmin:0, pmax:100, sortDesc:true  },
+  'sort-asc':            { bar:'A',      chapter:'text',   status:'all',      q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:false },
+  'noresult':            { bar:'A',      chapter:'text',   status:'resolved', q:'第 2 章', chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'empty':               { bar:'legacy', chapter:'text',   status:'all',      q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+  'create-dialog':       { bar:'A',      chapter:'text',   status:'all',      q:'',       chapterSel:null,      pmin:0, pmax:100, sortDesc:true  },
+};
+const STATES = Object.keys(PRESETS);
+
+let S = Object.assign({}, PRESETS.main);
+
+/** 筛选 + 排序（口径 1 = 标题 OR 位置 文本子串；口径 2 = 结构化 chapters 数组） */
+function computeRows(){
+  let rows = DATA.slice();
+  if (S.status !== 'all') rows = rows.filter(r => r.status === S.status);
+  if (S.chapter === 'text'){
+    const q = String(S.q || '').trim().toLowerCase();
+    // 检索面 = 条目标题 OR 位置文本（用户拍板：输入框兼作标题检索）
+    if (q) rows = rows.filter(r =>
+      String(r.title || '').toLowerCase().includes(q) || String(r.location || '').toLowerCase().includes(q));
+  } else if (S.chapter === 'struct'){
+    if (S.chapterSel) rows = rows.filter(r => (r.chapters || []).indexOf(S.chapterSel) >= 0);
+  }
+  if (S.bar === 'B') rows = rows.filter(r => r.priority >= S.pmin && r.priority <= S.pmax);
+  const dir = S.sortDesc ? -1 : 1;
+  rows.sort((a,b) => (a.priority - b.priority) * dir);
+  return rows;
+}
+
+function rowHtml(r){
+  const st = r.status === 'resolved' ? 'fs-resolved' : 'fs-open';
+  const stText = r.status === 'resolved' ? '已回收' : '未回收';
+  const at = (r.status === 'resolved' && r.resolvedAt)
+    ? '<span class="fs-resolved-at" data-testid="fs-resolved-at-' + r.id + '">· ' + r.resolvedAt + '</span>'
+    : '';
+  const loc = r.location
+    ? '<span class="badge" data-testid="fs-location-' + r.id + '">' + r.location + '</span>'
+    : '';
+  return '<div class="lib-row" data-testid="fs-row-' + r.id + '" data-status="' + r.status + '" data-priority="' + r.priority + '">'
+    + '<span class="tname">' + r.title + '</span>'
+    + '<span class="fs-status ' + st + '" data-testid="fs-status-' + r.id + '">' + stText + '</span>' + at
+    + '<span class="fs-pri" data-testid="fs-priority-' + r.id + '">优先级 ' + r.priority + '</span>'
+    + loc
+    + '<span class="row-actions"><button data-testid="fs-edit-' + r.id + '"><span data-ic="pencil"></span></button>'
+    + '<button class="del" data-testid="fs-delete-' + r.id + '"><span data-ic="trash"></span></button></span>'
+    + '</div>';
+}
+
+function render(){
+  // 形态 / 口径属性（CSS 驱动显隐）
+  document.body.dataset.bar = S.bar;
+  document.body.dataset.chapter = S.chapter;
+
+  // 行
+  const host = document.getElementById('fsRows');
+  const rows = computeRows();
+  host.innerHTML = rows.map(rowHtml).join('');
+  injectIcons(host);
+
+  // 计数
+  const countText = '显示 ' + rows.length + ' / 共 ' + DATA.length + ' 条';
+  document.getElementById('fs-count').textContent = countText;
+  document.getElementById('fs-count-b').textContent = countText;
+
+  // 状态 chip 高亮
+  const chipMap = { all:'fs-status-chip-all', open:'fs-status-chip-open', resolved:'fs-status-chip-resolved' };
+  Object.keys(chipMap).forEach(k => {
+    const el = document.querySelector('[data-testid="' + chipMap[k] + '"]');
+    el.classList.toggle('active', S.status === k);
+    el.classList.toggle('idle', S.status !== k);
+    el.setAttribute('aria-pressed', String(S.status === k));
+  });
+
+  // 口径 1 检索输入 / 口径 2 已选章节 chip
+  document.getElementById('fsSearchInput').value = S.q;
+  const selHost = document.querySelector('[data-testid="fs-chapter-selected"]');
+  selHost.innerHTML = S.chapterSel
+    ? '<button class="rank-chip active" data-testid="fs-chapter-chip-selected">' + S.chapterSel + '</button>'
+    : '';
+  injectIcons(selHost);
+
+  // 排序控件
+  const asc = !S.sortDesc;
+  document.getElementById('fsSortLabel').textContent = asc ? '优先级 低→高' : '优先级 高→低';
+  const ic = document.getElementById('fsSortIc');
+  ic.setAttribute('data-ic', asc ? 'arrowup' : 'arrowdown');
+  injectIcons(ic.parentElement);
+
+  // 筛选无结果
+  document.querySelector('[data-testid="fs-noresult"]').style.display = rows.length ? 'none' : 'flex';
+
+  // 设计注释条（唯一显示当前态那条）
+  document.querySelectorAll('.design-note').forEach(n => {
+    n.style.display = n.getAttribute('data-plan') === document.body.dataset.state ? 'flex' : 'none';
+  });
+}
+
 function setState(s){
+  if (!PRESETS[s]) return;
   document.body.dataset.state = s;
-  document.getElementById('stateSel').value = s;
+  S = Object.assign({}, PRESETS[s]);
+  const sel = document.getElementById('stateSel');
+  if (sel) sel.value = s;
+  render();
 }
 function setTheme(th){
   document.documentElement.dataset.theme = th;
   document.body.dataset.theme = th;
+  const sel = document.getElementById('themeSel');
+  if (sel) sel.value = th;
 }
-document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
-document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
-const init = location.hash.replace('#','');
-if (STATES.includes(init)) { setState(init); document.getElementById('stateSel').value = init; }
+
+/* ── 交互绑定（原型可点：chip / 排序 / 清除筛选） ── */
+function bind(){
+  const chipMap = { 'fs-status-chip-all':'all', 'fs-status-chip-open':'open', 'fs-status-chip-resolved':'resolved' };
+  Object.keys(chipMap).forEach(tid => {
+    const el = document.querySelector('[data-testid="' + tid + '"]');
+    if (el) el.addEventListener('click', () => { S.status = chipMap[tid]; render(); });
+  });
+  const sortBtn = document.querySelector('[data-testid="fs-sort-toggle"]');
+  if (sortBtn) sortBtn.addEventListener('click', () => { S.sortDesc = !S.sortDesc; render(); });
+  const searchInput = document.getElementById('fsSearchInput');
+  if (searchInput) searchInput.addEventListener('input', () => { S.q = searchInput.value; render(); });
+  const clearBtn = document.querySelector('[data-testid="fs-clear-filters"]');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    S.status = 'all'; S.q = ''; S.chapterSel = null; render();
+  });
+  document.getElementById('stateSel').addEventListener('change', e => setState(e.target.value));
+  document.getElementById('themeSel').addEventListener('change', e => setTheme(e.target.value));
+}
+
+/* ── 初始化 ── */
+injectIcons(document);
+bind();
+const initState = location.hash.replace('#', '');
+setState(STATES.includes(initState) ? initState : 'main');
 window.addEventListener('hashchange', () => {
-  const s = location.hash.replace('#','');
-  if (STATES.includes(s)) { setState(s); document.getElementById('stateSel').value = s; }
+  const s = location.hash.replace('#', '');
+  if (STATES.includes(s)) setState(s);
 });
 </script>
 </body>
