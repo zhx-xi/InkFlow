@@ -526,6 +526,7 @@ async def get_extraction_service(
     db: AsyncSession,
 ) -> ExtractionService:
     """获取 ExtractionService 实例（F14 统一提取门面，spec §5/§8）： 复用 F9-F12 + F16 风格 + 增量追踪 + 懒加载向量存储 + ..."""  # noqa: E501  # 中文 docstring 长描述
+    from inkflow.api.deps_kg_extract import get_relation_extraction_service
     from inkflow.core.config import config
 
     vector_store = await get_vector_store_optional()
@@ -566,6 +567,7 @@ async def get_extraction_service(
             timeline_repo=SQLiteTimelineRepository(db),
         ),
         style_service=get_style_service(db),
+        relation_extraction_service=get_relation_extraction_service(db),
         character_repo=SQLiteCharacterRepository(db),
         world_repo=SQLiteWorldRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),

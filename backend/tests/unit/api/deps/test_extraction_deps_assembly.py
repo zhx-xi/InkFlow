@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from inkflow.api import deps
+from inkflow.domain.models.extraction import ExtractionType
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 
 
@@ -64,3 +65,23 @@ async def test_extraction_service_vector_store_injected_when_configured(db) -> N
     with patch.object(deps, "get_vector_store", AsyncMock(return_value=fake_store)):
         svc = await deps.get_extraction_service(db=db)
     assert svc._vector_store is not None, "配置 embedding 后应注入实例"
+
+
+async def test_extraction_service_assembles_relation_extraction_service(db) -> None:
+    """#1408：装配层注入 F48 RelationExtractionService —— KNOWLEDGE_RELATION 槽位非空。
+
+    这是「CLI 收 7 种值」与「服务层可执行」之间的接线证据：门面构造时把 F48
+    关系提取服务注入注册表，`extract run --type knowledge_relation` 才不会再
+    落到 UnsupportedExtractionTypeError（422）。
+    """
+    with patch.object(
+        deps,
+        "get_vector_store",
+        AsyncMock(side_effect=RAGUnavailableError("未配置 embedding 模型")),
+    ):
+        svc = await deps.get_extraction_service(db=db)
+
+    assert svc._relation_extraction_service is not None, "关系提取服务应随门面装配注入"
+    assert svc._handlers[ExtractionType.KNOWLEDGE_RELATION] is not None, (
+        "KNOWLEDGE_RELATION 槽位必须注册 handler（#1408 根因即此槽缺席）"
+    )

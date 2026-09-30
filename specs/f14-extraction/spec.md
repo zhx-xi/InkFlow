@@ -5,6 +5,7 @@
 > **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 A（STYLE 注册占位 + 调用 422，v1.0 已按此设计，仅标记确认——**本拍板已被 F16 兑现**：F16 ✅ 已注册 handler，§6.1/§12，占位表述随 F16 spec §8.2 第 10 项同步修订）/ Q2=选项 B（TIMELINE 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项，默认 false）/ Q3=综合方案（保留源 sha256 增量 + F12 事件 `source_chapter_id` 章节联动）；v1.0 的「TIMELINE 委托 F12 确定性检查」改为设置项关闭时的兜底语义（跨模块 MODIFY F12，F13 改 F6 sources.py 先例）
 > **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，用户拍板按 docs 建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
+> **Spec 变更**: v1.3 — 类型面口径统一（#1408）：`ExtractionType.KNOWLEDGE_RELATION`（F48 知识图谱关系提取）接入统一提取入口——§6.1 注册表补第 7 槽（委托 `RelationExtractionService.extract_for_project(project_id, method="rule")`，与 `knowledge extract --method rule` 殊途同归：项目级、规则集、零 LLM）、§6.3/§6.4/§7 补项目级单源与输入约束（不接受 text/chapter_ids → 显式 422）、§2.1/§3.1/§4.1 类型清单 6 种 → 7 种；CLI 组 help / `--type` help / choices 三者口径一致由 `tests/cli/test_cli_extract_type_contract_1408.py` 契约测试守卫（枚举扩张未同步 → FAIL）
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
 > **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
@@ -21,7 +22,7 @@
 
 ## 1. 概述
 
-把 F9-F13 已存在的**提取 / 生成 / 检查**能力收敛到一个**统一接口**（`ExtractionType` 6 种 + 增量提取），并落地 **ADR-013 RAG**（实现 `domain/ports/vector_store.py` 已定义的 `VectorStoreProtocol`：LangChain Chroma + BGE 本地 Embedding）。
+把 F9-F13 已存在的**提取 / 生成 / 检查**能力收敛到一个**统一接口**（`ExtractionType` 7 种 + 增量提取），并落地 **ADR-013 RAG**（实现 `domain/ports/vector_store.py` 已定义的 `VectorStoreProtocol`：LangChain Chroma + BGE 本地 Embedding）。
 
 **核心价值**: 作者与 AI Agent 面对「从章节文本/项目资料沉淀创作档案」时只有一个入口（`inkflow extract run` / `POST /api/v1/extract`），不用记 5 套模块各自的 extract/generate/check 命令；重复提取同一内容不再浪费 LLM token（增量提取只处理变更内容）；F9-F13 已建档案可一键索引进向量库，为 F6 上下文分层与 F3 写作提供语义检索数据基础（ADR-013 的落地实证）。
 
@@ -34,9 +35,10 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 F13  追踪:    伏笔档案(状态机) ──确定性追踪──▶ 状态流转
 F14  新增:    章节文本(text) ──LLM──▶ 时间线事件 ──合并落库──▶ F12 事件档案（设置项开启时）
 
-F14  门面:    ExtractionType(6 种) ──分发──▶ 上述管线（character/setting 委托提取、
+F14  门面:    ExtractionType(7 种) ──分发──▶ 上述管线（character/setting 委托提取、
              outline 委托生成、timeline 提取/检查双语义（设置项切换）、foreshadowing 新建提取管线、
-             style 注册 handler（F16 ✅））+ 增量提取（hash 变更追踪） + RAG 索引（ADR-013）
+             style 注册 handler（F16 ✅）、knowledge_relation 委托 F48 关系提取（项目级规则集，
+             零 LLM，#1408））+ 增量提取（hash 变更追踪） + RAG 索引（ADR-013）
 ```
 
 **复用** F9/F10/F11/F12/F13 的既有管线（`CharacterService.extract` / `WorldService.extract` / `OutlineService.generate` / `TimelineService.check_consistency`——门面直接注入各模块 Service 委托，**不重写管线**）；F13 移交的「伏笔 AI 提取」（F13 spec §10）与 Q2 拍板的「时间线事件提取」（章节文本 → 时间线事件，`timeline_auto_extract` 设置项控制，§5.5）是本模块**新建的两条 LLM 管线**（`_foreshadowing_extractor.py` + `foreshadowing_extract.yaml` / `_timeline_extractor.py` + `timeline_extract.yaml`，均镜像 F9/F10 提取骨架）；时间线提取需**跨模块 MODIFY F12**（事件实体加 `source_chapter_id` 来源章节字段 + 仓储 `list_by_chapter`，F13 改 F6 sources.py 先例，§2.6/§8）；`VectorStoreProtocol`（P0-11 已定义，5 种 EntityType + IndexableEntity/RetrievedEntity）由本模块首次实现为 `infrastructure/rag/langchain_vector_store.py`。
@@ -56,11 +58,11 @@ F14  门面:    ExtractionType(6 种) ──分发──▶ 上述管线（chara
 
 F14 是横切收敛型模块：**不新建业务实体表**，新增一张**增量追踪记录表**（extraction_runs）+ 一组 DTO/枚举；向量侧的数据类（EntityType / IndexableEntity / RetrievedEntity）**已由 P0-11 在 `domain/ports/vector_store.py` 定义，本模块引用不重定义**（§2.4）。领域层 id 为 UUID，数据库 int 自增映射（同 F1 §12 / ADR-004）。
 
-### 2.1 ExtractionType（6 种提取类型，统一接口的入口枚举）
+### 2.1 ExtractionType（7 种提取类型，统一接口的入口枚举）
 
 ```python
 class ExtractionType(StrEnum):
-    """统一提取接口的 6 种类型（PRD P1-06 验收标准 ①）。"""
+    """统一提取接口的 7 种类型（PRD P1-06 验收标准 ①）。"""
 
     CHARACTER = "character"        # 角色提取 → 委托 F9 CharacterService.extract
     SETTING = "setting"            # 世界提取 → 委托 F10 WorldService.extract
@@ -68,6 +70,7 @@ class ExtractionType(StrEnum):
     TIMELINE = "timeline"          # 时间线事件提取（设置项开启，§5.5）/ 一致性检查（关闭，委托 F12 check_consistency）
     FORESHADOWING = "foreshadowing"  # 伏笔提取 → 本模块新建 ForeshadowingExtractor（F13 移交，§5.4）
     STYLE = "style"                # 风格检测 → F16 已注册 StyleService.analyze（§6.1）
+    KNOWLEDGE_RELATION = "knowledge_relation"  # 知识图谱关系提取 → F48 RelationExtractionService（项目级规则提取，零 LLM；#1408 接入统一入口）
 ```
 
 **类型语义表**（每种类型在统一接口中的「输入模式 / 引擎 / 落库 / 增量 / RAG 映射」见 §6.1 注册表；本节只列身份映射）:
@@ -80,6 +83,7 @@ class ExtractionType(StrEnum):
 | `timeline` | F12（实体 MODIFY）+ F14（管线） | `TimelineExtractor.extract`（设置项**开启**）/ `TimelineService.check_consistency`（设置项**关闭**——v1.1 起为兜底语义） | LLM 提取（章节文本 → 时间线事件，镜像 F9 骨架，合并到 F12 事件档案）/ 确定性检查（无 LLM） | 开启：text / chapter_ids；关闭：无（库内事件档案） |
 | `foreshadowing` | F13 | `ForeshadowingExtractor`（F14 新建） | LLM 提取（镜像 F9 骨架，合并到 F13 档案） | text / chapter_ids |
 | `style` | F16 ✅ | `StyleService.analyze`（F16 注册，§6.1） | 确定性文本分析（+ LLM 深度分析可选，仅独立入口） | text / chapter_ids |
+| `knowledge_relation` | F48 ✅ | `RelationExtractionService.extract_for_project`（#1408 接入，`method="rule"`） | 确定性规则集（R1/R2/R3，零 LLM） | 无（项目级；不接受 text/chapter_ids → 422） |
 
 > **为什么 OUTLINE/TIMELINE 也算「提取类型」**: PRD P1-06 明确列出 6 种类型统一接口；大纲与时间线在创作工具链中的角色是「从创作资料收敛出结构化产物」，与角色/世界/伏笔同属「一键沉淀」的用户心智。统一接口对它们做**语义适配**（outline=生成；timeline=提取（设置项开启）或检查（关闭）），而不是强行为它们编造「从文本提取」的管线——能力等价、入口统一（论证见 §5.7/§12）。
 >
@@ -255,7 +259,7 @@ from inkflow.domain.ports.vector_store import EntityType  # P0-11 已定义，�
 
 
 class ExtractionType(StrEnum):
-    """统一提取接口的 6 种类型（§2.1）。"""
+    """统一提取接口的 7 种类型（§2.1）。"""
 
     CHARACTER = "character"
     SETTING = "setting"
@@ -263,6 +267,7 @@ class ExtractionType(StrEnum):
     TIMELINE = "timeline"
     FORESHADOWING = "foreshadowing"
     STYLE = "style"
+    KNOWLEDGE_RELATION = "knowledge_relation"
 
 
 class ExtractionStatus(StrEnum):
@@ -404,7 +409,7 @@ class ReindexResult(BaseModel):
 
 | 方法 | 路径 | 用途 | 请求体 | 响应 |
 |------|------|------|--------|------|
-| POST | `/api/v1/extract` | 统一提取（6 种类型分发 + 增量 + 可选索引） | `ExtractionRequest` | 200 + ExtractionResult |
+| POST | `/api/v1/extract` | 统一提取（7 种类型分发 + 增量 + 可选索引） | `ExtractionRequest` | 200 + ExtractionResult |
 | GET | `/api/v1/projects/{project_id}/extractions/runs` | 增量状态列表 | Query: `?type=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | POST | `/api/v1/projects/{project_id}/vector/reindex` | 全量重建索引（RAG） | `{entity_types?: [...]}` | 200 + ReindexResult |
 | POST | `/api/v1/projects/{project_id}/vector/retrieve` | 语义检索（RAG） | `{query, entity_types?, top_k?, min_score?}` | 200 + `{items: [RetrievedEntity]}` |
@@ -643,7 +648,8 @@ POST /api/v1/projects/3f2e1d4a-.../vector/retrieve
 ### 4.1 extract 组（统一提取入口 + 增量状态）
 
 ```bash
-inkflow extract run --project-id <uuid> --type <character|setting|outline|timeline|foreshadowing|style> \
+inkflow extract run --project-id <uuid> \
+    --type <character|setting|outline|timeline|foreshadowing|style|knowledge_relation> \
     [--text <str> | --text-file <path> | --chapters <uuid,uuid,...>] \
     [--prompt <str>] [--num-chapters <int>] [--no-save] \
     [--auto-extract | --no-auto-extract] \
@@ -655,8 +661,10 @@ inkflow extract run --project-id <uuid> --type <character|setting|outline|timeli
     #   timeline_auto_extract：开启=LLM 事件提取，关闭=F12 确定性检查，§5.5）
     # --index 提取成功后自动索引本次产物（§5.6）；--force 忽略增量 skip 强制重跑（§5.2）
     # --type style → F16 已注册 handler（§6.1）：成功退出码 0（校验失败 → VALIDATION_ERROR 信封，F16 spec §3.3）
+    # --type knowledge_relation → F48 关系提取（#1408）：项目级单源、规则集提取（零 LLM），不带源参数；
+    #   带 --text/--text-file/--chapters → 422「knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）」（§6.4）
 
-inkflow extract status --project-id <uuid> [--type <character|setting|outline|timeline|foreshadowing|style>] [--json]
+inkflow extract status --project-id <uuid> [--type <character|setting|outline|timeline|foreshadowing|style|knowledge_relation>] [--json]
     # 列出该项目各 (type, 源) 的最近一次 run 状态（§2.3）
 ```
 
@@ -1190,7 +1198,7 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 
 （对应 F9 §6「关系图谱与分组管理规则」的位置；F14 无图谱，本节承载类型注册、输入约束与 run 状态语义）
 
-### 6.1 类型注册表（6 槽，6 实现——STYLE 由 F16 注册 handler，§12）
+### 6.1 类型注册表（7 槽，7 实现——STYLE 由 F16 注册 handler，§12；KNOWLEDGE_RELATION 由 #1408 接入）
 
 | 槽位 | handler | 输入模式 | 增量追踪 | RAG 映射 | 依赖 |
 |------|---------|----------|----------|----------|------|
@@ -1200,6 +1208,7 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 | `timeline` | `TimelineExtractor.extract`（设置项开启）/ `TimelineService.check_consistency`（设置项关闭——判定在门面层，§5.5） | 开启：text / chapter_ids；关闭：无（库内事件） | ✅（开启，按源 hash）/ ❌（关闭，每次执行） | timeline_event（增量索引 + reindex） | F12 ✅（实体 MODIFY）+ F14 管线 |
 | `foreshadowing` | `ForeshadowingExtractor`（F14 新建） | text / chapter_ids | ✅ | foreshadowing | F13 ✅ |
 | `style` | `StyleService.analyze`（F16 注册，§12） | text / chapter_ids | ❌（每次执行，确定性只读计算——F16 语义） | —（不在 RAG 范围） | F16 ✅ |
+| `knowledge_relation` | `RelationExtractionService.extract_for_project`（#1408 接入，`method="rule"`） | 无（项目级单源 `"full"`；text/chapter_ids → 422） | ❌（每次执行，规则集确定性计算，无增量价值） | —（不在 RAG 范围；index=true 忽略 + warning） | F48 ✅ |
 
 **注册表实现**（`extraction_service.py` 内部 dict：`ExtractionType → handler`）:
 
@@ -1214,6 +1223,7 @@ _HANDLERS: dict[ExtractionType, ...] = {
     ExtractionType.TIMELINE: self._timeline_handler,   # 设置项切换（§5.5）
     ExtractionType.FORESHADOWING: self._foreshadowing_extractor.extract,
     ExtractionType.STYLE: self._style_service.analyze,  # F16 注册（F16 spec §8.2，接口零变更兑现）
+    ExtractionType.KNOWLEDGE_RELATION: self._knowledge_relation_handler,  # #1408 接入（F48 关系提取）
 }
 ```
 
@@ -1238,6 +1248,7 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | 类型 ∈ {character, setting, foreshadowing, timeline（开启时）} 且源 hash == run.content_hash 且 not force | skip | 核心增量路径 |
 | 同上但 force=true | 执行 | 强制重跑（作者想重新审视 LLM 结果） |
 | outline | 执行 | 生成不承诺幂等（§5.2） |
+| knowledge_relation | 执行 | 项目级单源、规则集确定性计算（每次执行，无增量价值，#1408） |
 | timeline（设置项关闭） | 执行 | 确定性检查只读廉价（§5.2） |
 | 无 run 行 | 执行 | 首次提取 |
 | hash 不同 | 执行 | 内容已变更 |
@@ -1252,8 +1263,9 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | outline | 无效（422） | prompt 可选 / num_chapters 1-100 / save 默认 true | 无效（422） | 无效（422） | 忽略 + warning |
 | timeline | 开启：**必须提供其一**（互斥，同 character）；关闭：无效（422） | 无效（422） | ✅ 透传 F12（关闭语义） | ✅ 仅 timeline 生效（bool \| None；None=跟随项目配置） | ✅ 生效（开启）/ 忽略 + warning（关闭） |
 | style | **必须提供其一**（互斥，同 character/setting/foreshadowing——F16 落地后语义） | 无效（422） | 无效（422） | 无效（422） | 忽略 + warning「style 类型不支持自动索引」 |
+| knowledge_relation | 无效（422——项目级提取，不接受源参数，#1408） | 无效（422） | 无效（422） | 无效（422） | 忽略 + warning「knowledge_relation 类型不支持自动索引」 |
 
-> 类型不匹配的字段一律 422 而非静默忽略（显式错误优先，同 F13 event_id 校验风格）；`index` 对 outline / timeline（关闭时）是**忽略 + warnings 提示**（非错误——索引是增强行为，不阻塞提取主流程）；`auto_extract` 是 timeline 专属覆盖参数——显式 `true`/`false` 覆盖项目配置 `timeline_auto_extract`，缺省 None 跟随项目配置（§2.6）；timeline 关闭时携带 text/chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」（设置项判定在门面层，§5.5）。
+> 类型不匹配的字段一律 422 而非静默忽略（显式错误优先，同 F13 event_id 校验风格；`knowledge_relation` 为项目级提取，携带 text/chapter_ids → 422「knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）」，#1408）；`index` 对 outline / timeline（关闭时）是**忽略 + warnings 提示**（非错误——索引是增强行为，不阻塞提取主流程）；`auto_extract` 是 timeline 专属覆盖参数——显式 `true`/`false` 覆盖项目配置 `timeline_auto_extract`，缺省 None 跟随项目配置（§2.6）；timeline 关闭时携带 text/chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」（设置项判定在门面层，§5.5）。
 
 ---
 
@@ -1267,6 +1279,9 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | outline 携带 text/chapter_ids | 422: "outline 类型不支持 text/chapter_ids（使用 prompt/num_chapters）" |
 | timeline 设置项关闭且携带 text/chapter_ids | 422: "时间线自动提取未开启（配置 timeline_auto_extract）"（设置项判定在门面层，§5.5） |
 | STYLE 类型调用 | 200 + ExtractionResult（detail=StyleReport，created=0/updated=0/model=None——F16 已落地，F16 spec §5.3 归一语义） |
+| `knowledge_relation` 无源参数调用（#1408） | 200 + ExtractionResult（项目级规则关系提取：created=新增关系数、updated=0、model=None、indexed=false；与 `inkflow knowledge extract --method rule` 同一执行体） |
+| `knowledge_relation` 携带 text/chapter_ids（#1408） | 422: "knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）" |
+| `knowledge_relation` 但门面未装配关系提取服务（#1408 防御） | 422: "不支持的提取类型"（UnsupportedExtractionTypeError——注册表槽位缺失时兜底，不静默成功） |
 | text 为空/全空白 / > 50000 字符 | 422（Pydantic，同 F9 约束） |
 | 章节内容 > 50000 字符 | 422: "章节内容超过提取上限（50000 字符）" |
 | chapter_ids 指向不存在/软删章节 | 422: "章节不存在"（F2 get 不含软删） |
@@ -1666,9 +1681,9 @@ F14 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 校验（ExtractionType 6 值 / ExtractionRequest 互斥与类型约束 / ExtractionResult / ExtractionRun / ReindexResult） | `pytest backend/tests/unit/domain/models/test_extraction_models.py -v` 全绿 |
+| M1 | 领域模型 + DTO 校验（ExtractionType 7 值（#1408 补 KNOWLEDGE_RELATION）/ ExtractionRequest 互斥与类型约束 / ExtractionResult / ExtractionRun / ReindexResult） | `pytest backend/tests/unit/domain/models/test_extraction_models.py -v` 全绿 |
 | M2 | ExtractionRun 仓储（get/upsert(ON CONFLICT)/list，in-memory SQLite） | `pytest backend/tests/unit/infrastructure/database/test_extraction_run_repo.py -v` 全绿 |
-| M3 | 门面分发（Mock 各模块 Service：6 类型委托（timeline 双语义：设置项开/关；STYLE → StyleService.analyze，F16 已注册）+ 项目校验 + 结果归一） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
+| M3 | 门面分发（Mock 各模块 Service：7 类型委托（timeline 双语义：设置项开/关；STYLE → StyleService.analyze，F16 已注册；KNOWLEDGE_RELATION → F48 关系提取，#1408 接入）+ 项目校验 + 结果归一） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
 | M4 | 增量提取算法（hash 变更检测 / skip / force / 手动模式 / 断点续跑 / 部分失败语义；timeline 开启时按源增量、关闭时每次执行） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿（增量相关用例） |
 | M5 | 伏笔提取管线（foreshadowing_extract.yaml + ForeshadowingExtractor：解析/重试/合并/幂等） | `pytest backend/tests/unit/domain/services/test_foreshadowing_extractor.py -v` 全绿 |
 | M5b | **时间线提取管线**（timeline_extract.yaml + TimelineExtractor：解析/重试/事件合并（匹配键 (project_id, title, source_chapter_id)）/ 设置项开/关切换（门面层判定）/ 事件-章节联动语义；含跨模块 MODIFY F12 四文件（source_chapter_id 字段 + list_by_chapter）） | `pytest backend/tests/unit/domain/services/test_timeline_extractor.py -v` 全绿 + F12 相关用例（test_timeline_repo 增补 list_by_chapter 用例） |
@@ -1681,7 +1696,7 @@ F14 被依赖:
 | M12 | 切片器变体 + 重叠 + 元数据 + 指纹联动（#277 M3，P1——**先行合入**） | `pytest backend/tests/unit/domain/services/test_chunking_modes.py backend/tests/unit/domain/services/test_chunking.py -v` 全绿（段落切分/重叠率 ∈ 区间/块 id 三态/对话降级/LLM 降级/元数据 fallback/指纹联动）；扩展 test_search_service.py 元数据缺键 `.get()` fallback 用例；手工：改切片配置 → stale → `vector reindex` → 检索正常且无幽灵块、无相邻重复块 |
 | M13 | 对话切片器 + LLM 分析切片器（#278 M4，P2——**同里程碑后续批次**） | `pytest backend/tests/unit/domain/services/test_chunking_modes.py -v` 全绿（说话人切换边界/短块合并/无对话降级段落；LLM mock analyzer 边界生效/失败降级不中断/hash 相同跳过 analyzer）；手工：对话文本检索返回对话级 chunk；LLM 档内容未变章节不重复调用 analyzer |
 
-> **验收标准 ↔ Issue #44 映射**: ①「≥6 种提取类型统一接口」→ M1/M3/M8/M9（ExtractionType 6 值 + 注册表 6 槽 + 统一 API/CLI）；②「增量提取（只处理变更内容）」→ M4/M10（hash 追踪 + skip + 断点续跑，手工闭环含「只处理第 2 章」实证）；③「RAG 向量存储落地（chromadb + BGE）」→ M6/M7/M10（LangChainVectorStore + reindex/retrieve + 手工检索闭环，BGE 首次下载 ~100MB 在 M10 实证）；**Q2/Q3 拍板范围** → M5b/M10（时间线提取管线 + 设置项切换 + 事件-章节联动，§2.6/§5.5）。
+> **验收标准 ↔ Issue #44 映射**: ①「≥6 种提取类型统一接口」→ M1/M3/M8/M9（ExtractionType 6 值 + 注册表 6 槽 + 统一 API/CLI；#1408 补齐第 7 值 `knowledge_relation` → 7 值 + 7 槽，CLI 口径一致由契约测试守卫）；②「增量提取（只处理变更内容）」→ M4/M10（hash 追踪 + skip + 断点续跑，手工闭环含「只处理第 2 章」实证）；③「RAG 向量存储落地（chromadb + BGE）」→ M6/M7/M10（LangChainVectorStore + reindex/retrieve + 手工检索闭环，BGE 首次下载 ~100MB 在 M10 实证）；**Q2/Q3 拍板范围** → M5b/M10（时间线提取管线 + 设置项切换 + 事件-章节联动，§2.6/§5.5）。
 
 ---
 

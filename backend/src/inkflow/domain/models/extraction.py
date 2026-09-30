@@ -1,6 +1,6 @@
 """F14 统一提取服务领域模型 — 枚举 / DTO / 增量追踪记录.
 
-ExtractionType 是统一提取接口的入口枚举（6 种类型，spec §2.1）；
+ExtractionType 是统一提取接口的入口枚举（7 种类型，spec §2.1）；
 ExtractionRequest / ExtractionResult 是统一提取的请求/结果信封（§2.2）；
 ExtractionRun 是增量追踪记录（每 (project, type, source) 一行最新状态，
 §2.3）；ReindexResult 是全量重建索引结果（§5.6），引用 P0-11 已定义的
@@ -23,7 +23,7 @@ from inkflow.domain.ports.vector_store import EntityType  # P0-11 已定义，�
 
 
 class ExtractionType(StrEnum):
-    """统一提取接口的 6 种类型（PRD P1-06 验收标准 ①，§2.1）.
+    """统一提取接口的 7 种类型（PRD P1-06 验收标准 ①，§2.1）.
 
     Attributes:
         CHARACTER: 角色提取 → 委托 F9 CharacterService.extract.
@@ -33,7 +33,9 @@ class ExtractionType(StrEnum):
             委托 F12 check_consistency）.
         FORESHADOWING: 伏笔提取 → 本模块新建 ForeshadowingExtractor
             （F13 移交，§5.4）.
-        STYLE: 风格检测 → 注册占位（F16 未实现，调用返回 422，§6.1）.
+        STYLE: 风格检测 → StyleService.analyze（F16 已交付，确定性文本分析）.
+        KNOWLEDGE_RELATION: 知识图谱关系提取 → F48 RelationExtractionService
+            （项目级规则提取，零 LLM；#1408 接入统一提取入口）.
     """
 
     CHARACTER = "character"
@@ -64,7 +66,7 @@ class ExtractionRequest(BaseModel):
 
     Attributes:
         project_id: 所属项目 UUID.
-        type: 提取类型（6 种，决定参数语义与分发目标）.
+        type: 提取类型（7 种，决定参数语义与分发目标）.
         text: 手动文本（与 chapter_ids 互斥，≤ 50000 字符；仅
             character/setting/foreshadowing 及 timeline 开启时使用）.
         chapter_ids: 章节模式（从 F2 读取内容，增量追踪，≤ 100 章）.

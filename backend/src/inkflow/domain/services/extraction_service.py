@@ -1,7 +1,7 @@
 """F14 统一提取服务门面 — 分发 / 增量判定 / 结果归一 / RAG 索引编排.
 
 ExtractionService 是 F14 的横切收敛核心（spec §5）: 把 F9-F13 已存在的
-提取/生成/检查管线收敛到统一接口（ExtractionType 6 种）背后，叠加两块
+提取/生成/检查管线收敛到统一接口（ExtractionType 7 种）背后，叠加两块
 横切能力——增量提取（源内容 sha256 hash 变更追踪，只处理变更源，§5.2）
 与 RAG 向量索引（ADR-013，§5.6）。
 
@@ -10,7 +10,8 @@ ExtractionService 是 F14 的横切收敛核心（spec §5）: 把 F9-F13 已存
 TimelineService.check_consistency / ForeshadowingExtractor /
 TimelineExtractor），本类只做:
 ① 项目存在性校验（统一 404 语义）
-② 类型注册表查 handler（6 槽全注册，STYLE → StyleService 委托，§6.1/F16 §8.2）
+② 类型注册表查 handler（7 槽全注册，STYLE → StyleService 委托，§6.1/F16 §8.2；
+   KNOWLEDGE_RELATION → F48 RelationExtractionService 项目级规则提取，#1408）
 ③ 增量判定（_resolve_sources: hash 比对 run 表，skip 时不调用 LLM）
 ④ 逐源分发执行（_dispatch: 各类型请求构造 + 结果归一化，§5.3）
 ⑤ 每源成功后立即 upsert ExtractionRun（断点续跑基础，§6.2）
@@ -107,6 +108,7 @@ from inkflow.domain.services._timeline_extractor import TimelineExtractor
 from inkflow.domain.services.character_service import CharacterService
 from inkflow.domain.services.model_resolution import resolve_model
 from inkflow.domain.services.outline_service import OutlineService
+from inkflow.domain.services.relation_extraction_service import RelationExtractionService
 from inkflow.domain.services.style_service import StyleService
 from inkflow.domain.services.timeline_service import TimelineService
 from inkflow.domain.services.world_service import WorldService
@@ -199,7 +201,7 @@ def _normalize_result(type_: ExtractionType, result: Any) -> _Normalized:
 
 
 class ExtractionService(_ExtractionRAGMixin):
-    """统一提取服务门面（spec §5）— 分发 6 种类型 + 增量提取 + RAG 编排.
+    """统一提取服务门面（spec §5）— 分发 7 种类型 + 增量提取 + RAG 编排.
 
     依赖全部通过构造函数注入（ADR-015，测试注入 Mock）:
 
@@ -215,6 +217,8 @@ class ExtractionService(_ExtractionRAGMixin):
         timeline_extractor: F14 时间线提取管线（TIMELINE 开启语义委托）.
         style_service: F16 风格检测服务（STYLE 委托 analyze——每次执行 +
             门面恒确定性 llm_analysis=False，spec §8.2）.
+        relation_extraction_service: F48 知识图谱关系提取服务（KNOWLEDGE_RELATION
+            槽位委托，项目级规则提取，零 LLM）.
         character_repo / world_repo / timeline_repo / foreshadowing_repo:
             reindex 全量重建用档案仓储（§5.6）.
         vector_store: RAG 向量存储（ADR-013）；None = 未装配，
@@ -244,6 +248,7 @@ class ExtractionService(_ExtractionRAGMixin):
         foreshadowing_extractor: ForeshadowingExtractor,
         timeline_extractor: TimelineExtractor,
         style_service: StyleService,
+        relation_extraction_service: RelationExtractionService | None = None,
         character_repo: CharacterRepositoryProtocol | None = None,
         world_repo: WorldRepositoryProtocol | None = None,
         timeline_repo: TimelineRepositoryProtocol | None = None,
@@ -264,6 +269,7 @@ class ExtractionService(_ExtractionRAGMixin):
         self._foreshadowing_extractor = foreshadowing_extractor
         self._timeline_extractor = timeline_extractor
         self._style_service = style_service
+        self._relation_extraction_service = relation_extraction_service
         self._character_repo = character_repo
         self._world_repo = world_repo
         self._timeline_repo = timeline_repo
@@ -278,7 +284,8 @@ class ExtractionService(_ExtractionRAGMixin):
         )
         self._reindex_lock = asyncio.Lock()
 
-        # 类型注册表（spec §6.1: 6 槽全注册；F16 §8.2: STYLE → StyleService.analyze）。
+        # 类型注册表（spec §6.1: 7 槽全注册；F16 §8.2: STYLE → StyleService.analyze；
+        # #1408: KNOWLEDGE_RELATION → F48 RelationExtractionService 项目级规则提取）。
         # TIMELINE 槽位为双 handler 选择器（§5.5: 设置项开启 → TimelineExtractor，
         # 关闭 → TimelineService.check_consistency）。
         self._handlers: dict[ExtractionType, Callable[..., Any] | None] = {
@@ -288,6 +295,7 @@ class ExtractionService(_ExtractionRAGMixin):
             ExtractionType.TIMELINE: self._timeline_handler,
             ExtractionType.FORESHADOWING: self._foreshadowing_extractor.extract,
             ExtractionType.STYLE: self._style_service.analyze,
+            ExtractionType.KNOWLEDGE_RELATION: self._knowledge_relation_handler,
         }
 
     # ── 统一提取入口（spec §5.1 模式总览）────────────────────────
@@ -296,7 +304,7 @@ class ExtractionService(_ExtractionRAGMixin):
         """执行统一提取 — 项目校验 → 类型查表 → 增量判定 → 逐源执行 → 可选索引.
 
         Args:
-            request: 统一提取请求（6 种类型，type 决定参数语义）.
+            request: 统一提取请求（7 种类型，type 决定参数语义）.
 
         Returns:
             统一结果信封（ExtractionResult，§5.3）.
@@ -314,7 +322,7 @@ class ExtractionService(_ExtractionRAGMixin):
         if project is None:
             raise ProjectNotFoundError()
 
-        # ② 类型注册表查 handler（§6.1: 6 槽全注册，未注册 → 422 防御）
+        # ② 类型注册表查 handler（§6.1: 7 槽全注册，未注册 → 422 防御）
         handler = self._handlers.get(request.type)
         if handler is None:
             raise UnsupportedExtractionTypeError()
@@ -338,15 +346,27 @@ class ExtractionService(_ExtractionRAGMixin):
                         await self._vector_store.index_batch(entities)
                     result.indexed = True
             else:
-                unsupported = (
-                    "outline/timeline/style"
-                    if request.type is ExtractionType.STYLE
-                    else "outline/timeline"
-                )
+                unsupported = {
+                    ExtractionType.STYLE: "outline/timeline/style",
+                    ExtractionType.KNOWLEDGE_RELATION: "knowledge_relation",
+                }.get(request.type, "outline/timeline")
                 result.warnings.append(f"{unsupported} 类型不支持自动索引")
 
         # ⑦ 汇总返回（result 由 _run_sources 构建）
         return result
+
+    async def _knowledge_relation_handler(self, request: ExtractionRequest) -> ExtractionResult:
+        """KNOWLEDGE_RELATION 槽位 handler（#1408）— 项目级规则关系提取（零 LLM）.
+
+        委托 F48 RelationExtractionService.extract_for_project，与
+        `inkflow knowledge extract --method rule` 同一执行体（两条入口殊途同归）：
+        项目级单源、不读 text/chapter_ids（_validate_input 已显式拒绝）、不花 LLM。
+        """
+        if self._relation_extraction_service is None:
+            raise UnsupportedExtractionTypeError()
+        return await self._relation_extraction_service.extract_for_project(
+            request.project_id, method="rule"
+        )
 
     # ── 增量判定（spec §5.2）────────────────────────────────────
 
@@ -377,6 +397,14 @@ class ExtractionService(_ExtractionRAGMixin):
             if not has_source:
                 raise ExtractionValidationError("style 类型必须提供 text 或 chapter_ids")
             return
+        if request.type is ExtractionType.KNOWLEDGE_RELATION:
+            # #1408：项目级提取——源参数（text/chapter_ids）无意义，显式 422
+            # （同 outline 先例，§6.4「类型不匹配字段一律 422」而非静默忽略）
+            if has_source:
+                raise ExtractionValidationError(
+                    "knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）"
+                )
+            return
         if not has_source:
             raise ExtractionValidationError(
                 "character/setting/foreshadowing 类型必须提供 text 或 chapter_ids"
@@ -399,6 +427,9 @@ class ExtractionService(_ExtractionRAGMixin):
         if request.type is ExtractionType.STYLE:
             # F16（§8.2 表 #4）: 每次执行——不读 run 表 hash、恒 skip=False
             # （确定性只读计算廉价，无增量价值）；章节读取在 StyleService 内（门面不读章节）
+            return [_Source(key="full", label="full", hash=_content_hash(""), skip=False)]
+        if request.type is ExtractionType.KNOWLEDGE_RELATION:
+            # #1408：项目级单源（同 outline/style）——每次执行，无增量 skip 价值
             return [_Source(key="full", label="full", hash=_content_hash(""), skip=False)]
 
         if request.text is not None:
@@ -611,6 +642,16 @@ class ExtractionService(_ExtractionRAGMixin):
                 updated=0,
                 warnings=list(result.warnings),
                 model=None,
+                detail=result.model_dump(mode="json"),
+                raw=result,
+            )
+        elif request.type is ExtractionType.KNOWLEDGE_RELATION:
+            result = await self._knowledge_relation_handler(request)
+            return _Normalized(
+                created=result.created,
+                updated=result.updated,
+                warnings=list(result.warnings),
+                model=result.model,
                 detail=result.model_dump(mode="json"),
                 raw=result,
             )

@@ -1377,7 +1377,7 @@ export interface paths {
         put?: never;
         /**
          * Extract
-         * @description 统一提取（spec §3.2）— 6 种类型分发 + 增量判定 + 可选 RAG 索引。
+         * @description 统一提取（spec §3.2）— 7 种类型分发 + 增量判定 + 可选 RAG 索引。
          *
          *     请求体即 ExtractionRequest（DTO 自带校验: text/chapter_ids 互斥、超限、
          *     非法 UUID/type → Pydantic 422）；业务校验（类型不匹配、章节不存在/跨项目、
@@ -4427,7 +4427,7 @@ export interface components {
          *
          *     Attributes:
          *         project_id: 所属项目 UUID.
-         *         type: 提取类型（6 种，决定参数语义与分发目标）.
+         *         type: 提取类型（7 种，决定参数语义与分发目标）.
          *         text: 手动文本（与 chapter_ids 互斥，≤ 50000 字符；仅
          *             character/setting/foreshadowing 及 timeline 开启时使用）.
          *         chapter_ids: 章节模式（从 F2 读取内容，增量追踪，≤ 100 章）.
@@ -4483,7 +4483,7 @@ export interface components {
         };
         /**
          * ExtractionType
-         * @description 统一提取接口的 6 种类型（PRD P1-06 验收标准 ①，§2.1）.
+         * @description 统一提取接口的 7 种类型（PRD P1-06 验收标准 ①，§2.1）.
          *
          *     Attributes:
          *         CHARACTER: 角色提取 → 委托 F9 CharacterService.extract.
@@ -4493,7 +4493,9 @@ export interface components {
          *             委托 F12 check_consistency）.
          *         FORESHADOWING: 伏笔提取 → 本模块新建 ForeshadowingExtractor
          *             （F13 移交，§5.4）.
-         *         STYLE: 风格检测 → 注册占位（F16 未实现，调用返回 422，§6.1）.
+         *         STYLE: 风格检测 → StyleService.analyze（F16 已交付，确定性文本分析）.
+         *         KNOWLEDGE_RELATION: 知识图谱关系提取 → F48 RelationExtractionService
+         *             （项目级规则提取，零 LLM；#1408 接入统一提取入口）.
          * @enum {string}
          */
         ExtractionType: "character" | "setting" | "outline" | "timeline" | "foreshadowing" | "style" | "knowledge_relation";

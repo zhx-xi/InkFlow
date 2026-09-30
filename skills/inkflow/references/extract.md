@@ -6,7 +6,7 @@ agent 使用：零散域合并（均无 GUI 独立页面，GUI 经写作页/资�
 
 | 命令 | 必选参数 | 可选/易错 | 说明 |
 |---|---|---|---|
-| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style) | `--text`/`--text-file`/`--chapters` 三选一互斥；`--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | 提取 6 类型；`--index` 同时入向量库 |
+| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style/knowledge_relation) | `--text`/`--text-file`/`--chapters` 三选一互斥（knowledge_relation 为项目级提取，不接受源参数）；`--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | 提取 7 类型；`--index` 同时入向量库（knowledge_relation 零 LLM、不参与索引） |
 | `extract status` | `--project-id` | `--type` | 最近提取记录（GUI 资料库 RAG tab 同源） |
 
 ## style（风格检测）

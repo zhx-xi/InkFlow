@@ -7,7 +7,7 @@ indirectly via the writing page / libraries).
 
 | Command | Required params | Optional/error-prone | Purpose |
 |---|---|---|---|
-| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style) | `--text`/`--text-file`/`--chapters` mutually exclusive; `--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | Extract the 6 types; `--index` also enters the vector library |
+| `extract run` | `--project-id` `--type`(character/setting/outline/timeline/foreshadowing/style/knowledge_relation) | `--text`/`--text-file`/`--chapters` mutually exclusive (knowledge_relation is project-level: no source args); `--prompt` `--num-chapters` `--save/--no-save` `--auto-extract` `--model` `--index` `--force` | Extract the 7 types; `--index` also enters the vector library (knowledge_relation is zero-LLM and not indexed) |
 | `extract status` | `--project-id` | `--type` | Recent extraction records (same source as the GUI library RAG tab) |
 
 ## style (style detection)

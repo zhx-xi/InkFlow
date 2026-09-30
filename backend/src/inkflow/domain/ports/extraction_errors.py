@@ -37,7 +37,7 @@ class ExtractionValidationError(ExtractionServiceError):
 class UnsupportedExtractionTypeError(ExtractionServiceError):
     """不支持的提取类型 — 422.
 
-    用于 type 为合法字符串但不在 ExtractionType 6 种枚举内（防御性，
+    用于 type 为合法字符串但不在 ExtractionType 枚举内，或该类型未装配 handler（防御性，
     如未来新增类型扩展值）。
     """
 

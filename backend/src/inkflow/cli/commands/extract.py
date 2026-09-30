@@ -44,7 +44,7 @@ from inkflow.infrastructure.http import (
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
-app = typer.Typer(name="extract", help="统一提取入口（6 种类型）", no_args_is_help=True)
+app = typer.Typer(name="extract", help="统一提取入口（7 种类型）", no_args_is_help=True)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ def extract_run_cmd(
     type: ExtractionType = typer.Option(
         ...,
         "--type",
-        help="提取类型（character/setting/outline/timeline/foreshadowing/style）",
+        help="提取类型（character/setting/outline/timeline/foreshadowing/style/knowledge_relation；knowledge_relation 为项目级规则关系提取，零 LLM，无需源参数）",  # noqa: E501  # #1408 逐字 help 文案（含全 7 个枚举值，超 100 列）
     ),
     text: str = typer.Option("", "--text", help="待提取文本（与 --text-file/--chapters 互斥）"),
     text_file: str | None = typer.Option(
@@ -155,7 +155,7 @@ def extract_run_cmd(
     index: bool = typer.Option(False, "--index", help="提取成功后自动索引本次产物（RAG）"),
     force: bool = typer.Option(False, "--force", help="忽略增量 skip 强制重跑"),
 ) -> None:
-    """执行统一提取（6 种类型；--text/--text-file/--chapters 三选一）"""
+    """执行统一提取（7 种类型；--text/--text-file/--chapters 三选一）"""
     cli_ctx: CliContext = ctx.obj
     if text and text_file is not None:
         typer.echo("⚠️ --text 与 --text-file 不能同时使用", err=True)
