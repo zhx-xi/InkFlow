@@ -14,6 +14,7 @@
  * 自 library.tsx 拆分以守 900 行护栏（同 useWorldCategories 先例）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchAllChapters } from '../api/chapters';
 import { apiFetch, errorMessage } from '../api/client';
 import type { OutlineItemDTO } from '../components/OutlineTree';
 import { useToastStore } from '../stores/toast';
@@ -22,17 +23,9 @@ import { useToastStore } from '../stores/toast';
 export const OUTLINE_PAGE_SIZE = 10;
 /** #1002：全量路单页上限（后端 limit 最大 100） */
 const OUTLINE_FULL_LIMIT = 100;
-/** #1374：章节全量路单页上限（后端 /chapters limit 最大 100） */
-const CHAPTER_FULL_LIMIT = 100;
 
 interface OutlineListData {
   items?: OutlineItemDTO[];
-  total?: number;
-}
-
-/** #1374：章节列表端点响应（章标题映射 + 章序） */
-interface ChapterListData {
-  items?: Array<{ id: string | number; title?: string }>;
   total?: number;
 }
 
@@ -122,20 +115,9 @@ export function useOutlineLibrary(
     let cancelled = false;
     void (async () => {
       try {
-        // 首页不带 query（保持既有端点形状）；total 缺失时按单页收口（旧 mock / 旧后端兜底）
-        const first = await apiFetch<ChapterListData>(`/api/v1/projects/${pid}/chapters`);
+        // #1407：复用公共 helper 翻全量（首页无 query + offset 步进收口，见 api/chapters.ts）
+        const { items } = await fetchAllChapters(pid);
         if (cancelled) return;
-        const items = [...(first.items ?? [])];
-        const total = first.total ?? items.length;
-        while (items.length > 0 && items.length < total) {
-          const next = await apiFetch<ChapterListData>(
-            `/api/v1/projects/${pid}/chapters?offset=${items.length}&limit=${CHAPTER_FULL_LIMIT}`,
-          );
-          if (cancelled) return;
-          const page = next.items ?? [];
-          if (page.length === 0) break;
-          items.push(...page);
-        }
         const map: Record<string, string> = {};
         const order: string[] = [];
         for (const ch of items) {

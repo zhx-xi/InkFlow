@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
+import { fetchAllChapters } from '../../api/chapters';
 import { apiFetch, errorMessage } from '../../api/client';
 import { useI18n } from '../../i18n/useI18n';
 import { useToastStore } from '../../stores/toast';
@@ -86,18 +87,15 @@ export function AIExtractDialog({
     setRunsLoaded(false);
     void (async () => {
       try {
-        const chapterData = await apiFetch<{ items: ChapterMeta[] }>(
-          `/api/v1/projects/${projectId}/chapters`,
-        );
+        const { items } = await fetchAllChapters(projectId);
         if (cancelled) return;
-        const list = chapterData.items ?? [];
-        setChapters(list);
+        setChapters(items);
         setSelectedChapterId((prev) => {
-          if (defaultChapterId !== undefined && list.some((c) => c.id === defaultChapterId)) {
+          if (defaultChapterId !== undefined && items.some((c) => c.id === defaultChapterId)) {
             return defaultChapterId;
           }
-          if (prev !== '' && list.some((c) => c.id === prev)) return prev;
-          return list[0]?.id ?? '';
+          if (prev !== '' && items.some((c) => c.id === prev)) return prev;
+          return items[0]?.id ?? '';
         });
       } catch {
         if (!cancelled) setChapters([]);

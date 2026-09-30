@@ -478,3 +478,80 @@ describe('chapter store — #999 normalizeChapterTitles（RED 契约）', () => 
     expect(s.chapters).toEqual(chapters);
   });
 });
+
+/**
+ * #1407 卷章树翻全量：`loadChapterTree` 必须取满 `total`。
+ *
+ * 根因：后端 `GET /projects/{pid}/chapters` 是分页端点（默认 50/页、上限 100）→
+ * 裸请求只拿第一页 → >50 章项目写作页左栏树自第 51 章起不可见 / 不可选 / 不可编辑。
+ * 参考范式 = #1374（useOutlineLibrary 章标题映射翻全量），本单收敛到公共 helper
+ * `api/chapters.ts` 的 `fetchAllChapters`。
+ *
+ * ⚠️ mock 形状（本单最易漏的一步）：既有用例的 mock 按
+ * `path === '/api/v1/projects/p1/chapters'` 精确匹配 —— 续页会带
+ * `?offset=&limit=` 查询串，必须**模拟后端分页语义**分发，否则续页请求落入
+ * throw 分支（本组用例即为此形态）。
+ */
+describe('chapter store — #1407 卷章树翻全量（后端默认 50/页）', () => {
+  const CHAPTERS_PATH = '/api/v1/projects/p1/chapters';
+
+  /** 造 N 章元数据（标题用通用占位符） */
+  function makeManyChapters(count: number): ChapterMeta[] {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `c${i}`,
+      title: `第${i + 1}章 测试`,
+      volume_id: 'v1',
+      order_index: i,
+      word_count: 0,
+    }));
+  }
+
+  /** 忠实模拟后端分页：空 query → offset=0/limit=50；带 query 按参数切片（limit 上限 100） */
+  function pagedBackend(all: ChapterMeta[]) {
+    const chapterCalls: string[] = [];
+    const fetch = async (path: string) => {
+      if (path === '/api/v1/projects/p1/volumes') return { items: volumes };
+      if (path === '/api/v1/agent/drafts?project_id=p1&status=draft') {
+        return { items: [], total: 0 };
+      }
+      if (!path.startsWith(CHAPTERS_PATH)) throw new Error(`unexpected path: ${path}`);
+      const rest = path.slice(CHAPTERS_PATH.length);
+      if (rest !== '' && !rest.startsWith('?')) throw new Error(`unexpected path: ${path}`);
+      chapterCalls.push(path);
+      const qs = new URLSearchParams(rest);
+      const offset = Number(qs.get('offset') ?? 0);
+      const limit = Math.min(Number(qs.get('limit') ?? 50), 100);
+      return { items: all.slice(offset, offset + limit), total: all.length, offset, limit };
+    };
+    return { fetch, chapterCalls };
+  }
+
+  it('【R】total=138、单页 50 → 树取满 138 章（第 51 章起可见）', async () => {
+    const backend = pagedBackend(makeManyChapters(138));
+    apiFetchMock.mockImplementation(backend.fetch);
+
+    await act(async () => {
+      await useChapterStore.getState().loadChapterTree('p1');
+    });
+
+    const s = useChapterStore.getState();
+    expect(s.chapters).toHaveLength(138);
+    expect(s.chapters[50].id).toBe('c50'); // 第 51 章（修复前不可见）
+    expect(s.chapters[137].id).toBe('c137');
+    expect(backend.chapterCalls).toHaveLength(2);
+    expect(s.error).toBeNull();
+    expect(s.loading).toBe(false);
+  });
+
+  it('【R】反例：total 恰为整页倍数（100）→ 取满且不多发请求（不死循环）', async () => {
+    const backend = pagedBackend(makeManyChapters(100));
+    apiFetchMock.mockImplementation(backend.fetch);
+
+    await act(async () => {
+      await useChapterStore.getState().loadChapterTree('p1');
+    });
+
+    expect(useChapterStore.getState().chapters).toHaveLength(100);
+    expect(backend.chapterCalls).toHaveLength(2);
+  });
+});

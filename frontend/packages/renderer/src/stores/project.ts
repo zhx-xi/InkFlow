@@ -63,6 +63,7 @@ export interface NewProjectInput {
 }
 
 import { create } from 'zustand';
+import { fetchAllChapters } from '../api/chapters';
 import { apiFetch, errorMessage } from '../api/client';
 
 /** 章节进度（written = 已有正文章节数，total = 章节总数） */
@@ -73,13 +74,6 @@ export interface ChapterProgress {
 
 interface ProjectListResponse {
   items: Project[];
-  total: number;
-  offset: number;
-  limit: number;
-}
-
-interface ChapterListResponse {
-  items: Array<{ id: string; word_count: number }>;
   total: number;
   offset: number;
   limit: number;
@@ -132,12 +126,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await Promise.all(
         data.items.map(async (project) => {
           try {
-            const chapters = await apiFetch<ChapterListResponse>(
-              `/api/v1/projects/${project.id}/chapters`,
-            );
+            const { items, total } = await fetchAllChapters(project.id);
             chapterProgress[project.id] = {
-              written: chapters.items.filter((c) => c.word_count > 0).length,
-              total: chapters.items.length,
+              written: items.filter((c) => c.word_count > 0).length,
+              total,
             };
           } catch {
             // 忽略：进度拉取失败仅缺卡片进度，列表仍可用
