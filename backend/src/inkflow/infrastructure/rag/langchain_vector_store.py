@@ -52,7 +52,7 @@ _FLUSH_PROBE_STEP_S = 0.5
 # #1404: 单个 embedding 请求的 input 条数上限。当前唯一生产 provider 为 zhipu
 # embedding-3（单请求 input ≤ 64 条，超限返回 400 code 1214「input数组最大不得超过64条」）。
 # 升级路径：接入第二个 embedding provider 时，此处改为按 provider 取值
-#（例如从 ProviderConfig 能力表读取），不要在此硬编码多个 provider 的分支。
+# （例如从 ProviderConfig 能力表读取），不要在此硬编码多个 provider 的分支。
 _EMBED_MAX_INPUTS_PER_REQUEST = 64
 
 

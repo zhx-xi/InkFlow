@@ -20,10 +20,10 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import chromadb
-from loguru import logger
 import pytest
 from chromadb.config import Settings
 from langchain_core.embeddings import Embeddings
+from loguru import logger
 
 from inkflow.domain.ports.extraction_errors import VectorStoreError
 from inkflow.domain.ports.vector_store import (
@@ -745,6 +745,7 @@ async def test_retrieve_hnsw_internal_error_retries_before_raising(
     # 本断言不达 → RED；GREEN（多级重试 ≥2 次）后 call_count >= 3
     assert call_count >= 3
 
+
 # ══ #1404 追加段: embedding 单请求 input 上限 64 条（zhipu embedding-3）═══════
 # 契约源: specs/f14-extraction/spec.md §5.6（批量索引分片）+ §7 边界情况。
 # 缺陷背景: zhipu embedding-3 单请求 input 上限 64 条，超限 → 400 code 1214
@@ -959,4 +960,3 @@ async def test_index_batch_survives_provider_input_limit(tmp_path: Path) -> None
         await store.index_batch(entities)
     stored = _upserted_docs_1404(collections[f"inkflow_{EntityType.CHARACTER.value}"])
     assert stored == {e.id: e.content for e in entities}
-
