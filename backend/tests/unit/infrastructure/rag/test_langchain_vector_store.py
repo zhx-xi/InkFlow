@@ -13,7 +13,10 @@ delete_project 返回删除数 / 空库 retrieve → 空列表 / FakeEmbeddings
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import chromadb
@@ -743,7 +746,7 @@ async def test_retrieve_hnsw_internal_error_retries_before_raising(
     assert call_count >= 3
 
 # ══ #1404 追加段: embedding 单请求 input 上限 64 条（zhipu embedding-3）═══════
-# 契约源: specs/f14-extraction/spec.md §5.6（索引触发·全量重建）+ §7 边界情况。
+# 契约源: specs/f14-extraction/spec.md §5.6（批量索引分片）+ §7 边界情况。
 # 缺陷背景: zhipu embedding-3 单请求 input 上限 64 条，超限 → 400 code 1214
 # （「input数组最大不得超过64条」）。批量路径把整组实体一次性提交（无分片）→
 # 实体总数 > 64 的项目「重建索引」100% 失败（重建中断、指纹停在 reindexing、
@@ -752,19 +755,24 @@ async def test_retrieve_hnsw_internal_error_retries_before_raising(
 # embed_documents 后合并，再一次性 upsert（语义不变、幂等保持）。
 # RED 形态: 当前 _index_batch_sync 整组一次提交 → 调用次数断言（ceil(n/64)）FAIL。
 #
-# 形态（镜像 #929 契约测试）: 分片次数/空串回归用 mock chroma + MagicMock embeddings
-# （纯计数断言，零磁盘 I/O —— 计数不该依赖真实 hnsw，否则引入 #873 段竞态 flake）；
-# 结果一致性用真实 chroma 两实例 + collection.get()（不打 hnsw 查询）。
+# 形态（镜像 #929 契约测试的 mock 环境）: 本段全部用 mock chroma + mock embeddings，
+# 且 patch 一律走 `with patch(...)` 上下文（零磁盘 I/O、退出即恢复）——
+# 分片只影响 embedding 调用侧；计数/行为断言若走真实 chroma，会与同目录兄弟用例的
+# #873/#1011 hnsw 段竞态互相干扰（实测同跑必红），故本段恒不触磁盘。
 
 EMBED_REQUEST_LIMIT_1404 = 64  # zhipu embedding-3 单请求 input 条数上限
 
 
-@pytest.fixture
-def mock_store(tmp_path: Path):
-    """mock chroma + mock embeddings 的 store（计数断言专用，零磁盘/零网络）。"""
+def _default_mock_embeddings() -> MagicMock:
+    """MagicMock embeddings：embed_documents 每次返回与入参等长的 8 维向量。"""
     embeddings = MagicMock()
     embeddings.embed_query.return_value = [0.1] * 8
     embeddings.embed_documents.side_effect = lambda texts: [[0.1] * 8 for _ in texts]
+    return embeddings
+
+
+def _build_mock_chroma() -> tuple[MagicMock, dict[str, MagicMock]]:
+    """构造 mock chromadb client（预注册 meta + 5 类 collection）。"""
     client = MagicMock()
     collections: dict[str, MagicMock] = {}
 
@@ -781,14 +789,23 @@ def mock_store(tmp_path: Path):
     client.get_or_create_collection("inkflow_meta")
     for entity_type in EntityType:
         client.get_or_create_collection(f"inkflow_{entity_type.value}")
+    return client, collections
 
+
+@contextmanager
+def mock_store_ctx(
+    tmp_path: Path, embeddings: Any = None
+) -> Iterator[tuple[LangChainVectorStore, dict[str, MagicMock], Any]]:
+    """with 上下文：mock chroma 的 store（退出即恢复 patch，零磁盘）。"""
+    emb = embeddings if embeddings is not None else _default_mock_embeddings()
+    client, collections = _build_mock_chroma()
     with patch(
         "inkflow.infrastructure.rag.langchain_vector_store.chromadb.PersistentClient",
         return_value=client,
     ):
-        store = LangChainVectorStore(persist_dir=tmp_path, embeddings=embeddings)
+        store = LangChainVectorStore(persist_dir=tmp_path, embeddings=emb)
         store._client = client
-        yield store, collections, embeddings
+        yield store, collections, emb
 
 
 def _entities_1404(
@@ -807,9 +824,17 @@ def _entities_1404(
     ]
 
 
-def _embed_batches_1404(embeddings: MagicMock) -> list[list[str]]:
+def _embed_batches_1404(embeddings: Any) -> list[list[str]]:
     """按调用顺序取出 embed_documents 的每次入参。"""
     return [call.args[0] for call in embeddings.embed_documents.call_args_list]
+
+
+def _upserted_docs_1404(collection: MagicMock) -> dict[str, str]:
+    """累计该 collection 所有 upsert 调用的 (id → document) 映射。"""
+    docs: dict[str, str] = {}
+    for call in collection.upsert.call_args_list:
+        docs.update(dict(zip(call.kwargs["ids"], call.kwargs["documents"], strict=True)))
+    return docs
 
 
 @pytest.mark.parametrize(
@@ -824,12 +849,12 @@ def _embed_batches_1404(embeddings: MagicMock) -> list[list[str]]:
     ],
 )
 async def test_index_batch_embeds_in_chunks_of_provider_limit(
-    mock_store, count: int, expected_calls: int
+    tmp_path: Path, count: int, expected_calls: int
 ) -> None:
     """#1404: index_batch 按 64 条上限分片调用 embed_documents（每次入参 ≤ 64）。"""
-    store, _collections, embeddings = mock_store
     entities = _entities_1404(count)
-    await store.index_batch(entities)
+    with mock_store_ctx(tmp_path) as (store, collections, embeddings):
+        await store.index_batch(entities)
 
     batches = _embed_batches_1404(embeddings)
     assert len(batches) == expected_calls, (
@@ -843,58 +868,44 @@ async def test_index_batch_embeds_in_chunks_of_provider_limit(
     # 分片展开后不丢不重、顺序保持（= 有效实体顺序）
     assert [doc for batch in batches for doc in batch] == [e.content for e in entities]
     # 合并后仍一次性 upsert（语义不变：每类型一次写入）
-    upsert = _collections[f"inkflow_{EntityType.CHARACTER.value}"].upsert
+    upsert = collections[f"inkflow_{EntityType.CHARACTER.value}"].upsert
     assert upsert.call_count == 1
     assert len(upsert.call_args.kwargs["embeddings"]) == count
 
 
 async def test_index_batch_chunked_result_matches_per_entity(tmp_path: Path) -> None:
-    """#1404: 分片批量索引结果与逐条 index 一致（按 id 对齐，顺序无关）。"""
+    """#1404: 分片批量索引写入内容与逐条 index 一致（按 id 对齐，顺序无关）。"""
     entities = [
         *_entities_1404(70),  # 超 64 → 触发分片
         *_entities_1404(30, EntityType.SETTING),
     ]
-    store_a = LangChainVectorStore(
-        persist_dir=tmp_path / "chunked", embeddings=FakeEmbeddings()
-    )
-    store_b = LangChainVectorStore(
-        persist_dir=tmp_path / "per-entity", embeddings=FakeEmbeddings()
-    )
-
-    await store_a.index_batch(entities)
-    for entity in entities:
-        await store_b.index(entity)
+    with (
+        mock_store_ctx(tmp_path) as (store_a, collections_a, _),
+        mock_store_ctx(tmp_path) as (store_b, collections_b, _),
+    ):
+        await store_a.index_batch(entities)
+        for entity in entities:
+            await store_b.index(entity)
 
     for entity_type in (EntityType.CHARACTER, EntityType.SETTING):
-        expected_ids = {e.id for e in entities if e.entity_type is entity_type}
-        expected_docs = {e.id: e.content for e in entities if e.entity_type is entity_type}
-
-        # (id, metadata) 全集一致
-        batch_side = {eid: md for eid, md in await store_a.list_entities("p1", entity_type)}
-        single_side = {eid: md for eid, md in await store_b.list_entities("p1", entity_type)}
+        expected = {e.id: e.content for e in entities if e.entity_type is entity_type}
+        key = f"inkflow_{entity_type.value}"
+        batch_side = _upserted_docs_1404(collections_a[key])
+        single_side = _upserted_docs_1404(collections_b[key])
         assert batch_side == single_side, (
-            f"#1404: {entity_type.value} 分片批量索引结果与逐条索引不一致"
+            f"#1404: {entity_type.value} 分片批量写入内容与逐条索引不一致"
         )
-        assert set(batch_side) == expected_ids
-
-        # 正文（document）一致：直读 chroma 存储（get 不打 hnsw，规避 #873 段竞态 flake）
-        with store_a._lock:
-            stored_a = store_a._get_collection(entity_type).get(where={"project_id": "p1"})
-        with store_b._lock:
-            stored_b = store_b._get_collection(entity_type).get(where={"project_id": "p1"})
-        map_a = dict(zip(stored_a["ids"], stored_a["documents"], strict=True))
-        map_b = dict(zip(stored_b["ids"], stored_b["documents"], strict=True))
-        assert map_a == map_b, f"#1404: {entity_type.value} 分片后正文与逐条索引不一致"
-        assert map_a == expected_docs
+        assert batch_side == expected
+        # 分片侧每类型仅一次 upsert（幂等语义保持）；逐条侧为 N 次覆盖写
+        assert collections_a[key].upsert.call_count == 1
 
 
-async def test_index_batch_chunking_preserves_empty_content_guard_929(mock_store) -> None:
+async def test_index_batch_chunking_preserves_empty_content_guard_929(tmp_path: Path) -> None:
     """#1404 回归: #929 空串守卫在分片路径下行为不变。
 
     空白 content 逐条 warning + 跳过（不进任何分片入参、不写 chroma）；
     分片只作用于过滤后的有效实体（70 条 → ceil(70/64) = 2 次）。
     """
-    store, collections, embeddings = mock_store
     entities = _entities_1404(70)
     entities.insert(3, make_entity("blank-1", EntityType.CHARACTER, "p1", "   "))
     entities.insert(40, make_entity("blank-2", EntityType.CHARACTER, "p1", ""))
@@ -903,7 +914,8 @@ async def test_index_batch_chunking_preserves_empty_content_guard_929(mock_store
         lambda message: warnings.append(message.record["message"]), level="WARNING"
     )
     try:
-        await store.index_batch(entities)
+        with mock_store_ctx(tmp_path) as (store, collections, embeddings):
+            await store.index_batch(entities)
     finally:
         logger.remove(sink_id)
 
@@ -921,4 +933,30 @@ async def test_index_batch_chunking_preserves_empty_content_guard_929(mock_store
     assert upsert.call_count == 1
     assert len(upsert_ids) == 70
     assert "blank-1" not in upsert_ids and "blank-2" not in upsert_ids
+
+
+class _ChunkLimitedEmbeddings(FakeEmbeddings):
+    """模拟 zhipu embedding-3 上游硬约束：单请求 input 超过 64 条即拒绝（400 code 1214）。
+
+    用真实异常形态（硬拒绝而非降级）证明链路不再把整组实体一次提交 ——
+    若实现回退成整批提交，本用例必 FAIL（比计数 spy 更贴「400 不再发生」语义）。
+    """
+
+    max_inputs = EMBED_REQUEST_LIMIT_1404
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if len(texts) > self.max_inputs:
+            raise RuntimeError(
+                f"模拟 provider 400 code 1214：input 数组 {len(texts)} 条超过上限 {self.max_inputs}"
+            )
+        return super().embed_documents(texts)
+
+
+async def test_index_batch_survives_provider_input_limit(tmp_path: Path) -> None:
+    """#1404: provider 硬拒绝 > 64 条 input 时 index_batch 仍全量入库、不抛异常。"""
+    entities = _entities_1404(150)
+    with mock_store_ctx(tmp_path, _ChunkLimitedEmbeddings()) as (store, collections, _):
+        await store.index_batch(entities)
+    stored = _upserted_docs_1404(collections[f"inkflow_{EntityType.CHARACTER.value}"])
+    assert stored == {e.id: e.content for e in entities}
 
