@@ -96,10 +96,70 @@ button{font-family:inherit;cursor:pointer}
 .kg-seg button{border:none;border-radius:4px;padding:4px 12px;font-size:12px;color:var(--ink-2);background:none;transition:background var(--dur),color var(--dur)}
 .kg-seg button.active{background:var(--accent-weak);color:var(--accent);font-weight:500}
 
-/* 图谱画布（@xyflow 模拟：节点着色 + 有向边 + 详情卡） */
+/* ── #1373 主体：筛选面板（形态 B）+ 筛选 chip 组（形态 A）+ 画布 ── */
+.kg-body{display:flex;gap:12px;align-items:flex-start;margin-top:12px}
+.kg-main{flex:1;min-width:0}
+.kg-fpanel{display:none;flex:none;width:224px;max-height:520px;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+body[data-filter-form="b"][data-panel="open"] .kg-fpanel{display:flex}
+body[data-filter-form="b"] .kg-filters{display:none}
+.kf-head{flex:none;display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.kf-head svg{width:13px;height:13px;color:var(--ink-3)}
+.kf-head input{width:100%;border:none;background:none;outline:none;font-size:12px;color:var(--ink);font-family:inherit}
+.kf-head input::placeholder{color:var(--ink-3)}
+.kf-scroll{flex:1;min-height:0;overflow-y:auto;padding:4px 0}
+.kf-group{padding:6px 0}
+.kf-gtitle{display:flex;align-items:center;justify-content:space-between;padding:2px 10px 4px;font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.kf-opt{display:flex;align-items:center;gap:7px;padding:5px 10px;font-size:12px;color:var(--ink-2);cursor:pointer}
+.kf-opt:hover{background:var(--surface-2);color:var(--ink)}
+.kf-opt input{width:13px;height:13px;margin:0;accent-color:var(--accent);flex:none}
+.kf-opt .dot{width:8px;height:8px;flex:none;border-radius:50%}
+.kf-opt .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kf-opt.on{color:var(--ink);font-weight:500}
+.kf-foot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-3)}
+.kf-foot span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kf-foot button{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:6px;background:none;font-size:11px;color:var(--ink-2);padding:3px 10px;white-space:nowrap;flex:none}
+.kf-foot button:hover{border-color:var(--accent);color:var(--accent)}
+.kf-foot button svg{width:12px;height:12px}
+.kf-stats{flex:none;padding:6px 10px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── #1373 折叠态：底部折叠栏（零横向占用 → 画布恢复全宽；「不牺牲画布宽度」的落点） ── */
+.kg-filterbar{display:none;align-items:center;gap:8px;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:7px 12px;font-size:12px;color:var(--ink-2)}
+.kg-filterbar svg{width:13px;height:13px;color:var(--ink-3)}
+.kg-filterbar .fb-summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.kg-filterbar .fb-spacer{flex:1}
+.kg-filterbar button{border:1px solid var(--line);border-radius:6px;background:none;font-size:11px;color:var(--ink-2);padding:3px 10px;white-space:nowrap;flex:none}
+.kg-filterbar button:hover{border-color:var(--accent);color:var(--accent)}
+.kg-filterbar .fb-expand{display:inline-flex;align-items:center;gap:4px}
+.kg-filterbar .fb-expand svg{width:12px;height:12px}
+body[data-filter-form="b"][data-panel="closed"] .kg-filterbar{display:flex}
+body[data-filter-form="b"][data-panel="closed"] .kg-fpanel{display:none}
+/* 筛选生效时折叠栏给出可辨提示（收起后仍能一眼看出「正在筛选」） */
+body[data-filter-active="1"] .kg-filterbar{border-color:var(--accent)}
+body[data-filter-active="1"] .kg-filterbar .fb-summary{color:var(--accent);font-weight:500}
+
+/* 筛选 chip 组（形态 A：顶部两行 —— 复用 characters.html 的 rank-chip 视觉先例） */
+.kg-filters{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.kf-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.kf-label{flex:none;width:28px;font-size:11px;color:var(--ink-3)}
+.kf-search{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;background:var(--surface);padding:2px 9px;height:24px;width:150px;flex:none}
+.kf-search svg{width:12px;height:12px;color:var(--ink-3)}
+.kf-search input{width:100%;border:none;background:none;outline:none;font-size:11px;color:var(--ink);font-family:inherit}
+.kf-search input::placeholder{color:var(--ink-3)}
+.kf-chips{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.fm-chip{border:none;border-radius:999px;padding:3px 11px;font-size:12px;background:var(--surface-3);color:var(--ink-2);transition:background var(--dur),color var(--dur)}
+.fm-chip:hover{color:var(--ink)}
+.fm-chip.active{background:var(--accent);color:var(--accent-ink);font-weight:500}
+.fm-chip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.fm-more{border:1px dashed var(--line);border-radius:999px;padding:3px 10px;font-size:11px;background:none;color:var(--ink-3)}
+.kf-clear{border:none;background:none;font-size:11px;color:var(--ink-3);text-decoration:underline;padding:3px 4px}
+.kf-clear:hover{color:var(--accent)}
+
+/* 图谱画布（@xyflow 模拟：节点着色 + 有向边 + 详情卡 + 图例） */
 .kg-canvas{position:relative;height:520px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden;margin-top:12px}
+.kg-edges{position:absolute;inset:0;width:100%;height:100%}
 .kg-node{position:absolute;display:flex;align-items:center;gap:6px;border:1px solid;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:500;white-space:nowrap;box-shadow:var(--shadow);cursor:pointer}
 .kg-node .dot{width:8px;height:8px;flex:none;border-radius:50%}
+.kg-node .nm{white-space:nowrap}
 .kg-node.sel{outline:2px solid var(--accent);outline-offset:2px}
 .kg-detail{position:absolute;left:12px;bottom:12px;z-index:10;width:256px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px;box-shadow:var(--shadow-hover)}
 .kg-detail .dtype{font-size:11px;color:var(--ink-3)}
@@ -108,7 +168,24 @@ button{font-family:inherit;cursor:pointer}
 .kg-detail .go-edit{border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-size:12px;padding:4px 12px}
 .kg-detail .go-edit:hover{background:var(--accent-hover)}
 .kg-detail .go-edit svg{width:12px;height:12px;display:inline-block;vertical-align:-2px;margin-right:4px}
-.kg-tag{position:absolute;right:12px;top:12px;z-index:10;font-size:11px;color:var(--ink-3);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+
+/* 图例（#1373：类型色相带 + 画布操作提示，画布右下角） */
+.kg-legend{position:absolute;right:12px;bottom:12px;z-index:10;display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 9px;font-size:11px;color:var(--ink-2)}
+.kg-legend .lg-title{color:var(--ink-3)}
+.kg-legend .lg-item{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.kg-legend .lg-item .dot{width:8px;height:8px;flex:none;border-radius:50%}
+.kg-legend .kg-tag{border-left:1px solid var(--line);padding-left:10px;color:var(--ink-3);white-space:nowrap}
+
+/* 方案取舍说明条（#1373 评审辅助 —— 设计注释，非产品 UI；实现时不做进页面） */
+.kg-note{display:none;position:absolute;top:0;left:0;right:0;z-index:12;align-items:flex-start;gap:8px;padding:7px 12px;border-bottom:1px dashed var(--line);background:var(--surface-2);font-size:11.5px;line-height:1.55;color:var(--ink-2)}
+.kg-note b{color:var(--ink)}
+.kg-note .tag{flex:none;border-radius:4px;background:var(--surface-3);padding:1px 6px;font-size:11px;color:var(--ink-2)}
+.kg-note .plan{flex:none;font-weight:500;color:var(--accent)}
+body[data-note="color-a"] .kg-note[data-plan="color-a"],
+body[data-note="color-b"] .kg-note[data-plan="color-b"],
+body[data-note="filter-a"] .kg-note[data-plan="filter-a"],
+body[data-note="filter-b"] .kg-note[data-plan="filter-b"],
+body[data-note="filter-collapse"] .kg-note[data-plan="filter-collapse"]{display:flex}
 
 /* 关系列表（RelationList） */
 .rel-list{border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden;margin-top:12px}
@@ -139,6 +216,10 @@ body[data-state="empty"] .kg-empty{display:flex}
 .kg-empty button{margin-top:12px;border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:4px 12px}
 .kg-empty button:hover{border-color:var(--accent);color:var(--accent)}
 
+/* 筛选生效时的空结果提示（#1373） */
+.kg-fempty{display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:6px;font-size:12px;color:var(--ink-2)}
+body[data-filter-empty="1"] .kg-fempty{display:flex}
+
 /* 关系表单对话框（RelationForm） */
 .dialog-overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
 body[data-state="relation-form"] .dialog-overlay{display:flex}
@@ -166,7 +247,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
 </style>
 </head>
-<body data-state="graph">
+<body data-state="graph" data-color="a" data-filter-form="a" data-note="" data-filter-empty="">
 
 <div class="app">
   <!-- ═══ 侧边导航 AppNav（设定库分组，知识图谱激活） ═══ -->
@@ -251,103 +332,162 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
         <button data-testid="library-kg-scope-all" aria-pressed="false">显示全部实体</button>
       </div>
 
-      <!-- 图谱画布视图 -->
-      <div class="view-graph">
-        <div class="kg-canvas" data-testid="library-kg-canvas">
-          <!-- 有向边（贝塞尔 + label，SVG） -->
-          <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 900 520" preserveAspectRatio="none">
-            <defs>
-              <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0 0L10 5L0 10z" fill="var(--ink-3)"/>
-              </marker>
-            </defs>
-            <path d="M150 100 C 210 140, 220 190, 290 210" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-            <path d="M160 160 C 240 210, 260 260, 330 300" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-            <path d="M370 260 C 460 250, 500 220, 570 190" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-            <path d="M380 320 C 460 330, 500 340, 560 350" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-            <path d="M650 240 C 700 260, 720 290, 740 320" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-            <path d="M620 370 C 660 390, 690 400, 730 410" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-            <text x="215" y="160" text-anchor="middle" fill="var(--ink-2)" font-size="10">师承</text>
-            <text x="240" y="240" text-anchor="middle" fill="var(--ink-2)" font-size="10">加入</text>
-            <text x="470" y="235" text-anchor="middle" fill="var(--ink-2)" font-size="10">管辖</text>
-            <text x="470" y="345" text-anchor="middle" fill="var(--ink-2)" font-size="10">埋设于</text>
-            <text x="700" y="290" text-anchor="middle" fill="var(--ink-2)" font-size="10">包含</text>
-            <text x="680" y="400" text-anchor="middle" fill="var(--ink-2)" font-size="10">参与</text>
-          </svg>
-          <!-- 实体节点（六类型着色） -->
-          <div class="kg-node" style="left:80px;top:70px;background:#fef2f2;border-color:#fecaca;color:#991b1b"><span class="dot" style="background:#ef4444"></span>苏云舟</div>
-          <div class="kg-node" style="left:80px;top:180px;background:#fef2f2;border-color:#fecaca;color:#991b1b"><span class="dot" style="background:#ef4444"></span>林晚照</div>
-          <div class="kg-node" style="left:320px;top:230px;background:#eff6ff;border-color:#bfdbfe;color:#1e40af"><span class="dot" style="background:#3b82f6"></span>青云宗</div>
-          <div class="kg-node" style="left:600px;top:160px;background:#f0fdf4;border-color:#bbf7d0;color:#166534"><span class="dot" style="background:#22c55e"></span>剑冢</div>
-          <div class="kg-node" style="left:600px;top:320px;background:#f5f3ff;border-color:#ddd6fe;color:#5b21b6"><span class="dot" style="background:#8b5cf6"></span>师父闭关的真相</div>
-          <div class="kg-node sel" style="left:600px;top:70px;background:#fefce8;border-color:#fde68a;color:#854d0e"><span class="dot" style="background:#eab308"></span>夜访剑冢</div>
-          <div class="kg-node" style="left:780px;top:290px;background:#fff7ed;border-color:#fed7aa;color:#9a3412"><span class="dot" style="background:#f97316"></span>剑冢禁地</div>
-          <div class="kg-node" style="left:780px;top:390px;background:#f0fdf4;border-color:#bbf7d0;color:#166534"><span class="dot" style="background:#22c55e"></span>下山历练</div>
-          <!-- 缩放提示 -->
-          <span class="kg-tag">滚轮缩放 · 拖拽节点</span>
-          <!-- 选中节点详情卡 -->
-          <div class="kg-detail" data-testid="library-kg-node-detail">
-            <p class="dtype">时间线</p>
-            <p class="dname">夜访剑冢</p>
-            <div class="dbtns">
-              <button class="go-edit" data-testid="library-kg-node-edit-3"><span data-ic="pencil"></span>去编辑</button>
+      <div class="kg-body">
+        <!-- ═══ #1373 筛选形态 B：左侧筛选面板（类别多选 + 实体列表 + 搜索） ═══ -->
+        <aside class="kg-fpanel" data-testid="library-kg-filter-panel">
+          <div class="kf-head">
+            <span data-ic="search"></span>
+            <input type="text" placeholder="搜索实体名…" data-testid="library-kg-filter-panel-search" />
+          </div>
+          <div class="kf-scroll">
+            <div class="kf-group">
+              <div class="kf-gtitle"><span>类别</span><span data-testid="library-kg-filter-panel-cat-count">6</span></div>
+              <div id="panelCats"></div>
+            </div>
+            <div class="kf-group">
+              <div class="kf-gtitle"><span>实体</span><span data-testid="library-kg-filter-panel-entity-count">20</span></div>
+              <div id="panelEntities"></div>
             </div>
           </div>
-        </div>
-      </div>
+          <div class="kf-stats" id="library-kg-filter-summary" data-testid="library-kg-filter-summary">筛选：全部 · 显示 20 个实体</div>
+          <!-- #1373 底部折叠栏：右侧「折叠」收起为画布下方的一条栏（零横向占用） -->
+          <div class="kf-foot">
+            <button data-testid="library-kg-filter-collapse"><span data-ic="chevronsleft"></span>折叠</button>
+            <button data-testid="library-kg-filter-panel-clear">清除筛选</button>
+          </div>
+        </aside>
 
-      <!-- 关系列表视图 -->
-      <div class="view-list" style="display:none">
-        <div class="rel-list" data-testid="library-kg-relation-list">
-          <div class="divide-y">
-            <div class="rel-row">
-              <div class="rbody">
-                <div class="rline"><span class="src">苏云舟</span><span class="arrow">→</span><span class="rtype">师承</span><span class="arrow">→</span><span class="src">白眉道人</span></div>
-              </div>
-              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+        <div class="kg-main">
+          <!-- ═══ #1373 筛选形态 A：顶部 chip 组（类别单选 + 实体单选 + 搜索） ═══ -->
+          <div class="kg-filters" data-testid="library-kg-filters">
+            <div class="kf-row">
+              <span class="kf-label">类别</span>
+              <div class="kf-chips" data-testid="library-kg-filter-category" id="chipsCat"></div>
             </div>
-            <div class="rel-row">
-              <div class="rbody">
-                <div class="rline"><span class="src">苏云舟</span><span class="arrow">→</span><span class="rtype">加入</span><span class="arrow">→</span><span class="src">青云宗</span></div>
-              </div>
-              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-            </div>
-            <div class="rel-row">
-              <div class="rbody">
-                <div class="rline"><span class="src">青云宗</span><span class="arrow">→</span><span class="rtype">管辖</span><span class="arrow">→</span><span class="src">剑冢</span></div>
-                <p class="rdesc">剑冢为青云宗禁地，历代掌门葬剑之处。</p>
-              </div>
-              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-            </div>
-            <div class="rel-row">
-              <div class="rbody">
-                <div class="rline"><span class="src">夜访剑冢</span><span class="arrow">→</span><span class="rtype">埋设于</span><span class="arrow">→</span><span class="src">师父闭关的真相</span></div>
-                <p class="rdesc">第 12 章夜访时发现二十年前异动痕迹，埋下卷末揭晓伏笔。</p>
-              </div>
-              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-            </div>
-            <div class="rel-row">
-              <div class="rbody">
-                <div class="rline"><span class="src">剑冢</span><span class="arrow">→</span><span class="rtype">包含</span><span class="arrow">→</span><span class="src">剑冢禁地</span></div>
-              </div>
-              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
-            </div>
-            <div class="rel-row">
-              <div class="rbody">
-                <div class="rline"><span class="src">苏云舟</span><span class="arrow">→</span><span class="rtype">参与</span><span class="arrow">→</span><span class="src">下山历练</span></div>
-              </div>
-              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+            <div class="kf-row">
+              <span class="kf-label">实体</span>
+              <span class="kf-search"><span data-ic="search"></span><input type="text" placeholder="搜索实体名…" data-testid="library-kg-filter-search" /></span>
+              <div class="kf-chips" data-testid="library-kg-filter-entity" id="chipsEntity"></div>
+              <button class="kf-clear" data-testid="library-kg-filter-clear">清除筛选</button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- 图谱空态 -->
-      <div class="kg-empty" data-testid="library-kg-empty">
-        <span class="big-ic"><span data-ic="database"></span></span>
-        <h3>图谱为空</h3>
-        <p>还没有实体与关系，去角色/世界观等实体页创建，或点击「新建关系」建立联系</p>
-        <button data-testid="library-kg-empty-cta">去角色页创建</button>
+          <!-- 图谱画布视图 -->
+          <div class="view-graph">
+            <div class="kg-canvas" data-testid="library-kg-canvas">
+              <!-- #1373 方案取舍说明条（评审辅助，非产品 UI） -->
+              <div class="kg-note" data-plan="color-a">
+                <span class="tag">着色 A</span>
+                <span class="plan">✅ 采用 · 类型色相带内按 hash(name|id) 派生个体色（3 色相 × 2 明度）</span>
+                <span>类型可辨、同类个体亦有色差；纯前端派生、零契约改动、跨会话稳定。代价：同类内属同色系微差。</span>
+              </div>
+              <div class="kg-note" data-plan="color-b">
+                <span class="tag">着色 B</span>
+                <span class="plan">备选 · 图邻接贪心着色（同类型内相邻节点必定异色）</span>
+                <span>相邻必异色 → 追一条线时不会看丢。代价：颜色随图增删重排而变，不跨会话稳定，无法形成长期记忆。</span>
+              </div>
+              <div class="kg-note" data-plan="filter-a">
+                <span class="tag">筛选 A</span>
+                <span class="plan">备选 · 顶部两行 chip 组（类别单选 → 实体 chip 联动 + 搜索）</span>
+                <span>复用设定库既有 rank-chip 视觉，不占横向空间、画布保持最宽。代价：实体多时 chip 行换行抬高页面，靠「更多 ▾」兜底。</span>
+              </div>
+              <div class="kg-note" data-plan="filter-b">
+                <span class="tag">筛选 B</span>
+                <span class="plan">✅ 采用 · 左侧筛选面板 + 底部折叠栏（折叠后零横向占用）+ 选择记忆 + 一键清除</span>
+                <span>实体多时可滚动/可搜索/可多选；「折叠」收起面板后画布恢复全宽，筛选结果保持生效。代价：展开态占宽 224px（画布窄约 24%）。</span>
+              </div>
+              <div class="kg-note" data-plan="filter-collapse">
+                <span class="tag">折叠态</span>
+                <span class="plan">面板收起 → 画布下方「底部折叠栏」接管：零横向占用（画布全宽），筛选仍生效</span>
+                <span>筛选生效时折叠栏描边/摘要用 accent 强调，收起后仍一眼可见「正在筛选」；点「展开筛选」还原。面板开合状态本地记住。</span>
+              </div>
+              <svg class="kg-edges" aria-hidden="true"></svg>
+              <div id="kgNodes"></div>
+              <div class="kg-fempty" data-testid="library-kg-filter-empty">
+                <span>当前筛选下没有可见实体</span>
+                <span style="font-size:11px;color:var(--ink-3)">调整「类别 / 实体」筛选条件，或点「清除筛选」</span>
+              </div>
+              <!-- 选中节点详情卡 -->
+              <div class="kg-detail" data-testid="library-kg-node-detail">
+                <p class="dtype">时间线</p>
+                <p class="dname">夜访剑冢</p>
+                <div class="dbtns">
+                  <button class="go-edit" data-testid="library-kg-node-edit-3"><span data-ic="pencil"></span>去编辑</button>
+                </div>
+              </div>
+              <!-- #1373 图例：类型色相带 + 画布操作提示 -->
+              <div class="kg-legend" data-testid="library-kg-legend">
+                <span class="lg-title">图例</span>
+                <span id="legendItems" style="display:contents"></span>
+                <span class="kg-tag">滚轮缩放 · 拖拽节点</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 关系列表视图 -->
+          <div class="view-list" style="display:none">
+            <div class="rel-list" data-testid="library-kg-relation-list">
+              <div class="divide-y">
+                <div class="rel-row">
+                  <div class="rbody">
+                    <div class="rline"><span class="src">苏云舟</span><span class="arrow">→</span><span class="rtype">师承</span><span class="arrow">→</span><span class="src">白眉道人</span></div>
+                  </div>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="rel-row">
+                  <div class="rbody">
+                    <div class="rline"><span class="src">苏云舟</span><span class="arrow">→</span><span class="rtype">加入</span><span class="arrow">→</span><span class="src">青云宗</span></div>
+                  </div>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="rel-row">
+                  <div class="rbody">
+                    <div class="rline"><span class="src">青云宗</span><span class="arrow">→</span><span class="rtype">管辖</span><span class="arrow">→</span><span class="src">剑冢</span></div>
+                    <p class="rdesc">剑冢为青云宗禁地，历代掌门葬剑之处。</p>
+                  </div>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="rel-row">
+                  <div class="rbody">
+                    <div class="rline"><span class="src">夜访剑冢</span><span class="arrow">→</span><span class="rtype">埋设于</span><span class="arrow">→</span><span class="src">断剑的秘密</span></div>
+                    <p class="rdesc">夜访时发现异动痕迹，埋下卷末揭晓伏笔。</p>
+                  </div>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="rel-row">
+                  <div class="rbody">
+                    <div class="rline"><span class="src">剑冢</span><span class="arrow">→</span><span class="rtype">包含</span><span class="arrow">→</span><span class="src">剑冢禁地</span></div>
+                  </div>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+                <div class="rel-row">
+                  <div class="rbody">
+                    <div class="rline"><span class="src">苏云舟</span><span class="arrow">→</span><span class="rtype">参与</span><span class="arrow">→</span><span class="src">夜访剑冢</span></div>
+                  </div>
+                  <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 图谱空态 -->
+          <div class="kg-empty" data-testid="library-kg-empty">
+            <span class="big-ic"><span data-ic="database"></span></span>
+            <h3>图谱为空</h3>
+            <p>还没有实体与关系，去角色/世界观等实体页创建，或点击「新建关系」建立联系</p>
+            <button data-testid="library-kg-empty-cta">去角色页创建</button>
+          </div>
+
+          <!-- #1373 折叠态：底部折叠栏（面板收起后的常驻入口；零横向占用 → 画布保持全宽） -->
+          <div class="kg-filterbar" data-testid="library-kg-filterbar">
+            <span data-ic="search"></span>
+            <span>筛选</span>
+            <span class="fb-summary" id="library-kg-filterbar-summary" data-testid="library-kg-filterbar-summary">全部 · 显示 20 个实体</span>
+            <span class="fb-spacer"></span>
+            <button data-testid="library-kg-filterbar-clear">清除筛选</button>
+            <button class="fb-expand" data-testid="library-kg-filterbar-expand">展开筛选<span data-ic="chevronsright"></span></button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -356,7 +496,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
       <span>项目: 青云志</span>
-      <span>节点 8 · 关系 6</span>
+      <span>节点 20 · 关系 22</span>
     </div>
   </div>
 </div>
@@ -402,7 +542,12 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
 <div class="demo-bar">
   <label>状态
     <select id="stateSel">
-      <option value="graph">图谱画布 · 节点详情卡</option>
+      <option value="graph">图谱画布 · 推荐组合（着色 A + 折叠筛选面板）</option>
+      <option value="color-a">着色方案 A · 色相分层（采用）</option>
+      <option value="color-b">着色方案 B · 邻接着色（备选）</option>
+      <option value="filter-b">筛选方案 B · 侧边面板展开（采用）</option>
+      <option value="filter-b-collapsed">筛选方案 B · 折叠态（画布全宽）</option>
+      <option value="filter-a">筛选方案 A · 顶部 chip 组（备选）</option>
       <option value="list">关系列表</option>
       <option value="empty">图谱空态</option>
       <option value="relation-form">新建关系表单</option>
@@ -419,7 +564,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
 </div>
 
 <script>
-/* ── 内联 SVG 图标库 ── */
+/* ── 内联 SVG 图标库（对象键一律加引号，#1375 坑 24） ── */
 const ICONS = {
   penline:'<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
   bookopen:'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
@@ -436,7 +581,8 @@ const ICONS = {
   bot:'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
   settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   folderopen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
-  chevronsleft:'<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+  'chevronsleft':'<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+  'chevronsright':'<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
   'chevron-down':'<path d="m6 9 6 6 6-6"/>',
   'chevron-right':'<path d="m9 18 6-6-6-6"/>',
   plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
@@ -447,7 +593,7 @@ const ICONS = {
   trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
 };
-document.querySelectorAll('[data-ic]').forEach(el=>{
+[].forEach.call(document.querySelectorAll('[data-ic]'), function(el){
   const name = el.getAttribute('data-ic');
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.setAttribute('viewBox','0 0 24 24');
@@ -460,31 +606,536 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
   el.appendChild(svg);
 });
 
-/* ── 状态机：图谱 / 列表 / 空态 / 关系表单 ── */
-const STATES = ['graph','list','empty','relation-form'];
+/* ═══════════ #1373 图数据（示例实体名均取自既有 design/GUI 原型已用的占位名，未新增创作设定） ═══════════ */
+const ENTITY_TYPES = ['character','world','outline','timeline','foreshadow','map_pin'];
+const TYPE_LABEL = { character:'角色', world:'世界观', outline:'大纲', timeline:'时间线', foreshadow:'伏笔', map_pin:'地图标记' };
+/* 类型基准色相：与既有 TYPE_STYLES 的圆点色同源（红/蓝/绿/黄/紫/橙） */
+const TYPE_HUE = { character:4, world:217, outline:142, timeline:45, foreshadow:262, map_pin:25 };
+
+/* 🔴 边集刻意构造成「从左到右的 DAG」（source 列 < target 列）：
+   同列/回绕边会让贝塞尔曲线折回节点左侧、把箭头画到空白处（#1373 首版实测）——
+   徒手绘制的静态画布不做回绕路由，加边时请保持 source 在 target 左侧。 */
+const NODES = [
+  { id:'character:8', type:'character',  name:'阿九',     x:4,  y:26 },
+  { id:'character:2', type:'character',  name:'苏云舟',   x:4,  y:37 },
+  { id:'character:4', type:'character',  name:'陆清欢',   x:4,  y:48 },
+  { id:'character:7', type:'character',  name:'守陵人',   x:4,  y:59 },
+  { id:'character:1', type:'character',  name:'白眉道人', x:20, y:26 },
+  { id:'character:3', type:'character',  name:'林晚照',   x:20, y:37 },
+  { id:'character:5', type:'character',  name:'顾沉舟',   x:20, y:48 },
+  { id:'character:6', type:'character',  name:'谢无衣',   x:20, y:59 },
+  { id:'world:1',     type:'world',      name:'青云宗',   x:36, y:37 },
+  { id:'world:4',     type:'world',      name:'剑冢',     x:52, y:15 },
+  { id:'timeline:2',  type:'timeline',   name:'下山历练', x:52, y:26 },
+  { id:'world:3',     type:'world',      name:'青云山',   x:52, y:37 },
+  { id:'timeline:1',  type:'timeline',   name:'夜访剑冢', x:52, y:59 },
+  { id:'world:5',     type:'world',      name:'剑冢禁地', x:68, y:15 },
+  { id:'world:2',     type:'world',      name:'藏经阁',   x:68, y:37 },
+  { id:'world:6',     type:'world',      name:'望云亭',   x:68, y:48 },
+  { id:'foreshadow:1',type:'foreshadow', name:'断剑的秘密', x:68, y:59 },
+  { id:'foreshadow:2',type:'foreshadow', name:'师父闭关的真相', x:68, y:70 },
+  { id:'outline:1',   type:'outline',    name:'剑心蒙尘', x:84, y:37 },
+  { id:'map_pin:1',   type:'map_pin',    name:'山门',     x:84, y:70 },
+];
+const EDGES = [
+  ['character:2','character:1','师承'],
+  ['character:2','character:3','师兄妹'],
+  ['character:2','character:5','宿敌'],
+  ['character:2','character:6','同门'],
+  ['character:2','world:1','加入'],
+  ['character:3','world:1','加入'],
+  ['character:4','world:1','加入'],
+  ['character:4','world:6','居所'],
+  ['character:7','world:4','守卫'],
+  ['character:8','world:2','洒扫'],
+  ['character:2','timeline:1','参与'],
+  ['character:7','foreshadow:2','知晓'],
+  ['world:1','world:3','坐落于'],
+  ['world:1','world:4','管辖'],
+  ['world:1','map_pin:1','标注'],
+  ['world:3','world:2','包含'],
+  ['world:3','world:6','包含'],
+  ['world:4','world:5','包含'],
+  ['timeline:1','foreshadow:1','埋设于'],
+  ['timeline:2','foreshadow:2','埋设于'],
+  ['foreshadow:1','outline:1','推进'],
+  ['foreshadow:2','outline:1','关联'],
+];
+const LARGE_GRAPH_HINT = 8; /* 实体 chip 折叠阈值（形态 A） */
+
+/* ═══════════ 着色算法 ═══════════ */
+/** FNV-1a 32 位：同输入恒定 → 同实体跨会话同色（方案 A 的稳定性来源） */
+function hash32(str){
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i += 1){
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function norm(h){ return ((h % 360) + 360) % 360; }
+function makePalette(hue, dark){
+  return {
+    dot:    'hsl(' + norm(hue) + ' 66% ' + (dark ? 42 : 58) + '%)',
+    border: 'hsl(' + norm(hue) + ' 56% ' + (dark ? 66 : 82) + '%)',
+    bg:     'hsl(' + norm(hue) + ' 70% ' + (dark ? 88 : 96) + '%)',
+    text:   'hsl(' + norm(hue) + ' 62% ' + (dark ? 24 : 34) + '%)',
+  };
+}
+/** 方案 A：类型色相带内按 hash(name|id) 取 3 色相 × 2 明度
+ *  🔴 步长经视觉复核校准（#1373）：±13°/6% 亮度差异在真实渲染下**肉眼不可辨**
+ *     → 8 个角色看起来一个色，方案 A 的「个体可辨」承诺落空。改为 ±18°/14% 亮度。 */
+function colorA(node){
+  const h = hash32(node.id + '|' + node.name);
+  const hue = TYPE_HUE[node.type] + ((h % 3) - 1) * 18;
+  const dark = Math.floor(h / 3) % 2;
+  return makePalette(hue, dark === 1);
+}
+/** 方案 B：同类型内图邻接贪心着色（相邻节点必定异色），颜色随图结构变化 */
+function colorB(nodes, edges){
+  const map = {};
+  const neighbors = {};
+  for (const e of edges){
+    (neighbors[e[0]] = neighbors[e[0]] || []).push(e[1]);
+    (neighbors[e[1]] = neighbors[e[1]] || []).push(e[0]);
+  }
+  const offs = [-28, 0, 28, -14, 14, 42];
+  for (const t of ENTITY_TYPES){
+    const group = nodes.filter(function(n){ return n.type === t; });
+    const used = {};
+    for (const n of group){
+      const taken = {};
+      const nb = neighbors[n.id] || [];
+      for (const other of nb){
+        if (used[other] !== undefined) taken[used[other]] = true;
+      }
+      let slot = 0;
+      while (taken[slot] && slot < offs.length - 1) slot += 1;
+      used[n.id] = slot;
+      map[n.id] = makePalette(TYPE_HUE[t] + offs[slot], slot >= 3);
+    }
+  }
+  return map;
+}
+
+/* ═══════════ 节点 / 边 / 图例渲染 ═══════════ */
+const nodeHost = document.getElementById('kgNodes');
+const svgEdges = document.querySelector('.kg-edges');
+const visibleIds = new Set();
+let colorMode = 'a';
+
+NODES.forEach(function(n){
+  const el = document.createElement('div');
+  el.className = 'kg-node';
+  el.setAttribute('data-id', n.id);
+  el.setAttribute('data-type', n.type);
+  el.setAttribute('data-name', n.name);
+  el.setAttribute('data-testid', 'library-kg-node-' + n.id.replace(':', '-'));
+  el.style.left = n.x + '%';
+  el.style.top = n.y + '%';
+  if (n.id === 'timeline:1') el.classList.add('sel');
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  const nm = document.createElement('span');
+  nm.className = 'nm';
+  nm.textContent = n.name;
+  el.appendChild(dot);
+  el.appendChild(nm);
+  nodeHost.appendChild(el);
+});
+
+(function renderLegend(){
+  const host = document.getElementById('legendItems');
+  const base = { character:4, world:217, outline:142, timeline:45, foreshadow:262, map_pin:25 };
+  ENTITY_TYPES.forEach(function(t){
+    const item = document.createElement('span');
+    item.className = 'lg-item';
+    item.setAttribute('data-testid', 'library-kg-legend-' + t);
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.backgroundColor = 'hsl(' + base[t] + ' 62% 50%)';
+    const label = document.createElement('span');
+    label.textContent = TYPE_LABEL[t];
+    item.appendChild(dot);
+    item.appendChild(label);
+    host.appendChild(item);
+  });
+})();
+
+function nodeEl(id){ return nodeHost.querySelector('[data-id="' + id + '"]'); }
+
+function applyColors(mode){
+  colorMode = mode;
+  const map = mode === 'b' ? colorB(NODES, EDGES) : null;
+  NODES.forEach(function(n){
+    const el = nodeEl(n.id);
+    if (!el) return;
+    const c = map ? map[n.id] : colorA(n);
+    el.style.backgroundColor = c.bg;
+    el.style.borderColor = c.border;
+    el.style.color = c.text;
+    el.querySelector('.dot').style.backgroundColor = c.dot;
+  });
+}
+
+function drawEdges(){
+  while (svgEdges.firstChild) svgEdges.removeChild(svgEdges.firstChild);
+  const NS = 'http://www.w3.org/2000/svg';
+  const defs = document.createElementNS(NS, 'defs');
+  defs.innerHTML = '<marker id="kgarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--ink-3)"/></marker>';
+  svgEdges.appendChild(defs);
+  const host = document.querySelector('.kg-canvas');
+  const hr = host.getBoundingClientRect();
+  let drawn = 0;
+  EDGES.forEach(function(e){
+    if (!visibleIds.has(e[0]) || !visibleIds.has(e[1])) return;
+    const s = nodeEl(e[0]);
+    const t = nodeEl(e[1]);
+    if (!s || !t) return;
+    const sr = s.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    const x1 = sr.right - hr.left;
+    const y1 = sr.top + sr.height / 2 - hr.top;
+    const x2 = tr.left - hr.left;
+    const y2 = tr.top + tr.height / 2 - hr.top;
+    const dx = Math.max(26, Math.abs(x2 - x1) * 0.36);
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'var(--ink-3)');
+    p.setAttribute('stroke-width', '1.2');
+    p.setAttribute('stroke-dasharray', '4 3');
+    p.setAttribute('marker-end', 'url(#kgarr)');
+    p.setAttribute('data-edge', e[0] + '>' + e[1]);
+    svgEdges.appendChild(p);
+    const tx = document.createElementNS(NS, 'text');
+    tx.setAttribute('x', String((x1 + x2) / 2));
+    tx.setAttribute('y', String((y1 + y2) / 2 - 3));
+    tx.setAttribute('text-anchor', 'middle');
+    tx.setAttribute('fill', 'var(--ink-2)');
+    tx.setAttribute('font-size', '10');
+    tx.textContent = e[2];
+    svgEdges.appendChild(tx);
+    drawn += 1;
+  });
+  return drawn;
+}
+
+/* ═══════════ 筛选（#1373）═══════════ */
+const filterState = { category: 'all', entity: null, query: '' };
+
+/* ── 决策③：选择即本地记忆 + 一键清除 ──
+   记忆键与画布位置记忆同构（`inkflow:kg:<域>[:<project_id>]`）；原型固定 demo-project，
+   真实实现把 project_id 接进来（对齐 KnowledgeGraphCanvas 的 kgPositionsKey）。 */
+const KG_DEMO_PROJECT = 'demo-project';
+const KG_FILTER_KEY = 'inkflow:kg:filters:' + KG_DEMO_PROJECT;
+const KG_PANEL_KEY = 'inkflow:kg:panel';
+let panelOpen = true;
+
+/** 存储读取双守卫（隐私模式 / JSON 异常 / 无 localStorage → null，不抛错） */
+function readStored(key){
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function writeStored(key, value){
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // 配额 / 隐私模式 → 静默（记忆降级为会话内）
+  }
+}
+function saveFilters(){
+  writeStored(KG_FILTER_KEY, { category: filterState.category, entity: filterState.entity });
+}
+/** 用户动作统一出口：刷新 UI + 落记忆（setState 是截图驱动，不走这里，避免污染记忆） */
+function userChange(){
+  applyPanel();
+  renderAll();
+  saveFilters();
+}
+function clearFilters(){
+  filterState.category = 'all';
+  filterState.entity = null;
+  filterState.query = '';
+  userChange();
+}
+function applyPanel(){
+  document.body.dataset.panel = panelOpen ? 'open' : 'closed';
+  document.body.dataset.filterActive =
+    filterState.category !== 'all' || filterState.entity ? '1' : '';
+}
+function setPanel(open){
+  panelOpen = !!open;
+  writeStored(KG_PANEL_KEY, panelOpen ? 'open' : 'closed');
+  applyPanel();
+}
+/** 无 hash 时按记忆恢复（默认：全部 + 面板展开） */
+function restoreFromMemory(){
+  const f = readStored(KG_FILTER_KEY);
+  if (f && typeof f === 'object'){
+    const cat = f.category;
+    filterState.category = cat === 'all' || ENTITY_TYPES.indexOf(cat) >= 0 ? cat : 'all';
+    filterState.entity = NODES.some(function(n){ return n.id === f.entity; }) ? f.entity : null;
+  }
+  panelOpen = readStored(KG_PANEL_KEY) !== 'closed';
+  applyPanel();
+  renderAll();
+}
+
+function adjacentOf(id){
+  const out = new Set([id]);
+  EDGES.forEach(function(e){
+    if (e[0] === id) out.add(e[1]);
+    if (e[1] === id) out.add(e[0]);
+  });
+  return out;
+}
+function computeVisible(){
+  let ids = NODES.map(function(n){ return n.id; });
+  if (filterState.category !== 'all'){
+    ids = ids.filter(function(id){
+      const n = NODES.find(function(x){ return x.id === id; });
+      return n && n.type === filterState.category;
+    });
+  }
+  if (filterState.entity){
+    const adj = adjacentOf(filterState.entity);
+    ids = ids.filter(function(id){ return adj.has(id); });
+  }
+  return new Set(ids);
+}
+function applyFilter(){
+  const vis = computeVisible();
+  visibleIds.clear();
+  vis.forEach(function(id){ visibleIds.add(id); });
+  NODES.forEach(function(n){
+    const el = nodeEl(n.id);
+    if (el) el.style.display = vis.has(n.id) ? '' : 'none';
+  });
+  document.body.dataset.filterEmpty = vis.size === 0 ? '1' : '';
+  /* 详情卡只在「全量浏览且选中节点可见」时才显示（筛选态下用户尚未点选） */
+  const detail = document.querySelector('[data-testid="library-kg-node-detail"]');
+  const detailVisible = vis.size === NODES.length;
+  detail.style.display = detailVisible ? '' : 'none';
+  const drawn = drawEdges();
+  updateSummaries(vis);
+  return { visible: vis.size, edges: drawn };
+}
+
+/** 面板底部与折叠栏共用同一句摘要（两处 id 同步） */
+function updateSummaries(vis){
+  const cat = filterState.category === 'all' ? '全部' : TYPE_LABEL[filterState.category];
+  const ent = filterState.entity
+    ? (NODES.find(function(x){ return x.id === filterState.entity; }) || {}).name
+    : null;
+  const text = '筛选：' + cat + (ent ? ' · ' + ent : '') + ' · 显示 ' + vis.size + ' 个实体';
+  const textBar = cat + (ent ? ' · ' + ent : '') + ' · 显示 ' + vis.size + ' 个实体';
+  const a = document.getElementById('library-kg-filter-summary');
+  const b = document.getElementById('library-kg-filterbar-summary');
+  if (a) a.textContent = text;
+  if (b) b.textContent = textBar;
+}
+
+/* ═══════════ 筛选控件渲染（形态 A chips / 形态 B 面板）═══════════ */
+function renderCategoryChips(){
+  const host = document.getElementById('chipsCat');
+  while (host.firstChild) host.removeChild(host.firstChild);
+  const items = [{ value:'all', label:'全部' }].concat(ENTITY_TYPES.map(function(t){
+    return { value:t, label:TYPE_LABEL[t] };
+  }));
+  items.forEach(function(it){
+    const b = document.createElement('button');
+    b.className = 'fm-chip' + (filterState.category === it.value ? ' active' : '');
+    b.setAttribute('data-kind', 'cat');
+    b.setAttribute('data-value', it.value);
+    b.setAttribute('data-testid', 'library-kg-filter-cat-' + it.value);
+    if (it.value !== 'all'){
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.backgroundColor = 'hsl(' + TYPE_HUE[it.value] + ' 62% 50%)';
+      b.appendChild(dot);
+    }
+    b.appendChild(document.createTextNode(it.label));
+    b.addEventListener('click', function(){ filterState.category = it.value; filterState.entity = null; userChange(); });
+    host.appendChild(b);
+  });
+}
+function renderEntityChips(){
+  const host = document.getElementById('chipsEntity');
+  while (host.firstChild) host.removeChild(host.firstChild);
+  const pool = NODES.filter(function(n){
+    return filterState.category === 'all' || n.type === filterState.category;
+  });
+  const shown = pool.slice(0, LARGE_GRAPH_HINT);
+  shown.forEach(function(n){
+    const b = document.createElement('button');
+    b.className = 'fm-chip' + (filterState.entity === n.id ? ' active' : '');
+    b.setAttribute('data-kind', 'entity');
+    b.setAttribute('data-value', n.id);
+    b.setAttribute('data-testid', 'library-kg-filter-entity-' + n.id.replace(':', '-'));
+    b.textContent = n.name;
+    b.addEventListener('click', function(){
+      filterState.entity = filterState.entity === n.id ? null : n.id;
+      userChange();
+    });
+    host.appendChild(b);
+  });
+  if (pool.length > shown.length){
+    const more = document.createElement('button');
+    more.className = 'fm-more';
+    more.setAttribute('data-testid', 'library-kg-filter-entity-more');
+    more.textContent = '更多 ' + (pool.length - shown.length) + ' ▾';
+    host.appendChild(more);
+  }
+}
+function renderPanel(){
+  const cats = document.getElementById('panelCats');
+  const ents = document.getElementById('panelEntities');
+  while (cats.firstChild) cats.removeChild(cats.firstChild);
+  while (ents.firstChild) ents.removeChild(ents.firstChild);
+  ENTITY_TYPES.forEach(function(t){
+    const lab = document.createElement('label');
+    lab.className = 'kf-opt' + (filterState.category === t ? ' on' : '');
+    lab.setAttribute('data-testid', 'library-kg-filter-panel-cat-' + t);
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = filterState.category === t || filterState.category === 'all';
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.backgroundColor = 'hsl(' + TYPE_HUE[t] + ' 62% 50%)';
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = TYPE_LABEL[t];
+    lab.appendChild(cb); lab.appendChild(dot); lab.appendChild(nm);
+    lab.addEventListener('click', function(ev){
+      ev.preventDefault();
+      filterState.category = filterState.category === t ? 'all' : t;
+      filterState.entity = null;
+      userChange();
+    });
+    cats.appendChild(lab);
+  });
+  const q = filterState.query.trim();
+  const pool = NODES.filter(function(n){
+    return q === '' || n.name.indexOf(q) >= 0;
+  });
+  pool.forEach(function(n){
+    const lab = document.createElement('label');
+    lab.className = 'kf-opt' + (filterState.entity === n.id ? ' on' : '');
+    lab.setAttribute('data-testid', 'library-kg-filter-panel-entity-' + n.id.replace(':', '-'));
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = filterState.entity === n.id;
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.backgroundColor = 'hsl(' + TYPE_HUE[n.type] + ' 62% 50%)';
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = n.name;
+    lab.appendChild(cb); lab.appendChild(dot); lab.appendChild(nm);
+    lab.addEventListener('click', function(ev){
+      ev.preventDefault();
+      filterState.entity = filterState.entity === n.id ? null : n.id;
+      userChange();
+    });
+    ents.appendChild(lab);
+  });
+}
+function renderAll(){
+  renderCategoryChips();
+  renderEntityChips();
+  renderPanel();
+  /* 🔴 必须现读 body 上的 data-color：renderAll 由 setState 调用，
+     若沿用模块内缓存的 colorMode 会取到「上一次」的着色方案（#1373 首跑实测） */
+  applyColors(document.body.dataset.color === 'b' ? 'b' : 'a');
+  applyFilter();
+}
+
+/* ═══════════ 状态机 ═══════════ */
+const SHOTS = {
+  /* 决策①：着色取 A（默认）。决策②：筛选栏取 B（左侧面板）+ 折叠。决策③：默认全部。 */
+  'graph':              { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
+  'color-a':            { color:'a', form:'b', panel:'closed', note:'color-a',         category:'all',       entity:null },
+  'color-b':            { color:'b', form:'b', panel:'closed', note:'color-b',         category:'all',       entity:null },
+  'filter-b':           { color:'a', form:'b', panel:'open',   note:'filter-b',        category:'character', entity:'character:2' },
+  'filter-b-collapsed': { color:'a', form:'b', panel:'closed', note:'filter-collapse', category:'character', entity:'character:2' },
+  'filter-a':           { color:'a', form:'a', panel:'open',   note:'filter-a',        category:'character', entity:null },
+  'list':               { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
+  'empty':              { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
+  'relation-form':      { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
+};
+const STATES = Object.keys(SHOTS);
+
 function setState(s){
+  const cfg = SHOTS[s] || SHOTS.graph;
   document.body.dataset.state = s;
+  document.body.dataset.color = cfg.color;
+  document.body.dataset.filterForm = cfg.form;
+  document.body.dataset.note = cfg.note;
   document.getElementById('stateSel').value = s;
-  const vg = document.querySelector('.view-graph');
-  const vl = document.querySelector('.view-list');
   const seg = document.querySelectorAll('.kg-seg button');
-  vg.style.display = s === 'graph' ? '' : 'none';
-  vl.style.display = s === 'list' ? '' : 'none';
-  if (s === 'graph') { seg[0].classList.add('active'); seg[1].classList.remove('active'); }
-  if (s === 'list') { seg[1].classList.add('active'); seg[0].classList.remove('active'); }
+  const isList = s === 'list';
+  document.querySelector('.view-graph').style.display = isList ? 'none' : '';
+  document.querySelector('.view-list').style.display = isList ? '' : 'none';
+  /* 决策④：筛选不作用于关系列表 → 列表视图下三套筛选控件一并隐藏（避免「控件在场却无效」）
+     🔴 空态同样要让位（无可筛对象），且必须走 JS 内联——CSS 里 `body[data-state="empty"] .kg-fpanel`
+     是 (0,1,1)、打不过 `body[data-filter-form="b"][data-panel="open"] .kg-fpanel` 的 (0,3,1)（首跑实测）。 */
+  const listHide = isList || s === 'empty' ? 'none' : '';
+  document.querySelector('.kg-filters').style.display = listHide;
+  document.querySelector('.kg-fpanel').style.display = listHide;
+  document.querySelector('.kg-filterbar').style.display = listHide;
+  seg[0].classList.toggle('active', !isList);
+  seg[1].classList.toggle('active', isList);
+  filterState.category = cfg.category;
+  filterState.entity = cfg.entity;
+  filterState.query = '';
+  panelOpen = cfg.panel !== 'closed';
+  applyPanel();
+  renderAll();
 }
 function setTheme(th){
   document.documentElement.dataset.theme = th;
   document.body.dataset.theme = th;
 }
-document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));
-document.getElementById('themeSel').addEventListener('change',e=>setTheme(e.target.value));
-const init = location.hash.replace('#','');
-if (STATES.includes(init)) { setState(init); document.getElementById('stateSel').value = init; }
-window.addEventListener('hashchange', () => {
-  const s = location.hash.replace('#','');
-  if (STATES.includes(s)) { setState(s); document.getElementById('stateSel').value = s; }
+document.getElementById('stateSel').addEventListener('change', function(e){ setState(e.target.value); });
+document.getElementById('themeSel').addEventListener('change', function(e){ setTheme(e.target.value); });
+document.getElementById('chipsCat').addEventListener('click', function(){ /* chips 自绑 */ });
+/* 决策③「一键清除筛选」：三处入口（chip 行 / 面板 / 底部折叠栏）同一行为 + 同一记忆更新 */
+['library-kg-filter-clear', 'library-kg-filter-panel-clear', 'library-kg-filterbar-clear'].forEach(function(tid){
+  const el = document.querySelector('[data-testid="' + tid + '"]');
+  if (el) el.addEventListener('click', function(){ clearFilters(); });
 });
+/* 决策②「底部折叠栏 + 折叠功能」：收起 → 面板消失、底部折叠栏接管（零横向占用，画布全宽） */
+[['library-kg-filter-collapse', false], ['library-kg-filterbar-expand', true]].forEach(function(pair){
+  const el = document.querySelector('[data-testid="' + pair[0] + '"]');
+  if (el) el.addEventListener('click', function(){ setPanel(pair[1]); });
+});
+const searchA = document.querySelector('[data-testid="library-kg-filter-search"]');
+if (searchA){
+  searchA.addEventListener('input', function(e){ filterState.query = e.target.value; renderPanel(); });
+}
+const searchB = document.querySelector('[data-testid="library-kg-filter-panel-search"]');
+if (searchB){
+  searchB.addEventListener('input', function(e){ filterState.query = e.target.value; renderPanel(); });
+}
+const init = location.hash.replace('#','');
+if (STATES.indexOf(init) >= 0) {
+  setState(init); /* 演示/截图态：显式指定，不读记忆 */
+} else {
+  setState('graph'); /* 产品默认：类别=全部 + 面板展开（决策③） */
+  restoreFromMemory(); /* 覆盖为上次选择（决策③：选择即本地记忆） */
+}
+window.addEventListener('hashchange', function(){
+  const s = location.hash.replace('#','');
+  if (STATES.indexOf(s) >= 0) setState(s);
+});
+window.addEventListener('resize', function(){ drawEdges(); });
 </script>
 </body>
 </html>
