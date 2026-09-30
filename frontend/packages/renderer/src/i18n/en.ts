@@ -218,7 +218,7 @@ export const en: Record<string, string> = {
   // #1301 timeline axis (spec f12:621/702 · f43:773 · f19:34); F48: knowledge graph tab (specs/f48-knowledge-graph/spec.md §5.4)
   'lib.tlGroupNone': 'Unassigned', 'lib.tlChapterUnknown': 'Unknown chapter', 'lib.tlAxis': 'Timeline axis', 'lib.tlAxisMain': 'Axis', 'lib.tlAxisSub': 'Marker', 'lib.tlTimeUnknown': 'Unknown', 'lib.tlChCount': '{n} events', 'lib.tlFilterChapter': 'Chapter: {label}', 'lib.tlFilterType': 'Type: {label}', 'lib.tlFilterChapterTitle': 'Filter by chapter', 'lib.tlFilterTypeTitle': 'Filter by event type', 'lib.tlFilterAll': 'All', 'lib.tlFilterAllChapters': 'All chapters', 'lib.tlFlag.normal': 'Linear', 'lib.tlFlag.flashback': 'Flashback', 'lib.tlFlag.flashforward': 'Flash-forward',
   'lib.knowledge.canvasHint': 'Scroll to zoom · drag nodes',
-  'lib.knowledge.scopeAll': 'Show all entities',
+  'lib.knowledge.scopeAll': 'Show all entities', 'lib.knowledge.filter.category': 'Category', 'lib.knowledge.filter.entity': 'Entity', 'lib.knowledge.filter.all': 'All', 'lib.knowledge.filter.search': 'Search entities…', 'lib.knowledge.filter.clear': 'Clear filters', 'lib.knowledge.filter.empty': 'No entities under current filters', 'lib.knowledge.filter.shown': '{n} entities shown', 'lib.knowledge.filter.collapse': 'Collapse', 'lib.knowledge.filter.expand': 'Expand filters', 'lib.knowledge.filter.summary': 'Filter: {label} · {shown}', 'lib.knowledge.filterbar.summary': '{label} · {shown}', 'lib.knowledge.legend': 'Legend',
   'lib.knowledge.newRelation': 'New Relation',
   'lib.knowledge.viewGraph': 'Graph View',
   'lib.knowledge.viewList': 'Relation List',

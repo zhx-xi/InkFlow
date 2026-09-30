@@ -11,6 +11,11 @@
  * - KgNode 挂 source/target 两个 Handle → 可拖线建关系（onConnect 本地即时成边 + 上报父级落库）
  * - 拖拽结束按 project_id 把位置写入 localStorage（存储不可用时静默降级为会话内）
  * - 画布右下角「滚轮缩放 · 拖拽节点」提示（对齐 design/GUI/knowledge/knowledge.html）
+ *
+ * #1373 升级（spec f19-gui/knowledge §4.1/§4.2）：
+ * - 节点改「个体着色」（kgColor.deriveNodeColor：类型基准色相 ±18° × 2 明度），
+ *   右下角提示升级为六类图例（原提示并入图例行尾）
+ * - 新增可选 prop：`filterActive`（筛选生效时隐藏节点详情卡）/ `showLegend`（图谱空态不渲染图例）
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -33,9 +38,11 @@ import {
 import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
 import type { EntityType, GraphEdge, GraphNode } from '../../api/knowledge-graph';
 import { useI18n } from '../../i18n/useI18n';
+import { typeBaseDot, deriveNodeColor } from './kgColor';
+import { KG_CATEGORIES } from './kgFilter';
 
 /** 实体类型显示名 i18n key（与六分类 tab 同源语义） */
-const ENTITY_TYPE_KEYS: Record<EntityType, string> = {
+export const ENTITY_TYPE_KEYS: Record<EntityType, string> = {
   character: 'lib.knowledge.type.character',
   world: 'lib.knowledge.type.world',
   outline: 'lib.knowledge.type.outline',
@@ -44,17 +51,7 @@ const ENTITY_TYPE_KEYS: Record<EntityType, string> = {
   map_pin: 'lib.knowledge.type.map_pin',
 };
 
-/** 节点类型着色（Tailwind 默认调色板十六进制，供画布节点与详情卡共用） */
-const TYPE_STYLES: Record<EntityType, { bg: string; border: string; text: string; dot: string }> = {
-  character: { bg: '#fef2f2', border: '#fecaca', text: '#991b1b', dot: '#ef4444' },
-  world: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af', dot: '#3b82f6' },
-  outline: { bg: '#f0fdf4', border: '#bbf7d0', text: '#166534', dot: '#22c55e' },
-  timeline: { bg: '#fefce8', border: '#fde68a', text: '#854d0e', dot: '#eab308' },
-  foreshadow: { bg: '#f5f3ff', border: '#ddd6fe', text: '#5b21b6', dot: '#8b5cf6' },
-  map_pin: { bg: '#fff7ed', border: '#fed7aa', text: '#9a3412', dot: '#f97316' },
-};
-
-type KgNodeData = { name: string; type: EntityType };
+type KgNodeData = { id: string; name: string; type: EntityType; entity_id: string };
 type KgRFNode = RFNode<KgNodeData>;
 
 /** 位置持久化 localStorage 基键（#1325）；带 project_id 时以 `:<project_id>` 后缀隔离 */
@@ -95,9 +92,11 @@ function writeSavedPositions(
 /** 自定义节点：类型着色 + 名称标签 + 左右两个连线锚点（#1325：拉线建关系前置） */
 function KgNode({ data }: NodeProps<KgRFNode>) {
   const { t } = useI18n();
-  const style = TYPE_STYLES[data.type] ?? TYPE_STYLES.character;
+  // #1373：个体着色——同类型实体在「类型基准色相 ±18° × 2 明度」色带内按 id|name 派生
+  const style = deriveNodeColor({ id: data.id, name: data.name, type: data.type });
   return (
     <div
+      data-testid={`library-kg-node-${data.type}-${data.entity_id}`}
       className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium shadow-card"
       style={{ backgroundColor: style.bg, borderColor: style.border, color: style.text }}
     >
@@ -107,7 +106,7 @@ function KgNode({ data }: NodeProps<KgRFNode>) {
         className="kg-handle"
         aria-label={t('lib.knowledge.form.targetType')}
       />
-      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: style.dot }} aria-hidden="true" />
+      <span className="kg-dot h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: style.dot }} aria-hidden="true" />
       <span className="whitespace-nowrap">{data.name}</span>
       <Handle
         type="source"
@@ -157,6 +156,10 @@ export interface KnowledgeGraphCanvasProps {
   onEditEdge?: (edge: GraphEdge) => void;
   /** 边详情「删除」回调（父级二次确认后 DELETE） */
   onDeleteEdge?: (edge: GraphEdge) => void;
+  /** 筛选生效中 → 隐藏节点详情卡（spec N12：用户尚未点选） */
+  filterActive?: boolean;
+  /** 是否渲染右下角图例（图谱空态不渲染） */
+  showLegend?: boolean;
 }
 
 /** 画布对外入口：包一层 ReactFlowProvider（画布内的 @xyflow hooks 需要该上下文） */
@@ -178,6 +181,8 @@ function CanvasInner({
   onOpenEntity,
   onEditEdge,
   onDeleteEdge,
+  filterActive = false,
+  showLegend = true,
 }: KnowledgeGraphCanvasProps) {
   const { t } = useI18n();
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -194,7 +199,7 @@ function CanvasInner({
         id: n.id,
         type: 'kgNode',
         position: { x: 32 + (i % 5) * 180, y: 40 + Math.floor(i / 5) * 110 },
-        data: { name: n.name, type: n.type },
+        data: { id: n.id, name: n.name, type: n.type, entity_id: n.entity_id },
       })),
     [nodes],
   );
@@ -323,14 +328,28 @@ function CanvasInner({
           setSelectedEdge(null);
         }}
       />
-      {/* #1325：拖拽/缩放提示（对齐 design/GUI/knowledge/knowledge.html 的「滚轮缩放 · 拖拽节点」） */}
-      <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md border border-line bg-surface/90 px-2 py-0.5 text-[11px] text-ink-3">
-        {t('lib.knowledge.canvasHint')}
-      </span>
+      {/* #1373：右下角图例（六类基准色），#1325 的「滚轮缩放 · 拖拽节点」提示并入行尾 */}
+      {showLegend && (
+        <div
+          data-testid="library-kg-legend"
+          className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-2.5 rounded-md border border-line bg-surface/90 px-2.5 py-1 text-[11px] text-ink-2"
+        >
+          <span className="text-ink-3">{t('lib.knowledge.legend')}</span>
+          {KG_CATEGORIES.map((type) => (
+            <span key={type} data-testid={`library-kg-legend-${type}`} className="flex items-center gap-1 whitespace-nowrap">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: typeBaseDot(type) }} aria-hidden="true" />
+              {t(ENTITY_TYPE_KEYS[type])}
+            </span>
+          ))}
+          <span className="whitespace-nowrap border-l border-line pl-2.5 text-ink-3">
+            {t('lib.knowledge.canvasHint')}
+          </span>
+        </div>
+      )}
       <div className="sr-only" data-testid="library-kg-summary">
         {t('lib.knowledge.graphSummary')}：{summary}
       </div>
-      {selectedNode && (
+      {selectedNode && !filterActive && (
         <div
           data-testid="library-kg-node-detail"
           className="absolute bottom-3 left-3 z-10 w-64 rounded-md border border-line bg-surface p-3 shadow-card"
