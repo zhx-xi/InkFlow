@@ -274,4 +274,36 @@ describe('「AI 提取」弹窗（#652）', () => {
     expect(extractZh['extract.title']).toBe('AI 提取');
     expect(extractZh['extract.run']).toBe('开始提取');
   });
+
+  /**
+   * #1407：章节下拉必须翻全量。后端 `GET /projects/{pid}/chapters` 默认 50/页 →
+   * 裸请求只拿第一页 → 第 51 章及以后无法做「整章一键提取」。
+   * mock 形态：同一路径 + `?offset=&limit=` 查询串 → 必须模拟后端分页语义分发。
+   */
+  it('#1407（全量）：total=138、单页 50 → 章节下拉含第 51 章及末章', async () => {
+    const all = Array.from({ length: 138 }, (_, i) => ({
+      id: `ch${i}`, title: `第${i + 1}章 测试`, volume_id: null, order_index: i, word_count: 0,
+    }));
+    const chapterCalls: string[] = [];
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects/p1/extractions/runs') return { ...RUN_LIST };
+      if (!path.startsWith('/api/v1/projects/p1/chapters')) return { ok: true };
+      chapterCalls.push(path);
+      const qs = new URLSearchParams(path.slice('/api/v1/projects/p1/chapters'.length));
+      const offset = Number(qs.get('offset') ?? 0);
+      const limit = Math.min(Number(qs.get('limit') ?? 50), 100);
+      return { items: all.slice(offset, offset + limit), total: all.length, offset, limit };
+    });
+
+    const user = userEvent.setup();
+    renderDialog();
+    const trigger = await screen.findByTestId('ai-extract-chapter');
+    // 全量翻页完成（首页 + 一页续页）
+    await waitFor(() => expect(chapterCalls).toHaveLength(2));
+
+    await user.click(trigger);
+    // 第 51 章与末章均可选（修复前下拉仅到第 50 章）
+    expect(await screen.findByRole('option', { name: '第51章 测试' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '第138章 测试' })).toBeInTheDocument();
+  });
 });

@@ -391,3 +391,50 @@ describe('project store — F43 重命名/删除 actions', () => {
     expect(s.currentProjectId).toBe('p1');
   });
 });
+
+/**
+ * #1407 项目卡片章节进度「全量口径」：后端 `GET /projects/{pid}/chapters` 默认 50/页。
+ *
+ * 两处语义缺陷一并收敛（#1407 D3）：
+ * - `total` 取**响应体 total**（服务端全量计数），不再用页内条数 `items.length`
+ *   —— 不改则 >50 章项目进度恒显示「n / 50」；
+ * - `written` 为**全量口径**（全量章节里 word_count > 0 的条数），分母修对后分子也必须全量。
+ *
+ * 兼容性判据：既有用例（`total: 12` 且单页内 12 条，见上方「状态与状态转换」）
+ * 改后仍须得 `{written:3, total:12}` —— 本组用例的 mock 与既有用例同形，
+ * 仅把 total 抬到超过单页。
+ */
+describe('project store — #1407 进度全量口径（响应体 total）', () => {
+  const CHAPTERS_PATH = '/api/v1/projects/p1/chapters';
+
+  it('【R】total=138、单页仅 50 → {written:60,total:138}（分母不再被压成 50）', async () => {
+    // 138 章：前 60 章有正文（word_count>0），其余空白 → 全量口径 written=60
+    const all = Array.from({ length: 138 }, (_, i) =>
+      makeChapter({ id: `c${i}`, word_count: i < 60 ? 800 : 0 }),
+    );
+    const projects = [makeProject({ id: 'p1', name: '青云志' })];
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: projects, total: 1, offset: 0, limit: 50 };
+      if (!path.startsWith(CHAPTERS_PATH)) throw new Error(`unexpected path: ${path}`);
+      const rest = path.slice(CHAPTERS_PATH.length);
+      // 首页（无 query）= 后端默认 50/页；续页按 offset/limit 切片（limit 上限 100）
+      const qs = new URLSearchParams(rest);
+      const offset = Number(qs.get('offset') ?? 0);
+      const limit = Math.min(Number(qs.get('limit') ?? 50), 100);
+      return {
+        items: all.slice(offset, offset + limit),
+        total: 138,
+        offset,
+        limit,
+      };
+    });
+
+    await act(async () => {
+      await useProjectStore.getState().loadProjects();
+    });
+
+    const s = useProjectStore.getState();
+    expect(s.chapterProgress).toEqual({ p1: { written: 60, total: 138 } });
+    expect(s.error).toBeNull();
+  });
+});

@@ -1,0 +1,58 @@
+/**
+ * #1407：章节列表「翻全量」helper（4 处消费点的唯一实现）。
+ *
+ * 根因：后端 `GET /api/v1/projects/{pid}/chapters` 是**分页端点**
+ * （默认 limit=50、上限 100；响应 {items,total,offset,limit}，
+ * 见 backend/src/inkflow/api/routers/chapter.py）→ 前端裸请求只拿第一页，
+ * >50 章项目在「写作页左栏卷章树 / 项目页卡片进度 / AI 提取章节下拉」三处被静默截断。
+ *
+ * 与 #1374 同族（该单在 useOutlineLibrary 内联翻页修了章标题映射一处）；
+ * 本 helper 收敛 4 处消费点（含 #1374 那处改为复用，去除重复实现）。
+ */
+import { apiFetch } from './client';
+
+/** 章节列表项（镜像 useChapterStore ChapterMeta） */
+export interface ChapterListDto {
+  id: string;
+  title: string;
+  volume_id: string | null;
+  order_index: number;
+  word_count: number;
+  writing_requirements?: string | null;
+}
+
+/** 分页端点响应（后端恒有 total/offset/limit；此处可选以便旧 mock 兼容） */
+export interface ChapterListResponse {
+  items?: ChapterListDto[];
+  total?: number;
+  offset?: number;
+  limit?: number;
+}
+
+/** 续页单页上限（后端 limit 最大 100） */
+export const CHAPTER_FULL_LIMIT = 100;
+
+/**
+ * 取满项目全量章节（首页不带 query 保持既有端点形状；续页 offset 步进）。
+ *
+ * - 首页无 query → 后端默认 50/页（既有 mock / 调用面按此形状）
+ * - 续页 `?offset=<已取条数>&limit=100`，累计 >= total 即停（整页倍数不多发请求）
+ * - `total` 缺失 → 按单页收口；续页空 items → 立即停止（防 total 虚高死循环）
+ * - 返回 `total` 一律为**响应体口径**（项目卡片进度分母用服务端全量，非页内条数）
+ */
+export async function fetchAllChapters(
+  projectId: string,
+): Promise<{ items: ChapterListDto[]; total: number }> {
+  const first = await apiFetch<ChapterListResponse>(`/api/v1/projects/${projectId}/chapters`);
+  const items = [...(first.items ?? [])];
+  const total = first.total ?? items.length;
+  while (items.length > 0 && items.length < total) {
+    const next = await apiFetch<ChapterListResponse>(
+      `/api/v1/projects/${projectId}/chapters?offset=${items.length}&limit=${CHAPTER_FULL_LIMIT}`,
+    );
+    const page = next.items ?? [];
+    if (page.length === 0) break;
+    items.push(...page);
+  }
+  return { items, total };
+}

@@ -47,7 +47,7 @@
 | 行编辑（lib-edit） | 悬停显现铅笔图标 | 打开编辑对话框（预填 title/priority/location/description） | saving 禁用 | PATCH 成功 → 关框 + 刷新 + 顶部「已保存」 | err toast，对话框保持可改重试 | 优先级缺失回填兜底 50 |
 | 行删除（lib-delete） | 悬停显现垃圾桶 | ConfirmDialog（lib-confirm-dialog） | DELETE 请求 | ok toast + 列表刷新 | err toast + 关框 | 遮罩点击不关闭（#195）；关闭仅 取消/Esc/确认成功 |
 | 对话框保存（library-create-save） | 标题非空 enabled | handleSave（PATCH/POST 父级分支） | saving「保存中…」禁用 | 父级关框 + 刷新 | err toast | 优先级原生 min/max 0-100；ESC/取消关闭；遮罩点击不关闭 |
-| AI 提取（extract-entry-lib） | 描边按钮 | AIExtractDialog（类型 = 伏笔，章节选择） | 提取中 | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染 |
+| AI 提取（extract-entry-lib） | 描边按钮 | AIExtractDialog（类型 = 伏笔，章节选择） | 提取中 | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；章节下拉**全量加载**（#1407：翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
 | 状态机控件（open/resolved 切换） | 无（原型与实现均无此控件） | — | — | — | — | 后端 status 字段与 resolve/reopen 端点存在，但 GUI **只读展示**状态徽标，不提供切换入口（#1324 拍板：超原型，另议） |
 
 ## 3. 验收

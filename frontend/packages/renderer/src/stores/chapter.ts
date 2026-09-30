@@ -33,13 +33,6 @@ export interface Chapter extends ChapterMeta {
   content: string;
 }
 
-interface ChapterListResponse {
-  items: ChapterMeta[];
-  total: number;
-  offset: number;
-  limit: number;
-}
-
 /** #999 批量归一化响应（POST /projects/{id}/chapters/normalize-titles） */
 export interface NormalizeTitlesResult {
   format: string;
@@ -48,6 +41,7 @@ export interface NormalizeTitlesResult {
 }
 
 import { create } from 'zustand';
+import { fetchAllChapters } from '../api/chapters';
 import { apiFetch, errorMessage } from '../api/client';
 import type { DraftDto } from '../api/drafts';
 
@@ -121,15 +115,13 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const { items: volumes } = await apiFetch<{ items: Volume[] }>(`/api/v1/projects/${projectId}/volumes`);
-      const chapterData = await apiFetch<ChapterListResponse>(
-        `/api/v1/projects/${projectId}/chapters`,
-      );
+      const { items: chapters } = await fetchAllChapters(projectId);
       // #371：同项目 reload（treeProjectId 相同）保留当前章/正文——写作页挂载自动加载
       // 不清空已播种/已编辑内容；切项目/首次加载（不同或 null）→ 清空（#345 防旧项目残留）
       const sameProject = get().treeProjectId === projectId;
       set({
         volumes,
-        chapters: chapterData.items,
+        chapters,
         treeProjectId: projectId,
         ...(sameProject ? {} : { currentChapterId: null, content: '' }),
       });

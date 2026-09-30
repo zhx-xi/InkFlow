@@ -66,11 +66,11 @@
 
 ## 3. 验收
 
-- N1：无项目进入写作页 → 空态引导（Compass + 返回项目页）；有项目 → 三栏布局 + 卷章树骨架加载后正常渲染
+- N1：无项目进入写作页 → 空态引导（Compass + 返回项目页）；有项目 → 三栏布局 + 卷章树骨架加载后正常渲染（#1407：卷章树**全量加载** —— 前端翻页取满 `GET /projects/{pid}/chapters` 的 `total`，>50 章项目第 51 章起同样可见/可选/可编辑）
 - N2：工具栏默认 opacity 0.35、hover 编辑器区域全显；Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+Enter / Ctrl+Shift+Enter 五组快捷键生效
 - N3：续写/生成四触发点（工具栏按钮×2 + 快捷键×2）共享模型未配置守卫：未配置 → warn toast 且不启动生成
 - N4：生成中续写/生成禁用 + Sparkles 脉冲动画；SSE 停止按钮仅流式中出现，停止后保留已生成前文
-- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（#1378：默认 2:1 铺满、拖拽改比例、跨重挂载保持；#1397：左栏宽度同样按项目持久化、跨重挂载保持）
+- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用（#1407：卷章树全量加载 → 第 51 章起的章节同样可重命名/删除/拖拽）；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（#1378：默认 2:1 铺满、拖拽改比例、跨重挂载保持；#1397：左栏宽度同样按项目持久化、跨重挂载保持）
 - N6：自动保存 2s 防抖落盘 + 状态栏自动保存时间更新；SSE done 帧落章不触发防抖保存
 - N7：删除授权三态分段控件（delete-mode-manual/ask-once/auto）渲染三按钮，默认 manual 选中（data-selected=true / aria-pressed）；点击一次确认/全自动 → updateChatDeletePermission(conversationId, mode) PATCH 生效；conversation 缺失先建再 PATCH
 - N8：interrupt SSE 帧到达 → HITL 确认弹窗（delete-confirm-dialog 显示实体名 + confirmTitle）；点确认删除 → resumeChatRun({approved:true}) 续跑删除；点取消 → {approved:false} 拒绝不删除；弹窗打开期间分段控件 disabled
