@@ -1055,6 +1055,13 @@ class LangChainVectorStore:
 | **增量索引** | `extract` 带 `index=true` | 提取成功后，本次 created/updated 实体（character/setting/foreshadowing/timeline（开启时提取的事件））→ index_batch；章节模式额外索引该章 chapter_chunk | 日常提取即索引（按需开启） |
 | **全量重建** | `vector reindex` / POST vector/reindex | 从各模块仓储全量拉取档案（分页循环 `list(limit=100)`；timeline 用已有 `list_all`；章节用 `list_chapters` 分页循环）→ index_batch | 升级/初始化/索引修复（幂等 upsert，可重复执行） |
 
+**批量索引分片（#1404）**: `LangChainVectorStore._index_batch_sync` 内按模块常量
+`_EMBED_MAX_INPUTS_PER_REQUEST`（64 条 = zhipu embedding-3 单请求 input 上限）分片调用
+`embed_documents` 后合并，再一次性 upsert —— 实体总数 > 64 的项目重建索引不再因上游
+400 code 1214（「input数组最大不得超过64条」）中断；合并顺序 = 有效实体顺序（`_probe_embedding`
+取末条与分片前语义一致）。单条路径 `_index_sync` 逐条提交，不受影响。该常量与 #929 空串守卫正交
+（先过滤空白 content，再对有效集分片）；接入第二个 embedding provider 时改为按 provider 取值。
+
 **检索入口**: `vector retrieve` / POST vector/retrieve（§3/§4）。**不接入 F3/F6 写作链路**（RAG 注入写作上下文归 Phase 2+ 联调，见 §10——MVP 只交付「能索引、能检索」的实证闭环）。
 
 **RAG 可用性策略**:
@@ -1305,6 +1312,7 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | vector retrieve 无结果 / min_score 过滤全空 | 200 + 空 items（正常路径） |
 | vector retrieve query 空白（空串/纯空格，#929 R4） | store 层确定性降级：`logger.warning` + 返回 `[]`（不调 embed_query、不打 chroma；外部 zhipu 400 1213 家族根治，端点契约不变仍 200 空 items） |
 | 索引实体 content 空白（#929 R4） | store 层逐条跳过：`logger.warning`（含实体 id）+ 不 embed 不 upsert（reindex 继续不中断；批量全空 → 零 embed 调用） |
+| 批量索引单组有效实体数 > 64（#1404） | store 层分片：`embed_documents` 按 `_EMBED_MAX_INPUTS_PER_REQUEST`（64）分批提交后合并，再一次性 upsert（每类型一次）——超限不再触发上游 400 code 1214、重建不中断、指纹可达 `fresh`；单条路径不受影响 |
 | vector retrieve top_k 越界（≤0 或 >50） | 422（Pydantic 校验 top_k 1-50，min_score 0-1） |
 | vector retrieve 遇 chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族） | 服务层自愈：捕获 VectorStoreError → 触发一次 reindex → 重试一次；成功 → 200 命中（relevance_score 降序）；仍失败 → 500 "向量检索失败：chromadb hnsw 段读取失败(...)"（清晰可定位，**不吞空**「内部错误（无详情）」；新增 2026-08-31） |
 | vector reindex 空项目（无档案） | 200 + indexed=0（正常路径） |

@@ -49,6 +49,12 @@ _RETRIEVE_RETRY_BUDGET_S = 1.5
 _FLUSH_PROBE_MAX_ROUNDS = 8
 _FLUSH_PROBE_STEP_S = 0.5
 
+# #1404: 单个 embedding 请求的 input 条数上限。当前唯一生产 provider 为 zhipu
+# embedding-3（单请求 input ≤ 64 条，超限返回 400 code 1214「input数组最大不得超过64条」）。
+# 升级路径：接入第二个 embedding provider 时，此处改为按 provider 取值
+#（例如从 ProviderConfig 能力表读取），不要在此硬编码多个 provider 的分支。
+_EMBED_MAX_INPUTS_PER_REQUEST = 64
+
 
 class LangChainVectorStore:
     """VectorStoreProtocol 实现 — LangChain Chroma + 本地 Embedding（ADR-013）。
@@ -308,6 +314,8 @@ class LangChainVectorStore:
 
         #929 空串守卫：分组内过滤空白 content（逐条 warning），过滤后组空 → continue；
         embed_documents 入参恒不含空白串（zhipu 400 家族路径）。
+        #1404 分片：embed_documents 按 _EMBED_MAX_INPUTS_PER_REQUEST（64）分批提交后合并，
+        超过 64 条不再触发上游 400 code 1214；合并顺序 = valid 顺序，upsert 仍每类型一次。
         """
         by_type: dict[EntityType, list[IndexableEntity]] = {}
         for entity in entities:
@@ -326,7 +334,10 @@ class LangChainVectorStore:
                 valid.append(entity)
             if not valid:
                 continue
-            embeddings = self._embeddings.embed_documents([e.content for e in valid])
+            embeddings: list[list[float]] = []
+            for start in range(0, len(valid), _EMBED_MAX_INPUTS_PER_REQUEST):
+                chunk = valid[start : start + _EMBED_MAX_INPUTS_PER_REQUEST]
+                embeddings.extend(self._embeddings.embed_documents([e.content for e in chunk]))
             with self._lock:
                 collection = self._get_collection(entity_type)
                 # #1011: 每组取最后一条真实向量作探针（upsert 前填充；同组同维度）
