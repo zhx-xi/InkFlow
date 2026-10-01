@@ -483,3 +483,35 @@ class TestRunServiceExceptBranch:
             await _run_service(_raise(ForeshadowingNotFoundError("x")))
         assert ei.value.status_code == 404
         assert "x" in ei.value.detail
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# #1350：伏笔列表响应暴露结构化章号 first_chapter_id
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class TestFirstChapterIdExposed1350:
+    """列表响应含 first_chapter_id（GUI「第 N 章 · location」的数据源）。"""
+
+    @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
+    def test_list_includes_first_chapter_id(self, mock_get_svc: MagicMock) -> None:
+        """带结构化章号 → 响应原样透出 UUID 字符串."""
+        svc = _mock_svc(mock_get_svc)
+        cid = uuid.UUID("c0000001-0000-4000-8000-000000000001")
+        svc.list = AsyncMock(return_value=([_foreshadowing("铜镜的秘密", first_chapter_id=cid)], 1))
+
+        response = client.get(f"/api/v1/projects/{PID}/foreshadowings")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["first_chapter_id"] == str(cid)
+
+    @patch("inkflow.api.routers.foreshadowings.get_foreshadowing_service")
+    def test_list_first_chapter_id_null_when_absent(self, mock_get_svc: MagicMock) -> None:
+        """存量/未选出章号 → 字段为 null（不伪造章号）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.list = AsyncMock(return_value=([_foreshadowing("林晚的身世")], 1))
+
+        response = client.get(f"/api/v1/projects/{PID}/foreshadowings")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["first_chapter_id"] is None

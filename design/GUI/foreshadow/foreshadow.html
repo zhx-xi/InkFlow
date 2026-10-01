@@ -360,7 +360,11 @@ body[data-shot="1"] .demo-bar{display:none}
         </div>
         <div class="design-note" data-design-annotation="1" data-plan="chapter-match-struct" data-testid="fs-note-chapter-match-struct">
           <span class="dn-tag">口径 2 · 结构化</span>
-          <span>选「第 2 章」→ 命中 <b>3 条</b>（含口径 1 漏掉的两条），<b>无漏项</b>。⚠️ 需 F14 提取侧补 <code>foreshadowing ↔ chapter</code> 关联字段（跨 F12/F14）→ <b>本期不可用，本图仅形态演示</b>。</span>
+          <span>选「第 2 章」→ 命中 <b>3 条</b>（含口径 1 漏掉的两条），<b>无漏项</b>。关联字段 <code>foreshadowings.first_chapter_id</code> <b>已由 #1350 落地</b>（幂等迁移 + 提取侧候选章号选择 + 存量零回填）；<b>按章节筛选的 UI 与查询参数仍未实现</b>，本图仅形态演示。</span>
+        </div>
+        <div class="design-note" data-design-annotation="1" data-plan="struct-chapter" data-testid="fs-note-struct-chapter">
+          <span class="dn-tag">#1350 · 位置徽标</span>
+          <span>位置徽标文案规则：<code>first_chapter_id</code> 非空且能在章节序中定位 → <b>「第 N 章 · &lt;location&gt;」</b>（N = 章序位 + 1；location 为空时只显「第 N 章」）；为空 / 映射缺失 → <b>回落 location 原文</b>（不伪造章号）；最终文本为空则不渲染徽标。存量数据 <b>零回填</b>（不解析 location 自由文本）。本图各行徽标即该形态（示例 location 本身已含章号，故视觉不变、PNG 无需重截）。</span>
         </div>
         <div class="design-note" data-design-annotation="1" data-plan="sort-asc" data-testid="fs-note-sort-asc">
           <span class="dn-tag">排序 · 升序</span>

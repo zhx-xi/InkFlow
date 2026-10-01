@@ -31,7 +31,8 @@
 │ │   林晚照的旧玉佩  [已回收] 优先级 40  第8章·初见         │ │
 │ │   未署名的旧信    [未回收] 优先级 20  （location 空→无徽标）│ │
 │ │ 行悬停显现 [编辑][删除]（D12）                           │ │
-│ │ 注：location 为自由文本，原文照显（非结构化章号）        │ │
+│ │ 注：#1350 —— first_chapter_id 非空 → 「第 N 章 · location」│ │
+│ │     为空或映射缺失 → 回落 location 原文（不伪造章号）     │ │
 │ │ 筛选后 0 条 → 卡内展示「当前筛选条件下没有匹配的伏笔」+  │ │
 │ │   [清除筛选]（**不**复用「还没有伏笔，去创建」空态）     │ │
 │ └──────────────────────────────────────────────────────────┘ │
@@ -41,7 +42,7 @@
 - 参考锚点（真实实现）：
   - 端点：GET /api/v1/projects/{pid}/foreshadowings（分页 {items,...}）；创建 POST 同列表端点；PATCH /api/v1/foreshadowings/{id}；DELETE /api/v1/foreshadowings/{id}
   - 工具栏：列表非空时「去创建」（library-create-btn，accent 主按钮）+ AI 提取（extract-entry-lib，提取类型含「伏笔」）
-  - 平铺列表（library-list，divide-y 圆角卡片）：行 = 标题（item.title，纯 span 展示，flex-1 truncate）+ 状态徽标（lib-fs-status-&lt;id&gt;，未回收=accent-weak / 已回收=surface-3；已回收时附「· 回收日期」lib-fs-resolved-at-&lt;id&gt;）+ 优先级（lib-fs-priority-&lt;id&gt;，文案「优先级 {n}」）+ 位置徽标（lib-fs-location-&lt;id&gt;，location 原文照显，空串不渲染）+ 悬停操作（编辑 lib-edit-&lt;id&gt; / 删除 lib-delete-&lt;id&gt;，D12 opacity 0→100）；无等级/标签扩展（withCharacterExtras=false）
+  - 平铺列表（library-list，divide-y 圆角卡片）：行 = 标题（item.title，纯 span 展示，flex-1 truncate）+ 状态徽标（lib-fs-status-&lt;id&gt;，未回收=accent-weak / 已回收=surface-3；已回收时附「· 回收日期」lib-fs-resolved-at-&lt;id&gt;）+ 优先级（lib-fs-priority-&lt;id&gt;，文案「优先级 {n}」）+ 位置徽标（lib-fs-location-&lt;id&gt;，#1350：`first_chapter_id` 非空且能在章节序 `chapterOrder` 中定位 → 「第 N 章 · location」（N = 章序位 + 1；`chapterOrder` 缺省时组件内 `fetchAllChapters(projectId)` 取数，注入优先）；为空 / 映射缺失 → 回落 location 原文；最终文本为空则不渲染）+ 悬停操作（编辑 lib-edit-&lt;id&gt; / 删除 lib-delete-&lt;id&gt;，D12 opacity 0→100）；无等级/标签扩展（withCharacterExtras=false）
   - #1324：扩展由 `withForeshadowExtras`（library.tsx 传 activeCat==='foreshadow'）门控——其他分类不渲染 lib-fs-* 节点
   - 创建/编辑对话框（library-create-dialog，cat=foreshadow）：标题（必填，requiredValue=title）+ 优先级（number input，min 0 max 100，默认 50）+ 位置 + 描述
   - 空态：无条目 → library-tab-empty「还没有伏笔，去创建」+ CTA
@@ -61,7 +62,7 @@
 | 状态机控件（open/resolved 切换） | 无（原型与实现均无此控件） | — | — | — | — | 后端 status 字段与 resolve/reopen 端点存在，但 GUI **只读展示**状态徽标，不提供切换入口（#1324 拍板：超原型，另议） |
 | 回收状态 chip（#1376 已实现） | 「全部」选中（= 不加筛选条件 → 请求不带 `status`） | 选中「未回收」/「已回收」→ 服务端重拉（`?status=open\|resolved`）+ 计数更新 + 页码归零 | 列表 loading | 列表与 `显示 N / 共 M 条` 同步 | — | 三态互斥单选（只有两个状态值 → 三态等效覆盖「多选」语义）；「全部」= 不传 status |
 | 检索输入框（#1376 已实现） | 空（不过滤） | 输入即筛（**实时，无需 Enter**；250ms 防抖后下发请求） | — | 列表 + 计数更新 | — | 匹配面 = **条目标题 OR 位置文本**（大小写不敏感子串，**并集**）。落点 = 服务端：**扩展后端 `?search=` 覆盖面为 title OR location**（未新增 `?location=`，理由见 §4.6）；`total` 为筛选后口径 → 跨页不漏项；**location 为空或不含查询子串者位置面不命中**（口径 1 固有代价，见 §4.2）；清空 = 不过滤 |
-| 出现章节·口径 2 章节选择（**本期不做**，依赖后端先行） | 空（不过滤） | 「选择章节」→ 章节多选 → 按结构化关联过滤 | — | 列表 + 计数更新 | — | 语义准确无漏项；**依赖 F14 提取侧补 foreshadowing ↔ chapter 关联字段，本期不可用**（#1350 承接） |
+| 出现章节·口径 2 章节选择（**筛选 UI 仍不做**——数据基础已由 #1350 落地） | 空（不过滤） | 「选择章节」→ 章节多选 → 按结构化关联过滤 | — | 列表 + 计数更新 | — | 语义准确无漏项；`foreshadowings.first_chapter_id`（**#1350 已落地**：迁移 + 提取侧候选章号选择 + 存量零回填）已提供结构化数据基础；按章节**筛选**的 UI 与后端查询参数仍未实现，需单独立 issue |
 | 排序切换（#1376 已实现） | 「优先级 高→低」（降序，= 后端 `?sort_by=priority&sort_desc=true` 默认值） | 点击 → 反向（低→高）+ 图标换向 | — | 列表重排 | — | 同优先级按 updated_at DESC 兜底（F13 spec §6.2）；切换后页码归零；**降序（缺省）不下发排序参数**（= 后端缺省），升序下发 `sort_by=priority&sort_desc=false` |
 | 清除筛选（#1376 已实现） | 仅筛选结果 0 条时显示 | 清空 status/检索条件 → 恢复全量 | — | 列表恢复 | — | 不改变排序方向 |
 | 筛选无结果提示（#1376 已实现） | 0 条时替换列表区 | — | — | — | — | 文案「当前筛选条件下没有匹配的伏笔」+ 清除入口；**不得**复用 library-tab-empty（会把「筛掉了」误报成「没有数据」） |
@@ -72,7 +73,8 @@
 - N2：创建/编辑对话框（标题必填 + 优先级 0-100 默认 50 + 位置/描述）
 - N3：删除二次确认（不可恢复文案）
 - N4：空态 CTA + 列表非空常驻「去创建」+ AI 提取入口（伏笔类型）
-- N5：列表行渲染状态徽标（未回收/已回收，已回收附回收日期）+ 优先级「优先级 {n}」+ 位置徽标（location 原文照显）；状态徽标**只读**，无状态切换控件（与后端 resolve/reopen 端点的差异如实保留）
+- N5：列表行渲染状态徽标（未回收/已回收，已回收附回收日期）+ 优先级「优先级 {n}」+ 位置徽标（#1350：结构化章号优先，回落 location 原文）；状态徽标**只读**，无状态切换控件（与后端 resolve/reopen 端点的差异如实保留）
+- N12（#1350）：位置徽标 = `first_chapter_id` 非空且能在章节序中定位 → 「第 N 章 · <location>」（N = 章序位 + 1；location 为空时只显示「第 N 章」）；为空 / 映射缺失 → 回落 location 原文（**不伪造章号**）；最终文本为空则不渲染徽标。契约：`frontend/packages/renderer/src/components/LibraryItemList.foreshadow.test.tsx`（#1350 describe）+ 后端 `first_chapter_id` 透出（`backend/tests/unit/api/routers/test_foreshadowing_api.py::TestFirstChapterIdExposed1350`）
 
 > N6-N11（#1376）**已实现**（2026-10-01）——可验证证据：
 > 前端页契约 `frontend/packages/renderer/src/pages/library-foreshadow-filter-1376.test.tsx`、
@@ -103,7 +105,7 @@
 | 口径 | 语义 | 命中示例（原型 8 条种子数据，查询「第 2 章」） | 代价 | 原型 PNG |
 |---|---|---|---|---|
 | **1（已拍板）** | 单一检索框按**条目标题 OR `location` 文本**子串匹配（标题面 = 复用后端 `?search=`；位置面 = 口径 1） | 命中 **1 条**（林晚照的旧玉佩）——本例「第 2 章」标题面无命中 | 🔴 **位置面：location 为空者必然不命中**；location 未规范写章号者（如「开篇 · 序章梦境」）同样不命中——上例共 **2 条被漏**（无名剑客的遗言 / 未署名的旧信）。文本规范全靠用户自觉 | `foreshadow-chapter-match-text.png` |
-| 2 | 按**结构化 `foreshadowing ↔ chapter` 关联**过滤 | 命中 **3 条**（含口径 1 漏掉的两条），无漏项 | 🔴 需 F14 提取侧补关联字段（跨 F12/F14）→ **本期不可用**，跨模块改造，建议单独立 issue 挂后续版本 | `foreshadow-chapter-match-struct.png` |
+| 2 | 按**结构化 `foreshadowing ↔ chapter` 关联**过滤 | 命中 **3 条**（含口径 1 漏掉的两条），无漏项 | 关联字段 `foreshadowings.first_chapter_id` **已由 #1350 落地**（2026-10-01：幂等迁移 + 提取侧候选章号选择 + 存量零回填）；**按章节筛选的 UI 与查询参数仍未实现**，跨模块改造建议单独立 issue | `foreshadow-chapter-match-struct.png` |
 
 ### 4.3 🔴 后端契约实证（决定「前端 vs 后端筛选」的取舍）
 

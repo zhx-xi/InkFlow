@@ -698,6 +698,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "first_chapter_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "id": {
         "has_server_default": false,
         "nullable": false

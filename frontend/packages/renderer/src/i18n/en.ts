@@ -37,7 +37,7 @@ export const en: Record<string, string> = {
   'lib.empty.create': 'Create',
   'lib.loadFailed': 'Loading failed, please retry',
   'lib.retry': 'Retry', // #1324: foreshadowing row extras (location shown verbatim, no key needed)
-  'lib.fs.status.open': 'Open', 'lib.fs.status.resolved': 'Resolved', 'lib.fs.priority': 'Priority {n}',
+  'lib.fs.status.open': 'Open', 'lib.fs.status.resolved': 'Resolved', 'lib.fs.priority': 'Priority {n}', 'lib.fs.chapter': 'Chapter {n}', // #1350 foreshadow chapter anchor
   // F43: library CRUD P0 (specs/f43-setting-library-gui/spec.md §6)
   'lib.edit': 'Edit', 'lib.delete': 'Delete',
   'lib.edit.title.characters': 'Edit Character',

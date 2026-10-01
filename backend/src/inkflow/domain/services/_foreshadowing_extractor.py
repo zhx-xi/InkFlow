@@ -10,7 +10,7 @@ ForeshadowingRepositoryProtocol），测试中注入 Mock。
 
 管线步骤（§5.4）:
 ① 校验项目存在 —— 由门面统一负责（§5.1），extractor 不重复
-② 渲染 foreshadowing_extract.yaml（PromptManager，变量 {text}）
+② 渲染 foreshadowing_extract.yaml（PromptManager，变量 {text} + #1350 候选章号清单 {chapters}）
 ③ LLMClient.chat(model or project.config.model, temperature=0.2)
 ④ 解析 JSON → Pydantic schema 校验（ExtractedForeshadowing）
    → 非法条目跳过 + warning
@@ -33,6 +33,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from inkflow.domain.models.chapter import Chapter
 from inkflow.domain.models.foreshadowing import (
     ExtractedForeshadowing,
     Foreshadowing,
@@ -40,6 +41,7 @@ from inkflow.domain.models.foreshadowing import (
     ForeshadowingExtractRequest,
     ForeshadowingStatus,
 )
+from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
@@ -142,6 +144,7 @@ class ForeshadowingExtractor:
         llm_client: LLM 客户端（F5）.
         prompt_manager: Prompt 模板管理器（F5）.
         foreshadowing_repo: 伏笔仓储端口（F13）.
+        chapter_repo: 章节仓储端口（#1350 候选章号清单来源）.
     """
 
     def __init__(
@@ -150,10 +153,35 @@ class ForeshadowingExtractor:
         llm_client: LLMClientProtocol,
         prompt_manager: PromptTemplateProtocol,
         foreshadowing_repo: ForeshadowingRepositoryProtocol,
+        chapter_repo: ChapterRepositoryProtocol,
     ) -> None:
         self._llm = llm_client
         self._prompts = prompt_manager
         self._repo = foreshadowing_repo
+        self._chapters = chapter_repo
+
+    # ── 候选章号清单（#1350）────────────────────────────────────
+
+    async def _load_all_chapters(self, project_id: uuid.UUID) -> list[Chapter]:
+        """取项目**全量**章节（分页取满；仓储返回顺序即章序 = 候选清单序号顺序）.
+
+        首页 ``offset=0`` + 仓储默认 limit；续页 ``offset=已取条数`` + ``limit=100``。
+        续页空 / ``total`` 缺失即停；``offset`` 单调递增兜底防死循环。
+        """
+        chapters: list[Chapter] = []
+        offset = 0
+        while True:
+            if offset == 0:
+                page, total = await self._chapters.list_chapters(project_id, offset=0)
+            else:
+                page, total = await self._chapters.list_chapters(
+                    project_id, offset=offset, limit=100
+                )
+            chapters.extend(page)
+            offset += len(page)
+            if not page or not total or offset >= total:
+                break
+        return chapters
 
     # ── 公共入口 ────────────────────────────────────────────────
 
@@ -179,9 +207,13 @@ class ForeshadowingExtractor:
         """
         model = request.model or default_model
 
-        # ② 渲染模板（变量: text）
+        # ② 渲染模板（变量: text + #1350 候选章号清单）
+        chapters = await self._load_all_chapters(request.project_id)
+        candidates_text = "\n".join(f"{i}: {c.title}" for i, c in enumerate(chapters, start=1))
         template = self._prompts.load(_TEMPLATE_NAME)
-        rendered = self._prompts.render(template, {"text": request.text})
+        rendered = self._prompts.render(
+            template, {"text": request.text, "chapters": candidates_text}
+        )
         messages = [ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages]
 
         # ③④⑤ 调用 LLM + 解析 + 修复式重试（≤ 2 次）
@@ -215,6 +247,7 @@ class ForeshadowingExtractor:
             foreshadowings=outcome.foreshadowings,
             item_warnings=outcome.warnings,
             model=model,
+            chapters=chapters,
         )
 
     # ── 解析 ────────────────────────────────────────────────────
@@ -254,6 +287,7 @@ class ForeshadowingExtractor:
         foreshadowings: list[ExtractedForeshadowing],
         item_warnings: list[str],
         model: str,
+        chapters: list[Chapter],
     ) -> ForeshadowingExtractionResult:
         """合并落库: 按 (project_id, title) 匹配伏笔 → 覆盖/新建。"""
         warnings = list(item_warnings)
@@ -279,6 +313,7 @@ class ForeshadowingExtractor:
                         status=ForeshadowingStatus.OPEN,
                         location=ef.location or "",
                         event_id=None,
+                        first_chapter_id=_chapter_id_for_number(chapters, ef.first_chapter_number),
                         created_at=now,
                         updated_at=now,
                     )
@@ -286,7 +321,11 @@ class ForeshadowingExtractor:
                 created.append(new_fs)
                 continue
 
-            merged = _merge_foreshadowing_fields(existing, ef)
+            merged = _merge_foreshadowing_fields(
+                existing,
+                ef,
+                first_chapter_id=_chapter_id_for_number(chapters, ef.first_chapter_number),
+            )
             if merged is None:
                 # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
                 continue
@@ -304,9 +343,12 @@ class ForeshadowingExtractor:
 
 
 def _merge_foreshadowing_fields(
-    existing: Foreshadowing, ef: ExtractedForeshadowing
+    existing: Foreshadowing,
+    ef: ExtractedForeshadowing,
+    *,
+    first_chapter_id: uuid.UUID | None,
 ) -> Foreshadowing | None:
-    """非空字段覆盖合并（description/location 独立判断，status 不重置）.
+    """非空字段覆盖合并（description/location/first_chapter_id 独立判断，status 不重置）.
 
     无任何变化时返回 None（幂等跳过，不更新 updated_at）；否则
     保留 existing 的 id / priority / status / event_id / 时间戳等无关字段。
@@ -314,13 +356,21 @@ def _merge_foreshadowing_fields(
     Args:
         existing: 库中同名伏笔.
         ef: LLM 提取出的伏笔.
+        first_chapter_id: 本次选中的章节锚点（None = 本次未选出，保留既有值）.
 
     Returns:
         合并后的完整伏笔；无变化返回 None.
     """
     new_description = ef.description or existing.description
     new_location = ef.location or existing.location
-    if new_description == existing.description and new_location == existing.location:
+    new_first_chapter_id = (
+        first_chapter_id if first_chapter_id is not None else existing.first_chapter_id
+    )
+    if (
+        new_description == existing.description
+        and new_location == existing.location
+        and new_first_chapter_id == existing.first_chapter_id
+    ):
         return None
     return Foreshadowing(
         id=existing.id,
@@ -331,8 +381,20 @@ def _merge_foreshadowing_fields(
         status=existing.status,  # 不重置（open/resolved 原样保留，§5.4 合并策略）
         location=new_location,
         event_id=existing.event_id,
+        first_chapter_id=new_first_chapter_id,
         resolved_at=existing.resolved_at,
         extra=existing.extra,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )
+
+
+def _chapter_id_for_number(chapters: list[Chapter], number: int | None) -> uuid.UUID | None:
+    """候选清单序号 → 章节 UUID（越界 / None → None，不抛错）.
+
+    ``number`` 是 1-based 序号（``ExtractedForeshadowing.first_chapter_number``）；
+    仓储返回顺序即章序，落在 ``[1, len(chapters)]`` 内才映射，否则 None。
+    """
+    if number is None or not 1 <= number <= len(chapters):
+        return None
+    return chapters[number - 1].id

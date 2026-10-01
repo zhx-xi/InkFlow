@@ -12,6 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from inkflow.domain.models.foreshadowing import (
+    ExtractedForeshadowing,
     Foreshadowing,
     ForeshadowingCreate,
     ForeshadowingStatus,
@@ -215,3 +216,55 @@ class TestForeshadowingUpdate:
         """location 超过 200 字符应抛出 ValidationError."""
         with pytest.raises(ValidationError, match="埋设位置不能超过 200 个字符"):
             ForeshadowingUpdate(location="位" * 201)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# #1350 伏笔「第几章」结构化列 first_chapter_id（方案 A，location 保留为自由描述）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class TestFirstChapterIdField:
+    """Foreshadowing.first_chapter_id —— 可空结构化章号（FK chapters.id）。"""
+
+    def test_entity_defaults_first_chapter_id_none(self):
+        """未提供 → None（存量 94 条与手工建档形态；不编造章号）。"""
+        fs = Foreshadowing(id=FID, project_id=PID, title="林晚的身世", created_at=TS, updated_at=TS)
+        assert fs.first_chapter_id is None
+
+    def test_entity_accepts_first_chapter_id_uuid(self):
+        """显式提供领域 UUID → 原样保留（int↔UUID 映射在仓储层）。"""
+        cid = uuid.UUID("aa11bb22-0000-4000-8000-000000000003")
+        fs = Foreshadowing(
+            id=FID,
+            project_id=PID,
+            title="林晚的身世",
+            first_chapter_id=cid,
+            created_at=TS,
+            updated_at=TS,
+        )
+        assert fs.first_chapter_id == cid
+
+
+class TestExtractedFirstChapterNumber:
+    """ExtractedForeshadowing.first_chapter_number —— 模型输出的候选清单序号。"""
+
+    def test_defaults_none(self):
+        """未输出章号 → None（不覆盖既有结构化章号）。"""
+        ef = ExtractedForeshadowing(title="铜镜的秘密")
+        assert ef.first_chapter_number is None
+
+    def test_accepts_positive_number(self):
+        """正整数序号原样保留（1 = 候选清单第 1 章）。"""
+        ef = ExtractedForeshadowing(title="铜镜的秘密", first_chapter_number=3)
+        assert ef.first_chapter_number == 3
+
+    def test_non_positive_becomes_none_without_raising(self):
+        """0 / 负数（模型幻觉）→ 宽容降级为 None，不抛错（不丢整条伏笔）。"""
+        assert (
+            ExtractedForeshadowing(title="铜镜的秘密", first_chapter_number=0).first_chapter_number
+            is None
+        )
+        assert (
+            ExtractedForeshadowing(title="铜镜的秘密", first_chapter_number=-2).first_chapter_number
+            is None
+        )

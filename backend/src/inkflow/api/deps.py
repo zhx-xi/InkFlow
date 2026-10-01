@@ -560,6 +560,7 @@ async def get_extraction_service(
             llm_client=LangChainLLMClient(),
             prompt_manager=LangChainPromptManager(),
             foreshadowing_repo=SQLiteForeshadowingRepository(db),
+            chapter_repo=SQLiteChapterRepository(db),
         ),
         timeline_extractor=TimelineExtractor(
             llm_client=LangChainLLMClient(),

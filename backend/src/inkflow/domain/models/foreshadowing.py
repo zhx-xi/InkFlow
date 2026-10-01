@@ -116,6 +116,7 @@ class Foreshadowing(BaseModel):
         status: 生命周期状态（open/resolved）.
         location: 埋设位置自由文本（空 = 未记录；不挂事件时仍可写「第 3 章」）.
         event_id: F12 时间线事件锚点（None = 未挂接；叙事位置从事件获取）.
+        first_chapter_id: #1350 首次出现章节锚点（None = 未记录，不解析 location）.
         resolved_at: 回收时间 (UTC)（仅状态迁移维护）.
         extra: 扩展属性字典（标签、关联角色名等 Phase 2+ 字段预留）.
         created_at: 创建时间 (UTC).
@@ -132,6 +133,7 @@ class Foreshadowing(BaseModel):
     status: ForeshadowingStatus = ForeshadowingStatus.OPEN
     location: str = ""  # 埋设位置自由文本（空 = 未记录；不挂事件时仍可写「第 3 章」）
     event_id: uuid.UUID | None = None  # F12 时间线事件锚点（None = 未挂接；叙事位置从事件获取）
+    first_chapter_id: uuid.UUID | None = None  # #1350 首次出现章节锚点（None = 未记录）
     resolved_at: datetime | None = None  # 回收时间（仅状态迁移维护）
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
@@ -241,11 +243,17 @@ class ExtractedForeshadowing(BaseModel):
 
     title 非法（空/超长）时该条被跳过并记录 warning，不影响其余条目落库。
     description / location 可空：空值（None/空串）在合并时表示「不覆盖」。
+
+    first_chapter_number 是 LLM 从候选清单选的 **1-based 序号**（不是章 id）：
+    None / 非正整数（模型幻觉）宽容降级为 None，不抛错（不丢整条伏笔）；
+    正整数原样保留，由提取器映射为对应章节 UUID 落库。
     """
 
     title: str
     description: str | None = None
     location: str | None = None
+    # #1350 首次出现章节序号（候选清单 1-based 序号；None / 非正数降级为 None）
+    first_chapter_number: int | None = None
 
     @field_validator("title")
     @classmethod
@@ -264,6 +272,14 @@ class ExtractedForeshadowing(BaseModel):
     def validate_location(cls, v: str | None) -> str | None:
         """验证埋设位置：None 合法；否则去空白且不超过 200 字符."""
         return _validate_location(v) if v is not None else None
+
+    @field_validator("first_chapter_number")
+    @classmethod
+    def validate_first_chapter_number(cls, v: int | None) -> int | None:
+        """验证章节序号：None → None；``<= 0`` → None（宽容降级）；正整数原样保留."""
+        if v is None or v <= 0:
+            return None
+        return v
 
 
 class ForeshadowingExtractRequest(BaseModel):

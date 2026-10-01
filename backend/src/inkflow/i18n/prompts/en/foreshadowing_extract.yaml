@@ -10,12 +10,19 @@ system_prompt: |
   {
     "foreshadowings": [
       {"title": "foreshadowing name (short, e.g. \"The Secret of the Bronze Mirror\")", "description": "what the foreshadowing sets up and the expected payoff, or empty",
-       "location": "where it is planted, or empty (e.g. \"Chapter 5, Lin Wan's bathing scene\")"}
+       "location": "where it is planted, or empty (e.g. \"Chapter 5, Lin Wan's bathing scene\")",
+       "first_chapter_number": the number of the chapter where it is first planted (must be taken
+                               strictly from the \"Chapter candidates\" list below; null when the
+                               list is empty or the chapter cannot be determined)}
     ]
   }
   foreshadowings must not contain duplicate names.
 human_prompt: |
+  Chapter candidates (number: title):
+  {chapters}
+
   Chapter text:
   {text}
 variables:
   - text
+  - chapters

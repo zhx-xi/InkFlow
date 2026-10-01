@@ -34,7 +34,7 @@ export const zh = {
   'lib.empty.create': '去创建',
   'lib.loadFailed': '加载失败，请重试',
   'lib.retry': '重试',
-  'lib.fs.status.open': '未回收', 'lib.fs.status.resolved': '已回收', 'lib.fs.priority': '优先级 {n}', // #1324 伏笔行
+  'lib.fs.status.open': '未回收', 'lib.fs.status.resolved': '已回收', 'lib.fs.priority': '优先级 {n}', 'lib.fs.chapter': '第 {n} 章', // #1324 伏笔行 · #1350 伏笔结构化章号
   // F43：设定库 CRUD P0（specs/f43-setting-library-gui/spec.md §6）
   'lib.edit': '编辑', 'lib.delete': '删除',
   'lib.edit.title.characters': '编辑角色',

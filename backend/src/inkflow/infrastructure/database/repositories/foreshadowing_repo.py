@@ -66,6 +66,7 @@ def _orm_to_domain(orm: ForeshadowingORM) -> Foreshadowing:
         status=ForeshadowingStatus(orm.status),
         location=orm.location,
         event_id=_int_to_uuid(orm.event_id),
+        first_chapter_id=_int_to_uuid(orm.first_chapter_id),
         resolved_at=orm.resolved_at,
         extra=orm.extra or {},
         created_at=orm.created_at,
@@ -83,6 +84,9 @@ def _domain_to_orm(domain: Foreshadowing) -> ForeshadowingORM:
         status=domain.status.value,
         location=domain.location,
         event_id=_uuid_to_int(domain.event_id) if domain.event_id is not None else None,
+        first_chapter_id=(
+            _uuid_to_int(domain.first_chapter_id) if domain.first_chapter_id is not None else None
+        ),
         resolved_at=domain.resolved_at,
         extra=domain.extra,
     )
@@ -266,6 +270,9 @@ class SQLiteForeshadowingRepository:
                 status=f.status.value,
                 location=f.location,
                 event_id=_uuid_to_int(f.event_id) if f.event_id is not None else None,
+                first_chapter_id=(
+                    _uuid_to_int(f.first_chapter_id) if f.first_chapter_id is not None else None
+                ),
                 resolved_at=f.resolved_at,
                 extra=f.extra,
                 updated_at=_utcnow(),

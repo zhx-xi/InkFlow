@@ -873,14 +873,18 @@ async def _run_sources(request, sources) -> ExtractionResult:
 
 ```text
 ① 校验项目存在 —— 由门面统一负责（§5.1），extractor 不重复
-② 渲染 foreshadowing_extract.yaml（PromptManager，变量: text）
-③ LLMClient.chat(model or project.config.model, temperature=0.2)
-④ 解析 JSON → Pydantic schema 校验（ExtractedForeshadowing）
+② 取候选章号清单 —— chapter_repo 分页取满项目章节（首页 offset=0；续页 offset=已取条数，
+   limit=100；total 缺失/空页即停），构造「序号: 标题」逐行文本（序号自 1 起；无章节 → 空串）
+③ 渲染 foreshadowing_extract.yaml（PromptManager，变量: text, chapters）
+④ LLMClient.chat(model or project.config.model, temperature=0.2)
+⑤ 解析 JSON → Pydantic schema 校验（ExtractedForeshadowing）
    → 非法条目跳过 + warning
-⑤ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → ForeshadowingExtractionError
-⑥ 合并落库（§5.4 合并策略）: 按 (project_id, title) 匹配活动伏笔 →
-   存在=更新(非空字段覆盖) / 不存在=创建（priority 默认 50）
-⑦ 返回 ForeshadowingExtractionResult（created/updated/warnings + model）
+⑥ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → ForeshadowingExtractionError
+⑦ 章号映射（#1350）: first_chapter_number ∈ [1, len(chapters)] → 对应章节 UUID；
+   越界 / 清单为空 / None → None（宽容降级，不抛错、不丢条目）
+⑧ 合并落库（§5.4 合并策略）: 按 (project_id, title) 匹配活动伏笔 →
+   存在=更新(非空字段覆盖，含 first_chapter_id) / 不存在=创建（priority 默认 50）
+⑨ 返回 ForeshadowingExtractionResult（created/updated/warnings + model）
 ```
 
 **模板 `foreshadowing_extract.yaml`**（§5.2 结构同 character_extract.yaml）:
@@ -896,23 +900,29 @@ system_prompt: |
   {
     "foreshadowings": [
       {"title": "伏笔名（短，如『铜镜的秘密』）", "description": "伏笔内容与预期回收方式或空",
-       "location": "埋设位置描述或空（如『第 5 章·林晚沐浴场景』）"}
+       "location": "埋设位置描述或空（如『第 5 章·林晚沐浴场景』）",
+       "first_chapter_number": 首次埋设章节的序号（必须严格取自下方「章节候选清单」中的序号；
+                               清单为空或无法确定时填 null）}
     ]
   }
   foreshadowings 中不要包含重复的伏笔名。
 human_prompt: |
+  章节候选清单（序号: 标题）：
+  {chapters}
+
   章节文本：
   {text}
 variables:
   - text
+  - chapters
 ```
 
 **合并策略（复用 F13 档案约定）**:
 
 | 情况 | 行为 | 计入 |
 |------|------|------|
-| 项目内存在同名**活动**伏笔 | 非空提取字段覆盖（description/location 独立判断），**不重置 status**（open/resolved 原样保留），更新 updated_at | `updated` |
-| 不存在 | 创建新伏笔（status=open，priority=50，event_id=None） | `created` |
+| 项目内存在同名**活动**伏笔 | 非空提取字段覆盖（description/location/**first_chapter_id** 独立判断；本次未选出章号 → 保留既有值），**不重置 status**（open/resolved 原样保留），更新 updated_at | `updated` |
+| 不存在 | 创建新伏笔（status=open，priority=50，event_id=None，first_chapter_id=映射值或 None） | `created` |
 | 存在但已**软删除** | 视为不存在 → 创建新档案（partial unique 允许；warning「存在已删除的同名伏笔档案」） | `created` + warning |
 | 提取字段非法（title 空/超长等） | 该条跳过 | `warnings` |
 

@@ -23,10 +23,16 @@
  * RED 预期：GREEN 前无 withForeshadowExtras prop / 无 lib-fs-* 节点 → element-missing，FAIL。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { LibraryItemList } from './LibraryItemList';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { useThemeStore } from '../stores/theme';
+import { fetchAllChapters } from '../api/chapters';
+
+/** #1350：组件缺省按 projectId 内部拉取章节序（同 #679 角色分组模式）→ 模块级 mock。 */
+vi.mock('../api/chapters', () => ({
+  fetchAllChapters: vi.fn(async () => ({ items: [], total: 0 })),
+}));
 
 /** 伏笔行种子（API 响应形状：title/priority/status/location/resolved_at） */
 type FsItem = LibraryItemDTO & {
@@ -140,5 +146,112 @@ describe('#1324 伏笔行状态/优先级/位置渲染（对齐 design/GUI/fores
     // 既有行仍渲染
     expect(screen.getByText('师父闭关的真相')).toBeInTheDocument();
     expect(screen.getByTestId('lib-edit-f1')).toBeInTheDocument();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// #1350：伏笔位置徽标「第 N 章 · location」（结构化章号 first_chapter_id 优先）
+//
+// 契约（GREEN）：
+// - item.first_chapter_id 非空且能在章节序（chapterOrder）中定位 → 徽标文案
+//   「第 N 章 · <location>」（N = 序位 + 1）；location 为空时只显示「第 N 章」。
+// - first_chapter_id 为空，或不在章节序中（映射缺失）→ 回落既有 location 原文。
+// - chapterOrder 未注入时按 projectId 内部拉取（同 #679 角色分组取数模式）。
+// - location 仍为自由描述（#1324 契约不变，仅在其上叠加结构化章号前缀）。
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 伏笔行种子（含 #1350 新增字段 first_chapter_id） */
+type FsChapterItem = LibraryItemDTO & {
+  status?: string;
+  resolved_at?: string | null;
+  first_chapter_id?: string | null;
+};
+
+const CHAPTER_ORDER = ['c1', 'c2', 'c3'];
+
+const FS_CHAPTER_ITEMS: FsChapterItem[] = [
+  // 章号命中 + 有 location → 「第 3 章 · 闭关」
+  { id: 'g1', title: '铜镜的秘密', priority: 90, status: 'open', location: '闭关', first_chapter_id: 'c3' },
+  // 无章号（存量形态）→ 回落 location
+  { id: 'g2', title: '玉佩的裂痕', priority: 50, status: 'open', location: '初见', first_chapter_id: null },
+  // 章号命中但 location 为空 → 只显示「第 2 章」
+  { id: 'g3', title: '无位置伏笔', priority: 50, status: 'open', location: '', first_chapter_id: 'c2' },
+  // 章号不在章节序中（映射缺失）→ 回落 location，不伪造章号
+  { id: 'g4', title: '未知章节伏笔', priority: 50, status: 'open', location: '山门', first_chapter_id: 'cX' },
+];
+
+function renderFsChapter(props?: Partial<Parameters<typeof LibraryItemList>[0]>) {
+  return render(
+    <LibraryItemList
+      items={FS_CHAPTER_ITEMS}
+      withForeshadowExtras
+      chapterOrder={CHAPTER_ORDER}
+      onEdit={vi.fn()}
+      onDelete={vi.fn()}
+      {...props}
+    />,
+  );
+}
+
+describe('#1350 伏笔位置徽标「第 N 章 · location」（结构化章号优先，空值回落）', () => {
+  beforeEach(() => {
+    useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
+    vi.mocked(fetchAllChapters).mockClear();
+  });
+
+  it('N2：first_chapter_id 命中章节序 → 「第 N 章 · location」（N = 序位 + 1）', () => {
+    renderFsChapter();
+
+    expect(screen.getByTestId('lib-fs-location-g1')).toHaveTextContent('第 3 章 · 闭关');
+  });
+
+  it('N2：first_chapter_id 为空 → 回落纯 location 文本（存量形态不变）', () => {
+    renderFsChapter();
+
+    const badge = screen.getByTestId('lib-fs-location-g2');
+    expect(badge).toHaveTextContent('初见');
+    expect(badge).not.toHaveTextContent('第');
+  });
+
+  it('location 为空但章号命中 → 只显示「第 N 章」（不出现孤悬分隔符）', () => {
+    renderFsChapter();
+
+    const badge = screen.getByTestId('lib-fs-location-g3');
+    expect(badge).toHaveTextContent('第 2 章');
+    expect(badge).not.toHaveTextContent('·');
+  });
+
+  it('章号不在章节序中（映射缺失）→ 回落 location，不伪造章号', () => {
+    renderFsChapter();
+
+    const badge = screen.getByTestId('lib-fs-location-g4');
+    expect(badge).toHaveTextContent('山门');
+    expect(badge).not.toHaveTextContent('第');
+  });
+
+  it('未注入 chapterOrder → 按 projectId 内部拉取章节序（同 #679 模式）', async () => {
+    vi.mocked(fetchAllChapters).mockResolvedValueOnce({
+      items: [
+        { id: 'c1', title: '觉醒', volume_id: null, order_index: 0, word_count: 0 },
+        { id: 'c2', title: '拜师', volume_id: null, order_index: 1, word_count: 0 },
+        { id: 'c3', title: '结丹', volume_id: null, order_index: 2, word_count: 0 },
+      ],
+      total: 3,
+    });
+
+    render(
+      <LibraryItemList
+        items={[FS_CHAPTER_ITEMS[0]]}
+        withForeshadowExtras
+        projectId="p1"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('lib-fs-location-g1')).toHaveTextContent('第 3 章 · 闭关'),
+    );
+    expect(fetchAllChapters).toHaveBeenCalledWith('p1');
   });
 });

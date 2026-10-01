@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { listCharacterGroups, type CharacterGroup } from '../api/character';
+import { fetchAllChapters } from '../api/chapters';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { LibraryForeshadowFilters, type ForeshadowFilterBarProps } from './LibraryForeshadowFilters';
 import { useI18n } from '../i18n/useI18n';
@@ -19,6 +20,8 @@ type LibraryItemWithGroup = LibraryItemDTO & {
 type LibraryItemForeshadow = LibraryItemDTO & {
   status?: string;
   resolved_at?: string | null;
+  /** #1350：结构化首次出现章节 id（列表响应透出；映射为「第 N 章」前缀） */
+  first_chapter_id?: string | null;
 };
 
 /** #701：角色归属分组 ids —— group_ids 数组优先（N:M 权威）；缺失时兜底旧单选 group_id */
@@ -42,6 +45,8 @@ export interface LibraryItemListProps {
   withCharacterExtras?: boolean;
   /** #1324：foreshadow 分类渲染状态徽标 + 优先级 + 位置徽标（缺省不渲染） */
   withForeshadowExtras?: boolean;
+  /** #1350：章节序 id 数组（位置徽标映射「第 N 章」；数组下标 = 章序 - 1）。可注入（测试）或经 projectId 内部拉取。 */
+  chapterOrder?: string[];
   /** #1376：伏笔筛选/排序条（受控；缺省不渲染 —— 仅 foreshadow 分类传入） */
   foreshadowFilter?: ForeshadowFilterBarProps & { shown: number; total: number };
   /** #679：角色分组列表（characters 分类分组卡片数据源；数组顺序 = 分组渲染顺序）。可注入（测试）或经 projectId 内部拉取。 */
@@ -85,6 +90,7 @@ export function LibraryItemList({
   items,
   withCharacterExtras = false,
   withForeshadowExtras = false,
+  chapterOrder,
   foreshadowFilter,
   characterGroups,
   projectId,
@@ -121,6 +127,23 @@ export function LibraryItemList({
     };
   }, [withCharacterExtras, characterGroups, projectId]);
   const effectiveGroups = characterGroups ?? fetchedGroups;
+  // #1350：章节序数据源 = 注入的 chapterOrder（测试/受控）或按 projectId 内部全量拉取（同 #679 模式）
+  const [fetchedChapterOrder, setFetchedChapterOrder] = useState<string[]>([]);
+  useEffect(() => {
+    if (!withForeshadowExtras || chapterOrder || !projectId) return;
+    let cancelled = false;
+    void fetchAllChapters(projectId)
+      .then((data) => {
+        if (!cancelled) setFetchedChapterOrder((data.items ?? []).map((c) => String(c.id)));
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedChapterOrder([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [withForeshadowExtras, chapterOrder, projectId]);
+  const effectiveChapterOrder = chapterOrder ?? fetchedChapterOrder;
   // #679：等级选项卡顺序（总览 → 主角 → 重要配角 → 配角 → 场景角色 → 一次性角色）
   const RANK_OPTIONS = ['all', 'protagonist', 'major', 'minor', 'scene', 'walkon'].map((key) => ({
     key,
@@ -152,6 +175,16 @@ export function LibraryItemList({
     const fs = item as LibraryItemForeshadow;
     const resolved = fs.status === 'resolved';
     const resolvedAt = resolved && fs.resolved_at ? formatResolvedAt(fs.resolved_at) : '';
+    // #1350：结构化章号命中 → 「第 N 章 · location」（location 空则只显示「第 N 章」）；未命中回落 location 原文
+    const idx = fs.first_chapter_id ? effectiveChapterOrder.indexOf(String(fs.first_chapter_id)) : -1;
+    const n = idx >= 0 ? idx + 1 : 0;
+    const rawLocation = fs.location ?? '';
+    const locationText =
+      n > 0
+        ? rawLocation !== ''
+          ? `${t('lib.fs.chapter', { n })} · ${rawLocation}`
+          : t('lib.fs.chapter', { n })
+        : rawLocation;
     return (
       <>
         <span
@@ -168,12 +201,12 @@ export function LibraryItemList({
         <span data-testid={`lib-fs-priority-${item.id}`} className="shrink-0 text-[11px] text-ink-3">
           {t('lib.fs.priority', { n: fs.priority ?? 0 })}
         </span>
-        {fs.location !== '' && fs.location != null && (
+        {locationText !== '' && (
           <span
             data-testid={`lib-fs-location-${item.id}`}
             className="shrink-0 max-w-[14rem] truncate rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-ink-2"
           >
-            {fs.location}
+            {locationText}
           </span>
         )}
       </>
