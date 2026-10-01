@@ -559,10 +559,10 @@ describe('设定库页 — #196 分类实体手动创建', () => {
  *   世界观追加 lib.delete.worldCascade「该条目及其全部子条目将级联删除，不可恢复」+ DELETE ?cascade=true
  * - #195：遮罩点击不关闭；关闭仅 取消/Esc/确认成功
  * - 删除成功 → reloadKey 刷新 + ok toast（toast.saved）；失败 → err toast + 列表不变
- * - 知识图谱 tab 无列表行操作按钮（图谱画布视图，F48 改造——L10 用例改断言 library-kg-canvas）
+ * - 知识图谱 tab 无列表行操作按钮（图谱视图，F48 改造——L10 用例改断言 library-kg-view）
  *
  * RED 预期：lib-edit-x / lib-delete-x / lib-confirm-dialog / lib-save-indicator 均不存在 →
- * element-missing（类 3 契约缺口）；L10 改断言 library-kg-canvas（F48 图谱视图，非确认型）。
+ * element-missing（类 3 契约缺口）；L10 改断言 library-kg-view（#1419：空态不渲染画布，容器上移到视图根）。
  */
 describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
   /** 角色列表完整 DTO（编辑预填需要全字段，spec §2.1；P1 契约升级 2026-08-13：含等级/标签 extra——编辑保存 enabled 前提） */
@@ -836,7 +836,7 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
       expect(screen.getByTestId('library-list')).toHaveTextContent('林晚');
     });
   });
-  it('L10 知识图谱 tab 无列表行操作按钮（图谱画布视图 library-kg-canvas，F48 改造）', async () => {
+  it('L10 知识图谱 tab 无列表行操作按钮（图谱视图根容器 library-kg-view，F48/#1419 改造）', async () => {
     act(() => {
       useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' });
     });
@@ -851,11 +851,11 @@ describe('设定库页 — F43 列表项编辑/删除（P0）', () => {
     renderLibrary();
 
     await user.click(screen.getByRole('tab', { name: '知识图谱' }));
-    const canvas = await screen.findByTestId('library-kg-canvas');
-    expect(canvas).toBeInTheDocument();
+    const view = await screen.findByTestId('library-kg-view');
+    expect(view).toBeInTheDocument();
     // 图谱视图非列表：F43 列表行编辑/删除按钮不存在（F48 关系编辑走画布/关系列表内交互）
-    expect(within(canvas).queryAllByTestId(/^lib-edit-/)).toHaveLength(0);
-    expect(within(canvas).queryAllByTestId(/^lib-delete-/)).toHaveLength(0);
+    expect(within(view).queryAllByTestId(/^lib-edit-/)).toHaveLength(0);
+    expect(within(view).queryAllByTestId(/^lib-delete-/)).toHaveLength(0);
   });
 });
 

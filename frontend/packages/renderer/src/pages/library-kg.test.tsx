@@ -24,6 +24,9 @@
  * - graph 返回 {nodes: [], edges: []} → data-testid="library-kg-empty" + 文案
  *   t('lib.knowledge.empty.title')（zh='图谱为空'；i18n 新增 lib.knowledge.* 组）
  * - 空态可含「去角色/世界观等实体页创建」引导链接（GREEN 自定 testid，非本契约面）
+ * - 🔴 #1419：空态**不渲染画布**（对齐 design/GUI/knowledge/knowledge.html
+ *   `body[data-state="empty"] .kg-canvas{display:none}`）——画布内 legend / sr-only summary 随之消失
+ * - 🔴 #1419：图谱视图根容器 data-testid="library-kg-view"（library.test.tsx L10 迁移后的断言锚点）
  *
  * 【建关系表单（§5.4 工具栏「新建关系」→ 表单；保存成功后关闭/收起）】
  * - 容器 data-testid="library-kg-relation-form"；字段 testid：
@@ -246,7 +249,9 @@ describe('F48 知识图谱 tab（spec §5.4）', () => {
   it('N5 sr-only 摘要：图谱渲染 → library-kg-summary 存在', async () => {
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
-      if (path === '/api/v1/projects/p1/knowledge-graph') return GRAPH_SEED;
+      // #1419：真实请求带 ?scope=related|all —— 必须前缀匹配。此前用精确匹配，该分支永不命中，
+      // 用例落到默认空响应、在**空态**下空转（仅因「空态也挂载画布」的漂移才偶然转绿）
+      if (path.startsWith('/api/v1/projects/p1/knowledge-graph')) return GRAPH_SEED;
       return { items: [], total: 0, offset: 0, limit: 50 };
     });
     act(() => { useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' }); });
@@ -255,6 +260,38 @@ describe('F48 知识图谱 tab（spec §5.4）', () => {
     await user.click(screen.getByRole('tab', { name: '知识图谱' }));
     const summary = await screen.findByTestId('library-kg-summary');
     expect(summary).toBeInTheDocument();
+  });
+
+  /** #1419：空态对齐基线 = design/GUI/knowledge/knowledge.html
+   *  （`body[data-state="empty"] .kg-canvas{display:none}`）——空态**不挂载**画布，而非隐藏它。 */
+  it('#1419 空态：图谱为空 → 画布不渲染（对齐原型空态隐藏画布）', async () => {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path.startsWith('/api/v1/projects/p1/knowledge-graph')) return { nodes: [], edges: [] };
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+    act(() => { useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' }); });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
+    expect(await screen.findByTestId('library-kg-empty')).toBeInTheDocument();
+    // 画布整体不渲染（画布内的图例 / sr-only 摘要随之让位）
+    expect(screen.queryByTestId('library-kg-canvas')).toBeNull();
+    expect(screen.queryByTestId('library-kg-legend')).toBeNull();
+    expect(screen.queryByTestId('library-kg-summary')).toBeNull();
+    // 图谱视图根容器仍在（空态卡片挂在其中）——library.test.tsx L10 的断言锚点
+    expect(screen.getByTestId('library-kg-view')).toBeInTheDocument();
+  });
+
+  it('#1419 非空态反例：图谱有节点 → 画布正常渲染（空态隐藏不得误伤有数据场景）', async () => {
+    act(() => { useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1' }); });
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.click(screen.getByRole('tab', { name: '知识图谱' }));
+    expect(await screen.findByTestId('library-kg-canvas')).toHaveTextContent('林尘');
+    expect(screen.queryByTestId('library-kg-empty')).toBeNull();
   });
 
   it('新建关系：工具栏按钮 → 表单渲染 → 提交 POST /knowledge-relations（六元组+description）→ 列表视图出现新行', async () => {
