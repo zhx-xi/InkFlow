@@ -2273,6 +2273,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/knowledge-graph/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Knowledge Graph
+         * @description 导出 mxGraph XML（spec §5.7.2；只读幂等，同数据两次导出字节级一致）。
+         */
+        get: operations["export_knowledge_graph_api_v1_projects__project_id__knowledge_graph_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge-graph/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Knowledge Graph
+         * @description 导入 mxGraph XML（spec §5.7.3；请求体为原始 XML 文本，非 JSON）。
+         *
+         *     响应体为 KnowledgeGraphImportResult（计数恒等式 total == imported + skipped + failed）。
+         */
+        post: operations["import_knowledge_graph_api_v1_projects__project_id__knowledge_graph_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/knowledge-relations": {
         parameters: {
             query?: never;
@@ -4642,6 +4684,52 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+        };
+        /**
+         * KnowledgeGraphImportIssue
+         * @description 导入过程中被跳过 / 拒绝的一条边.
+         */
+        KnowledgeGraphImportIssue: {
+            /** Edge Id */
+            edge_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "skipped" | "failed";
+            /** Label */
+            label: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * KnowledgeGraphImportResult
+         * @description 导入结果（计数恒等式 total == imported + skipped + failed）.
+         */
+        KnowledgeGraphImportResult: {
+            /**
+             * Deleted
+             * @default 0
+             */
+            deleted: number;
+            /**
+             * Details
+             * @default []
+             */
+            details: components["schemas"]["KnowledgeGraphImportIssue"][];
+            /** Failed */
+            failed: number;
+            /** Imported */
+            imported: number;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "merge" | "replace";
+            /** Skipped */
+            skipped: number;
+            /** Total */
+            total: number;
         };
         /**
          * KnowledgeRelationCreate
@@ -11100,6 +11188,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_knowledge_graph_api_v1_projects__project_id__knowledge_graph_export_get: {
+        parameters: {
+            query?: {
+                format?: "mxgraph";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_knowledge_graph_api_v1_projects__project_id__knowledge_graph_import_post: {
+        parameters: {
+            query?: {
+                mode?: "merge" | "replace";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/xml": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeGraphImportResult"];
                 };
             };
             /** @description Validation Error */

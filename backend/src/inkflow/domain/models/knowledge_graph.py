@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -161,3 +162,34 @@ class KnowledgeGraphView(BaseModel):
 
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+class MxGraphEdge(BaseModel):
+    """mxGraph XML 解析出的边 cell（端点为原始 cell id，尚未解析为实体引用）."""
+
+    id: str
+    label: str
+    description: str = ""
+    source: str
+    target: str
+
+
+class KnowledgeGraphImportIssue(BaseModel):
+    """导入过程中被跳过 / 拒绝的一条边."""
+
+    kind: Literal["skipped", "failed"]
+    edge_id: str
+    label: str
+    reason: str
+
+
+class KnowledgeGraphImportResult(BaseModel):
+    """导入结果（计数恒等式 total == imported + skipped + failed）."""
+
+    mode: Literal["merge", "replace"]
+    total: int
+    imported: int
+    skipped: int
+    failed: int
+    deleted: int = 0
+    details: list[KnowledgeGraphImportIssue] = []

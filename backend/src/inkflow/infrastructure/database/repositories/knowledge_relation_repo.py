@@ -300,3 +300,20 @@ class SQLiteKnowledgeRelationRepository:
     async def cleanup_for_entity(self, entity_type: str, entity_id: uuid.UUID) -> int:
         """实体硬删级联清理 —— delete_by_entity 别名（§5.3，语义一致）."""
         return await self.delete_by_entity(entity_type, entity_id)
+
+    # ── delete_by_project（drawio import mode=replace 清空）──
+
+    async def delete_by_project(self, project_id: uuid.UUID) -> int:
+        """真删项目内全部关系行（drawio 导入 replace 清空），返回删除行数.
+
+        与 delete_by_entity 不同：本方法**立即 commit**——replace 清空后即使文件内
+        全部边校验失败（无 add 落库），清空结果也必须持久化（spec §7 边界 24）。
+        """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 0
+        stmt = sa_delete(KnowledgeRelationORM).where(KnowledgeRelationORM.project_id == pid)
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        rowcount: int = result.rowcount  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+        return rowcount

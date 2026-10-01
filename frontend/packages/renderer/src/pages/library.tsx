@@ -204,6 +204,8 @@ export function LibraryPage() {
     },
     onRequestRelationDelete: setPendingRelationDelete,
     onGoEntities: () => handleTabChange('characters'),
+    // #1360：drawio 导入成功后 bump reloadKey，触发图谱/关系列表重拉
+    onGraphImported: () => setReloadKey((k) => k + 1),
   });
   // #1300：分页分类用 pagedLib（#1320：world 已移出——整树语义需全量数据，见 worldLib）；其余（timeline/knowledge）由 catData、outline 由 outlineLib 持有
   const isPagedCat = PAGEABLE_CATS.includes(activeCat as PageableCatKey);

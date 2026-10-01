@@ -55,6 +55,8 @@ export interface KnowledgeGraphWiringArgs {
   onRequestRelationDelete: (relation: KnowledgeRelation) => void;
   /** 空态引导目标 */
   onGoEntities: () => void;
+  /** #1360：drawio 导入成功后回调（父侧 bump reloadKey 触发图谱重拉） */
+  onGraphImported: () => void;
 }
 
 export function useKnowledgeGraphWiring({
@@ -71,6 +73,7 @@ export function useKnowledgeGraphWiring({
   onOpenRelationForm,
   onRequestRelationDelete,
   onGoEntities,
+  onGraphImported,
 }: KnowledgeGraphWiringArgs): KnowledgeGraphWiring {
   // #1325：关系列表服务端分页（旧实现不带 limit/offset → 后端默认 limit=50 使第 51 条起永久不可见）
   const [relationPage, setRelationPage] = useState(0);
@@ -175,6 +178,8 @@ export function useKnowledgeGraphWiring({
       if (relation) onRequestRelationDelete(relation);
     },
     onGoEntities,
+    projectId: currentProjectId ?? undefined,
+    onImported: onGraphImported,
   };
 
   return { relations, relationTotal, viewProps };
