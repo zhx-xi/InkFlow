@@ -378,7 +378,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
               <!-- #1373 方案取舍说明条（评审辅助，非产品 UI） -->
               <div class="kg-note" data-plan="color-a">
                 <span class="tag">着色 A</span>
-                <span class="plan">✅ 采用 · 类型色相带内按 hash(name|id) 派生个体色（3 色相 × 2 明度）</span>
+                <span class="plan">✅ 采用 · 类型色相带内按 hash(id|name) 派生个体色（4 色相 × 3 明度 = 12 色槽，#1418 扩槽）</span>
                 <span>类型可辨、同类个体亦有色差；纯前端派生、零契约改动、跨会话稳定。代价：同类内属同色系微差。</span>
               </div>
               <div class="kg-note" data-plan="color-b">
@@ -674,22 +674,32 @@ function hash32(str){
   return h >>> 0;
 }
 function norm(h){ return ((h % 360) + 360) % 360; }
-function makePalette(hue, dark){
+const HUE_OFFSETS = [-18, -6, 6, 18];
+/** 3 明度档（亮 / 中 / 暗）：与 kgColor.ts 的 LIGHT_STEPS 同值 */
+const LIGHT_STEPS = [
+  { dot: 60, border: 82, bg: 96, text: 34 },
+  { dot: 50, border: 74, bg: 92, text: 29 },
+  { dot: 40, border: 66, bg: 88, text: 24 },
+];
+function makePalette(hue, step){
   return {
-    dot:    'hsl(' + norm(hue) + ' 66% ' + (dark ? 42 : 58) + '%)',
-    border: 'hsl(' + norm(hue) + ' 56% ' + (dark ? 66 : 82) + '%)',
-    bg:     'hsl(' + norm(hue) + ' 70% ' + (dark ? 88 : 96) + '%)',
-    text:   'hsl(' + norm(hue) + ' 62% ' + (dark ? 24 : 34) + '%)',
+    dot:    'hsl(' + norm(hue) + ' 66% ' + step.dot + '%)',
+    border: 'hsl(' + norm(hue) + ' 56% ' + step.border + '%)',
+    bg:     'hsl(' + norm(hue) + ' 70% ' + step.bg + '%)',
+    text:   'hsl(' + norm(hue) + ' 62% ' + step.text + '%)',
   };
 }
-/** 方案 A：类型色相带内按 hash(name|id) 取 3 色相 × 2 明度
+/** 方案 A：类型色相带内按 hash(id|name) 取 4 色相 × 3 明度（12 色槽）
  *  🔴 步长经视觉复核校准（#1373）：±13°/6% 亮度差异在真实渲染下**肉眼不可辨**
- *     → 8 个角色看起来一个色，方案 A 的「个体可辨」承诺落空。改为 ±18°/14% 亮度。 */
+ *     → 8 个角色看起来一个色，方案 A 的「个体可辨」承诺落空。改为 ±18°/14% 亮度。
+ *  🔴 #1418 扩槽（6 槽 → 12 槽）：6 槽下 8 个角色实染只有 4 色（碰撞组 3+3）
+ *     → 改 4 色相 × 3 明度；槽位须取**位混匀后**的 hash（FNV-1a 最低位质量差，
+ *     裸 `h % 4` 在 240 个样本上只命中 2 个取值 → 名义 12 槽实际只有 6 槽可达）。 */
 function colorA(node){
   const h = hash32(node.id + '|' + node.name);
-  const hue = TYPE_HUE[node.type] + ((h % 3) - 1) * 18;
-  const dark = Math.floor(h / 3) % 2;
-  return makePalette(hue, dark === 1);
+  const mixed = Math.imul(h ^ (h >>> 16), 2654435761) >>> 0;
+  const hue = TYPE_HUE[node.type] + HUE_OFFSETS[(mixed >>> 4) % 4];
+  return makePalette(hue, LIGHT_STEPS[(mixed >>> 2) % 3]);
 }
 /** 方案 B：同类型内图邻接贪心着色（相邻节点必定异色），颜色随图结构变化 */
 function colorB(nodes, edges){
@@ -712,7 +722,7 @@ function colorB(nodes, edges){
       let slot = 0;
       while (taken[slot] && slot < offs.length - 1) slot += 1;
       used[n.id] = slot;
-      map[n.id] = makePalette(TYPE_HUE[t] + offs[slot], slot >= 3);
+      map[n.id] = makePalette(TYPE_HUE[t] + offs[slot], LIGHT_STEPS[slot >= 3 ? 2 : 0]);
     }
   }
   return map;

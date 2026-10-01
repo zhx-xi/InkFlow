@@ -13,7 +13,7 @@
  * - 画布右下角「滚轮缩放 · 拖拽节点」提示（对齐 design/GUI/knowledge/knowledge.html）
  *
  * #1373 升级（spec f19-gui/knowledge §4.1/§4.2）：
- * - 节点改「个体着色」（kgColor.deriveNodeColor：类型基准色相 ±18° × 2 明度），
+ * - 节点改「个体着色」（kgColor.deriveNodeColor：类型基准色相 4 档 × 3 明度 = 12 色槽，#1418 扩槽），
  *   右下角提示升级为六类图例（原提示并入图例行尾）
  * - 新增可选 prop：`filterActive`（筛选生效时隐藏节点详情卡）/ `showLegend`（图谱空态不渲染图例）
  */
