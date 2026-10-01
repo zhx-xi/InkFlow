@@ -7,7 +7,7 @@
 
 - 原型引用：design/GUI/foreshadow/foreshadow.html + foreshadow-<state>.png（状态枚举：main / filter-a / filter-b / search-title / chapter-match-text / chapter-match-struct / sort-asc / noresult / legacy / empty / create-dialog）
 > 低保真排版示意简图（区块+标签，非精确像素）
-> ⚠️ 筛选/排序条（下图 🔷 段）为 **#1376 设计基线：原型已出、实现未做**；`legacy` 态 = 当前实现的真实形态。其余区块均以已合入实现为准。
+> ⚠️ 筛选/排序条（下图 🔷 段）为 **#1376 筛选/排序**：原型已出、**实现已落地**（服务端过滤/排序，落地形态见 §4.6）；`legacy` 态 = 实现前的形态对照（历史）。其余区块均以已合入实现为准。
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -20,7 +20,7 @@
 ├──────────────────────────────────────────────────────────────┤
 │ 工具栏（右缘）：[去创建]  [AI 提取（类型=伏笔）]             │
 │ ┌──────────────────────────────────────────────────────────┐ │
-│ │ 🔷 筛选/排序条（#1376 待实现）                            │ │
+│ │ 🔷 筛选/排序条（#1376 已实现）                            │ │
 │ │  回收状态 [全部][未回收][已回收]   ← chip 三态（选中=accent）│ │
 │ │  检索 [__标题或位置，如：剑 / 第 2 章__] ← 实时，无需 Enter│ │
 │ │                      排序 [优先级 高→低]   显示 5 / 共 8 条│ │
@@ -45,7 +45,7 @@
   - #1324：扩展由 `withForeshadowExtras`（library.tsx 传 activeCat==='foreshadow'）门控——其他分类不渲染 lib-fs-* 节点
   - 创建/编辑对话框（library-create-dialog，cat=foreshadow）：标题（必填，requiredValue=title）+ 优先级（number input，min 0 max 100，默认 50）+ 位置 + 描述
   - 空态：无条目 → library-tab-empty「还没有伏笔，去创建」+ CTA
-  - 🔷 #1376 检索/筛选控件（原型已出、未实现）：`fs-status-chips`（回收状态三态）/ `fs-search-input`（检索框，匹配面 = 标题 OR 位置）/ `fs-sort-toggle`（排序切换）/ `fs-count`（显示 N / 共 N 条）/ `fs-noresult` + `fs-clear-filters`（无结果态）；口径 2 备选为 `fs-chapter-picker`（章节选择，需后端先行）
+  - #1376 检索/筛选控件（**已实现**：`components/LibraryForeshadowFilters.tsx` + `hooks/useForeshadowFilters.ts` + `LibraryItemList` 的 `foreshadowFilter` 分支）：`foreshadow-filters`（条容器）/ `fs-status-chips` + `fs-status-chip-all|open|resolved`（回收状态三态，`aria-pressed` 单选）/ `fs-search-input`（检索框，匹配面 = 标题 OR 位置；输入 250ms 防抖后下发 `?search=`）/ `fs-count`（显示 N / 共 M 条）/ `fs-sort-toggle`（排序切换，`aria-pressed` = 降序）+ `fs-sort-label` / `fs-noresult` + `fs-clear-filters`（无结果态）；口径 2 备选 `fs-chapter-picker` **未实现**（#1350 承接）
   - 后端状态机（GUI 只读展示）：status open/resolved（创建即 open，回收走 resolve 端点）；Create/Update DTO 均无 status 字段——行内状态徽标**只读**，无状态切换控件（原型亦无此按钮，见 #1324 拍板）
 - 布局说明：纵向单栏——工具栏 → 卡片（筛选/排序条 → 平铺列表）；行内标题 flex-1 truncate 在前，其后依次状态徽标/优先级/位置徽标（均 shrink-0），末尾编辑/删除（悬停显现）；对话框遮罩挂页面根部
 
@@ -59,12 +59,12 @@
 | 对话框保存（library-create-save） | 标题非空 enabled | handleSave（PATCH/POST 父级分支） | saving「保存中…」禁用 | 父级关框 + 刷新 | err toast | 优先级原生 min/max 0-100；ESC/取消关闭；遮罩点击不关闭 |
 | AI 提取（extract-entry-lib） | 描边按钮 | AIExtractDialog（类型 = 伏笔，章节选择） | 提取中 | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；章节下拉**全量加载**（#1407：翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
 | 状态机控件（open/resolved 切换） | 无（原型与实现均无此控件） | — | — | — | — | 后端 status 字段与 resolve/reopen 端点存在，但 GUI **只读展示**状态徽标，不提供切换入口（#1324 拍板：超原型，另议） |
-| 🔷 回收状态 chip（#1376 待实现） | 「全部」选中（= 不加筛选条件） | 选中任一 chip → 列表重拉/重filter + 计数更新 + 页码归零 | 列表 loading | 列表与 `显示 N / 共 N 条` 同步 | — | 三态互斥单选（只有两个状态值 → 三态等效覆盖「多选」语义）；「全部」= 不传 status |
-| 🔷 检索输入框（#1376 待实现） | 空（不过滤） | 输入即筛（**实时，无需 Enter**） | — | 列表 + 计数更新 | — | 匹配面 = **条目标题 OR 位置文本**（大小写不敏感子串）。标题面可复用后端 `?search=`（title icontains，零改动）；位置面需 `?location=`（**已拍板采纳**）——在此之前纯前端只过滤当前页；**location 为空或不含查询子串者位置面不命中**（口径 1 固有代价，见 §4.2）；清空 = 不过滤 |
-| 🔷 出现章节·口径 2 章节选择（#1376 待实现，依赖后端先行） | 空（不过滤） | 「选择章节」→ 章节多选 → 按结构化关联过滤 | — | 列表 + 计数更新 | — | 语义准确无漏项；**依赖 F14 提取侧补 foreshadowing ↔ chapter 关联字段，本期不可用** |
-| 🔷 排序切换（#1376 待实现） | 「优先级 高→低」（降序，= 后端 ?sort_by=priority&sort_desc=true 默认值） | 点击 → 反向（低→高）+ 图标换向 | — | 列表重排 | — | 同优先级按 updated_at DESC 兜底（F13 spec §6.2）；切换后页码归零 |
-| 🔷 清除筛选（#1376 待实现） | 仅筛选结果 0 条时显示 | 清空 status/位置/章节条件 → 恢复全量 | — | 列表恢复 | — | 不改变排序方向 |
-| 🔷 筛选无结果提示（#1376 待实现） | 0 条时替换列表区 | — | — | — | — | 文案「当前筛选条件下没有匹配的伏笔」+ 清除入口；**不得**复用 library-tab-empty（会把「筛掉了」误报成「没有数据」） |
+| 回收状态 chip（#1376 已实现） | 「全部」选中（= 不加筛选条件 → 请求不带 `status`） | 选中「未回收」/「已回收」→ 服务端重拉（`?status=open\|resolved`）+ 计数更新 + 页码归零 | 列表 loading | 列表与 `显示 N / 共 M 条` 同步 | — | 三态互斥单选（只有两个状态值 → 三态等效覆盖「多选」语义）；「全部」= 不传 status |
+| 检索输入框（#1376 已实现） | 空（不过滤） | 输入即筛（**实时，无需 Enter**；250ms 防抖后下发请求） | — | 列表 + 计数更新 | — | 匹配面 = **条目标题 OR 位置文本**（大小写不敏感子串，**并集**）。落点 = 服务端：**扩展后端 `?search=` 覆盖面为 title OR location**（未新增 `?location=`，理由见 §4.6）；`total` 为筛选后口径 → 跨页不漏项；**location 为空或不含查询子串者位置面不命中**（口径 1 固有代价，见 §4.2）；清空 = 不过滤 |
+| 出现章节·口径 2 章节选择（**本期不做**，依赖后端先行） | 空（不过滤） | 「选择章节」→ 章节多选 → 按结构化关联过滤 | — | 列表 + 计数更新 | — | 语义准确无漏项；**依赖 F14 提取侧补 foreshadowing ↔ chapter 关联字段，本期不可用**（#1350 承接） |
+| 排序切换（#1376 已实现） | 「优先级 高→低」（降序，= 后端 `?sort_by=priority&sort_desc=true` 默认值） | 点击 → 反向（低→高）+ 图标换向 | — | 列表重排 | — | 同优先级按 updated_at DESC 兜底（F13 spec §6.2）；切换后页码归零；**降序（缺省）不下发排序参数**（= 后端缺省），升序下发 `sort_by=priority&sort_desc=false` |
+| 清除筛选（#1376 已实现） | 仅筛选结果 0 条时显示 | 清空 status/检索条件 → 恢复全量 | — | 列表恢复 | — | 不改变排序方向 |
+| 筛选无结果提示（#1376 已实现） | 0 条时替换列表区 | — | — | — | — | 文案「当前筛选条件下没有匹配的伏笔」+ 清除入口；**不得**复用 library-tab-empty（会把「筛掉了」误报成「没有数据」） |
 
 ## 3. 验收
 
@@ -74,16 +74,19 @@
 - N4：空态 CTA + 列表非空常驻「去创建」+ AI 提取入口（伏笔类型）
 - N5：列表行渲染状态徽标（未回收/已回收，已回收附回收日期）+ 优先级「优先级 {n}」+ 位置徽标（location 原文照显）；状态徽标**只读**，无状态切换控件（与后端 resolve/reopen 端点的差异如实保留）
 
-> 以下 N6-N11 属 **#1376 设计基线（原型已出、实现未做）**——实现前不得据本节判定「已实现」：
+> N6-N11（#1376）**已实现**（2026-10-01）——可验证证据：
+> 前端页契约 `frontend/packages/renderer/src/pages/library-foreshadow-filter-1376.test.tsx`、
+> 条组件契约 `frontend/packages/renderer/src/components/LibraryForeshadowFilters.test.tsx`、
+> 后端并集语义 `backend/tests/unit/infrastructure/database/test_foreshadowing_repo.py::TestForeshadowingRepository::test_list_search_matches_title_or_location`（落地形态见 §4.6）：
 
-- N6（#1376）：筛选/排序条位于列表卡片顶部（与角色页 character-rank-tabs 同位置同形态）；含「回收状态」chip 三态 + 「检索」框（标题 + 位置，实时）+ 「显示 N / 共 N 条」计数 + 排序切换
+- N6（#1376）：筛选/排序条位于列表卡片顶部（与角色页 character-rank-tabs 同位置同形态）；含「回收状态」chip 三态 + 「检索」框（标题 + 位置，实时）+ 「显示 N / 共 M 条」计数（N = 本页条数、M = 筛选后总数）+ 排序切换
 - N7（#1376）：回收状态筛选 = 三态互斥（全部/未回收/已回收）；切换后列表、计数、页码同步
 - N8（#1376）：排序切换在「优先级 高→低 / 低→高」两向间切换，图标随向变化
 - N9（#1376）：筛选结果 0 条 → 卡内展示「当前筛选条件下没有匹配的伏笔」+「清除筛选」；空态 `library-tab-empty` 不参与
 - N10（#1376）：筛选/排序控件仅 foreshadow 分类渲染（其他分类不出现）
 - N11（#1376）：检索框**输入即筛**（无需 Enter）；匹配面 = 条目标题 OR 位置文本（大小写不敏感子串）；原型实测输入「剑」→ 命中标题含「剑」的 4 条 + 位置含「剑」的 1 条（5/8）
 
-## 4. #1376 设计基线：筛选/排序（原型已出 · 未实现）
+## 4. #1376 筛选/排序（原型已出 · 已实现）
 
 > 归档来源：本页原型 `design/GUI/foreshadow/foreshadow.html`（多形态属性切换）+ 10 张状态 PNG；
 > 截图与断言脚本 `design/GUI/_tools/shot-1376-foreshadow-filter.cjs`（本地 headless，**非 CI**）。
@@ -114,7 +117,7 @@
 | 位置过滤 / 优先级区间 / 章节关联 | ❌ 均**无** | 口径 2 与方案 B 的区间能力需后端先行 |
 | 前端机制 | ✅ 已有先例：`useLibraryPagedList(..., extraQuery)`（#1320 角色等级筛选 `?role_rank=` 即走此路，extraQuery 变化即重拉 + 页码归零）— `hooks/useLibraryPagedList.ts:55-61`、`pages/library.tsx:161-167` | 状态/排序可直接复用该机制 |
 
-🔴 **由此推论（分页语义约束）**：#1300/#1320 已确立「筛选须下沉服务端，否则 total 口径错 + 跨页项漏取」。纯前端过滤只作用于当前页——在分页已启用的伏笔列表上会漏掉其他页的命中项。**本轮已拍板：位置面一并服务端化（新增 `?location=`）**，故实现后四项（状态 / 标题检索 / 位置 / 排序）全部走服务端、无跨页漏项。⚠️ `?location=` 落地时须同步 API 契约 + 契约测试（`docs/contract-guard.md` 联保清单）。
+🔴 **由此推论（分页语义约束）**：#1300/#1320 已确立「筛选须下沉服务端，否则 total 口径错 + 跨页项漏取」。纯前端过滤只作用于当前页——在分页已启用的伏笔列表上会漏掉其他页的命中项。**本轮已拍板：位置面一并服务端化**，故实现后四项（状态 / 标题检索 / 位置 / 排序）全部走服务端、无跨页漏项。⚠️ 落地形态为**扩展既有 `?search=` 的覆盖面**（而非新增 `?location=`）——见 §4.6；该变体不改变接口形状，故未触发 `ci_cd/openapi_snapshot.json` 与 `docs/contract-guard.md` 联保同步，语义变化记入 `specs/f13-foreshadowing/spec.md` §6.3。
 
 ### 4.4 原型内设计注释条（实现时**不得**做进产品 UI）
 
@@ -128,6 +131,37 @@
 | 1 | 筛选栏形态 | **A**（chip 组）；**且检索框兼作条目标题检索**——按输入内容实时检索（无需 Enter），匹配面 = 条目标题 OR 位置文本 |
 | 2 | 「出现章节」口径 | **口径 1**（位置文本）先落；口径 2（结构化关联）单独立 issue 挂后续版本 |
 | 3 | 排序默认方向 | **降序**（priority 大者在前 = 后端默认 + 注入顺序） |
-| 4 | 实现落点 | 状态 / 排序 / 标题检索走服务端（后端**已有** `?status=` / `?sort_by=priority` / `?search=`，零后端改动）；**接受新增 `?location=`** 把位置面一并服务端化（避免纯前端只过滤当前页） |
+| 4 | 实现落点 | 状态 / 排序 / 标题检索走服务端（后端**已有** `?status=` / `?sort_by=priority` / `?search=`）；位置面一并服务端化（避免纯前端只过滤当前页）——**落地形态 = 扩展 `?search=` 覆盖面为 title OR location**（未新增独立 `?location=`），见 §4.6 |
 
 > 原兜底默认（形态 A + 口径 1 + 降序）已与本轮结论一致，不再作为待定项。
+
+### 4.6 实现落地记录（#1376，2026-10-01）
+
+| 项 | 落地形态 |
+|---|---|
+| 状态筛选 | 服务端 `?status=open\|resolved`（不传 = 全部）；chip 三态单选 |
+| 检索（口径 1） | 服务端 `?search=`，后端匹配面**由 title 扩展为 title OR location**（`or_(title.icontains, location.icontains)`，`foreshadowing_repo.py::list`） |
+| 排序 | 服务端 `?sort_by=priority&sort_desc=`；**降序（默认）不下发任何排序参数**（= 后端缺省），升序下发 `sort_by=priority&sort_desc=false` |
+| 计数行 | `fs-count` = 「显示 {本页条数} / 共 {筛选后 total} 条」；分页 `total` 与 `items` 同条件（服务端过滤口径） |
+| 空结果态 | `fs-noresult`（`LibraryItemList` 的 `foreshadowFilter` 分支）替换列表；**不复用** `library-tab-empty`；`fs-clear-filters` 清 status + 检索，**不改**排序方向 |
+| 检索防抖 | 输入 250ms 防抖后进 `extraQuery`（输入框显示即时值；避免每键一次请求） |
+| 作用域 | 仅 `activeCat === 'foreshadow'` 渲染（`foreshadow-filters` 其它分类不出现，N10） |
+
+**为什么未新增 `?location=`（§4.5 决策 4 的落地变体）**：单个检索框的匹配面是**并集**
+（标题 ∪ 位置）。若拆成 `?search=` + `?location=` 两参数，二者同时传入时的组合语义含混
+（常规 AND 会退化为「标题与位置都含查询串」的交集，与 N11 实测的并集 5/8 口径不符）。
+扩展 `?search=` 覆盖面后参数面不增、语义单义，且不改变接口形状（仍为 `?search=`）→
+未触动 `ci_cd/openapi_snapshot.json` 快照与 `docs/contract-guard.md` 联保清单；
+语义变化已同步 `specs/f13-foreshadowing/spec.md` §6.3。
+
+**反例守护**：不选任何筛选（「全部」+ 检索空）→ 请求与实现前逐字一致（仅 `limit`/`offset`，
+无 `status` / `search` / `sort_*`），列表 = 全量 + 后端缺省顺序。
+
+**证据（可验证）**：
+
+| 断言面 | 位置 |
+|---|---|
+| 页契约（状态下沉 / total 重算 / 排序×分页共存 / 检索并集 5 命中 / 空结果态 / 清除筛选 / 反例守护 / N10 作用域） | `frontend/packages/renderer/src/pages/library-foreshadow-filter-1376.test.tsx`（12 用例） |
+| 条组件契约（chip 三态 / 计数行 / 排序双向 / 受控输入 / 设计注释条缺席） | `frontend/packages/renderer/src/components/LibraryForeshadowFilters.test.tsx`（11 用例） |
+| 后端并集语义 + 口径 1 漏项代价 | `backend/tests/unit/infrastructure/database/test_foreshadowing_repo.py::TestForeshadowingRepository::test_list_search_matches_title_or_location` |
+| 文案域（zh.ts/en.ts 贴 900 行护栏 → 独立域文件，同 `pagination.ts` 先例） | `frontend/packages/renderer/src/i18n/foreshadow-filter.ts` + `i18n.contract.test.ts` 的来源登记 |

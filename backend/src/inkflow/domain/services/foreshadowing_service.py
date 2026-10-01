@@ -184,7 +184,7 @@ class ForeshadowingService:
 
         Args:
             project_id: 所属项目 UUID（router 解析路径参数后传入）.
-            search: 伏笔名不区分大小写子串匹配（可选）.
+            search: 伏笔名或埋设位置不区分大小写子串匹配（可选；#1376 并集语义）.
             status: 状态精确过滤（open / resolved；不传 = 全部伏笔）.
             sort_by: 排序字段（priority / title / status / updated_at / created_at）.
             sort_desc: 是否倒序（默认 True，priority 大者在前）.

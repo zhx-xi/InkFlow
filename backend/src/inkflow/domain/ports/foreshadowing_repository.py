@@ -82,7 +82,7 @@ class ForeshadowingRepositoryProtocol(Protocol):
 
         Args:
             project_id: 项目主键（领域 UUID，见 #1291）.
-            search: 伏笔名不区分大小写子串匹配（可选）.
+            search: 伏笔名或埋设位置不区分大小写子串匹配（可选；#1376 并集语义）.
             status: 状态精确过滤（open / resolved；不传 = 全部伏笔）.
             sort_by: 排序字段（priority / title / status / updated_at /
                 created_at；伏笔语境下默认 priority，与注入顺序一致）.

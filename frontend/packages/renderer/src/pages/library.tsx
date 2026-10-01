@@ -37,6 +37,7 @@ import { LIBRARY_PAGE_SIZE, useLibraryPagedList, type PageableCatKey } from '../
 import { useWorldFullList } from '../hooks/useWorldFullList';
 import { useLibraryCategoryData } from '../hooks/useLibraryCategoryData';
 import { useKnowledgeGraphWiring } from '../hooks/useKnowledgeGraphWiring';
+import { useForeshadowFilters } from '../hooks/useForeshadowFilters';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -158,12 +159,15 @@ export function LibraryPage() {
   const catEndpoint = (CATS.find((c) => c.key === activeCat) ?? CATS[0]).endpoint;
   // #1320：角色等级筛选下沉服务端（extraQuery 变化 → hook 内部重置页码到第 1 页）。
   // world 不进分页分类（下）→ 恒 null；仅 characters 需要该条件。
+  // #1376：伏笔筛选（回收状态 · 检索 · 排序）同样下沉服务端 —— 筛选条 state 由 hook 持有。
+  const fsFilter = useForeshadowFilters();
   const pagedExtraQuery = useMemo(
-    () =>
-      activeCat === 'characters' && characterRank !== 'all'
-        ? { role_rank: characterRank }
-        : null,
-    [activeCat, characterRank],
+    () => {
+      if (activeCat === 'characters' && characterRank !== 'all') return { role_rank: characterRank };
+      if (activeCat === 'foreshadow') return fsFilter.extraQuery;
+      return null;
+    },
+    [activeCat, characterRank, fsFilter.extraQuery],
   );
   const pagedLib = useLibraryPagedList<LibraryItemDTO>(
     currentProjectId,
@@ -641,7 +645,7 @@ export function LibraryPage() {
                 onDelete={openDelete}
                 onAdd={handleOutlineAdd}
               />
-            ) : listItems.length === 0 ? (
+            ) : listItems.length === 0 && !(activeCat === 'foreshadow' && fsFilter.active) ? (
               <div
                 data-testid="library-tab-empty"
                 className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
@@ -723,6 +727,12 @@ export function LibraryPage() {
                   items={listItems}
                   withCharacterExtras={activeCat === 'characters'}
                   withForeshadowExtras={activeCat === 'foreshadow'}
+                  /* #1376：伏笔筛选/排序条（仅 foreshadow 分类渲染，N10） */
+                  foreshadowFilter={
+                    activeCat === 'foreshadow'
+                      ? { ...fsFilter.barProps, shown: pagedLib.items.length, total: pagedLib.total }
+                      : undefined
+                  }
                   projectId={currentProjectId}
                   rank={activeCat === 'characters' ? characterRank : undefined}
                   onRankChange={

@@ -491,6 +491,7 @@ inkflow foreshadowing list --project-id <uuid> \
     [--status <open|resolved>] [--search <str>] \
     [--sort <priority|title|status|updated_at|created_at>] \
     [--sort-desc/--no-sort-desc] [--json]
+    # #1376：--search 匹配面 = 伏笔名 OR 埋设位置（大小写不敏感子串，并集；见 §6.3）
 
 inkflow foreshadowing get --id <uuid> [--json]
 
@@ -701,12 +702,13 @@ class ForeshadowingSource:
 
 | 参数 | 默认值 | 约束 | 说明 |
 |------|--------|------|------|
-| `search` | — | — | 对 title 不区分大小写子串匹配（icontains） |
+| `search` | — | — | 对 **title 或 location** 不区分大小写子串匹配（icontains，**并集**；location 为空者位置面不命中）。#1376（2026-10-01）扩展：原为仅 title |
 | `status` | — | `open` / `resolved` | 状态**精确**过滤；不传 = 全部活动伏笔（open + resolved） |
 | `sort_by` | `priority` | `priority` / `title` / `status` / `updated_at` / `created_at` | 排序字段（伏笔语境下优先级为自然默认，与注入顺序一致；event_id 为 UUID 无排序业务意义，不参与排序） |
 | `sort_desc` | `true` | — | 降序（priority 排序时大者在前） |
 | `offset` / `limit` | 0 / 50 | offset ≥ 0, limit [1, 100] | 分页 |
 
+- #1376：`search` 匹配面 = title ∪ location（GUI 伏笔页单个检索框兼作「标题检索」与「出现章节 · 口径 1 位置文本匹配」，见 `specs/f19-gui/foreshadow.md` §4.5/§4.6）；并集语义下同一行不重复计数，`total` 与 `items` 同条件（跨页一致）。⚠️ 接口形状未变（仍为 `?search=`）→ 未触动 `ci_cd/openapi_snapshot.json` 快照
 - 伏笔**内容/描述全文检索**不在 F13 范围（F22 搜索服务，§10）
 - 列表**不区分注入视图**：注入集合 = 列表过滤 `status=open` 的全量子集（无独立端点，YAGNI）
 

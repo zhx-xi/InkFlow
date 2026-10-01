@@ -20,6 +20,8 @@ import { chatDeleteUxEn, chatDeleteUxZh } from './chat-delete-ux';
 import { chatUxEn, chatUxZh } from './chat-ux';
 import { en } from './en';
 import { extractEn, extractZh } from './extract-keys';
+// #1376：伏笔页筛选/排序条文案域（zh.ts/en.ts 已贴 900 行护栏 → 独立成文件，同 pagination.ts 先例）
+import { foreshadowFilterEn, foreshadowFilterZh } from './foreshadow-filter';
 import { logEn, logZh } from './log';
 // #496（contract-496 §4.2）：logs-ux 域（日志页 UI 文案）并入 combo —— RED 期该模块不存在，
 // 本文件收集期 module-not-found（预期【R】），GREEN 新建 logs-ux.ts（导出 logsUxZh/logsUxEn）即愈
@@ -57,6 +59,8 @@ const comboZh: Dict = {
   ...writingReqZh,
   // #1300：分页域
   ...paginationZh,
+  // #1376：伏笔页筛选/排序条域
+  ...foreshadowFilterZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -76,6 +80,8 @@ const comboEn: Dict = {
   ...writingReqEn,
   // #1300：分页域
   ...paginationEn,
+  // #1376：伏笔页筛选/排序条域
+  ...foreshadowFilterEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {
@@ -356,6 +362,7 @@ describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静�
     ['book', bookZh],
     ['logs-ux', logsUxZh],
     ['pagination', paginationZh],
+    ['foreshadow-filter', foreshadowFilterZh],
   ];
   const sourcesEn: Array<[string, Dict]> = [
     ['en', en],
@@ -372,6 +379,7 @@ describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静�
     ['book', bookEn],
     ['logs-ux', logsUxEn],
     ['pagination', paginationEn],
+    ['foreshadow-filter', foreshadowFilterEn],
   ];
 
   /** 顺序遍历各来源字典，返回「key（先定义域 ∩ 后定义域）」清单（撞键即非空） */

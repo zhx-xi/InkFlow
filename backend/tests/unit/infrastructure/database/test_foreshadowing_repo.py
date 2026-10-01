@@ -5,7 +5,8 @@
 - get_by_title 命中与未命中（真删排除、项目隔离）
 - 全唯一索引: 同名插入 → IntegrityError（回滚后可继续）；
   真删后同名可重建（spec §2.3）
-- list 搜索（title icontains）/ status 精确过滤（open/resolved/不传=全部）/
+- list 搜索（title OR location icontains，#1376 口径 1 并集）/
+  status 精确过滤（open/resolved/不传=全部）/
   各 sort_by 排序（priority 默认降序，priority 相等按 updated_at DESC 兜底）/
   分页
 - list_open: F6 注入集合只含 open 活动伏笔，按 (priority DESC, updated_at DESC)，
@@ -255,6 +256,41 @@ class TestForeshadowingRepository:
         items2, total2 = await repo.list(uuid.UUID(int=project.id), search="不存在")
         assert total2 == 0
         assert items2 == []
+
+    async def test_list_search_matches_title_or_location(self, db_session, project):
+        """#1376：search 匹配面 = title OR location（口径 1 位置文本子串，并集）.
+
+        契约（specs/f19-gui/foreshadow.md §4.5 决策 1/4）：GUI 单个检索框的匹配面是
+        「条目标题 OR 位置文本」，故 ``?search=`` 的覆盖面由「仅 title」扩展为
+        「title OR location」——并集语义下同一行不重复计数，total 与 items 同条件
+        （分页 total 跟随筛选口径，跨页不漏项）。
+
+        口径 1 固有代价如实断言：location 为空者位置面**必然不命中**。
+        """
+        repo = SQLiteForeshadowingRepository(db_session)
+        await repo.add(_foreshadowing(project, "断剑的秘密", location="第 11 章 · 闭关"))
+        await repo.add(_foreshadowing(project, "守陵人的来历", location="第 10 章 · 剑冢"))
+        await repo.add(_foreshadowing(project, "未署名的旧信", location=""))
+        pid = uuid.UUID(int=project.id)
+
+        # 标题面命中 1（断剑的秘密）+ 位置面命中 1（守陵人的来历）= 并集 2
+        items, total = await repo.list(pid, search="剑")
+        assert total == 2
+        assert {f.title for f in items} == {"断剑的秘密", "守陵人的来历"}
+
+        # 仅位置面命中（标题不含查询串）——「扩展 search 覆盖面」的可判别证据
+        items2, total2 = await repo.list(pid, search="第 10 章")
+        assert total2 == 1
+        assert items2[0].title == "守陵人的来历"
+
+        # location 为空者不因「章号」命中（口径 1 的漏项代价，如实体现）
+        _, total3 = await repo.list(pid, search="第 2 章")
+        assert total3 == 0
+
+        # 并集不破坏既有 title 面语义（回归守护）
+        items4, total4 = await repo.list(pid, search="未署名")
+        assert total4 == 1
+        assert items4[0].title == "未署名的旧信"
 
     async def test_list_status_filter(self, db_session, project):
         """status 精确过滤：open / resolved / 不传=全部活动伏笔."""

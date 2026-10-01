@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { listCharacterGroups, type CharacterGroup } from '../api/character';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
+import { LibraryForeshadowFilters, type ForeshadowFilterBarProps } from './LibraryForeshadowFilters';
 import { useI18n } from '../i18n/useI18n';
 
 /** #679/#701：角色行含 group_id（旧单选过渡）与 group_ids（N:M 多分组）；LibraryItemDTO 未声明，此处本地补全类型 */
@@ -41,6 +42,8 @@ export interface LibraryItemListProps {
   withCharacterExtras?: boolean;
   /** #1324：foreshadow 分类渲染状态徽标 + 优先级 + 位置徽标（缺省不渲染） */
   withForeshadowExtras?: boolean;
+  /** #1376：伏笔筛选/排序条（受控；缺省不渲染 —— 仅 foreshadow 分类传入） */
+  foreshadowFilter?: ForeshadowFilterBarProps & { shown: number; total: number };
   /** #679：角色分组列表（characters 分类分组卡片数据源；数组顺序 = 分组渲染顺序）。可注入（测试）或经 projectId 内部拉取。 */
   characterGroups?: CharacterGroup[];
   /** #679：characters 分类内部拉取角色分组（当 characterGroups 未注入时）所需的项目 id */
@@ -82,6 +85,7 @@ export function LibraryItemList({
   items,
   withCharacterExtras = false,
   withForeshadowExtras = false,
+  foreshadowFilter,
   characterGroups,
   projectId,
   rank,
@@ -247,6 +251,45 @@ export function LibraryItemList({
       </li>
     );
   };
+
+  if (foreshadowFilter) {
+    // #1376：伏笔筛选/排序条 + 列表（筛选条是列表容器的一部分；空结果态替代通用空态）
+    return (
+      <div
+        data-testid="library-list"
+        className="overflow-hidden rounded-lg border border-line bg-surface shadow-card"
+      >
+        <LibraryForeshadowFilters
+          status={foreshadowFilter.status}
+          query={foreshadowFilter.query}
+          sortDesc={foreshadowFilter.sortDesc}
+          shown={foreshadowFilter.shown}
+          total={foreshadowFilter.total}
+          onStatusChange={foreshadowFilter.onStatusChange}
+          onQueryChange={foreshadowFilter.onQueryChange}
+          onToggleSort={foreshadowFilter.onToggleSort}
+        />
+        {foreshadowFilter.active && items.length === 0 ? (
+          <div
+            data-testid="fs-noresult"
+            className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center"
+          >
+            <p className="text-[13px] text-ink-2">{t('lib.fs.filter.noresult')}</p>
+            <button
+              type="button"
+              data-testid="fs-clear-filters"
+              className="rounded-md border border-line px-3 py-1.5 text-[12px] text-ink-2 transition duration-180 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={foreshadowFilter.onClear}
+            >
+              {t('lib.fs.filter.clear')}
+            </button>
+          </div>
+        ) : (
+          <ul className="divide-y divide-line">{items.map((item) => renderRow(item))}</ul>
+        )}
+      </div>
+    );
+  }
 
   if (!withCharacterExtras) {
     // 非 characters 分类：保持既有平铺 <ul> 原样
