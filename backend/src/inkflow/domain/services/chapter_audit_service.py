@@ -40,12 +40,13 @@ from inkflow.domain.models.audit import AuditFinding, AuditReport
 from inkflow.domain.models.chapter_audit import (
     AuditCheckType,
     AuditLog,
+    AuditLogDetail,
     AuditSeverity,
     ChapterAuditFinding,
     ChapterAuditReport,
 )
 from inkflow.domain.ports.audit_log_repository import AuditLogRepositoryProtocol
-from inkflow.domain.ports.chapter_audit_errors import NoPendingAuditError
+from inkflow.domain.ports.chapter_audit_errors import AuditLogNotFoundError, NoPendingAuditError
 from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
@@ -268,7 +269,8 @@ class ChapterAuditService:
                 degraded=degraded,
                 created_at=report.created_at,
                 confirmed_at=None,
-            )
+            ),
+            findings=report.findings,
         )
         return report
 
@@ -352,6 +354,23 @@ class ChapterAuditService:
         if project is None:
             raise ProjectNotFoundError()
         return await self._audit_log_repo.list(_to_uuid(project_id), offset=offset, limit=limit)
+
+    async def get_log(self, log_id: uuid.UUID) -> AuditLogDetail:
+        """按审计记录 ID 取回明细（#1420 读口：客户端超时后的恢复路径）.
+
+        Args:
+            log_id: 审计记录 UUID.
+
+        Returns:
+            含 findings 快照的 AuditLogDetail（与触发审计时的响应体同源）.
+
+        Raises:
+            AuditLogNotFoundError: 记录不存在（404 语义）.
+        """
+        detail = await self._audit_log_repo.get(_to_uuid(log_id))
+        if detail is None:
+            raise AuditLogNotFoundError()
+        return detail
 
     # ──── 内部辅助（确定性 + LLM 降级 + 静态映射）─────────────────────
 

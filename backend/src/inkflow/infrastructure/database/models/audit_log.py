@@ -4,7 +4,7 @@
 - DB 主键为 int 自增；领域层 id 为 UUID，
   映射规则: domain_id = uuid.UUID(int=orm.id)（转换在
   repositories/audit_log_repo.py）
-- 轻量记录（Q1=C）：仅摘要级字段，无 findings 明细/JSON 快照
+- 轻量记录（Q1=C）：摘要级字段 + #1420 增 findings JSON 快照列（读口专用）
 - FK 级联: 项目/章节硬删除 → 审计记录随删（附属记录，非独立资产，E14）
 - schema 由 Base.metadata.create_all 管理，零迁移
 - 本文件为纯 ORM 映射，不包含任何领域转换函数（转换在 repo 层，
@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from inkflow.core.database import Base, EntityUuidMixin
+from inkflow.core.database import Base, EntityUuidMixin, LenientJSON
 
 
 def _utcnow() -> datetime:
@@ -94,6 +94,17 @@ class AuditLogORM(EntityUuidMixin, Base):
         nullable=True,
     )
     """确认时间（pending 为 None）."""
+
+    findings: Mapped[list] = mapped_column(
+        LenientJSON(fallback=[]),
+        nullable=False,
+        default=list,
+    )
+    """审计发现快照（#1420 演进）：Q1=C 摘要级落库 → 增 findings JSON 列。
+
+    客户端 300s 超时时 POST 响应被丢弃，findings 不再不可恢复；读口见
+    GET /api/v1/audit-logs/{log_id}。空值/旧行经 LenientJSON 回退 []。
+    """
 
     def __repr__(self) -> str:
         return f"<AuditLogORM id={self.id} chapter_id={self.chapter_id} status={self.status!r}>"

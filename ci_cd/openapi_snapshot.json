@@ -8222,6 +8222,47 @@
         ]
       }
     },
+    "/api/v1/audit-logs/{log_id}": {
+      "get": {
+        "description": "按审计记录 ID 取回审计明细（#1420）——轻量记录元信息 + findings 快照.\n\n客户端超时后（POST 响应被丢弃）的恢复路径：`--history` 找到记录 ID → 本端点取明细。",
+        "operationId": "get_audit_log_api_v1_audit_logs__log_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "log_id",
+            "required": true,
+            "schema": {
+              "title": "Log Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Audit Log",
+        "tags": [
+          "章节审计"
+        ]
+      }
+    },
     "/api/v1/chapters/{chapter_id}": {
       "delete": {
         "operationId": "delete_chapter_api_v1_chapters__chapter_id__delete",

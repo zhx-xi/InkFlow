@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import builtins
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.domain.models.chapter_audit import AuditLog
+from inkflow.domain.models.chapter_audit import AuditLog, AuditLogDetail, ChapterAuditFinding
 from inkflow.infrastructure.database.models.audit_log import AuditLogORM
 from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
@@ -38,6 +39,16 @@ def _log_orm_to_domain(orm: AuditLogORM) -> AuditLog:
     )
 
 
+def _log_orm_to_detail(orm: AuditLogORM) -> AuditLogDetail:
+    """ORM → 明细领域模型（轻量字段 + findings 快照，仅读口使用）."""
+    light = _log_orm_to_domain(orm)
+    raw = orm.findings or []
+    return AuditLogDetail(
+        **light.model_dump(),
+        findings=[ChapterAuditFinding.model_validate(item) for item in raw],
+    )
+
+
 class SQLiteAuditLogRepository:
     """SQLite 审计日志仓储实现（AuditLogRepositoryProtocol 结构化子类型）.
 
@@ -49,11 +60,14 @@ class SQLiteAuditLogRepository:
         """以异步会话构造仓储（注入方式与既有仓储一致）."""
         self._session = session
 
-    async def add(self, log: AuditLog) -> AuditLog:
+    async def add(
+        self, log: AuditLog, *, findings: Sequence[ChapterAuditFinding] | None = None
+    ) -> AuditLog:
         """插入一条审计记录并返回含 ORM 主键背书的领域实体.
 
         Args:
             log: 领域审计记录（id 为占位，以 ORM 自增主键生成为准）.
+            findings: 审计发现快照（#1420）；None/空 → 落空列表.
 
         Returns:
             已落库的 AuditLog（id = uuid.UUID(int=orm_id)）.
@@ -69,11 +83,29 @@ class SQLiteAuditLogRepository:
             note=log.note,
             created_at=log.created_at,
             confirmed_at=log.confirmed_at,
+            findings=[f.model_dump(mode="json") for f in (findings or [])],
         )
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
         return _log_orm_to_domain(orm)
+
+    async def get(self, log_id: uuid.UUID) -> AuditLogDetail | None:
+        """按主键取回审计记录明细（轻量字段 + findings 快照）.
+
+        Args:
+            log_id: 审计记录主键（领域 UUID，见 #1291）.
+
+        Returns:
+            AuditLogDetail（findings 已解析）；不存在 → None.
+        """
+        lid = require_uuid_pk(log_id)
+        if lid is None:
+            return None
+        stmt = select(AuditLogORM).where(AuditLogORM.id == lid)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _log_orm_to_detail(orm) if orm is not None else None
 
     async def latest_pending(self, chapter_id: uuid.UUID) -> AuditLog | None:
         """返回该章最新 pending 审计记录（created_at desc，id desc 兜底）.
