@@ -24,9 +24,10 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   MAX_CONSECUTIVE_FAILURES,
+  killProcessTree,
   nextBackoffDelayMs,
   parseReadyLine,
-  resolveKernelCommand,
+  resolveSpawnCommand,
   tryReuseKernel,
   writeKernelStateFile,
   type KernelInfo,
@@ -240,58 +241,6 @@ function clearMonitorTimers(): void {
   }
 }
 
-/** dev 分支相对命令以仓库根为基准解析（pnpm 脚本/E2E 的 cwd 是 frontend/ 或 packages/electron/） */
-function resolveKernelCommandForSpawn(): { command: string; args: string[] } {
-  const resolved = resolveKernelCommand({
-    isPackaged: app.isPackaged,
-    env: process.env,
-    // #187 任意 cwd 启动：打包版传绝对路径（process.resourcesPath 定位 resources/kernel/inkflow.exe）；
-    // #192：app.getAppPath() 打包版返回 app.asar 是错误基准（join 出不存在路径 → ENOENT），
-    // process.resourcesPath 是标准定位；truthy 守卫兼容测试 mock 缺失该属性（同款防御）
-    packagedKernelPath:
-      app.isPackaged && process.resourcesPath
-        ? path.join(process.resourcesPath, 'kernel', 'inkflow.exe')
-        : undefined,
-    // #1153：dev 绝对路径（#187 同款；REPO_ROOT 上溯 → worktree 覆盖成立）
-    devKernelPath: app.isPackaged ? undefined : path.join(REPO_ROOT, 'backend', '.venv', 'Scripts', 'python.exe'),
-    stateFile: kernelStatePath ?? undefined, // #1237：注入 --port-file，与 CLI 同源（恢复单例语义）
-  });
-  if (app.isPackaged || path.isAbsolute(resolved.command)) {
-    return resolved;
-  }
-  for (const base of [REPO_ROOT, process.cwd()]) {
-    const absolute = path.resolve(base, resolved.command);
-    if (existsSync(absolute)) {
-      return { command: absolute, args: resolved.args };
-    }
-  }
-  // 找不到则交给 spawn 报错 → 进入崩溃拉起/错误对话框
-  return resolved;
-}
-
-/** 残留进程回收：taskkill 进程树（Windows 下 child.kill 可能杀不干净子进程） */
-function killProcessTree(child: ChildProcess): void {
-  if (child.pid === undefined) {
-    return;
-  }
-  try {
-    const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-      windowsHide: true,
-      stdio: 'ignore',
-    });
-    killer.on('error', () => {
-      // taskkill 不可用时退化为 child.kill
-    });
-  } catch {
-    // 忽略：退化为 child.kill
-  }
-  try {
-    child.kill();
-  } catch {
-    // 进程已退出
-  }
-}
-
 /** 连续失败达到阈值 → 弹「重试/退出」对话框（§3.2.4 / §3.7 M6） */
 async function showStartupErrorDialog(): Promise<void> {
   const { response } = await dialog.showMessageBox({
@@ -410,7 +359,15 @@ function spawnKernel(): void {
   handlingFailure = false;
   clearMonitorTimers();
 
-  const { command, args } = resolveKernelCommandForSpawn();
+  // dev 相对命令以仓库根为基准解析（pnpm 脚本/E2E 的 cwd 是 frontend/ 或 packages/electron/）
+  const { command, args } = resolveSpawnCommand({
+    isPackaged: app.isPackaged,
+    env: process.env,
+    resourcesPath: process.resourcesPath,
+    repoRoot: REPO_ROOT,
+    stateFile: kernelStatePath ?? undefined,
+    cwd: process.cwd(),
+  });
   const child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'] as const,
     windowsHide: true,
