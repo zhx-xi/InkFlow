@@ -569,3 +569,237 @@ def test_tb5_api_event_check_returns_report() -> None:
         assert data["conflicts"][0]["conflict_type"] == "order_conflict"
         assert data["flashbacks"] == []
         svc.check_event.assert_awaited_once_with(event_id)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# #1409 追加段：time_unit 单位归一（年 365/月 30/周 7/日 1）+ 时/时辰 日锚点
+# 契约源: specs/f12-timeline/spec.md §2.7（S1-S5）/§5.2/§5.3/§5.4/§5.5
+# 纯插入追加（不修改既有用例语义）。
+# RED 预期（现实现按裸 time_value 比较 / 视图按裸值排序 / 消息不含数值）:
+#   U1/U2/U4/U5/U7/U8 FAILED；U3/U6/U9/U10 修复前即绿（反例/守护类 —— 正确，别改它们）
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _unit_event(
+    title: str,
+    *,
+    time_value: float | None,
+    time_unit: str = "",
+    narrative_position: int = 1,
+    timeline_flag: str = "",
+) -> TimelineEvent:
+    """构造**带 time_unit** 的事件（既有 `_event` 无该参数，追加段自带 helper）."""
+    return TimelineEvent(
+        id=uuid.uuid4(),
+        project_id=PID,
+        title=title,
+        time_value=time_value,
+        time_unit=time_unit,
+        narrative_position=narrative_position,
+        timeline_flag=timeline_flag,
+        created_at=TS,
+        updated_at=TS,
+    )
+
+
+@pytest.mark.asyncio
+async def test_u1_cross_unit_forward_is_not_a_conflict() -> None:
+    """U1（#1409 核心）：`8 日` → `3 月` —— 归一后 `8 < 90` → **不报**倒叙。
+
+    现实现裸比 `8.0 > 3.0` → 误报 order_conflict（issue 实测的 6/7 假阳性之一）。
+    """
+    events = [
+        _unit_event("第八日", time_value=8.0, time_unit="日", narrative_position=1),
+        _unit_event("第三月", time_value=3.0, time_unit="月", narrative_position=2),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert report.checked == 2
+    assert report.skipped == 0
+    assert report.conflicts == []
+    assert report.consistent is True
+
+
+@pytest.mark.asyncio
+async def test_u2_cross_unit_reverse_is_still_a_conflict() -> None:
+    """U2（#1409）：`3 月` → `8 日` —— 归一后 `90 > 8` → **仍报**（真倒退，归一不得抹掉）。"""
+    events = [
+        _unit_event("第三月", time_value=3.0, time_unit="月", narrative_position=1),
+        _unit_event("第八日", time_value=8.0, time_unit="日", narrative_position=2),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert report.consistent is False
+    assert len(report.conflicts) == 1
+    assert report.conflicts[0].conflict_type == "order_conflict"
+    assert report.conflicts[0].prev.time_value == 3.0
+    assert report.conflicts[0].next.time_value == 8.0
+
+
+@pytest.mark.asyncio
+async def test_u3_true_inversion_same_unit_still_reported() -> None:
+    """U3（守护）：同单位真逆序 `[10 日, 5 日]` → 仍报（归一后 `10 > 5`）。
+
+    修复前即为绿（裸比亦报）—— 这是**正确的**，别去改它。
+    """
+    events = [
+        _unit_event("先", time_value=10.0, time_unit="日", narrative_position=1),
+        _unit_event("后", time_value=5.0, time_unit="日", narrative_position=2),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert report.consistent is False
+    assert len(report.conflicts) == 1
+    assert report.conflicts[0].prev.time_value == 10.0
+    assert report.conflicts[0].next.time_value == 5.0
+
+
+@pytest.mark.asyncio
+async def test_u4_clock_unit_anchored_to_current_day() -> None:
+    """U4（#1409 拍板 1）：「时/时辰」是**当天时刻** → 归一 = 日锚点 + 时/24。
+
+    `8 日 → 3 时 → 9 日`：`3 时` 归一为 `8 + 0.125 = 8.125`（**不是** `0.125`），
+    因此既不误报（若按 `/24` 直接比会得到 `0.125 < 8` → 假倒叙），也不与后继 9 日冲突。
+    """
+    events = [
+        _unit_event("第八日", time_value=8.0, time_unit="日", narrative_position=1),
+        _unit_event("辰时", time_value=3.0, time_unit="时", narrative_position=2),
+        _unit_event("第九日", time_value=9.0, time_unit="日", narrative_position=3),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert report.conflicts == []
+    assert report.consistent is True
+
+
+@pytest.mark.asyncio
+async def test_u5_clock_intra_day_order_preserved() -> None:
+    """U5（守护）：同一日内的「时」相对顺序仍可判 —— `5 时 → 3 时` 报、`3 时 → 5 时` 不报。
+
+    两种形态在修复前都错（裸比 `8 > 3` 会把「第八日 → 辰时」误判为倒叙）→ 修复后按
+    日锚点归一（8.0 < 8.125 < 8.208）两例均正确。
+    """
+    ok = [
+        _unit_event("第八日", time_value=8.0, time_unit="日", narrative_position=1),
+        _unit_event("辰时", time_value=3.0, time_unit="时", narrative_position=2),
+        _unit_event("午时", time_value=5.0, time_unit="时", narrative_position=3),
+    ]
+    ok_report = await _make_service(ok).check_consistency(PID)
+    assert ok_report is not None
+    assert ok_report.conflicts == []
+
+    bad = [
+        _unit_event("第八日", time_value=8.0, time_unit="日", narrative_position=1),
+        _unit_event("午时", time_value=5.0, time_unit="时", narrative_position=2),
+        _unit_event("辰时", time_value=3.0, time_unit="时", narrative_position=3),
+    ]
+    bad_report = await _make_service(bad).check_consistency(PID)
+    assert bad_report is not None
+    assert len(bad_report.conflicts) == 1
+
+
+@pytest.mark.asyncio
+async def test_u6_empty_and_unknown_unit_behaviour_unchanged() -> None:
+    """U6（反例守护，§2.7 S5）：空串 / 未列举单位（如「纪元」）→ 因子 1，结论与 v1.1 一致。
+
+    修复前即为绿 —— 正确，别改（保证既有手工数据零回归）。
+    """
+    events = [
+        _unit_event("甲", time_value=10.0, time_unit="", narrative_position=1),
+        _unit_event("乙", time_value=5.0, time_unit="", narrative_position=2),
+        _unit_event("丙", time_value=2.0, time_unit="纪元", narrative_position=3),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert report.checked == 3
+    assert len(report.conflicts) == 2  # 10>5、5>2（裸值比较，与 v1.1 相同）
+    assert report.consistent is False
+
+
+@pytest.mark.asyncio
+async def test_u7_event_timeline_sorted_by_normalized_days() -> None:
+    """U7（#1409 §5.2）：事件时间线视图按**归一后**日尺度排序。
+
+    `3 月`（=90 日）必须排在 `8 日` **之后**；现实现按裸值 → `3.0 < 8.0` 排反。
+    """
+    events = [
+        _unit_event("月事件", time_value=3.0, time_unit="月", narrative_position=1),
+        _unit_event("日事件", time_value=8.0, time_unit="日", narrative_position=2),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert [e.title for e in report.event_timeline] == ["日事件", "月事件"]
+
+
+@pytest.mark.asyncio
+async def test_u8_conflict_message_shows_current_time_value() -> None:
+    """U8（#1409 拍板 3）：消息同时给出**原始表达**与**当前 time_value**（+ 归一值）。
+
+    真实坑：数据修好后消息仍显示旧表达 → 以为改动没生效。故消息必须含当前数值。
+    """
+    events = [
+        _unit_event("先叙", time_value=3.0, time_unit="月", narrative_position=1),
+        _unit_event("后叙", time_value=1.0, time_unit="日", narrative_position=2),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert len(report.conflicts) == 1
+    message = report.conflicts[0].message
+    assert "3.0月" in message
+    assert "time_value=3.0" in message
+    assert "归一=90日" in message
+    assert "time_value=1.0" in message
+
+
+@pytest.mark.asyncio
+async def test_u9_bare_value_label_unchanged_for_unitless_events() -> None:
+    """U9（反例守护）：无 `time_display` / `time_unit` 的事件 → 标签保持裸数值（向后兼容）。
+
+    修复前即为绿 —— 正确，别改（既有 M4 用例的精确消息断言依赖此形态）。
+    """
+    report = await _make_service(_seq(3.0, 2.0)).check_consistency(PID)
+    assert report is not None
+    assert len(report.conflicts) == 1
+    assert "（3.0）" in report.conflicts[0].message
+    assert "time_value=" not in report.conflicts[0].message
+
+
+@pytest.mark.asyncio
+async def test_u11_check_event_prev_pair_order_conflict() -> None:
+    """U11（#1409 覆盖补强）：check_event 的**前邻对**为未声明逆序 → 计入 conflicts。
+
+    目标 = 事件2（作为 next 参与逆序对 `[5 日, 3 日]`）—— 覆盖 pre-v 侧分类分支
+    （既有 TB1-TB4 只覆盖 next 侧 / flashback / flashforward / None 形态）。
+    """
+    events = _seq(5.0, 3.0)
+    target = events[1]
+    report = await _make_service(events).check_event(target.id)
+    assert report is not None
+    assert report.checked is True
+    assert report.consistent is False
+    assert len(report.conflicts) == 1
+    assert report.conflicts[0].conflict_type == "order_conflict"
+    assert report.conflicts[0].prev.id == events[0].id
+    assert report.conflicts[0].next.id == target.id
+    assert report.flashbacks == []
+
+
+@pytest.mark.asyncio
+async def test_u10_declared_flashback_still_legal_across_units() -> None:
+    """U10（守护）：跨单位逆序 + 后叙声明「倒叙」→ 仍判合法 flashback（声明制不受归一影响）。"""
+    events = [
+        _unit_event("第三月", time_value=3.0, time_unit="月", narrative_position=1),
+        _unit_event(
+            "往回一日",
+            time_value=1.0,
+            time_unit="日",
+            narrative_position=2,
+            timeline_flag="倒叙",
+        ),
+    ]
+    report = await _make_service(events).check_consistency(PID)
+    assert report is not None
+    assert report.conflicts == []
+    assert len(report.flashbacks) == 1
+    assert report.flashbacks[0].conflict_type == "flashback"
+    assert report.consistent is True

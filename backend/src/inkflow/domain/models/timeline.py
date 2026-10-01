@@ -132,9 +132,12 @@ class TimelineEvent(BaseModel):
         project_id: 所属项目 UUID.
         title: 事件标题；允许重复（事件是实例而非档案，无唯一约束）.
         description: 事件描述（该时刻发生了什么）.
-        time_value: 世界内时间数值键（可排序、可比较）；None = 时间未知
-            （事件时间线排末尾、不参与一致性检查）.
-        time_unit: 时间单位标签（纪元/年/月/日/时；自由文本，仅语义，不参与排序）.
+        time_value: 世界内时间数值键——**相对项目时基的累计时长**，其物理尺度
+            由 time_unit 给定（§2.7）；None = 时间未知（事件时间线排末尾、
+            不参与一致性检查）.
+        time_unit: 时间单位标签（`time_value` 的物理尺度；可知单位：年/岁=365 日、
+            月=30 日、周/星期=7 日、日/天=1 日，时/时辰=当天时刻；未列举/空串
+            = 时基裸值，因子 1）。**参与归一排序**（§2.7/§5.2），不再「仅语义」.
         time_display: 原始时间表达（time_value 的人工可读镜像，不参与排序）.
         narrative_position: 叙事位置（单一线性序号，小者在前 = 先被叙述）.
         timeline_flag: 时间线标记（"" = 正叙、flashback = 倒叙、
@@ -153,7 +156,7 @@ class TimelineEvent(BaseModel):
     title: str
     description: str = ""
     time_value: float | None = None  # None = 世界内时间未知
-    time_unit: str = ""  # 单位标签（纪元/年/日…），仅语义
+    time_unit: str = ""  # time_value 的物理尺度（年/月/日…），参与归一排序（§2.7）
     time_display: str = ""  # 原始时间表达（如「青元历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""  # ""/flashback/flashforward（建议值，自由文本）
