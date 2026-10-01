@@ -28,7 +28,8 @@ from pydantic import ValidationError
 from inkflow.cli._time import format_local
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
-from inkflow.domain.models.timeline import TimelineEventUpdate
+from inkflow.domain.models.timeline import TimelineEvent, TimelineEventUpdate
+from inkflow.domain.services._timeline_timebase import plan_reanchor
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
@@ -80,6 +81,24 @@ def _time_label(event: dict) -> str:
     return event.get("time_display") or str(event.get("time_value"))
 
 
+def _time_label_with_value(event: dict) -> str:
+    """事件时间表达 + **当前** `time_value`（#1409 拍板 3：详情必须显示当前数值）.
+
+    形如「青元历 317 年秋（time_value=317.5）」——数据修好后人类输出必须能看出
+    数值已变，否则会以为改动没生效。无 `time_display` 时 `time_value` 本身即当前
+    数值，不重复附注；`time_value is None` 且无 `time_display` → 「时间未知」。
+    """
+    time_value = event.get("time_value")
+    display = event.get("time_display")
+    if time_value is None and not display:
+        return "时间未知"
+    if not display:
+        return str(time_value)
+    if time_value is None:
+        return str(display)
+    return f"{display}（time_value={time_value}）"
+
+
 # ---------------------------------------------------------------------------
 # create  — inkflow timeline create --project-id <uuid> --title <str> ...
 # ---------------------------------------------------------------------------
@@ -95,7 +114,11 @@ def create_event_cmd(
     time_value: float | None = typer.Option(
         None, "--time-value", help="世界内时间数值键（缺席 = 时间未知）"
     ),
-    time_unit: str = typer.Option("", "--time-unit", help="时间单位标签（仅语义）"),
+    time_unit: str = typer.Option(
+        "",
+        "--time-unit",
+        help="时间单位（`time_value` 的尺度：年/月/周/日；参与归一排序，#1409 §2.7）",
+    ),
     time_display: str = typer.Option(
         "", "--time-display", help="原始时间表达（如「青元历 317 年初」）"
     ),
@@ -303,7 +326,7 @@ def get_event_cmd(
         typer.echo(f"ID:           {event['id']}")
         typer.echo(f"标题:         {event['title']}")
         typer.echo(f"描述:         {event['description']}")
-        typer.echo(f"世界内时间:   {_time_label(event)}")
+        typer.echo(f"世界内时间:   {_time_label_with_value(event)}")
         typer.echo(f"时间单位:     {event['time_unit']}")
         typer.echo(f"原始时间表达: {event['time_display']}")
         typer.echo(f"叙事位置:     {event['narrative_position']}")
@@ -414,3 +437,70 @@ def delete_event_cmd(
         print_result(cli_ctx, {"id": str(eid), "deleted": True})
     else:
         typer.echo(f"✅ 事件 #{event_id} 已删除")
+
+
+# ---------------------------------------------------------------------------
+# normalize — inkflow timeline normalize --project-id <uuid> [--apply]
+# ---------------------------------------------------------------------------
+
+
+@app.command("normalize")
+@instrument(caller_type="cli")
+def normalize_timeline_cmd(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
+    apply: bool = typer.Option(
+        False, "--apply", help="落库（逐事件 PATCH）；默认 dry-run 只报计划"
+    ),
+) -> None:
+    """项目级归一/重锚（段内计数器型历史数据 → 项目时基；默认 dry-run）"""
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            view = await client.get(f"/projects/{pid}/timeline")
+            events = [TimelineEvent.model_validate(e) for e in (view.get("narrative_order") or [])]
+            plan = plan_reanchor(events)
+            if apply:
+                for change in plan.changes:
+                    body: dict[str, Any] = {
+                        "time_value": change.new_time_value,
+                        "time_unit": change.new_time_unit,
+                    }
+                    if change.new_time_display is not None:
+                        body["time_display"] = change.new_time_display
+                    await client.patch(f"/timeline/events/{change.event_id}", json=body)
+        return {
+            "applied": apply,
+            "segments": plan.segments,
+            "changed": len(plan.changes),
+            "total_valued": plan.total_valued,
+            "conflicts_before": plan.conflicts_before,
+            "conflicts_after": plan.conflicts_after,
+            "changes": [
+                {
+                    "id": str(change.event_id),
+                    "title": change.title,
+                    "time_value": change.time_value,
+                    "time_unit": change.time_unit,
+                    "new_time_value": change.new_time_value,
+                    "new_time_unit": change.new_time_unit,
+                    "new_time_display": change.new_time_display,
+                }
+                for change in plan.changes
+            ],
+        }
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+        return
+    tail = f"已写入 {data['changed']} 条" if apply else "dry-run 未写入，加 --apply 执行"
+    typer.echo(
+        f"🧭 时间线归一: 识别 {data['segments']} 个叙事段，"
+        f"将改写 {data['changed']}/{data['total_valued']} 条事件"
+        f"（冲突 {data['conflicts_before']} → {data['conflicts_after']}）；{tail}"
+    )

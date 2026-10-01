@@ -8,13 +8,17 @@
   未注入）同样抛 TimelineServiceError
 - 资源不存在（404 语义）: 多数方法返回 None 由 router 层转 404；
   _ensure_project 校验失败抛 ProjectNotFoundError
-- 双线视图（spec §5.2）: event_timeline 按 (time_value ASC NULLS LAST,
+- 双线视图（spec §5.2）: event_timeline 按 (归一日尺度 ASC NULLS LAST,
   narrative_position ASC) 排序；narrative_order 按叙事位置升序
   （list_all 已按 (narrative_position ASC, created_at ASC) 稳定排序）
-- 一致性检查（spec §5.3，确定性算法，无 LLM）: 对叙事顺序上相邻且
-  time_value 均非 None 的事件对做相邻对扫描，报告全部逆序对；
-  已声明 flashback/flashforward 的逆序对计入 flashbacks（不影响
-  consistent），未声明的计入 conflicts
+- 一致性检查（spec §5.3，确定性算法，无 LLM）: 先按 §2.7 S2/S4 把
+  time_value 从 time_unit 归一到「日」，再对叙事顺序上相邻且归一值均
+  非 None 的事件对做相邻对扫描，报告全部逆序对；已声明
+  flashback/flashforward 的逆序对计入 flashbacks（不影响 consistent），
+  未声明的计入 conflicts
+
+`#1409`：`time_unit` 不再是「仅语义」——它是 `time_value` 的物理尺度，
+参与归一排序与比较（见 `_timeline_timebase`）。
 
 依赖全部通过构造函数注入（ADR-015，测试注入 Mock）:
 - repository: TimelineRepositoryProtocol（B1 已实现）
@@ -27,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 
 from inkflow.domain.models.timeline import (
@@ -46,6 +50,14 @@ from inkflow.domain.ports.timeline_errors import (
 )
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.services._data_change import publish_change
+from inkflow.domain.services._timeline_timebase import (
+    FLASHBACK_WORDS,
+    FLASHFORWARD_WORDS,
+    UNIT_DAYS,
+    has_flag,
+    normalized_days,
+    to_days,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +75,22 @@ def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
 
 
 def _time_label(event: TimelineEvent) -> str:
-    """事件时间的人类可读表达（time_display 优先，缺失时回退数值字符串）。"""
-    return event.time_display or str(event.time_value)
+    """事件时间的人类可读表达（#1409 拍板 3：必须含**当前** time_value）.
+
+    形态：`time_display`（缺失时回退 `f"{原值}{time_unit}"`）+ `（time_value=原值）`；
+    单位因子 ≠ 1 时追加 `，归一={days:g}日`（如 `3.0月（time_value=3.0），归一=90日`）。
+    `time_display` 与 `time_unit` **都为空**时保持原行为 `str(time_value)`
+    （向后兼容：既有精确消息断言依赖裸数值形态，见 U9）。
+    """
+    unit = (event.time_unit or "").strip()
+    if not event.time_display and not unit:
+        return str(event.time_value)
+    base = event.time_display or f"{event.time_value}{event.time_unit}"
+    label = f"{base}（time_value={event.time_value}）"
+    days = to_days(event.time_value, event.time_unit)
+    if days is not None and UNIT_DAYS.get(unit, 1.0) != 1.0:
+        label += f"，归一={days:g}日"
+    return label
 
 
 def _to_ref(event: TimelineEvent) -> TimelineEventRef:
@@ -79,59 +105,35 @@ def _to_ref(event: TimelineEvent) -> TimelineEventRef:
     )
 
 
-def _has_flag(flag: str | None, *needles: str) -> bool:
-    """#1323 G6：``timeline_flag`` 是**自由文本**，用包含式匹配判定语义。
-
-    真实数据为中文自由文本（DB 实测：``''=181, 倒叙=29, 插叙=3, 梦境=1, 回忆=1``），
-    此前用字面量等值比较（``== "flashback"``）→ 33 条已声明倒叙/插叙被当作「未标记」，
-    直接产 ``order_conflict``（error 级 finding）串到审计报告。
-
-    包含式匹配对既有英文值零破坏（``flashback`` 含 ``flashback``），
-    且能覆盖带修饰的自由文本（``倒叙（回忆片段）``）。
-
-    Args:
-        flag: 事件的 timeline_flag 原值（可能为 None / 空串）.
-        needles: 语义等价词表（中英并列）.
-
-    Returns:
-        任一 needle 作为子串出现 → True.
-    """
-    if not flag:
-        return False
-    lowered = flag.lower()
-    return any(n.lower() in lowered for n in needles)
-
-
-_FLASHBACK_WORDS = ("flashback", "倒叙", "回忆")
-"""倒叙语义词表（#1323：prompt 枚举 + 中文自由文本兼容）。"""
-
-_FLASHFORWARD_WORDS = ("flashforward", "插叙", "预叙")
-"""插叙/预叙语义词表（#1323：prompt 枚举 + 中文自由文本兼容）。"""
-
-
-def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict | None:
+def _classify_pair(
+    prev: TimelineEvent,
+    nxt: TimelineEvent,
+    keys: Mapping[uuid.UUID, float | None],
+) -> TimelineConflict | None:
     """分类相邻事件对（spec §5.4）——check_consistency 与 check_event 共用.
 
-    仅当双方 time_value 均已知且 prev.time_value > next.time_value（逆序对）时
-    返回 TimelineConflict：next 标记倒叙 → flashback；prev 标记插叙 →
-    flashforward；否则 → order_conflict。正序/同时刻/任一时间未知 → None
-    （不参与比较）。
+    比较的是**归一日尺度**键 `keys`（§2.7 S2/S4：单位归一 + 时/时辰 日锚点），
+    不再直接比较裸 `time_value`（否则「8 日 vs 3 月」会被误判为倒叙）。仅当双方
+    归一值均已知且 `keys[prev] > keys[nxt]`（逆序对）时返回 TimelineConflict：
+    next 标记倒叙 → flashback；prev 标记插叙 → flashforward；否则 →
+    order_conflict。正序/同时刻/任一时间未知 → None（不参与比较）。
 
-    🔴 #1323 G6：标记判定为**包含式**（``_has_flag``），兼容中文自由文本
+    🔴 #1323 G6：标记判定为**包含式**（``has_flag``），兼容中文自由文本
     （真实数据「倒叙/插叙」）与既有英文值（flashback/flashforward）。
 
     Args:
         prev: 叙事序中靠前的事件.
         nxt: 叙事序中靠后的事件.
+        keys: 事件 id → 归一日尺度值（`normalized_days` 的输出）.
 
     Returns:
         逆序对的分类结果；正序/同时刻/时间未知返回 None.
     """
-    prev_tv = prev.time_value
-    nxt_tv = nxt.time_value
-    if prev_tv is None or nxt_tv is None or prev_tv <= nxt_tv:
+    prev_days = keys.get(prev.id)
+    next_days = keys.get(nxt.id)
+    if prev_days is None or next_days is None or prev_days <= next_days:
         return None
-    if _has_flag(nxt.timeline_flag, *_FLASHBACK_WORDS):
+    if has_flag(nxt.timeline_flag, *FLASHBACK_WORDS):
         return TimelineConflict(
             conflict_type="flashback",
             prev=_to_ref(prev),
@@ -143,7 +145,7 @@ def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict 
                 f"（{_time_label(prev)}），已标记，判定合法。"
             ),
         )
-    if _has_flag(prev.timeline_flag, *_FLASHFORWARD_WORDS):
+    if has_flag(prev.timeline_flag, *FLASHFORWARD_WORDS):
         return TimelineConflict(
             conflict_type="flashforward",
             prev=_to_ref(prev),
@@ -172,7 +174,10 @@ def _classify_pair(prev: TimelineEvent, nxt: TimelineEvent) -> TimelineConflict 
 
 
 def _sort_event_timeline(events: list[TimelineEvent]) -> list[TimelineEvent]:
-    """事件时间线视图排序（spec §5.2）: time_value ASC NULLS LAST, narrative_position ASC。
+    """事件时间线视图排序（spec §5.2）: 归一日尺度 ASC NULLS LAST, narrative_position ASC。
+
+    #1409：排序前按 `time_unit` 归一到「日」（§2.7 S2/S4）——不再比较裸
+    `time_value`（否则「3 月」会排在「8 日」之前）。
 
     Args:
         events: 待排序的事件列表.
@@ -180,9 +185,10 @@ def _sort_event_timeline(events: list[TimelineEvent]) -> list[TimelineEvent]:
     Returns:
         排序后的新列表（不修改入参）.
     """
+    keys = normalized_days(events)
     return sorted(
         events,
-        key=lambda e: (e.time_value is None, e.time_value, e.narrative_position),
+        key=lambda e: (keys.get(e.id) is None, keys.get(e.id), e.narrative_position),
     )
 
 
@@ -244,7 +250,8 @@ class TimelineService:
             title: 事件标题（TimelineEventCreate 已去空白校验）.
             description: 事件描述.
             time_value: 世界内时间数值键；None = 时间未知.
-            time_unit: 时间单位标签（仅语义）.
+            time_unit: 时间单位（time_value 的尺度；参与归一排序，
+                见 _timeline_timebase / spec §2.7）.
             time_display: 原始时间表达.
             narrative_position: 叙事位置；None = 先 next_position 再追加.
             timeline_flag: 时间线标记（""/flashback/flashforward）.
@@ -410,10 +417,12 @@ class TimelineService:
         ② 事件 time_value None → checked=false、consistent=true、冲突为空
            （不参与检查，非冲突）；
         ③ repo.list_all(project_id) 取全部事件（已按 narrative_position ASC
-           稳定排序），定位该事件在叙事序中的位置 i；
+           稳定排序），按 §2.7 S2/S4 对**全量**事件算一次归一日尺度键
+           `keys = normalized_days(events)`（`时/时辰` 需序列上下文），定位
+           该事件在叙事序中的位置 i；
         ④ 检查相邻对 (events[i-1], events[i]) 与 (events[i], events[i+1])，
-           复用 _classify_pair（check_consistency 的相邻对分类逻辑）；该事件
-           最多参与两对，两对的逆序冲突均计入；
+           复用 _classify_pair（比较归一值，与 check_consistency 同口径）；
+           该事件最多参与两对，两对的逆序冲突均计入；
         ⑤ 返回 EventCheckReport（consistent = conflicts 为空，flashbacks 不影响）.
 
         Args:
@@ -434,20 +443,21 @@ class TimelineService:
                 flashbacks=[],
             )
         events = await self._repo.list_all(event.project_id)
+        keys = normalized_days(events)
         # 事件在叙事序中的位置 i（list_all 已按 narrative_position ASC 稳定排序）
         i = next((idx for idx, e in enumerate(events) if e.id == event.id), None)
         conflicts: list[TimelineConflict] = []
         flashbacks: list[TimelineConflict] = []
         if i is not None:
             if i > 0:
-                conflict = _classify_pair(events[i - 1], events[i])
+                conflict = _classify_pair(events[i - 1], events[i], keys)
                 if conflict is not None:
                     if conflict.conflict_type in ("flashback", "flashforward"):
                         flashbacks.append(conflict)
                     else:
                         conflicts.append(conflict)
             if i + 1 < len(events):
-                conflict = _classify_pair(events[i], events[i + 1])
+                conflict = _classify_pair(events[i], events[i + 1], keys)
                 if conflict is not None:
                     if conflict.conflict_type in ("flashback", "flashforward"):
                         flashbacks.append(conflict)
@@ -472,12 +482,17 @@ class TimelineService:
     ) -> ConsistencyReport | None:
         """一致性检查（spec §5.3，确定性算法，无 LLM）— 相邻对扫描.
 
-        对叙事顺序（list_all 已按 narrative_position ASC, created_at ASC
-        稳定排序）上 time_value 均非 None 的相邻事件对 (A, B) 逐一比较：
-        A.time_value > B.time_value 为逆序对，按 §5.4 分类：
+        先按 §2.7 S2/S4 把 `time_value` 从 `time_unit` 归一到「日」
+        （`keys = normalized_days(events)`，`时/时辰` 用叙事序上的日锚点），
+        再对叙事顺序（list_all 已按 narrative_position ASC, created_at ASC
+        稳定排序）上归一值均非 None 的相邻事件对 (A, B) 逐一比较：
+        `keys[A] > keys[B]` 为逆序对，按 §5.4 分类：
         - next 标记 flashback → flashbacks（合法倒叙）
         - prev 标记 flashforward → flashbacks（合法插叙/预叙）
         - 否则 → conflicts（order_conflict，需修正）
+
+        #1409：`time_unit` 参与比较（不再比较裸 `time_value`）——「8 日 → 3 月」
+        归一后 `8 < 90` 为正序，不误报倒叙（§2.7 S3）。
 
         Args:
             project_id: 所属项目 UUID.
@@ -493,14 +508,15 @@ class TimelineService:
         """
         await self._ensure_project(project_id)
         events = await self._repo.list_all(project_id)
-        # 参与比较集合: 叙事顺序上 time_value 非 None 的事件（元组携带收窄后的
-        # float 时间值，供 mypy 静态收窄；None 事件计入 skipped）
-        seq = [(e, e.time_value) for e in events if e.time_value is not None]
+        keys = normalized_days(events)
+        # 参与比较集合: 叙事顺序上归一值非 None 的事件（#1409 §2.7 S2/S4；
+        # time_value None → 归一值 None → 计入 skipped，语义与 v1.1 一致）
+        seq = [e for e in events if keys.get(e.id) is not None]
         skipped = len(events) - len(seq)
         conflicts: list[TimelineConflict] = []
         flashbacks: list[TimelineConflict] = []
         for i in range(len(seq) - 1):
-            conflict = _classify_pair(seq[i][0], seq[i + 1][0])
+            conflict = _classify_pair(seq[i], seq[i + 1], keys)
             if conflict is None:
                 continue  # 正序/同刻/时间未知：不冲突（§5.4）
             if conflict.conflict_type in ("flashback", "flashforward"):

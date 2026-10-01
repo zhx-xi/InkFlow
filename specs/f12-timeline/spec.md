@@ -6,7 +6,9 @@
 
 > **Spec 变更（v1.1，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① TimelineEvent 移除 `is_deleted` 字段（§2.1）；② DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /timeline/events/{id}/restore` 端点与 `timeline restore` 命令移除（§3/§4/§14）；③ 双线视图与一致性检查基于物理存在的事件（§5）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
 >
-> **Spec 版本**: 1.1 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
+> **Spec 变更（v1.2，2026-10-01，#1409）**: **`time_value` 终局语义**确立（§2.7）——`time_value` 是「相对项目时基的累计时长」，其物理尺度由 `time_unit` 给定；一致性检查与事件时间线排序**一律在按单位归一到「日」的尺度上**进行（年 365 / 月 30 / 周 7 / 日 1；`时/时辰` 为当天时刻，锚定叙事序上最近日锚点，**不是累计量**）。① `time_unit` 由「仅语义、不参与排序」改为**参与归一排序**（§2.1/§2.2 表述作废，§5.2/§5.3 算法同步）；② 新增项目级归一/重锚工具 `inkflow timeline normalize`（§4.1/§4.2 CLI 契约 + §5.7 算法）；③ 提取 prompt 同步要求「单位固定 + 项目内累计时基 + 不确定即 null」（§5.5，F14 §5.5 契约由本 spec 统一声明）；④ 冲突/提示消息同时给出原始表达与当前 `time_value`（§5.4）。**本语义是 #1353（多纪元最小落地）与 #1410/#1411（完整历法引擎）的共同前置**——多纪元轴族必须建立在本节「单时基 + 单位归一」之上，不得绕过。
+>
+> **Spec 版本**: 1.2 | **日期**: 2026-10-01 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第四个模块，估算 3-4 人天）
 > **关联 Issues**: [#42](https://github.com/zhx-xi/InkFlow/issues/42)
 > **依赖**: F1 ✅（前置）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F12 无 LLM，见 §1/§5）
@@ -57,8 +59,8 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
 | title | str | NOT NULL, 1-100 字符, 去空白 | 事件标题（如「林尘觉醒金手指」「宗门大比」） |
 | description | str | NOT NULL, DEFAULT "", ≤ 5000 字符 | 事件描述（该时刻发生了什么） |
-| time_value | float? | NULLABLE, 已索引 | **世界内时间数值键**（可排序、可比较）；None = 世界内时间未知（事件时间线排末尾、不参与一致性检查，见 §5）；约束：有限数值，\|v\| ≤ 10^12（允许负数 = 纪元前） |
-| time_unit | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间单位标签（建议值：纪元/年/月/日/时；自由文本）；仅语义说明，**不参与排序** |
+| time_value | float? | NULLABLE, 已索引 | **世界内时间数值键**（可排序、可比较）——**语义 = 相对项目时基的累计时长，尺度由 `time_unit` 给定**（终局定义见 §2.7）；None = 世界内时间未知（事件时间线排末尾、不参与一致性检查，见 §5）；约束：有限数值，\|v\| ≤ 10^12（允许负数 = 纪元前） |
+| time_unit | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间单位标签，**`time_value` 的物理尺度**（可知单位：年/岁=365 日、月=30 日、周/星期=7 日、日/天=1 日；`时/时辰`=当天时刻；未列举/空串 = 视同时基裸值，因子 1）。**参与归一排序**（§2.7/§5.2）。同一项目内应统一单位（提取默认「日」） |
 | time_display | str | NOT NULL, DEFAULT "", ≤ 100 字符 | 原始时间表达（如「青元历 317 年秋」），time_value 的人工可读镜像；不参与排序 |
 | narrative_position | int | NOT NULL, DEFAULT 0, ≥ 0, 已索引 | **叙事位置**（单一线性序号，小者在前 = 先被叙述）；创建缺省 = 项目内 max+1（叙事末尾追加）；允许重复（排序按 `(narrative_position ASC, created_at ASC)` 稳定输出） |
 | timeline_flag | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间线标记（建议值：`""` = 正叙、`flashback` = 倒叙、`flashforward` = 插叙/预叙；自由文本，未在建议词表中的值等同未标记，见 §6.2） |
@@ -164,7 +166,7 @@ class TimelineEvent(BaseModel):
     title: str
     description: str = ""
     time_value: float | None = None      # None = 世界内时间未知
-    time_unit: str = ""                  # 单位标签（纪元/年/日…），仅语义
+    time_unit: str = ""                  # time_value 的尺度（年/月/周/日/时），参与归一排序（§2.7）
     time_display: str = ""               # 原始时间表达（如「青元历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""              # ""/flashback/flashforward（建议值，自由文本）
@@ -328,6 +330,27 @@ class TimelineView(BaseModel):
     event_timeline: list[TimelineEvent]   # 事件时间线（世界内时间升序，未知排末尾）
     narrative_order: list[TimelineEvent]  # 叙事时间线（叙事位置升序）
 ```
+
+### 2.7 time_value 终局语义（#1409，0.16.0 起；#1353/#1410 的共同前置）
+
+**背景（#1409 实证）**：原契约把 `time_unit` 声明为「仅语义、不参与排序」，却在排序/一致性检查里直接比较裸 `time_value`。于是「多单位共用一个数值键」这件事**在契约里无人负责**：写入侧随便填单位，校验侧只能裸比较 → 跨单位误判（实测：30 章正文、382 事件，`日 186 / 时·时辰 61 / 月 18 / 年 16 / 空 101`，`audit check` 报 7 条「未声明的倒叙」，其中 3 条是 `8 日 vs 3 月` 这类**纯跨单位误判**）。本节把该语义定死。
+
+**终局语义（规范文本）**：
+
+| # | 规则 |
+|---|------|
+| S1 | **累计时基**：`time_value` 是「相对**项目时基**（epoch，项目内唯一）的累计时长」；其**物理尺度由 `time_unit` 声明**——如 `3.5` + `年` ⇔ 距时基 3.5×365 日。历史/手工数据允许其他单位，但语义一律按本条解释 |
+| S2 | **单位归一表**（比较与排序前必须归一）：`年/岁` = 365 日、`月` = 30 日、`周/星期` = 7 日、`日/天` = 1 日。归一值 `days = time_value × factor(unit)` |
+| S3 | **同一项目内应统一单位**（新建/提取默认 `日`）；跨单位数据依赖 S2 归一后才可比。**禁止**把不同单位的裸 `time_value` 直接比大小 |
+| S4 | **`时 / 时辰` = 当天时刻，不是累计量**：归一值 = **叙事序上最近一个「日级」事件的归一值（日锚点）** + `(time_value mod 24) / 24`；无前置日锚点时锚点取 0。**禁止**把它当累计值（`/24` 直接比、或与裸日值直接比） |
+| S5 | **未知/未列举单位（含空串）= 时基裸值**（因子 1）——保留既有行为，向后兼容（反例守护：`time_unit` 为空的项目其比较结论与 #1409 之前完全一致） |
+| S6 | **归一用于比较/排序，不回写库**：库内仍存原始 `time_value`/`time_unit`；归一是**只读投影**（判定层），非数据迁移。`time_value` 需要的**数据层归一/重锚**由 S7 的一次性工具承担 |
+| S7 | **项目级归一/重锚（一次性，显式）**：`inkflow timeline normalize --project-id <id>`（默认 dry-run，`--apply` 落库，§5.7）把**段内计数器型**历史数据投影到项目时基：按叙事顺序走带值且**未声明**倒叙/插叙的事件，**数值回落 = 新叙事段**，新段起点接在上一段末尾，**段内保留原有相对天数**；单位一并归一到「日」。**禁止**用「抬平到前一条」（`g = prev`）——那会级联抹平整卷的相对信息 |
+| S8 | **确定性 & 幂等**：归一与重锚均为纯函数（同输入同输出）；对已归一的单调序列运行重锚 → **0 处改动**（幂等） |
+| S9 | **`time_value = None` 语义不变**：时间未知 → 事件时间线排末尾、一致性检查计入 `skipped`（不参与比较、不报冲突） |
+| S10 | **提取侧契约**：LLM 提取的 `time_value` 必须**单位固定**、且为**项目内累计时基**；**无法确定时输出 `null`**，不得输出「本段第几天」这类段内相对计数器（§5.5）；历史段内计数器数据由 S7 工具修复 |
+
+**与后续里程碑的关系**：`#1353`（0.16.0 多纪元最小落地）在本节「单时基 + 单位归一」之上叠加**纪元轴族**（`extra.era` / `extra.era_value`），**不推翻** S1-S5；`#1410/#1411`（0.17.0 完整历法引擎）把 S2/S4 的固定换算表替换为**可配置纪元流速比 + 历法换算**，届时 S2/S4 由「常量表」升级为「历法函数」，S7 的段续接语义保留。**三个里程碑共用本节词汇**（时基 / 单位 / 日锚点 / 段续接），不得各造一套。
 
 ---
 
@@ -547,6 +570,10 @@ inkflow timeline update --id <uuid> \
 
 inkflow timeline delete --id <uuid> [--force] [--json]     # v1.1 真删（--permanent 已移除）
 # v1.1 移除: inkflow timeline restore --id <uuid> [--json]
+
+inkflow timeline normalize --project-id <uuid> [--apply] [--json]   # #1409 项目级归一/重锚
+    # 默认 dry-run（只报计划不写库）；--apply 落库（逐事件 PATCH，复用既有端点）
+    # 报告: applied/segments/changed/total_valued/conflicts_before/conflicts_after/changes[]
 ```
 
 > 命令名 `check` / `view` 与 Python 内置无关键字冲突（`check` 非保留字），Typer 命令注册正常。
@@ -577,6 +604,12 @@ inkflow timeline get --id 00000000-0000-0000-0000-000000000000 --json
 
 inkflow timeline delete --id ... --json
 → {"ok": false, "error": {"code": "VALIDATION_ERROR", "message": "删除需 --force 或交互确认"}}  # 退出码 1
+
+inkflow timeline normalize --project-id ... --json          # 默认 dry-run
+→ {"ok": true, "data": {"applied": false, "segments": 7, "changed": 70, "total_valued": 82,
+      "conflicts_before": 7, "conflicts_after": 0, "changes": [{"id": "...", "title": "...",
+      "time_value": 3.0, "time_unit": "月", "new_time_value": 90.0, "new_time_unit": "日"}]}}
+inkflow timeline normalize --project-id ... --apply --json  # 落库（applied=true）
 ```
 
 ---
@@ -618,30 +651,32 @@ inkflow timeline delete --id ... --json
 
 | 时间线 | 排序键 | 排序规则 | 说明 |
 |--------|--------|----------|------|
-| **事件时间线**（世界内时间轴） | `time_value` | `(time_value ASC NULLS LAST, narrative_position ASC)` | 故事世界内事件发生的先后；time_value 为 None 的事件排末尾（按叙事位置兜底） |
+| **事件时间线**（世界内时间轴） | `time_value`（**归一日尺度**，§2.7 S2/S4） | `(归一值 ASC NULLS LAST, narrative_position ASC)` | 故事世界内事件发生的先后；**排序前按 `time_unit` 归一到「日」**（`时/时辰` 按日锚点投影，未知/空单位 = 裸值）；`time_value` 为 None 的事件排末尾（按叙事位置兜底） |
 | **叙事时间线**（叙事顺序） | `narrative_position` | `(narrative_position ASC, created_at ASC)` | 小说叙述中事件被讲述的先后；单一整数序号，稳定排序 |
 
 两条线是**同一批事件的两种投影**（非两份数据）：改 `time_value` 只移动事件时间线中的位置，改 `narrative_position` 只移动叙事时间线中的位置——这正是双线可能矛盾、需要一致性检查的原因。
 
 ### 5.3 检查算法（相邻对扫描）
 
-**算法**: 对叙事顺序（过滤 time_value 为 None 的事件后）的相邻事件对 `(A, B)` 逐一比较 `time_value`；若 `A.time_value > B.time_value` 则为逆序对，按 §5.4 分类。
+**算法**: 对叙事顺序（过滤 time_value 为 None 的事件后）的相邻事件对 `(A, B)` 逐一比较**归一日尺度值**（§2.7 S2/S4：`keys[e] = 归一(单位, time_value, 日锚点)`）；若 `keys[A] > keys[B]` 则为逆序对，按 §5.4 分类。
 
-**完备性论证（可测试性的数学基础）**: 序列单调非降 ⟺ 序列不存在相邻逆序对。因此「修正所有报告出的 order_conflict」等价于「使叙事顺序与世界内时间顺序一致」——相邻对扫描**不会漏报任何需要修正的矛盾**，且报告天然按叙事顺序排列、逐条可执行。
+**完备性论证（可测试性的数学基础）**: 序列单调非降 ⟺ 序列不存在相邻逆序对。因此「修正所有报告出的 order_conflict」等价于「使叙事顺序与世界内时间顺序一致」——相邻对扫描**不会漏报任何需要修正的矛盾**，且报告天然按叙事顺序排列、逐条可执行。**归一不改变该论证**：归一是对全序列施加的**同一单调映射的前半部**（单位换算 + 日锚点投影），比较仍在归一后的全序上进行。
 
 **复杂度**: 排序 O(n log n) + 扫描 O(n)。
 
 **伪代码**:
 ```text
-P = [e for e in events_by_narrative_order if e.time_value is not None]   # 参与比较集合
+events = list_all(project_id)                     # 叙事序（narrative_position ASC, created_at ASC）
+keys   = normalized_days(events)                  # §2.7 S2/S4：单位归一 + 时/时辰 日锚点投影（None 保持 None）
+P      = [e for e in events if keys[e] is not None]   # 参与比较集合
 skipped = len(events) - len(P)
 conflicts, flashbacks = [], []
 for i in range(len(P) - 1):
     A, B = P[i], P[i + 1]
-    if A.time_value > B.time_value:
-        if B.timeline_flag == "flashback":
+    if keys[A] > keys[B]:                          # ← 比较归一值，不是裸 time_value
+        if B.timeline_flag 命中倒叙词表:
             flashbacks.append(TimelineConflict("flashback", A, B, ...))
-        elif A.timeline_flag == "flashforward":
+        elif A.timeline_flag 命中插叙词表:
             flashbacks.append(TimelineConflict("flashforward", A, B, ...))
         else:
             conflicts.append(TimelineConflict("order_conflict", A, B, ...))
@@ -661,9 +696,13 @@ consistent = (len(conflicts) == 0)
 **规则要点**:
 - `consistent` **仅由 `conflicts` 决定**：已声明的倒叙/插叙不影响一致性子（它们是合法的叙事手法，不是错误）
 - 未在建议词表中的 `timeline_flag` 值（如拼写错误 `flshback`）**等同未标记**：逆序对仍报 `order_conflict`（声明不生效）
-- `time_value` 相等（同刻事件）：**不冲突**——同时发生的事件叙事顺序可任意排列
+- `time_value` 相等（同刻事件）：**不冲突**——同时发生的事件叙事顺序可任意排列（**比较的是归一值**：`8 日` 与 `3 月` 归一为 `8` 与 `90`，**不相等**）
+- **跨单位不误判（§2.7 S2/S3）**：`8 日` 后接 `3 月` → 归一 `8 < 90` → 正序，**不报**倒叙；反向 `3 月` → `8 日`（`90 > 8`）→ 报 `order_conflict`（真实倒退）
+- **`时/时辰` 不参与累计（§2.7 S4）**：`第 8 日` 后的 `3 时` 归一为 `8 + 3/24 = 8.125`（**不是** `0.125`，也不是 `/24` 累计）；同一日内的 `3 时 → 5 时` 仍保序
+- **未知/空单位不变（§2.7 S5）**：`time_unit` 为空或未列举 → 因子 1，比较结论与本 spec v1.1 完全一致（反例守护）
 - `time_value` 为 None（时间未知）：**跳过**（计入 `skipped`，不参与比较、不报冲突）——未知时间没有「错误」可言
 - `include_flashbacks=false` 时 `flashbacks` 返回空列表（服务层不收集），`conflicts` 与 `consistent` 不受影响
+- **冲突消息同时给出原始表达与当前数值（#1409）**：`_time_label` 输出形如 `青元历 317 年秋（time_value=317.5）`、`3.0月（time_value=3.0），归一=90日`；无 `time_display`/`time_unit` 时保持裸数值（向后兼容）。**避免「改了数据看不出变化」**——消息必须显示**当前** `time_value`，而不是仅显示原始表达
 
 ### 5.5 输入约束与边界
 
@@ -675,6 +714,10 @@ consistent = (len(conflicts) == 0)
 | 全部时间未知 | checked=0, skipped=n, consistent=true | 未定时间不产生矛盾 |
 | 全逆序（完整倒叙长线，未标记） | n-1 条 order_conflict | 每条都是独立可修正项 |
 | 混合序列（如 [10, 5, 8]） | 1 条冲突（10,5） | 相邻对报告；修正后重查即收敛（完备性 §5.3） |
+| **跨单位混合**（如 [8日, 3月]） | **0 条冲突** | 归一后 `8 < 90`（§2.7 S2）；反向 `[3月, 8日]` → 1 条 order_conflict |
+| **`时/时辰` 参与**（如 [8日, 3时, 9日]） | 0 条冲突 | `3时` → `8 + 0.125`（当天时刻锚定，§2.7 S4）；若写成累计 `/24` 则 `0.125 < 8` 会误报倒叙 |
+| **空/未知单位** | 与本 spec v1.1 结论一致 | 因子 1（§2.7 S5 反例守护） |
+| **段内计数器型历史数据**（同单位但跨段重置，如 `…30日 → 3日…`） | 报 order_conflict（**不是误报**：该数据在同一时基上确实自相矛盾） | 由 §5.7 `timeline normalize` 一次性重锚修复；归一本身**无法**修（无基准信息，任何自动猜测都会抹平真实逆序） |
 
 ### 5.6 一致性检查 vs 提取/生成：差异对照表
 
@@ -688,6 +731,26 @@ consistent = (len(conflicts) == 0)
 | 幂等性 | 同文本二次提取 → 空 diff | 不承诺幂等 | **严格幂等**（同数据同报告） |
 | 失败模式 | LLMRequestError / 解析重试耗尽 | 同左 | 无（纯内存计算，仅 DB 读取） |
 | 测试方式 | Mock LLM 分支覆盖 | 同左 | **快照断言 + 序列构造用例**（最易测试的一代） |
+
+### 5.7 项目级归一/重锚（`timeline normalize`，#1409 §2.7 S7）
+
+**问题**：`#1323` 之前的提取器把 LLM 的**段内计数器**（「本段第几天」）直接落库 → 同一项目内 `time_value` 不在同一坐标系（实测：修屋顶段 `1→8`、年货段 `28→30`、夜袭段 `7→7.99`、另有一段 `3.0 月`）。段与段之间不可比 ⇒ 校验层无论怎么归一都无法还原真实顺序（归一只能修「跨单位」，修不了「同单位跨段重置」）。
+
+**定位**：一次性、**显式**、**用户裁决**的数据修复工具（**不是**自动迁移、**不是**判定层逻辑）：
+
+| 维度 | 规定 |
+|------|------|
+| 命令 | `inkflow timeline normalize --project-id <uuid> [--apply]`（**默认 dry-run**，只报计划不写库；`--json` 输出完整计划） |
+| 算法 | ① 单位归一（§2.7 S2，`时/时辰` 用日锚点，§2.7 S4）；② 按**叙事顺序**遍历**带值且未声明**倒叙/插叙的事件；③ **数值回落 = 新叙事段**，新段起点接在**上一段末尾**（`offset = prev_global`），**段内保留原有相对天数**（`g = offset + (v − 段内最小)`）；④ 单位统一写「日」；⑤ `time_display` 为空时归档**原表达式**（`f"{原值}{原单位}"`） |
+| 豁免 | `time_value = None` 与**任一** `timeline_flag` 非空（已声明倒叙/插叙）的事件**完全不改**（其合法性由声明制保证，§5.4） |
+| 幂等 | 对已归一/单调数据运行 → **0 处改动**（§2.7 S8）；重复 `--apply` 不产生漂移 |
+| 报告（dry-run 与 apply 同构） | `applied: bool`、`segments: int`（识别出的叙事段数）、`changed: int` / `total_valued: int`、`conflicts_before: int`、`conflicts_after: int`、`changes: [{id, title, time_value, time_unit, new_time_value, new_time_unit}]` |
+| ⚠️ 风险声明 | 重锚是**单调投影**：对未声明事件，它按构造消除全部逆序（`conflicts_after = 0`）。因此它是「**让历史数据自洽**」的工具，**不是**「修故事时间线」的工具——真实叙事错误（该报冲突的）会被一并吸收。故 **dry-run 默认 + 显式 `--apply`**，作者须先看 `conflicts_before` 报告再决定 |
+| 边界 | 无事件 / 全部时间未知 → 计划为空；单段单调序列 → `segments=1, changed=0`；`source_chapter_id` 为 NULL 的手工事件同样参与（按叙事序） |
+| 面 | CLI（HTTP）：`GET /projects/{id}/timeline`（全量双线总览，无分页）+ 逐事件 `PATCH /timeline/events/{id}` 复用**既有端点**——**不新增 API 契约**（无 OpenAPI 快照变更）；GUI 接线归后续（#1353/#1410 时基工作） |
+| 与归一的关系 | 归一（§5.2/§5.3，只读投影）= **判定层**；重锚（本节，写库）= **数据层**。二者互补：归一让跨单位数据可比；重锚让段内计数器型历史数据落回同一时基 |
+
+> **为什么不用「抬平到前一条」（`g = max(g, prev)`）**：抬平会把整卷的相对天数压成一条平线（级联丢失段内信息），实测虽也能到 0 冲突，但**代价是抹平数据**——违反 S7 的「保留段内相对天数」。实测对比见 #1409 报告。
 
 ---
 
@@ -749,6 +812,15 @@ consistent = (len(conflicts) == 0)
 | 一致性检查：逆序对且 prev 标记 flashforward | 200，flashbacks 含该项，**不算冲突** |
 | 一致性检查：逆序对且无标记 / 标记为未知值（如 "flshback"） | 200，conflicts 含该 order_conflict，consistent=false |
 | 一致性检查：同刻事件（time_value 相等） | 不冲突（叙事顺序可任意） |
+| 一致性检查：跨单位相邻事件（如 `8 日` → `3 月`） | 200，**不冲突**（归一后 `8 < 90`，§2.7 S2）；反向（`3 月` → `8 日`）→ order_conflict |
+| 一致性检查：`time_unit` 为空 / 未列举（如 `纪元`） | 行为与本 spec v1.1 **完全一致**（因子 1，裸值比较，§2.7 S5 反例守护） |
+| 一致性检查：`时/时辰` 且无前置日级事件 | 日锚点取 0（归一值 ∈ `[0, 1)`）；报/不报与本 spec v1.1 一致（不产生新假阳性） |
+| 一致性检查：段内计数器型数据（跨段回落） | 报 order_conflict（数据在同一时基上确实矛盾）→ 由 `timeline normalize` 修复（§5.7） |
+| `timeline normalize` 默认（无 `--apply`） | 200，报告 `applied=false`，**不写库**（dry-run 为默认） |
+| `timeline normalize --apply` | 逐事件 PATCH；报告 `applied=true` 且 `changed` == 实写条数 |
+| `timeline normalize` 对已归一/单调数据 | `changed=0`（幂等，§2.7 S8） |
+| `timeline normalize` 无带值事件 | `segments=0, changed=0`，不报错 |
+| `timeline normalize`：已声明倒叙/插叙 / 时间未知 | 该事件不出现在 `changes`（完全不改） |
 | 一致性检查：include_flashbacks=false | flashbacks 返回空列表；conflicts/consistent 不变 |
 | 一致性检查：项目不存在 | 404: "项目不存在" |
 | 删除事件（v1.1 真删） | 204；不进入双线视图与一致性检查（物理不存在） |
@@ -884,6 +956,9 @@ CLI 测试: timeline 组（Mock TimelineService）              ~14 cases
 - 已删除事件不参与检查（物理不存在）
 - **确定性/快照**：同一事件集合两次检查 → 逐字段相等（快照断言）
 - 报告视图正确性：event_timeline 按 time_value 升序（未知排末尾）、narrative_order 按叙事位置升序
+- **#1409 单位归一**：`[8日, 3月]` → 0 冲突（反向 `[3月, 8日]` → 1 冲突）；真逆序（同单位 `[10, 5]`）仍报；`时/时辰` 锚定（`[8日, 3时]` → 0 冲突，且 `3时` 归一 = 8.125，**不是** 0.125）；空/未知单位结论与 v1.1 一致（反例守护）；`event_timeline` 视图按归一日尺度排序
+
+**项目级归一/重锚（#1409 §5.7 专项）**：跨段回落序列（如 `[1,8] → [28,30] → [7,7.99]`）→ 续接为单调序列、段内相对差不丢；已声明倒叙/插叙事件**完全不改**；`time_value=None` 不改；单位一并归一到「日」；`time_display` 为空时归档原表达式；**幂等**（对已归一序列再跑 → `changed=0`）；dry-run 不写库（`applied=false`）；`--apply` 逐事件 PATCH 且改写条数 == `changed`
 
 **API**: 8 端点成功路径 / 404 全路径（项目/事件）/ 422 字段校验（标题空/超长、time_value 非有限/越界、清除传非空字符串）/ 无效 UUID → 404 / 双线总览 200 / check 200（include_flashbacks 两态）/ check 冲突示例与合法倒叙示例响应结构
 
@@ -905,7 +980,7 @@ CLI 测试: timeline 组（Mock TimelineService）              ~14 cases
 | 跨模块全维度一致性审计（角色/世界观/大纲/时间线/伏笔联动审计） | **F15 审计服务**（P1-07，Issue 待创建）——F12 只做时间线**内部**双线一致性 |
 | 事件 ↔ 实际章节强绑定（chapter_id、叙事位置 = 章节序 + 段序） | Phase 2+——同 F11 边界声明：F12 管「时间线数据」，F2 管「已创建卷/章」，互不绑定；章节级叙事位置归 Phase 2+ |
 | 树形时间线 / 平行时间线（多线分支、平行世界合并） | Phase 2+——MVP 单线（世界内时间全序 + 叙事顺序全序），多线/分支归 Phase 2+（决策见 §2.2/§12） |
-| 时间单位换算（纪元→年 自动换算、季节偏移） | 不做——time_value 是作者/提取器维护的数值键，time_unit 仅标签；换算需单位定义表，收益不成比例（P5 YAGNI） |
+| ~~时间单位换算（纪元→年 自动换算、季节偏移）~~ | **（v1.2 部分纳入）** 单位→「日」归一（年 365/月 30/周 7/日 1）+ `时/时辰` 日锚点投影 + 段续接重锚**已做**（§2.7 S2/S4/S7，判定层 + `timeline normalize` 工具）；**仍不做**：纪元/历法换算与季节偏移（可配置纪元流速比、闰月、多历法并存）→ 归 **#1353（0.16.0 多纪元最小落地）/ #1410+#1411（0.17.0 完整历法引擎）**。原「收益不成比例（YAGNI）」结论**被 #1409 实测推翻**：不做归一的代价是审计假阳性（7 条）|
 | 时间区间事件（起止时间、区间重叠检测） | Phase 2+——MVP 单点时间（待澄清 Q1） |
 | 事件参与角色多对多（participants 表，供 F14 提取直接落库） | Phase 2+——MVP 经 extra 预留（待澄清 Q2） |
 | 最小修正建议（LIS 算法给出最少调整事件集） | Phase 2+——MVP 相邻对报告 + 双线视图，人工修正（待澄清 Q3） |
@@ -964,6 +1039,10 @@ F12 被依赖:
 | 删除语义 | 单实体真删（v1.1 / #211），无级联 | 单实体模块无级联语义（无子实体）；真删后事件物理不存在，不进入视图与检查 |
 | CLI 布局 | `inkflow timeline` 顶级组 8 个扁平命令（无子组） | 单实体模块（同 F10 world 组布局）；避免顶级命令膨胀；`check`/`view` 为只读命令，人类可读摘要 + `--json` 完整报告 |
 | 更新清除语义 | `time_value`/`timeline_flag` 用 `""` 清除（None = 不修改） | 与 F10 category、F11 arc_id 的既有约定同构；None 与 "" 双语义解决「可空字段无法表达清除」的 Pydantic 更新难题 |
+| **time_value 语义 = 单位化累计时基**（#1409） | `time_value` × `time_unit` = 相对项目时基的累计时长；比较/排序**一律归一到「日」**（§2.7 S1-S5） | 原「time_unit 仅语义、不参与排序」使「多单位共用一个数值键」无人负责 → 真数据实测 7 条审计假阳性（3 条纯跨单位误判）。**备选：让 `time_value` 自带单位（如字符串「3月」）** → 破坏可排序数值键、需全链路类型改造（否决）；**备选：强制写入侧单一时基（拒绝非「日」单位）** → 破坏既有手工数据与 #1353 多纪元方向（否决）。选「归一到日 + 归一表」，代价是 365/30 取近似值（历法引擎 #1410 修正） |
+| **判定层归一 vs 数据层重锚分离**（#1409） | 比较/排序用**只读归一投影**；数据修复用**显式 `timeline normalize`**（dry-run 默认） | 归一修不了「同单位跨段重置」（无基准信息）；而自动重锚是**单调投影**（按构造消除全部逆序）→ 静默执行会把审计永久刷绿、吸收真实错误（违反「degraded ≠ 通过」）。故分层：判定层只做无副作用投影；数据层必须**用户显式裁决** |
+| **重锚用「回落=新段 + 段内续接」而非「抬平到前一条」**（#1409） | 段起点接上一段末尾，段内保留相对天数 | 抬平（`g = prev`）会把整卷压成平线、级联抹平相对信息（#1409 实测：两者都能到 0 冲突，但抬平的信息损失不可接受）；回落分段与「段内计数器」的真实成因一致（LLM 逐章提取，段落边界即计数器重置点） |
+| **归一/重锚不做自动启动迁移**（#1409） | 不随 `create_all` / lifespan 自动执行（对比 #1323 叙事序回填） | #1323 是**位置语义**修正（不改业务数值）；本项是**数值**改写（实测改动 85% 带值事件）且会消除冲突信号 → 必须显式触发（§5.7）。**备选：扩展 `core/migrations_*` 自动回填** → 静默改写用户数据 + 审计失真（否决） |
 
 ---
 
@@ -979,6 +1058,7 @@ F12 被依赖:
 | M6 | CLI timeline 组（信封/退出码/确认交互/check 摘要） | `pytest tests/test_cli_timeline.py -v` 全绿 |
 | M7 | 手工验证：真实项目建事件 → 双线总览 → 检查 → 修正闭环 | 手工验证（`inkflow timeline create` 建 3+ 事件制造逆序 → `inkflow timeline check` 看到冲突 → 加 flashback 标记 → 重查 consistent=true；`inkflow timeline view` 双线正确） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F12 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
+| M9 | **（v1.2 #1409）单位归一 + 项目级重锚** | `pytest backend/tests/unit/domain/services/test_timeline_check.py tests/unit/domain/services/test_timeline_timebase.py -v` 全绿；`pytest tests/cli/test_cli_timeline_ops.py -v` 全绿；`inkflow timeline normalize --project-id <真实项目>` dry-run 报告 `conflicts_before → conflicts_after` |
 
 ---
 
@@ -1020,6 +1100,7 @@ F12 被依赖:
 | timeline get | 事件存在 | 查询 | JSON | 404「事件不存在」 | — |
 | timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除） | JSON | 404；422 | — |
 | timeline delete | 事件存在 | 二次确认（--force 跳过）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除 |
+| timeline normalize | 项目存在 | `GET /projects/{id}/timeline` 取全量事件 → 计算归一/重锚计划（dry-run 默认）→ `--apply` 时逐事件 `PATCH /timeline/events/{id}` | 「🧭 时间线归一: 识别 N 个叙事段，将改写 M/K 条事件（冲突 7 → 0）；dry-run 未写入，加 --apply 执行」/ `--json` 完整计划 | 404 NOT_FOUND（项目不存在）；VALIDATION_ERROR（无效 UUID）；DB_ERROR | 无带值事件 → `segments=0, changed=0`；已归一 → `changed=0`（幂等）；已声明倒叙/时间未知不改 |
 | ~~timeline restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 
 > 错误码：NOT_FOUND / VALIDATION_ERROR / DB_ERROR（**无 LLM_ERROR**——F12 无 LLM）。
@@ -1032,6 +1113,8 @@ F12 被依赖:
 - A4：删除事件 → 双线总览与 check 均不含该事件（物理不存在，不可恢复）
 - A5：0/1 个活动事件 → 200 consistent=true（checked=0/1）；全部事件时间未知 → checked=0、skipped=n、consistent=true
 - A6：include_flashbacks=false → flashbacks 返回空列表；conflicts/consistent 不变
+- A7（#1409）：`8 日` → `3 月` 相邻**不报**冲突；`3 月` → `8 日` **报** order_conflict；`时/时辰` 归一到「日锚点 + 时/24」（非 `/24`）；`time_unit` 为空时结论与 v1.1 一致
+- A8（#1409）：`timeline normalize` 默认 dry-run **不改库**；`--apply` 后 `audit/check` 的 order_conflict 收敛（真实项目实测 7 → 0）；重复运行 `changed=0`
 
 ### 14.4 Spec 漂移标注（追加时核对实现 routers/timeline.py）
 

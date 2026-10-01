@@ -106,7 +106,7 @@ class TimelineEventORM(EntityUuidMixin, Base):
         nullable=False,
         default="",
     )
-    """时间单位标签 (≤ 20 字符，去空白；仅语义说明，不参与排序)."""
+    """时间单位标签 (≤ 20 字符，去空白；`time_value` 的物理尺度，参与归一排序，#1409 §2.7)."""
 
     time_display: Mapped[str] = mapped_column(
         String(100),

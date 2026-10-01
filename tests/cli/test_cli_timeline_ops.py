@@ -393,3 +393,177 @@ class TestTimelineHumanOutput:
         )
         assert result.exit_code == 0
         assert "事件已更新: [林尘觉醒金手指·改]" in result.output
+
+
+# ══════════════════════════════════════════════════════════════════════
+# #1409 追加段：`timeline normalize`（项目级归一/重锚）+ 人类输出带 time_value
+# 契约源: specs/f12-timeline/spec.md §4.1/§4.2/§5.7（默认 dry-run；--apply 逐事件 PATCH）
+# RED 预期: 命令尚未注册 → CliRunner 返回 exit_code == 2（UsageError），断言失败
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _tl_event(
+    title: str,
+    value: float | None,
+    unit: str,
+    pos: int,
+    flag: str = "",
+    display: str = "",
+) -> dict:
+    """构造 API 返回的时间线事件 JSON（`normalize` 的输入面 = 双线总览 narrative_order）."""
+    return {
+        "id": str(uuid.uuid4()),
+        "project_id": str(PID),
+        "title": title,
+        "description": "",
+        "time_value": value,
+        "time_unit": unit,
+        "time_display": display,
+        "narrative_position": pos,
+        "timeline_flag": flag,
+        "extra": {},
+        "created_at": "2026-08-01T10:00:00Z",
+        "updated_at": "2026-08-01T10:00:00Z",
+    }
+
+
+def _legacy_view() -> dict:
+    """段内计数器型历史数据 `[1 日, 8 日, 3 日, 5 日]`（回落 = 新段）."""
+    events = [
+        _tl_event("甲", 1.0, "日", 1),
+        _tl_event("乙", 8.0, "日", 2),
+        _tl_event("丙", 3.0, "日", 3),
+        _tl_event("丁", 5.0, "日", 4),
+    ]
+    return {
+        "project_id": str(PID),
+        "total": len(events),
+        "event_timeline": events,
+        "narrative_order": events,
+    }
+
+
+class TestNormalizeCmd:
+    """`inkflow timeline normalize` —— 默认 dry-run，`--apply` 才落库（spec §5.7）."""
+
+    def test_dry_run_is_default_and_does_not_write(self, cli_runner, fake_http_client):
+        """默认（无 --apply）→ 只读双线总览、**不** PATCH 任何事件."""
+        fake_http_client.get.return_value = _legacy_view()
+        result = cli_runner.invoke(
+            app,
+            ["normalize", "--project-id", str(PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert fake_http_client.get.await_count == 1
+        assert str(fake_http_client.get.await_args.args[0]).endswith(f"/projects/{PID}/timeline")
+        fake_http_client.patch.assert_not_awaited()
+        assert "dry-run" in result.output or "未写入" in result.output
+
+    def test_json_report_shape(self, cli_runner, fake_http_client):
+        """--json → 信封 `{ok, data}`；报告字段齐（applied/segments/changed/…/changes）."""
+        fake_http_client.get.return_value = _legacy_view()
+        result = cli_runner.invoke(
+            app,
+            ["normalize", "--project-id", str(PID)],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is True
+        data = payload["data"]
+        assert data["applied"] is False
+        assert data["segments"] == 2
+        assert data["total_valued"] == 4
+        assert data["changed"] == 2
+        assert data["conflicts_before"] == 1
+        assert data["conflicts_after"] == 0
+        assert {c["title"] for c in data["changes"]} == {"丙", "丁"}
+        assert all(c["new_time_unit"] == "日" for c in data["changes"])
+
+    def test_apply_patches_each_changed_event(self, cli_runner, fake_http_client):
+        """--apply → 逐事件 PATCH（复用既有端点），body 含新值与单位「日」."""
+        fake_http_client.get.return_value = _legacy_view()
+        fake_http_client.patch.return_value = _tl_event("丙", 8.0, "日", 3)
+        result = cli_runner.invoke(
+            app,
+            ["normalize", "--project-id", str(PID), "--apply"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        assert fake_http_client.patch.await_count == 2
+        bodies = [call.kwargs["json"] for call in fake_http_client.patch.await_args_list]
+        assert all(b["time_unit"] == "日" for b in bodies)
+        assert sorted(b["time_value"] for b in bodies) == [8.0, 10.0]
+        for call in fake_http_client.patch.await_args_list:
+            assert str(call.args[0]).startswith("/timeline/events/")
+        payload = json.loads(result.stdout)
+        assert payload["data"]["applied"] is True
+        assert payload["data"]["changed"] == 2
+
+    def test_no_valued_events_is_noop(self, cli_runner, fake_http_client):
+        """全部时间未知 → `segments=0, changed=0`，不 PATCH、不报错."""
+        view = {
+            "project_id": str(PID),
+            "total": 1,
+            "event_timeline": [],
+            "narrative_order": [_tl_event("未知", None, "", 1)],
+        }
+        fake_http_client.get.return_value = view
+        result = cli_runner.invoke(
+            app,
+            ["normalize", "--project-id", str(PID), "--apply"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        fake_http_client.patch.assert_not_awaited()
+        data = json.loads(result.stdout)["data"]
+        assert data["segments"] == 0
+        assert data["changed"] == 0
+        assert data["total_valued"] == 0
+
+    def test_invalid_uuid_maps_to_not_found(self, cli_runner, fake_http_client):
+        """非法 UUID → NOT_FOUND（spec §7），不触达内核."""
+        result = cli_runner.invoke(
+            app,
+            ["normalize", "--project-id", "not-a-uuid"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "NOT_FOUND"
+        fake_http_client.get.assert_not_awaited()
+
+
+class TestHumanOutputShowsTimeValue:
+    """#1409 拍板 3：人类输出必须显示**当前** time_value（否则改完看不出变化）."""
+
+    def test_get_human_includes_current_time_value(self, cli_runner, fake_http_client):
+        fake_http_client.get.return_value = _make_event(
+            title="林尘觉醒金手指",
+            time_value=317.5,
+            time_unit="年",
+            time_display="青元历 317 年秋",
+        )
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "青元历 317 年秋" in result.output
+        assert "time_value=317.5" in result.output
+
+    def test_get_human_unknown_time_unchanged(self, cli_runner, fake_http_client):
+        """时间未知（无 display）→ 仍显示「时间未知」（向后兼容）."""
+        fake_http_client.get.return_value = _make_event(
+            time_value=None, time_unit="", time_display=""
+        )
+        result = cli_runner.invoke(
+            app,
+            ["get", "--id", str(uuid.uuid4())],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "时间未知" in result.output
