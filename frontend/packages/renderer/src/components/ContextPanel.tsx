@@ -106,25 +106,43 @@ function GroupHeader({
   title,
   source,
   onPick,
+  checkedCount = 0,
+  onClear,
 }: {
   title: string;
   source: ContextSourceType;
   onPick: (source: ContextSourceType) => void;
+  checkedCount?: number;
+  onClear?: (source: ContextSourceType) => void;
 }) {
   const { t } = useI18n();
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="min-w-0 truncate text-[13px] font-medium">{title}</span>
       {PICKER_SOURCES.has(source) && (
-        <button
-          type="button"
-          data-testid={`context-pick-${source}`}
-          aria-label={t('write.context.injectSelect')}
-          className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-          onClick={() => onPick(source)}
-        >
-          {t('write.context.injectSelect')}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {onClear && (
+            <button
+              type="button"
+              data-testid={`context-clear-${source}`}
+              aria-label={`${t('write.context.clearCategory')} ${title}`}
+              disabled={checkedCount === 0}
+              className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => onClear(source)}
+            >
+              {t('write.context.clearCategory')}
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid={`context-pick-${source}`}
+            aria-label={t('write.context.injectSelect')}
+            className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            onClick={() => onPick(source)}
+          >
+            {t('write.context.injectSelect')}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -505,6 +523,20 @@ export function ContextPanel({
     void runAssemble(full);
   };
 
+  /** #1405：分类一键清除 —— 仅清空该类勾选，其余两类保持当前值（#1235：显式空 = 该类不注入） */
+  const clearCategory = (source: ContextSourceType) => {
+    userTouchedRef.current = true;
+    const next: ContextOverride = {
+      character_ids: source === 'character_setting' ? [] : checkedCharacterIds,
+      foreshadowing_ids: source === 'foreshadowing' ? [] : checkedForeshadowingIds,
+      world_ids: source === 'world_setting' ? [] : checkedWorldIds,
+    };
+    setCheckedCharacterIds(next.character_ids);
+    setCheckedForeshadowingIds(next.foreshadowing_ids);
+    setCheckedWorldIds(next.world_ids);
+    void runAssemble(next);
+  };
+
   return (
     <aside
       data-testid="context-panel"
@@ -590,6 +622,8 @@ export function ContextPanel({
                 source={source}
                 title={t(SOURCE_TITLE_KEYS[source] ?? source)}
                 onPick={(s) => void openPicker(s)}
+                onClear={clearCategory}
+                checkedCount={source === 'character_setting' ? checkedCharacterIds.length : source === 'world_setting' ? checkedWorldIds.length : checkedForeshadowingIds.length}
               />
             ))
           : null}
@@ -623,7 +657,7 @@ export function ContextPanel({
                   data-testid={`context-block-${source}`}
                   className="rounded-md border border-line bg-surface p-3"
                 >
-                  <GroupHeader title={title} source={source} onPick={(s) => void openPicker(s)} />
+                  <GroupHeader title={title} source={source} onPick={(s) => void openPicker(s)} onClear={clearCategory} checkedCount={source === 'character_setting' ? checkedCharacterIds.length : source === 'world_setting' ? checkedWorldIds.length : checkedForeshadowingIds.length} />
                   {blocks.length === 0 ? (
                     <div className="mt-2 text-[12px] leading-relaxed text-ink-3">
                       {t('common.empty')}

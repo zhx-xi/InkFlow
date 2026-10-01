@@ -205,6 +205,8 @@ button{font-family:inherit;cursor:pointer}
 .ctx-card .card-title{font-size:13px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctx-card .pick-btn{flex:none;border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:2px 6px;white-space:nowrap}
 .ctx-card .pick-btn:hover{background:var(--surface-3);color:var(--ink)}
+.ctx-card .card-actions{display:flex;align-items:center;gap:6px;flex:none}
+.ctx-card .clear-btn:disabled{opacity:.4;cursor:not-allowed}
 .ctx-card .empty-tip{margin-top:8px;font-size:12px;color:var(--ink-3)}
 .ctx-item{margin-top:8px;display:flex;gap:8px;align-items:flex-start}
 .ctx-item input[type=checkbox]{margin-top:2px;accent-color:var(--accent)}
@@ -580,17 +582,17 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
                 <div class="ctx-outline">第 12 章 剑心蒙尘 —— 情节点：苏云舟夜访剑冢，发现师父闭关的真相与二十年前剑冢异动有关。</div>
               </div>
               <div class="ctx-card" data-testid="context-block-character_setting">
-                <div class="card-head"><span class="card-title">角色</span><button class="pick-btn">＋ 选择注入</button></div>
+                <div class="card-head"><span class="card-title">角色</span><div class="card-actions"><button class="pick-btn clear-btn" data-testid="context-clear-character_setting">清空</button><button class="pick-btn">＋ 选择注入</button></div></div>
                 <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">苏云舟 · 主角</span><span class="c">青云宗弟子，剑心澄明；本卷面临「剑心蒙尘」心魔。</span></span></label>
                 <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">林晚照 · 重要配角</span><span class="c">师妹，善医术；执意随师兄下山。</span></span></label>
               </div>
               <div class="ctx-card" data-testid="context-block-world_setting">
-                <div class="card-head"><span class="card-title">世界观</span><button class="pick-btn">＋ 选择注入</button></div>
+                <div class="card-head"><span class="card-title">世界观</span><div class="card-actions"><button class="pick-btn clear-btn" data-testid="context-clear-world_setting">清空</button><button class="pick-btn">＋ 选择注入</button></div></div>
                 <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">青云宗</span><span class="c">修仙宗门，坐落云海之巅，以剑修闻名。</span></span></label>
                 <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">剑冢</span><span class="c">历代掌门葬剑之地，禁地，剑鸣可闻百里。</span></span></label>
               </div>
               <div class="ctx-card" data-testid="context-block-foreshadowing">
-                <div class="card-head"><span class="card-title">伏笔</span><button class="pick-btn">＋ 选择注入</button></div>
+                <div class="card-head"><span class="card-title">伏笔</span><div class="card-actions"><button class="pick-btn clear-btn" data-testid="context-clear-foreshadowing">清空</button><button class="pick-btn">＋ 选择注入</button></div></div>
                 <label class="ctx-item"><input type="checkbox" checked /><span><span class="t">师父闭关的真相</span><span class="c">与二十年前剑冢异动有关；卷末揭晓。</span></span></label>
               </div>
               <!-- #1349：本章已注入（回执面）——「上一章生成时**实际**注入了什么」。

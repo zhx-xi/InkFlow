@@ -528,7 +528,7 @@ export const en: Record<string, string> = {
   'write.context.tokens': '{total}/{budget} tokens',
   'write.context.injectSelect': '+ Select inject', 'write.context.pickerSearch': 'Search existing settings...',
   'write.context.pickerAppend': 'Append inject',
-  'write.context.clearAll': 'Clear', 'write.context.preselectApplied': 'Preselected by outline', 'write.context.preselectFallback': 'Preselect unavailable, all selected', 'write.context.preselectPending': 'Agent preselecting…', 'write.context.selectAll': 'Select all',
+  'write.context.clearAll': 'Clear', 'write.context.preselectApplied': 'Preselected by outline', 'write.context.preselectFallback': 'Preselect unavailable, all selected', 'write.context.preselectPending': 'Agent preselecting…', 'write.context.selectAll': 'Select all', 'write.context.clearCategory': 'Clear',
   'write.stream.generating': 'Generating',
   'write.stream.stop': 'Stop',
   'write.stream.done': '{words} words · {model} · format {valid}',
