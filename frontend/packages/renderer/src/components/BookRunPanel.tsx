@@ -10,6 +10,7 @@ import { startPolling } from '../lib/polling';
 import { useBookStore } from '../stores/book';
 import type { InterveneDiff } from '../api/books';
 import { BookSummaryPanel } from './BookSummaryPanel';
+import { ConfirmDialog } from './ConfirmDialog';
 import { ExecutionTraceRow } from './ExecutionTraceRow';
 import { VolumeHITLDialog } from './VolumeHITLDialog';
 
@@ -35,6 +36,7 @@ export function BookRunPanel() {
   const { t } = useI18n();
   const [showSummary, setShowSummary] = useState(false);
   const [reasonExpanded, setReasonExpanded] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const runId = useBookStore((s) => s.runId);
   const runStatus = useBookStore((s) => s.runStatus);
   const progressReason = useBookStore((s) => s.progressReason);
@@ -44,6 +46,7 @@ export function BookRunPanel() {
   const density = useBookStore((s) => s.density);
   const interveneDiff = useBookStore((s) => s.interveneDiff);
   const loadRunStatus = useBookStore((s) => s.loadRunStatus);
+  const resetRun = useBookStore((s) => s.resetRun);
   const interveneRun = useBookStore((s) => s.interveneRun);
   const setDensity = useBookStore((s) => s.setDensity);
   const clearInterveneDiff = useBookStore((s) => s.clearInterveneDiff);
@@ -169,6 +172,16 @@ export function BookRunPanel() {
             >
               {t('book.run.summary')}
             </button>
+            {runStatus !== 'running' && (
+              <button
+                type="button"
+                data-testid="run-reset"
+                className="rounded border border-line px-2 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3"
+                onClick={() => setResetOpen(true)}
+              >
+                {t('book.run.reset')}
+              </button>
+            )}
           </div>
           {interveneDiff !== null && (
             <div
@@ -227,6 +240,21 @@ export function BookRunPanel() {
             </div>
           )}
           {showSummary && <BookSummaryPanel />}
+          {resetOpen && (
+            <ConfirmDialog
+              open={resetOpen}
+              title={t('book.run.reset.title')}
+              message={t('book.run.reset.message')}
+              confirmText={t('book.run.reset.confirm')}
+              danger
+              testidPrefix="run-reset"
+              onConfirm={() => {
+                setResetOpen(false);
+                void resetRun();
+              }}
+              onOpenChange={(open) => setResetOpen(open)}
+            />
+          )}
           <VolumeHITLDialog />
         </div>
       )}
