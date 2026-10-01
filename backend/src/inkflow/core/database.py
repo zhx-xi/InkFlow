@@ -24,7 +24,10 @@ from inkflow.core.migrations_agent_executions import (
     ensure_agent_executions_thread_id_column,
     ensure_agent_executions_trace_column,
 )
-from inkflow.core.migrations_chapter import ensure_chapters_writing_requirements_column
+from inkflow.core.migrations_chapter import (
+    ensure_chapters_previous_content_column,
+    ensure_chapters_writing_requirements_column,
+)
 from inkflow.core.migrations_chapter_audit import ensure_audit_logs_findings_column
 
 # 列/表迁移已抽至 core/migrations_{chapter,project,timeline_position,character_relation}.py
@@ -50,6 +53,7 @@ __all__ = [
     "ensure_agent_executions_thread_id_column",
     "ensure_agent_executions_trace_column",
     "ensure_audit_logs_findings_column",
+    "ensure_chapters_previous_content_column",
     "ensure_chapters_writing_requirements_column",
     "ensure_character_relations_merged_into_knowledge",
     "ensure_entity_uuid_columns",

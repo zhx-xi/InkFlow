@@ -237,6 +237,9 @@ class ManageBookParams(_MCPParams):
     target: str | None = None
     to: str | None = None
     payload: dict | None = None
+    # #1430：仅 `run` 用；成对（只给其一 → 服务端 422）
+    force: bool | None = None
+    confirm_overwrite: bool | None = None
 
 
 class ManageConfigParams(_MCPParams):

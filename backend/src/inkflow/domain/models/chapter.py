@@ -537,6 +537,8 @@ class Chapter(BaseModel):
     volume_id: uuid.UUID | None = None
     title: str
     content: str = ""
+    previous_content: str | None = None
+    """#1430 A2：被覆盖掉的上一稿正文（None=无旧稿）；经 update_chapter 覆盖写自动落位。"""
     status: ChapterStatus = ChapterStatus.DRAFT
     word_count: int = 0
     order_index: float = 0.0

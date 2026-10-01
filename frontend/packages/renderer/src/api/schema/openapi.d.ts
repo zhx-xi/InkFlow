@@ -912,6 +912,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chapters/{chapter_id}/restore-previous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Previous Chapter Content
+         * @description 恢复上一稿（#1430 A2）：previous_content 写回 content（双向切换，可再切回）.
+         *
+         *     章不存在 → 404「章节不存在」；无可恢复的旧稿（previous_content 空/纯空白）
+         *     → 409「无可恢复的旧稿」；成功 → 200 章 JSON（含恢复后的 previous_content）。
+         */
+        post: operations["restore_previous_chapter_content_api_v1_chapters__chapter_id__restore_previous_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/character-groups/{group_id}": {
         parameters: {
             query?: never;
@@ -4014,6 +4037,16 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Confirm Overwrite
+             * @default false
+             */
+            confirm_overwrite: boolean;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
             /** Limits */
             limits?: {
                 [key: string]: number;
@@ -8061,6 +8094,37 @@ export interface operations {
             query?: {
                 target_volume_id?: string | null;
             };
+            header?: never;
+            path: {
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_previous_chapter_content_api_v1_chapters__chapter_id__restore_previous_post: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 chapter_id: string;

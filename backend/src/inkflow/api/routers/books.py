@@ -56,6 +56,10 @@ class BookRunRequest(BaseModel):
     mode: str = "static"
     config: dict | None = None
     """agentic 模式配置透传（仅 mode="agentic" 生效；None → 默认 AgenticBookConfig）。"""
+    force: bool = False
+    """#1430 方案 A：显式跳过「内容已写」安全阀并覆盖正文（覆盖即数据丢失）。"""
+    confirm_overwrite: bool = False
+    """#1430 二次确认位；必须与 force 成对（只给其一 → 服务层 ValueError → 422）。"""
 
 
 class ConfirmRunRequest(BaseModel):
@@ -587,8 +591,15 @@ async def start_run(
 
     limits = BookLimits(**data.limits) if data.limits is not None else None
     agentic_config = AgenticBookConfig(**data.config) if data.config is not None else None
+    # #1430：非 force 请求调用面逐字不变（两个关键字只在显式给位时出现）
+    prepare_kwargs: dict[str, bool] = {}
+    if data.force or data.confirm_overwrite:
+        prepare_kwargs["force"] = data.force
+        prepare_kwargs["confirm_overwrite"] = data.confirm_overwrite
     try:
-        result = await svc.prepare_run(data.writing_plan_id, limits, mode=data.mode)
+        result = await svc.prepare_run(
+            data.writing_plan_id, limits, mode=data.mode, **prepare_kwargs
+        )
     except ChapterAlreadyWrittenError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except ValueError as e:
@@ -601,7 +612,14 @@ async def start_run(
     if result["status"] != "running":
         return result
     spawn_background_task(
-        _run_book(svc, data.writing_plan_id, limits, mode=data.mode, config=agentic_config),
+        _run_book(
+            svc,
+            data.writing_plan_id,
+            limits,
+            mode=data.mode,
+            config=agentic_config,
+            force=data.force,
+        ),
         key=result["run_id"],
     )
     return result
@@ -613,21 +631,28 @@ async def _run_book(
     limits: BookLimits | None,
     mode: str,
     config: AgenticBookConfig | None = None,
+    *,
+    force: bool = False,
 ) -> None:
     """后台执行体（fire-and-forget）：write_book/write_book_volume/write_book_agentic
-    全量执行；未预期异常 → mark_failed 落库（状态映射 running → failed）。"""
+    全量执行；未预期异常 → mark_failed 落库（状态映射 running → failed）。
+
+    #1430：`force=True` 时给三个 write 方法透传 `force=True`（否则 force 只跳过入口
+    预检、后台写正文仍撞闸 → 特性等于没做）；非 force 时调用面逐字不变。
+    """
     # #931 根因 5：agent/book 长任务非 HTTP 请求上下文——任务体起点锚定运行级
     # correlation（一次 run 一条链，覆盖 HTTP 请求级值）；trace contextvar 沿用
     # 请求继承的根（create_task 拷贝 context，asyncio 天然传播）。finally 复位。
     corr_token = set_request_correlation_id(str(plan_id))
     try:
+        write_kwargs: dict[str, bool] = {"force": True} if force else {}
         try:
             if mode == "agentic":
-                await svc.write_book_agentic(plan_id, limits, config)
+                await svc.write_book_agentic(plan_id, limits, config, **write_kwargs)
             elif mode == "volume":
-                await svc.write_book_volume(plan_id, limits)
+                await svc.write_book_volume(plan_id, limits, **write_kwargs)
             else:
-                await svc.write_book(plan_id, limits)
+                await svc.write_book(plan_id, limits, **write_kwargs)
         except Exception:
             with contextlib.suppress(Exception):
                 await svc.mark_failed(str(plan_id))

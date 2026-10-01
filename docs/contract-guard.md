@@ -95,6 +95,7 @@
 | `backend/src/inkflow/i18n/prompts/{zh,en}/context_preselect.yaml` | 模板变量 `outline` / `requirements` / `candidates`（#1379） | `backend/tests/unit/api/routers/test_context_preselect_api_1379.py`（端到端经真模板渲染） |
 | `backend/src/inkflow/domain/services/writing_service.py` | 写作链编排 | `backend/tests/unit/domain/services/test_writing_service.py` |
 | `backend/src/inkflow/api/routers/books.py` | writer factory 装配 | `tests/api/test_books_api.py`（另见 `test_books_api_v12.py` / `test_books_api_stage4.py` / `test_books_api_background.py` / `test_books_api_start_mode.py`） |
+| `backend/src/inkflow/api/routers/books.py` | **请求 DTO 字段面**（`BookRunRequest` / `ConfirmRunRequest` / `InterveneRequest` / `Planner*Request`，2026-10-02 #1430 登记） | ① **MCP A8 护栏**：`ManageBookParams ⊇` 这些 DTO 的字段面 → `backend/tests/unit/mcp/test_mcp_tool_surface_933.py::TestSchemaDriftGuard933::test_book_params_superset_of_book_router_dtos`（`unit-backend` 恒跑；给 DTO 加字段却不同步 MCP schema **必红**，实测 #1430 撞红一次）；② OpenAPI 快照漂移 → `ci_cd/openapi_snapshot.json` 重导 + `lint-frontend` 的 `gen:api` 漂移门禁；③ 端点行为 → `tests/api/test_book_force_overwrite_1430.py` |
 
 ### ⚠️ 本门禁的覆盖边界（不要让「门禁全绿」冒充「契约完好」）
 

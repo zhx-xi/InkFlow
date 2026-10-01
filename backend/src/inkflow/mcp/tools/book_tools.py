@@ -167,6 +167,8 @@ async def _route_book(
                     "limits": params.limits,
                     "mode": params.mode,
                     "config": params.config,
+                    "force": params.force,
+                    "confirm_overwrite": params.confirm_overwrite,
                 }
             ),
             timeout=timeout,

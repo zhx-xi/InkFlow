@@ -69,6 +69,7 @@ from inkflow.core.database import (
     ensure_agent_role_key_column,
     ensure_agents_grants_column,
     ensure_audit_logs_findings_column,
+    ensure_chapters_previous_content_column,
     ensure_chapters_writing_requirements_column,
     ensure_character_drop_is_deleted,
     ensure_character_relations_merged_into_knowledge,
@@ -151,6 +152,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_character_relations_merged_into_knowledge)
         await conn.run_sync(ensure_characters_brief_column)
         await conn.run_sync(ensure_chapters_writing_requirements_column)
+        await conn.run_sync(ensure_chapters_previous_content_column)
         await conn.run_sync(ensure_audit_logs_findings_column)
         await conn.run_sync(ensure_outline_drop_is_deleted)
         # #1323：时间线叙事序一次性回填为合成序（幂等；旧库自动修正跨章碰撞）

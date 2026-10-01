@@ -40,6 +40,8 @@ class ChapterORM(EntityUuidMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    previous_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """#1430 A2：被覆盖掉的上一稿正文（None = 无旧稿）；备份落点见 spec §5.8。"""
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
     word_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     order_index: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

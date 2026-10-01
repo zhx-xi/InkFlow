@@ -25,3 +25,19 @@ def ensure_chapters_writing_requirements_column(conn: Connection) -> None:
         return
     if "writing_requirements" not in names:
         conn.execute(text("ALTER TABLE chapters ADD COLUMN writing_requirements TEXT"))
+
+
+def ensure_chapters_previous_content_column(conn: Connection) -> None:
+    """#1430 A2：为既有库 chapters 补 previous_content 列（幂等，conn.run_sync 调用）.
+
+    镜像 ensure_chapters_writing_requirements_column：PRAGMA 检缺列才 ALTER；表不存在
+    （全新环境）→ no-op，等 create_all 建新表（ORM 已含该列）。**零回填**：存量行没有
+    「被本次覆盖掉的那一版」这个事实，凭空把 content 抄进 previous_content 会伪造出
+    一份并不存在的旧稿（依据 issue #1430 迁移契约四形态）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(chapters)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return
+    if "previous_content" not in names:
+        conn.execute(text("ALTER TABLE chapters ADD COLUMN previous_content TEXT"))

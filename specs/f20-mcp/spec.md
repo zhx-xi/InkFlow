@@ -22,6 +22,11 @@
 > ③ **通用加固**：19 个参数模型全部 `extra="forbid"` —— 未声明字段由「静默丢弃 + `ok=True` 无变更」改为 `INVALID_ARGS`（违反「显式失败优于静默错误」，issue #1233 通用要求）。
 > `mode="agentic"` / `show_context=true` 与 `action` 的组合性约束（仅 `generate`）在工具层显式校验，非静默忽略。**仍零新增 REST 端点**。
 
+> **Spec 变更**（v1.4 → v1.5，2026-10-02，#1430）：**工具数不变（仍 19）**，`manage_book` 补两个 run 字段。
+> ① `run` action 增 `force` / `confirm_overwrite`（`method="mcp"` 的二次确认对：只给其一 → 服务端 422）；
+> ② 随 F44 §5.8（v1.11）「`book run --force` 覆盖正文 + A2 旧稿备份落点」同步 —— **A8 护栏（inputSchema ⊇ DTO 字段面）把 MCP 面与新增的 `BookRunRequest.force/confirm_overwrite` 绑在一起**，本增量即该护栏的联保修订；
+> ③ 未传时 `_compact` 剔除 None → body 不含两位（既有调用面逐字不变）。**仍零新增 REST 端点**。
+
 > **模块类型声明**: 本模块为 **第 19 变体「MCP 表现层（薄客户端经 HTTP）型」**——InkFlow 第三表现层（与 `api/` REST、`cli/` 并列），对外部 agent 提供 MCP 行业标准 stdio 接口。编号依据 AGENTS.md 模块类型谱系（**F38=第 18 变体为最新无冲突基线**，接续编号）；⚠️ 历史变体编号存在漂移（f24/f27 均自述第 11、f30/f29 均自述第 13、f21/f36 均自述第 15），本 spec 以 F38=18 为基线声明第 19，冲突以 ADR-019 v5+ 为准。
 
 ---
@@ -106,7 +111,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | `search` | search | project_id, query, content_type | GET `/projects/{pid}/search`（F22） |
 | `manage_session` | create / list / get / pause / resume / complete / fail | project_id, session_type, id, logs | POST/GET `/sessions` · GET/PATCH `/sessions/{id}` · POST `/sessions/{id}/pause\|resume\|complete\|fail` · POST/GET `/sessions/{id}/logs` |
 | `tool_search` | list | （无；返回当前装配的工具面清单） | 本地装配结果（不经 HTTP，同 `inkflow agent tools list` 豁免先例） |
-| `manage_book` | plan_start / plan_respond / plan_auto / plan_show / plan_confirm / run / status / confirm / intervene / summary | project_id, one_liner, mode, source_outline_id, session_id, answers, auto, confirm, writing_plan_id, limits, config, run_id, approved, decision, intervene_action, target, to, payload | POST/GET `/agent/books/planner` · GET `/agent/books/planner/{sid}` · POST `/agent/books/planner/{sid}/respond` · POST `/agent/books/runs` · GET `/agent/books/runs/{rid}` · POST `/agent/books/runs/{rid}/confirm\|intervene` · GET `/agent/books/runs/{rid}/summary`（F44，零新增端点） |
+| `manage_book` | plan_start / plan_respond / plan_auto / plan_show / plan_confirm / run / status / confirm / intervene / summary | project_id, one_liner, mode, source_outline_id, session_id, answers, auto, confirm, writing_plan_id, limits, config, run_id, approved, decision, intervene_action, target, to, payload, force, confirm_overwrite（#1430：仅 `run` 用，成对） | POST/GET `/agent/books/planner` · GET `/agent/books/planner/{sid}` · POST `/agent/books/planner/{sid}/respond` · POST `/agent/books/runs` · GET `/agent/books/runs/{rid}` · POST `/agent/books/runs/{rid}/confirm\|intervene` · GET `/agent/books/runs/{rid}/summary`（F44，零新增端点；#1430 的 `force`/`confirm_overwrite` 经 POST `/agent/books/runs` body 透传） |
 | `manage_config` | provider_list / llm_status | project_id（llm_status 可选，带则附 vector status 摘要） | GET `/provider-configs`（key_saved + models 注册态）· GET `/projects/{pid}/vector/status`（llm_status 可选段）。**只读：不暴露 set-key / PATCH 写面**（凭据纪律，宿主侧自管） |
 | `manage_log` | query | level, caller_type, project_id, from_ts, to_ts, q, correlation_id, trace_id, page, limit | GET `/logs`（#888 结构化日志查询；from_ts/to_ts → 端点查询参数 `from`/`to`） |
 
@@ -497,6 +502,7 @@ F20 被依赖:
 | A16 | 组合性显式失败 | `mode=agentic` / `show_context=true` 用于非 `generate` → `INVALID_ARGS` + 零 HTTP | 同上（`::TestWriteMode1233` / `::TestWriteShowContext1233` 各一例） |
 | A17 | `manage_project.config` 往返 | `create` / `update` 透传 `config`（body 该键逐字相等）；未传 `config` 时 **body 无该键**（不凭默认值覆盖既有配置）。持久化侧由 `test_project_service.py::test_update_merges_config_subobject_fields` + `tests/api/test_project_api.py::test_update_project_config_default_words` 锁定 | `test_mcp_tool_surface_1233.py::TestManageProjectConfig1233` |
 | A18 | 既有 MCP 用例全绿 | `pytest backend/tests/unit/mcp/ -q`（6 个既有文件 + 新契约文件） | `unit-backend` job |
+| A19 | #1430 联保：`manage_book` 的 `force`/`confirm_overwrite` 随 `BookRunRequest` 同步（A8 护栏的必然推论），且**真的透传**到 POST `/agent/books/runs` body（未传时两位不出现） | `test_mcp_tool_surface_933.py::TestSchemaContract933::test_manage_book_actions_and_fields` · `::TestBookToolSurface::test_run_force_overwrite_passthrough` / `test_run_without_force_omits_both_flags`；contract 表 `test_mcp_schemas.py::_CONTRACT` | `unit-backend` job |
 
 > **MCP 工具面不在 `ci.yml` 的 `contract` filter 内**（核查结论与 checklist 见 `docs/contract-guard.md` §MCP 工具面契约源）——改 MCP schema **不触发** `e2e-frontend-settings`；工具面由恒跑 job `unit-backend` / `integration-cli-backend` 守卫。
 

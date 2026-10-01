@@ -374,6 +374,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "previous_content": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "project_id": {
         "has_server_default": false,
         "nullable": false

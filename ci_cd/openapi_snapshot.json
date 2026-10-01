@@ -1075,6 +1075,16 @@
             ],
             "title": "Config"
           },
+          "confirm_overwrite": {
+            "default": false,
+            "title": "Confirm Overwrite",
+            "type": "boolean"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
           "limits": {
             "anyOf": [
               {
@@ -8479,6 +8489,47 @@
           }
         },
         "summary": "Move Chapter",
+        "tags": [
+          "章节"
+        ]
+      }
+    },
+    "/api/v1/chapters/{chapter_id}/restore-previous": {
+      "post": {
+        "description": "恢复上一稿（#1430 A2）：previous_content 写回 content（双向切换，可再切回）.\n\n章不存在 → 404「章节不存在」；无可恢复的旧稿（previous_content 空/纯空白）\n→ 409「无可恢复的旧稿」；成功 → 200 章 JSON（含恢复后的 previous_content）。",
+        "operationId": "restore_previous_chapter_content_api_v1_chapters__chapter_id__restore_previous_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chapter_id",
+            "required": true,
+            "schema": {
+              "title": "Chapter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Previous Chapter Content",
         "tags": [
           "章节"
         ]
