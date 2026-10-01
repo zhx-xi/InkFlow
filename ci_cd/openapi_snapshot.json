@@ -2341,6 +2341,90 @@
         "title": "KnowledgeExtractRequest",
         "type": "object"
       },
+      "KnowledgeGraphImportIssue": {
+        "description": "导入过程中被跳过 / 拒绝的一条边.",
+        "properties": {
+          "edge_id": {
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "skipped",
+              "failed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "edge_id",
+          "label",
+          "reason"
+        ],
+        "title": "KnowledgeGraphImportIssue",
+        "type": "object"
+      },
+      "KnowledgeGraphImportResult": {
+        "description": "导入结果（计数恒等式 total == imported + skipped + failed）.",
+        "properties": {
+          "deleted": {
+            "default": 0,
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "details": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeGraphImportIssue"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "merge",
+              "replace"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "total",
+          "imported",
+          "skipped",
+          "failed"
+        ],
+        "title": "KnowledgeGraphImportResult",
+        "type": "object"
+      },
       "KnowledgeRelationCreate": {
         "description": "创建图谱关系请求 DTO — 六元组必填 + 可选描述.\n\nAttributes:\n    source_type: 起点实体类型，必填.\n    source_id: 起点实体 UUID，必填.\n    target_type: 终点实体类型，必填.\n    target_id: 终点实体 UUID，必填.\n    relation_type: 关系类型，必填，1-20 字符，去空白.\n    description: 关系说明，可选，≤ 500 字符.",
         "properties": {
@@ -12996,6 +13080,127 @@
           }
         },
         "summary": "Get Graph",
+        "tags": [
+          "知识图谱"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge-graph/export": {
+      "get": {
+        "description": "导出 mxGraph XML（spec §5.7.2；只读幂等，同数据两次导出字节级一致）。",
+        "operationId": "export_knowledge_graph_api_v1_projects__project_id__knowledge_graph_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "const": "mxgraph",
+              "default": "mxgraph",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Knowledge Graph",
+        "tags": [
+          "知识图谱"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge-graph/import": {
+      "post": {
+        "description": "导入 mxGraph XML（spec §5.7.3；请求体为原始 XML 文本，非 JSON）。\n\n响应体为 KnowledgeGraphImportResult（计数恒等式 total == imported + skipped + failed）。",
+        "operationId": "import_knowledge_graph_api_v1_projects__project_id__knowledge_graph_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "merge",
+              "enum": [
+                "merge",
+                "replace"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/xml": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "title": "Body",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeGraphImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Knowledge Graph",
         "tags": [
           "知识图谱"
         ]

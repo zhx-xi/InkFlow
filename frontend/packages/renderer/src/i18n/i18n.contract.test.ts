@@ -26,6 +26,8 @@ import { logEn, logZh } from './log';
 // #496（contract-496 §4.2）：logs-ux 域（日志页 UI 文案）并入 combo —— RED 期该模块不存在，
 // 本文件收集期 module-not-found（预期【R】），GREEN 新建 logs-ux.ts（导出 logsUxZh/logsUxEn）即愈
 import { logsUxEn, logsUxZh } from './logs-ux';
+// #1360：drawio 导入/导出文案域（DrawioIoControls.tsx 的 t('lib.knowledge.drawio.*')）
+import { knowledgeDrawioEn, knowledgeDrawioZh } from './knowledge-drawio';
 // #1300：分页公共组件文案域（Pagination.tsx 的 t('pagination.page.*')）
 import { paginationEn, paginationZh } from './pagination';
 import { writingReqEn, writingReqZh } from './writing-req';
@@ -65,6 +67,8 @@ const comboZh: Dict = {
   ...foreshadowFilterZh,
   // #1353：时间线纪元轴族域
   ...timelineEraZh,
+  // #1360：drawio 导入/导出域
+  ...knowledgeDrawioZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -88,6 +92,8 @@ const comboEn: Dict = {
   ...foreshadowFilterEn,
   // #1353：时间线纪元轴族域
   ...timelineEraEn,
+  // #1360：drawio 导入/导出域
+  ...knowledgeDrawioEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {

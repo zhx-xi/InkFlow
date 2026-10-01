@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/knowledge/knowledge.html + knowledge-<state>.png（empty/graph/list/relation-form/graph-color-a/graph-color-b/graph-filter-a/graph-filter-b/graph-filter-b-collapsed）
+- 原型引用：design/GUI/knowledge/knowledge.html + knowledge-<state>.png（empty/graph/list/relation-form/drawio-import/graph-color-a/graph-color-b/graph-filter-a/graph-filter-b/graph-filter-b-collapsed）
 > 低保真排版示意简图（区块+标签，非精确像素）
 
 ```text
@@ -18,6 +18,7 @@
 │ 分类 tab：角色│世界观│大纲│时间线│伏笔│知识图谱              │
 ├──────────────────────────────────────────────────────────────┤
 │ 工具栏：[＋新建关系] [图谱视图│关系列表] [显示全部实体]      │
+│         [导出 drawio] [导入 drawio]（#1360）                 │
 ├────────────────/-┬───────────────────────────────────────────┤
 │ 筛选面板(224)   │  [图谱视图]                              │
 │ 🔍搜索实体名…   │ ┌───────────────────────────────────────┐ │
@@ -38,6 +39,7 @@
 │ 关系列表视图：起点→ 关系类型 → 终点 + 描述 + [编辑][删除]    │
 │   （列表视图隐藏筛选面板/折叠栏/图例——决策④：不筛选列表）    │
 │ 弹层：关系表单（起点/终点 类型+实体 + 关系类型必填 + 描述）  │
+│ 弹层：导入 drawio（选文件 + merge/replace + replace 确认）    │
 │ 图谱空态：虚线卡片「图谱为空」+ 去角色页创建按钮             │
 │   （空态隐藏画布 + 筛选面板/折叠栏 + 图例）                  │
 └──────────────────────────────────────────────────────────────┘
@@ -45,7 +47,11 @@
 - 参考锚点（真实实现，F48 §5.4）：
   - 端点：GET /api/v1/projects/{pid}/knowledge-graph（一次返回 nodes + edges 聚合）；GET/POST /api/v1/projects/{pid}/knowledge-relations（分页 + source_type/target_type/relation_type/source 过滤）；PATCH/DELETE /api/v1/knowledge-relations/{id}（真删）
   - 工具栏（flex-wrap）：新建关系（library-kg-new-relation，accent 主按钮 + Plus 图标）+ 视图切换胶囊组（library-kg-view-graph「图谱视图」默认激活 / library-kg-view-list「关系列表」，激活 = accent-weak 填充 + accent 文字）+ **全量实体开关（library-kg-scope-all，独立按钮，与视图胶囊组同级但不在其容器内——该容器的 aria-pressed 只服务图谱/列表两态）**
-  - **节点集范围（#1325）**：`GET /knowledge-graph?scope=related|all`，**缺省 related** = 只显示「参与至少一条关系」的实体（无关系时回退角色全集）；`scope=all` = 六类实体全量（完整体检视图）。开关 aria-pressed 反映 scope，点击在 related/all 间切换并重拉图谱。文案 `lib.knowledge.scopeAll`「显示全部实体」
+  - **drawio 格式互通（#1360 §5.7 / ADR-061）**：工具栏追加两个独立按钮 `library-kg-export-drawio`「导出 drawio」/ `library-kg-import-drawio`「导入 drawio」（不并入视图胶囊组与 scope 开关）
+    - **导出**：`GET /projects/{pid}/knowledge-graph/export?format=mxgraph` → 经 Electron file IPC（`getDefaultLocation()` + `saveExport({path, filename, content})`）写盘；成功后工具栏右侧出状态行 `library-kg-drawio-status`（「已导出：<文件名>」），失败出 `library-kg-drawio-error`（`errorMessage`）。**只做一次性格式转换，不内嵌 drawio 编辑器**
+    - **导入**：打开弹层 `library-kg-import-dialog` —— 选文件 `library-kg-import-file`（input type=file，accept `.drawio/.xml`）+ 模式单选 `library-kg-import-mode-merge`（默认）/ `library-kg-import-mode-replace`；选 replace 时露出危险提示与确认勾选框 `library-kg-import-replace-ack`（**未勾选 / 未选文件 → `library-kg-import-submit` disabled**）
+    - 提交 → `POST /projects/{pid}/knowledge-graph/import?mode=merge|replace`（原始 XML body）→ 结果区 `library-kg-import-result` 回报「新增 N · 跳过 N · 失败 N（共 N 条）」（计数恒等式 `total == imported + skipped + failed`），并回调父级 bump `reloadKey` 触发图谱重拉；失败 → `library-kg-import-error`，弹层保持打开
+    - `library-kg-import-cancel` 关闭弹层且不调 API；导入**不创建实体**（drawio 里新画的节点无法映射 → 计入 failed 并说明原因）
   - 图谱画布（library-kg-canvas，h-[520px] 圆角卡片，@xyflow/react v12）：
     - 六类实体节点（自定义节点 KgNode）：角色/世界观/大纲/时间线/伏笔/地图标记，各类型专属底色/边框/文字色/圆点色（TYPE_STYLES 十六进制表）；节点 = **左侧 target 锚点 + 圆点 + 名称 + 右侧 source 锚点**（两个 `<Handle>` 带 `className="kg-handle"`，为「拖线建关系」的前置）
     - 有向边（自定义边 KgEdge）：贝塞尔路径 + 箭头（ArrowClosed）+ 边中央 label（关系类型，SVG text）；边 id 保留 kr:/cr: 前缀
@@ -104,6 +110,11 @@
 | **一键清除筛选（-filterbar-clear / -filter-panel-clear）（#1373）** | 常驻（图谱视图） | 点击 → 类别回「全部」+ 清空实体与搜索 | — | 画布恢复全量节点 + 详情卡复现 | — | 三处入口同一行为；**同步更新记忆**；列表/空态不渲染 |
 | **筛选记忆（localStorage）（#1373）** | 无记录 → 默认「全部 + 面板展开」 | 用户每次选择 / 折叠即写入 | — | 重开或刷新按记忆恢复（筛选值 + 面板开合） | 记忆损坏 / 存储不可用 → 静默回退默认，不抛错 | 键 `inkflow:kg:filters:<project_id>`（值 `{category, entity}`）+ `inkflow:kg:panel` |
 | **图例（library-kg-legend）（#1373）** | 常驻（图谱视图右下角） | 不可交互（纯说明） | — | — | — | 列表视图 / 空态隐藏；窄画布（展开态）下与详情卡不重叠 |
+| **导出 drawio（library-kg-export-drawio）（#1360）** | 常驻工具栏 | 点击 → `exportKnowledgeGraphFile(pid)` → `file.getDefaultLocation()` → `saveExport({path,filename,content})` | 按钮禁用 + 状态行不出现 | `library-kg-drawio-status`「已导出：<文件名>」 | `library-kg-drawio-error`（`errorMessage(err)`） | 只做一次性格式转换（不内嵌编辑器）；`projectId` 缺省 → 按钮 disabled |
+| **导入 drawio（library-kg-import-drawio）（#1360）** | 常驻工具栏 | 点击 → 打开 `library-kg-import-dialog` | — | 弹层打开（默认 merge + 无结果） | — | 取消 `library-kg-import-cancel` 关闭且不调 API |
+| **导入模式单选（-mode-merge / -mode-replace）（#1360）** | 默认 merge 勾选 | 切 replace → 露出危险提示 + 确认勾选框 `-replace-ack` | — | 危险框可见 | — | 切回 merge → 危险框与勾选态一并让位 |
+| **导入提交（library-kg-import-submit）（#1360）** | 未选文件 / replace 未勾选 → **disabled** | 三要素齐备 → `importKnowledgeGraphFile(pid, xml, mode)` | 按钮 disabled（loading 文案） | 结果区 `-import-result` 回报计数 + 回调 `onImported`（bump reloadKey → 图谱重拉） | `-import-error`（弹层保持打开，可改后重试） | `mode=replace` 具破坏性 → 须显式勾选确认；导入**不创建实体**，无映射节点计入 failed |
+| **导入结果回报（library-kg-import-result）（#1360）** | 提交前不渲染 | 提交成功后显示「新增 N · 跳过 N · 失败 N（共 N 条）」+ 失败明细 | — | — | — | 计数恒等式 `total == imported + skipped + failed`（后端保证） |
 
 ## 3. 验收
 
@@ -123,6 +134,7 @@
 - **N14（#1373）**：**折叠不牺牲画布宽度**——`library-kg-filter-collapse` 收起面板后画布宽度恢复到全宽（原型实测 732 → 968px），筛选结果**保持生效**；折叠栏提供「展开筛选」回入口；面板开合状态本地记住
 - **N15（#1373）**：**选择即本地记忆 + 一键清除**——`localStorage['inkflow:kg:filters:<project_id>']` 存 `{category, entity}`，重开/刷新按记忆恢复（含面板折叠态 `inkflow:kg:panel`）；三处「清除筛选」入口同一行为并同步更新记忆；记忆损坏或存储不可用时静默回退默认（不抛错）
 - **N16（#1419）**：**空态不渲染画布**——图谱为空（`nodes.length === 0`）时 `library-kg-canvas` **不存在于 DOM**（画布内 `library-kg-legend` / `library-kg-summary` 一并让位），只剩 `library-kg-empty` 引导卡片；非空态画布照常渲染（反例守护）；`library-kg-view` 根容器在两种状态下都存在
+- **N17（#1360）**：**drawio 格式互通**——工具栏 `library-kg-export-drawio` / `library-kg-import-drawio` 可用；导出走 file IPC 落盘并在 `library-kg-drawio-status` 显示文件名；导入弹层可选文件 + 选 merge/replace（replace 须勾选 `library-kg-import-replace-ack` 才能提交），提交后在 `library-kg-import-result` 回报「新增/跳过/失败」计数并触发图谱重拉；未选文件或 replace 未勾选时提交按钮 disabled；失败出 `library-kg-import-error` 且弹层保持打开（**不内嵌 drawio 编辑器**，见 ADR-061）
 
 ## 4. 节点着色与筛选规则（#1373 / #1418）
 
@@ -168,5 +180,6 @@
 ### 4.4 原型已用 testid（实现请沿用，勿另起名）
 
 **采用（形态 B）**：`library-kg-view`（图谱视图根容器，#1419）· `library-kg-legend` · `library-kg-legend-<type>` · `library-kg-filter-panel` · `library-kg-filter-panel-search` · `library-kg-filter-panel-cat-<type>` · `library-kg-filter-panel-entity-<type>-<id>` · `library-kg-filter-panel-clear` · `library-kg-filter-collapse` · `library-kg-filter-summary` · `library-kg-filterbar` · `library-kg-filterbar-summary` · `library-kg-filterbar-clear` · `library-kg-filterbar-expand` · `library-kg-filter-empty` · `library-kg-node-<type>-<id>`
+· **#1360 drawio**：`library-kg-export-drawio` · `library-kg-import-drawio` · `library-kg-drawio-status` · `library-kg-drawio-error` · `library-kg-import-dialog` · `library-kg-import-file` · `library-kg-import-mode-merge` · `library-kg-import-mode-replace` · `library-kg-import-replace-ack` · `library-kg-import-submit` · `library-kg-import-cancel` · `library-kg-import-result` · `library-kg-import-error`
 
 **备选（形态 A，未采用，仅原型保留）**：`library-kg-filters` · `library-kg-filter-category` · `library-kg-filter-cat-<type>`（含 `-cat-all`）· `library-kg-filter-entity` · `library-kg-filter-entity-<type>-<id>` · `library-kg-filter-entity-more` · `library-kg-filter-search` · `library-kg-filter-clear`

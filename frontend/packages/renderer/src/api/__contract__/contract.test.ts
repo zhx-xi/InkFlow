@@ -377,6 +377,21 @@ describe('S3c 契约对拍：前端 api/*.ts ↔ 后端 OpenAPI 快照（后端�
         op: ['POST', '/api/v1/projects/{project_id}/knowledge-relations'],
         side: 'request',
       },
+      // #1360：drawio 导入结果回报（前端手写 DTO ↔ 后端响应 schema 对拍）
+      {
+        file: 'knowledge-graph.ts',
+        iface: 'KnowledgeGraphImportResult',
+        op: ['POST', '/api/v1/projects/{project_id}/knowledge-graph/import'],
+        side: 'response',
+      },
+      // #1360：drawio 导入明细行（失败/跳过原因结构）
+      {
+        file: 'knowledge-graph.ts',
+        iface: 'KnowledgeGraphImportIssue',
+        op: ['POST', '/api/v1/projects/{project_id}/knowledge-graph/import'],
+        side: 'response',
+        itemOf: 'details',
+      },
       { file: 'search.ts', iface: 'SearchResponseDto', op: ['GET', '/api/v1/search'], side: 'response' },
       { file: 'search.ts', iface: 'SearchHitDto', op: ['GET', '/api/v1/search'], side: 'response', itemOf: 'hits' },
     ];

@@ -1,5 +1,5 @@
 /** F48 知识图谱 API 客户端（specs/f48-knowledge-graph/spec.md §3.1：图谱聚合 + 关系 CRUD，apiFetch 封装同 client.ts 模式） */
-import { apiFetch } from './client';
+import { ApiError, apiFetch, getApiConfig, KernelOfflineError } from './client';
 
 /** 六类设定实体类型（spec §2.1 规则 1：与 library.tsx 六分类 tab 对齐，rag 除外） */
 export type EntityType = 'character' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'map_pin';
@@ -132,4 +132,102 @@ export async function updateKnowledgeRelation(
 /** DELETE /api/v1/knowledge-relations/{id}——真删（spec §2.1 规则 7） */
 export async function deleteKnowledgeRelation(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/knowledge-relations/${id}`, { method: 'DELETE' });
+}
+
+/** drawio 导入模式（spec §5.7.3）：merge=不删既有行 / replace=先清空再写入 */
+export type KnowledgeGraphImportMode = 'merge' | 'replace';
+
+/** 导入过程中被跳过 / 拒绝的一条边（spec §5.7.3 响应体 details 元素） */
+export interface KnowledgeGraphImportIssue {
+  kind: 'skipped' | 'failed';
+  edge_id: string;
+  label: string;
+  reason: string;
+}
+
+/** 导入结果（spec §5.7.3；计数恒等式 total == imported + skipped + failed） */
+export interface KnowledgeGraphImportResult {
+  mode: KnowledgeGraphImportMode;
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  deleted: number;
+  details: KnowledgeGraphImportIssue[];
+}
+
+/** 解析 Content-Disposition 文件名：优先 RFC 5987 filename*（UTF-8 百分号解码），兼容 filename="..." */
+function parseFilename(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null;
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(contentDisposition);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      return null;
+    }
+  }
+  const plain = /filename="([^"]+)"/i.exec(contentDisposition);
+  if (plain) {
+    try {
+      return decodeURIComponent(plain[1]);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** 导出 drawio：GET /api/v1/projects/{pid}/knowledge-graph/export?format=mxgraph（application/xml） */
+export async function exportKnowledgeGraphFile(
+  projectId: string,
+): Promise<{ filename: string; content: string }> {
+  const { baseURL, token } = getApiConfig();
+  const headers = new Headers();
+  if (token) headers.set('X-InkFlow-Token', token);
+  const res = await fetch(
+    `${baseURL}/api/v1/projects/${projectId}/knowledge-graph/export?format=mxgraph`,
+    { headers },
+  );
+  if (res.status === 401) throw new KernelOfflineError();
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const data = (await res.json()) as { detail?: unknown };
+      detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? detail);
+    } catch {
+      /* 非 JSON 错误体 */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const content = await res.text();
+  const filename = parseFilename(res.headers.get('Content-Disposition')) ?? 'knowledge-graph.drawio';
+  return { filename, content };
+}
+
+/** 导入 drawio：POST /api/v1/projects/{pid}/knowledge-graph/import?mode=<mode>（原始 XML body） */
+export async function importKnowledgeGraphFile(
+  projectId: string,
+  xml: string,
+  mode: KnowledgeGraphImportMode,
+): Promise<KnowledgeGraphImportResult> {
+  const { baseURL, token } = getApiConfig();
+  const headers = new Headers({ 'Content-Type': 'application/xml' });
+  if (token) headers.set('X-InkFlow-Token', token);
+  const res = await fetch(
+    `${baseURL}/api/v1/projects/${projectId}/knowledge-graph/import?mode=${mode}`,
+    { method: 'POST', headers, body: xml },
+  );
+  if (res.status === 401) throw new KernelOfflineError();
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const data = (await res.json()) as { detail?: unknown };
+      detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? detail);
+    } catch {
+      /* 非 JSON 错误体 */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as KnowledgeGraphImportResult;
 }

@@ -24,8 +24,9 @@ import asyncio
 import uuid
 from collections.abc import Awaitable
 from typing import Any, Literal, cast
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +40,7 @@ from inkflow.api.deps_kg_extract import (
     get_relation_extraction_service,
 )
 from inkflow.domain.models.knowledge_graph import (
+    KnowledgeGraphImportResult,
     KnowledgeRelationCreate,
     KnowledgeRelationUpdate,
 )
@@ -153,6 +155,50 @@ async def get_graph(
     svc = _get_svc(db)
     view = await _run_service(svc.graph(pid, scope=scope))
     return view.model_dump(mode="json")
+
+
+@router.get("/projects/{project_id}/knowledge-graph/export")
+@instrument(caller_type="api")
+async def export_knowledge_graph(
+    project_id: str,
+    format: Literal["mxgraph"] = "mxgraph",
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """导出 mxGraph XML（spec §5.7.2；只读幂等，同数据两次导出字节级一致）。"""
+    pid = _parse_id(project_id, detail="项目不存在")
+    svc = _get_svc(db)
+    xml, filename = await _run_service(svc.export_mxgraph(pid))
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+    return Response(
+        content=xml.encode("utf-8"),
+        media_type="application/xml; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.post("/projects/{project_id}/knowledge-graph/import")
+@instrument(caller_type="api")
+async def import_knowledge_graph(
+    project_id: str,
+    mode: Literal["merge", "replace"] = "merge",
+    body: bytes = Body(media_type="application/xml"),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeGraphImportResult:
+    """导入 mxGraph XML（spec §5.7.3；请求体为原始 XML 文本，非 JSON）。
+
+    响应体为 KnowledgeGraphImportResult（计数恒等式 total == imported + skipped + failed）。
+    """
+    pid = _parse_id(project_id, detail="项目不存在")
+    try:
+        xml = body.decode("utf-8")
+    except UnicodeDecodeError as err:
+        raise HTTPException(
+            status_code=422,
+            detail=f"非法 mxGraph XML：请求体不是 UTF-8 文本（{err.reason}）",
+        ) from err
+    svc = _get_svc(db)
+    result: KnowledgeGraphImportResult = await _run_service(svc.import_mxgraph(pid, xml, mode=mode))
+    return result
 
 
 @router.get("/knowledge-relations/{relation_id}")

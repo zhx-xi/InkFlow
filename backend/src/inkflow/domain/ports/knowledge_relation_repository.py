@@ -169,3 +169,14 @@ class KnowledgeRelationRepositoryProtocol(Protocol):
             删除行数.
         """
         ...
+
+    async def delete_by_project(self, project_id: uuid.UUID) -> int:
+        """真删项目内全部关系行（drawio import mode=replace 清空）.
+
+        Args:
+            project_id: 项目主键（领域 UUID，见 #1291）.
+
+        Returns:
+            删除行数.
+        """
+        ...

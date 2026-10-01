@@ -48,6 +48,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-055](architecture/ADR-055.md) | 时间存储与显示口径 — 存储/传输一律 UTC，面向用户显示一律本地时区 | ✅ 已接受 | 2026-09-10 |
 | [ADR-056](architecture/ADR-056.md) | 会话 ↔ agentic 执行轨迹关联 — sessions.context 软锚（agent_run_id） | ✅ 已接受 | 2026-09-10 |
 | [ADR-060](architecture/ADR-060.md) | 统一 UUID 身份键 — `new_uuid()`（UUIDv7）+ 本地 int 主键 / UUID 索引键 | ✅ 已接受 | 2026-09-17 |
+| [ADR-061](architecture/ADR-061.md) | 知识图谱 drawio 互通 — mxGraph XML 一次性格式转换（不内嵌编辑器） | ✅ 已接受 | 2026-10-02 |
 
 ### 数据库（database）
 
@@ -185,6 +186,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **GUI**: Electron 壳 + 共享 React 渲染层（ADR-020 [gui/](gui/ADR-020.md)）
 - **执行轨迹关联**: 会话 ↔ agentic run 用 `sessions.context` 软锚（`agent_run_id`，零迁移；仅新发起生效，存量不回溯）（ADR-056 [architecture/](architecture/ADR-056.md)）
 - **身份键**: 实体统一走 `new_uuid()`（RFC 9562 UUIDv7，时间有序 + `data_dir/.instance_id` 机器标识）；本地 `id` 保持自增 int PK，新增 `uuid` 唯一索引列作全局身份（云同步地基）；`UUID(int=id)` 惯例退场 → 根除 int64 溢出类缺陷（ADR-060 [architecture/](architecture/ADR-060.md)）
+- **drawio 互通**: 知识图谱只做 mxGraph XML **一次性格式转换**（导出/导入），**不内嵌 drawio 编辑器**；`.drawio` 不落盘入库、不作第二真相源（离线 / 体积 / 双真相源三重冲突）；导入复用既有校验链，冲突行按幂等语义跳过并回报（ADR-061 [architecture/](architecture/ADR-061.md)）
 - **CI 质量**: Reviewdog + Ruff 统一门禁（ADR-017 [test-ci/](test-ci/ADR-017.md)）
 - **CI 测试分层**: 三层目录 + 按功能链路并行 job（ADR-018 [test-ci/](test-ci/ADR-018.md)）
 - **CI 真实 AI**: label 触发 + workflow_dispatch 兜底（ADR-026 [test-ci/](test-ci/ADR-026.md)）

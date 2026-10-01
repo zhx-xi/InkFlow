@@ -1,7 +1,9 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.4 | **日期**: 2026-09-21 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **Spec 版本**: 1.5 | **日期**: 2026-10-02 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+>
+> **Spec 变更**（1.4 → 1.5，2026-10-02 #1360）：**新增 drawio（mxGraph XML）导入/导出**（§5.7，ADR-061）——两端点（`GET …/knowledge-graph/export?format=mxgraph` + `POST …/knowledge-graph/import?mode=merge|replace`）、交换格式 v1（节点 id = `entity_type:entity_uuid`、边用 `<object label tooltip>` 包装）、导入**复用既有校验链**（冲突按幂等跳过 + 计数回报）、`total == imported + skipped + failed`；同步 §3.1-§3.3 端点与异常表（新增 `MxGraphImportError` → 422）、§7 边界 18-25、§8 文件结构、§9 测试场景 18-22、§10（「图谱导出/分享」状态演进：导出已交付、分享仍不做）、§12 决策 13、§13 M9、§14.1/§14.3（A7）。**不内嵌编辑器**（否决 iframe 内嵌 / 桌面包内嵌，见 ADR-061）。
 >
 > **Spec 变更**（1.3 → 1.4，2026-09-21 #1325）：**图谱聚合新增 `scope` 节点集语义（默认 `related`）+ 节点集改走全量方法 + 画布交互补全**——§5.2（scope 语义 + 顺序约束 + 每表全量 + C3 修复）、§5.4（样式表 import / Handle / 拉线建关系 / 全量视图开关 / 画布提示 / 关系列表分页）、§12 决策 4（状态演进）、§13 验收 M6、§14.1 端点状态流。**触发缺陷**：C1 `@xyflow/react/dist/style.css` 从未 import → 边 `stroke` 无值（不可见）+ 节点失 `position:absolute`（堆叠）＝ 用户「看得到块、看不到线」；C3 节点走 `repo.list()` 默认 `limit=50` → 实测 217/438 节点、8 条边被当孤立边丢弃（与 v1.3 §5.2「每表全量返回」冲突）。**归因修正**：C2（无 Handle）**不是**「无线」成因——React Flow v12 无 Handle 会回退节点中心锚点，边仍可渲染；C2 是「拉线建关系」的前置。
 >
@@ -311,6 +313,8 @@ class KnowledgeRelationORM(Base):
 | POST | `/api/v1/projects/{project_id}/knowledge-relations` | 创建图谱关系 → 201 |
 | GET | `/api/v1/projects/{project_id}/knowledge-relations` | 关系列表（分页 + 过滤：`?source_type=&target_type=&relation_type=`；`?source=ai` 过滤 #479 预留） |
 | GET | `/api/v1/projects/{project_id}/knowledge-graph` | **图谱聚合查询**（nodes + edges **单表 `knowledge_relations`**；#495 后不再合并 character_relations） |
+| GET | `/api/v1/projects/{project_id}/knowledge-graph/export` | **导出 mxGraph XML**（`.drawio` 同构；`?format=mxgraph`，v1 唯一取值）→ `application/xml` 附件（#1360，§5.7） |
+| POST | `/api/v1/projects/{project_id}/knowledge-graph/import` | **导入 mxGraph XML**（请求体 = 原始 XML；`?mode=merge\|replace`）→ 导入结果 JSON（#1360，§5.7） |
 | GET | `/api/v1/knowledge-relations/{relation_id}` | 关系详情 |
 | PATCH | `/api/v1/knowledge-relations/{relation_id}` | 更新关系（六元组可改 + description） |
 | DELETE | `/api/v1/knowledge-relations/{relation_id}` | 真删关系（无 restore） |
@@ -367,6 +371,30 @@ DELETE /api/v1/knowledge-relations/9
 → 204
 ```
 
+**导出 mxGraph XML**（#1360）：
+
+```http
+GET /api/v1/projects/1/knowledge-graph/export?format=mxgraph
+→ 200
+Content-Type: application/xml; charset=utf-8
+Content-Disposition: attachment; filename*=UTF-8''<书名>-knowledge-graph.drawio
+
+<mxfile host="InkFlow" ...> … <mxGraphModel>…</mxGraphModel> … </mxfile>
+```
+
+**导入 mxGraph XML**（#1360）：
+
+```http
+POST /api/v1/projects/1/knowledge-graph/import?mode=merge
+Content-Type: application/xml
+
+<mxfile>…</mxfile>
+→ 200
+{"mode": "merge", "total": 3, "imported": 2, "skipped": 1, "failed": 0, "deleted": 0,
+ "details": [{"kind": "skipped", "edge_id": "kr:…", "label": "师承",
+              "reason": "该关系已存在（同键唯一）"}]}
+```
+
 ### 3.3 异常映射表
 
 | 异常 | 状态码 | detail |
@@ -377,6 +405,7 @@ DELETE /api/v1/knowledge-relations/9
 | KnowledgeRelationNotFoundError | 404 | 关系不存在 |
 | ProjectNotFoundError（F10 world_errors 复用） | 404 | 项目不存在 |
 | KnowledgeRelationValidationError | 422 | 六元组非法（字段校验） |
+| MxGraphImportError（#1360） | 422 | 非法 mxGraph XML：<原因>（解析阶段失败——非合法 XML / 缺 `mxGraphModel` 根。**不 500**） |
 
 > **错误类归属**：`knowledge_graph_errors.py` 只定义模块专属错误；`ProjectNotFoundError` **复用 F10 world_errors 既有类**（F16 双入口教训：不重定义通用名错误类，避免遮蔽既有 router）；router 单入口（knowledge_graph.py）`_run_service` catch 链照 F10/F36 模式。
 > **实体校验错误复用**：各实体 repo 的「不存在」错误（CharacterNotFoundError 等）在服务层**转换**为 `KnowledgeEntityNotFoundError`（图谱域统一错误面，不泄漏 F9-F13 各错误类——跨模块调用方只面对图谱错误契约）。
@@ -666,6 +695,131 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 - 图谱节点：按实体类型分组顺序返回（character → world → outline → timeline → foreshadow → map_pin，组内 `name ASC`）——画布布局稳定，非随机
 - 图谱边：**单一来源 `knowledge_relations`**（#495 后无跨表优先权问题，原「knowledge 在前、character_relations 在后」排列废止），组内 `created_at ASC`
 
+### 5.7 drawio（mxGraph XML）导入 / 导出（#1360）
+
+> 形态选型与「为何不内嵌编辑器」见 **ADR-061**；本节只定义**交换格式 + 端点契约**。
+> 铁律：只做**一次性格式转换**——`.drawio` 不落盘入库、不作第二真相源；导入复用既有校验链（§5.1）。
+
+#### 5.7.1 交换格式（mxGraph XML v1）
+
+三层固定结构（drawio 桌面版可原样打开）：
+
+```xml
+<mxfile host="InkFlow" type="device">
+  <diagram id="inkflow-knowledge-graph" name="知识图谱">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1"
+                  connect="1" arrows="1" fold="1" page="1" pageScale="1"
+                  pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <!-- 节点（六类实体）+ 边（knowledge_relations） -->
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+```
+
+**节点**（`vertex="1"`，朴素 `mxCell`）：
+
+```xml
+<mxCell id="character:&lt;entity_uuid&gt;" value="角色甲"
+        style="rounded=1;whiteSpace=wrap;html=1;fillColor=#…;strokeColor=#…;"
+        vertex="1" parent="1">
+  <mxGeometry x="40" y="40" width="140" height="40" as="geometry" />
+</mxCell>
+```
+
+- `id` 恒 `<entity_type>:<entity_uuid>`（与 `GraphNode.id` 同构）——**导入解析实体的唯一锚点**
+- `value` = `GraphNode.name`
+- `style` / `mxGeometry` 仅服务 drawio 排版，**导入不读**
+
+**边**（`edge="1"`，外层 `<object>` 包装）：
+
+```xml
+<object id="kr:&lt;relation_uuid&gt;" label="师承" tooltip="说明文本">
+  <mxCell style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;"
+          edge="1" parent="1"
+          source="character:&lt;uuid&gt;" target="world:&lt;uuid&gt;">
+    <mxGeometry relative="1" as="geometry" />
+  </mxCell>
+</object>
+```
+
+- `id` 恒 `kr:<relation_uuid>`；`label` = `relation_type`
+- `tooltip` = `description`（**描述为空则省略该属性**）——`<object>` 是 drawio 官方的「自定义元数据」载体（画布保存时保留），故描述在 drawio 里可读、可改、可回传
+- `source` / `target` = 节点 `id`
+
+**确定性（往返幂等的前提）**
+
+| 维度 | 规则 |
+|------|------|
+| 节点集 | **仅「参与至少一条关系的实体」**（边的端点并集；无关系 → 空文件。**不含**无关系的孤立实体——文件表达的是关系图，不是实体清单） |
+| 节点序 | 复用 §5.6 图谱节点序（六类组序 character→world→outline→timeline→foreshadow→map_pin，组内 `name ASC`） |
+| 节点坐标 | 确定性网格：`x = 40 + col*200`、`y = 40 + row*60`（`col` = 类型序号 0-5，`row` = 该类型内序号）——**纯函数、零随机** |
+| 边序 | `created_at ASC`（同 §5.6） |
+| 端点缺失 | 关系指向的实体查不到（已被删）→ **跳过该边** + loguru warning（同 §7 边界 10 的孤立边口径，不生成悬空引用） |
+| 文件名 | `<清洗后书名>-knowledge-graph.drawio`（Windows 禁符 `\ / : * ? " < > \|` → `_`；书名截断 60 字符；空书名 → `untitled`） |
+
+#### 5.7.2 导出端点
+
+```
+GET /api/v1/projects/{project_id}/knowledge-graph/export?format=mxgraph
+```
+
+- `format: Literal["mxgraph"] = "mxgraph"`（v1 唯一取值；其它值 → FastAPI 422 短路，service 零调用）
+- 成功 → `200`，`media_type="application/xml; charset=utf-8"`，
+  `Content-Disposition: attachment; filename*=UTF-8''<URL 编码文件名>`（镜像 F21 export 的头部形态）
+- 只读幂等：同数据两次导出 → **字节级一致**（含节点序/坐标/边序/时间戳均不出现在文件里）
+- 项目不存在 → 404「项目不存在」
+
+#### 5.7.3 导入端点
+
+```
+POST /api/v1/projects/{project_id}/knowledge-graph/import?mode=merge|replace
+Content-Type: application/xml          请求体 = 原始 mxGraph XML 文本
+```
+
+**解析（`_mxgraph_codec.parse_mxgraph_xml`）**
+
+1. XML 不可解析 / 根节点不是 `mxfile`/`mxGraphModel` / 找不到 `mxGraphModel` → **422 MxGraphImportError**（detail = `非法 mxGraph XML：<原因>`），**数据零变更**
+   - 找不到 `mxGraphModel` 但存在**带非空文本的 `<diagram>`** → 说明是 drawio「导出为 XML 且勾选 Compressed」的 base64 压缩体，detail 须点明「压缩」（用户据此可取消勾选后重存）；空 `<diagram>` 不误报
+2. 收集 cell：`mxCell` 与 `object`/`UserObject` 包装的 `mxCell` **都要认**（drawio 保存时两种形态都会出现）
+   - 节点 cell = 带 `vertex="1"`（或带 `source`/`target` 之外的 `value` 且无 `edge`）——仅用于**端点解析**
+   - 边 cell = 带 `edge="1"` **或**同时有 `source` + `target`
+   - 可见文本：包装元素的 `label` 优先，否则 `mxCell` 的 `value`；描述：包装元素的 `tooltip`
+3. 端点解析：`id` 按**第一个 `:`** 拆成 `<type>` / `<uuid>`；`type` 必须 ∈ `EntityType` 六值、`uuid` 必须可 `uuid.UUID(...)` 解析，否则该边计入 **failed**（reason「端点无法解析为 InkFlow 实体」）——**手工在 drawio 新画的节点属于此类**（文件里没有 InkFlow 实体标识）
+
+**写入（复用 §5.1 校验链）**
+
+- 每一条可解析的边 → 组装六元组 + description → 调 **`KnowledgeGraphService.create_relation`**（项目存在 → 自环 → 字段校验 → 实体存在且同项目 → 同键唯一 → 落库）
+- `mode=merge`（默认）：不删除任何既有行；同键已存在（库内既有 **或** 文件内重复）→ `create_relation` 抛 `KnowledgeRelationConflictError` → 计入 **skipped**
+- `mode=replace`：**先** `relation_repo.delete_by_project(pid)` 清空项目内既有关系（计数 → `deleted`），**再**逐边写入 —— 删除**只发生在解析成功之后**（非法 XML 不会造成数据丢失）
+- 单行非法（自环 / 实体不存在或跨项目 / 字段非法）→ `KnowledgeGraphServiceError` 子类 → 计入 **failed** + reason（**不中断整批、不 500**）
+- `source` 列恒 `manual`（导出/导入是用户动作，非 AI 提取）
+
+**响应体（JSON）**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `mode` | `"merge" \| "replace"` | 回显 |
+| `total` | int | 文件内**边 cell 总数**（含解析失败者） |
+| `imported` | int | 实际落库行数 |
+| `skipped` | int | 同键幂等跳过行数 |
+| `failed` | int | 校验/解析拒绝行数 |
+| `deleted` | int | `replace` 清空的既有行数（`merge` 恒 `0`） |
+| `details` | `list[ImportIssue]` | 每条未导入边一条：`{kind: "skipped"\|"failed", edge_id, label, reason}` |
+
+> **计数恒等式（测试锁定）**：`total == imported + skipped + failed`。
+
+#### 5.7.4 交换格式的已知边界（诚实声明）
+
+- **不创建实体**：导入只能在已存在实体之间建关系；drawio 里新画的节点无法映射
+- **排版不回流**：节点坐标是视图态（GUI 存 `localStorage`），导入不读 `mxGeometry`
+- **压缩保存的 drawio 不兼容**：drawio `.drawio` 默认保存为**未压缩** XML（官方文档：`compressXml` 默认 false），但只要用户走「File > Export as > XML」并保留默认勾选的 `Compressed`，`<diagram>` 内容就是 base64+deflate 压缩体 → 本 v1 不解析，返回 422 并**在错误信息中点明「压缩」**（真实压缩解码见 ADR-061「后续」栏，未承诺）
+- **`replace` 具破坏性**：清空项目内既有关系（GUI 侧须**勾选确认**后才可提交）
+- **XML 安全**：标准库 `xml.etree.ElementTree`（不解析外部实体）；本地单用户输入为用户自选文件。若未来暴露给远程调用方，需先引入 `defusedxml`（ADR-061 影响节）
+
 ---
 
 ## 6. 组织规则
@@ -699,6 +853,15 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 | 15 | 关系列表无匹配 | 200 `{"items": [], "total": 0}` |
 | 16 | 六元组 source_type/target_type 非法枚举值 | 422 KnowledgeRelationValidationError（Pydantic Enum 校验） |
 | 17 | #479 ai 行（未来）与 manual 行同键 | 唯一索引拒绝（ai 写入方需幂等去重——§5.5 预留） |
+| 18 | 导出：`format` 传 `mxgraph` 之外的值 | 422（FastAPI Literal 短路，service 零调用） |
+| 19 | 导出：项目内无任何关系 | 200 + 合法空 mxGraph XML（0 节点 0 边；前端提示「无可导出的关系」由 GUI 决定） |
+| 20 | 导入：请求体非合法 XML / 缺 `mxGraphModel` | 422 MxGraphImportError（`非法 mxGraph XML：<原因>`）；**数据零变更**（`replace` 也不删） |
+| 21 | 导入：边端点无法解析（手工在 drawio 新画的节点） | 该边计入 `failed` + reason「端点无法解析为 InkFlow 实体」；其余边照常导入 |
+| 22 | 导入：文件内两条完全相同的边 | 第一条落库，第二条按同键幂等 → `skipped`（`total == imported + skipped + failed` 恒成立） |
+| 23 | 导入：边指向跨项目实体 | `create_relation` 抛 KnowledgeEntityNotFoundError → 计入 `failed`（不 500、不中断整批） |
+| 24 | 导入：`mode=replace` 且文件只有非法边 | 既有关系**已被清空**（`deleted` = 原行数），非法边全部计入 `failed`——GUI 侧须勾选确认（§5.7.4） |
+| 25 | 导入：请求体 GBK/非 UTF-8 字节 | 422（解码失败归入 `非法 mxGraph XML`，不 500） |
+| 26 | 导入：drawio「Export as XML + Compressed」产出的压缩体（`<diagram>` 内 base64，无 `mxGraphModel`） | 422 MxGraphImportError，detail 点明「压缩」（用户据此取消勾选后重存；本 v1 不解压，§5.7.4） |
 
 ---
 
@@ -730,6 +893,32 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
 | `frontend/packages/renderer/src/pages/library-kg.test.tsx` | **CREATE** | 前端测试（图谱 tab 渲染/空态/建关系交互——测试文件命名同既有 library-p*.test.tsx 惯例） |
 | `frontend/package.json`（或 renderer package） | **MODIFY** | 新增 `@xyflow/react` 依赖（Q2=A 拍板定稿） |
 
+**#1360（drawio 互通，§5.7）追加：**
+
+| 文件 | 变更 | 内容 |
+|------|------|------|
+| `backend/src/inkflow/domain/services/_mxgraph_codec.py` | **CREATE** | 纯函数编解码器：`build_mxgraph_xml(nodes, edges)` / `parse_mxgraph_xml(xml)` / `suggest_drawio_filename(name)`；仅用标准库 `xml.etree.ElementTree`（domain 层零框架依赖，同 `_txt_exporter.py` 先例） |
+| `backend/src/inkflow/domain/services/knowledge_graph_service.py` | **MODIFY** | 新增 `export_mxgraph(project_id)` → `(xml, filename)` + `import_mxgraph(project_id, xml, mode)` → `KnowledgeGraphImportResult`（导入逐行复用 `create_relation`） |
+| `backend/src/inkflow/domain/models/knowledge_graph.py` | **MODIFY** | 新增 `KnowledgeGraphImportMode` / `KnowledgeGraphImportIssue` / `KnowledgeGraphImportResult` |
+| `backend/src/inkflow/domain/ports/knowledge_graph_errors.py` | **MODIFY** | 新增 `MxGraphImportError(KnowledgeGraphServiceError)`（422） |
+| `backend/src/inkflow/domain/ports/knowledge_relation_repository.py` | **MODIFY** | 端口新增 `delete_by_project(project_id) -> int`（`replace` 模式清空） |
+| `backend/src/inkflow/infrastructure/database/repositories/knowledge_relation_repo.py` | **MODIFY** | 实现 `delete_by_project`（真删项目内全部关系行，返回删除行数） |
+| `backend/src/inkflow/api/routers/knowledge_graph.py` | **MODIFY** | 新增 export（`application/xml` 附件）/ import（原始 XML body）2 端点（§5.7.2/§5.7.3） |
+| `backend/tests/unit/domain/services/test_knowledge_graph_mxgraph_1360.py` | **CREATE** | 编解码纯函数 + service 层（往返幂等 / 冲突跳过 / 非法 XML / 自环 / 跨项目 / replace 语义） |
+| `backend/tests/unit/api/routers/test_knowledge_graph_mxgraph_api_1360.py` | **CREATE** | 2 端点契约（XML 响应头/422 错误形态/mode 透传/计数回报） |
+| `tests/integration/test_knowledge_graph_mxgraph_roundtrip_1360.py` | **CREATE** | 真 DB + 真 repo 端到端往返（导出→导入→再导出字节稳定；冲突跳过；非法 XML 不落库） |
+| `frontend/packages/renderer/src/api/knowledge-graph.ts` | **MODIFY** | `exportKnowledgeGraphFile` / `importKnowledgeGraphFile` + 结果类型（原始 fetch，镜像 `api/export.ts`——非 JSON 传输） |
+| `frontend/packages/renderer/src/components/knowledge-graph/DrawioIoControls.tsx` | **CREATE** | 工具栏「导出 drawio / 导入 drawio」+ 导入弹层（选文件 / merge\|replace 单选 / replace 二次确认 / 结果回报） |
+| `frontend/packages/renderer/src/components/knowledge-graph/KnowledgeGraphView.tsx` | **MODIFY** | 工具栏挂载 `DrawioIoControls`（`projectId` / 导入成功后 `onImported` 触发刷新） |
+| `frontend/packages/renderer/src/hooks/useKnowledgeGraphWiring.tsx` | **MODIFY** | 透传 `projectId` + `onImported`（导入成功后 bump `reloadKey`） |
+| `frontend/packages/renderer/src/i18n/knowledge-drawio.ts` | **CREATE** | `lib.knowledge.drawio.*` 文案域（zh/en 等高）——**zh.ts/en.ts 已贴 900 行护栏，不得直接新增行**（同 `pagination.ts` / `foreshadow-filter.ts` 先例） |
+| `frontend/packages/renderer/src/i18n/useI18n.ts` + `i18n.contract.test.ts` | **MODIFY** | 并入 `knowledge-drawio` 文案域 |
+| `design/GUI/knowledge/knowledge.html` + `knowledge-drawio-import.png` + `_tools/shot-knowledge-drawio-1360.cjs` | **MODIFY/CREATE** | 原型 + 受影响状态截图（AGENTS.md §4.6 三件同步） |
+| `specs/f19-gui/knowledge.md` | **MODIFY** | 页交互规格补 drawio 导入/导出动作与验收锚点 |
+
+> ⚠️ 本批**无新 CLI 命令** → 不需要追加 `ci.yml integration-cli-backend` 文件列表。
+> ⚠️ 新增 2 个 API 端点 → **必须**同 PR 重导 `ci_cd/openapi_snapshot.json`（backend: `uv run python ../ci_cd/export_openapi.py`）+ 前端 `pnpm gen:api`，否则 `test_openapi_contract` / `lint-frontend` 双红（AGENTS.md 陷阱 26 同族）。
+
 > **⚠️ CI 盲区防范（Issue #59/#61 教训）**：`tests/cli/test_cli_knowledge_graph.py` 是**新文件**，需显式加入 ci.yml `integration-cli-backend` job 文件列表（Windows pytest 不展开 glob）；前端新测试文件确认被现有 vitest 收集（renderer 目录通配，实现期核对）。
 > **⚠️ 900 行护栏（#88）**：`test_knowledge_graph_service.py` 若超 900 行按 class 拆分（F43 P2 先例）。
 > **ℹ️ #479 文件不在本表**：定时任务/提取服务/设置扩展/前端设置卡片的文件结构与 CI 登记见 §5.5.8（v1.2 定稿），由 #479 实现期交付，F48 不涉及。
@@ -747,10 +936,12 @@ GET /api/v1/knowledge/extract/status      # 设置页「立即运行」按钮状
                 + 孤立边防御 + bulk_create_relations 预留（#479 面）                              ~20 cases
                 + scope 节点集语义（related/all/回退角色全集/收窄先于孤立边过滤）               ~10 cases（#1325）
 API（集成）:     CRUD 端点 + 错误映射 + 图谱聚合响应形状 + ?scope= 透传                            ~13 cases
+                 + drawio 导出/导入端点（XML 头/mode 透传/计数回报/非法 XML 422）                  ~10 cases（#1360）
 CLI:             knowledge 组命令 + graph 输出                                                      ~10 cases
 前端:            图谱 tab 渲染/空态/建关系表单/边编辑删除（library-kg.test.tsx）                    ~8 cases
                 + 画布契约（样式表 import/Handle/拖拽保持/持久化/拉线/scope 开关/提示）           ~9 cases（#1325）
                 + 关系列表分页（limit·offset/分页条/跨页可达/末页禁用）                            ~6 cases（#1325）
+                + drawio 工具栏/导入弹层（导出调用/选文件/mode 单选/replace 确认/结果回报）        ~7 cases（#1360）
 ```
 
 ### 关键测试场景
@@ -772,6 +963,11 @@ CLI:             knowledge 组命令 + graph 输出                             
 15. **画布契约（#1325）**：`main.tsx` 含 `@xyflow/react/dist/style.css` import（可证伪：删则 FAIL）；每节点 source/target 两个 `.kg-handle`；拖拽后位置不被网格覆盖；拖拽结束写 `localStorage`；连线 → 关系表单预填两端；`library-kg-scope-all` 反映 scope
 16. **关系列表分页（#1325）**：首屏 `?limit=50&offset=0`；`library-kg-page-*` 三件套；next → `offset=50` 且第 51 条可见；首页 prev 禁用 / 末页 next 禁用
 17. **自动化盲区（#1325 已知）**：jsdom 无真实指针几何与 SVG 布局测量 → **拖拽位移/缩放/边可见性/线条避让只能靠真实浏览器（人工或 Playwright）复验**；本层契约只证明「结构/接线/props」正确
+18. **drawio 往返幂等（#1360）**：真 DB 建「角色甲 --师承--> 角色乙」+「角色甲 --属于--> 世界观丙」→ 导出 `xml1` → 导入（merge，同项目）→ 全部命中同键 → `imported=0 / skipped=2` → 再导出 `xml2` → **`xml1 == xml2` 逐字节相等**（导出/导入→再导出 结果稳定）。反例守护：若导出含时间戳/随机坐标/随机 id，此用例必 FAIL
+19. **drawio 冲突跳过与计数恒等（#1360）**：文件含 1 条新边 + 1 条既有边 + 1 条自环边 → `imported=1 / skipped=1 / failed=1 / total=3`（`total == imported + skipped + failed`）
+20. **drawio 非法 XML 不落库（#1360）**：`<mxfile>` 截断 / 无 `mxGraphModel` → 422 + detail 含「非法 mxGraph XML」；**`mode=replace` 下亦不删除任何既有行**（先解析后删除）；非 UTF-8 字节同样 422 不 500
+21. **drawio 端点解析拒绝（#1360）**：手工新画节点（id 形如 `X1a2b`）参与的边 → `failed` + reason 含「端点无法解析」；指向**其它项目**实体的边 → 走既有校验链 → `failed`（reason = 实体不存在/不在同一项目），HTTP 仍 200
+22. **drawio replace 语义（#1360）**：项目内既有 2 条关系，导入只含 1 条新边的文件（`mode=replace`）→ `deleted=2 / imported=1`，库内最终恰 1 行；`merge` 同文件 → `deleted=0 / imported=1`，库内 3 行
 
 ### 覆盖率
 
@@ -790,7 +986,7 @@ CLI:             knowledge 组命令 + graph 输出                             
 | 实体详情编辑（图谱内直接改角色/世界观内容） | 各实体编辑在既有页面闭环（图谱节点详情 = 只读摘要 + 跳转） | 后续 |
 | 图谱布局算法自研/力导向自动布局调优 | 选型 @xyflow/react 自带布局；深度调优无场景 | 后续 |
 | 关系类型受控词表/规则引擎 | 自由文本 v1.0 可用；词表归 #479 规则提取 | #479 |
-| 图谱导出/分享 | 本地单机架构（ADR-030）无分享场景 | 永不 |
+| ~~图谱导出/分享~~ | ~~本地单机架构（ADR-030）无分享场景~~ → **状态演进**：#1360 已交付 **drawio（mxGraph XML）导入/导出**（§5.7）——「导出」不再永久排除；**「分享（多渠道分发/云链接）」仍不做**（本地单机） | #1360 ✅ / 分享：永不 |
 | 图谱节点隐藏/筛选（按类型过滤显示） | 实体量级小，v1.0 全量显示；前端可后续加 | 后续 |
 | F14 extraction_runs 列表展示 | Q3=A 拍板不保留在图谱 tab；是否并入统一日志页由 #496 决定 | #496（1.0.0） |
 | 多项目关系共享 | 本地单机 + 强 project_id 隔离（F9/F36 同款） | 永不 |
@@ -837,7 +1033,8 @@ F48 被依赖:
 | 9 | **Q1=A 拍板：允许图谱建角色↔角色关系（2026-08-19）** | character→character 合法（写 knowledge_relations）；角色页 F9 保留（写 character_relations）；图谱聚合合并 + 同键去重（§5.2）（**状态演进**：#495（2026-09-17）后角色页亦写 knowledge_relations 子空间，聚合单表，无合并去重——本条 2026-08-19 时的双轨结论已演进） | 图谱手动编辑闭环完整；F9 零破坏；个人项目可接受双轨（**留痕**：「双轨」为 2026-08-19 状态，现已单轨） | 方案 B（图谱禁止角色关系——编辑流断裂，**用户否决**）；方案 C（迁移合并——当时判断属破坏性重构，**用户否决**，建 #495 挂 1.0.0 后续做；**#495 实施时以反向合并 + 契约零变更落地，未破坏已交付面**） |
 | 10 | **Q2=A 拍板：图谱渲染定稿 @xyflow/react（2026-08-19）** | React Flow v12（37.9K stars，MIT，React 19 兼容）；拖拽/缩放/自定义节点开箱即用 | 工程化最小；React 生态图可视化事实标准 | 手写 SVG/Canvas（+2-3 人天，**用户否决**）；antv G6/d3-force（**用户否决**） |
 | 11 | **Q3=A 拍板：提取运行记录不保留 + 统一日志页（2026-08-19）** | 图谱 tab 不保留 extractions/runs 展示；运行日志（内核/GUI/AI）统一日志页建 #496 挂 1.0.0 | 图谱 tab 聚焦关系；runs 是过程日志非日常查看对象；日志页独立功能后续排期 | 方案 B（图谱 tab 内嵌提取记录区——三视图拥挤，**用户否决**）；方案 C（等 #480——推迟 D3 落地，**用户否决**） |
-| 12 | **#479 契约定稿（v1.2，2026-08-19）：进程内调度 + 复用 extraction_runs + 幂等跳过** | ① 进程内 asyncio 调度器（lifespan 启停 + 启动补跑 + 每周期重读设置），不引入 APScheduler/系统 cron；② run 记录复用 F14 extraction_runs（ExtractionType 第 7 值），不建自有表；③ 六元组幂等 = 跳过不覆盖（AI 不覆盖手动调整的 description）；④ 规则提取三规则集只读结构化字段（WorldSetting.parent_id / Foreshadowing.event_id / MapPin.location_id+ref_id），零 LLM；⑤ AI/规则提取只写 knowledge_relations（不碰 F9 角色关系既有行；**#495 后两者同表 `character↔character` 子空间**）；⑥ 未配置模型（provider_config 无 key_saved=True）→ AI 禁用：端点 422 + 前端选项 disabled + both 降级 rule | 本地单机架构进程内调度最简单可逆；复用 run 表面零新表零 GUI 面（Q3=A 已拍 runs 无展示面）；跳过不覆盖保护用户手动编辑；规则集确定性可测试 | 系统 cron/schtasks（跨平台三套 + 内核外生命周期失控）；自建 kg_extraction_runs 表（无展示面纯属冗余）；幂等覆盖更新（破坏用户手动编辑）；AI 提取写 character_relations（破坏 F9 契约 + 双轨污染） |
+| 12 | **#479 契约定稿（v1.2，2026-08-19）：进程内调度 + 复用 extraction_runs + 幂等跳过** | ① 进程内 asyncio 调度器（lifespan 启停 + 启动补跑 + 每周期重读设置），不引入 APScheduler/系统 cron；② run 记录复用 F14 extraction_runs（ExtractionType 第 7 值），不建自有表；③ 六元组幂等 = 跳过不覆盖（AI 不覆盖手动调整的 description）；④ 规则提取三规则集只读结构化字段（WorldSetting.parent_id / Foreshadowing.event_id / MapPin.location_id+ref_id），零 LLM；⑤ AI/规则提取只写 knowledge_relations（不碰 F9 角色关系既有行；**#495 后两者同表 `character↔character` 子空间**）；⑥ 未配置模型（provider_config 无 key_saved=True）→ AI 禁用：端点 422 + 前端选项 disabled + both 降级 rule | 本地单机架构进程内调度最简单可逆；复用 run 表面零新表零 GUI 面（Q3=A 已拍板 runs 无展示面）；跳过不覆盖保护用户手动编辑；规则集确定性可测试 | 系统 cron/schtasks（跨平台三套 + 内核外生命周期失控）；自建 kg_extraction_runs 表（无展示面纯属冗余）；幂等覆盖更新（破坏用户手动编辑）；AI 提取写 character_relations（破坏 F9 契约 + 双轨污染） |
+| 13 | **#1360：drawio 只做 mxGraph XML 一次性格式转换，不内嵌编辑器**（ADR-061） | 导出/导入两个单向端点；`.drawio` 不落盘入库、不作第二真相源；导入逐行**复用既有校验链** `create_relation`（冲突按幂等跳过 + 计数回报）；交换格式由 `domain/services/_mxgraph_codec.py` 纯函数承担（标准库 XML） | 可离线、零体积、零第二真相源；不新增校验路径（导入与单条创建同一错误面）；渲染栈无关（纯数据转换） | B drawio iframe 内嵌（需外网，违 ADR-020）；C drawio 桌面包内嵌（上百 MB + `.drawio` 成第二可编辑真相源，违 ADR-030）；D 自研私有 JSON（生态为零，用户诉求落空） |
 
 ---
 
@@ -853,6 +1050,7 @@ F48 被依赖:
 | M6 | 前端知识图谱 tab（画布/交互/增删改） | `frontend` vitest `library-kg.test.tsx` + `library-kg-canvas-1325.test.tsx` + `library-kg-page-1325.test.tsx` 全绿（@xyflow/react 渲染，Q2=A 定稿）；手工验证：切到知识图谱 tab → 画布渲染节点 + **连线可见** → 拖拽/缩放（位置保持）→ 从节点 Handle **拉线** → 关系表单预填两端 → 保存 → 边出现 → 点击边详情 → 删除 → 「显示全部实体」切 `scope=all`（#1325 补） |
 | M7 | 手工验证闭环 | 建角色+世界观 → 图谱建「属于」关系 → 图谱显示 → 角色页建角色关系 → 图谱页显示该边（**#495 后同表，无需合并**）→ 删关系 → 删实体 → 关系被清理（无悬空边） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（先跑 coverage-backend 等价命令实测留 buffer）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过；前端 `pnpm lint` + `tsc --noEmit` |
+| M9（#1360） | drawio（mxGraph XML）导入/导出 | 三层测试全绿：① `backend/tests/unit/domain/services/test_knowledge_graph_mxgraph_1360.py`（编解码纯函数 + service）；② `backend/tests/unit/api/routers/test_knowledge_graph_mxgraph_api_1360.py`（端点契约）；③ `tests/integration/test_knowledge_graph_mxgraph_roundtrip_1360.py`（**真 DB 往返幂等：导出→导入→再导出逐字节相等**）。手工验证：图谱 tab 点「导出 drawio」→ 得到 `.drawio` 文件（drawio 桌面版可打开、节点/边/关系类型标签正确）→ 在 drawio 里改一处标签 → 「导入 drawio」选文件 + `merge` → 回报 imported/skipped/failed 计数 → 画布刷新；`replace` 须勾选确认后方可提交。前端 vitest drawio 用例全绿；契约生成物（openapi 快照 + d.ts）已刷新；三件套（原型 HTML + PNG + `specs/f19-gui/knowledge.md`）同 PR 同步 |
 
 > Issue #478 验收标准映射：关系数据模型 = M1-M2；可视化 = M4/M6；手动增删改 = M3/M6；前端测试全绿 = M6/M8；#479 预留 = §5.5 数据面（M 行不覆盖——由 #479 验收，见 §5.5.9）。
 
@@ -868,7 +1066,7 @@ F48 被依赖:
 
 ---
 
-> **所有里程碑验收以本节 M1-M8 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——F48 实现以 v1.1 为唯一真相来源。v1.2（2026-08-19）补定 §5.5 #479 具体契约（决策 12），#479 实现以 §5.5 为唯一真相。v1.3（2026-09-17）同步 #495 落地：`character_relations` 并入 `knowledge_relations`，图谱聚合单表化（去重逻辑废止），F9→F48 契约零变更。
+> **所有里程碑验收以本节 M1-M9 为准**；Q1-Q3 已全拍板（2026-08-19，✅ 留痕），正文已按拍板结果修订（§2.1 规则 3b / §5.2 聚合 / §5.4 前端 / §8 文件结构 / §10 / §11 / §12 决策 9-11 / §13）——F48 实现以 v1.1 为唯一真相来源。v1.2（2026-08-19）补定 §5.5 #479 具体契约（决策 12），#479 实现以 §5.5 为唯一真相。v1.3（2026-09-17）同步 #495 落地：`character_relations` 并入 `knowledge_relations`，图谱聚合单表化（去重逻辑废止），F9→F48 契约零变更。v1.4（2026-09-21）补定 #1325 `scope` 节点集语义 + 画布交互（M6 扩验）。v1.5（2026-10-02）补定 #1360 drawio（mxGraph XML）导入/导出（§5.7，ADR-061，M9）。
 
 ## 14. 动作确认
 
@@ -884,6 +1082,8 @@ F48 被依赖:
 | GET /api/v1/knowledge-relations/{relation_id} | 关系存在 | 详情 | 200 完整实体 | 404（关系不存在） | — |
 | PATCH /api/v1/knowledge-relations/{relation_id} | 关系存在 | 变更字段重新校验（自环/实体存在/同项目/同键唯一）→ 落库 | 200 完整实体 | 404；422（改键后冲突/字段非法） | source 字段不可改（#479 写入方才能置 ai）；未传字段不动 |
 | DELETE /api/v1/knowledge-relations/{relation_id} | 关系存在 | 真删单行（无 restore） | 204 | 404 | 与 F9/F36 删除语义一致（#211 统一登记） |
+| GET /api/v1/projects/{project_id}/knowledge-graph/export | 项目存在（`?format=mxgraph`） | 只读：关系全集 + 端点实体 → mxGraph XML | 200 `application/xml` 附件（含 `Content-Disposition`） | 404（项目不存在）；422（format 非 mxgraph，Pydantic 短路） | 同数据两次导出**字节级一致**；无关系 → 合法空文件（§7 边界 19）；孤立边跳过 + warning |
+| POST /api/v1/projects/{project_id}/knowledge-graph/import | 项目存在（`?mode=merge\|replace`，请求体 = 原始 XML） | 解析 → 逐边走 §5.1 校验链 → 计数回报；`replace` 先清空（**仅在解析成功后**） | 200 `{mode,total,imported,skipped,failed,deleted,details}` | 404（项目不存在）；422（非法 XML / mode 非法） | 单行非法不中断整批、不 500；`total == imported + skipped + failed`；端点无法解析 → failed；`source` 恒 manual |
 
 ### 14.2 CLI 命令状态流
 
@@ -904,3 +1104,4 @@ F48 被依赖:
 - A4：图谱聚合（**单表**）+ 孤立边防御 + 清理回调（M4）
 - A5：CLI knowledge 组全绿（含 ci.yml integration-cli-backend 登记）（M5）
 - A6：前端知识图谱 tab（画布/交互/增删改）+ 手工验证闭环（删实体 → 关系被清理无悬空边）（M6/M7）
+- A7：drawio（mxGraph XML）导入/导出——三层测试（编解码 unit / 端点 API / **真 DB 往返幂等**）+ 前端 drawio 用例 + 契约生成物刷新 + 三件套同步（M9，§5.7）

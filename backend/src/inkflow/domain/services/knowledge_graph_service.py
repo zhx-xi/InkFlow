@@ -33,6 +33,8 @@ from inkflow.domain.models.knowledge_graph import (
     EntityType,
     GraphEdge,
     GraphNode,
+    KnowledgeGraphImportIssue,
+    KnowledgeGraphImportResult,
     KnowledgeGraphView,
     KnowledgeRelation,
     KnowledgeRelationCreate,
@@ -42,6 +44,7 @@ from inkflow.domain.ports.character_repository import CharacterRepositoryProtoco
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.knowledge_graph_errors import (
     KnowledgeEntityNotFoundError,
+    KnowledgeGraphServiceError,
     KnowledgeRelationConflictError,
     KnowledgeRelationNotFoundError,
     KnowledgeRelationSelfLoopError,
@@ -56,6 +59,7 @@ from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
+from inkflow.domain.services import _mxgraph_codec
 from inkflow.domain.services._data_change import publish_change
 
 
@@ -553,6 +557,156 @@ class KnowledgeGraphService:
                     )
                 )
         return nodes
+
+    # ── drawio 导入 / 导出（spec §5.7，ADR-061）────────────────────────
+
+    async def export_mxgraph(self, project_id: uuid.UUID) -> tuple[str, str]:
+        """导出项目关系图为 mxGraph XML（一次性格式转换，不落盘入库）.
+
+        Args:
+            project_id: 项目 UUID.
+
+        Returns:
+            ``(xml, filename)`` 元组；无关系 → 合法空文件（0 节点 0 边）.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（404）.
+        """
+        pid_int = _to_uuid(project_id)
+        project = (
+            await self._project_repo.get(project_id) if self._project_repo is not None else None
+        )
+        if self._project_repo is not None and project is None:
+            raise ProjectNotFoundError()
+        relations = await self._relation_repo.list_by_project(pid_int)
+        pool: list[GraphNode] = []
+        pool.extend(await self._collect_nodes(pid_int, EntityType.CHARACTER, lambda e: e.name))
+        pool.extend(await self._collect_nodes(pid_int, EntityType.WORLD, lambda e: e.name))
+        pool.extend(await self._collect_nodes(pid_int, EntityType.OUTLINE, lambda e: e.name))
+        pool.extend(await self._collect_nodes(pid_int, EntityType.TIMELINE, lambda e: e.title))
+        pool.extend(await self._collect_nodes(pid_int, EntityType.FORESHADOW, lambda e: e.title))
+        pool.extend(await self._collect_map_pin_nodes(pid_int))
+
+        needed = {f"{kr.source_type.value}:{kr.source_id}" for kr in relations} | {
+            f"{kr.target_type.value}:{kr.target_id}" for kr in relations
+        }
+        selected = [n for n in pool if n.id in needed]
+        selected.sort(key=lambda n: (_NODE_TYPE_ORDER.index(n.type), n.name))
+        node_ids = {n.id for n in selected}
+
+        edges: list[GraphEdge] = []
+        for kr in relations:
+            src = f"{kr.source_type.value}:{kr.source_id}"
+            tgt = f"{kr.target_type.value}:{kr.target_id}"
+            if src not in node_ids or tgt not in node_ids:
+                logger.warning(
+                    "图谱导出孤立边跳过: relation=%s（端点 %s / %s 不在节点集）",
+                    kr.id,
+                    src,
+                    tgt,
+                )
+                continue
+            edges.append(
+                GraphEdge(
+                    id=f"kr:{kr.id}",
+                    source=src,
+                    target=tgt,
+                    label=kr.relation_type,
+                    description=kr.description,
+                    source_table="knowledge_relations",
+                )
+            )
+        xml = _mxgraph_codec.build_mxgraph_xml(selected, edges)
+        filename = _mxgraph_codec.suggest_drawio_filename(
+            project.name if project is not None else "untitled"
+        )
+        return xml, filename
+
+    async def import_mxgraph(
+        self, project_id: uuid.UUID, xml: str, mode: str = "merge"
+    ) -> KnowledgeGraphImportResult:
+        """导入 mxGraph XML（复用 create_relation 校验链，逐行回报，不中断整批）.
+
+        顺序契约: 先解析（失败 → MxGraphImportError，数据零变更，replace 也不删）
+        → 项目存在检查 → replace 清空 → 逐边写入。
+
+        Args:
+            project_id: 项目 UUID.
+            xml: 原始 mxGraph XML 文本.
+            mode: ``merge``（默认，不删既有行）/ ``replace``（先清空再写入）.
+
+        Returns:
+            KnowledgeGraphImportResult（total == imported + skipped + failed）.
+
+        Raises:
+            MxGraphImportError: XML 非法（422，数据零变更）.
+            ProjectNotFoundError: 项目不存在（404）.
+        """
+        edges = _mxgraph_codec.parse_mxgraph_xml(xml)
+        pid_int = _to_uuid(project_id)
+        project = (
+            await self._project_repo.get(project_id) if self._project_repo is not None else None
+        )
+        if self._project_repo is not None and project is None:
+            raise ProjectNotFoundError()
+        normalized: Literal["merge", "replace"] = "merge"
+        if mode == "replace":
+            normalized = "replace"
+        deleted = 0
+        if normalized == "replace":
+            deleted = await self._relation_repo.delete_by_project(pid_int)
+        imported = 0
+        skipped = 0
+        failed = 0
+        details: list[KnowledgeGraphImportIssue] = []
+        for edge in edges:
+            source = _mxgraph_codec.parse_entity_ref(edge.source)
+            target = _mxgraph_codec.parse_entity_ref(edge.target)
+            if source is None or target is None:
+                failed += 1
+                details.append(
+                    KnowledgeGraphImportIssue(
+                        kind="failed",
+                        edge_id=edge.id,
+                        label=edge.label,
+                        reason="端点无法解析为 InkFlow 实体",
+                    )
+                )
+                continue
+            try:
+                await self.create_relation(
+                    pid_int,
+                    source[0].value,
+                    source[1],
+                    target[0].value,
+                    target[1],
+                    edge.label,
+                    edge.description,
+                )
+                imported += 1
+            except KnowledgeRelationConflictError as exc:
+                skipped += 1
+                details.append(
+                    KnowledgeGraphImportIssue(
+                        kind="skipped", edge_id=edge.id, label=edge.label, reason=str(exc)
+                    )
+                )
+            except KnowledgeGraphServiceError as exc:
+                failed += 1
+                details.append(
+                    KnowledgeGraphImportIssue(
+                        kind="failed", edge_id=edge.id, label=edge.label, reason=str(exc)
+                    )
+                )
+        return KnowledgeGraphImportResult(
+            mode=normalized,
+            total=len(edges),
+            imported=imported,
+            skipped=skipped,
+            failed=failed,
+            deleted=deleted,
+            details=details,
+        )
 
     # ── 实体硬删清理回调（spec §5.3）──────────────────────────────────
 

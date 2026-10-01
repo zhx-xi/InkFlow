@@ -57,6 +57,13 @@ class KnowledgeRelationValidationError(KnowledgeGraphServiceError):
         super().__init__(message)
 
 
+class MxGraphImportError(KnowledgeGraphServiceError):
+    """非法 mxGraph XML（解析阶段失败）— 422."""
+
+    def __init__(self, message: str = "非法 mxGraph XML") -> None:
+        super().__init__(message)
+
+
 class LLMNotConfiguredError(Exception):
     """未配置大模型 — AI 提取前置门禁失败（#479 D3 拍板）。"""
 

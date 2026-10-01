@@ -235,6 +235,31 @@ body[data-state="relation-form"] .dialog-overlay{display:flex}
 .btn-ghost2{border:1px solid var(--line);border-radius:6px;background:none;font-size:14px;color:var(--ink-2);padding:6px 16px}
 .btn-ghost2:hover{background:var(--surface-3)}
 
+/* ── #1360 drawio 导入 / 导出（mxGraph XML ↔ knowledge_relations，ADR-061） ── */
+.kg-io{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:6px 12px;font-size:12px;color:var(--ink-2);transition:border-color var(--dur),color var(--dur)}
+.kg-io:hover{border-color:var(--accent);color:var(--accent)}
+.kg-io svg{width:13px;height:13px}
+.kg-io-status{display:none;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+body[data-drawio-status="1"] .kg-io-status{display:inline-flex}
+/* 导入弹层（独立于关系表单 overlay：两态互不遮蔽） */
+.dlg-drawio{display:none;position:fixed;inset:0;z-index:50;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
+body[data-state="drawio-import"] .dlg-drawio{display:flex}
+.dlg-drawio .dialog{width:540px}
+.dlg-modes{display:flex;flex-direction:column;gap:8px}
+.dlg-mode{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--ink-2);cursor:pointer}
+.dlg-mode strong{color:var(--ink);font-weight:500}
+/* .dlg-field input 的 width:100% 会撑爆单选圆点（原型实测：圆点跑到行中间）→ 显式收回 */
+.dlg-modes input[type="radio"]{width:auto;height:auto;border:none;background:none;padding:0;margin:3px 0 0}
+.dlg-mode>span{flex:1 1 auto;min-width:0}
+.dlg-danger{display:none;align-items:center;gap:8px;border:1px solid var(--err);border-radius:6px;background:var(--surface-2);padding:8px 10px;font-size:12px;color:var(--err)}
+body[data-drawio-mode="replace"] .dlg-danger{display:flex}
+.dlg-file{display:flex;align-items:center;gap:8px;border:1px dashed var(--line);border-radius:6px;background:var(--surface-2);padding:10px 12px;font-size:12px;color:var(--ink-2)}
+.dlg-result{display:none;margin-top:12px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:10px 12px;font-size:12px;color:var(--ink-2)}
+body[data-drawio-result="1"] .dlg-result{display:block}
+.dlg-result .cnt{color:var(--accent);font-weight:500}
+.dlg-result .fail{color:var(--err);font-weight:500}
+.dlg-note{margin-top:6px;font-size:11px;color:var(--ink-3)}
+
 /* 状态栏 */
 .statusbar{display:flex;align-items:center;gap:20px;flex:none;padding:6px 16px;border-top:1px solid var(--line);background:var(--surface);font-size:11px;color:var(--ink-3)}
 
@@ -330,6 +355,10 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
         </div>
         <!-- #1325：节点集范围开关（related 默认 = 只显示参与关系者；切 all = 六类全量） -->
         <button data-testid="library-kg-scope-all" aria-pressed="false">显示全部实体</button>
+        <!-- #1360：drawio 格式互通（只做一次性转换，不内嵌编辑器 —— ADR-061） -->
+        <button class="kg-io" data-testid="library-kg-export-drawio"><span data-ic="download"></span>导出 drawio</button>
+        <button class="kg-io" data-testid="library-kg-import-drawio"><span data-ic="upload"></span>导入 drawio</button>
+        <span class="kg-io-status" data-testid="library-kg-drawio-status"><span data-ic="check"></span>已导出：青云志-knowledge-graph.drawio</span>
       </div>
 
       <div class="kg-body">
@@ -538,6 +567,48 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
   </div>
 </div>
 
+<!-- ═══ #1360 导入 drawio 弹层（选文件 + merge/replace + replace 确认 + 结果回报） ═══ -->
+<div class="dlg-drawio">
+  <div class="dialog" role="dialog" aria-modal="true" aria-label="导入 drawio" data-testid="library-kg-import-dialog">
+    <h2>导入 drawio</h2>
+    <p class="dlg-note">从 mxGraph XML（.drawio）恢复关系。导入只认 InkFlow 导出的节点 id（<code>类型:实体UUID</code>）——在 drawio 里新画的节点无法映射，会被跳过并回报。</p>
+    <div class="dlg-fields">
+      <div class="dlg-field">
+        <span>文件</span>
+        <label class="dlg-file">
+          <span data-ic="filetext"></span>
+          <input type="file" accept=".drawio,.xml,application/xml" data-testid="library-kg-import-file" />
+        </label>
+      </div>
+      <div class="dlg-field">
+        <span>模式</span>
+        <div class="dlg-modes">
+          <label class="dlg-mode">
+            <input type="radio" name="drawioMode" value="merge" checked data-testid="library-kg-import-mode-merge" />
+            <span><strong>合并</strong>（merge）· 跳过已存在的关系，只补新增</span>
+          </label>
+          <label class="dlg-mode">
+            <input type="radio" name="drawioMode" value="replace" data-testid="library-kg-import-mode-replace" />
+            <span><strong>替换</strong>（replace）· 先清空本项目既有关系，再按文件重建</span>
+          </label>
+        </div>
+      </div>
+      <div class="dlg-danger">
+        <span data-ic="x"></span>
+        <label><input type="checkbox" data-testid="library-kg-import-replace-ack" /> 我了解：替换会删除本项目全部既有关系（不可恢复）</label>
+      </div>
+    </div>
+    <div class="dlg-result" data-testid="library-kg-import-result">
+      <div>导入完成：新增 <span class="cnt">1</span> · 跳过 <span>1</span> · 失败 <span class="fail">1</span>（共 3 条）</div>
+      <div class="dlg-note">kr:2 自指 —— 关系两端不能是同一实体（自环）</div>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn-ghost2" data-testid="library-kg-import-cancel">取消</button>
+      <button class="btn-primary" data-testid="library-kg-import-submit" style="font-size:14px;padding:6px 16px">导入</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ 演示切换条 ═══ -->
 <div class="demo-bar">
   <label>状态
@@ -551,6 +622,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="list">关系列表</option>
       <option value="empty">图谱空态</option>
       <option value="relation-form">新建关系表单</option>
+      <option value="drawio-import">导入 drawio · 替换模式（含结果回报）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -586,6 +658,10 @@ const ICONS = {
   'chevron-down':'<path d="m6 9 6 6 6-6"/>',
   'chevron-right':'<path d="m9 18 6-6-6-6"/>',
   plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  filetext:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
   minus:'<path d="M5 12h14"/>',
   square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
   x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
@@ -1079,6 +1155,8 @@ const SHOTS = {
   'list':               { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
   'empty':              { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
   'relation-form':      { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
+  /* #1360：drawio 导入弹层（replace 模式 + 结果回报；勾选确认框供对照） */
+  'drawio-import':      { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null, drawioMode:'replace', drawioResult:'1' },
 };
 const STATES = Object.keys(SHOTS);
 
@@ -1088,6 +1166,19 @@ function setState(s){
   document.body.dataset.color = cfg.color;
   document.body.dataset.filterForm = cfg.form;
   document.body.dataset.note = cfg.note;
+  /* #1360：drawio 导入弹层（默认 merge + 无结果；drawio-import 态切 replace + 结果回报） */
+  document.body.dataset.drawioMode = cfg.drawioMode || 'merge';
+  document.body.dataset.drawioResult = cfg.drawioResult || '0';
+  const modeMergeEl = document.querySelector('[data-testid="library-kg-import-mode-merge"]');
+  const modeReplaceEl = document.querySelector('[data-testid="library-kg-import-mode-replace"]');
+  if (modeMergeEl && modeReplaceEl){
+    const rep = (cfg.drawioMode || 'merge') === 'replace';
+    modeReplaceEl.checked = rep;
+    modeMergeEl.checked = !rep;
+  }
+  const ackEl = document.querySelector('[data-testid="library-kg-import-replace-ack"]');
+  if (ackEl) ackEl.checked = s === 'drawio-import';
+  document.body.dataset.drawioStatus = cfg.drawioStatus || '0';
   document.getElementById('stateSel').value = s;
   const seg = document.querySelectorAll('.kg-seg button');
   const isList = s === 'list';
@@ -1134,6 +1225,17 @@ const searchB = document.querySelector('[data-testid="library-kg-filter-panel-se
 if (searchB){
   searchB.addEventListener('input', function(e){ filterState.query = e.target.value; renderPanel(); });
 }
+/* #1360 drawio：模式单选切 replace 时露出确认框；导出按钮切出状态行；导入按钮开弹层 */
+[['library-kg-import-mode-merge','merge'], ['library-kg-import-mode-replace','replace']].forEach(function(pair){
+  const el = document.querySelector('[data-testid="' + pair[0] + '"]');
+  if (el) el.addEventListener('change', function(){ document.body.dataset.drawioMode = pair[1]; });
+});
+const exportBtn = document.querySelector('[data-testid="library-kg-export-drawio"]');
+if (exportBtn) exportBtn.addEventListener('click', function(){ document.body.dataset.drawioStatus = '1'; });
+const importBtn = document.querySelector('[data-testid="library-kg-import-drawio"]');
+if (importBtn) importBtn.addEventListener('click', function(){ setState('drawio-import'); });
+const importCancel = document.querySelector('[data-testid="library-kg-import-cancel"]');
+if (importCancel) importCancel.addEventListener('click', function(){ setState('graph'); });
 const init = location.hash.replace('#','');
 if (STATES.indexOf(init) >= 0) {
   setState(init); /* 演示/截图态：显式指定，不读记忆 */

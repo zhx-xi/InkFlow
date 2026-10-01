@@ -12,6 +12,7 @@ import type {
 } from '../../api/knowledge-graph';
 import { useI18n } from '../../i18n/useI18n';
 import { cn } from '../../lib/cn';
+import { DrawioIoControls } from './DrawioIoControls';
 import { ENTITY_TYPE_KEYS, KnowledgeGraphCanvas } from './KnowledgeGraphCanvas';
 import { deriveNodeColor, typeBaseDot } from './kgColor';
 import {
@@ -53,6 +54,10 @@ export interface KnowledgeGraphViewProps {
   relationPage?: number;
   relationPageSize?: number;
   onRelationPageChange?: (page: number) => void;
+  /** #1360：drawio 导入/导出所需项目 id（缺省 → 控件禁用） */
+  projectId?: string;
+  /** #1360：导入成功后回调（父侧 bump reloadKey 触发图谱重拉） */
+  onImported?: () => void;
 }
 
 export function KnowledgeGraphView({
@@ -76,6 +81,8 @@ export function KnowledgeGraphView({
   relationPage,
   relationPageSize,
   onRelationPageChange,
+  projectId,
+  onImported,
 }: KnowledgeGraphViewProps) {
   const { t } = useI18n();
 
@@ -191,6 +198,8 @@ export function KnowledgeGraphView({
         >
           {t('lib.knowledge.scopeAll')}
         </button>
+        {/* #1360：drawio 导入 / 导出（spec §5.7） */}
+        <DrawioIoControls projectId={projectId} onImported={onImported} />
       </div>
       {view === 'graph' ? (
         <div className="flex items-start gap-3" data-testid="library-kg-view">

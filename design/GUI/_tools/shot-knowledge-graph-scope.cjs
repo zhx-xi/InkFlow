@@ -31,6 +31,7 @@ const SCENES = [
   { id: 'list', out: 'knowledge-list.png', scroll: 'list', desc: '关系列表视图（不筛选）' },
   { id: 'empty', out: 'knowledge-empty.png', scroll: 'empty', desc: '图谱空态' },
   { id: 'relation-form', out: 'knowledge-relation-form.png', scroll: 'none', desc: '新建关系表单' },
+  { id: 'drawio-import', out: 'knowledge-drawio-import.png', scroll: 'none', desc: '#1360 导入 drawio 弹层（replace 模式 + 结果回报）' },
 ];
 
 const SCROLL_TO = {
@@ -122,6 +123,22 @@ async function probe(page) {
       scopePressed: q('[data-testid="library-kg-scope-all"]')
         ? q('[data-testid="library-kg-scope-all"]').getAttribute('aria-pressed')
         : 'MISSING',
+      /* #1360 drawio 导入 / 导出 */
+      exportBtn: disp('[data-testid="library-kg-export-drawio"]'),
+      importBtn: disp('[data-testid="library-kg-import-drawio"]'),
+      exportText: ((q('[data-testid="library-kg-export-drawio"]') || {}).textContent || 'MISSING').trim(),
+      importText: ((q('[data-testid="library-kg-import-drawio"]') || {}).textContent || 'MISSING').trim(),
+      drawioStatus: disp('[data-testid="library-kg-drawio-status"]'),
+      dialogDrawio: disp('[data-testid="library-kg-import-dialog"]'),
+      drawioMode: document.body.dataset.drawioMode,
+      drawioResult: document.body.dataset.drawioResult,
+      replaceAck: q('[data-testid="library-kg-import-replace-ack"]')
+        ? q('[data-testid="library-kg-import-replace-ack"]').checked
+        : 'MISSING',
+      dangerBox: disp('.dlg-danger'),
+      resultBox: disp('[data-testid="library-kg-import-result"]'),
+      resultText: ((q('[data-testid="library-kg-import-result"]') || {}).textContent || 'MISSING').trim(),
+      dialogRect: rect('[data-testid="library-kg-import-dialog"]'),
       noteA: noteShown('color-a'),
       noteB: noteShown('color-b'),
       noteFA: noteShown('filter-a'),
@@ -202,6 +219,13 @@ function checks(d, scene) {
   push(`全量实体开关可见（实际 ${d.scopeBtn}）`, d.scopeBtn !== 'none' && d.scopeBtn !== 'MISSING');
   push(`开关文案=「显示全部实体」（实际 ${d.scopeText}）`, d.scopeText === '显示全部实体');
   push(`开关 aria-pressed=false（实际 ${d.scopePressed}）`, d.scopePressed === 'false');
+  /* #1360：drawio 导入/导出按钮常驻工具栏（全状态） */
+  push(`drawio 导出按钮可见（实际 ${d.exportBtn}）`, d.exportBtn !== 'none' && d.exportBtn !== 'MISSING');
+  push(`drawio 导入按钮可见（实际 ${d.importBtn}）`, d.importBtn !== 'none' && d.importBtn !== 'MISSING');
+  push(`导出按钮文案=「导出 drawio」（实际 ${d.exportText}）`, d.exportText === '导出 drawio');
+  push(`导入按钮文案=「导入 drawio」（实际 ${d.importText}）`, d.importText === '导入 drawio');
+  /* 导出状态行只在导出后出现（默认态不占位） */
+  push(`导出状态行默认隐藏（实际 ${d.drawioStatus}）`, d.drawioStatus === 'none');
 
   const canvasTop = d.canvasRect ? d.canvasRect.top : -1;
   const canvasBottom = d.canvasRect ? d.canvasRect.bottom : -1;
@@ -329,6 +353,20 @@ function checks(d, scene) {
 
   if (scene.id === 'relation-form') {
     push('关系表单弹层可见', d.dialog !== 'none' && d.dialog !== 'MISSING');
+  }
+
+  if (scene.id === 'drawio-import') {
+    push('drawio 导入弹层可见', d.dialogDrawio !== 'none' && d.dialogDrawio !== 'MISSING');
+    push(`模式 = replace（实际 ${d.drawioMode}）`, d.drawioMode === 'replace');
+    push(`replace 危险提示露出（实际 ${d.dangerBox}）`, d.dangerBox !== 'none' && d.dangerBox !== 'MISSING');
+    push(`确认勾选框已勾（实际 ${d.replaceAck}）`, d.replaceAck === true);
+    push(`结果回报可见（实际 ${d.resultBox}）`, d.resultBox !== 'none' && d.resultBox !== 'MISSING');
+    push(
+      `结果回报含新增/跳过/失败三段（实际 ${d.resultText}）`,
+      /新增/.test(d.resultText) && /跳过/.test(d.resultText) && /失败/.test(d.resultText),
+    );
+    /* 弹层在视口内完整可见（不能只断 display） */
+    push('导入弹层完整落在视口内', !!d.dialogRect && d.dialogRect.top >= 0 && d.dialogRect.bottom <= d.viewportH);
   }
 
   return fails;
