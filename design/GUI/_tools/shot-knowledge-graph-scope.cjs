@@ -153,7 +153,7 @@ function maxChannelDelta(a, b) {
   if (!x || !y) return -1;
   return Math.max(Math.abs(x[0] - y[0]), Math.abs(x[1] - y[1]), Math.abs(x[2] - y[2]));
 }
-/** 同类型内个体色的「视觉可辨度」统计 */
+/** 同类型内个体色的「视觉可辨度」统计（kinds = 实际出现的圆点色种数，#1418 扩槽口径） */
 function typeColorSpread(nodes) {
   const byType = {};
   nodes.forEach((n) => {
@@ -169,7 +169,8 @@ function typeColorSpread(nodes) {
         maxBg = Math.max(maxBg, maxChannelDelta(list[i].bg, list[j].bg));
       }
     }
-    return { t, n: list.length, maxDot, maxBg };
+    const kinds = new Set(list.map((n) => n.dot)).size;
+    return { t, n: list.length, maxDot, maxBg, kinds };
   });
 }
 
@@ -261,9 +262,17 @@ function checks(d, scene) {
     const spread = typeColorSpread(d.nodes);
     const strong = spread.filter((s) => s.maxDot >= 40 || s.maxBg >= 30);
     console.log(
-      `    方案A 个体色差明细 ${spread.map((s) => s.t + ':dot' + s.maxDot + '/bg' + s.maxBg).join(' ')}`,
+      `    方案A 个体色差明细 ${spread
+        .map((s) => s.t + ':dot' + s.maxDot + '/bg' + s.maxBg + '/kinds' + s.kinds)
+        .join(' ')}`,
     );
     push(`同类型内 ≥4 类出现肉眼可辨的个体色差（实际 ${strong.length} 类）`, strong.length >= 4);
+    /* #1418 扩槽：6 槽下 8 个角色实染只有 4 色（碰撞组 3+3）→ 12 槽后色种数必须 > 4 */
+    const ch = spread.find((s) => s.t === 'character');
+    push(
+      `#1418 8 个角色圆点色种数 > 4（实际 ${ch ? ch.kinds : 'MISSING'} 色 / ${ch ? ch.n : 0} 节点）`,
+      !!ch && ch.n === 8 && ch.kinds > 4,
+    );
   }
 
   if (scene.id === 'filter-a') {
