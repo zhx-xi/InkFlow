@@ -223,7 +223,7 @@ async def extract(
     request: ExtractionRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """统一提取（spec §3.2）— 6 种类型分发 + 增量判定 + 可选 RAG 索引。
+    """统一提取（spec §3.2）— 7 种类型分发 + 增量判定 + 可选 RAG 索引。
 
     请求体即 ExtractionRequest（DTO 自带校验: text/chapter_ids 互斥、超限、
     非法 UUID/type → Pydantic 422）；业务校验（类型不匹配、章节不存在/跨项目、

@@ -37,7 +37,7 @@ class TestExtractionTypeEnum:
         assert len(ExtractionType) == 7
 
     def test_member_values(self):
-        """6 种类型的 value 与 spec §2.1 一一对应."""
+        """原 6 值的 value 与 spec §2.1 一一对应（第 7 值见 test_knowledge_relation_member）."""
         assert ExtractionType.CHARACTER.value == "character"
         assert ExtractionType.SETTING.value == "setting"
         assert ExtractionType.OUTLINE.value == "outline"
