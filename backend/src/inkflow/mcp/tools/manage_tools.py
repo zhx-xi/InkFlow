@@ -104,6 +104,7 @@ async def _route_project(client: _HTTPClient, params: ManageProjectParams) -> ob
                     "tags": params.tags,
                     "language": params.language,
                     "target_words": params.target_words,
+                    "config": params.config,
                 }
             ),
         )
@@ -120,6 +121,7 @@ async def _route_project(client: _HTTPClient, params: ManageProjectParams) -> ob
                     "tags": params.tags,
                     "language": params.language,
                     "target_words": params.target_words,
+                    "config": params.config,
                 }
             ),
         )

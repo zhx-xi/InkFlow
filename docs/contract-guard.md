@@ -120,6 +120,26 @@
 > 可验证证据后闭环；本节证据要求自 #1184a 起对**所有新增/修改的 spec** 长期生效。
 > 已知存量缺口（f19/f20/f23/f33 共 7 行历史无证据标记）另立 issue 跟踪，不在 #1184b 范围。
 
+## MCP 工具面契约源（#1233 核查结论，2026-10-02）
+
+MCP 工具面（`backend/src/inkflow/mcp/tools/schemas.py` 的 19 个 `*Params` 模型 +
+`mcp/tools/__init__.py::MCP_TOOL_REGISTRY`）**不在 `ci.yml` 的 `contract` filter 里**，
+也不被任何 `tests/e2e/**` 硬编码工具名/字段名——核查依据：
+
+| 核查项 | 取证 | 结论 |
+|--------|------|------|
+| `ci.yml` contract filter 命中面 | filter 仅列 `infrastructure/agent/tools/registry.py` + 审计装配 + 写作链契约源（`docs/contract-guard.md` §消费面登记表同源） | MCP 文件不在其中 → 改 MCP schema **不触发** `e2e-frontend-settings` |
+| e2e 是否硬编码 MCP 工具名 | `tests/e2e/**` 全目录 grep `mcp` 仅命中 `e2e-logs.spec.ts`（`caller_type=mcp` 字样，与工具面无关） | 无 e2e 快照可断 |
+| 谁锁 MCP 工具面 | `backend/tests/unit/mcp/`（恒跑 job `unit-backend`）+ `tests/cli/test_cli_mcp.py`、`test_mcp_tool_surface_retest_866.py`（`integration-cli-backend`） | 工具面契约由**恒跑**单元/集成 job 守卫，无需 e2e 联保 |
+
+**改 MCP 工具面（工具增删 / action 枚举 / 字段面）时的 checklist**：
+
+1. 同步 `specs/f20-mcp/spec.md` §2.2 映射表 + §4.1 清单 + §13 验收（spec 是工具面的契约真相源）；
+2. 同步 `backend/tests/unit/mcp/test_mcp_schemas.py` 的 `_CONTRACT` 表与
+   `test_mcp_tool_surface_*.py` 的 `_EXPECTED_NAMES` / `ALL_SCHEMAS` 计数断言；
+3. **无需**改 `ci.yml` 的 `contract` filter，也**无需**动 e2e（除非将来出现消费 MCP 工具面的 e2e spec——
+   `tests/e2e/**` 内新增「硬编码 MCP 工具名/字段名」的断言时，按 AGENTS.md §9 陷阱 #26 的扩容规则追加 filter + 在本文档登记）。
+
 ## 改表 PR checklist（机械引用）
 
 改 `registry.py` 的表内容时：

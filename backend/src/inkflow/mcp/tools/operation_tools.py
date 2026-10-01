@@ -88,23 +88,74 @@ def _compact(mapping: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in mapping.items() if value is not None}
 
 
+_PLACEHOLDER = "（未配置章级写作要求）"  # 逐字沿用 CLI 占位文案
+
+
+async def _fetch_chapter_requirements(client: _HTTPClient, chapter_id: str | None) -> str:
+    """取 `chapters.writing_requirements` 真实值（失败 / 不存在 / 为空 → 空串）。"""
+    if chapter_id is None:
+        return ""
+    try:
+        chapter = await client.get(f"/chapters/{chapter_id}")
+    except Exception:  # 观测失败绝不阻断写作主路径（镜像 CLI 同名 helper）
+        return ""
+    if not isinstance(chapter, dict):
+        return ""
+    value = chapter.get("writing_requirements")
+    return value.strip() if isinstance(value, str) else ""
+
+
 async def _route_write(client: _HTTPClient, params: WriteParams, timeout: float | None) -> object:
     """write action 路由：非流式端点同步返回 + 草稿确认（Q3=A，#933）。"""
     if params.action == "generate":
-        return await client.post(
-            "/writing/generate",
-            json=_compact(
-                {
+        # #1233：show_context 先取章级要求 → 装配上下文（镜像 CLI `write next --show-context`）
+        assembly: dict | None = None
+        if params.show_context:
+            requirements = await _fetch_chapter_requirements(client, params.chapter_id)
+            assembly = await client.post(
+                "/context/assemble",
+                json={
                     "project_id": params.project_id,
                     "chapter_id": params.chapter_id,
-                    "outline": params.outline,
-                    "context": params.context,
-                    "style_hint": params.style_hint,
-                    "target_words": params.target_words,
-                }
-            ),
-            timeout=timeout,
-        )
+                    "model": "",  # 空串 = 服务端按兜底窗口计预算（镜像 CLI --show-context）
+                    "writing_requirements": requirements or _PLACEHOLDER,
+                },
+            )
+        if params.mode == "agentic":
+            # min_words = target_words；agentic DTO 无 target_words 字段（勿透传）
+            data: dict = await client.post(
+                "/writing/agentic/generate",
+                json=_compact(
+                    {
+                        "project_id": params.project_id,
+                        "chapter_id": params.chapter_id,
+                        "outline": params.outline,
+                        "context": params.context,
+                        "style_hint": params.style_hint,
+                        "min_words": params.target_words,
+                    }
+                ),
+                timeout=timeout,
+            )
+        else:
+            data = await client.post(
+                "/writing/generate",
+                json=_compact(
+                    {
+                        "project_id": params.project_id,
+                        "chapter_id": params.chapter_id,
+                        "outline": params.outline,
+                        "context": params.context,
+                        "style_hint": params.style_hint,
+                        "target_words": params.target_words,
+                    }
+                ),
+                timeout=timeout,
+            )
+        if assembly is not None and isinstance(data, dict):
+            # 新 dict，不原地修改响应对象（镜像 CLI `--show-context`）
+            return {**data, "context": assembly}
+        return data
     if params.action == "continue":
         return await client.post(
             "/writing/continue",
@@ -236,6 +287,18 @@ def build_write_tool() -> MCPTool:
                 "draft_list 需要 project_id",
                 "请提供 project_id（可经 manage_project list 查询）后重试",
             )
+        if params.mode == "agentic" and params.action != "generate":
+            return _error(
+                "INVALID_ARGS",
+                "mode=agentic 仅适用于 action=generate",
+                "请改用 action=generate（agentic 单章写作），或省略 mode",
+            )
+        if params.show_context and params.action != "generate":
+            return _error(
+                "INVALID_ARGS",
+                "show_context 仅适用于 action=generate",
+                "请改用 action=generate，或省略 show_context",
+            )
         try:
             from inkflow.infrastructure.http import (
                 LLM_TASK_TIMEOUT,
@@ -266,7 +329,9 @@ def build_write_tool() -> MCPTool:
             name="write",
             description=(
                 "写作：续写下一章 / 续写指定章 / 按指令修订 "
-                "/ 草稿确认（confirm_draft/reject_draft/draft_list）"
+                "/ 草稿确认（confirm_draft/reject_draft/draft_list）；"
+                "mode=agentic 走自主编排（F27），"
+                "show_context=true 返回上下文装配结果（仅 action=generate）"
             ),
             input_schema=WriteParams.model_json_schema(),
         ),

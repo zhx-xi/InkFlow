@@ -110,7 +110,17 @@ from inkflow.mcp.tools.schemas import (
 _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
     "ManageProjectParams": (
         ["create", "list", "get", "update", "delete", "restore"],
-        ["id", "name", "tags", "language", "target_words", "search", "force", "permanent"],
+        [
+            "id",
+            "name",
+            "tags",
+            "language",
+            "target_words",
+            "config",
+            "search",
+            "force",
+            "permanent",
+        ],
     ),
     "ManageChapterParams": (
         ["create", "list", "get", "update", "delete", "move"],
@@ -207,6 +217,8 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
             "status",
             "source_outline_id",
             "title",
+            "mode",
+            "show_context",
         ],
     ),
     "ManageBookParams": (
