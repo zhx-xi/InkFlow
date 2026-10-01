@@ -152,6 +152,15 @@
  *   body: InterveneRequest；404 运行不存在 / 422（已完成章不可干预 / 干预目标不存在 /
  *   非法干预动作 / 干预参数缺失 / 大纲更新器未装配 / 运行未处于可暂停状态）
  * - GET /runs/{run_id}/summary（200）→ RunSummaryResponse（无 checkpoint → next:{finished:true}）；404 运行不存在
+ *
+ * ⚠️ #1288（#1282 第 1 项）增量——GREEN 必须追加：
+ *
+ * export interface ResetRunResponse { run_id: string; status: string; }
+ * export function resetBookRun(runId: string): Promise<ResetRunResponse>
+ *
+ * 端点契约（backend api/routers/books.py reset_run 实证，勿重新推断）：
+ * - POST /runs/{run_id}/reset（200）→ {run_id, status: 'ready'}；**无请求体**
+ *   404 运行不存在 / 422 运行已在进行中不可重置；清 progress/execution_refs，不动正文
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -163,6 +172,7 @@ import {
   confirmBookRun,
   interveneBookRun,
   getBookRunSummary,
+  resetBookRun,
 } from './books';
 import { apiFetch } from './client';
 
@@ -442,5 +452,18 @@ describe('getBookRunSummary — GET /runs/{run_id}/summary（确认型：api 层
     });
     const res = await getBookRunSummary('wp-1');
     expect(res.next.finished).toBe(true);
+  });
+});
+
+describe('resetBookRun — POST /runs/{run_id}/reset（#1288 方案 B：不删正文重跑）', () => {
+  it('POST 无请求体，返回 {run_id, status:"ready"} 原样透传', async () => {
+    apiFetchMock.mockResolvedValue({ run_id: 'wp-1', status: 'ready' });
+    const res = await resetBookRun('wp-1');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/runs/wp-1/reset', {
+      method: 'POST',
+    });
+    // 透传断言（api 层零加工）
+    expect(res.run_id).toBe('wp-1');
+    expect(res.status).toBe('ready');
   });
 });

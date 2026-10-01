@@ -79,6 +79,12 @@ export const bookZh: Record<string, string> = {
   'book.trace.editSave': '保存',
   'book.trace.editCancel': '取消',
   'book.trace.briefPlaceholder': '输入新的章 brief…',
+  // #1288：reset 运行（破坏性操作确认；重置 ≠ 删除正文）
+  'book.run.reset': '重置运行',
+  'book.run.reset.title': '重置运行？',
+  'book.run.reset.message':
+    '重置 ≠ 删除正文：只清空执行状态（章进度与执行记录），正文与草稿不会被删除。若旧正文仍在，重跑时安全闸仍会拦截，需你先自行处理旧正文。',
+  'book.run.reset.confirm': '确认重置',
 };
 
 export const bookEn: Record<string, string> = {
@@ -158,4 +164,10 @@ export const bookEn: Record<string, string> = {
   'book.trace.editSave': 'Save',
   'book.trace.editCancel': 'Cancel',
   'book.trace.briefPlaceholder': 'Enter a new chapter brief…',
+  // #1288: reset run (destructive confirm; reset != delete chapters)
+  'book.run.reset': 'Reset run',
+  'book.run.reset.title': 'Reset run?',
+  'book.run.reset.message':
+    'Reset ≠ delete chapters: only the execution state (chapter progress and run records) is cleared — chapter text and drafts are NOT deleted. If old chapters remain, the safety gate still blocks a rerun until you handle them yourself.',
+  'book.run.reset.confirm': 'Reset',
 };

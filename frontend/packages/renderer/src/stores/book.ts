@@ -8,6 +8,7 @@ import {
   getPlannerSession,
   interveneBookRun,
   respondPlanner,
+  resetBookRun,
   startBookRun,
   startPlanner,
   type ConfirmedItem,
@@ -103,6 +104,8 @@ interface BookState {
     payload?: { brief?: string },
   ) => Promise<boolean>;
   loadSummary: (runId: string) => Promise<void>;
+  /** #1288：重置运行执行态（确认后调用；成功清运行态、保留 writingPlan） */
+  resetRun: () => Promise<boolean>;
   clearInterveneDiff: () => void;
   reset: () => void;
 }
@@ -399,6 +402,34 @@ export const useBookStore = create<BookState>((set, get) => ({
       set({ summary: res, summaryLoading: false });
     } catch (err) {
       set({ error: errorMessage(err), summaryLoading: false });
+    }
+  },
+
+  resetRun: async () => {
+    const runId = get().runId;
+    if (runId === null) return false;
+    set({ error: null });
+    try {
+      await resetBookRun(runId);
+      // 运行态整体归零 → 页级 BookPlannerPanel 回到「计划就绪 + 开始写作」分支（重跑闭环）；
+      // writingPlan 必须保留（否则计划卡消失、无处点「开始写作」）
+      set({
+        runId: null,
+        runStatus: null,
+        progress: {},
+        counters: null,
+        progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
+        progressReason: null,
+        waitingHitl: false,
+        hitlPayload: null,
+        interveneDiff: null,
+        summary: null,
+        summaryLoading: false,
+      });
+      return true;
+    } catch (err) {
+      set({ error: errorMessage(err) });
+      return false;
     }
   },
 

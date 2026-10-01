@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/book/book-run.html + book-run-<state>.png（completed/degraded/degraded-expanded/failed/running）
+- 原型引用：design/GUI/book/book-run.html + book-run-<state>.png（completed/degraded/degraded-expanded/failed/reset-confirm/running）
 - ⚠️ **命名说明**：本页原型文件名为 `book-run.html`（非其它 14 页的 `<page>.html` 形态），与其它页命名不统一。本规格沿用现状、**不做改名**（改名会同时动原型资产与 `design/GUI/_tools/` 截图脚本，收益低于风险）。一致性门禁 `ci_cd/check_gui_spec_sync.py` 只校验**目录级**对应（`design/GUI/book/` ↔ `specs/f19-gui/book.md`），对目录内文件命名无语义要求。
 - ⚠️ **本页无侧边栏入口**（`AppNav.tsx` 无 book 项），仅 `App.tsx:169` 保留路由 `<Route path="/book" element={<BookPage />} />`。用户当前无法从导航点入本页；本规格按「已合入实现」记录现状，**不新增入口**（是否启用另议）。
 > 低保真排版示意简图（区块+标签，非精确像素）
@@ -42,6 +42,7 @@
 │             干预 [暂停 run-intervene-pause / 恢复 resume]
 │             密度三档 run-density-performance/dashboard/silent
 │             [回归摘要 run-summary-toggle]
+│             [重置运行 run-reset（非 running 态；带确认框）]
 │             diff banner（run-diff-banner，可关闭）
 │             计数：run-counter-chapters / calls / tokens
 │             token 预警 run-token-warning
@@ -63,6 +64,7 @@
     - 状态徽标 `run-status`：四档语义类（`RUN_BADGE_CLASSES`）—— `completed`（ok 绿）/ `failed`（err 红）/ `degraded`（warn 橙）/ 其它（中性 surface-3）。取值来自 `useBookStore().runStatus`
     - 失败原因 `run-progress-reason`：仅 `failed | degraded` **且** `progressReason` 非空时渲染；`reasonLong = progressReason.length > 200`（`REASON_EXPAND_THRESHOLD`）→ 默认 `line-clamp-3` + `run-progress-reason-toggle`（展开/收起，本地 state）
     - 干预工具栏：`running` → `run-intervene-pause`；`paused` → `run-intervene-resume`（互斥渲染）
+    - **重置运行 `run-reset`**（#1288）：`runStatus !== 'running'` 时渲染（与后端 reset 对 `running` 抛 422「运行已在进行中，不可重置」同族防呆）→ 点击打开共享 `ConfirmDialog`（`testidPrefix='run-reset'`，`danger`；`run-reset-dialog` / `run-reset-cancel` / `run-reset-ok`）→ 确认后 `useBookStore().resetRun()` 调 `POST /runs/{run_id}/reset`（**无请求体**），成功后运行态整体归零（`runId` / `runStatus` / `progress` / `counters` / `progressReason` / `waitingHitl` / `hitlPayload` / `interveneDiff` / `summary`）→ 页级回到「计划就绪 + 开始写作」分支（`writingPlan` **保留**，重跑闭环）；取消 / Esc 关闭且**不发**请求。⚠️ 确认文案须含「**重置 ≠ 删除正文**」（只清执行状态、不删正文/草稿；旧正文需自行处理，否则重跑仍被安全闸 #1265 判据拦截）
     - 密度三档（本地 state，**零额外请求**）：`run-density-performance`（章行内干预控件）/ `run-density-dashboard` / `run-density-silent`（**不渲染** `run-progress-list`）；`aria-pressed` 标记当前档
     - `run-summary-toggle` → 切换 `BookSummaryPanel`；`run-diff-banner`（`interveneDiff` 非空时）+ `run-diff-close`
     - 计数三行：`run-counter-chapters`（`chapters_written / max_chapters`）、`run-counter-calls`（`agent_calls / max_agent_calls`）、`run-counter-tokens`（仅 `max_tokens` 与 `tokens_used` 均定义时渲染）
@@ -90,6 +92,7 @@
 | 恢复（run-intervene-resume） | `paused` 时渲染 | POST resume | — | 状态转 `running` | err | 非 paused 态不渲染该按钮 |
 | 密度三档（run-density-performance / dashboard / silent） | `aria-pressed` 标记当前档 | 切换本地密度 | — | 列表/控件密度即时变化 | — | `silent` 下**不渲染** `run-progress-list`；零额外请求 |
 | 回归摘要（run-summary-toggle） | 未展开 | 切换 `BookSummaryPanel` | — | 面板显隐 | — | 纯本地 state |
+| 重置运行（run-reset，#1288） | `runStatus !== 'running'` 时渲染 | 打开共享 `ConfirmDialog`（`run-reset-dialog`） | — | 确认 → `POST /runs/{run_id}/reset` **恰好一次** → 运行态归零、页级回「计划就绪 + 开始写作」（`writingPlan` 保留） | store `error`，面板保留（失败不假装成功） | 取消 / Esc → 关闭且**不发**请求；`running` 态**不渲染**该按钮（后端 422 防呆）；确认文案须含「重置 ≠ 删除正文」 |
 | 原因展开（run-progress-reason-toggle） | 仅 `length > 200` 时渲染 | 展开/收起全文 | — | `line-clamp-3` 解除/恢复 | — | ≤200 字不渲染该按钮 |
 | diff 关闭（run-diff-close） | `interveneDiff` 非空时 | `clearInterveneDiff()` | — | banner 消失 | — | 只清展示，不回滚数据 |
 | 进度行展开（ExecutionTraceRow） | 默认折叠 | 展开该章摘要/干预控件 | — | 行内控件显示 | — | `done` 章干预控件禁用（422 防呆） |
@@ -139,3 +142,4 @@
 - N10：`run-progress-list` 逐 `outlineId` 渲染 `ExecutionTraceRow`，五态徽标 + 默认折叠
 - N11：`runId === null` → `book.run.noRun`「暂无运行」纯文本，无工具栏
 - N12：轮询 1s 间隔、终态自动停（`status` 既非 `running` 也非 `pending`）
+- N13（#1288）：`runStatus !== 'running'` → `run-reset` 可点；点击弹 `run-reset-dialog`，文案含「重置 ≠ 删除正文」；取消 → 关闭且不发请求；确认 → `POST /runs/{run_id}/reset` 恰好一次 + 运行面板回空态（`runId` 清空，页级回「计划就绪」）；失败（422）→ 面板保留 + `error` 记录

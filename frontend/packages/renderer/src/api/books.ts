@@ -255,3 +255,14 @@ export async function interveneBookRun(runId: string, body: InterveneRequest): P
 export async function getBookRunSummary(runId: string): Promise<RunSummaryResponse> {
   return apiFetch<RunSummaryResponse>(`/api/v1/agent/books/runs/${runId}/summary`);
 }
+
+/** #1288：重置书级运行执行态（#1282 方案 B；清 progress/execution_refs + 退回 ready，不动正文） */
+export interface ResetRunResponse {
+  run_id: string;
+  status: string;
+}
+
+/** 重置运行（POST /runs/{run_id}/reset；无请求体；404 运行不存在 / 422 运行已在进行中） */
+export async function resetBookRun(runId: string): Promise<ResetRunResponse> {
+  return apiFetch<ResetRunResponse>(`/api/v1/agent/books/runs/${runId}/reset`, { method: 'POST' });
+}
