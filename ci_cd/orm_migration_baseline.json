@@ -294,6 +294,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "findings": {
+        "has_server_default": false,
+        "nullable": false
+      },
       "id": {
         "has_server_default": false,
         "nullable": false

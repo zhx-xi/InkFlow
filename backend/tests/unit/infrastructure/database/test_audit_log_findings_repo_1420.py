@@ -253,6 +253,35 @@ async def test_findings_survive_multiple_logs_independently(db_session, project,
     assert detail_second.findings == []
 
 
+async def test_migrated_legacy_row_reads_empty_findings(db_session, project, chapter) -> None:
+    """#1420 E17 组合面：旧库经 ALTER 补列后的存量行（findings 为 SQL 默认 '[]'）→ 读口空 findings.
+
+    `test_ensure_audit_logs_findings_old_db_adds_column` 锁「补列后存量行为 '[]'」，
+    本用例接上后半链：该行经 ORM（LenientJSON 解析）→ `_log_orm_to_detail` → 空列表，
+    不因旧行形态崩溃、不 404。
+    """
+    from sqlalchemy import text as sql_text
+
+    insert = await db_session.execute(
+        sql_text(
+            "INSERT INTO audit_logs (project_id, chapter_id, chapter_title, status, "
+            "severity_summary, summary, degraded, note, created_at, findings) "
+            "VALUES (:pid, :cid, '第 3 章 龙的苏醒', 'pending', "
+            "'0 error, 0 warnings, 0 info', '', 0, '', '2026-08-01 10:00:00', '[]')"
+        ),
+        {"pid": project.id, "cid": chapter.id},
+    )
+    await db_session.commit()
+    row_id = int(insert.lastrowid)
+
+    repo = SQLiteAuditLogRepository(db_session)
+    detail = await repo.get(uuid.UUID(int=row_id))
+
+    assert detail is not None
+    assert detail.findings == []
+    assert detail.severity_summary == "0 error, 0 warnings, 0 info"
+
+
 async def test_get_detail_degraded_flag_preserved(db_session, project, chapter) -> None:
     """读口保留 degraded 标记（可追溯审计质量）."""
     repo = SQLiteAuditLogRepository(db_session)

@@ -172,6 +172,19 @@ class TestAuditLogDetailCli:
         assert data["data"]["severity_summary"] == "1 error, 1 warnings, 0 info"
         assert data["data"]["findings"][0]["check_type"] == "character_drift"
 
+    def test_log_mode_degraded_hint(self, cli_runner, fake_http_client):
+        """降级记录 → `--log` 人类输出含降级提示（记录级可追溯审计质量）."""
+        fake_http_client.get.return_value = _detail(degraded=True)
+
+        result = cli_runner.invoke(
+            app,
+            ["chapter", "--log", str(LOG_ID)],
+            obj=CliContext(json_output=False),
+        )
+
+        assert result.exit_code == 0
+        assert "降级" in result.output
+
     def test_log_mode_not_found_exit_1(self, cli_runner, fake_http_client):
         """记录不存在（HTTP 404）→ NOT_FOUND 错误信封 + 退出 1."""
         from inkflow.infrastructure.http import HttpApiError  # 惰性导入惯例
