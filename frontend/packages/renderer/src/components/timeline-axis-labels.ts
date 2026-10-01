@@ -16,9 +16,10 @@
  * 或**来源章胶囊**（世界序，`tl-src-<id>`）。
  *
  * 回退链（两序一致）：
- * - 世界内时间：`time_display` → `time_value + time_unit` → 「未知」占位
+ * - 世界内时间：`time_display` →（#1353）`轴名 + 轴内值` → `time_value + time_unit` → 「未知」占位
  * - 副标记（`sub`）：保留槽位但不承载章号（章信息由章刻度 / 来源章胶囊承载）
  */
+import { eraNameOf, eraValueOf } from './timeline-era-axes';
 import type { TimelineEventDTO } from './TimelineView';
 
 export type TimelineViewMode = 'narrative' | 'world';
@@ -38,11 +39,17 @@ export function axisLabels(
   view: TimelineViewMode,
   t: (key: string, params?: Record<string, string | number>) => string,
 ): TimelineAxisLabel {
+  // #1353：无 time_display 时插入「轴名 + 轴内值」回退（无轴内值则只有轴名）
+  const eraName = eraNameOf(ev);
+  const eraValue = eraValueOf(ev);
+  const eraText = eraName === null ? null : eraValue === null ? eraName : `${eraName} ${eraValue}`;
   const timeText = ev.time_display
     ? ev.time_display
-    : ev.time_value !== null && ev.time_value !== undefined
-      ? `${ev.time_value}${ev.time_unit ?? ''}`
-      : t('lib.tlTimeUnknown');
+    : eraText !== null
+      ? eraText
+      : ev.time_value !== null && ev.time_value !== undefined
+        ? `${ev.time_value}${ev.time_unit ?? ''}`
+        : t('lib.tlTimeUnknown');
   // #1374：两序分流 —— 叙事序轴在「章」刻度上（时间降级为行内小字）；
   // 世界序轴即世界内时间（行内主轴 = 刻度本体）。
   if (view === 'narrative') {

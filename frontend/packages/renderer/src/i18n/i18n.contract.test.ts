@@ -32,6 +32,8 @@ import { writingReqEn, writingReqZh } from './writing-req';
 import { roleEnhanceEn, roleEnhanceZh } from './role-enhance';
 import { sessionUxEn, sessionUxZh } from './session-ux';
 import { sessionsUxEn, sessionsUxZh } from './sessions-ux';
+// #1353：时间线纪元轴族文案域（zh.ts/en.ts 已贴 900 行护栏 → 独立成文件，同 foreshadow-filter.ts 先例）
+import { timelineEraEn, timelineEraZh } from './timeline-era';
 import { useI18n } from './useI18n';
 import { useThemeStore } from '../stores/theme';
 import { worldCatKindEn, worldCatKindZh } from './world-cat-kind';
@@ -61,6 +63,8 @@ const comboZh: Dict = {
   ...paginationZh,
   // #1376：伏笔页筛选/排序条域
   ...foreshadowFilterZh,
+  // #1353：时间线纪元轴族域
+  ...timelineEraZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -82,6 +86,8 @@ const comboEn: Dict = {
   ...paginationEn,
   // #1376：伏笔页筛选/排序条域
   ...foreshadowFilterEn,
+  // #1353：时间线纪元轴族域
+  ...timelineEraEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {

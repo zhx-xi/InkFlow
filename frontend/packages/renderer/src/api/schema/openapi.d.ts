@@ -5924,6 +5924,13 @@ export interface components {
              * @default
              */
             description: string;
+            /**
+             * Era
+             * @default
+             */
+            era: string;
+            /** Era Value */
+            era_value?: number | string | null;
             /** Narrative Position */
             narrative_position?: number | null;
             /**
@@ -5959,6 +5966,10 @@ export interface components {
         TimelineEventUpdate: {
             /** Description */
             description?: string | null;
+            /** Era */
+            era?: string | null;
+            /** Era Value */
+            era_value?: number | string | null;
             /** Narrative Position */
             narrative_position?: number | null;
             /** Source Chapter Id */

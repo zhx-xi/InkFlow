@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from typing import Any
 
@@ -99,6 +100,24 @@ def _time_label_with_value(event: dict) -> str:
     return f"{display}（time_value={time_value}）"
 
 
+def _parse_era_value(cli_ctx: CliContext, raw: str) -> float | str:
+    """CLI 的 --era-value 解析："" 原样（清除轴内值）；数值须为有限数。
+
+    非数值 / 非有限（nan / inf 字面量）→ 本地 VALIDATION_ERROR 信封 + 退出码 1，
+    不发起内核调用（镜像 _parse_uuid 形态；DTO 侧另有同语义校验兜底）。
+    """
+    if raw == "":
+        return ""
+    try:
+        parsed = float(raw)
+    except ValueError:
+        parsed = math.nan
+    if not math.isfinite(parsed):
+        print_error(cli_ctx, "VALIDATION_ERROR", "纪元轴内值必须是有限数值")
+        raise typer.Exit(1)
+    return parsed
+
+
 # ---------------------------------------------------------------------------
 # create  — inkflow timeline create --project-id <uuid> --title <str> ...
 # ---------------------------------------------------------------------------
@@ -128,6 +147,10 @@ def create_event_cmd(
     timeline_flag: str = typer.Option(
         "", "--timeline-flag", help="时间线标记（flashback / flashforward）"
     ),
+    era: str | None = typer.Option(None, "--era", help="纪元轴名（#1353 §2.8；缺省 = 不设纪元）"),
+    era_value: str | None = typer.Option(
+        None, "--era-value", help='纪元轴内值（数值；"" = 清除轴内值）'
+    ),
 ) -> None:
     """创建时间线事件"""
     cli_ctx: CliContext = ctx.obj
@@ -136,18 +159,23 @@ def create_event_cmd(
     async def _impl() -> dict:
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
+        payload: dict[str, Any] = {
+            "title": title,
+            "description": description,
+            "time_value": time_value,
+            "time_unit": time_unit,
+            "time_display": time_display,
+            "narrative_position": narrative_position,
+            "timeline_flag": timeline_flag,
+        }
+        if era is not None:
+            payload["era"] = era
+        if era_value is not None:
+            payload["era_value"] = _parse_era_value(cli_ctx, era_value)
         async with client:
             return await client.post(
                 f"/projects/{pid}/timeline/events",
-                json={
-                    "title": title,
-                    "description": description,
-                    "time_value": time_value,
-                    "time_unit": time_unit,
-                    "time_display": time_display,
-                    "narrative_position": narrative_position,
-                    "timeline_flag": timeline_flag,
-                },
+                json=payload,
             )
 
     event = _run(cli_ctx, _impl)
@@ -360,6 +388,12 @@ def update_event_cmd(
         "--timeline-flag",
         help='新时间线标记；传空字符串 "" 表示清除标记（置为正叙）',
     ),
+    era: str | None = typer.Option(
+        None, "--era", help='纪元轴名（#1353 §2.8；传空字符串 "" 表示清除纪元）'
+    ),
+    era_value: str | None = typer.Option(
+        None, "--era-value", help='纪元轴内值（数值；"" = 清除轴内值）'
+    ),
 ) -> None:
     """更新时间线事件（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
@@ -386,6 +420,10 @@ def update_event_cmd(
         update_fields["narrative_position"] = narrative_position
     if timeline_flag is not None:
         update_fields["timeline_flag"] = timeline_flag
+    if era is not None:
+        update_fields["era"] = era
+    if era_value is not None:
+        update_fields["era_value"] = _parse_era_value(cli_ctx, era_value)
     update = TimelineEventUpdate(**update_fields)
 
     async def _impl() -> dict:
