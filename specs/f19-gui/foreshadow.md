@@ -145,6 +145,7 @@
 | 计数行 | `fs-count` = 「显示 {本页条数} / 共 {筛选后 total} 条」；分页 `total` 与 `items` 同条件（服务端过滤口径） |
 | 空结果态 | `fs-noresult`（`LibraryItemList` 的 `foreshadowFilter` 分支）替换列表；**不复用** `library-tab-empty`；`fs-clear-filters` 清 status + 检索，**不改**排序方向 |
 | 检索防抖 | 输入 250ms 防抖后进 `extraQuery`（输入框显示即时值；避免每键一次请求） |
+| 重拉期挂载 | 检索/状态/排序触发的重拉**不作整卡骨架替换**（`viewSkeleton` 门槛：仅首帧无筛选且列表为空时走骨架）——否则文本输入框被卸载 → 失焦 / 中文 IME 组合中断；重拉期保留上一批行（SWR 式） |
 | 作用域 | 仅 `activeCat === 'foreshadow'` 渲染（`foreshadow-filters` 其它分类不出现，N10） |
 
 **为什么未新增 `?location=`（§4.5 决策 4 的落地变体）**：单个检索框的匹配面是**并集**
@@ -161,7 +162,7 @@
 
 | 断言面 | 位置 |
 |---|---|
-| 页契约（状态下沉 / total 重算 / 排序×分页共存 / 检索并集 5 命中 / 空结果态 / 清除筛选 / 反例守护 / N10 作用域） | `frontend/packages/renderer/src/pages/library-foreshadow-filter-1376.test.tsx`（12 用例） |
+| 页契约（状态下沉 / total 重算 / 排序×分页共存 / 检索并集 5 命中 / 空结果态 / 清除筛选 / 反例守护 / 重拉期挂载 / N10 作用域） | `frontend/packages/renderer/src/pages/library-foreshadow-filter-1376.test.tsx`（14 用例） |
 | 条组件契约（chip 三态 / 计数行 / 排序双向 / 受控输入 / 设计注释条缺席） | `frontend/packages/renderer/src/components/LibraryForeshadowFilters.test.tsx`（11 用例） |
 | 后端并集语义 + 口径 1 漏项代价 | `backend/tests/unit/infrastructure/database/test_foreshadowing_repo.py::TestForeshadowingRepository::test_list_search_matches_title_or_location` |
 | 文案域（zh.ts/en.ts 贴 900 行护栏 → 独立域文件，同 `pagination.ts` 先例） | `frontend/packages/renderer/src/i18n/foreshadow-filter.ts` + `i18n.contract.test.ts` 的来源登记 |

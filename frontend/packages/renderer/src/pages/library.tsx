@@ -223,6 +223,10 @@ export function LibraryPage() {
   useDataChangeSubscription(LIBRARY_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
   // #1002：outline tab 的 loading/error 由 hook 持有；其余分类沿用通用 effect 态（非 outline 行为零改动）
   const viewLoading = activeCat === 'outline' ? outlineLib.loading : listLoading;
+  // #1376：伏笔筛选条含文本输入 —— 重拉期间不得用整卡骨架替换（否则输入框卸载 → 失焦 / IME 组合中断）
+  const keepsForeshadowBarWhileLoading =
+    activeCat === 'foreshadow' && (fsFilter.active || pagedLib.items.length > 0);
+  const viewSkeleton = viewLoading && !keepsForeshadowBarWhileLoading;
   const viewFailed = activeCat === 'outline' ? outlineLib.loadFailed : listFailed;
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
@@ -572,7 +576,7 @@ export function LibraryPage() {
             {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表）；#1375：world 分支不再渲染此钮（入口 = 工具栏「新建条目」） */}
             {currentProjectId !== null && (
               <div className="mb-3 flex items-center justify-end gap-2">
-                {createCat !== null && !viewLoading && !viewFailed && listItems.length > 0 && activeCat !== 'world' && activeCat !== 'outline' && (
+                {createCat !== null && !viewSkeleton && !viewFailed && listItems.length > 0 && activeCat !== 'world' && activeCat !== 'outline' && (
                   <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
                     {t('lib.empty.create')}
                   </button>
@@ -580,7 +584,7 @@ export function LibraryPage() {
                 <AIExtractEntry />
               </div>
             )}
-            {viewLoading ? (
+            {viewSkeleton ? (
               <div data-testid="library-list" className="space-y-2">
                 <Skeleton className="h-11 w-full" />
                 <Skeleton className="h-11 w-full" />

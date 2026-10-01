@@ -119,6 +119,34 @@ function lastFsUrl(): string {
   return calls[calls.length - 1] ?? '';
 }
 
+/** 「第 2 次伏笔请求挂起」的可控 fake：用于断言重拉（loading）期间的挂载形态 */
+function seedFsApiDeferred() {
+  let release: (() => void) | null = null;
+  let fsCalls = 0;
+  apiFetchMock.mockImplementation(async (url: string) => {
+    const u = String(url);
+    if (/\/maps$/.test(u)) return { items: [], total: 0 };
+    if (/\/world-categories$/.test(u)) return { items: [], total: 0 };
+    if (/\/character-groups$/.test(u)) return { items: [], total: 0 };
+    if (/\/characters/.test(u)) return { items: [], total: 0, offset: 0, limit: 50 };
+    if (/\/foreshadowings/.test(u)) {
+      fsCalls += 1;
+      const qs = new URL(u, 'http://x').searchParams;
+      if (fsCalls === 1) {
+        return { items: FS_ROWS, total: FS_ROWS.length, offset: 0, limit: 50 };
+      }
+      const status = qs.get('status');
+      const filtered = status ? FS_ROWS.filter((r) => r.status === status) : FS_ROWS;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { items: filtered, total: filtered.length, offset: Number(qs.get('offset') ?? '0'), limit: 50 };
+    }
+    return { items: [], total: 0, offset: 0, limit: 50 };
+  });
+  return { release: () => release?.() };
+}
+
 /** 渲染设定库页（foreshadow 分类）并等首帧数据到达 */
 async function renderForeshadowPage() {
   const utils = render(
@@ -386,6 +414,40 @@ describe('#1376 空结果态（N9）：不复用「还没有伏笔」空态', ()
     expect(screen.getByTestId('fs-status-chip-all')).toHaveAttribute('aria-pressed', 'true');
     expect((screen.getByTestId('fs-search-input') as HTMLInputElement).value).toBe('');
     await waitFor(() => expect(screen.getByTestId('fs-count')).toHaveTextContent('显示 8 / 共 8 条'));
+  });
+});
+
+describe('#1376 重拉期间筛选条保持挂载（输入框不失焦、不吞键）', () => {
+  it('逐字输入跨越防抖窗口（每键 400ms > 250ms）→ 输入累积不丢字、检索词完整下发', async () => {
+    seedFsApi();
+    await renderForeshadowPage();
+
+    // 每键间隔 > 防抖窗口 → 每字都会触发一次重拉；若重拉期骨架卸载整卡，第二字将落进已卸载的输入框
+    const user = userEvent.setup({ delay: 400 });
+    await user.type(screen.getByTestId('fs-search-input'), '断剑');
+
+    expect((screen.getByTestId('fs-search-input') as HTMLInputElement).value).toBe('断剑');
+    await waitFor(() => {
+      expect(new URL(lastFsUrl(), 'http://x').searchParams.get('search')).toBe('断剑');
+    });
+  });
+
+  it('重拉期间（响应未返回）筛选条与列表卡保持挂载（不出现整卡骨架替换）', async () => {
+    const { release } = seedFsApiDeferred();
+    await renderForeshadowPage();
+    const before = apiFetchMock.mock.calls.length;
+
+    await userEvent.setup().click(screen.getByTestId('fs-status-chip-open'));
+    // 第 2 次请求已发出但挂起 → loading 态
+    await waitFor(() => expect(apiFetchMock.mock.calls.length).toBeGreaterThan(before));
+
+    // 🔴 loading 期间整卡不得被骨架替换：文本输入框必须仍在（否则重拉即失焦 / IME 组合中断）
+    expect(screen.getByTestId('fs-search-input')).toBeInTheDocument();
+    expect(screen.getByTestId('foreshadow-filters')).toBeInTheDocument();
+
+    release();
+    await waitFor(() => expect(screen.getByTestId('fs-count')).toHaveTextContent('显示 6 / 共 6 条'));
+    expect(screen.getByTestId('fs-search-input')).toBeInTheDocument();
   });
 });
 
