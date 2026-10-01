@@ -126,8 +126,9 @@ body[data-state="narrative-filter"] .tl-filter-panel{display:block}
 .tl-fp-item.sel .cb svg{display:block}
 
 /* 纪元轴选择器（方案 B） */
-.tl-axis-picker{display:none;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
-body[data-state="world-b"] .tl-axis-picker{display:inline-flex}
+.tl-axis-picker{display:none;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"] .tl-axis-picker{display:inline-flex}
+#axisChips{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
 .axis-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11.5px;color:var(--ink-3);background:var(--surface)}
 .axis-chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-weak)}
 .axis-chip .ck{display:flex;align-items:center;justify-content:center;width:12px;height:12px;color:var(--accent)}
@@ -157,8 +158,8 @@ body[data-state="world-b"] .tl-axis-picker{display:inline-flex}
 .tl-node + .tl-node{margin-top:6px}
 .tl-node::before{content:"";position:absolute;left:-23px;top:50%;width:8px;height:8px;border-radius:999px;background:var(--surface);border:1.5px solid var(--accent);transform:translateY(-50%)}
 .tl-axis--time .tl-node::before{background:var(--accent)}
-.tl-main{flex:none;width:84px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
-.tl-main--dim{width:66px;font-weight:400;color:var(--ink-3)}
+.tl-main{flex:none;min-width:84px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
+.tl-main--dim{min-width:66px;font-weight:400;color:var(--ink-3)}
 .tl-node .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
 .tl-node--demo .tname{color:var(--ink-2)}
 .tl-src{flex:none;border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--ink-3);white-space:nowrap}
@@ -294,9 +295,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
           <button class="tl-filter-btn" data-testid="tl-filter-type"><span data-ic="filter"></span>类型：全部<span data-ic="chevron-down"></span></button>
           <span class="tl-axis-picker" data-testid="tl-axis-picker">
             <span>纪元轴：</span>
-            <button class="axis-chip on" data-testid="tl-axis-chip-qingyuan"><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg></span>青云界 · 青元历</button>
-            <button class="axis-chip on" data-testid="tl-axis-chip-xianjie"><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg></span>仙界 · 仙历</button>
-            <button class="axis-chip" data-testid="tl-axis-chip-mingjie"><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.2"/></svg></span>幽冥界 · 冥历</button>
+            <span id="axisChips"></span>
           </span>
           <button class="check-btn" data-testid="tl-check-all"><span data-ic="scansearch"></span>一致性检查</button>
           <span class="tl-legend" id="tlLegend" data-testid="tl-legend">轴=章 · 事件按章推进；行内小字=世界内时间</span>
@@ -318,7 +317,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
       <span>项目: 青云志</span>
-      <span>事件 5 条</span>
+      <span>事件 6 条</span>
     </div>
   </div>
 </div>
@@ -333,7 +332,8 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="narrative">叙事序 · 章轴（新）</option>
       <option value="narrative-filter">叙事序 · 筛选展开</option>
       <option value="world">世界序 · A 拆半（时间轴）</option>
-      <option value="world-b">世界序 · B 全做（纪元泳道）</option>
+      <option value="world-eras">世界序 · 纪元轴（默认：仅主力轴）</option>
+      <option value="world-eras-multi">世界序 · 纪元轴（多轴同时显示）</option>
       <option value="empty">空态</option>
     </select>
   </label>
@@ -401,20 +401,24 @@ const DEMO = {
   ],
   noneKey: '__none__',
   noneTitle: '未分章',
-  /* axis = 纪元轴（仅方案 B 演示用；真实数据面暂无该字段，见说明卡） */
-  /* 时间文案 = 纪年式（用户 2026-09-22 拍板：不用相对时间「xx 年前」；纪年式如「青元历 317 年」/「始皇三年」） */
-  events: [
-    { id:'1', ch:'c11', time:17,  timeText:'青元历 17 年',  title:'师父闭关前夜，问苏云舟「剑心为何物」', axis:'qingyuan' },
-    { id:'2', ch:'c12', time:217, timeText:'青元历 217 年', title:'苏云舟下山，林晚照追随', axis:'qingyuan' },
-    { id:'3', ch:'c12', time:297, timeText:'青元历 297 年', title:'夜访剑冢，发现二十年前异动痕迹', axis:'qingyuan' },
-    { id:'4', ch:'c13', time:314, timeText:'青元历 314 年', title:'剑心蒙尘，断剑于山门', axis:'qingyuan' },
-    { id:'5', ch:null,  time:null, timeText:'未知',          title:'守陵人失踪（手工录入，未归章）', axis:'qingyuan' },
-    { id:'6', ch:null,  time:1024, timeText:'仙历 1024 年', title:'仙界法旨降下（演示：另一纪元轴事件）', axis:'xianjie', demo:true },
-  ],
+  /* 纪元轴（#1353 / 0.16.0）：事件以 extra.era（轴名）+ extra.era_value（轴内值）承载，零 DDL。
+     轴顺序 = 事件流中**首次出现**的顺序；`on` = 该演示态的勾选态
+     （真实实现：默认只勾选**主力轴** = 事件数最多的轴；至少保留一条轴） */
   axes: [
     { key:'qingyuan', name:'青云界 · 青元历', on:true },
-    { key:'xianjie',  name:'仙界 · 仙历',    on:true },
-    { key:'mingjie',  name:'幽冥界 · 冥历',  on:false },
+    { key:'none',     name:'未分纪元',        on:false },
+    { key:'xianjie',  name:'仙界 · 仙历',     on:false },
+  ],
+  /* time = 轴内值（extra.era_value，仅轴内排序/标签用）；timeText = time_display（原样优先）
+     标签回落链（#1353）：time_display → 「轴名 + 轴内值」→ 未知（事件 6 无 time_display 即走回落）
+     时间文案 = 纪年式（用户 2026-09-22 拍板：不用相对时间「xx 年前」） */
+  events: [
+    { id:'1', ch:'c11', axis:'qingyuan', time:17,   timeText:'青元历 17 年',  title:'师父闭关前夜，问苏云舟「剑心为何物」' },
+    { id:'2', ch:'c12', axis:'qingyuan', time:217,  timeText:'青元历 217 年', title:'苏云舟下山，林晚照追随' },
+    { id:'3', ch:'c12', axis:'qingyuan', time:297,  timeText:'青元历 297 年', title:'夜访剑冢，发现二十年前异动痕迹' },
+    { id:'4', ch:'c13', axis:'qingyuan', time:314,  timeText:'青元历 314 年', title:'剑心蒙尘，断剑于山门' },
+    { id:'5', ch:null,  axis:'none',     time:null, timeText:'未知',          title:'守陵人失踪（手工录入，未归章、未设纪元）' },
+    { id:'6', ch:null,  axis:'xianjie',  time:1024, timeText:'',              title:'仙界法旨降下（另一纪元轴事件）' },
   ],
 };
 const chTitle = (key) => {
@@ -422,16 +426,36 @@ const chTitle = (key) => {
   const c = DEMO.chapters.find((x) => x.key === key);
   return c ? c.title : '未知章节';
 };
-const ALL_EVENTS = DEMO.events.map((ev) => Object.assign({}, ev, { chTitle: chTitle(ev.ch) }));
-/* 非演示事件（叙事序 / 世界序 A 视作现有数据面；「另一纪元」演示事件仅方案 B 泳道展示） */
-const NON_DEMO = ALL_EVENTS.filter((ev) => !ev.demo);
+const eraName = (key) => {
+  const axis = DEMO.axes.find((a) => a.key === key);
+  return axis ? axis.name : key;
+};
+/* 标签回落链（#1353）：time_display 原样 → 轴名 + 轴内值 → 未知 */
+const eventLabel = (ev) => {
+  if (ev.timeText) return ev.timeText;
+  if (ev.axis) return ev.time === null || ev.time === undefined ? eraName(ev.axis) : `${eraName(ev.axis)} ${ev.time}`;
+  return '未知';
+};
+const ALL_EVENTS = DEMO.events.map((ev) =>
+  Object.assign({}, ev, { chTitle: chTitle(ev.ch), label: eventLabel(ev) }),
+);
+/* 轴族（#1353 派生规则：仅含有事件的轴；顺序 = 事件流首次出现） */
+const AXIS_KEYS = DEMO.axes.map((a) => a.key).filter((k) => ALL_EVENTS.some((ev) => ev.axis === k));
+/* 主力轴 = 事件数最多的轴（并列取先出现）——「主角所在轴」的启发式（用户 2026-10-02 拍板默认只显示它） */
+const PRIMARY_AXIS = AXIS_KEYS.slice().sort((a, b) => {
+  const ca = ALL_EVENTS.filter((ev) => ev.axis === a).length;
+  const cb = ALL_EVENTS.filter((ev) => ev.axis === b).length;
+  return cb - ca || AXIS_KEYS.indexOf(a) - AXIS_KEYS.indexOf(b);
+})[0];
+const KIND_LABEL = { none: '（默认轴）' };
 
-const STATES = ['narrative','narrative-filter','world','world-b','empty'];
+const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','empty'];
 const LEGENDS = {
   'narrative':        '轴=章 · 事件按章推进排列；行内小字=世界内时间',
   'narrative-filter': '轴=章 · 已筛选：第十二章（筛选对两序共用）',
-  'world':            '轴=世界内时间（升序，未知末尾）· 不再按章分组；行尾=来源章',
-  'world-b':          '轴=纪元 · 每轴独立时间刻度 · 勾选控制显示哪几条轴',
+  'world':            '轴=世界内时间（升序，未知末尾）· 不再按章分组；行尾=来源章（单轴：项目无纪元数据时零变化）',
+  'world-eras':       '轴=纪元 · 默认只显示主力轴 · 勾选控制显示哪几条轴（至少保留一条）',
+  'world-eras-multi': '轴=纪元 · 每轴独立时间刻度（轴内按纪元值升序）· 默认轴「未分纪元」= R6-4 的旧单标量时间线',
   'empty':            '',
 };
 const NOTES = {
@@ -441,8 +465,10 @@ const NOTES = {
     '<b>按章筛选（新）</b>：数据面 ✅（source_chapter_id + 章节列表）。已选「第十二章」→ 列表仅显示该章事件。按事件类型（正叙/倒叙/插叙）同样可做；<b>按世界 / 按角色关联 = 0.16.0</b>（无字段，见 B 版缺口说明）。',
   'world':
     '<b>世界序 · 方案 A（拆半，推荐）</b>：轴 = <b>世界内时间</b>，全局升序、未知末尾，<b>不再按章分组</b>；行尾小字 = 来源章。<b>纪元分轴（多纪元）留 0.16.0</b>（#1353，需 era 数据面）——避免与多纪元体系二次重构。',
-  'world-b':
-    '<b>世界序 · 方案 B（全做）</b>：轴 = <b>纪元（多泳道）</b> + 轴选择器（勾选显示哪几条轴）。⚠ <b>数据面缺口</b>：事件无 era/world 字段、time_value 为单标量（f12:84 曾否决复合键）→ 0.15.0 落地须先把 #1353 的 <code>extra.era</code> 最小落点提前，并先改 f12:84 否决记录（spec 级决策前置）。',
+  'world-eras':
+    '<b>世界序 · 纪元轴（#1353 / 0.16.0 落地）</b>：事件以 <code>extra.era</code>（轴名）+ <code>extra.era_value</code>（轴内值）承载纪元，<b>零 DDL</b>（既有 JSON 列，无新列/无迁移）。<b>默认只显示主力轴</b>（事件数最多的轴 —— 「主角所在轴」的启发式，主角↔纪元映射归后续里程碑）；切换 chips 即按选中轴分组渲染。<code>time_value</code> 仍是<b>跨轴全局标量</b>，一致性检查<b>不按纪元分桶</b>（跨纪元比较归 #1411）。',
+  'world-eras-multi':
+    '<b>世界序 · 纪元轴 · 多轴同时显示</b>：每轴一条泳道、各自时间刻度（轴内按 <code>era_value</code> 升序、缺失排末尾）；<b>默认轴「未分纪元」</b>= R6-4 保留的旧「单标量时间线」（无纪元事件不丢、不改判）。标签规则：<code>time_display</code> 原样优先 → 无则「轴名 + 轴内值」。至少保留一条轴（取消最后一条无效）。',
   'empty':
     '<b>空态</b>：无变化（「还没有时间线，去创建」+ CTA）。',
 };
@@ -454,10 +480,9 @@ function nodeHTML(ev, opts){
   const o = opts || {};
   const timeCls = o.timeMode === 'tick' ? 'tl-main' : 'tl-main tl-main--dim';
   const src = o.showSrc ? `<span class="tl-src" data-testid="tl-src-${ev.id}">${esc(ev.chTitle)}</span>` : '';
-  const demo = ev.demo ? '<span class="tl-demo">演示</span>' : '';
-  return `<div class="tl-node${ev.demo ? ' tl-node--demo' : ''}" data-testid="tl-axis-node-${ev.id}">
-    <span class="${timeCls}" data-testid="tl-axis-main-${ev.id}">${esc(ev.timeText)}</span>
-    <span class="tname">${esc(ev.title)}</span>${demo}${src}
+  return `<div class="tl-node" data-testid="tl-axis-node-${ev.id}">
+    <span class="${timeCls}" data-testid="tl-axis-main-${ev.id}">${esc(ev.label)}</span>
+    <span class="tname">${esc(ev.title)}</span>${src}
     <button class="check-one" data-testid="tl-check-one-${ev.id}">单事件检查</button>
     <span class="tl-actions">
       <button data-testid="tl-edit-${ev.id}" aria-label="编辑 ${esc(ev.title)}"><span data-ic2="pencil"></span></button>
@@ -489,7 +514,7 @@ function renderNarrative(evs){
 
 /* 世界序 A = 世界内时间单轴：全局升序（未知末尾），不分组，行尾来源章 */
 function renderWorldA(){
-  const evs = NON_DEMO.slice().sort((a, b) => {
+  const evs = ALL_EVENTS.slice().sort((a, b) => {
     if (a.time === null && b.time === null) return 0;
     if (a.time === null) return 1;
     if (b.time === null) return -1;
@@ -499,19 +524,34 @@ function renderWorldA(){
     .map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true })).join('')}</div>`;
 }
 
-/* 世界序 B = 纪元泳道（每轴独立时间刻度） */
-function renderWorldB(){
-  const lanes = DEMO.axes.filter((a) => a.on).map((a) => {
-    const evs = ALL_EVENTS.filter((ev) => ev.axis === a.key).sort((x, y) => {
+/* 世界序 = 纪元轴族：轴选择器（chips）+ 选中轴的泳道（每轴独立时间刻度，轴内按纪元值升序） */
+const CHIP_SVG = '<span class="ck">' + CK_SVG + '</span>';
+
+function chipHTML(key, on){
+  const label = key === 'none' ? '未分纪元' : eraName(key);
+  return `<button class="axis-chip${on ? ' on' : ''}" data-testid="tl-axis-chip-${key}" aria-pressed="${on ? 'true' : 'false'}">${CHIP_SVG}${esc(label)}</button>`;
+}
+
+/* 轴选择器（多选 chips；默认只勾选主力轴 —— 至少保留一条轴，见说明卡） */
+function renderPicker(onKeys){
+  document.getElementById('axisChips').innerHTML = AXIS_KEYS
+    .map((key) => chipHTML(key, onKeys.includes(key)))
+    .join('');
+}
+
+/* 选中轴的泳道（只渲染选中轴；每事件恰好渲染一次） */
+function renderWorldEras(onKeys){
+  const lanes = AXIS_KEYS.filter((key) => onKeys.includes(key)).map((key) => {
+    const evs = ALL_EVENTS.filter((ev) => ev.axis === key).sort((x, y) => {
       if (x.time === null && y.time === null) return 0;
       if (x.time === null) return 1;
       if (y.time === null) return -1;
       return x.time - y.time;
     });
-    return `<section class="tl-lane" data-testid="tl-lane-${a.key}">
+    return `<section class="tl-lane" data-testid="tl-lane-${key}">
       <header class="tl-lane-head">
         <span class="lane-dot"></span>
-        <span class="tl-lane-name">${esc(a.name)}</span>
+        <span class="tl-lane-name">${esc(key === 'none' ? '未分纪元' : eraName(key))}${KIND_LABEL[key] || ''}</span>
         <span class="tl-lane-meta">${evs.length} 个事件</span>
       </header>
       <div class="tl-axis tl-axis--time">${evs.map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true })).join('')}</div>
@@ -538,12 +578,13 @@ function renderFilterPanel(state){
 function renderBody(state){
   if (state === 'narrative' || state === 'narrative-filter') {
     const evs = state === 'narrative-filter'
-      ? NON_DEMO.filter((ev) => (ev.ch === null ? DEMO.noneKey : ev.ch) === 'c12')
-      : NON_DEMO;
+      ? ALL_EVENTS.filter((ev) => (ev.ch === null ? DEMO.noneKey : ev.ch) === 'c12')
+      : ALL_EVENTS;
     return renderNarrative(evs);
   }
   if (state === 'world') return renderWorldA();
-  if (state === 'world-b') return renderWorldB();
+  if (state === 'world-eras') return renderWorldEras(['qingyuan']);
+  if (state === 'world-eras-multi') return renderWorldEras(AXIS_KEYS);
   return '';
 }
 
@@ -568,11 +609,12 @@ function setState(s){
   document.body.dataset.state = s;
   const sel = document.getElementById('stateSel');
   if (sel) sel.value = s;
-  const isWorld = s === 'world' || s === 'world-b';
+  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi';
   document.getElementById('segNarrative').classList.toggle('active', !isWorld);
   document.getElementById('segWorld').classList.toggle('active', isWorld);
   document.getElementById('tlLegend').textContent = LEGENDS[s] || '';
   document.getElementById('tlBody').innerHTML = renderBody(s);
+  renderPicker(s === 'world-eras-multi' ? AXIS_KEYS : [PRIMARY_AXIS]);
   mountDynIcons();
   renderFilterPanel(s);
   document.getElementById('reviewNote').innerHTML = NOTES[s] || '';
