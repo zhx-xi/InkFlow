@@ -219,6 +219,8 @@ class TestSchemaContract933:
             "target",
             "to",
             "payload",
+            "force",
+            "confirm_overwrite",
         ):
             assert field in model.model_fields, f"ManageBookParams 缺字段 {field}"
             assert field not in model.model_json_schema().get("required", [])
@@ -419,6 +421,38 @@ class TestManageBookRouting933:
         assert body.get("limits") == {"max_chapters": 3}
         assert body.get("mode") == "agentic"
         assert body.get("config") == {"max_steps": 5}
+
+    @pytest.mark.asyncio
+    async def test_run_force_overwrite_passthrough(self, fake_env):
+        """#1430：`run` 透传 force/confirm_overwrite 到 POST /runs body。
+
+        `_MCPParams` 是 `extra="forbid"`（#1233）——未声明字段会被拒（INVALID_ARGS）。
+        本用例同时是「参数收了必须用」的守卫（contract-guard：门禁拦不住空转参数，
+        只能靠断言取证）。
+        """
+        env = _envelope(
+            await _book().func(
+                action="run",
+                writing_plan_id="wp1",
+                force=True,
+                confirm_overwrite=True,
+            )
+        )
+        assert env["ok"] is True
+        last = _last(fake_env.client)
+        assert last["path"] == "/agent/books/runs"
+        body = last["json"] or {}
+        assert body.get("force") is True
+        assert body.get("confirm_overwrite") is True
+
+    @pytest.mark.asyncio
+    async def test_run_without_force_omits_both_flags(self, fake_env):
+        """未传时不带 force/confirm_overwrite（既有调用面逐字不变）。"""
+        env = _envelope(await _book().func(action="run", writing_plan_id="wp1"))
+        assert env["ok"] is True
+        body = _last(fake_env.client)["json"] or {}
+        assert "force" not in body
+        assert "confirm_overwrite" not in body
 
     @pytest.mark.asyncio
     async def test_status(self, fake_env):

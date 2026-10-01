@@ -174,7 +174,11 @@ class BookService(BookOutlineMixin, BookRunMixin):
         self._brief_configs: dict[uuid.UUID, object] = {}  # #1185：已解析项目配置复用
 
     async def write_book(
-        self, plan_id: uuid.UUID, limits: BookLimits | None = None
+        self,
+        plan_id: uuid.UUID,
+        limits: BookLimits | None = None,
+        *,
+        force: bool = False,
     ) -> dict[str, str]:
         """启动书级运行（202 语义）→ {run_id, status}（阶段 2 顺序派发）.
 
@@ -187,6 +191,8 @@ class BookService(BookOutlineMixin, BookRunMixin):
         Args:
             plan_id: 计划 UUID（run 载体 = WritingPlan）.
             limits: 请求显式上限；None = 回退项目级 extra / 默认常量.
+            force: #1430 方案 A：显式跳过「内容已写」安全闸并覆盖正文（判据本身 #1265
+                零改动；force=False 时逐字保持既有行为）.
 
         Returns:
             {"run_id": str(plan.id), "status": "completed" | "failed" | "degraded"}.
@@ -209,7 +215,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             oid: ref for oid, ref in plan.execution_refs.items() if oid in live_outline_ids
         }
         for chapter in chapters:
-            if await self._check_content_written(plan, chapter):
+            if await self._check_content_written(plan, chapter) and not force:
                 raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
         if not chapters:
             plan.status = "completed"
@@ -247,7 +253,11 @@ class BookService(BookOutlineMixin, BookRunMixin):
         return {"run_id": str(plan.id), "status": plan.status}
 
     async def write_book_volume(
-        self, plan_id: uuid.UUID, limits: BookLimits | None = None
+        self,
+        plan_id: uuid.UUID,
+        limits: BookLimits | None = None,
+        *,
+        force: bool = False,
     ) -> dict[str, str]:
         """卷级编排入口（阶段 3，#337）：安全阀预检 → 卷 planner 拆章 → 卷图 Send 扇出 → 卷边界暂停.
 
@@ -263,6 +273,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
         Args:
             plan_id: 计划 UUID（run 载体 = WritingPlan）.
             limits: 请求显式上限；None = 回退项目级 extra / 默认常量.
+            force: #1430 方案 A：显式跳过「内容已写」安全阀（卷级轨口径一致）.
 
         Returns:
             {"run_id": str(plan.id), "status": "waiting_hitl" | "completed" | "failed" |
@@ -283,7 +294,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
         # volumes[].chapters 为章 dict（_outline_to_chapter_dict 产物）——按 outline_id 判
         for volume in volumes:
             for chapter in volume["chapters"]:
-                if await self._check_chapter_written(plan, chapter):
+                if await self._check_chapter_written(plan, chapter) and not force:
                     raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
         if self._volume_pipeline is None:
             raise ValueError("volume_pipeline 未配置")

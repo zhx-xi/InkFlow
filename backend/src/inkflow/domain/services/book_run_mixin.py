@@ -51,6 +51,9 @@ class BookRunMixin:
         plan_id: uuid.UUID,
         limits: BookLimits | None = None,
         mode: str = "static",
+        *,
+        force: bool = False,
+        confirm_overwrite: bool = False,
     ) -> dict:
         """启动前预校验（endpoint 内 await，错误立即 4xx/409/422）+ running 落库（#456）.
 
@@ -62,18 +65,27 @@ class BookRunMixin:
             plan_id: 计划 UUID（run 载体 = WritingPlan）.
             limits: 请求显式上限；None = 回退项目级 extra / 默认常量.
             mode: "static"（顺序派发）/ "volume"（卷级编排）/ "agentic"（自主编排）.
+            force: #1430 方案 A：显式跳过「内容已写」安全阀并覆盖正文（覆盖即数据丢失）.
+            confirm_overwrite: #1430 二次确认位；**必须与 force 成对**，只给其一 → ValueError
+                （防自动化链路静默带上 force）.
 
         Returns:
             {"run_id": str(plan.id), "status": "running"} 或
-            {"run_id": str(plan.id), "status": "completed"}（无章快路径）.
+            {"run_id": str(plan.id), "status": "completed"}（无章快路径）；force 成功时
+            追加 ``overwrite`` = {"forced", "backup_target", "chapters_to_backup"}
+            （备份落点随响应可见，硬约束「不做静默备份」）.
 
         Raises:
-            ValueError: 计划不存在 / 上限全无 / 运行已在进行中.
+            ValueError: force 与 confirm_overwrite 未成对 / 计划不存在 / 上限全无 /
+                运行已在进行中.
             ChapterAlreadyWrittenError: 任一目标章已有内容或执行已完成.
         """
         # 函数体 import：避免与 book_service 模块级循环依赖（错误类定义于彼）
         from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
 
+        # #1430 入口不变量：双条件必须成对（与「是否有正文」无关），防自动化静默覆盖
+        if force != confirm_overwrite:
+            raise ValueError("force 与 confirm_overwrite 必须同时提供")
         plan = await self._repo.get_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan_id
         )
@@ -87,39 +99,64 @@ class BookRunMixin:
             plan.limits[_field] = getattr(merged, _field)
         if mode == "volume":
             volumes = await self._find_volumes(plan)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
+            chapters_to_backup = 0
             for volume in volumes:
                 for chapter in volume["chapters"]:
                     if await self._check_chapter_written(plan, chapter):  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
-                        raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+                        if not force:
+                            raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+                        chapters_to_backup += 1
             has_targets = bool(volumes)
         elif mode == "agentic":
             await self._check_agentic_authorized(plan)
             chapters = await self._find_chapters(plan)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
+            chapters_to_backup = 0
             for chapter in chapters:
                 if await self._check_content_written(plan, chapter):  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
-                    raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+                    if not force:
+                        raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+                    chapters_to_backup += 1
             # 镜像 volume 分支「书级 run 隐式目标 = 整本书」语义：预校验通过即 running
             # 落库（RED 契约 test_prepare_run_mode_agentic 期望 running；无章 completion
             # 由 write_book_agentic → pipeline 空章路径兜底）
             has_targets = True
         else:
             chapters = await self._find_chapters(plan)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
+            chapters_to_backup = 0
             for chapter in chapters:
                 if await self._check_content_written(plan, chapter):  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
-                    raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+                    if not force:
+                        raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
+                    chapters_to_backup += 1
             has_targets = bool(chapters)
+        # #1430：force 时备份落点随响应可见（硬约束「不做静默备份」）
+        overwrite = (
+            {
+                "forced": True,
+                "backup_target": "chapters.previous_content",
+                "chapters_to_backup": chapters_to_backup,
+            }
+            if force
+            else None
+        )
         if not has_targets:
             plan.status = "completed"
             await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
                 plan
             )
-            return {"run_id": str(plan.id), "status": "completed"}
+            result: dict[str, Any] = {"run_id": str(plan.id), "status": "completed"}
+            if overwrite is not None:
+                result["overwrite"] = overwrite
+            return result
         mark_run_owner(plan)
         plan.status = "running"
         await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan
         )
-        return {"run_id": str(plan.id), "status": "running"}
+        result = {"run_id": str(plan.id), "status": "running"}
+        if overwrite is not None:
+            result["overwrite"] = overwrite
+        return result
 
     async def _check_agentic_authorized(self, plan) -> None:
         """#598 全自动授权门禁：config 明确存在且 auto_write_enabled=False → 拒绝。
@@ -295,6 +332,8 @@ class BookRunMixin:
         plan_id: uuid.UUID,
         limits: BookLimits | None = None,
         config: AgenticBookConfig | None = None,
+        *,
+        force: bool = False,
     ) -> dict[str, str]:
         """book-level 自主编排入口（F49 #551，spec §5.4）：校验 → 安全阀 → 委托 execute.
 
@@ -310,6 +349,8 @@ class BookRunMixin:
             plan_id: 计划 UUID（run 载体 = WritingPlan）.
             limits: 请求显式上限；None = 回退项目级 extra / 默认常量.
             config: agentic 模式配置（AgenticBookConfig）；None = 默认配置.
+            force: #1430 方案 A：显式跳过「内容已写」安全阀（force=True 时后台写正文
+                不撞闸；判据本身 #1265 零改动）.
 
         Returns:
             {"run_id": str(plan.id), "status": plan.status（执行后完成态重派生为
@@ -334,7 +375,7 @@ class BookRunMixin:
         merged = await self._resolve_merged_limits(plan, limits)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
         chapters = await self._find_chapters(plan)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
         for chapter in chapters:
-            if await self._check_content_written(plan, chapter):  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
+            if await self._check_content_written(plan, chapter) and not force:  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
                 raise ChapterAlreadyWrittenError("该章已有内容，拒绝重跑")
         # #915：execute 前统一转章 dict（镜像卷轨 _outline_to_chapter_dict 装配契约，
         # pipeline 消费 ChapterDict——outline_id/chapter_id/name/...，而非 Outline 对象）

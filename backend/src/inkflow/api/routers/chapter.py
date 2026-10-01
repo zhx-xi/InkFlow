@@ -25,6 +25,7 @@ from inkflow.domain.models.chapter import (
 from inkflow.domain.ports.world_errors import ProjectNotFoundError
 from inkflow.domain.services.chapter_service import (
     ChapterService,
+    PreviousContentUnavailableError,
     VolumeMoveError,
     VolumeNotEmptyError,
 )
@@ -234,6 +235,25 @@ async def move_chapter(
     except VolumeMoveError as e:
         # #1162/#1166: 目标卷不存在（溢出/查无此卷）→ 422（镜像同文件 delete_volume 映射）
         raise HTTPException(status_code=422, detail=str(e)) from e
+    if ch is None:
+        raise HTTPException(status_code=404, detail="章节不存在")
+    return ch.model_dump(mode="json")
+
+
+@router.post("/chapters/{chapter_id}/restore-previous")
+@instrument(caller_type="api")
+async def restore_previous_chapter_content(chapter_id: str, db: AsyncSession = Depends(get_db)):
+    """恢复上一稿（#1430 A2）：previous_content 写回 content（双向切换，可再切回）.
+
+    章不存在 → 404「章节不存在」；无可恢复的旧稿（previous_content 空/纯空白）
+    → 409「无可恢复的旧稿」；成功 → 200 章 JSON（含恢复后的 previous_content）。
+    """
+    svc = _svc(db)
+    cid = _parse_id(chapter_id, detail="章节不存在")
+    try:
+        ch = await svc.restore_previous_content(cid)
+    except PreviousContentUnavailableError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     if ch is None:
         raise HTTPException(status_code=404, detail="章节不存在")
     return ch.model_dump(mode="json")

@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.10（#1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.11（#1430 方案 A：`book run --force` 显式覆盖正文 + A2 旧稿备份落点 `chapters.previous_content` + 恢复读口 + 请求面双条件，2026-10-02；1.10 #1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -210,12 +210,13 @@ def validate_at_least_one_hard_limit(limits: BookLimits) -> None:
 | `POST /planner` | 1 | 启动访谈会话（body 一句话 + project_id）→ 返回会话 + 第一轮 ≤5 问（v1.2 #475：LLM 动态生成，通用必答 + 针对性并存） | 201 |
 | `POST /planner/{session_id}/respond` | 1 | 回复本轮问题（或 `auto=true` 全部你决定）→ 下一轮问 / 冲突回问 / 末尾总体确认（`confirm`）/ 完成返回 WritingPlan | 200 |
 | `GET /planner/{session_id}` | 1 | 访谈会话状态（已问问题/回答快照 + 确定项/冲突，问题即模板复用；v1.2 供用户审计回溯） | 200 |
-| `POST /runs` | 1/2/3/4 | `write_book` 启动书级运行（body：writing_plan_id 或 one_liner；limits；mode） | 202 |
+| `POST /runs` | 1/2/3/4 | `write_book` 启动书级运行（body：writing_plan_id 或 one_liner；limits；mode；**v1.11 #1430：`force` + `confirm_overwrite` 双条件显式覆盖**，见 §5.8） | 202 |
 | `GET /runs/{run_id}` | 1-4 | 书级运行状态（进度树 + 计数器 + 当前 interrupt + 章级只报告） | 200 |
 | `POST /runs/{run_id}/confirm` | 3 | 卷级 HITL 确认（body `{approved, decision?}`；非 waiting_hitl → 422） | 200 |
 | `POST /runs/{run_id}/intervene` | 4 | 中途干预（pause/resume/改向/编辑，§3.3） | 200 |
 | `GET /runs/{run_id}/summary` | 4 | 回归摘要 + 结构化运行日志（§3.4） | 200 |
 | `POST /runs/{run_id}/reset` | 4 | 重置执行态（清 progress/execution_refs + 退回 `ready`，**不删正文**；#1282 方案 B——「不删旧稿就重跑」出口） | 200 |
+| `POST /chapters/{chapter_id}/restore-previous` | 4 | 把 `chapters.previous_content` 写回 `content`（v1.11 #1430 恢复读口）；无旧稿 → 409；章不存在 → 404 | 200 |
 
 ### 3.2 请求/响应示例（阶段 1 访谈 + 阶段 3 卷确认）
 
@@ -324,6 +325,7 @@ inkflow book plan show <session>                                          # 会�
 
 # 阶段 2-4：书级运行
 inkflow book run <plan_id> [--limits max_chapters=5,max_tokens=200000]    # 启动（顺序派发/卷级按进度）
+inkflow book run <plan_id> --force --confirm-overwrite                    # v1.11 #1430：显式跳过安全闸并覆盖已有正文（旧稿落 chapters.previous_content）
 inkflow book status <run_id> [--density performance|dashboard|silent]     # 状态轮询（观察流三层密度）
 inkflow book confirm <run_id> --approved --decision "继续下一卷"          # 卷级 HITL 确认（阶段 3）
 inkflow book intervene <run_id> --action pause|resume|redirect|edit ...   # 中途干预（阶段 4）
@@ -591,6 +593,52 @@ START → bootstrap → prepare_continuity（B：写前定承接表，一次 LLM
 
 **测试锚**：`backend/tests/unit/api/routers/test_book_run_929.py`（R1-R4 + G1：装配期零解析 / 委托收到 project_model kw / 真实 getter 透传项目模型 / 预检先于 prepare）。
 
+### 5.8 v1.11 增量：`book run --force` 显式覆盖正文 + A2 旧稿备份落点（#1430）
+
+> 来源：#1288 第 2 项（方案 A）。#1288 第 1 项（`reset` = 方案 B，§3.1 端点表）只清**执行态**、不删正文；方案 A 是它的**补充出口**：`reset` 之后若正文仍在，安全阀依旧拦截（#1265 判据读实际数据），用户只能自己去删正文。A 提供「**显式**跳过安全阀 + **覆盖**正文 + 旧稿可恢复」的第三条路。⚠️ A 会**主动写 `chapters.content`**，覆盖即数据丢失 → 备份是硬要求。
+
+**旧稿落点（用户 2026-10-01 拍板 = A2）**：`chapters` 新增 `previous_content`（`Text`，nullable），**不新造表**（抄 `outline_service` 的 `extra["replace_snapshot"]` 快照先例 + 仓库既有 `LenientJSON` 列先例）。未选方案备案：
+
+| 方案 | 旧稿落点 | 未选原因（可推翻，若要推翻请新开 issue） |
+|---|---|---|
+| A1 | `drafts` 表（`Draft.chapter_id`=该章，`status=draft`） | 🔴 **代码级语义冲突**：`draft_service.confirm()` 取 `target = draft.chapter_id or chapter_id`（`domain/services/draft_service.py:219`）⇒ 确认「备份草稿」会把**旧文写回该章、静默回退新正文**；若为规避把 `chapter_id` 留空，又落进 `POST /agent/drafts/prune-orphans` 的清理面 ⇒ 备份不可信 |
+| A3 | 不落旧稿，覆盖前显式提示 + 二次确认 | 一次误点旧稿永久消失（不可恢复）；A2 的「上一稿快照」是通用能力，后续任何覆盖/重写入口都可复用 |
+
+> 另已排除：`DataChangeEvent`（审计/SSE 变更流）**不含正文载荷**，不能当备份源。
+
+**快照规则（写路径，`ChapterService.update_chapter`）**：落实新正文**之前**，若「归一后的新正文 ≠ 库中旧正文」且「旧正文非空白」→ 把**库中旧正文**（`existing.content`，逐字）写进 `previous_content`。
+
+- 旧正文为空白（`""` / 纯空白）→ **不写空壳**：`previous_content` 保持原值（「有正文」判据与安全阀 `content_checker` 同口径：`.strip()` 后非空）
+- 只改标题 / 正文值未变（幂等写）→ **不产生快照**（无内容丢失，备份无意义）
+- 连续覆盖 → `previous_content` 恒为**紧邻上一版**（不是首版）
+- 该规则是 `update_chapter` 的**唯一收口**（GUI 手编正文 / 草稿 confirm / book 轨审计落章 `_audit_bridge.persist_chapter_body` 全部经此路径），故无需把 `force` 位透传到写路径深处
+
+**恢复读口**：`POST /chapters/{chapter_id}/restore-previous` → `ChapterService.restore_previous_content(chapter_id)`
+
+- 把 `previous_content` 写回 `content`；**恢复动作自身也遵守同一覆盖口径**（旧稿是被新正文覆盖掉的，恢复同样先落一次快照）⇒ 结果是 `content` ⇄ `previous_content` 的**双向切换**，可再恢复回去
+- `previous_content` 为空白 → **409**「无可恢复的旧稿」（不静默 200）；章不存在 → **404**
+- GUI 入口另开单（本增量只交付 API + CLI 读侧可见）
+
+**请求面：双条件（`force` + `confirm_overwrite`）**
+
+- `POST /runs` body 新增 `force: bool = False` / `confirm_overwrite: bool = False`；**两者必须成对**，只给其一 → `ValueError`「force 与 confirm_overwrite 必须同时提供」→ **422**。目的：防止任何自动化链路**静默**带上 force（覆盖正文 = 数据丢失，必须有人显式二次确认）。
+- **force 只做显式跳过**：`force=True + confirm_overwrite=True` 时跳过「内容已写」安全阀；🔴 **安全阀判据本身（#1265）零改动** —— 否则 `reset` 的语义解释会跟着漂移（reset 之所以安全，正因「正文还在 ⇒ 闸门仍拦」）。`force=False` 路径行为与调用面**逐字不变**。
+- **force 必须到达后台执行体**：`prepare_run` 只预检 + 落 `running`，真正写正文的是后台任务里的 `write_book` / `write_book_volume` / `write_book_agentic` —— 三者都吃 `force`（否则 force 只跳过入口预检，后台写正文时仍撞阀 → 特性等于没做）。
+- **备份落点随响应可见**（硬约束「不做静默备份」）：force 成功（202）时响应体带
+
+  ```jsonc
+  { "run_id": "uuid", "status": "running",
+    "overwrite": { "forced": true,
+                   "backup_target": "chapters.previous_content",   // 去哪找回
+                   "chapters_to_backup": 2 } }                     // 待备份章数（= 目标章中当前已有正文的章数；0 = 无旧稿可备）
+  ```
+
+- **CLI**：`inkflow book run <plan_id> --force --confirm-overwrite`（只透传、不做本地判定 —— 双条件是服务层不变量）；不带 flag 时 body 逐字不变；响应含 `overwrite` 时人类输出点明备份列与章数。
+
+**reset（B）语义不变**：B 继续不动正文；A 是 B 的补充出口而非替代。
+
+**测试锚**：迁移四形态 `backend/tests/unit/infrastructure/database/test_chapters_previous_content_migration_1430.py`；快照 + 恢复 `backend/tests/unit/domain/services/test_chapter_previous_content_1430.py`；双条件 + 后台透传 `backend/tests/unit/domain/services/test_book_run_force_1430.py` + `tests/api/test_book_force_overwrite_1430.py`；恢复读口 `tests/api/test_chapter_restore_previous_1430.py`；CLI `tests/cli/test_cli_book_force_1430.py`。
+
 ## 6. 组织规则
 
 编排域专属约定（各阶段实现共享，避免每阶段重复设计）：
@@ -819,6 +867,14 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 |---|------|--------------|
 | M13 | 后端提问引擎（PR-1，#475 验收「访谈问题由 LLM 按 one_liner+项目设定动态生成；已确定项不再重复提问；确定项落会话可回溯」） | mock LLM 单测（通用必答 + 针对性并存、提取 confirmed_items 只问未确定项、冲突回问、末尾总体确认 confirm=true 完成、LLM 失败降级 ROUND1/ROUND2）；API 测试（confirm 端点 + confirmed_items/conflicts 响应字段）；`book plan show` 回溯确定项 |
 | M14 | 前端对话式 UI（PR-2，#475 验收「后端+前端测试全绿」） | Vitest 组件测试（对话式消息流、确定项汇总卡片确认/修改、kind=conflict 警示、auto 按钮）；`pnpm test`（vitest run） |
+
+### 13.6 v1.11 #1430 方案 A（覆盖 + A2 备份 + 恢复读口）：M15-M17
+
+| M | 验收 | 验证命令/方式 |
+|---|------|--------------|
+| M15 | 迁移三形态 + 幂等（旧库补列且**存量 previous_content 恒 NULL**（零回填）/ 新库 no-op / 表不存在 no-op / 连续两次调用等价）；ORM 基线已重导 | `pytest backend/tests/unit/infrastructure/database/test_chapters_previous_content_migration_1430.py`；`uv run python ci_cd/check_orm_migration_drift.py --regen` 后 `git diff --exit-code ci_cd/orm_migration_baseline.json` |
+| M16 | 备份「覆盖前必落」（旧正文逐字进 `previous_content`）+「旧值为空不留空壳」+ 恢复读口可写回（且恢复自身遵守覆盖口径 = 双向切换）；`chapters.previous_content` 随章资源可回读 | `pytest backend/tests/unit/domain/services/test_chapter_previous_content_1430.py tests/api/test_chapter_restore_previous_1430.py` |
+| M17 | 双条件拒绝（只给 force / 只给 confirm_overwrite → 422）；force 抵达后台执行体；备份落点随 force 响应可见；**非 force 路径零变化**（既有安全闸用例全绿 + 非 force 请求调用面逐字不变） | `pytest backend/tests/unit/domain/services/test_book_run_force_1430.py tests/api/test_book_force_overwrite_1430.py backend/tests/unit/domain/services/test_book_service_safety_gate_1265.py backend/tests/unit/domain/services/test_book_reset_1282.py tests/cli/test_cli_book_force_1430.py` |
 
 ## 待澄清问题（阻塞级，已拍板固化 v1.1 + v1.2 Q4）
 

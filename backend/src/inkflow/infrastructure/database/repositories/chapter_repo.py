@@ -46,6 +46,7 @@ def _chapter_orm_to_domain(orm: ChapterORM) -> Chapter:
         volume_id=uuid.UUID(int=orm.volume_id) if orm.volume_id else None,
         title=orm.title,
         content=orm.content,
+        previous_content=orm.previous_content,
         status=ChapterStatus(orm.status),
         word_count=orm.word_count,
         order_index=orm.order_index,
@@ -182,6 +183,7 @@ class SQLiteChapterRepository:
             volume_id=chapter.volume_id.int if chapter.volume_id else None,
             title=chapter.title,
             content=chapter.content,
+            previous_content=chapter.previous_content,
             status=chapter.status.value,
             word_count=wc,
             order_index=chapter.order_index,
@@ -263,6 +265,7 @@ class SQLiteChapterRepository:
             .values(
                 title=chapter.title,
                 content=chapter.content,
+                previous_content=chapter.previous_content,
                 status=chapter.status.value,
                 word_count=wc,
                 order_index=chapter.order_index,

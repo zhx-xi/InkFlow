@@ -253,6 +253,8 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
             "target",
             "to",
             "payload",
+            "force",
+            "confirm_overwrite",
         ],
     ),
     "ManageConfigParams": (

@@ -296,9 +296,23 @@ def book_run(
         "--limits",
         help="上限 k=v 逗号分隔，如 max_chapters=5,max_tokens=200000",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="显式跳过「内容已写」安全阀并覆盖正文（须与 --confirm-overwrite 成对）",
+    ),
+    confirm_overwrite: bool = typer.Option(
+        False,
+        "--confirm-overwrite",
+        help="二次确认覆盖正文（与 --force 成对）",
+    ),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
-    """启动书级运行（POST /runs -> run_id/status；阶段 2 顺序派发）。"""
+    """启动书级运行（POST /runs -> run_id/status；阶段 2 顺序派发）。
+
+    #1430：`--force`（+ `--confirm-overwrite`）显式覆盖已有正文；CLI 只透传、不做
+    本地双条件判定（双条件是服务层不变量，只给其一时由 API 回 422）。
+    """
     cli_ctx: CliContext = ctx.obj
 
     async def _impl() -> dict:
@@ -308,6 +322,10 @@ def book_run(
         parsed = _parse_limits(limits)
         if parsed:
             body["limits"] = parsed
+        if force:
+            body["force"] = True
+        if confirm_overwrite:
+            body["confirm_overwrite"] = True
         async with client:
             return await client.post("/agent/books/runs", json=body)
 
@@ -315,6 +333,12 @@ def book_run(
 
     def _render(data: dict) -> None:
         typer.echo(f"✓ 已启动 run_id={data.get('run_id')}")
+        overwrite = data.get("overwrite")
+        if overwrite:
+            typer.echo(
+                f"覆盖模式：旧正文备份落点 {overwrite.get('backup_target')}"
+                f"（待备份 {overwrite.get('chapters_to_backup')} 章）"
+            )
 
     _human_or_json(cli_ctx, json_output, data, _render)
 

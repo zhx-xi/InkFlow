@@ -43,6 +43,10 @@ class VolumeMoveError(Exception):
     """目标卷非法（不存在或等于当前卷）。"""
 
 
+class PreviousContentUnavailableError(Exception):
+    """无可恢复的上一稿（chapters.previous_content 为空/纯空白）。"""
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -261,10 +265,39 @@ class ChapterService:
             updated = updated.model_copy(
                 update={"content": normalize_chapter_content(updated.content, updated.title)}
             )
+        # #1430：正文覆盖 → 先落「上一稿」快照（旧值非空且内容确实变）。
+        # 快照值取**库中旧正文**（existing.content 逐字，非入参原文）；旧正文空白
+        # 或正文未变（含只改标题的幂等写）→ 不写快照（不留空壳）。写路径唯一收口。
+        if updated.content != existing.content and (existing.content or "").strip():
+            updated = updated.model_copy(update={"previous_content": existing.content})
         saved = await self._repo.update_chapter(updated)
         await self._auto_link_outline(saved, existing)
         await publish_change("chapter", "update", saved.id, saved.project_id)
         return saved
+
+    async def restore_previous_content(self, chapter_id: int | uuid.UUID) -> Chapter | None:
+        """恢复上一稿（#1430 A2）：把 previous_content 写回 content（双向切换）.
+
+        经 :meth:`update_chapter` 覆盖写 ⇒ 本次被替换的正文自动落回 previous_content，
+        结果是 content ⇄ previous_content 互换，可再恢复回去。
+
+        Args:
+            chapter_id: 章节主键（int 或 UUID）.
+
+        Returns:
+            恢复后的 Chapter；章不存在 → None（router 转 404）.
+
+        Raises:
+            PreviousContentUnavailableError: previous_content 为空/纯空白（router 转 409）.
+        """
+        cid = _to_uuid(chapter_id)
+        existing = await self._repo.get_chapter(cid)
+        if existing is None:
+            return None
+        previous = existing.previous_content
+        if not (previous or "").strip():
+            raise PreviousContentUnavailableError("无可恢复的旧稿")
+        return await self.update_chapter(cid, ChapterUpdate(content=previous))
 
     async def _auto_link_outline(self, saved: Chapter, before: Chapter | None = None) -> None:
         """#1001：正文首次非空白落盘 → 触发章级大纲自动关联（弱依赖）.
