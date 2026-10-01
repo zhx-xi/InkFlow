@@ -1,15 +1,18 @@
-"""F34 章节审计 REST API — 触发审计 / 用户确认 / 审计记录查询.
+"""F34 章节审计 REST API — 触发审计 / 用户确认 / 审计记录查询 / 明细读口.
 
-三个端点（spec §3.1）:
+四个端点（spec §3.1）:
 - POST /projects/{project_id}/chapters/{chapter_id}/audit
   （body: AuditTriggerRequest）→ 200 完整 ChapterAuditReport
 - POST /projects/{project_id}/chapters/{chapter_id}/audit/confirm
   （body: AuditConfirmRequest）→ 200 {status, confirmed_at}
 - GET  /projects/{project_id}/audit-logs → 200 {total, logs}（分页）
+- GET  /audit-logs/{log_id} → 200 AuditLogDetail（#1420 findings 明细读口）
 
 端点风格沿用 F15 audit.py / F16 style.py：`Depends(get_db)` 注入数据库
-session，再经模块级 `_get_svc(db)` 获取 ChapterAuditService——单元测试
-通过 `@patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")`
+session，再经模块级服务工厂获取 ChapterAuditService——带项目段的端点走
+`_get_svc(db, project_id)`（附带项目级 model 解析）；#1420 读口
+`GET /audit-logs/{log_id}` 无项目上下文，直接走 `get_chapter_audit_service(db)`。
+单元测试通过 `@patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")`
 mock 服务层（同 F9-F16 模式）。
 
 错误映射（spec §3.3 异常映射表）:
@@ -35,7 +38,7 @@ from inkflow.domain.models.chapter_audit import (
     AuditConfirmRequest,
     AuditTriggerRequest,
 )
-from inkflow.domain.ports.chapter_audit_errors import NoPendingAuditError
+from inkflow.domain.ports.chapter_audit_errors import AuditLogNotFoundError, NoPendingAuditError
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 from inkflow.domain.services.chapter_audit_service import ChapterAuditService
@@ -74,6 +77,20 @@ def _parse_chapter_id(chapter_id: str) -> uuid.UUID:
             raise HTTPException(status_code=404, detail="章节不存在") from err
 
 
+def _parse_log_id(log_id: str) -> uuid.UUID:
+    """安全解析审计记录 ID 字符串，支持 UUID 格式和整数格式（同 _parse_id）.
+
+    无效 UUID → 404「审计记录不存在」（统一解析失败处理，不进入服务层）。
+    """
+    try:
+        return uuid.UUID(log_id)
+    except ValueError:
+        try:
+            return uuid.UUID(int=int(log_id))
+        except (ValueError, OverflowError) as err:
+            raise HTTPException(status_code=404, detail="审计记录不存在") from err
+
+
 async def _get_svc(db: AsyncSession, project_id: uuid.UUID) -> ChapterAuditService:
     """获取 ChapterAuditService 实例（方便 mock）.
 
@@ -108,6 +125,8 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except NoPendingAuditError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except AuditLogNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"内部错误: {e}") from e
 
@@ -172,3 +191,19 @@ async def list_audit_logs(
     svc = await _get_svc(db, pid)
     logs, total = await _run_service(svc.list_logs(pid, offset=offset, limit=limit))
     return {"total": total, "logs": [log.model_dump(mode="json") for log in logs]}
+
+
+@router.get("/audit-logs/{log_id}")
+@instrument(caller_type="api")
+async def get_audit_log(
+    log_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """按审计记录 ID 取回审计明细（#1420）——轻量记录元信息 + findings 快照.
+
+    客户端超时后（POST 响应被丢弃）的恢复路径：`--history` 找到记录 ID → 本端点取明细。
+    """
+    lid = _parse_log_id(log_id)
+    svc = get_chapter_audit_service(db)
+    detail = await _run_service(svc.get_log(lid))
+    return detail.model_dump(mode="json")

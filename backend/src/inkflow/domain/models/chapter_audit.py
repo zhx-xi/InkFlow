@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AuditCheckType(StrEnum):
@@ -133,6 +133,19 @@ class AuditLog(BaseModel):
     note: str = ""  # 拒绝原因/备注（用户确认时填写，可空）
     created_at: datetime  # 审计时间（UTC）
     confirmed_at: datetime | None = None  # 确认时间（pending 为 None）
+
+
+class AuditLogDetail(AuditLog):
+    """审计记录明细（#1420 演进）——轻量记录 + 落库的 findings 快照.
+
+    仅读口形态（GET /api/v1/audit-logs/{log_id} / CLI `audit chapter --log <id>`）：
+    列表端点仍返回轻量 `AuditLog`，findings 不随列表膨胀（Q1=C 摘要级口径不变）。
+
+    Attributes:
+        findings: 审计发现快照（与触发审计时的 POST 响应体一致）；旧记录为空列表.
+    """
+
+    findings: list[ChapterAuditFinding] = Field(default_factory=list)
 
 
 class AuditTriggerRequest(BaseModel):

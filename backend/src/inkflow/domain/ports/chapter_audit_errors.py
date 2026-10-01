@@ -17,10 +17,21 @@ from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 
 __all__ = [
+    "AuditLogNotFoundError",
     "ChapterNotFoundError",
     "NoPendingAuditError",
     "ProjectNotFoundError",
 ]
+
+
+class AuditLogNotFoundError(Exception):
+    """审计记录不存在 — get_log 校验失败，API 层映射为 404.
+
+    消息即 404 响应 detail（CLI 对应退出 1）。
+    """
+
+    def __init__(self, message: str = "审计记录不存在") -> None:
+        super().__init__(message)
 
 
 class NoPendingAuditError(Exception):

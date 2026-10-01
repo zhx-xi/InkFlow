@@ -9,6 +9,7 @@ F7 §5 全局约定：--json 统一信封 {"ok": true, "data": ...} /
 - 触发审计:  inkflow audit chapter <章节> -p <项目> [--include-static]
 - 审计+确认:  ... --confirm accept|reject [--note TEXT]
 - 查记录:    inkflow audit chapter --history -p <项目>
+- 查明细:    inkflow audit chapter --log <审计记录 ID>（#1420，可省略 -p）
 
 错误码映射（spec §7）：
 - HttpApiError 经 map_http_error：404 → NOT_FOUND、422 → VALIDATION_ERROR、
@@ -145,16 +146,12 @@ async def _resolve_chapter_id(
     raise typer.Exit(1) from None  # print_error 已退出，此行不可达（静态分析用）
 
 
-def _print_human_report(report: dict) -> None:
-    """人类可读审计报告（spec §4）：findings 按 severity 逐条（error 在前）."""
-    typer.echo(
-        f"📋 章节审计: {report.get('chapter_title', '')} (status: {report.get('status', '')})"
-    )
-    findings = sorted(
-        report.get("findings", []),
+def _print_findings(findings: list[dict]) -> None:
+    """逐条打印 findings（severity 排序：error < warning < info）."""
+    for finding in sorted(
+        findings,
         key=lambda f: _SEVERITY_ORDER.get(str(f.get("severity", "info")), 99),
-    )
-    for finding in findings:
+    ):
         severity = finding.get("severity", "info")
         check_type = finding.get("check_type", "")
         message = finding.get("message", "")
@@ -165,9 +162,27 @@ def _print_human_report(report: dict) -> None:
             typer.echo(f"    关联: {finding['ref_entity_name']}")
         if finding.get("context"):
             typer.echo(f"    上下文: {finding['context']}")
+
+
+def _print_human_report(report: dict) -> None:
+    """人类可读审计报告（spec §4）：findings 按 severity 逐条（error 在前）."""
+    typer.echo(
+        f"📋 章节审计: {report.get('chapter_title', '')} (status: {report.get('status', '')})"
+    )
+    _print_findings(list(report.get("findings", [])))
     if report.get("degraded"):
         typer.echo("⚠️ 本次审计为降级模式：部分检查项未完整执行")
     typer.echo(f"   摘要: {report.get('summary', '')}（完整报告见 inkflow audit chapter --json）")
+
+
+def _print_human_detail(data: dict) -> None:
+    """人类可读审计明细（#1420）：记录元信息 + findings 逐条（error 在前）."""
+    typer.echo(f"📋 审计记录 {data.get('id', '')}（{data.get('chapter_title', '')}）")
+    typer.echo(f"   状态: {data.get('status', '')}  摘要: {data.get('severity_summary', '')}")
+    typer.echo(f"   时间: {format_local(data.get('created_at'))}")
+    _print_findings(list(data.get("findings", [])))
+    if data.get("degraded"):
+        typer.echo("⚠️ 本次审计为降级模式：部分检查项未完整执行")
 
 
 def _print_human_confirm(data: dict) -> None:
@@ -202,7 +217,9 @@ def _print_human_history(data: dict) -> None:
 def chapter_audit_cmd(
     ctx: typer.Context,
     chapter: str | None = typer.Argument(None, help="章节名称或 ID（--history 模式下可省略）"),
-    project: str = typer.Option(..., "--project", "-p", help="项目名称或 ID"),
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="项目名称或 ID（--log 模式可省略）"
+    ),
     include_static: bool = typer.Option(
         True,
         "--include-static/--no-include-static",
@@ -211,8 +228,9 @@ def chapter_audit_cmd(
     confirm: str | None = typer.Option(None, "--confirm", help="确认动作: accept / reject"),
     note: str = typer.Option("", "--note", "-n", help="确认备注（与 --confirm 搭配使用）"),
     history: bool = typer.Option(False, "--history", help="查询审计记录列表"),
+    log: str | None = typer.Option(None, "--log", help="按审计记录 ID 取回明细（含 findings）"),
 ) -> None:
-    """触发章节审计 / 确认 / 查询审计记录（spec §4 三种用法）"""
+    """触发章节审计 / 确认 / 查询审计记录 / 按记录 ID 取明细（spec §4 四种用法）"""
     cli_ctx: CliContext = ctx.obj
     if note and confirm is None:
         typer.echo("⚠️ --note 仅与 --confirm 搭配使用", err=True)
@@ -220,10 +238,16 @@ def chapter_audit_cmd(
     if confirm is not None and confirm not in {"accept", "reject"}:
         typer.echo(f"⚠️ --confirm 取值必须为 accept 或 reject，收到: {confirm}", err=True)
         raise typer.Exit(code=2)
+    if log is not None and (chapter is not None or confirm is not None or history):
+        typer.echo("⚠️ --log 不能与章节 / --confirm / --history 同时使用", err=True)
+        raise typer.Exit(code=2)
     if confirm is not None and history:
         typer.echo("⚠️ --confirm 与 --history 不能同时使用", err=True)
         raise typer.Exit(code=2)
-    if chapter is None and not history:
+    if log is None and project is None:
+        typer.echo("⚠️ 缺少项目（--project；仅 --log 模式可省略）", err=True)
+        raise typer.Exit(code=2)
+    if chapter is None and not history and log is None:
         typer.echo("⚠️ 缺少章节（仅 --history 模式可省略章节参数）", err=True)
         raise typer.Exit(code=2)
 
@@ -231,6 +255,9 @@ def chapter_audit_cmd(
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
+            if log is not None:
+                return await client.get(f"/audit-logs/{log}")
+            assert project is not None  # 上方校验已保证非 --log 模式必有项目
             pid = await _resolve_project_id(client, cli_ctx, project)
             if history:
                 return await client.get(f"/projects/{pid}/audit-logs")
@@ -250,6 +277,8 @@ def chapter_audit_cmd(
     data = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
         print_result(cli_ctx, data)
+    elif log is not None:
+        _print_human_detail(data)
     elif history:
         _print_human_history(data)
     elif confirm is not None:

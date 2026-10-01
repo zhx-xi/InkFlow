@@ -183,7 +183,9 @@ def _svc(
     audit_service = MagicMock()
     audit_service.run_audit = AsyncMock(return_value=_audit_report())
     audit_log_repo = MagicMock()
-    audit_log_repo.add = AsyncMock(side_effect=lambda log: log)
+    # #1420：仓储 add 增 findings 关键字（落库口径）；本文件只关心 check_type 收敛，
+    # mock 吸收新关键字（findings 落库断言归 #1420 专项契约测试）。
+    audit_log_repo.add = AsyncMock(side_effect=lambda log, **kwargs: log)
 
     outline_items = _default_outlines() if outlines is None else outlines
     outline_repo = MagicMock()

@@ -109,9 +109,9 @@ class InkFlowHTTPClient:
         流式（stream=True）用「流式响应空闲超时」前缀（SSE 帧间隙读超时语义），
         非流式用「请求超时」前缀；后缀提示服务端任务可能仍在进行、勿直接重试。
         """
-        suffix = "服务端任务可能仍在进行，请稍后用 list/get 查询结果，勿直接重试"
+        suffix = "服务端任务可能仍在进行，请稍后查看结果，勿直接重试"
         if stream:
-            stream_suffix = "生成可能仍在进行，请稍后用 list/get 查询结果，勿直接重试"
+            stream_suffix = "生成可能仍在进行，请稍后查看结果，勿直接重试"
             return f"流式响应空闲超时（{timeout:g}s）：{stream_suffix}"
         return f"请求超时（{timeout:g}s）：{suffix}"
 

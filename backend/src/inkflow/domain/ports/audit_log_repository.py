@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import builtins
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from inkflow.domain.models.chapter_audit import AuditLog
+from inkflow.domain.models.chapter_audit import AuditLog, AuditLogDetail, ChapterAuditFinding
 
 
 class AuditLogRepositoryProtocol(Protocol):
@@ -27,14 +28,28 @@ class AuditLogRepositoryProtocol(Protocol):
     领域 UUID ↔ ORM int 转换在仓储实现层完成。
     """
 
-    async def add(self, log: AuditLog) -> AuditLog:
-        """插入一条审计记录，返回含 ORM 主键背书的 AuditLog.
+    async def add(
+        self, log: AuditLog, *, findings: Sequence[ChapterAuditFinding] | None = None
+    ) -> AuditLog:
+        """插入一条审计记录（含 findings 快照），返回含 ORM 主键背书的 AuditLog.
 
         Args:
             log: 领域审计记录（id 由仓储按 ORM 自增主键生成）.
+            findings: 审计发现快照（#1420）；None/空 → 落空列表.
 
         Returns:
             已落库的 AuditLog（id = uuid.UUID(int=orm_id)）.
+        """
+        ...
+
+    async def get(self, log_id: uuid.UUID) -> AuditLogDetail | None:
+        """按审计记录 ID 取回明细（#1420 读口）.
+
+        Args:
+            log_id: 审计记录主键（领域 UUID，见 #1291）.
+
+        Returns:
+            含 findings 快照的 AuditLogDetail；log_id 不存在 → None.
         """
         ...
 

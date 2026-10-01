@@ -4,10 +4,16 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.3 | **日期**: 2026-09-18 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）
+> **Spec 版本**: 1.4 | **日期**: 2026-10-01 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）；v1.4 增量依据 Issue #1420（客户端超时后审计明细不可恢复——findings 落库 + 读口 + 超时文案对齐）
 > **所属阶段**: 0.6.0（#208 章节审计，估算 5-7 人天——v1.1 拍板含轻量记录 + CLI 确认 + GUI 最小版）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=C **轻量审计记录**（audit_logs 表：时间/章节/结果/确认状态/备注，不含 findings 明细；可追溯性落地且避免全量持久化膨胀）；Q2=B **CLI 支持确认**（`--confirm accept|reject`——单 CLI 用户不应被迫下载 GUI，双入口确认状态统一落 audit_logs）；Q3=C **GUI 最小版一并做**（章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知——确认闭环是功能定义）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 同步修订；Issue #208 验收标准已更新（gh comment 留痕 2026-08-09）。
+>
+> **Spec 变更（v1.3 → v1.4）——Q1=C 演进（非推翻）**: 客户端 300s 超时（响应被丢弃）后审计明细永久不可达，实测 352 章批审计命中 9 章（2.6%），只能重跑（约 200–300 秒 LLM 调用）且新增重复记录（Issue #1420）。
+> ① **方案 2（推荐·本版本采用）**：`audit_logs` 增 `findings` JSON 快照列（`TEXT NOT NULL DEFAULT '[]'`，`LenientJSON` 读回空串/旧行安全）——**触发审计出参（POST /audit 响应体）零变化**，仅落库多一份快照；新增读口 `GET /api/v1/audit-logs/{log_id}` + CLI `audit chapter --log <id>` 按记录 ID 取回明细（轻量记录元信息 + findings）。列表端点 `GET /projects/{pid}/audit-logs` **仍返回轻量 `AuditLog`**（响应形态零变化，Q1=C 摘要级口径不变）。
+> ② **方案 1（无论如何都做，同 PR 落地）**：传输层 TIMEOUT 文案不再承诺不存在的 `list/get` 能力（原「请稍后用 list/get 查询结果」→「请稍后查看结果」）——文案不得指向不存在的读口。
+> ③ **方案 3（异步语义：触发即返回 log_id + 按 id 轮询）** 本版本不做，归后续演进（§10）。
+> 连带修订：§2.3 / §3.1 / §3.2 / §3.3 / §4 / §5.1 / §5.7 / §7 / §8.1 / §9 / §10 / §12 / §13。
 >
 > **关联 Issues**: [#208](https://github.com/zhx-xi/InkFlow/issues/208)（本模块）；[#54](https://github.com/zhx-xi/InkFlow/issues/54)（F22 全文搜索——本模块为 F22「AI 自动维护」的增强触发语义前置，**F22 不阻塞等待本模块**）；[#45](https://github.com/zhx-xi/InkFlow/issues/45)（F15 审计服务——静态档案一致性，与本模块互补）
 > **依赖**: ✅ F2（章节 + ChapterStatus 四态：REVIEW/FINAL 为「写完一章」天然钩子）· ✅ F5（LLM 管线，ChatOpenAI 既有）· ✅ F9（角色档案读取）· ✅ F10（世界观条目读取）· ✅ F15（静态一致性审计可委托，API 已存在）· ✅ F19（GUI 渲染层，确认流程 UI 接线）· ⏳ F22（#54，被依赖方，非前置）
@@ -106,9 +112,9 @@ class ChapterAuditReport(BaseModel):
     confirmed_at: datetime | None = None
 ```
 
-### 2.3 AuditLog（轻量记录实体，Q1=C 拍板）
+### 2.3 AuditLog（轻量记录实体，Q1=C 拍板；v1.4 增 findings 快照列）
 
-**新表 audit_logs**（轻量：不含 findings 明细，可追溯的最小形态）：
+**新表 audit_logs**（轻量：不含 findings 明细，可追溯的最小形态）。**v1.4（#1420）演进**：增 `findings` JSON 快照列 + 读口专用明细模型 `AuditLogDetail`——**列表端点仍返回下方轻量 `AuditLog`（响应形态零变化）**，仅 `GET /api/v1/audit-logs/{log_id}` 返回明细：
 
 ```python
 class AuditLog(BaseModel):
@@ -126,6 +132,10 @@ class AuditLog(BaseModel):
     created_at: datetime        # 审计时间
     confirmed_at: datetime | None = None  # 确认时间（pending 为 None）
 
+class AuditLogDetail(AuditLog):        # v1.4（#1420）：读口专用明细形态（列表端点不返回）
+    """轻量记录 + findings 快照（与触发审计时的 POST 响应体同源）."""
+    findings: list[ChapterAuditFinding] = []   # 旧记录/未落快照 → 空列表
+
 class AuditLogORM(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -139,9 +149,10 @@ class AuditLogORM(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    findings: Mapped[list] = mapped_column(LenientJSON(fallback=[]), default=list)  # v1.4（#1420）
 ```
 
-> **决策论证表**：为什么是「轻量记录」而非「完整快照」（Q1=C 拍板，2026-08-09）：① 验收标准「可追溯」的最小满足 = 何时审计过/结果如何/为何拒绝，findings 明细是**即时消费**（看报告当下就处理），历史回看明细场景弱（F25 教训：不为假设场景付全量成本）；② 完整 JSON 快照每章审计 × 100 章 = 千级冗余数据，单用户本地工具无此必要；③ `severity_summary`（计数）落库使「过去一周审计质量趋势」可查，覆盖实际追溯需求。FK ondelete 级联：项目/章节删除时审计记录随删（审计是附属记录，非独立资产）。
+> **决策论证表**：为什么是「轻量记录」而非「完整快照」（Q1=C 拍板，2026-08-09）：① 验收标准「可追溯」的最小满足 = 何时审计过/结果如何/为何拒绝，findings 明细是**即时消费**（看报告当下就处理），历史回看明细场景弱（F25 教训：不为假设场景付全量成本）；② 完整 JSON 快照每章审计 × 100 章 = 千级冗余数据，单用户本地工具无此必要；③ `severity_summary`（计数）落库使「过去一周审计质量趋势」可查，覆盖实际追溯需求。FK ondelete 级联：项目/章节删除时审计记录随删（审计是附属记录，非独立资产）。**v1.4 演进（#1420）**：Q1=C 的「不存 findings 明细」前提被实测场景推翻——**客户端 300s 超时会让「即时消费」的明细彻底不可达**（352 章批审计命中 2.6%，重跑约 200–300 秒且新增重复记录），而快照成本远低于重跑成本（单章几 KB~几十 KB，352 章量级可接受）。故增 `findings` JSON 列 + 按记录 ID 读口：**摘要级列表（Q1=C 主体）不变**，明细改为「落库快照 + 只读按需取回」，不再要求客户端在响应窗口内消费。
 
 ### 2.4 AuditTriggerRequest / AuditConfirmRequest（DTO）
 
@@ -160,13 +171,16 @@ class AuditConfirmRequest(BaseModel):
 
 ## 3. API 契约
 
-### 3.1 端点总览（3 个）
+### 3.1 端点总览（4 个）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/v1/projects/{project_id}/chapters/{chapter_id}/audit` | 触发审计（手动）；自动触发不经过此端点（见 §5.1） |
 | POST | `/api/v1/projects/{project_id}/chapters/{chapter_id}/audit/confirm` | 用户确认（accept/reject，GUI/CLI 共用，Q2=B） |
 | GET | `/api/v1/projects/{project_id}/audit-logs` | 审计记录查询（轻量列表，Q1=C 可追溯入口） |
+| GET | `/api/v1/audit-logs/{log_id}` | **v1.4（#1420）** 审计记录明细（轻量记录 + findings 快照；超时后的恢复路径，**无项目段**——超时场景客户端只有 log id） |
+
+> **读口路径口径（v1.4）**：`{log_id}` 为审计记录 ID（UUID；兼容整数形态 = ORM 自增主键背书）。无项目段是刻意的——上游项目名/ID 在超时场景下可能不可得，且记录 ID 已全局唯一。记录不存在 → 404（§3.3）。服务取用**不走**需要 project_id 的装配路径（`_get_svc`），直接经 `get_chapter_audit_service(db)` 装配（该端点为只读，不消费 LLM）。
 
 > 自动触发（章节状态进入 REVIEW/FINAL）由**前端在状态变更后调用** audit 端点（F2 状态变更端点既有，F34 不 MODIFY F2——前端编排，见 §5.1 注）。
 
@@ -228,6 +242,38 @@ GET /api/v1/projects/1/audit-logs?limit=20&offset=0
 }
 ```
 
+```http
+GET /api/v1/audit-logs/00000000-0000-0000-0000-0000000000a1
+→ 200（v1.4 #1420 读口：轻量记录元信息 + findings 快照）
+{
+  "id": "00000000-0000-0000-0000-0000000000a1",
+  "project_id": "00000000-0000-0000-0000-000000000001",
+  "chapter_id": "00000000-0000-0000-0000-000000000002",
+  "chapter_title": "第 3 章 龙的苏醒",
+  "status": "pending",
+  "severity_summary": "1 error, 1 warnings, 0 info",
+  "summary": "",
+  "degraded": false,
+  "note": "",
+  "created_at": "2026-08-09T10:00:00Z",
+  "confirmed_at": null,
+  "findings": [
+    {
+      "check_type": "character_drift",
+      "severity": "error",
+      "message": "本章「李青焰」怒斥同伴，但角色档案性格为「温厚沉稳」，行为可能与人设冲突",
+      "suggestion": "可改为隐忍不发，或先铺垫情绪积累",
+      "ref_entity_id": "00000000-0000-0000-0000-00000000000c",
+      "ref_entity_name": "李青焰",
+      "context": "“够了！”李青焰猛地拍案而起，怒视众人……"
+    }
+  ]
+}
+
+GET /api/v1/audit-logs/999999
+→ 404 { "detail": "审计记录不存在" }
+```
+
 ### 3.3 异常映射表
 
 | 场景 | HTTP 状态 | 错误 body（ADR-012 统一格式） | 抛出/捕获点 |
@@ -237,6 +283,7 @@ GET /api/v1/projects/1/audit-logs?limit=20&offset=0
 | confirm 时无对应 pending 记录 | 422 | `{"detail": "No pending audit log"}` | service 校验（audit_logs 中该章最新记录非 pending） |
 | 请求体非法（action 非 accept/reject） | 422 | Pydantic 校验错误 | DTO 层 |
 | audit-logs 分页参数越界 | 422 | Pydantic 校验错误 | DTO 层 |
+| 审计记录不存在（v1.4 读口 log_id 无效/查无） | 404 | `{"detail": "审计记录不存在"}` | service 抛 `AuditLogNotFoundError`（router 显式 except；非法 log_id 在解析层即 404，不进服务层） |
 | LLM 分析失败 | 200 + degraded | 见 §5.3（降级策略：确定性检查仍返回，LLM 检查标记降级） | 不视为 HTTP 错误 |
 
 > ⚠️ **LLM 失败语义（重要）**：LLM 漂移检查失败**不使整个审计失败**——报告返回时 LLM 类 findings 标记为降级（`degraded=true` + message 注明「LLM 分析暂不可用」），确定性检查（字数/静态）正常返回；audit_logs 记录 `degraded=true`（可追溯审计质量）。这使 API 错误面只有 404/422，LLM 失败走 200 + 降级标记。
@@ -248,25 +295,30 @@ GET /api/v1/projects/1/audit-logs?limit=20&offset=0
 F7 全局约定：`--json` 信封、退出码 0/1/2。F34 新增 `inkflow audit chapter` 子命令（挂入既有 audit 组，F15 CLI 不动）。**v1.1 新增 `--confirm`（Q2=B 拍板：单 CLI 用户无需 GUI 即可完成确认闭环）**。
 
 ```text
-inkflow audit chapter <chapter> --project <name|id> [--include-static] [--confirm accept|reject] [--note TEXT] [--json]
+inkflow audit chapter [<chapter>] --project <name|id> [--include-static] [--confirm accept|reject] [--note TEXT] [--log <log_id>] [--json]
 
 参数:
-  chapter                  章节名称或 ID
-  --project, -p            项目名称或 ID
+  chapter                  章节名称或 ID（--history / --log 模式下省略）
+  --project, -p            项目名称或 ID（**v1.4：--log 模式可省略**；其余模式必填）
   --include-static         包含 F15 静态一致性委托（默认含）
   --confirm                确认动作：accept（接受）/ reject（拒绝）（v1.1，可省略）
   --note, -n               确认备注（拒绝原因等，写入 audit_logs.note；与 --confirm 搭配使用）
-  --json                   输出 JSON 信封（data = ChapterAuditReport 或确认结果）
+  --log                    **v1.4（#1420）** 按审计记录 ID 取回明细（含 findings）；与
+                           chapter / --confirm / --history 互斥；模式下 -p 被忽略
+  --json                   输出 JSON 信封（data = ChapterAuditReport / 确认结果 / 记录列表 / 记录明细）
 
 用法:
   触发审计（默认）:  inkflow audit chapter <章节> -p <项目>            → 输出报告
   审计 + 确认:      inkflow audit chapter <章节> -p <项目> --confirm accept
                     inkflow audit chapter <章节> -p <项目> --confirm reject --note "人设需再打磨"
   查审计记录:       inkflow audit chapter --history -p <项目>         → 轻量记录列表（v1.1 Q1=C）
+  取回明细:         inkflow audit chapter --log <记录ID>              → 记录元信息 + findings（v1.4）
 
-成功: 退出 0；人类可读输出按 severity 排序打印 findings；--json 输出报告/确认结果
-失败: 项目/章节不存在 → 退出 1；用法错误 → 退出 2；--confirm 时无 pending 记录 → 退出 1
+成功: 退出 0；人类可读输出按 severity 排序打印 findings；--json 输出报告/确认结果/记录列表/记录明细
+失败: 项目/章节/记录不存在 → 退出 1；用法错误 → 退出 2；--confirm 时无 pending 记录 → 退出 1
 ```
+
+> v1.4 说明（#1420）：`--log` 是**超时恢复路径**——先 `--history -p <项目>` 找到目标记录的 id，再 `--log <id>` 取回明细（`--history` 只给 `severity_summary`，不足以复核）。`--log` 与触发/确认/列表互斥（一次一个动作）；缺 `-p` 且无 `--log` → 用法错误（退出 2）。
 
 > v1.1 说明：`--confirm` 与 `--history` 互斥（一次一个动作）；`--note` 仅与 `--confirm reject` 有业务意义（accept 也可留备注，如「改过再确认」），无 `--confirm` 时 `--note` 报用法错误（退出 2）。
 
@@ -298,8 +350,9 @@ inkflow audit chapter <chapter> --project <name|id> [--include-static] [--confir
     → 过滤出与本章相关 findings（source_chapter_id == chapter_id 或章节级），
       转映射为 static_consistency 类型（§5.5）
  ⑦ 组装 ChapterAuditReport（status=pending，degraded 标记）→ 返回
- ⑧ 落 audit_logs 轻量记录（Q1=C）: status=pending + severity_summary（findings 计数）
-    + summary + degraded → 可追溯
+ ⑧ 落 audit_logs 轻量记录（Q1=C）+ **v1.4 findings 快照**: status=pending +
+     severity_summary（findings 计数）+ summary + degraded + findings（与本次返回的
+     报告同源）→ 可追溯，且客户端超时后可按记录 ID 取回（§3.1 读口）
  ── confirm 阶段 ──
  ⑨ confirm(project_id, chapter_id, action, note):
     - 校验该章最新 audit_logs 记录为 pending（无 → 422）
@@ -309,7 +362,7 @@ inkflow audit chapter <chapter> --project <name|id> [--include-static] [--confir
 
 **模式要点**:
 1. **LLM 主体 + 确定性兜底**：字数/静态是确定性检查（快、可断言），人设/设定漂移是 LLM 分析（慢、非确定）——两类 findings 同报告不同性质，测试策略分层（§9）
-2. **轻量记录可追溯**：audit_logs 只存摘要（severity 计数 + summary + degraded），findings 明细瞬态——追溯「何时/结果/为何拒绝」，不存快照（Q1=C）
+2. **轻量记录可追溯**：audit_logs 只存摘要（severity 计数 + summary + degraded），findings 明细瞬态——追溯「何时/结果/为何拒绝」，不存快照（Q1=C）。**v1.4（#1420）例外**：findings 另落一份 JSON 快照列供按记录 ID 读回（列表响应仍只输出摘要）——条目形态仍是轻量，删掉的是「明细不可恢复」这一副作用
 3. **确认双入口闭环**：GUI（弹层）+ CLI（--confirm）→ 同一 service 方法 → audit_logs 状态更新；确认不改变任何业务数据（无副作用，D3）
 4. **LLM 降级不阻塞**：LLM 失败 → 200 + degraded 标记（§5.3），确定性检查照常；degraded 落记录可追溯
 
@@ -365,7 +418,7 @@ chapter_audit_drift.yaml:
 | 分析主体 | 确定性规则 | 统计 + 可选 LLM | **LLM 主体 + 确定性兜底** |
 | 用户确认 | 无 | 无 | **有（GUI + CLI 双入口）** |
 | 新实体表 | 无 | 无 | **1 张轻量表 audit_logs（Q1=C）** |
-| 新 API | 1 只读端点 | 1 端点 | **3 端点（触发 + 确认 + 记录查询）** |
+| 新 API | 1 只读端点 | 1 端点 | **4 端点（触发 + 确认 + 记录列表 + v1.4 记录明细读口）** |
 | 跨模块 MODIFY | 无 | 无 | **无（前端编排自动触发）** |
 | LLM 失败语义 | N/A | 可选降级 | **降级不阻塞（200 + degraded 标记落记录）** |
 
@@ -407,6 +460,9 @@ chapter_audit_drift.yaml:
 | E13 | CLI --note 无 --confirm | 退出 2（用法错误） |
 | E14 | 章节/项目删除 | audit_logs FK 级联删除（§2.3，附属记录随删） |
 | E15 | audit-logs 查询分页 | limit 默认 20 最大 100，offset ≥0（422 越界） |
+| E16 | **v1.4（#1420）** 按记录 ID 取明细，记录不存在 | 404「审计记录不存在」（service 抛 `AuditLogNotFoundError`；非法 log_id 解析层即 404） |
+| E17 | **v1.4（#1420）** 旧库（#1420 前建的 audit_logs 无 findings 列） | lifespan 迁移补列（`ensure_audit_logs_findings_column`，存量行默认 `'[]'`）→ 读口返回空 findings 列表（不 404、不崩溃） |
+| E18 | **v1.4（#1420）** 客户端超时（响应丢弃）后想复核明细 | `--history -p <项目>` 取记录 ID → `audit chapter --log <id>` / `GET /api/v1/audit-logs/{log_id}` 取回（无需重跑，不新增记录） |
 
 ---
 
@@ -442,6 +498,22 @@ chapter_audit_drift.yaml:
 | MODIFY | `.github/workflows/ci.yml` | `tests/cli/test_cli_audit_chapter.py` 追加 integration-cli-backend + `tests/api/test_chapter_audit_api.py` 追加对应 integration job（陷阱 13/15） |
 
 > ⚠️ 反向核对：上表 CREATE 均已核实不存在、MODIFY 均已确认存在（2026-08-09）；前端文件清单（Q3=C 最小版）在实现会话细化——先读 F19 渲染层结构（writing 页/store 模式）再落具体路径。
+
+> **v1.4（#1420）增量清单**（相对上表的改动）：
+> - CREATE `core/migrations_chapter_audit.py` — `ensure_audit_logs_findings_column`（幂等补列）
+> - MODIFY `core/database.py` — re-export + `__all__`（迁移 wiring 门禁注册集口径）
+> - MODIFY `api/app.py` — lifespan 迁移链接线（`await conn.run_sync(ensure_audit_logs_findings_column)`）
+> - MODIFY `infrastructure/database/models/audit_log.py` — `findings` JSON 列（LenientJSON）
+> - MODIFY `domain/models/chapter_audit.py` — 新增 `AuditLogDetail`（读口形态；`AuditLog` 本身零变化）
+> - MODIFY `domain/ports/audit_log_repository.py` — `add(*, findings=...)` + `get(log_id)`
+> - MODIFY `domain/ports/chapter_audit_errors.py` — 新增 `AuditLogNotFoundError`（404 语义）
+> - MODIFY `infrastructure/database/repositories/audit_log_repo.py` — findings 落库/读回（`_log_orm_to_domain` 不变 → 列表路径不变）
+> - MODIFY `domain/services/chapter_audit_service.py` — `audit()` 传 findings + `get_log()`
+> - MODIFY `api/routers/chapter_audit.py` — `GET /audit-logs/{log_id}` + 404 映射
+> - MODIFY `cli/commands/audit_chapter.py` — `--log` 模式（`-p` 变可选）
+> - MODIFY `infrastructure/http/client.py` — TIMEOUT 文案对齐（方案 1）
+> - CREATE 测试：`backend/tests/unit/core/test_audit_logs_findings_migration_1420.py`、`backend/tests/unit/domain/models/test_chapter_audit_detail_1420.py`、`backend/tests/unit/infrastructure/database/test_audit_log_findings_repo_1420.py`、`backend/tests/unit/domain/services/test_chapter_audit_findings_persist_1420.py`、`backend/tests/unit/infrastructure/http/test_timeout_copy_1420.py`、`tests/api/test_chapter_audit_log_detail_1420.py`、`tests/cli/test_cli_audit_chapter_log_1420.py`
+> - 契约生成物（同 PR 刷新）：`ci_cd/openapi_snapshot.json` + `frontend/packages/renderer/src/api/schema/openapi.d.ts`
 
 ### 8.2 注入依赖（ChapterAuditService 构造签名）
 
@@ -486,6 +558,13 @@ class ChapterAuditService:
 | API | `tests/api/test_chapter_audit_api.py` | 404（项目/章节）/422（confirm 无 pending）/200 降级 /200 确认 /audit-logs 分页 |
 | CLI | `tests/cli/test_cli_audit_chapter.py` | 触发输出、--confirm accept/reject、--note 校验、--history、--json 信封、404/422 错误 |
 | E2E | 前端最小版（Q3=C） | GUI 展示 findings + accept/reject 点击闭环（章节页） |
+| 单元 | `backend/tests/unit/core/test_audit_logs_findings_migration_1420.py` | **v1.4** findings 列迁移三形态（旧库补列/新库 no-op/无表 no-op） |
+| 单元 | `backend/tests/unit/domain/models/test_chapter_audit_detail_1420.py` | **v1.4** `AuditLog` 字段集不变（反例守护）+ `AuditLogDetail` 边界 |
+| 单元 | `backend/tests/unit/infrastructure/database/test_audit_log_findings_repo_1420.py` | **v1.4** findings 落库/读回往返 + `get` 未命中 None + 列表/确认路径仍轻量 |
+| 单元 | `backend/tests/unit/domain/services/test_chapter_audit_findings_persist_1420.py` | **v1.4** audit 落库 findings == 响应体 + `get_log` 404 语义 |
+| 单元 | `backend/tests/unit/infrastructure/http/test_timeout_copy_1420.py` | **v1.4** TIMEOUT 文案不含 list/get（回归断言） |
+| API | `tests/api/test_chapter_audit_log_detail_1420.py` | **v1.4** 读口 200（含空 findings）/404（缺失·非法·整数形态）/500 |
+| CLI | `tests/cli/test_cli_audit_chapter_log_1420.py` | **v1.4** `--log` 人类输出/`--json`/无 `-p`/互斥退出 2/404 退出 1 |
 
 ### 9.2 关键场景
 
@@ -497,6 +576,8 @@ class ChapterAuditService:
 6. **空档案**：无角色/无世界观 → 对应检查跳过不报错
 7. **截断**：超长章节 → 报告注明截断 + 预算内条目选取
 8. **audit-logs 查询**：分页正确；章节删除 → 记录级联删除（E14）
+9. **v1.4 findings 落库（#1420）**：audit 后按记录 ID 读回明细 == 触发时的响应体 findings（含 ref_entity_id/context 往返保真）；旧记录无快照 → 空列表不 404
+10. **v1.4 超时文案（#1420）**：传输层超时文案不含 `list`/`get` 词元（回归断言），且仍保留「勿直接重试」劝止语义
 
 ### 9.3 覆盖率
 
@@ -510,7 +591,9 @@ class ChapterAuditService:
 |----|-----------|
 | 全书批处理审计 | F15 已覆盖档案间一致性；章节审计是单章粒度，全书级由 CLI 循环调用 |
 | 自动改文/自动修复漂移 | F27 哲学：AI 只建议，用户决策；自动改文是未来 Agent 化（F27 writer-agent）职责 |
-| audit_logs 存 findings 明细/JSON 快照 | Q1=C 拍板：轻量记录（摘要级）即可追溯；明细是即时消费，历史回看场景弱（§2.3 决策论证） |
+| ~~audit_logs 存 findings 明细/JSON 快照~~ **（v1.4 已演进，见下）** | ~~Q1=C 拍板：轻量记录（摘要级）即可追溯；明细是即时消费，历史回看场景弱（§2.3 决策论证）~~ → **v1.4（#1420）改为落 JSON 快照列 + 按记录 ID 读口**：客户端 300s 超时会让「即时消费」的明细彻底丢失（实测 2.6% 命中），副作用超过节省的存储 |
+| **v1.4 仍在范围外**：异步语义（触发即返回 log_id，超时后按 id 轮询） | #1420 方案 3（最彻底）本期不做——改动面大（端点语义/客户端轮询/进度态）；顺带解决「重跑新增重复记录」归后续演进 |
+| **v1.4 仍在范围外**：GUI 审计明细回看页 | 读口先供 CLI/API（超时恢复的主战场是批审计）；GUI 历史/明细页沿用 Q3=C「后续演进」口径 |
 | GUI 审计历史页/全局列表 | Q3=C 拍板：最小版只做章节页确认闭环；历史查询走 CLI `--history` + API audit-logs，GUI 历史页后续演进 |
 | 审计通知/提醒（推送） | 无场景（本地单用户工具），YAGNI |
 | 与 F22 索引同步联动 | F22 v1.1 不阻塞等待本模块；联动是增强（§5.6 注），归 F22 演进 |
@@ -542,7 +625,7 @@ class ChapterAuditService:
 | F44 全自动写作链（#1267） | **写作门禁**：`severity=error`（阻断级，口径 `_audit_bridge.BLOCKING_SEVERITY`）→ 停止后续章节，被阻断章 `progress=needs_review`，run 终态 `blocked`；`warning`/`info` 不阻断；`degraded=true` **不阻断但告警**（「没审出来 ≠ 审出问题」）。阻断判定唯一实现点 = `_audit_bridge.audit_blocks_writing` / `inspect_audit_conclusion`（交 F44 §5.5 展开） |
 | F22 搜索（#54） | 增强触发语义（审计确认 → 索引增量），**非阻塞**（F22 v1.1 已用状态变更触发） |
 | GUI | 章节页审计按钮 + 确认弹层（交互式轨 = 用户决定是否阻断，复用 `confirm accept\|reject` 状态机） |
-| CLI | `inkflow audit chapter`（触发 + 确认 + 历史） |
+| CLI | `inkflow audit chapter`（触发 + 确认 + 历史 + **v1.4 按记录 ID 取明细**） |
 
 ### 编号口径声明
 
@@ -564,6 +647,7 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 | D8 | **v1.1：CLI 确认双入口（Q2=B）** | `--confirm accept\|reject` + `--note`，GUI/CLI 共用 confirm service | 用户拍板（2026-08-09）：单 CLI 用户不应被迫下载 GUI 才能完成确认闭环；双入口状态统一落 audit_logs（单一真相源） | v1.0 CLI 只触发（单 CLI 用户确认悬空） |
 | D9 | **v1.1：GUI 最小版一并做（Q3=C）** | 章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知 | 用户拍板（2026-08-09）：确认闭环是功能定义的一部分（「最后由用户确认」）；F22 联动需要 accept 事件发生 | 后端先行 GUI 后置（确认语义悬空 + 重蹈 F15 GUI 缺位）；完整 GUI（历史页/通知超范围） |
 | D10 | 自有端口 audit_log_repository | 本模块自己的 Protocol + repo | 业务表之外的补充持久化不 MODIFY 既有 Protocol（F15 audit_repo 先例）；SQLite 轻量 CRUD 可独立测试 | 复用 F32 settings_repo（语义不同，key-value vs 记录表）；service 直连 ORM（破坏分层） |
+| D11 | **v1.4（#1420）：findings 落库 + 按记录 ID 读口（Q1=C 演进）** | `audit_logs` 增 `findings` JSON 快照列（`LenientJSON`，`TEXT NOT NULL DEFAULT '[]'`）；`add(*, findings=...)` 落库（与 POST 响应体同源）；新增 `GET /api/v1/audit-logs/{log_id}` + CLI `--log <id>`；**列表端点仍返回轻量 `AuditLog`**（独立 `AuditLogDetail` 模型，不污染列表形态） | 客户端 300s 超时会让「即时消费」的明细永久丢失（352 章批审计命中 2.6%，重跑 200–300 秒且新增重复记录）；快照成本（单章几 KB~几十 KB）远低于重跑成本；读口独立模型使 Q1=C 的摘要级列表契约零变化（向后兼容） | 仅改文案（明细仍不可恢复——#1420 方案 1 单独不足）；异步语义（触发即返回 log_id + 轮询，#1420 方案 3，改动面大，归后续）；写产物文件 + 存路径（引入清理策略与孤儿文件问题，DB 列更内聚） |
 
 ---
 
@@ -588,6 +672,8 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 | M13 | 真实 LLM 验证（ADR-026 label 触发） | CI（label） | e2e-ai-backend job：真实模型一次审计成功 + 降级路径 |
 | M14 | **v1.3：#1266 前后章连贯性** check 产出（不连贯输入 → `cross_chapter` finding）+ 反向断言（连贯 → 不产）+ LLM 失败降级（`degraded=true` 不抛错）+ 无前章摘要跳过 | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_check_types.py` |
 | M15 | **v1.3：#1266 大纲符合度** check 产出（偏离输入 → `outline_compliance` finding）+ 反向断言（符合 → 不产）+ LLM 失败降级 + 无章纲跳过 + 正文截断沿用既有常量 | 单元 | `pytest backend/tests/unit/domain/services/test_chapter_audit_check_types.py` |
+| M16 | **v1.4（#1420）：findings 落库 + 读口** —— 迁移三形态（旧库补列/新库 no-op/无表 no-op）+ audit 落库 findings == 响应体 + `GET /api/v1/audit-logs/{log_id}` 200（含空 findings）/404 + CLI `--log` 取回 + 列表形态零变化（反例守护） | 单元+API+CLI | `pytest backend/tests/unit/core/test_audit_logs_findings_migration_1420.py backend/tests/unit/infrastructure/database/test_audit_log_findings_repo_1420.py backend/tests/unit/domain/services/test_chapter_audit_findings_persist_1420.py ../tests/api/test_chapter_audit_log_detail_1420.py ../tests/cli/test_cli_audit_chapter_log_1420.py` |
+| M17 | **v1.4（#1420）：超时文案不承诺不存在的能力** —— 传输层 TIMEOUT 文案（非流式 + 流式）不含 `list`/`get` 词元，保留「勿直接重试」劝止语义 | 单元 | `pytest backend/tests/unit/infrastructure/http/test_timeout_copy_1420.py backend/tests/unit/infrastructure/http/test_timeout_classification_926.py` |
 
 > Issue #208 验收标准映射（v1.1 拍板同步 2026-08-09）：写完一章可触发=M11（前端自动触发） · 报告含字数/人设/设定+级别=M1/M3 · GUI 确认交互=M11 · **记录可追溯=Q1=C 轻量记录（M5/M7/M8，audit_logs + CLI --history + API audit-logs）** · **CLI 可确认=Q2=B（M7）**。
 
@@ -597,6 +683,6 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 
 | # | 问题 | 选项 | 建议 |
 |---|------|------|------|
-| Q1 | 审计历史追溯：报告瞬态还是留记录？ | A. 瞬态（零实体零迁移，重审覆盖）<br>B. 完整持久化（audit_runs 全量 findings + 历史页）<br>C. 轻量记录（audit_logs 摘要级：时间/章节/结果/确认状态/备注，无 findings 明细） | ✅ 已确认（用户拍板 2026-08-09：C）——正文已按轻量记录修订（§2.3 audit_logs + §3.3 GET audit-logs + §4 --history + §12 D1）；可追溯验收落地且避免全量膨胀 |
+| Q1 | 审计历史追溯：报告瞬态还是留记录？ | A. 瞬态（零实体零迁移，重审覆盖）<br>B. 完整持久化（audit_runs 全量 findings + 历史页）<br>C. 轻量记录（audit_logs 摘要级：时间/章节/结果/确认状态/备注，无 findings 明细） | ✅ 已确认（用户拍板 2026-08-09：C）——正文已按轻量记录修订（§2.3 audit_logs + §3.3 GET audit-logs + §4 --history + §12 D1）；可追溯验收落地且避免全量膨胀。⚠️ **v1.4（#1420）演进留痕**：Q1=C 本身不变（列表仍是摘要级轻量记录），仅**增** findings JSON 快照列 + 按记录 ID 读口（§2.3 / §3.1 / §12 D11）——原「findings 明细是即时消费、历史回看场景弱」的假设被「客户端 300s 超时导致明细永久丢失」证伪 |
 | Q2 | CLI 是否支持确认？ | A. CLI 只触发（确认是 GUI 交互语义）<br>B. CLI 也支持 `--confirm accept/reject`（+备注） | ✅ 已确认（用户拍板 2026-08-09：B，理由「单 CLI 用户不应被迫下载 GUI」）——正文已按双入口确认修订（§4 --confirm/--note + §5.1 ⑨ + §12 D8），GUI/CLI 状态统一落 audit_logs |
 | Q3 | GUI 确认流程范围？ | A. 完整前后端同 PR（含历史页）<br>B. 后端先行，GUI 归后续 issue<br>C. 最小版一并做（章节页按钮 + 报告弹层 + accept/reject，无历史页/通知） | ✅ 已确认（用户拍板 2026-08-09：C）——正文已按最小版修订（§8 前端清单 + §12 D9），确认闭环是功能定义；历史查询走 CLI/API 即可 |

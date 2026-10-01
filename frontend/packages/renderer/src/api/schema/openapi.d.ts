@@ -854,6 +854,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit-logs/{log_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Audit Log
+         * @description 按审计记录 ID 取回审计明细（#1420）——轻量记录元信息 + findings 快照.
+         *
+         *     客户端超时后（POST 响应被丢弃）的恢复路径：`--history` 找到记录 ID → 本端点取明细。
+         */
+        get: operations["get_audit_log_api_v1_audit_logs__log_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chapters/{chapter_id}": {
         parameters: {
             query?: never;
@@ -7879,6 +7901,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audit_log_api_v1_audit_logs__log_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

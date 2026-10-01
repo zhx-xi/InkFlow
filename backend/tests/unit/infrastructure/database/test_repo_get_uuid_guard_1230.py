@@ -268,6 +268,12 @@ _FAMILY_REPOS: list[tuple[str, str, str]] = [
         "SQLiteAgentTemplateRepository",
         "template_id",
     ),
+    # #1420：审计记录读口新增 get(log_id) 入口 → 纳入同族契约（登记 + 守卫覆盖）
+    (
+        "inkflow.infrastructure.database.repositories.audit_log_repo",
+        "SQLiteAuditLogRepository",
+        "log_id",
+    ),
     (
         "inkflow.infrastructure.database.repositories.character_repo",
         "SQLiteCharacterRepository",
