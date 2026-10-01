@@ -7,6 +7,7 @@
  * （src/kernel.test.ts + src/kernel.state.test.ts 契约）。
  * 契约来源：specs/f19-gui/spec.md §3.2；specs/f31-gui-tray/spec.md §2.1/§5.3/§5.4/§5.6。
  */
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -144,6 +145,74 @@ function resolveKernelCommandBase(
  * 弹错误框；退避序列 1+2+4+8+16+30s 封顶全部生效，约 1 分钟自愈窗口。
  */
 export const MAX_CONSECUTIVE_FAILURES = 6;
+
+/** spawn 前的命令解析入参（main.ts 组装 app/process 侧事实，本函数只做纯判定） */
+export interface ResolveSpawnCommandOptions {
+  isPackaged: boolean;
+  env: NodeJS.ProcessEnv;
+  /** process.resourcesPath in packaged mode (undefined in tests) */
+  resourcesPath?: string;
+  repoRoot: string;
+  stateFile?: string;
+  cwd: string;
+}
+
+/**
+ * spawn 用命令解析（#1382 从 main.ts 纯搬迁，行为逐字不变）：
+ * 按 resolveKernelCommand 三分支定位后，dev 相对命令再以 [repoRoot, cwd] 探测绝对路径；
+ * 探测不到则原样返回，交给 spawn 报错 → 进入崩溃拉起/错误对话框。
+ */
+export function resolveSpawnCommand(opts: ResolveSpawnCommandOptions): KernelCommand {
+  const resolved = resolveKernelCommand({
+    isPackaged: opts.isPackaged,
+    env: opts.env,
+    // #187 任意 cwd 启动：打包版传绝对路径（process.resourcesPath 定位 resources/kernel/inkflow.exe）；
+    // #192：app.getAppPath() 打包版返回 app.asar 是错误基准（join 出不存在路径 → ENOENT），
+    // process.resourcesPath 是标准定位；truthy 守卫兼容测试 mock 缺失该属性（同款防御）
+    packagedKernelPath:
+      opts.isPackaged && opts.resourcesPath
+        ? path.join(opts.resourcesPath, 'kernel', 'inkflow.exe')
+        : undefined,
+    // #1153：dev 绝对路径（#187 同款；repoRoot 上溯 → worktree 覆盖成立）
+    devKernelPath: opts.isPackaged
+      ? undefined
+      : path.join(opts.repoRoot, 'backend', '.venv', 'Scripts', 'python.exe'),
+    stateFile: opts.stateFile, // #1237：注入 --port-file，与 CLI 同源（恢复单例语义）
+  });
+  if (opts.isPackaged || path.isAbsolute(resolved.command)) {
+    return resolved;
+  }
+  for (const base of [opts.repoRoot, opts.cwd]) {
+    const absolute = path.resolve(base, resolved.command);
+    if (fs.existsSync(absolute)) {
+      return { command: absolute, args: resolved.args };
+    }
+  }
+  return resolved;
+}
+
+/** 残留进程回收：taskkill 进程树（Windows 下 child.kill 可能杀不干净子进程） */
+export function killProcessTree(child: ChildProcess): void {
+  if (child.pid === undefined) {
+    return;
+  }
+  try {
+    const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    killer.on('error', () => {
+      // taskkill 不可用时退化为 child.kill
+    });
+  } catch {
+    // 忽略：退化为 child.kill
+  }
+  try {
+    child.kill();
+  } catch {
+    // 进程已退出
+  }
+}
 
 /** kernel.json 状态文件五字段（F30 §2.1 契约，spec f31 §2.1 消费侧） */
 export interface KernelState {
