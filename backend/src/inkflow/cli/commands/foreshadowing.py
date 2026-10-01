@@ -168,7 +168,9 @@ def list_foreshadowings_cmd(
     ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     status: str | None = typer.Option(None, "--status", help="状态过滤 (open / resolved)"),
-    search: str | None = typer.Option(None, "--search", "-s", help="按伏笔名搜索"),
+    search: str | None = typer.Option(
+        None, "--search", "-s", help="按伏笔名或位置搜索（子串匹配）"
+    ),
     sort: str = typer.Option(
         "priority",
         "--sort",

@@ -14,12 +14,13 @@ import { sessionUxEn, sessionUxZh } from './session-ux';
 import { logsUxEn, logsUxZh } from './logs-ux';
 import { paginationEn, paginationZh } from './pagination';
 import { writingReqEn, writingReqZh } from './writing-req';
+import { foreshadowFilterEn, foreshadowFilterZh } from './foreshadow-filter';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh, ...writingReqZh, ...paginationZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn, ...writingReqEn, ...paginationEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh, ...writingReqZh, ...paginationZh, ...foreshadowFilterZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn, ...writingReqEn, ...paginationEn, ...foreshadowFilterEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */

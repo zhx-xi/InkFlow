@@ -29,7 +29,7 @@ import builtins
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -153,7 +153,7 @@ class SQLiteForeshadowingRepository:
 
         Args:
             project_id: 项目主键（int）.
-            search: 伏笔名不区分大小写子串匹配（可选）.
+            search: 伏笔名或埋设位置不区分大小写子串匹配（可选；#1376 并集语义）.
             status: 状态精确过滤（open / resolved；不传 = 全部伏笔）.
             sort_by: 排序字段（priority / title / status / updated_at /
                 created_at；伏笔语境下默认 priority，与注入顺序一致）.
@@ -172,9 +172,14 @@ class SQLiteForeshadowingRepository:
             return [], 0
         base = select(ForeshadowingORM).where(ForeshadowingORM.project_id == pid)
 
-        # 搜索: title icontains
+        # 搜索: title OR location icontains（#1376：GUI 单检索框 = 标题面 ∪ 位置面，口径 1）
         if search:
-            base = base.where(ForeshadowingORM.title.icontains(search))
+            base = base.where(
+                or_(
+                    ForeshadowingORM.title.icontains(search),
+                    ForeshadowingORM.location.icontains(search),
+                )
+            )
         # 状态精确过滤（不传 = 全部活动）
         if status is not None:
             base = base.where(ForeshadowingORM.status == status)

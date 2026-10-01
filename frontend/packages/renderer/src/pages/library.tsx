@@ -37,6 +37,7 @@ import { LIBRARY_PAGE_SIZE, useLibraryPagedList, type PageableCatKey } from '../
 import { useWorldFullList } from '../hooks/useWorldFullList';
 import { useLibraryCategoryData } from '../hooks/useLibraryCategoryData';
 import { useKnowledgeGraphWiring } from '../hooks/useKnowledgeGraphWiring';
+import { useForeshadowFilters } from '../hooks/useForeshadowFilters';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
@@ -158,12 +159,15 @@ export function LibraryPage() {
   const catEndpoint = (CATS.find((c) => c.key === activeCat) ?? CATS[0]).endpoint;
   // #1320：角色等级筛选下沉服务端（extraQuery 变化 → hook 内部重置页码到第 1 页）。
   // world 不进分页分类（下）→ 恒 null；仅 characters 需要该条件。
+  // #1376：伏笔筛选（回收状态 · 检索 · 排序）同样下沉服务端 —— 筛选条 state 由 hook 持有。
+  const fsFilter = useForeshadowFilters();
   const pagedExtraQuery = useMemo(
-    () =>
-      activeCat === 'characters' && characterRank !== 'all'
-        ? { role_rank: characterRank }
-        : null,
-    [activeCat, characterRank],
+    () => {
+      if (activeCat === 'characters' && characterRank !== 'all') return { role_rank: characterRank };
+      if (activeCat === 'foreshadow') return fsFilter.extraQuery;
+      return null;
+    },
+    [activeCat, characterRank, fsFilter.extraQuery],
   );
   const pagedLib = useLibraryPagedList<LibraryItemDTO>(
     currentProjectId,
@@ -219,6 +223,10 @@ export function LibraryPage() {
   useDataChangeSubscription(LIBRARY_DATA_CHANGE_DOMAINS, () => setReloadKey((k) => k + 1));
   // #1002：outline tab 的 loading/error 由 hook 持有；其余分类沿用通用 effect 态（非 outline 行为零改动）
   const viewLoading = activeCat === 'outline' ? outlineLib.loading : listLoading;
+  // #1376：伏笔筛选条含文本输入 —— 重拉期间不得用整卡骨架替换（否则输入框卸载 → 失焦 / IME 组合中断）
+  const keepsForeshadowBarWhileLoading =
+    activeCat === 'foreshadow' && (fsFilter.active || pagedLib.items.length > 0);
+  const viewSkeleton = viewLoading && !keepsForeshadowBarWhileLoading;
   const viewFailed = activeCat === 'outline' ? outlineLib.loadFailed : listFailed;
 
   const cat = CATS.find((c) => c.key === activeCat) ?? CATS[0];
@@ -568,7 +576,7 @@ export function LibraryPage() {
             {/* #545 + #568：列表非空保留常态"新建"入口（knowledge 无端点不渲染；空态 CTA 覆盖空列表）；#1375：world 分支不再渲染此钮（入口 = 工具栏「新建条目」） */}
             {currentProjectId !== null && (
               <div className="mb-3 flex items-center justify-end gap-2">
-                {createCat !== null && !viewLoading && !viewFailed && listItems.length > 0 && activeCat !== 'world' && activeCat !== 'outline' && (
+                {createCat !== null && !viewSkeleton && !viewFailed && listItems.length > 0 && activeCat !== 'world' && activeCat !== 'outline' && (
                   <button type="button" data-testid="library-create-btn" className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60" onClick={() => setCreateOpen(true)}>
                     {t('lib.empty.create')}
                   </button>
@@ -576,7 +584,7 @@ export function LibraryPage() {
                 <AIExtractEntry />
               </div>
             )}
-            {viewLoading ? (
+            {viewSkeleton ? (
               <div data-testid="library-list" className="space-y-2">
                 <Skeleton className="h-11 w-full" />
                 <Skeleton className="h-11 w-full" />
@@ -641,7 +649,7 @@ export function LibraryPage() {
                 onDelete={openDelete}
                 onAdd={handleOutlineAdd}
               />
-            ) : listItems.length === 0 ? (
+            ) : listItems.length === 0 && !(activeCat === 'foreshadow' && fsFilter.active) ? (
               <div
                 data-testid="library-tab-empty"
                 className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center"
@@ -723,6 +731,12 @@ export function LibraryPage() {
                   items={listItems}
                   withCharacterExtras={activeCat === 'characters'}
                   withForeshadowExtras={activeCat === 'foreshadow'}
+                  /* #1376：伏笔筛选/排序条（仅 foreshadow 分类渲染，N10） */
+                  foreshadowFilter={
+                    activeCat === 'foreshadow'
+                      ? { ...fsFilter.barProps, shown: pagedLib.items.length, total: pagedLib.total }
+                      : undefined
+                  }
                   projectId={currentProjectId}
                   rank={activeCat === 'characters' ? characterRank : undefined}
                   onRankChange={

@@ -68,7 +68,8 @@ export function useLibraryPagedList<T>(
   const extraKey = extraQuery
     ? Object.entries(extraQuery)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, v]) => `${k}=${v}`)
+        // #1376：检索词可能含空格/中文/`&` → 值必须 URL 编码（ASCII 值如 role_rank 编码后不变）
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
         .join('&')
     : '';
   // 分类/项目/筛选切换 → 页码重置（不复用上一数据集的页码）；reloadKey 不重置页码
