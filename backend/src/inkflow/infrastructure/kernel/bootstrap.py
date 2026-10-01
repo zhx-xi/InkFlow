@@ -165,6 +165,12 @@ def _spawn_kernel(cmd: list[str], log_file: Path) -> subprocess.Popen:
     """拉起内核进程（detach 语义，spec §5.5）：stdout/stderr 追加写日志文件。
 
     打开日志句柄前先做启动期归档（spec §6.3）：内核全量输出才会落进空的新文件。
+
+    内核子进程的 stdout/stderr **必须**以 UTF-8 写出（#1388）：同一份日志文件里
+    ``_log_kernel_event`` 的事件行是显式 UTF-8，若内核走 Windows ANSI 代码页
+    （简中 = CP936/GBK）则同文件混编，严格 UTF-8 读在首个非 ASCII 字节抛
+    ``UnicodeDecodeError``（实测 918MB 文件在 211,593 字节处崩）→ 排障面反成故障点。
+    故显式传 ``env``（增量注入 ``PYTHONIOENCODING=utf-8``，其余继承 ``os.environ``）。
     """
     _rotate_kernel_log(log_file)
     log_handle = open(log_file, "a", encoding="utf-8")  # noqa: SIM115  # 句柄需跨 Popen 生命周期保持打开（子进程继承写入）
@@ -175,6 +181,7 @@ def _spawn_kernel(cmd: list[str], log_file: Path) -> subprocess.Popen:
         cmd,
         stdout=log_handle,
         stderr=subprocess.STDOUT,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         creationflags=creationflags,
     )
 

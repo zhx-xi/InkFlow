@@ -32,6 +32,14 @@ import {
   writeKernelStateFile,
   type KernelInfo,
 } from './kernel';
+import {
+  appendKernelSpawnBanner,
+  appendKernelStderr,
+  closeKernelErrLog,
+  kernelErrLogPath,
+  openKernelErrLog,
+  type KernelErrLog,
+} from './kernel-log';
 import { buildTrayMenuTemplate } from './tray-menu';
 import { createMainLogger, setMainLogEndpoint } from './logger';
 
@@ -90,6 +98,8 @@ let trayHintDismissed = false;
 let tray: Tray | null = null;
 /** kernel.json 状态文件路径（spec f31 §5.4）：%APPDATA%\InkFlow\kernel.json；测试环境为 null 时跳过闭环 */
 let kernelStatePath: string | null = null;
+/** 内核 stderr 落盘句柄（#1382）：每次 spawn 换代；data_dir 不可用时为 null（退化为仅 console.error） */
+let kernelErrLog: KernelErrLog | null = null;
 /** __trayInfo.windowVisible 数据源：hide/show 事件驱动维护（spec f31 §9） */
 let trayInfoWindowVisible = true;
 /** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
@@ -371,10 +381,18 @@ function spawnKernel(): void {
   const child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'] as const,
     windowsHide: true,
+    // #1388 根因根治：内核子进程 stdout/stderr 固定 UTF-8；增量注入，保留既有 env
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     // #187 双保险：打包版 spawn cwd 固定为 exe 所在目录，任意 cwd 启动不依赖相对路径解析
     cwd: app.isPackaged ? path.dirname(process.execPath) : undefined,
   });
   kernelProcess = child;
+  // #1382：换代落盘句柄（关旧开新）+ spawn 定位横幅（内核静默也有留痕）
+  closeKernelErrLog(kernelErrLog);
+  kernelErrLog = openKernelErrLog(
+    kernelErrLogPath(kernelStatePath ? path.dirname(kernelStatePath) : null)
+  );
+  appendKernelSpawnBanner(kernelErrLog, { pid: child.pid, command, args });
   kernelInfo = null;
   healthFailures = 0;
 
@@ -413,6 +431,7 @@ function spawnKernel(): void {
   });
 
   child.stderr.on('data', (chunk: Buffer) => {
+    appendKernelStderr(kernelErrLog, chunk);
     const text = chunk.toString().trimEnd();
     if (text) {
       console.error(`[kernel] ${text}`);
@@ -455,6 +474,8 @@ function spawnKernel(): void {
 async function stopKernel(): Promise<void> {
   stopping = true;
   clearMonitorTimers();
+  closeKernelErrLog(kernelErrLog);
+  kernelErrLog = null;
   const child = kernelProcess;
   kernelProcess = null;
   kernelInfo = null;
