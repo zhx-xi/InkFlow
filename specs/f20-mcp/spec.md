@@ -16,6 +16,12 @@
 
 > **Spec 变更**（v1.2 → v1.3，2026-09-21，#1359）：工具面 **18 → 19**——新增 `manage_knowledge_relation`（跨实体图谱关系：create/list/graph/get/update/delete，转 F48 六端点 `/projects/{pid}/knowledge-relations`、`/projects/{pid}/knowledge-graph`、`/knowledge-relations/{id}`）。动机：既有 `manage_relation` 只打 F9 角色关系三端点（`/characters/{id}/relations`），而 `knowledge_relations` 才是图谱关系的真实承载表（#495 后 character↔character 并入其子空间）——跨实体关系（character→world / →foreshadow / →timeline / →outline / →map_pin）在 MCP 面**完全不可达**，而 GUI/CLI/HTTP 三面已有完整能力。**零新增 REST 端点**（全部转既有端点，§2.2 映射表）；**不改** `manage_relation`（F9 面向后兼容，两工具并存，描述中明示边界）。
 
+> **Spec 变更**（v1.3 → v1.4，2026-10-02，#1233）：**工具数不变（仍 19）**，补字段面 + 加固错误面。
+> ① `write` 增 `mode`（`deterministic`/`agentic`）与 `show_context`（写作链可触发/可观测，0.15.0 修复落点在 MCP 面缺失）；
+> ② `manage_project` 增 `config`（create/update 写路径透传，消「传了但静默无效」）；
+> ③ **通用加固**：19 个参数模型全部 `extra="forbid"` —— 未声明字段由「静默丢弃 + `ok=True` 无变更」改为 `INVALID_ARGS`（违反「显式失败优于静默错误」，issue #1233 通用要求）。
+> `mode="agentic"` / `show_context=true` 与 `action` 的组合性约束（仅 `generate`）在工具层显式校验，非静默忽略。**仍零新增 REST 端点**。
+
 > **模块类型声明**: 本模块为 **第 19 变体「MCP 表现层（薄客户端经 HTTP）型」**——InkFlow 第三表现层（与 `api/` REST、`cli/` 并列），对外部 agent 提供 MCP 行业标准 stdio 接口。编号依据 AGENTS.md 模块类型谱系（**F38=第 18 变体为最新无冲突基线**，接续编号）；⚠️ 历史变体编号存在漂移（f24/f27 均自述第 11、f30/f29 均自述第 13、f21/f36 均自述第 15），本 spec 以 F38=18 为基线声明第 19，冲突以 ADR-019 v5+ 为准。
 
 ---
@@ -84,7 +90,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 
 | 工具名 | action 枚举 | 关键参数（除 action 外） | 对应内核端点（复用，零新增） |
 |--------|-------------|--------------------------|------------------------------|
-| `manage_project` | create / list / get / update / delete / restore | name, genre, language, target_words, search, id, force, permanent | POST/GET `/projects` · GET/PATCH/DELETE `/projects/{id}` · POST `/projects/{id}/restore`（**restore 保留**——F1 回收站属 #211 明文豁免域） |
+| `manage_project` | create / list / get / update / delete / restore | name, tags, language, target_words, **config**（`dict`，create/update 透传）、search, id, force, permanent | POST/GET `/projects` · GET/PATCH/DELETE `/projects/{id}` · POST `/projects/{id}/restore`（**restore 保留**——F1 回收站属 #211 明文豁免域）。**#1233**：`config` 镜像 CLI `project update --config` 字段级语义（服务层 `existing.config.model_copy(update=...)` 部分合并，非整体替换）；`list`/`get`/`delete`/`restore` 不透传 |
 | `manage_chapter` | create / list / get / update / delete / move | project_id, volume_id, title, content, status, id, to_volume | POST `/projects/{pid}/volumes` · POST/GET `/projects/{pid}/chapters` · GET/PATCH/DELETE `/chapters/{cid}` · POST `/chapters/{cid}/move` |
 | `manage_character` | create / list / get / update / delete | project_id, name, search, group_id, id, extra, brief | POST/GET `/projects/{pid}/characters` · GET/PATCH/DELETE `/characters/{id}` · character-groups 端点（**v1.1/#211 移除 restore action 与端点**） |
 | `manage_relation` | create / list / get / update / delete | project_id, source_id, target_id, relation_type, id | relations 三端点（`/characters/{id}/relations` 等，F9） |
@@ -93,7 +99,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | `manage_world` | create / list / get / update / delete | project_id, category, name, id | POST/GET `/projects/{pid}/world-settings` · GET `/projects/{pid}/world-settings/categories` · GET/PATCH/DELETE `/world-settings/{id}`（**v1.1/#211 移除 restore action 与端点**） |
 | `manage_outline` | create / list / get / update / delete / generate | project_id, name, description, sort_order, level, parent_id, volume_id, chapter_id, search, force, prompt, num_chapters | POST/GET `/projects/{pid}/outlines` · GET/PATCH/DELETE `/outlines/{id}` · plot-points / story-arcs 端点 · POST `/outlines/generate` |
 | `manage_foreshadowing` | create / list / get / update / delete / resolve / reopen | project_id, content, status, id | POST/GET `/projects/{pid}/foreshadowings` · GET/PATCH/DELETE `/foreshadowings/{id}` · POST `/foreshadowings/{id}/resolve/reopen` |
-| `write` | generate / continue / revise / confirm_draft / reject_draft / draft_list | project_id, chapter_id, instruction, target_words, outline, existing_content, content, feedback, context, style_hint, draft_id, status, source_outline_id, title | POST `/writing/generate\|continue\|revise`（非流式，Q3 已拍板 A）· POST `/agent/drafts/{id}/confirm` · POST `/agent/drafts/{id}/reject` · GET `/agent/drafts`（#933 扩充；草稿面与 CLI `agent draft` 同端点同 body） |
+| `write` | generate / continue / revise / confirm_draft / reject_draft / draft_list | project_id, chapter_id, instruction, target_words, outline, existing_content, content, feedback, context, style_hint, draft_id, status, source_outline_id, title, **mode**（`deterministic`/`agentic`，仅 `generate`）, **show_context**（`bool`，仅 `generate`） | POST `/writing/generate\|continue\|revise`（非流式，Q3 已拍板 A）· POST `/writing/agentic/generate`（**#1233**：`mode=agentic` 时改走 F27 自主编排；`target_words` → `AgenticWriteRequest.min_words`，**不传** `target_words` 键）· POST `/context/assemble`（**#1233**：`show_context=true` 时先取 `GET /chapters/{id}` 的 `writing_requirements`（失败/为空 → 占位「（未配置章级写作要求）」）再装配，`model=""`；装配结果挂 `data["context"]`，镜像 CLI `write next --show-context`）· POST `/agent/drafts/{id}/confirm` · POST `/agent/drafts/{id}/reject` · GET `/agent/drafts`（#933 扩充；草稿面与 CLI `agent draft` 同端点同 body）。**#1233 组合性约束**：`mode="agentic"` 或 `show_context=true` 用于非 `generate` action → 本地 `INVALID_ARGS`（零 HTTP，把「静默不生效」升级为显式失败） |
 | `audit` | project / chapter | project_id, chapter_id, include_static | GET `/projects/{pid}/audit`（F15）· POST `/projects/{pid}/chapter-audit`（F34） |
 | `extract` | extract / reindex / retrieve | project_id, content, query | POST `/extract` · POST `/projects/{pid}/vector/reindex` · POST `/projects/{pid}/vector/retrieve` |
 | `export` | export | project_id, format, output_path | POST `/export`（F21） |
@@ -183,7 +189,7 @@ F20 的 MCP 工具沿用同一 `ToolSpec` 结构（`name`/`description`/`input_s
 | 6 | `manage_world` | 世界观管理：创建/列出/查看/更新/删除/恢复世界观设定 |
 | 7 | `manage_outline` | 大纲管理：创建/列出/查看/更新/删除大纲 + 情节点/故事弧 + AI 生成 |
 | 8 | `manage_foreshadowing` | 伏笔管理：创建/列出/查看/更新/删除伏笔 + 回收/重开 |
-| 9 | `write` | 写作：续写下一章 / 续写指定章 / 按指令修订 |
+| 9 | `write` | 写作：续写下一章 / 续写指定章 / 按指令修订 / 草稿确认；`mode=agentic` 走自主编排（F27），`show_context=true` 返回上下文装配结果（均仅 `action=generate`，#1233） |
 | 10 | `audit` | 审计：项目级四维审计 / 单章一致性审计 |
 | 11 | `extract` | 提取：从文本提取设定实体 / 向量重索引 / 语义检索 |
 | 12 | `export` | 导出：项目导出为 TXT（HTTP 面当前仅支持 txt，其余格式请走 GUI/CLI） |
@@ -310,6 +316,8 @@ agent → MCP server（stdio）
 | 15 | tool_search 调用 | 本地装配结果返回（不经 HTTP，同 #14） | — |
 | 16 | 新工具缺必填 id（`manage_book` 无 run_id / `write` confirm_draft 无 draft_id / `manage_log` 无过滤参数） | 工具层前置校验 → `INVALID_ARGS` 信封（零 HTTP 往返，LLM 可自愈） | INVALID_ARGS |
 | 17 | `manage_config` 只读边界 | 不暴露 set-key/PATCH 写面（凭据纪律）；未知 action → Pydantic 枚举校验 isError | —（协议层） |
+| 18 | **未声明字段**（#1233：字段名拼错 / 传了不存在的参数） | 19 个参数模型 `extra="forbid"` → Pydantic 校验失败 → `INVALID_ARGS` 信封（message 含未声明字段名 + hint 指向 `tool_search`），**零 HTTP 往返**。旧行为（静默丢弃 + `ok=True` 无变更）已废止 | INVALID_ARGS |
+| 19 | `mode="agentic"` / `show_context=true` 用于非 `generate` action（#1233） | 工具层前置校验 → `INVALID_ARGS`（零 HTTP）；**不**静默忽略 | INVALID_ARGS |
 
 ## 8. 文件结构（对照真实源码树）
 
@@ -440,6 +448,7 @@ F20 被依赖:
 | 12 | 跨实体图谱关系工具（#1359） | 新增 `manage_knowledge_relation`（18 → 19），转 F48 六端点；`manage_relation` 不动 | 既有 `manage_relation` 只达 F9 角色↔角色子空间，`knowledge_relations` 真实承载表里的跨实体关系在 MCP 面不可达；GUI/CLI/HTTP 三面已有能力 | 并入 `manage_relation`（破坏 F9 向后兼容 + 端点半径不同）；复用 `/characters/{id}/relations`（该端点打的是 character_relations 语义，非图谱六元组） |
 | 10 | write 流式语义 | 同步返回拼接结果（走非流式端点 `/writing/generate\|continue\|revise`）（Q3 已拍板 A） | MCP 工具模型天然同步；agent 一次拿到全文；避免 stdio 会话内流式帧与 JSON-RPC 响应交织 | SSE 流式透传（MCP 协议层无法逐 delta 推送，对 agent 无协议级收益） |
 | 11 | 工具面扩充（#933） | 15 → 18（`manage_book` + `manage_config` + `manage_log`；`write` 扩草稿 actions），全部转既有端点 | rc2 旅程实证外部 agent 走不完创作主线；PRD「≥15」不封顶；零新增 REST/领域方法（纯表现层装配） | 独立 `manage_draft`（工具数 +1、与 write 同域）；`manage_config` 写面（凭据纪律） |
+| 13 | 字段面补齐 + 未声明字段禁静默（#1233） | **方案 B 最小止血**：① `write` 增 `mode`/`show_context`；② `manage_project` 增 `config`；③ 通用要求：19 模型 `extra="forbid"`（未声明字段 → `INVALID_ARGS`）。工具数不变（仍 19） | 0.15.0 写作链修复（agentic/装配观测/config 字段级）在 MCP 面缺失 → 外部 agent 被迫回落 CLI；静默丢弃让调用方拿到 `ok=True` 却零变更（违反「显式失败优于静默错误」）；三项均为薄转发，零新增端点/领域方法 | 方案 A（全量：`write` 再补 `max_steps`/`token_budget`/`writing_requirements`、`manage_chapter` 补 `writing_requirements`、新增 `volume`/`skill`/`agent_runs` 三个工具面）——本期不做，留 backlog（issue #1233「方案 A」节）；「未声明字段也放行」——与 issue 通用要求冲突，否决 |
 
 ---
 
@@ -476,6 +485,20 @@ F20 被依赖:
 | A9 | `manage_book` plan start/respond/confirm/run + book status 经 MCP stdio 全链路可用 | 真实内核 stdio：plan_start → plan_respond(auto) → run → status/summary；plan_confirm 路由 + 错误信封 | `test_mcp_book_surface_933.py`（LLM 门禁轨 + 非 LLM 轨） |
 | A10 | `write confirm_draft` 与 CLI `agent draft confirm` 语义一致 | 同端点 `POST /agent/drafts/{id}/confirm` + 同 body 字段（chapter_id/source_outline_id/title，None 剔除）→ 草稿 draft→confirmed | `test_mcp_tool_surface_933.py` |
 | A11 | `manage_config` 只读边界 | description 含「只读」且不含 set-key 写面；仅 GET 端点（provider-configs / vector status） | `test_mcp_tool_surface_933.py` |
+
+### #1233 工具面补齐验收（2026-10-02）
+
+| # | 验收项 | 标准 | 测试落点 |
+|---|--------|------|----------|
+| A12 | **未声明字段不再静默丢弃** | 19 工具各注入未声明字段 → `INVALID_ARGS` 信封 + message 含该字段名 + **零 HTTP 往返**；同参数去掉未知字段仍 `ok=True`（两段式，防「本地必填守卫抢先拒绝」的假绿） | `test_mcp_tool_surface_1233.py::TestUnknownFieldForbidden1233` |
+| A13 | 19 参数模型全部禁未声明字段 | `model_json_schema()["additionalProperties"] is False`（`extra="forbid"` 全量覆盖） | `test_mcp_tool_surface_1233.py::TestSchemaUnknownFieldGuard1233` |
+| A14 | `write.mode=agentic` 路由正确 | `action=generate` + `mode=agentic` → `POST /writing/agentic/generate`，body 含 `min_words`（= `target_words`）且**不含** `target_words`；无 `mode` / `mode=deterministic` → 仍走 `POST /writing/generate`（回归护栏） | 同上 `::TestWriteMode1233` |
+| A15 | `write.show_context` 可观测 | `show_context=true` → 调用序列 `GET /chapters/{id}` → `POST /context/assemble`（`model=""`、`writing_requirements` 取列值或占位）→ 写入端点；装配结果挂 `data["context"]`；未开 → 单次调用（零额外往返）；与 `mode=agentic` 可组合 | 同上 `::TestWriteShowContext1233` |
+| A16 | 组合性显式失败 | `mode=agentic` / `show_context=true` 用于非 `generate` → `INVALID_ARGS` + 零 HTTP | 同上（`::TestWriteMode1233` / `::TestWriteShowContext1233` 各一例） |
+| A17 | `manage_project.config` 往返 | `create` / `update` 透传 `config`（body 该键逐字相等）；未传 `config` 时 **body 无该键**（不凭默认值覆盖既有配置）。持久化侧由 `test_project_service.py::test_update_merges_config_subobject_fields` + `tests/api/test_project_api.py::test_update_project_config_default_words` 锁定 | `test_mcp_tool_surface_1233.py::TestManageProjectConfig1233` |
+| A18 | 既有 MCP 用例全绿 | `pytest backend/tests/unit/mcp/ -q`（6 个既有文件 + 新契约文件） | `unit-backend` job |
+
+> **MCP 工具面不在 `ci.yml` 的 `contract` filter 内**（核查结论与 checklist 见 `docs/contract-guard.md` §MCP 工具面契约源）——改 MCP schema **不触发** `e2e-frontend-settings`；工具面由恒跑 job `unit-backend` / `integration-cli-backend` 守卫。
 
 ---
 

@@ -2,21 +2,35 @@
 
 每个模型：action: Literal[...] 必填（路由子操作）+ 领域可选字段默认 None；
 model_json_schema() 产物直接映射 MCP 协议 inputSchema（spec §2.2，Q1=A）。
+
+#1233 补面：19 个模型全部继承 `_MCPParams`（extra="forbid"，未声明字段 → INVALID_ARGS）；
+`WriteParams` 增 mode（deterministic/agentic）与 show_context（均仅 action=generate）；
+`ManageProjectParams` 增 config（create/update 字段级更新语义）。
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, WithJsonSchema
+from pydantic import BaseModel, ConfigDict, WithJsonSchema
 
 # Pydantic v2 对单值 Literal 的 schema 产物是 {"const": ...} 而非 {"enum": [...]}；
 # MCP inputSchema 契约要求 action 枚举数组（test_mcp_schemas 断言 enum），
 # 故单 action 模型用 WithJsonSchema 显式生成 {"type": "string", "enum": [...]}。
 
 
-class ManageProjectParams(BaseModel):
-    """项目管理工具参数：create/list/get/update/delete/restore。"""
+class _MCPParams(BaseModel):
+    """MCP 工具参数基类：未声明字段禁止静默丢弃（#1233）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ManageProjectParams(_MCPParams):
+    """项目管理工具参数：create/list/get/update/delete/restore。
+
+    config：项目配置子对象字段级更新（镜像 CLI `inkflow project update --config`，
+    仅 create/update 写路径透传）。
+    """
 
     action: Literal["create", "list", "get", "update", "delete", "restore"]
     id: str | None = None
@@ -24,12 +38,13 @@ class ManageProjectParams(BaseModel):
     tags: list[str] | None = None
     language: str | None = None
     target_words: int | None = None
+    config: dict[str, Any] | None = None
     search: str | None = None
     force: bool | None = None
     permanent: bool | None = None
 
 
-class ManageChapterParams(BaseModel):
+class ManageChapterParams(_MCPParams):
     """章节与卷管理工具参数：create/list/get/update/delete/move。"""
 
     action: Literal["create", "list", "get", "update", "delete", "move"]
@@ -43,7 +58,7 @@ class ManageChapterParams(BaseModel):
     to_volume: str | None = None
 
 
-class ManageCharacterParams(BaseModel):
+class ManageCharacterParams(_MCPParams):
     """角色管理工具参数：create/list/get/update/delete/restore。"""
 
     action: Literal["create", "list", "get", "update", "delete", "restore"]
@@ -60,7 +75,7 @@ class ManageCharacterParams(BaseModel):
     force: bool | None = None
 
 
-class ManageRelationParams(BaseModel):
+class ManageRelationParams(_MCPParams):
     """角色关系管理工具参数：create/list/get/update/delete。"""
 
     action: Literal["create", "list", "get", "update", "delete"]
@@ -73,7 +88,7 @@ class ManageRelationParams(BaseModel):
     description: str | None = None
 
 
-class ManageKnowledgeRelationParams(BaseModel):
+class ManageKnowledgeRelationParams(_MCPParams):
     """跨实体图谱关系管理工具参数：create/list/graph/get/update/delete（#1359）。
 
     与 ``manage_relation``（F9 角色↔角色三端点）**边界区分**：本工具打
@@ -98,7 +113,7 @@ class ManageKnowledgeRelationParams(BaseModel):
     limit: int | None = None
 
 
-class ManageTimelineParams(BaseModel):
+class ManageTimelineParams(_MCPParams):
     """时间线管理工具参数：create/list/get/update/delete/check。"""
 
     action: Literal["create", "list", "get", "update", "delete", "check"]
@@ -114,7 +129,7 @@ class ManageTimelineParams(BaseModel):
     search: str | None = None
 
 
-class ManageWorldParams(BaseModel):
+class ManageWorldParams(_MCPParams):
     """世界观管理工具参数：create/list/get/update/delete/restore。"""
 
     action: Literal["create", "list", "get", "update", "delete", "restore"]
@@ -128,7 +143,7 @@ class ManageWorldParams(BaseModel):
     force: bool | None = None
 
 
-class ManageOutlineParams(BaseModel):
+class ManageOutlineParams(_MCPParams):
     """大纲管理工具参数：create/list/get/update/delete/generate。"""
 
     action: Literal["create", "list", "get", "update", "delete", "generate"]
@@ -147,7 +162,7 @@ class ManageOutlineParams(BaseModel):
     num_chapters: int | None = None
 
 
-class ManageForeshadowingParams(BaseModel):
+class ManageForeshadowingParams(_MCPParams):
     """伏笔管理工具参数：create/list/get/update/delete/resolve/reopen。"""
 
     action: Literal["create", "list", "get", "update", "delete", "resolve", "reopen"]
@@ -163,8 +178,12 @@ class ManageForeshadowingParams(BaseModel):
     force: bool | None = None
 
 
-class WriteParams(BaseModel):
-    """写作工具参数：generate/continue/revise + 草稿确认（#933，Q3=A）。"""
+class WriteParams(_MCPParams):
+    """写作工具参数：generate/continue/revise + 草稿确认（#933，Q3=A）。
+
+    mode=agentic 走 F27 自主编排（仅 action=generate）；
+    show_context=True 返回上下文装配结果（仅 action=generate，镜像 CLI --show-context）。
+    """
 
     action: Literal["generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"]
     project_id: str | None = None
@@ -181,9 +200,11 @@ class WriteParams(BaseModel):
     status: str | None = None
     source_outline_id: str | None = None
     title: str | None = None
+    mode: Literal["deterministic", "agentic"] | None = None
+    show_context: bool | None = None
 
 
-class ManageBookParams(BaseModel):
+class ManageBookParams(_MCPParams):
     """书级编排工具参数：访谈式 Planner + 书级运行（#933，F44 零新增端点）。"""
 
     action: Literal[
@@ -218,14 +239,14 @@ class ManageBookParams(BaseModel):
     payload: dict | None = None
 
 
-class ManageConfigParams(BaseModel):
+class ManageConfigParams(_MCPParams):
     """环境自检工具参数（只读）：provider_list / llm_status（#933）。"""
 
     action: Literal["provider_list", "llm_status"]
     project_id: str | None = None
 
 
-class ManageLogParams(BaseModel):
+class ManageLogParams(_MCPParams):
     """日志巡检工具参数（只读）：query（#933，结构化日志查询）。"""
 
     action: Annotated[Literal["query"], WithJsonSchema({"type": "string", "enum": ["query"]})]
@@ -241,7 +262,7 @@ class ManageLogParams(BaseModel):
     limit: int | None = None
 
 
-class AuditParams(BaseModel):
+class AuditParams(_MCPParams):
     """审计工具参数：project/chapter。"""
 
     action: Literal["project", "chapter"]
@@ -250,7 +271,7 @@ class AuditParams(BaseModel):
     include_static: bool | None = None
 
 
-class ExtractParams(BaseModel):
+class ExtractParams(_MCPParams):
     """提取工具参数：extract/reindex/retrieve。"""
 
     action: Literal["extract", "reindex", "retrieve"]
@@ -262,7 +283,7 @@ class ExtractParams(BaseModel):
     min_score: float | None = None
 
 
-class ExportParams(BaseModel):
+class ExportParams(_MCPParams):
     """导出工具参数：export（get_raw 原始文本）。"""
 
     action: Annotated[Literal["export"], WithJsonSchema({"type": "string", "enum": ["export"]})]
@@ -271,7 +292,7 @@ class ExportParams(BaseModel):
     output_path: str | None = None
 
 
-class SearchParams(BaseModel):
+class SearchParams(_MCPParams):
     """搜索工具参数：search（GET /search）。"""
 
     action: Annotated[Literal["search"], WithJsonSchema({"type": "string", "enum": ["search"]})]
@@ -282,7 +303,7 @@ class SearchParams(BaseModel):
     offset: int | None = None
 
 
-class ManageSessionParams(BaseModel):
+class ManageSessionParams(_MCPParams):
     """会话管理工具参数：create/list/get/pause/resume/complete/fail/add_log。"""
 
     action: Literal["create", "list", "get", "pause", "resume", "complete", "fail", "add_log"]
@@ -299,7 +320,7 @@ class ManageSessionParams(BaseModel):
     result_json: str | None = None
 
 
-class ToolSearchParams(BaseModel):
+class ToolSearchParams(_MCPParams):
     """工具发现工具参数：list（本地装配，不经 HTTP）。"""
 
     action: Annotated[Literal["list"], WithJsonSchema({"type": "string", "enum": ["list"]})]
