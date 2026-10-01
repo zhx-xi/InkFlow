@@ -1,15 +1,21 @@
 /*
- * #1374 时间线「叙事序/世界序」轴向语义重构原型：截图 + 结构断言。
+ * 时间线原型：「叙事序 / 世界序 / 世界序·纪元轴」截图 + 结构断言。
  *
- * ⚠️ 本脚本取代 shot-1323.cjs（#1323 形态断言：两序共用章分组容器 + 组内换序；
- *    #1374 轴向语义分流后该形态作废，原脚本已删除）。
+ * 沿革：
+ *   #1323 形态断言（两序共用章分组容器）→ #1374 取代（双序轴向语义分流）
+ *   → #1353（本批）取代：#1374 的「方案 B 演示态 world-b」**正式落地**为 0.16.0 实现形态：
+ *     状态 world-b → `world-eras`（默认：仅主力轴）/ `world-eras-multi`（多轴同时显示）；
+ *     chips / 泳道改为数据驱动（轴顺序 = 事件流首次出现顺序）；去掉「演示」徽标
+ *     （纪元已是真实数据面 `extra.era` / `extra.era_value`，零 DDL）；
+ *     标签回落链补「轴名 + 轴内值」（无 time_display 时）。
  *
  * 状态集（与 timeline.html 的 demo-bar 一致）：
- *   narrative        叙事序 · 章为轴（章刻度 + 章下事件；行内小字=世界内时间）
- *   narrative-filter 叙事序 + 按章筛选面板展开（已选第十二章 → 列表仅 c12）
- *   world            世界序 · 方案 A 拆半（世界内时间单轴，无章分组，行尾=来源章）
- *   world-b          世界序 · 方案 B 全做（纪元多泳道 + 轴选择器）
- *   empty            空态
+ *   narrative          叙事序 · 章为轴（章刻度 + 章下事件；行内小字=世界内时间）
+ *   narrative-filter   叙事序 + 按章筛选面板展开（已选第十二章 → 列表仅 c12）
+ *   world              世界序 · 单轴（项目无纪元数据时的形态；此处演示「时间轴」本体）
+ *   world-eras         世界序 · 纪元轴族（默认只勾选主力轴 → 1 条泳道 + 3 chips）
+ *   world-eras-multi   世界序 · 纪元轴族（全部轴勾选 → 3 条泳道，含默认轴「未分纪元」）
+ *   empty              空态
  *
  * 用法: node design/GUI/_tools/shot-1374.cjs
  * 路径自解析（ROOT / playwright 均从脚本位置推导），见 _shared.cjs（#1361）。
@@ -25,7 +31,8 @@ const SHOTS = [
   { state: 'narrative', out: 'timeline-narrative.png' },
   { state: 'narrative-filter', out: 'timeline-narrative-filter.png' },
   { state: 'world', out: 'timeline-world.png' },
-  { state: 'world-b', out: 'timeline-world-multiaxis.png' },
+  { state: 'world-eras', out: 'timeline-world-eras.png' },
+  { state: 'world-eras-multi', out: 'timeline-world-eras-multi.png' },
   { state: 'empty', out: 'timeline-empty.png' },
 ];
 
@@ -35,12 +42,21 @@ async function probe(page) {
     const q = (s) => document.querySelector(s);
     const qa = (s) => Array.from(document.querySelectorAll(s));
     const txt = (el) => (el ? el.textContent.trim() : null);
+    const ids = (root, sel) =>
+      Array.from(root.querySelectorAll(sel)).map((n) =>
+        n.dataset.testid.replace('tl-axis-node-', ''),
+      );
     const axis = q('[data-testid="tl-axis"]');
     const nodes = qa('[data-testid^="tl-axis-node-"]');
     const groups = qa('[data-testid^="tl-chgroup-"]');
     const ticks = qa('[data-testid^="tl-chtick-"]');
     const nodeIds = nodes.map((n) => n.dataset.testid.replace('tl-axis-node-', ''));
-    const laneQy = q('[data-testid="tl-lane-qingyuan"]');
+    const laneOf = (key) => q(`[data-testid="tl-lane-${key}"]`);
+    const laneIds = (key) => {
+      const lane = laneOf(key);
+      return lane ? ids(lane, '[data-testid^="tl-axis-node-"]') : [];
+    };
+    const chipOf = (key) => q(`[data-testid="tl-axis-chip-${key}"]`);
     return {
       state: document.body.dataset.state,
       icons: qa('[data-ic]').length,
@@ -50,6 +66,7 @@ async function probe(page) {
       axisExists: !!axis,
       chapterAxis: !!axis && axis.classList.contains('tl-axis--chapter'),
       timeAxis: !!axis && axis.classList.contains('tl-axis--time'),
+      lanesWrap: !!q('.tl-lanes'),
       tickTexts: ticks.map((t) => txt(t.querySelector('.tl-chlabel'))),
       groupKeys: groups.map((g) => g.dataset.testid.replace('tl-chgroup-', '')),
       nodeIds,
@@ -59,25 +76,28 @@ async function probe(page) {
       main1Cls: (q('[data-testid="tl-axis-main-1"]') || { className: '' }).className,
       main2: txt(q('[data-testid="tl-axis-main-2"]')),
       main2Cls: (q('[data-testid="tl-axis-main-2"]') || { className: '' }).className,
-      laneAxisCount: qa('.tl-lanes .tl-axis--time').length,
+      main6: txt(q('[data-testid="tl-axis-main-6"]')),
       src1: txt(q('[data-testid="tl-src-1"]')),
       src5: txt(q('[data-testid="tl-src-5"]')),
       laneCount: qa('[data-testid^="tl-lane-"]').length,
-      laneQyIds: laneQy
-        ? Array.from(laneQy.querySelectorAll('[data-testid^="tl-axis-node-"]')).map((n) =>
-            n.dataset.testid.replace('tl-axis-node-', ''),
-          )
-        : [],
+      laneAxisCount: qa('.tl-lanes .tl-axis--time').length,
+      laneQyIds: laneIds('qingyuan'),
+      laneNoneIds: laneIds('none'),
+      laneXianjieIds: laneIds('xianjie'),
+      laneNoneName: txt(q('[data-testid="tl-lane-none"] .tl-lane-name')),
       chipCount: qa('[data-testid^="tl-axis-chip-"]').length,
       chipOn: qa('[data-testid^="tl-axis-chip-"].on').length,
-      demoBadges: qa('#tlBody .tl-demo').length,
+      chipPressed: {
+        qingyuan: chipOf('qingyuan') ? chipOf('qingyuan').getAttribute('aria-pressed') : null,
+        none: chipOf('none') ? chipOf('none').getAttribute('aria-pressed') : null,
+        xianjie: chipOf('xianjie') ? chipOf('xianjie').getAttribute('aria-pressed') : null,
+      },
+      pickerDisplay: q('[data-testid="tl-axis-picker"]')
+        ? getComputedStyle(q('[data-testid="tl-axis-picker"]')).display
+        : 'MISSING',
       c12Ids: (() => {
         const g = q('[data-testid="tl-chgroup-c12"]');
-        return g
-          ? Array.from(g.querySelectorAll('[data-testid^="tl-axis-node-"]')).map((n) =>
-              n.dataset.testid.replace('tl-axis-node-', ''),
-            )
-          : [];
+        return g ? ids(g, '[data-testid^="tl-axis-node-"]') : [];
       })(),
       filterBtnOn: !!q('#filterChapterBtn') && q('#filterChapterBtn').classList.contains('on'),
       filterLabel: txt(q('#filterChapterLabel')),
@@ -105,12 +125,14 @@ function checkAll(d, state) {
   if (state === 'narrative' || state === 'narrative-filter') {
     const isFilter = state === 'narrative-filter';
     chk('章轴容器（tl-axis--chapter）', d.chapterAxis);
+    chk('世界序专属：无轴选择器', d.pickerDisplay === 'none');
+    chk(`无泳道（实际 ${d.laneCount}）`, d.laneCount === 0);
     const expTicks = isFilter
       ? ['第十二章 夜访剑冢']
       : ['第十一章 剑心为何物', '第十二章 夜访剑冢', '第十三章 剑心蒙尘', '未分章'];
     chk(`章刻度=${JSON.stringify(expTicks)}（实际 ${JSON.stringify(d.tickTexts)}）`,
       JSON.stringify(d.tickTexts) === JSON.stringify(expTicks));
-    const expNodes = isFilter ? 2 : 5;
+    const expNodes = isFilter ? 2 : 6;
     chk(`事件数=${expNodes} 且无重复（实际 ${d.nodeCount} dup=${d.dup}）`,
       d.nodeCount === expNodes && d.dup === 0);
     if (!isFilter) {
@@ -132,23 +154,38 @@ function checkAll(d, state) {
   if (state === 'world') {
     chk('时间轴容器（tl-axis--time）', d.timeAxis);
     chk(`无章分组（实际 ${d.groupKeys.length}）`, d.groupKeys.length === 0);
-    chk(`事件序=时间升序 ['1','2','3','4','5']（实际 ${JSON.stringify(d.nodeIds)}）`,
-      JSON.stringify(d.nodeIds) === JSON.stringify(['1', '2', '3', '4', '5']));
+    chk(`无纪元泳道（实际 ${d.laneCount}）`, d.laneCount === 0);
+    chk(`事件序=时间升序（未知末尾）[1..4,6,5]（实际 ${JSON.stringify(d.nodeIds)}）`,
+      JSON.stringify(d.nodeIds) === JSON.stringify(['1', '2', '3', '4', '6', '5']));
     chk(`时间刻度 tl-axis-main-1=青元历 17 年（实际 ${d.main1}）`, d.main1 === '青元历 17 年');
     chk(`来源章小字 tl-src-1=第十一章…（实际 ${d.src1}）`, d.src1 === '第十一章 剑心为何物');
     chk(`来源章小字 tl-src-5=未分章（实际 ${d.src5}）`, d.src5 === '未分章');
-    chk(`事件数=5 且无重复（实际 ${d.nodeCount}）`, d.nodeCount === 5 && d.dup === 0);
+    chk(`事件数=6 且无重复（实际 ${d.nodeCount}）`, d.nodeCount === 6 && d.dup === 0);
   }
 
-  if (state === 'world-b') {
-    chk(`泳道=2（实际 ${d.laneCount}）`, d.laneCount === 2);
-    chk(`泳道内时间轴=2（实际 ${d.laneAxisCount}）`, d.laneAxisCount === 2);
-    chk(`轴 chips=3 勾选=2（实际 ${d.chipCount}/${d.chipOn}）`, d.chipCount === 3 && d.chipOn === 2);
-    chk(`事件数=6 且无重复（实际 ${d.nodeCount} dup=${d.dup}）`, d.nodeCount === 6 && d.dup === 0);
-    chk(`演示徽标=1（实际 ${d.demoBadges}）`, d.demoBadges === 1);
-    chk(`主世界泳道序=['1','2','3','4','5']（实际 ${JSON.stringify(d.laneQyIds)}）`,
-      JSON.stringify(d.laneQyIds) === JSON.stringify(['1', '2', '3', '4', '5']));
+  if (state === 'world-eras' || state === 'world-eras-multi') {
+    const isMulti = state === 'world-eras-multi';
+    chk(`轴选择器可见（实际 ${d.pickerDisplay}）`, d.pickerDisplay !== 'none' && d.pickerDisplay !== 'MISSING');
+    chk(`轴 chips=3（实际 ${d.chipCount}）`, d.chipCount === 3);
+    chk(`勾选数=${isMulti ? 3 : 1}（实际 ${d.chipOn}）`, d.chipOn === (isMulti ? 3 : 1));
+    chk(`默认轴 chip 勾选态=${isMulti}（实际 ${d.chipPressed.none}）`,
+      d.chipPressed.none === String(isMulti));
+    chk(`主力轴 chip 勾选态=true（实际 ${d.chipPressed.qingyuan}）`, d.chipPressed.qingyuan === 'true');
+    chk(`泳道=${isMulti ? 3 : 1}（实际 ${d.laneCount}）`, d.laneCount === (isMulti ? 3 : 1));
+    chk(`泳道内时间轴=${isMulti ? 3 : 1}（实际 ${d.laneAxisCount}）`, d.laneAxisCount === (isMulti ? 3 : 1));
+    chk(`主力轴泳道序=['1','2','3','4']（实际 ${JSON.stringify(d.laneQyIds)}）`,
+      JSON.stringify(d.laneQyIds) === JSON.stringify(['1', '2', '3', '4']));
     chk(`无章分组（实际 ${d.groupKeys.length}）`, d.groupKeys.length === 0);
+    chk(`图例含「纪元」（实际 ${d.legend}）`, String(d.legend).includes('纪元'));
+    if (isMulti) {
+      chk(`仙历泳道=['6']（实际 ${JSON.stringify(d.laneXianjieIds)}）`,
+        JSON.stringify(d.laneXianjieIds) === JSON.stringify(['6']));
+      chk(`默认轴泳道=['5']（实际 ${JSON.stringify(d.laneNoneIds)}）`,
+        JSON.stringify(d.laneNoneIds) === JSON.stringify(['5']));
+      chk(`默认轴泳道名=未分纪元（实际 ${d.laneNoneName}）`, String(d.laneNoneName).includes('未分纪元'));
+      chk(`事件数=6 且无重复（实际 ${d.nodeCount} dup=${d.dup}）`, d.nodeCount === 6 && d.dup === 0);
+      chk(`标签回落：tl-axis-main-6=仙界 · 仙历 1024（实际 ${d.main6}）`, d.main6 === '仙界 · 仙历 1024');
+    }
   }
 
   if (state === 'empty') {

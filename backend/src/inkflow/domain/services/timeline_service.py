@@ -42,6 +42,7 @@ from inkflow.domain.models.timeline import (
     TimelineEventRef,
     TimelineEventUpdate,
     TimelineView,
+    apply_era,
 )
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_errors import (
@@ -242,6 +243,8 @@ class TimelineService:
         time_display: str = "",
         narrative_position: int | None = None,
         timeline_flag: str = "",
+        era: str = "",
+        era_value: float | str | None = None,
     ) -> TimelineEvent:
         """创建时间线事件（spec §2.1: narrative_position 缺省 = 叙事末尾追加）.
 
@@ -255,6 +258,8 @@ class TimelineService:
             time_display: 原始时间表达.
             narrative_position: 叙事位置；None = 先 next_position 再追加.
             timeline_flag: 时间线标记（""/flashback/flashforward）.
+            era: 纪元轴名（"" = 不设纪元，#1353 §2.8 E1）.
+            era_value: 纪元轴内值（None = 不设轴内值，#1353 §2.8 E2）.
 
         Returns:
             持久化后的完整 TimelineEvent.
@@ -277,6 +282,7 @@ class TimelineService:
             time_display=time_display,
             narrative_position=narrative_position,
             timeline_flag=timeline_flag,
+            extra=apply_era({}, era, era_value),
             created_at=now,
             updated_at=now,
         )
@@ -352,9 +358,16 @@ class TimelineService:
         if existing is None:
             return None
         updates = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None}
+        updates.pop("era", None)
+        updates.pop("era_value", None)
         if "time_value" in updates and updates["time_value"] == "":
             updates["time_value"] = None  # "" = 清除世界内时间（置为未知）
         merged = existing.model_copy(update=updates)
+        # §2.8 E4 成对语义：era 未传（None）⇒ extra 整体不变（era_value 一并忽略）；
+        # era="" ⇒ 删两键；era 非空 ⇒ 写轴名 + 按 era_value 写/删/保留轴内值。
+        era = update.era if "era" in update.model_fields_set else None
+        era_value = update.era_value if "era_value" in update.model_fields_set else None
+        merged = merged.model_copy(update={"extra": apply_era(existing.extra, era, era_value)})
         logger.info("更新时间线事件: event_id=%s", event_id)
         updated: TimelineEvent | None = await self._repo.update(merged)
         if updated is not None:

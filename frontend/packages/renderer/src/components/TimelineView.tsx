@@ -26,7 +26,8 @@
  * - **筛选**（客户端，两序共用）：按章（`tl-filter-chapter` / `tl-fp-item-<key>`；
  *   全部章节 / 各章 / 未分章）+ 按事件类型（`tl-filter-type` / `tl-tp-item-<key>`；
  *   正叙/倒叙/插叙，词表对齐后端 #1323 G6）；重置 = 「全部」
- * - ⚠️ 数据面：#1374 纪元分轴（多纪元）不在本变更范围 —— 留 0.16.0（#1353/#1328）
+ * - #1353（0.16.0）：世界序**纪元轴族 + 轴选择器**——`extra.era` / `extra.era_value`
+ *   承载纪元（零 DDL），轴族 ≥ 2 条时按选中轴分泳道显示（默认只显示主力轴）
  *
  * #1302：列表行内编辑（tl-edit-<id>）/ 删除（tl-delete-<id>）入口——形态照抄
  * LibraryItemList.tsx:148-167 先例（group-hover + focus-within 双触发保证键盘可达可见）；
@@ -36,6 +37,7 @@ import { useMemo, useState } from 'react';
 import { Check, ChevronDown, Filter, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
+import { deriveEraAxes, eraKeyOf, primaryEraKey, sortByEraValue } from './timeline-era-axes';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
@@ -56,6 +58,8 @@ export interface TimelineEventDTO {
   /** spec f12 §6.2:707：自由文本（""=正叙 / flashback / flashforward），非布尔。
    *  旧 DTO 误声明为 boolean（漂移）；`string | boolean` 兼容历史 mock 数据。 */
   timeline_flag?: string | boolean;
+  /** #1353：纪元轴承载（extra.era 轴名 / extra.era_value 轴内值）——零 DDL（f12 spec v1.3 §2.8） */
+  extra?: Record<string, unknown> | null;
 }
 
 /** 完整 TimelineView（spec §5.16：双数组 = 后端排序结果，前端仅本地切换显示数组） */
@@ -217,6 +221,8 @@ export function TimelineView({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [chapterPanelOpen, setChapterPanelOpen] = useState(false);
   const [typePanelOpen, setTypePanelOpen] = useState(false);
+  // #1353：世界序纪元轴选择（null = 跟随默认 = 只显示主力轴）
+  const [selectedAxes, setSelectedAxes] = useState<string[] | null>(null);
 
   // 双序切换 = 本地切换显示数组（零额外请求，T2/T3 契约）；narrative_order 空 → 回退 event_timeline（旧数据兜底）
   const base = useMemo(
@@ -239,6 +245,14 @@ export function TimelineView({
         return true;
       }),
     [sorted, chapterFilter, typeFilter],
+  );
+
+  // #1353：纪元轴族（世界序泳道 + 轴选择器数据面；叙事序不消费）
+  const axes = useMemo(() => deriveEraAxes(eventTimeline), [eventTimeline]);
+  const showAxisPicker = view === 'world' && axes.length >= 2;
+  const activeAxisKeys = useMemo(
+    () => (selectedAxes ?? (primaryEraKey(axes) ? [primaryEraKey(axes) as string] : [])),
+    [selectedAxes, axes],
   );
 
   // #1323：章分组（仅叙事序；一章一个刻度；组内顺序 = 章内叙事序）
@@ -267,6 +281,15 @@ export function TimelineView({
   const chapterFilterLabel =
     chapterFilter === 'all' ? t('lib.tlFilterAll') : chapterLabel(chapterFilter);
   const typeFilterLabel = t(TYPE_LABEL_KEYS[typeFilter]);
+
+  /** #1353：切换纪元轴勾选；结果为空时保留（至少一条轴）；勾选顺序归一为轴族顺序 */
+  const toggleAxis = (key: string) => {
+    const next = activeAxisKeys.includes(key)
+      ? activeAxisKeys.filter((k) => k !== key)
+      : [...activeAxisKeys, key];
+    if (next.length === 0) return;
+    setSelectedAxes(axes.map((axis) => axis.key).filter((k) => next.includes(k)));
+  };
 
   const handleCheckAll = async () => {
     try {
@@ -519,6 +542,37 @@ export function TimelineView({
           ) : null}
         </div>
 
+        {/* #1353：世界序纪元轴选择器（仅轴族 ≥ 2 条；至少保留一条轴） */}
+        {showAxisPicker ? (
+          <div
+            data-testid="tl-axis-picker"
+            className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3"
+          >
+            <span>{t('lib.tlAxisPicker')}</span>
+            {axes.map((axis) => {
+              const on = activeAxisKeys.includes(axis.key);
+              return (
+                <button
+                  key={axis.key}
+                  type="button"
+                  data-testid={`tl-axis-chip-${axis.key}`}
+                  aria-pressed={on}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[12px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    on
+                      ? 'border-accent bg-accent-weak font-medium text-accent'
+                      : 'border-line text-ink-2 hover:border-accent hover:text-accent',
+                  )}
+                  onClick={() => toggleAxis(axis.key)}
+                >
+                  {on ? <Check className="h-2.5 w-2.5" aria-hidden="true" /> : null}
+                  {axis.isDefault ? t('lib.tlEraDefault') : axis.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         <button
           type="button"
           data-testid="tl-check-all"
@@ -528,7 +582,11 @@ export function TimelineView({
           {t('lib.tlCheck')}
         </button>
         <span data-testid="tl-legend" className="text-[12px] text-ink-3">
-          {view === 'narrative' ? t('lib.tlLegend.narrative') : t('lib.tlLegend.world')}
+          {view === 'narrative'
+            ? t('lib.tlLegend.narrative')
+            : showAxisPicker
+              ? t('lib.tlLegend.worldEras')
+              : t('lib.tlLegend.world')}
         </span>
       </div>
 
@@ -571,6 +629,39 @@ export function TimelineView({
                   </ol>
                 </div>
               ))
+            ) : showAxisPicker ? (
+              // #1353：世界序多纪元 → 每条**选中**轴一条泳道（轴内按 era_value 升序、缺失末尾）
+              <>
+                {axes
+                  .filter((axis) => activeAxisKeys.includes(axis.key))
+                  .map((axis) => {
+                    const laneEvents = sortByEraValue(
+                      filtered.filter((ev) => eraKeyOf(ev) === axis.key),
+                    );
+                    return (
+                      <section
+                        key={axis.key}
+                        data-testid={`tl-lane-${axis.key}`}
+                        className="relative rounded-lg border border-line bg-surface px-4 py-3 shadow-card"
+                      >
+                        <span aria-hidden="true" className="absolute bottom-5 left-[7px] top-5 w-px bg-line" />
+                        <div className="relative mb-2 pl-5 text-[12px] font-medium text-ink">
+                          <span
+                            aria-hidden="true"
+                            className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[2px] bg-accent"
+                          />
+                          {axis.isDefault ? t('lib.tlEraDefault') : axis.label}
+                          <span className="ml-2 text-[11px] font-normal text-ink-3">
+                            {t('lib.tlChCount', { n: laneEvents.length })}
+                          </span>
+                        </div>
+                        <ul className="space-y-2">
+                          {laneEvents.map((ev) => renderEventNode(ev, { showSrc: true }))}
+                        </ul>
+                      </section>
+                    );
+                  })}
+              </>
             ) : (
               <div className="relative rounded-lg border border-line bg-surface px-4 py-3 shadow-card">
                 <span aria-hidden="true" className="absolute bottom-5 left-[7px] top-5 w-px bg-line" />

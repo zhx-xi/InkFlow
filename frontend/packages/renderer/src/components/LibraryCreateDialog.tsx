@@ -98,6 +98,9 @@ export function LibraryCreateDialog({
   const [category, setCategory] = useState('');
   const [content, setContent] = useState('');
   const [timeDisplay, setTimeDisplay] = useState('');
+  // #1353：时间线纪元轴（extra.era / extra.era_value；字符串态便于受控输入）
+  const [era, setEra] = useState('');
+  const [eraValue, setEraValue] = useState('');
   const [priority, setPriority] = useState(50);
   const [location, setLocation] = useState('');
   // #675：outline 层级（overall/volume/chapter，创建对话框内可切换；初始值来自父级上下文）
@@ -126,6 +129,13 @@ export function LibraryCreateDialog({
     setCategory(editing?.category ?? initialCategory ?? '');
     setContent(editing?.content ?? '');
     setTimeDisplay(editing?.time_display ?? '');
+    // #1353：编辑模式预填 extra.era / extra.era_value（非字符串/数值兜底空串）
+    const eraRaw = editing?.extra?.era;
+    setEra(typeof eraRaw === 'string' ? eraRaw : '');
+    const eraValueRaw = editing?.extra?.era_value;
+    setEraValue(
+      typeof eraValueRaw === 'number' || typeof eraValueRaw === 'string' ? String(eraValueRaw) : '',
+    );
     setPriority(editing?.priority ?? 50);
     setLocation(editing?.location ?? '');
     setLevel(initialLevel ?? 'overall');
@@ -188,8 +198,25 @@ export function LibraryCreateDialog({
         return { name: name.trim(), category, content, parent_id: initialParentId ?? null };
       case 'outline':
         return { name: name.trim(), description, level, parent_id: initialParentId ?? null };
-      case 'timeline':
-        return { title: title.trim(), time_display: timeDisplay, description };
+      case 'timeline': {
+        // #1353：era 去空白（空串 = 不设纪元/清除）；era_value 空串 → ""，
+        // 可解析为有限数值 → number，否则原样字符串（后端 422 兜底）
+        const trimmedEraValue = eraValue.trim();
+        const numericEraValue = Number(trimmedEraValue);
+        const eraValuePayload =
+          trimmedEraValue === ''
+            ? ''
+            : Number.isFinite(numericEraValue)
+              ? numericEraValue
+              : trimmedEraValue;
+        return {
+          title: title.trim(),
+          time_display: timeDisplay,
+          description,
+          era: era.trim(),
+          era_value: eraValuePayload,
+        };
+      }
       case 'foreshadow':
         return { title: title.trim(), priority, location, description };
     }
@@ -376,6 +403,25 @@ export function LibraryCreateDialog({
                   className={INPUT_CLS}
                   value={timeDisplay}
                   onChange={(e) => setTimeDisplay(e.target.value)}
+                />
+              </Field>
+              {/* #1353：纪元轴名 + 轴内值（空串 = 不设纪元/清除轴内值） */}
+              <Field label={t('lib.create.era')}>
+                <input
+                  data-testid="library-create-era"
+                  aria-label={t('lib.create.era')}
+                  className={INPUT_CLS}
+                  value={era}
+                  onChange={(e) => setEra(e.target.value)}
+                />
+              </Field>
+              <Field label={t('lib.create.eraValue')}>
+                <input
+                  data-testid="library-create-era-value"
+                  aria-label={t('lib.create.eraValue')}
+                  className={INPUT_CLS}
+                  value={eraValue}
+                  onChange={(e) => setEraValue(e.target.value)}
                 />
               </Field>
               <Field label={t('lib.create.description')}>

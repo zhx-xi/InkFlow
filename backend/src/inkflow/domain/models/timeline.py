@@ -121,6 +121,92 @@ def _validate_text(v: str) -> str:
     return stripped
 
 
+ERA_KEY = "era"
+"""纪元轴名在 extra 中的键（f12 spec v1.3 §2.8 E1，跨层契约，勿改名）。"""
+ERA_VALUE_KEY = "era_value"
+"""纪元轴内值在 extra 中的键（§2.8 E2）。"""
+ERA_MAX_LEN = 50
+"""纪元轴名最大长度（§2.8 E1）。"""
+
+
+def _validate_era(v: str) -> str:
+    """验证纪元轴名：去空白且不超过 ERA_MAX_LEN 字符（空串合法 = 不设纪元）。
+
+    Args:
+        v: 原始纪元轴名.
+
+    Returns:
+        去空白后的轴名.
+
+    Raises:
+        ValueError: 轴名超过 ERA_MAX_LEN 字符.
+    """
+    stripped = v.strip()
+    if len(stripped) > ERA_MAX_LEN:
+        raise ValueError(f"纪元轴名不能超过 {ERA_MAX_LEN} 个字符")
+    return stripped
+
+
+def _validate_era_value(v: float | str | None) -> float | str | None:
+    """验证纪元轴内值：None / "" 合法；字符串仅 "" 合法；数值须有限。
+
+    Args:
+        v: 原始纪元轴内值（None = 不设/不修改；"" = 清除；数值 = 轴内值）.
+
+    Returns:
+        校验通过的轴内值.
+
+    Raises:
+        ValueError: 非空字符串，或非有限数值.
+    """
+    if v is None:
+        return None
+    if isinstance(v, str):
+        if v != "":
+            raise ValueError("清除纪元轴内值请传空字符串")
+        return v
+    if not math.isfinite(v):
+        raise ValueError("纪元轴内值必须是有限数值")
+    return v
+
+
+def apply_era(
+    extra: dict[str, Any], era: str | None, era_value: float | str | None
+) -> dict[str, Any]:
+    """按 §2.8 E4 成对语义把 era / era_value 应用到 extra。
+
+    ① era is None        → 返回 extra 的副本（不变；era_value 忽略）
+    ② era == ""          → 删除 ERA_KEY 与 ERA_VALUE_KEY 两键（回到默认轴）
+    ③ era 非空           → 写 ERA_KEY（去空白）；
+                            era_value 为数值 → 写 ERA_VALUE_KEY
+                            era_value == ""  → 删除 ERA_VALUE_KEY
+                            era_value 为 None → 保留原值
+    **不原地修改入参**（返回新 dict）。
+
+    Args:
+        extra: 既有扩展属性字典（不被修改）.
+        era: 纪元轴名（None = 不修改；"" = 清除；非空 = 写入）.
+        era_value: 轴内值（数值 = 写入；"" = 清除；None = 保留原值）.
+
+    Returns:
+        应用成对语义后的新 extra 字典.
+    """
+    result = dict(extra)
+    if era is None:
+        return result
+    if era == "":
+        result.pop(ERA_KEY, None)
+        result.pop(ERA_VALUE_KEY, None)
+        return result
+    result[ERA_KEY] = era.strip()
+    if isinstance(era_value, str):
+        if era_value == "":
+            result.pop(ERA_VALUE_KEY, None)
+    elif era_value is not None:
+        result[ERA_VALUE_KEY] = era_value
+    return result
+
+
 class TimelineEvent(BaseModel):
     """时间线事件领域实体 — 对应 timeline_events 表.
 
@@ -190,6 +276,8 @@ class TimelineEventCreate(BaseModel):
     narrative_position: int | None = None  # None = 追加到叙事末尾（max+1）
     timeline_flag: str = ""
     source_chapter_id: uuid.UUID | None = None  # None = 手工事件（不参与提取合并匹配）
+    era: str = ""  # 纪元轴名（0.16.0，#1353 §2.8）
+    era_value: float | str | None = None  # 纪元轴内值；"" = 不设轴内值
 
     @field_validator("title")
     @classmethod
@@ -235,6 +323,18 @@ class TimelineEventCreate(BaseModel):
         """验证时间线标记：去空白且不超过 20 字符（空串合法）."""
         return _validate_short_text(v, "时间线标记", 20)
 
+    @field_validator("era")
+    @classmethod
+    def validate_era(cls, v: str) -> str:
+        """验证纪元轴名：去空白且不超过 50 字符（空串合法 = 不设纪元）."""
+        return _validate_era(v)
+
+    @field_validator("era_value")
+    @classmethod
+    def validate_era_value(cls, v: float | str | None) -> float | str | None:
+        """验证纪元轴内值：None / "" 合法；字符串仅 "" 合法；数值须有限."""
+        return _validate_era_value(v)
+
 
 class TimelineEventUpdate(BaseModel):
     """更新时间线事件请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
@@ -254,6 +354,8 @@ class TimelineEventUpdate(BaseModel):
     narrative_position: int | None = None
     timeline_flag: str | None = None
     source_chapter_id: uuid.UUID | None = None  # None 不修改（同其他可空字段语义）
+    era: str | None = None  # None = 不修改；"" = 清除纪元
+    era_value: float | str | None = None  # None = 不修改；"" = 清除轴内值
 
     @field_validator("title")
     @classmethod
@@ -302,6 +404,18 @@ class TimelineEventUpdate(BaseModel):
     def validate_timeline_flag(cls, v: str | None) -> str | None:
         """验证时间线标记：None（不修改）直接返回；""（清除）合法；否则复用共享校验."""
         return _validate_short_text(v, "时间线标记", 20) if v is not None else None
+
+    @field_validator("era")
+    @classmethod
+    def validate_era(cls, v: str | None) -> str | None:
+        """验证纪元轴名：None（不修改）直接返回；否则复用共享校验."""
+        return _validate_era(v) if v is not None else None
+
+    @field_validator("era_value")
+    @classmethod
+    def validate_era_value(cls, v: float | str | None) -> float | str | None:
+        """验证纪元轴内值：None（不修改）直接返回；否则复用共享校验."""
+        return _validate_era_value(v) if v is not None else None
 
 
 class TimelineEventRef(BaseModel):

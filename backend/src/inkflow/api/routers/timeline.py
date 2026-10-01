@@ -33,6 +33,8 @@ from inkflow.api.deps import get_db, get_timeline_service
 from inkflow.domain.models.timeline import (
     TimelineEventUpdate,
     _validate_description,
+    _validate_era,
+    _validate_era_value,
     _validate_short_text,
     _validate_time_value,
     _validate_title,
@@ -86,6 +88,8 @@ class TimelineEventCreateBody(BaseModel):
     time_display: str = ""
     narrative_position: int | None = None  # None = 追加到叙事末尾（max+1）
     timeline_flag: str = ""
+    era: str = ""  # 纪元轴名（0.16.0，#1353 §2.8）
+    era_value: float | str | None = None  # 纪元轴内值；"" = 不设轴内值
 
     @field_validator("title")
     @classmethod
@@ -131,6 +135,18 @@ class TimelineEventCreateBody(BaseModel):
         """验证时间线标记：去空白且不超过 20 字符（空串合法）."""
         return _validate_short_text(v, "时间线标记", 20)
 
+    @field_validator("era")
+    @classmethod
+    def validate_era(cls, v: str) -> str:
+        """验证纪元轴名：去空白且不超过 50 字符（空串合法 = 不设纪元）."""
+        return _validate_era(v)
+
+    @field_validator("era_value")
+    @classmethod
+    def validate_era_value(cls, v: float | str | None) -> float | str | None:
+        """验证纪元轴内值：None / "" 合法；字符串仅 "" 合法；数值须有限."""
+        return _validate_era_value(v)
+
 
 # ── 事件 CRUD（嵌套项目路径）──────────────────────────────────
 
@@ -145,6 +161,10 @@ async def create_timeline_event(
     """创建时间线事件（spec §3.2；narrative_position 缺省 = 叙事末尾追加）。"""
     pid = _parse_id(project_id, detail="项目不存在")
     svc = _get_svc(db)
+    era_kwargs: dict[str, Any] = {}
+    if data.era or data.era_value is not None:
+        era_kwargs["era"] = data.era
+        era_kwargs["era_value"] = data.era_value
     event = await _run_service(
         svc.create_event(
             pid,
@@ -155,6 +175,7 @@ async def create_timeline_event(
             time_display=data.time_display,
             narrative_position=data.narrative_position,
             timeline_flag=data.timeline_flag,
+            **era_kwargs,
         )
     )
     return event.model_dump(mode="json")

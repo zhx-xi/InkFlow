@@ -5158,6 +5158,25 @@
             "title": "Description",
             "type": "string"
           },
+          "era": {
+            "default": "",
+            "title": "Era",
+            "type": "string"
+          },
+          "era_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Era Value"
+          },
           "narrative_position": {
             "anyOf": [
               {
@@ -5219,6 +5238,31 @@
               }
             ],
             "title": "Description"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Era"
+          },
+          "era_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Era Value"
           },
           "narrative_position": {
             "anyOf": [
