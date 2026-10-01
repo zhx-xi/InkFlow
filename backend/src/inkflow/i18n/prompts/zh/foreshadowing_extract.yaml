@@ -8,12 +8,18 @@ system_prompt: |
   {
     "foreshadowings": [
       {"title": "伏笔名（短，如『铜镜的秘密』）", "description": "伏笔内容与预期回收方式或空",
-       "location": "埋设位置描述或空（如『第 5 章·林晚沐浴场景』）"}
+       "location": "埋设位置描述或空（如『第 5 章·林晚沐浴场景』）",
+       "first_chapter_number": 首次埋设章节的序号（必须严格取自下方「章节候选清单」中的序号；
+                               清单为空或无法确定时填 null）}
     ]
   }
   foreshadowings 中不要包含重复的伏笔名。
 human_prompt: |
+  章节候选清单（序号: 标题）：
+  {chapters}
+
   章节文本：
   {text}
 variables:
   - text
+  - chapters

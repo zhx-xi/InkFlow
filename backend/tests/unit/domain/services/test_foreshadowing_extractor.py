@@ -13,17 +13,20 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
 
+from inkflow.domain.models.chapter import Chapter
 from inkflow.domain.models.foreshadowing import (
     Foreshadowing,
     ForeshadowingExtractionResult,
     ForeshadowingExtractRequest,
     ForeshadowingStatus,
 )
+from inkflow.domain.ports.chapter_repository import ChapterRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_errors import ForeshadowingExtractionError
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.llm_client import ChatResponse, LLMClientProtocol
@@ -118,11 +121,22 @@ def mock_repo() -> MagicMock:
 
 
 @pytest.fixture
-def extractor(mock_llm, mock_prompt_manager, mock_repo) -> ForeshadowingExtractor:
+def mock_chapter_repo() -> MagicMock:
+    """#1350：章节仓储（候选章号清单来源；默认项目无章节 → 空清单）。"""
+    repo = MagicMock(spec=ChapterRepositoryProtocol)
+    repo.list_chapters = AsyncMock(return_value=([], 0))
+    return repo
+
+
+@pytest.fixture
+def extractor(
+    mock_llm, mock_prompt_manager, mock_repo, mock_chapter_repo
+) -> ForeshadowingExtractor:
     return ForeshadowingExtractor(
         llm_client=mock_llm,
         prompt_manager=mock_prompt_manager,
         foreshadowing_repo=mock_repo,
+        chapter_repo=mock_chapter_repo,
     )
 
 
@@ -330,7 +344,10 @@ class TestForeshadowingExtractor:
         )
         mock_prompt_manager.load.assert_called_once_with("foreshadowing_extract")
         template = mock_prompt_manager.load.return_value
-        mock_prompt_manager.render.assert_called_once_with(template, {"text": "第一章文本"})
+        # #1350：候选章号清单作为渲染变量注入（本例项目无章节 → 空清单）
+        mock_prompt_manager.render.assert_called_once_with(
+            template, {"text": "第一章文本", "chapters": ""}
+        )
         kwargs = mock_llm.chat.await_args.kwargs
         assert kwargs["model"] == DEFAULT_MODEL
         assert kwargs["temperature"] == 0.2
@@ -397,3 +414,161 @@ class TestExtractJsonFragment:
         """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
         text = '{"msg": "他说 \\"你好\\""}'
         assert _extract_json_fragment(text) == text
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# #1350 伏笔「第几章」：提示词候选章号清单 → 模型只做选择 → 结构化落库
+# ══════════════════════════════════════════════════════════════════════════
+
+CH1 = uuid.UUID("c0000001-0000-4000-8000-000000000001")
+CH2 = uuid.UUID("c0000002-0000-4000-8000-000000000002")
+CH3 = uuid.UUID("c0000003-0000-4000-8000-000000000003")
+
+
+def _chapter(cid: uuid.UUID, title: str, order_index: float = 0.0) -> Chapter:
+    """构造候选章节（仓储返回顺序 = 章序 = 候选清单序号顺序）。"""
+    return Chapter(id=cid, project_id=PID, title=title, order_index=order_index)
+
+
+class TestFirstChapterSelection:
+    """候选清单渲染 / 选中章号映射落库 / 越界与无章可选的降级（#1350）。"""
+
+    async def test_candidate_list_rendered_with_numbers_and_titles(
+        self, extractor, mock_llm, mock_prompt_manager, mock_chapter_repo
+    ) -> None:
+        """模板变量 chapters = 逐行「序号: 标题」，序号自 1 起（章序 = 仓储返回序）。"""
+        mock_chapter_repo.list_chapters = AsyncMock(
+            return_value=([_chapter(CH1, "觉醒"), _chapter(CH2, "拜师")], 2)
+        )
+        mock_llm.chat.return_value = _ok_response(_payload([{"title": "铜镜的秘密"}]))
+        await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        variables = mock_prompt_manager.render.call_args.args[1]
+        assert variables["text"] == "t"
+        assert variables["chapters"] == "1: 觉醒\n2: 拜师"
+
+    async def test_selected_number_maps_to_chapter_uuid(
+        self, extractor, mock_llm, mock_chapter_repo
+    ) -> None:
+        """模型选第 2 章 → 新建伏笔 first_chapter_id 落库 = 第 2 章 UUID。"""
+        mock_chapter_repo.list_chapters = AsyncMock(
+            return_value=([_chapter(CH1, "觉醒"), _chapter(CH2, "拜师")], 2)
+        )
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                [
+                    {
+                        "title": "铜镜的秘密",
+                        "location": "第 2 章·拜师",
+                        "first_chapter_number": 2,
+                    }
+                ]
+            )
+        )
+        result = await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        assert len(result.created) == 1
+        assert result.created[0].first_chapter_id == CH2
+        assert result.created[0].location == "第 2 章·拜师"  # location 保留（自由描述）
+
+    async def test_out_of_range_number_leaves_field_none_without_error(
+        self, extractor, mock_llm, mock_chapter_repo
+    ) -> None:
+        """序号越界（幻觉 99）→ first_chapter_id=None；条目仍落库、不抛错、不丢条目。"""
+        mock_chapter_repo.list_chapters = AsyncMock(return_value=([_chapter(CH1, "觉醒")], 1))
+        mock_llm.chat.return_value = _ok_response(
+            _payload([{"title": "铜镜的秘密", "first_chapter_number": 99}])
+        )
+        result = await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        assert len(result.created) == 1
+        assert result.created[0].title == "铜镜的秘密"
+        assert result.created[0].first_chapter_id is None
+
+    async def test_no_chapters_renders_empty_list_and_null_field(
+        self, extractor, mock_llm, mock_prompt_manager
+    ) -> None:
+        """项目无章节（mock 默认空）→ 清单为空串；模型给号也无从映射 → None 且不报错。"""
+        mock_llm.chat.return_value = _ok_response(
+            _payload([{"title": "铜镜的秘密", "first_chapter_number": 1}])
+        )
+        result = await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        variables = mock_prompt_manager.render.call_args.args[1]
+        assert variables["chapters"] == ""
+        assert result.created[0].first_chapter_id is None
+
+    async def test_candidate_list_paginates_to_full_project_chapters(
+        self, extractor, mock_llm, mock_prompt_manager, mock_chapter_repo
+    ) -> None:
+        """#1407 同族护栏：章节多于单页须翻页取满（续页 offset = 已取条数）。
+
+        真实形态 >50 章项目首页只回一页 → 不翻页则清单被静默截断，
+        第 51 章起的伏笔永远选不到章号。
+        """
+        pages: dict[int, tuple[list[Chapter], int]] = {
+            0: ([_chapter(CH1, "觉醒"), _chapter(CH2, "拜师")], 3),
+            2: ([_chapter(CH3, "结丹")], 3),
+        }
+        seen: list[int] = []
+
+        async def _paged(*args: Any, **kwargs: Any) -> tuple[list[Chapter], int]:
+            raw = kwargs.get("offset", args[3] if len(args) > 3 else 0)
+            offset = int(raw)
+            seen.append(offset)
+            return pages.get(offset, ([], 0))
+
+        mock_chapter_repo.list_chapters = AsyncMock(side_effect=_paged)
+        mock_llm.chat.return_value = _ok_response(
+            _payload([{"title": "铜镜的秘密", "first_chapter_number": 3}])
+        )
+        result = await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        variables = mock_prompt_manager.render.call_args.args[1]
+        assert variables["chapters"] == "1: 觉醒\n2: 拜师\n3: 结丹"
+        assert result.created[0].first_chapter_id == CH3
+        assert seen == [0, 2]  # 首页 offset=0；续页 offset=已取条数（2）
+
+    async def test_merge_update_writes_first_chapter_id(
+        self, extractor, mock_llm, mock_repo, mock_chapter_repo
+    ) -> None:
+        """同名已存在 + 选出章号 → 更新落库 first_chapter_id（非空覆盖）。"""
+        mock_chapter_repo.list_chapters = AsyncMock(
+            return_value=([_chapter(CH1, "觉醒"), _chapter(CH2, "拜师")], 2)
+        )
+        existing = _fs("铜镜的秘密", description="旧描述", location="旧位置")
+        mock_repo.get_by_title = AsyncMock(return_value=existing)
+        mock_llm.chat.return_value = _ok_response(
+            _payload([{"title": "铜镜的秘密", "first_chapter_number": 1}])
+        )
+        result = await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        assert len(result.updated) == 1
+        assert result.updated[0].first_chapter_id == CH1
+
+    async def test_merge_without_number_keeps_existing_chapter_id(
+        self, extractor, mock_llm, mock_repo, mock_chapter_repo
+    ) -> None:
+        """合并时本次未选章号（None）→ 既有 first_chapter_id 不被清空（非空覆盖语义）。"""
+        mock_chapter_repo.list_chapters = AsyncMock(
+            return_value=([_chapter(CH1, "觉醒"), _chapter(CH2, "拜师")], 2)
+        )
+        existing = _fs("铜镜的秘密", description="旧描述").model_copy(
+            update={"first_chapter_id": CH1}
+        )
+        mock_repo.get_by_title = AsyncMock(return_value=existing)
+        mock_llm.chat.return_value = _ok_response(
+            _payload([{"title": "铜镜的秘密", "description": "新描述"}])
+        )
+        result = await extractor.extract(
+            ForeshadowingExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+        )
+        assert len(result.updated) == 1
+        assert result.updated[0].first_chapter_id == CH1
+        assert result.updated[0].description == "新描述"

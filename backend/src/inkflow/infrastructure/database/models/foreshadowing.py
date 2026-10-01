@@ -117,6 +117,14 @@ class ForeshadowingORM(EntityUuidMixin, Base):
     """F12 时间线事件锚点（事件硬删 → 置 NULL 解除挂接；软删不影响锚点）.
     事件叙事位置从事件获取，本表不存独立 narrative_position（spec §2.2）."""
 
+    first_chapter_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("chapters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    """#1350：结构化的首次出现章节锚点（可空 = 未记录；章节硬删 → 置 NULL）.
+    只对**新提取**的伏笔写入，存量数据零回填（不解析 location 自由文本）."""
+
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

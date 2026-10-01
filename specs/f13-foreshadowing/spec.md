@@ -63,6 +63,7 @@ F13  追踪:    伏笔档案(状态机) ──确定性追踪──▶ 状态流
 | status | str | NOT NULL, DEFAULT "open", 已索引 | 伏笔状态（`open` / `resolved`，见 §2.4 状态机） |
 | location | str | NOT NULL, DEFAULT "", ≤ 200 字符, 去空白 | 埋设位置描述（自由文本，如「第 3 章·林晚出场段落」「青云城初见」）；空 = 未记录；不挂事件时作者仍可写「第 3 章」 |
 | event_id | UUID? | NULLABLE, FK→timeline_events.id (ON DELETE SET NULL), 已索引 | **时间线事件锚点**（F12 事件，埋设落点；事件自带 time_value/narrative_position，伏笔的叙事位置从事件获取——移除独立 narrative_position 字段避免双份真相，见 §2.2）；None = 未挂接 |
+| first_chapter_id | UUID? | NULLABLE, FK→chapters.id (ON DELETE SET NULL), 未索引 | **结构化首次出现章节锚点（#1350）**：仅 AI 提取路径写入——提取时提示词给候选章号清单（项目章节全量，序号自 1 起），模型只做选择（输出 `first_chapter_number`），后端映射为真实章节 UUID 落库；None = 未记录（**存量数据与手工建档保持 None，不做 location 文本解析回填**，见 §2.2）；章节硬删 → FK SET NULL。`location` 继续保留为自由描述，二者并存 |
 | resolved_at | datetime? | NULLABLE, 已索引 | 回收时间 (UTC)；status=resolved 时由服务层自动设置，reopen 时清空 |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（标签、关联角色名等 Phase 2+ 字段预留） |
 | ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False, 已索引~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
@@ -80,15 +81,18 @@ F13  追踪:    伏笔档案(状态机) ──确定性追踪──▶ 状态流
 - `event_id` **不唯一**：一个事件可挂多条伏笔（无 unique 约束，仅索引）
 - 事件删除（F12 v1.1 真删）→ FK ON DELETE SET NULL 自动置 None（挂接解除，论证见 §12）
 
-### 2.2 埋设/回收位置表达（决策：自由文本 location + event_id 事件锚点）
+### 2.2 埋设/回收位置表达（决策：自由文本 location + event_id 事件锚点 + first_chapter_id 结构化章号）
 
 > **v1.1 变更（用户拍板 Q1=选项 C）**: 伏笔绑定 F12 时间线事件（event_id 锚点）；**移除独立 `narrative_position` 字段**——F12 事件本身携带 `time_value` / `narrative_position`（F12 spec §2.1），伏笔挂事件后叙事位置从事件获取；独立字段会造成「伏笔位置序号」与「事件叙事位置」双份真相（改事件叙事位置时伏笔侧不同步漂移）。
+>
+> **v1.2 变更（#1350）**: 新增可空结构化列 `first_chapter_id`（FK `chapters.id`，ON DELETE SET NULL）——「第几章出现」从自由文本升为有结构保证的值。**仅 AI 提取路径写入**：提示词给候选章号清单（项目章节全量，序号自 1 起），模型只做**选择**（输出 `first_chapter_number`），后端映射为真实章节 UUID 落库。`location` 保留为自由描述，二者并存（GUI 徽标 `first_chapter_id` 非空时显示「第 N 章 · location」，为空则回落 location 原文）。
+> **存量零回填**：既有数据（含实测 94 条形态不一的 location：`'第1-3章 梦境与觉醒'` 是范围、`'开篇梦境及醒来'` 无章号、`'井边检查陶罐与傍晚补罐'` 纯场景）一律保持 `first_chapter_id = NULL`——解析回填「或错或空，伪结构比无结构更坏」（方案 B 已否决）。
 
 | 备选方案 | 优点 | 缺点 | 结论 |
 |----------|------|------|------|
 | **自由文本 location + event_id 事件锚点（选定）** | 伏笔落点与 F12 时间线联动（叙事位置/世界内时间从事件获取，单一真相）；location 保留作者自由描述（不挂事件时仍可写「第 3 章」）；事件删除 → FK SET NULL 解除挂接（§2.1） | F12 为硬依赖（须先合入 main，§11）；挂接需事件存在性 + 同项目校验（复用 F12 `TimelineRepositoryProtocol.get`，F13 仓储无新增方法，§8.1） | ✅ MVP（用户拍板 Q1=选项 C） |
 | 自由文本 location + 独立 narrative_position（v1.0 设计） | 零跨模块依赖；narrative_position 提供可排序锚点 | **双份真相**：F12 事件已带 narrative_position，独立字段与之漂移（改事件叙事位置 ≠ 伏笔侧）；v1.0 时「F12 未合入 main」是临时约束，现已解除 | ❌ 移除（冗余字段，YAGNI；叙事位置统一从事件获取） |
-| 绑定 F2 章节（chapter_id FK） | 位置精确到章，可「按当前章节过滤未回收伏笔」 | 需 F2 跨模块硬依赖与章节存在性校验；章节重排/删除时锚点失效需级联处理 | ❌ 否决（F11/F12 边界声明先例：规划层与章节层互不绑定；按章节过滤注入归 Phase 2+，见待澄清 Q3） |
+| 绑定 F2 章节（chapter_id FK） | 位置精确到章，可「按当前章节过滤未回收伏笔」 | 需 F2 跨模块硬依赖与章节存在性校验；章节重排/删除时锚点失效需级联处理 | ⚠️ **部分采纳（#1350）**：仅加**可空** `first_chapter_id`（提取路径写入，章节删除 → SET NULL），不做「按章节过滤注入」；F11/F12 的「规划层不绑定章节层」边界声明继续适用于强绑定/过滤语义 |
 
 ### 2.3 唯一约束（全唯一索引，SQLite）
 
@@ -209,6 +213,7 @@ class Foreshadowing(BaseModel):
     status: ForeshadowingStatus = ForeshadowingStatus.OPEN
     location: str = ""                       # 埋设位置自由文本（空 = 未记录；不挂事件时仍可写「第 3 章」）
     event_id: uuid.UUID | None = None        # F12 时间线事件锚点（None = 未挂接；叙事位置从事件获取）
+    first_chapter_id: uuid.UUID | None = None  # #1350 结构化首次出现章节（None = 未记录；仅提取路径写入，存量零回填）
     resolved_at: datetime | None = None      # 回收时间（仅状态迁移维护）
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from inkflow.core.database import Base
 from inkflow.domain.models.foreshadowing import Foreshadowing, ForeshadowingStatus
+from inkflow.infrastructure.database.models.chapter import ChapterORM
 from inkflow.infrastructure.database.models.foreshadowing import ForeshadowingORM
 from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.models.timeline import TimelineEventORM
@@ -597,3 +598,89 @@ class TestInt64RangeGuard1106:
         # 随机 uuid4 的 .int 超出 int64 上界；UUID 无法表示负 int（下界分支不可达）
         assert await repo.get(uuid.uuid4()) is None
         assert await repo.get(uuid.UUID(int=2**63)) is None  # 边界：INT64_MAX + 1
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# #1350：foreshadowings.first_chapter_id 结构化章号（FK chapters.id，可空）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+async def _chapter_row(db_session, project: ProjectORM, *, title: str = "觉醒") -> ChapterORM:
+    """直接落库一个章节行（仅用 F2 ORM 建行，不依赖 F2 仓储）."""
+    ch = ChapterORM(project_id=project.id, title=title)
+    db_session.add(ch)
+    await db_session.commit()
+    await db_session.refresh(ch)
+    return ch
+
+
+@pytest.mark.integration
+class TestFirstChapterIdField1350:
+    """first_chapter_id 往返 / 未提供为 NULL / 更新写入 / 章节硬删置 NULL."""
+
+    async def test_add_and_get_roundtrip_first_chapter_id(self, db_session, project):
+        """add 落库 first_chapter_id（UUID↔int 映射）；get 读回同一 UUID."""
+        repo = SQLiteForeshadowingRepository(db_session)
+        ch = await _chapter_row(db_session, project, title="觉醒")
+
+        saved = await repo.add(
+            _foreshadowing(project, "铜镜的秘密", first_chapter_id=uuid.UUID(int=ch.id))
+        )
+        assert saved.first_chapter_id == uuid.UUID(int=ch.id)
+
+        got = await repo.get(saved.id)
+        assert got is not None
+        assert got.first_chapter_id == uuid.UUID(int=ch.id)
+
+        row = await db_session.execute(
+            select(ForeshadowingORM).where(ForeshadowingORM.id == saved.id.int)
+        )
+        assert row.scalar_one().first_chapter_id == ch.id  # DB 列为 int
+
+    async def test_add_without_first_chapter_id_stores_null(self, db_session, project):
+        """未提供（存量/手工形态）→ NULL；location 自由文本原样保留."""
+        repo = SQLiteForeshadowingRepository(db_session)
+        saved = await repo.add(_foreshadowing(project, "林晚的身世", location="第1-3章 梦境与觉醒"))
+        assert saved.first_chapter_id is None
+        assert saved.location == "第1-3章 梦境与觉醒"
+
+        row = await db_session.execute(
+            select(ForeshadowingORM).where(ForeshadowingORM.id == saved.id.int)
+        )
+        assert row.scalar_one().first_chapter_id is None
+
+    async def test_update_writes_first_chapter_id(self, db_session, project):
+        """update 写入 first_chapter_id（提取合并路径依赖本列在 update 语句内）."""
+        repo = SQLiteForeshadowingRepository(db_session)
+        ch = await _chapter_row(db_session, project, title="拜师")
+        f = await repo.add(_foreshadowing(project, "铜镜的秘密"))
+        assert f.first_chapter_id is None
+
+        merged = f.model_copy(update={"first_chapter_id": uuid.UUID(int=ch.id)})
+        updated = await repo.update(merged)
+        assert updated.first_chapter_id == uuid.UUID(int=ch.id)
+
+        got = await repo.get(f.id)
+        assert got is not None
+        assert got.first_chapter_id == uuid.UUID(int=ch.id)
+
+    async def test_chapter_hard_delete_sets_first_chapter_id_null(self, db_session, project):
+        """章节硬删 → first_chapter_id 自动置 NULL（FK ON DELETE SET NULL）."""
+        repo = SQLiteForeshadowingRepository(db_session)
+        ch = await _chapter_row(db_session, project, title="觉醒")
+        f = await repo.add(
+            _foreshadowing(project, "铜镜的秘密", first_chapter_id=uuid.UUID(int=ch.id))
+        )
+        assert f.first_chapter_id == uuid.UUID(int=ch.id)
+
+        ch_row = await db_session.execute(select(ChapterORM).where(ChapterORM.id == ch.id))
+        await db_session.delete(ch_row.scalar_one())
+        await db_session.commit()
+
+        got = await repo.get(f.id)
+        assert got is not None
+        assert got.first_chapter_id is None
+        row = await db_session.execute(
+            select(ForeshadowingORM).where(ForeshadowingORM.id == f.id.int)
+        )
+        assert row.scalar_one().first_chapter_id is None

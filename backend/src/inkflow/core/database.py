@@ -867,6 +867,25 @@ def ensure_foreshadowing_drop_is_deleted(conn: Connection) -> None:
     )
 
 
+def ensure_foreshadowings_first_chapter_id_column(conn: Connection) -> None:
+    """#1350：为存量库 foreshadowings 补 first_chapter_id 列（幂等，conn.run_sync 调用）.
+
+    PRAGMA 检缺列才 ALTER；表不存在 → no-op，等 create_all 建新表（ORM 已含列）。
+    存量数据零回填（不解析 location 自由文本，方案 B 已否决）。
+    """
+    cols = conn.execute(text("PRAGMA table_info(foreshadowings)")).fetchall()
+    names = {row[1] for row in cols}
+    if not names:
+        return
+    if "first_chapter_id" not in names:
+        conn.execute(
+            text(
+                "ALTER TABLE foreshadowings ADD COLUMN first_chapter_id INTEGER "
+                "REFERENCES chapters(id) ON DELETE SET NULL"
+            )
+        )
+
+
 async def drop_tables() -> None:
     """Drop all tables (for test teardown)."""
     async with engine.begin() as conn:
