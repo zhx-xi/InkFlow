@@ -193,7 +193,7 @@ export function KnowledgeGraphView({
         </button>
       </div>
       {view === 'graph' ? (
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3" data-testid="library-kg-view">
           {/* #1373 左侧筛选面板（决策②：224px = Tailwind w-56；空态不渲染） */}
           {!graphEmpty && panelOpen && (
             <aside
@@ -296,17 +296,19 @@ export function KnowledgeGraphView({
           )}
 
           <div className="min-w-0 flex-1">
-            <KnowledgeGraphCanvas
-              nodes={visibleNodes}
-              edges={visibleEdgeList}
-              persistKey={persistKey}
-              onConnectNodes={onConnectNodes}
-              onOpenEntity={onOpenEntity}
-              onEditEdge={onEditEdge}
-              onDeleteEdge={onDeleteEdge}
-              filterActive={filterActive && !graphEmpty}
-              showLegend={!graphEmpty}
-            />
+            {!graphEmpty && (
+              <KnowledgeGraphCanvas
+                nodes={visibleNodes}
+                edges={visibleEdgeList}
+                persistKey={persistKey}
+                onConnectNodes={onConnectNodes}
+                onOpenEntity={onOpenEntity}
+                onEditEdge={onEditEdge}
+                onDeleteEdge={onDeleteEdge}
+                filterActive={filterActive && !graphEmpty}
+                showLegend={!graphEmpty}
+              />
+            )}
             {/* 筛选无结果（图谱本身非空） */}
             {!graphEmpty && visibleNodes.length === 0 && (
               <div

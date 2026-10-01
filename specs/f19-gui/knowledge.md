@@ -55,7 +55,9 @@
     - **画布提示（#1325，对齐 design/GUI/knowledge/knowledge.html）**：右下角「滚轮缩放 · 拖拽节点」小字提示（`lib.knowledge.canvasHint`，pointer-events-none）
     - 点击节点 → 左下角节点详情卡（library-kg-node-detail，w-64）：类型 + 名称 + 「去编辑」按钮（library-kg-node-edit-<entity_id>）
     - 点击边 → 左下角边详情卡（library-kg-edge-detail，w-72）：label + 描述 + 来源（source_table）+ 编辑/删除按钮（仅 knowledge_relations 边；cr: 角色关系边只读无操作按钮）
-  - 图谱空态（library-kg-empty，画布下方虚线卡片）：「图谱为空」+ 引导文案（去实体页创建或新建关系）+ 去角色页创建按钮（library-kg-empty-cta → 父级切 characters tab）
+  - 图谱空态（library-kg-empty，**画布位置**的虚线卡片）：「图谱为空」+ 引导文案（去实体页创建或新建关系）+ 去角色页创建按钮（library-kg-empty-cta → 父级切 characters tab）
+  - **🔴 空态不渲染画布（#1419）**：`nodes` 为空时**不挂载** `KnowledgeGraphCanvas`（`library-kg-canvas` 不存在，而非 display:none）——画布内的图例（`library-kg-legend`）与 sr-only 摘要（`library-kg-summary`）随之让位，与 `design/GUI/knowledge/knowledge.html` 的 `body[data-state="empty"] .kg-canvas{display:none}` 同口径（原型侧图例同在 `.kg-canvas` 内）
+  - **图谱视图根容器（`library-kg-view`，#1419）**：图谱视图主区（筛选面板 + 画布 + 空态卡片 + 折叠栏）的公共容器，空态与非空态均存在；它是 `library.test.tsx` L10「图谱视图内无列表行操作按钮」的断言锚点（原先锚 `library-kg-canvas`，空态不再渲染后上移到视图根）
   - 关系列表（library-kg-relation-list，圆角卡片 divide-y）：行 = 起点名（font-medium）→ 关系类型（accent）→ 终点名 + 描述（12px ink-2）+ 悬停编辑（library-kg-rel-edit）/删除（library-kg-rel-delete）；名称经图谱节点解析（type + entity_id → name，缺省回退原始 id）；空态「暂无关系，点击「新建关系」创建」
   - **关系列表分页（#1325）**：列表下方分页条（`testIdPrefix="library-kg-page"`，复用 #1300 `Pagination`）——prev / info「第 N / M 页（共 T 条）」/ next；请求带 `?limit=50&offset=`（旧实现不带分页参数 → 后端默认 limit=50 使第 51 条起永久不可见）；首页 prev 禁用 / 末页 next 禁用
   - 关系表单（library-kg-relation-form，520px 遮罩弹层，max-h 90vh）：起点类型/起点实体 + 终点类型/终点实体（双列 grid；类型下拉切换清空已选实体；实体下拉缺实体时 disabled）+ 关系类型（placeholder「如：属于 / 参与 / 师徒」）+ 描述（可选）+ 保存/取消
@@ -77,7 +79,7 @@
   - **备选形态（未采用，仅原型对照）**：顶部两行 chip 组（`library-kg-filters` + `library-kg-filter-category` / `-cat-<type>` / `library-kg-filter-entity` / `-entity-<type>-<id>` / `-entity-more` / `-search` / `-clear`）——见 `knowledge-graph-filter-a.png`
   - **🔴 原型内嵌的 `.kg-note`「方案取舍说明条」是设计注释，不是产品 UI**（#1375 同款约定）——实现时不要做进页面
 
-- 布局说明：图谱视图 = 左侧筛选面板（224px、可折叠）+ 右侧主栏（纵向：工具栏 → 画布）；**折叠态**下主栏占满宽度、画布下方多一条折叠栏；图例与详情卡均叠在画布内（图例右下、详情卡左下，互不重叠）；关系表单与删除确认挂页面根部；图谱/列表切换为本地 view 状态（列表视图激活时按需拉取 relations，增删改经 reloadKey 局部刷新）
+- 布局说明：图谱视图 = 左侧筛选面板（224px、可折叠）+ 右侧主栏（纵向：工具栏 → 画布）；**折叠态**下主栏占满宽度、画布下方多一条折叠栏；图例与详情卡均叠在画布内（图例右下、详情卡左下，互不重叠）；关系表单与删除确认挂页面根部；图谱/列表切换为本地 view 状态（列表视图激活时按需拉取 relations，增删改经 reloadKey 局部刷新）；**空态**下主栏只剩 `library-kg-view` 容器 + 居中虚线引导卡片（画布/筛选面板/折叠栏/图例全部不渲染）
 
 ## 2. 动作样式（按钮 × 状态表）
 
@@ -120,6 +122,7 @@
 - **N13（#1373）**：筛选控件（面板 / 折叠栏 / 备选 chip 行）**只在图谱视图**渲染（列表视图与空态都不出现——决策④：不筛选关系列表）
 - **N14（#1373）**：**折叠不牺牲画布宽度**——`library-kg-filter-collapse` 收起面板后画布宽度恢复到全宽（原型实测 732 → 968px），筛选结果**保持生效**；折叠栏提供「展开筛选」回入口；面板开合状态本地记住
 - **N15（#1373）**：**选择即本地记忆 + 一键清除**——`localStorage['inkflow:kg:filters:<project_id>']` 存 `{category, entity}`，重开/刷新按记忆恢复（含面板折叠态 `inkflow:kg:panel`）；三处「清除筛选」入口同一行为并同步更新记忆；记忆损坏或存储不可用时静默回退默认（不抛错）
+- **N16（#1419）**：**空态不渲染画布**——图谱为空（`nodes.length === 0`）时 `library-kg-canvas` **不存在于 DOM**（画布内 `library-kg-legend` / `library-kg-summary` 一并让位），只剩 `library-kg-empty` 引导卡片；非空态画布照常渲染（反例守护）；`library-kg-view` 根容器在两种状态下都存在
 
 ## 4. 节点着色与筛选规则（#1373）
 
@@ -162,6 +165,6 @@
 
 ### 4.4 原型已用 testid（实现请沿用，勿另起名）
 
-**采用（形态 B）**：`library-kg-legend` · `library-kg-legend-<type>` · `library-kg-filter-panel` · `library-kg-filter-panel-search` · `library-kg-filter-panel-cat-<type>` · `library-kg-filter-panel-entity-<type>-<id>` · `library-kg-filter-panel-clear` · `library-kg-filter-collapse` · `library-kg-filter-summary` · `library-kg-filterbar` · `library-kg-filterbar-summary` · `library-kg-filterbar-clear` · `library-kg-filterbar-expand` · `library-kg-filter-empty` · `library-kg-node-<type>-<id>`
+**采用（形态 B）**：`library-kg-view`（图谱视图根容器，#1419）· `library-kg-legend` · `library-kg-legend-<type>` · `library-kg-filter-panel` · `library-kg-filter-panel-search` · `library-kg-filter-panel-cat-<type>` · `library-kg-filter-panel-entity-<type>-<id>` · `library-kg-filter-panel-clear` · `library-kg-filter-collapse` · `library-kg-filter-summary` · `library-kg-filterbar` · `library-kg-filterbar-summary` · `library-kg-filterbar-clear` · `library-kg-filterbar-expand` · `library-kg-filter-empty` · `library-kg-node-<type>-<id>`
 
 **备选（形态 A，未采用，仅原型保留）**：`library-kg-filters` · `library-kg-filter-category` · `library-kg-filter-cat-<type>`（含 `-cat-all`）· `library-kg-filter-entity` · `library-kg-filter-entity-<type>-<id>` · `library-kg-filter-entity-more` · `library-kg-filter-search` · `library-kg-filter-clear`
