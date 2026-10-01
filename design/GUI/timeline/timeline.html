@@ -2,16 +2,17 @@
 <html lang="zh" data-theme="paper">
 <head>
 <meta charset="utf-8" />
-<title>InkFlow 设定库 · 时间线 — 双序轴向语义重构原型（#1374）</title>
+<title>InkFlow 设定库 · 时间线 — 双序轴向语义 + 世界序纪元轴族原型（#1374 / #1353）</title>
 <!--
-  #1374 时间线「叙事序/世界序」轴向语义重构原型（0.15.0 原型阶段，不写实现）
+  #1374 时间线「叙事序/世界序」轴向语义重构原型（世界序纪元轴族为 #1353 / 0.16.0 落地形态）
   状态集（demo-bar 切换）：
-    narrative        叙事序 · 章为轴（新）——修掉「两序轴完全相同」
+    narrative        叙事序 · 章为轴——修掉「两序轴完全相同」
     narrative-filter 叙事序 + 按章筛选面板展开（已选第十二章）
-    world            世界序 · 方案 A 拆半（世界内时间单轴，无章分组）
-    world-b          世界序 · 方案 B 全做（纪元多泳道 + 轴选择器，需 0.16.0 数据面）
+    world            世界序 · 单轴形态（项目无纪元数据时；世界内时间单轴，无章分组）
+    world-eras       世界序 · 纪元轴族（#1353，默认只勾选主力轴）
+    world-eras-multi 世界序 · 纪元轴族（多轴同时显示，含默认轴「未分纪元」）
     empty            空态
-  A/B 拆法说明见左下角 review-note（截图时隐藏）。
+  说明见左下角 review-note（截图时隐藏）。
 -->
 <style>
 /* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
@@ -125,7 +126,7 @@ body[data-state="narrative-filter"] .tl-filter-panel{display:block}
 .tl-fp-item .cb svg{width:10px;height:10px;display:none}
 .tl-fp-item.sel .cb svg{display:block}
 
-/* 纪元轴选择器（方案 B） */
+/* 纪元轴选择器（#1353：仅世界序 + 轴族 ≥ 2 条时可见） */
 .tl-axis-picker{display:none;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
 body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"] .tl-axis-picker{display:inline-flex}
 #axisChips{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
@@ -172,7 +173,7 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 .tl-actions button svg{width:13px;height:13px}
 .tl-actions button:hover{background:var(--surface-3);color:var(--accent)}
 
-/* 纪元泳道（方案 B） */
+/* 纪元泳道（#1353：每轴独立时间刻度，轴内按纪元值升序） */
 .tl-lanes{display:flex;flex-direction:column;gap:12px}
 .tl-lane{border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:10px 16px 12px}
 .tl-lane-head{display:flex;align-items:center;gap:8px;padding:0 0 8px;margin-bottom:6px;border-bottom:1px dashed var(--line)}
