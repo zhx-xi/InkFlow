@@ -111,6 +111,12 @@ def test_pipeline_error_can_be_raised():
 # ── PipelineExecuteRequest (§3.2) ─────────────────────────────────────
 
 
+# ADR-063：agent_executions.project_id 已归一为 INTEGER + FK(projects.id)
+# → ORM 直写传 int，store（accepts uuid.UUID | str）传本地 UUID
+_PROJECT = uuid.UUID(int=1)
+_PROJECT_INT = _PROJECT.int
+
+
 def test_pipeline_execute_request_defaults():
     """默认值: pipeline='builtin:write_chapter', chapter_id=None,
     variables={}, role_overrides=None.
@@ -140,7 +146,7 @@ class TestAgentExecutionORM:
 
         execution = AgentExecutionORM(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT_INT,
             chapter_id=str(uuid.uuid4()),
         )
         db_session.add(execution)
@@ -159,7 +165,7 @@ class TestAgentExecutionORM:
 
         execution = AgentExecutionORM(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT_INT,
         )
         db_session.add(execution)
         await db_session.commit()
@@ -191,7 +197,7 @@ class TestAgentExecutionORM:
         ]
         execution = AgentExecutionORM(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT_INT,
             stages=stages,
         )
         db_session.add(execution)
@@ -212,7 +218,7 @@ class TestAgentStageResultORM:
 
         execution = AgentExecutionORM(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT_INT,
         )
         db_session.add(execution)
         await db_session.commit()
@@ -248,7 +254,7 @@ class TestAgentStageResultORM:
 
         execution = AgentExecutionORM(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT_INT,
         )
         db_session.add(execution)
         await db_session.commit()
@@ -281,7 +287,7 @@ class TestExecutionStore:
         chapter_id = str(uuid.uuid4())
         execution = await store.create_execution(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT,
             chapter_id=chapter_id,
         )
 
@@ -299,7 +305,7 @@ class TestExecutionStore:
         store = ExecutionStore(db_session)
         execution = await store.create_execution(
             pipeline="builtin:write_chapter",
-            project_id=str(uuid.uuid4()),
+            project_id=_PROJECT,
         )
 
         stages = [
@@ -330,8 +336,8 @@ class TestExecutionStore:
         from inkflow.infrastructure.agent import ExecutionStore
 
         store = ExecutionStore(db_session)
-        project_id = str(uuid.uuid4())
-        other_project_id = str(uuid.uuid4())
+        project_id = _PROJECT
+        other_project_id = uuid.UUID(int=2)
         for _ in range(3):
             await store.create_execution(pipeline="builtin:write_chapter", project_id=project_id)
         await store.create_execution(pipeline="builtin:write_chapter", project_id=other_project_id)
@@ -340,7 +346,7 @@ class TestExecutionStore:
 
         assert total == 3
         assert len(executions) == 2
-        assert all(e.project_id == project_id for e in executions)
+        assert all(e.project_id == project_id.int for e in executions)
 
     async def test_get_nonexistent_returns_none(self, db_session):
         """查询不存在的 execution → None。"""

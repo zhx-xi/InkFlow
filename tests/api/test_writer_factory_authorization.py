@@ -48,7 +48,7 @@ async def _seed(db_session, *, plan_id: uuid.UUID) -> None:
     """落表：project + chapter outline + writing plan（真实 repo，非 mock）。
 
     口径镜像 `test_books_coverage_backfill_1137.py::_seed_plan`：
-    WritingPlanORM.id / project_id 存**字符串**形态的 UUID，且显式 commit。
+    WritingPlanORM.id 存**字符串**形态 UUID，project_id 存 **INTEGER**（ADR-063），且显式 commit。
     """
     db_session.add(ProjectORM(id=SEED_PROJECT_ID.int, name="测试项目", language="zh-CN"))
     db_session.add(
@@ -73,7 +73,8 @@ async def _seed(db_session, *, plan_id: uuid.UUID) -> None:
     db_session.add(
         WritingPlanORM(
             id=str(plan_id),
-            project_id=str(SEED_PROJECT_ID),
+            # ADR-063：writing_plans.project_id 已归一为 INTEGER（= projects.id）
+            project_id=SEED_PROJECT_ID.int,
             title="测试计划",
             status="ready",
             root_outline_id=str(uuid.UUID(int=11)),

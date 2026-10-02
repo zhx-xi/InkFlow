@@ -69,7 +69,8 @@ class _Db:
                 [
                     WritingPlanORM(
                         id=pid,
-                        project_id=str(uuid.UUID(int=10)),
+                        # ADR-063：writing_plans.project_id 已归一为 INTEGER（存 projects.id）
+                        project_id=uuid.UUID(int=10).int,
                         title=title,
                         status="running",
                         limits=limits,
@@ -86,7 +87,8 @@ class _Db:
             session.add(
                 WritingPlanORM(
                     id=plan_id,
-                    project_id=str(uuid.UUID(int=10)),
+                    # ADR-063：writing_plans.project_id 已归一为 INTEGER（存 projects.id）
+                    project_id=uuid.UUID(int=10).int,
                     title=title,
                     status=status,
                     limits={},

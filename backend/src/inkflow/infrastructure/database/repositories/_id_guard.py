@@ -47,6 +47,51 @@ def require_uuid_pk(value: uuid.UUID | str | None) -> int | None:
     return None if _out_of_int64(parsed.int) else parsed.int
 
 
+def require_int_pk(value: uuid.UUID | str) -> int:
+    """ADR-063：把领域 UUID 归一为 SQLite INTEGER FK 值（``.int``）。
+
+    与 :func:`require_uuid_pk` 的差异：本函数用于**写入路径**，越界/畸形必须
+    响亮失败（ValueError），不得静默把无本地行的随机 uuid4 写成垃圾 FK 值。
+
+    Args:
+        value: ``uuid.UUID`` 或合法 uuid 字符串（调用方不应自行 ``.int``）。
+
+    Returns:
+        归一后的 SQLite int PK（``uuid.int``，落在 int64 范围内）。
+
+    Raises:
+        ValueError: 非法 uuid 字符串，或 ``.int`` 超出 int64 范围。
+        TypeError: 入参不是 ``uuid.UUID`` / 合法 uuid 字符串（契约违规）。
+    """
+    if isinstance(value, uuid.UUID):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = uuid.UUID(value)
+        except (ValueError, AttributeError) as exc:
+            raise ValueError(f"require_int_pk: 非法 uuid 字符串 {value!r}") from exc
+    else:
+        raise TypeError(
+            f"require_int_pk: 入参必须是 uuid.UUID 或 uuid 字符串，得到 {type(value).__name__}"
+        )
+    if _out_of_int64(parsed.int):
+        raise ValueError(f"require_int_pk: {parsed} 超出 int64 范围，无本地 projects 行")
+    return parsed.int
+
+
+def int_pk_for_filter(value: uuid.UUID | str | None) -> int:
+    """读/过滤路径的主键归一：越界（真 uuid4）或非法 → -1（永不匹配任何真实行）.
+
+    ADR-060 D9：越界 id 的读取语义是「不存在」而不是报错（写路径仍用 require_int_pk
+    响亮失败）。projects.id 是 AUTOINCREMENT 正整数，-1 恒不命中。
+    """
+    try:
+        pk = require_uuid_pk(value)
+    except (TypeError, ValueError):
+        return -1
+    return -1 if pk is None else pk
+
+
 def _out_of_int64(value: int) -> bool:
     """是否超出 SQLite 64 位 INTEGER 范围（随机 uuid4 的 .int 必然超出）。
 

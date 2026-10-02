@@ -33,8 +33,13 @@ class AgentExecutionORM(Base):
     pipeline: Mapped[str] = mapped_column(String(100), nullable=False)
     """管线标识（如 builtin:write_chapter）."""
 
-    project_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    """所属项目 ID（已索引）."""
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    """所属项目 ID（INTEGER + FK(projects.id) ON DELETE CASCADE，ADR-063）."""
 
     chapter_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     """关联章节 ID（可选，取决于管线类型）."""
@@ -101,11 +106,11 @@ class AgentStageResultORM(EntityUuidMixin, Base):
 
     execution_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("agent_executions.id"),
+        ForeignKey("agent_executions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    """所属执行记录 ID（外键 → agent_executions.id，已索引）."""
+    """所属执行记录 ID（外键 → agent_executions.id ON DELETE CASCADE，已索引）."""
 
     stage_id: Mapped[str] = mapped_column(String(50), nullable=False)
     """阶段标识（如 outline / chapter_write / style_review）."""

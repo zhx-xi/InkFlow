@@ -128,7 +128,7 @@ class TestExecutionStoreInjectedContext:
         session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_factory() as session:
             store = ExecutionStore(session)
-            row = await store.create_execution("builtin:write_auto", "p1", "ch1")
+            row = await store.create_execution("builtin:write_auto", PROJECT_ID, "ch1")
             await store.update_stages(
                 execution_id=row.id,
                 stages=[],
@@ -149,7 +149,7 @@ class TestExecutionStoreInjectedContext:
         session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_factory() as session:
             store = ExecutionStore(session)
-            row = await store.create_execution("builtin:write_auto", "p1")
+            row = await store.create_execution("builtin:write_auto", PROJECT_ID)
             await store.update_stages(execution_id=row.id, stages=[], status="completed")
             got = await store.get_execution(row.id)
             assert got is not None
@@ -200,7 +200,8 @@ def _svc_with_sources(*, characters=(), worlds=(), foreshadows=()):
     return svc
 
 
-PROJECT_ID = str(uuid.uuid4())
+# ADR-063：agent_executions.project_id 已归一为 INTEGER → 文本形态须为本地 int 可归一值
+PROJECT_ID = str(uuid.UUID(int=1))
 
 
 class TestInjectionDetailCollection:
@@ -291,7 +292,7 @@ class _ExecRow:
     def __init__(self, *, exec_id, chapter_id, injected_context, created_at=None):
         self.id = exec_id
         self.chapter_id = chapter_id
-        self.project_id = "p1"
+        self.project_id = 1  # ADR-063：ORM 列（INTEGER）的值形态
         self.pipeline = "builtin:write_auto"
         self.status = "completed"
         self.injected_context = injected_context
@@ -547,7 +548,7 @@ class TestRealStoreNewMethods:
         factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with factory() as session:
             store = ExecutionStore(session)
-            row = await store.create_execution("builtin:write_auto", "p1", "ch-real")
+            row = await store.create_execution("builtin:write_auto", PROJECT_ID, "ch-real")
             await store.update_injected_context(row.id, payload)
             got = await store.get_execution(row.id)
             assert got is not None
@@ -573,9 +574,9 @@ class TestRealStoreNewMethods:
         factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with factory() as session:
             store = ExecutionStore(session)
-            await store.create_execution("builtin:write_auto", "p1", "ch-target")
-            await store.create_execution("builtin:write_auto", "p1", "ch-other")
-            await store.create_execution("builtin:write_auto", "p1", "ch-target")
+            await store.create_execution("builtin:write_auto", PROJECT_ID, "ch-target")
+            await store.create_execution("builtin:write_auto", PROJECT_ID, "ch-other")
+            await store.create_execution("builtin:write_auto", PROJECT_ID, "ch-target")
 
             rows, total = await store.list_chapter_executions("ch-target")
             assert total == 2

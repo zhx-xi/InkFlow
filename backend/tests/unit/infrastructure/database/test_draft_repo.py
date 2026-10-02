@@ -83,10 +83,13 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 
 # ── 常量 ──────────────────────────────────────
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+# ADR-063：drafts.project_id 已归一为 INTEGER + FK(projects.id)
+# → 领域 UUID 必须落在 int64 内（本地项目 = UUID(int=projects.id)）
+PROJECT_ID = uuid.UUID(int=1)
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
 CONTENT = "草稿正文内容。"
-ZERO_PROJECT_ID = uuid.UUID(int=0)  # #275: rc9 缺陷数据签名（全零 UUID）
+ZERO_PROJECT_ID = uuid.UUID(int=0)  # #275: rc9 缺陷数据签名（全零 UUID → int 0）
+OTHER_PROJECT_ID = uuid.UUID(int=2)
 
 
 def _utcnow() -> datetime:
@@ -194,7 +197,7 @@ class TestDraftRepository:
         await repo.create(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="草稿A")
         d2 = await repo.create(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="草稿B")
         await repo.create(
-            project_id=uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+            project_id=OTHER_PROJECT_ID,
             chapter_id=None,
             content="其他项目草稿",
         )

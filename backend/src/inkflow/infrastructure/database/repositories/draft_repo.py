@@ -33,13 +33,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.infrastructure.database.models.agent_run import DraftORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 def _orm_to_domain(orm: DraftORM) -> Draft:
     """Draft ORM 行 → 领域实体（uuid 字符串 → UUID）."""
     return Draft(
         id=orm.id,
-        project_id=uuid.UUID(orm.project_id),
+        project_id=uuid.UUID(int=orm.project_id),
         chapter_id=uuid.UUID(orm.chapter_id) if orm.chapter_id is not None else None,
         volume_id=uuid.UUID(orm.volume_id) if orm.volume_id is not None else None,
         source_outline_id=(
@@ -88,7 +92,7 @@ class SQLiteDraftRepository:
             生成的 UTC 时间）.
         """
         orm = DraftORM(
-            project_id=str(project_id),
+            project_id=require_int_pk(project_id),
             chapter_id=str(chapter_id) if chapter_id is not None else None,
             content=content,
             summary=summary,
@@ -144,7 +148,7 @@ class SQLiteDraftRepository:
         Returns:
             (页内 Draft 列表, 该项目草稿总数).
         """
-        base = select(DraftORM).where(DraftORM.project_id == str(project_id))
+        base = select(DraftORM).where(DraftORM.project_id == int_pk_for_filter(project_id))
         if status is not None:
             base = base.where(DraftORM.status == status.value)
         count_stmt = select(func.count()).select_from(base.subquery())
@@ -184,7 +188,7 @@ class SQLiteDraftRepository:
         stmt = (
             select(DraftORM)
             .where(
-                DraftORM.project_id == str(project_id),
+                DraftORM.project_id == int_pk_for_filter(project_id),
                 DraftORM.status == DraftStatus.DRAFT.value,
                 or_(*key_conditions),
             )
@@ -258,7 +262,8 @@ class SQLiteDraftRepository:
         Returns:
             匹配条数（dry_run=True 时草稿保留）.
         """
-        stmt = select(DraftORM).where(DraftORM.project_id == str(uuid.UUID(int=0)))
+        # #275 全零 UUID 孤儿 → int 0（ADR-063：列已归一为 INTEGER）
+        stmt = select(DraftORM).where(DraftORM.project_id == 0)
         result = await self._session.execute(stmt)
         orphans = list(result.scalars().all())
         if dry_run:

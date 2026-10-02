@@ -45,6 +45,10 @@ NEW_SCHEMA = OLD_SCHEMA.replace(
     "trace TEXT, created_at DATETIME NOT NULL",
 )
 
+# ADR-063：agent_executions.project_id 已归一为 INTEGER + FK(projects.id)
+# → 写入路径的 project_id 须为本地 int 可归一形态（UUID(int=projects.id)）
+_PROJECT_UUID = "00000000-0000-0000-0000-000000000001"
+
 
 def _columns(conn, table: str) -> set[str]:
     rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
@@ -99,7 +103,7 @@ class FakeExecution:
     def __init__(self, *, trace=None):
         self.id = "e1"
         self.pipeline = "builtin:write_auto"
-        self.project_id = "p1"
+        self.project_id = 1  # ADR-063：ORM 列（INTEGER）的值形态
         self.status = "completed"
         self.stages = []
         self.relations = []
@@ -130,7 +134,7 @@ class TestExecutionStoreTrace:
         session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_factory() as session:
             store = ExecutionStore(session)
-            exec_row = await store.create_execution("builtin:write_auto", "p1")
+            exec_row = await store.create_execution("builtin:write_auto", _PROJECT_UUID)
             trace = [
                 {
                     "node": "architect",
@@ -163,7 +167,7 @@ class TestExecutionStoreTrace:
         session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_factory() as session:
             store = ExecutionStore(session)
-            exec_row = await store.create_execution("builtin:write_auto", "p1")
+            exec_row = await store.create_execution("builtin:write_auto", _PROJECT_UUID)
             await store.update_stages(execution_id=exec_row.id, stages=[], status="completed")
             got = await store.get_execution(exec_row.id)
             assert got is not None

@@ -24,13 +24,17 @@ from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import WritingPlan
 from inkflow.infrastructure.database.models.planner_session import PlannerSessionORM
 from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 def _writing_plan_orm_to_domain(orm: WritingPlanORM) -> WritingPlan:
     """WritingPlan ORM 行 → 领域实体（uuid 字符串 → UUID，JSON 列 → dict/list）."""
     return WritingPlan(
         id=uuid.UUID(orm.id),
-        project_id=uuid.UUID(orm.project_id),
+        project_id=uuid.UUID(int=orm.project_id),
         title=orm.title,
         status=orm.status,
         root_outline_id=(
@@ -52,7 +56,7 @@ def _planner_session_orm_to_domain(orm: PlannerSessionORM) -> PlannerSession:
     """PlannerSession ORM 行 → 领域实体（uuid 字符串 → UUID，JSON 列 → dict/list）."""
     return PlannerSession(
         id=uuid.UUID(orm.id),
-        project_id=uuid.UUID(orm.project_id),
+        project_id=uuid.UUID(int=orm.project_id),
         status=orm.status,
         one_liner=orm.one_liner,
         round=orm.round,
@@ -74,7 +78,7 @@ def _domain_to_writing_plan_orm(plan: WritingPlan) -> WritingPlanORM:
     """领域 WritingPlan → ORM 行（UUID → str，dict/list 直接给 LenientJSON 列）."""
     return WritingPlanORM(
         id=str(plan.id),
-        project_id=str(plan.project_id),
+        project_id=require_int_pk(plan.project_id),
         title=plan.title,
         status=plan.status,
         root_outline_id=(str(plan.root_outline_id) if plan.root_outline_id is not None else None),
@@ -94,7 +98,7 @@ def _domain_to_planner_session_orm(session: PlannerSession) -> PlannerSessionORM
     """领域 PlannerSession → ORM 行（UUID → str，dict/list 直接给 LenientJSON 列）."""
     return PlannerSessionORM(
         id=str(session.id),
-        project_id=str(session.project_id),
+        project_id=require_int_pk(session.project_id),
         status=session.status,
         one_liner=session.one_liner,
         round=session.round,
@@ -221,7 +225,7 @@ class SQLiteBookRepository:
         """
         base = select(PlannerSessionORM)
         if project_id is not None:
-            base = base.where(PlannerSessionORM.project_id == str(project_id))
+            base = base.where(PlannerSessionORM.project_id == int_pk_for_filter(project_id))
         if status is not None:
             base = base.where(PlannerSessionORM.status == status)
 

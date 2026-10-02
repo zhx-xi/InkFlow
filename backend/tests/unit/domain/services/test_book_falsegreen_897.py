@@ -50,7 +50,8 @@ _UNAUTHORIZED = "Error code: 401 - invalid API key"
 
 
 def _pid() -> uuid.UUID:
-    return uuid.uuid4()
+    """本地项目 UUID（ADR-063：writing_plans.project_id 已归一为 INTEGER + FK）。"""
+    return uuid.UUID(int=1)
 
 
 def _plan(**overrides) -> WritingPlan:

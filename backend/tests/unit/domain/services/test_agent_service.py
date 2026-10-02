@@ -105,7 +105,7 @@ class FakeExecution:
         self._seq = FakeExecution._seq
         self.id = str(uuid.uuid4())
         self.pipeline = pipeline
-        self.project_id = project_id
+        self.project_id = uuid.UUID(str(project_id)).int  # ADR-063: 列已归一为 INTEGER
         self.chapter_id = chapter_id
         self.status = "pending"
         self.stages: list[dict] = []
@@ -165,10 +165,10 @@ class MockExecutionStore:
     async def list_executions(
         self, project_id: str, limit: int = 20
     ) -> tuple[list[FakeExecution], int]:
-        matching = [e for e in self.executions.values() if e.project_id == project_id]
+        hits = [e for e in self.executions.values() if e.project_id == uuid.UUID(project_id).int]
         # created_at 降序，同刻创建时按创建顺序倒序（对应真实 SQL 的 created_at desc）
-        matching.sort(key=lambda e: (e.created_at, e._seq), reverse=True)
-        return matching[:limit], len(matching)
+        hits.sort(key=lambda e: (e.created_at, e._seq), reverse=True)
+        return hits[:limit], len(hits)
 
 
 class MockProjectRepo:
@@ -227,7 +227,7 @@ class TestExecute:
         assert result["execution_id"]
         record = store.executions[result["execution_id"]]
         assert record.status == "pending"
-        assert record.project_id == str(project.id)
+        assert record.project_id == project.id.int
 
         await asyncio.sleep(0.05)  # 等待后台任务完成
         status = await service.get_status(result["execution_id"])

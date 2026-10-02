@@ -143,7 +143,10 @@ class FakeExecution:
     def __init__(self, pipeline: str, project_id: str, chapter_id: str | None = None) -> None:
         self.id = str(uuid.uuid4())
         self.pipeline = pipeline
-        self.project_id = project_id
+        # ADR-063：project_id 列为 INTEGER → 仿件须存 int（镜像 ORM 真实形态）
+        self.project_id = (
+            project_id if isinstance(project_id, int) else uuid.UUID(str(project_id)).int
+        )
         self.chapter_id = chapter_id
         self.status = "pending"
         self.stages: list[dict] = []

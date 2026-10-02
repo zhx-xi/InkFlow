@@ -48,7 +48,9 @@ class TestExecutionStoreDefensive:
         """update_status 带 hitl_payload 非 None → 落库读回（L90-91）。"""
         store = ExecutionStore(db_session)
         execution = await store.create_execution(
-            pipeline="book:volume", project_id=str(uuid.uuid4())
+            # ADR-063：project_id 列已归一为 INTEGER → 须为本地 int 可归一值
+            pipeline="book:volume",
+            project_id=uuid.UUID(int=1),
         )
         payload = {
             "question": "确认继续下一卷？",
@@ -73,7 +75,9 @@ class TestExecutionStoreDefensive:
         （覆盖 L90 if 的 False 分支 90->92）。"""
         store = ExecutionStore(db_session)
         execution = await store.create_execution(
-            pipeline="book:volume", project_id=str(uuid.uuid4())
+            # ADR-063：project_id 列已归一为 INTEGER → 须为本地 int 可归一值
+            pipeline="book:volume",
+            project_id=uuid.UUID(int=1),
         )
         payload = {"question": "确认继续下一卷？"}
         await store.update_status(execution.id, "waiting_hitl", payload)

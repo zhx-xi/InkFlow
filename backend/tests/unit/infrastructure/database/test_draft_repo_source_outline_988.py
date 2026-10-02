@@ -36,7 +36,8 @@ from inkflow.infrastructure.database.repositories.draft_repo import (
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+# ADR-063：drafts.project_id 已归一为 INTEGER + FK(projects.id) → 领域 UUID 须在 int64 内
+PROJECT_ID = uuid.UUID(int=1)
 OUTLINE_ID = uuid.UUID(int=51)  # 小值 UUID（int↔UUID 惯例，与真实 outline 行主键同形）
 CONTENT = "草稿正文内容（source_outline_id 持久化契约）。"
 

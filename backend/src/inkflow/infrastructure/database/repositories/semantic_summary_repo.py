@@ -29,6 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.semantic_summary import SemanticSummary, SummaryScope
 from inkflow.infrastructure.database.models.semantic_summary import SemanticSummaryORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 def _orm_to_domain(orm: SemanticSummaryORM) -> SemanticSummary:
@@ -36,7 +40,7 @@ def _orm_to_domain(orm: SemanticSummaryORM) -> SemanticSummary:
     return SemanticSummary(
         id=orm.id,
         scope=SummaryScope(orm.scope),
-        project_id=uuid.UUID(orm.project_id) if orm.project_id else None,
+        project_id=uuid.UUID(int=orm.project_id) if orm.project_id is not None else None,
         content=orm.content,
         anchor_hash=orm.anchor_hash,
         anchor_count=orm.anchor_count,
@@ -62,11 +66,14 @@ class SQLiteSemanticSummaryRepository:
         Returns:
             落库后的 SemanticSummary（updated_at 由 ORM onupdate 自动刷新）.
         """
+        project_pk = require_int_pk(summary.project_id) if summary.project_id is not None else None
         stmt = select(SemanticSummaryORM).where(SemanticSummaryORM.scope == summary.scope.value)
         if summary.scope == SummaryScope.USER:
             stmt = stmt.where(SemanticSummaryORM.project_id.is_(None))
         else:
-            stmt = stmt.where(SemanticSummaryORM.project_id == str(summary.project_id))
+            if project_pk is None:
+                raise ValueError("scope=project 的语义总结必须带 project_id")
+            stmt = stmt.where(SemanticSummaryORM.project_id == project_pk)
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         if orm is not None:
@@ -78,7 +85,7 @@ class SQLiteSemanticSummaryRepository:
             orm = SemanticSummaryORM(
                 id=summary.id,
                 scope=summary.scope.value,
-                project_id=str(summary.project_id) if summary.project_id else None,
+                project_id=project_pk,
                 content=summary.content,
                 anchor_hash=summary.anchor_hash,
                 anchor_count=summary.anchor_count,
@@ -109,7 +116,7 @@ class SQLiteSemanticSummaryRepository:
         if project_id is None:
             stmt = stmt.where(SemanticSummaryORM.project_id.is_(None))
         else:
-            stmt = stmt.where(SemanticSummaryORM.project_id == str(project_id))
+            stmt = stmt.where(SemanticSummaryORM.project_id == int_pk_for_filter(project_id))
         result = await self._session.execute(stmt)
         orm = result.scalar_one_or_none()
         return _orm_to_domain(orm) if orm else None
@@ -147,7 +154,7 @@ class SQLiteSemanticSummaryRepository:
         result = await self._session.execute(
             delete(SemanticSummaryORM).where(
                 SemanticSummaryORM.scope == SummaryScope.PROJECT.value,
-                SemanticSummaryORM.project_id == str(project_id),
+                SemanticSummaryORM.project_id == int_pk_for_filter(project_id),
             )
         )
         await self._session.commit()

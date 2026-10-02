@@ -83,7 +83,8 @@ async def _seed_plan(db_session, plan_id: uuid.UUID) -> None:
     db_session.add(
         WritingPlanORM(
             id=str(plan_id),
-            project_id=str(SEED_PROJECT_ID),
+            # ADR-063：writing_plans.project_id 已归一为 INTEGER（= projects.id）
+            project_id=SEED_PROJECT_ID.int,
             title="覆盖补齐计划",
             status="ready",
         )

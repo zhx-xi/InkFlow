@@ -61,6 +61,12 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _pid() -> uuid.UUID:
+    """本地项目 UUID（ADR-063：writing_plans/planner_sessions.project_id 已归一为
+    INTEGER + FK(projects.id) → 领域 UUID 必须落在 int64 内）."""
+    return uuid.UUID(int=1)
+
+
 @pytest.fixture
 def repo(db_session):
     return SQLiteBookRepository(db_session)
@@ -74,7 +80,7 @@ async def test_add_get_writing_plan(repo):
     """add → get 回读（§13.1 M3：WritingPlan 落库）。"""
     plan = WritingPlan(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         title="测试计划",
         status="ready",
         root_outline_id=uuid.uuid4(),
@@ -113,7 +119,7 @@ async def test_update_writing_plan(repo):
     """update 全字段覆盖写回（进度/执行引用随执行漂移）。"""
     plan = WritingPlan(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         title="初始",
         created_at=_utcnow(),
         updated_at=_utcnow(),
@@ -141,7 +147,7 @@ async def test_add_get_planner_session(repo):
     """add → get 回读（§13.1 M3：PlannerSession 落库）。"""
     session = PlannerSession(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         status="drafting",
         one_liner="写一本关于时间旅者的悬疑小说",
         round=1,
@@ -178,7 +184,7 @@ async def test_update_planner_session(repo):
     """update 覆盖写回（轮次/回答/授权/关联计划漂移）。"""
     session = PlannerSession(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         one_liner="一句话",
         created_at=_utcnow(),
         updated_at=_utcnow(),
@@ -223,7 +229,7 @@ async def test_update_writing_plan_missing_noop(repo):
     """update 不存在计划 → no-op 不炸（repo 查无分支）。"""
     plan = WritingPlan(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         title="不存在",
         created_at=_utcnow(),
         updated_at=_utcnow(),
@@ -238,7 +244,7 @@ async def test_update_planner_session_missing_noop(repo):
     """update 不存在会话 → no-op 不炸（repo 查无分支）。"""
     session = PlannerSession(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         one_liner="不存在",
         created_at=_utcnow(),
         updated_at=_utcnow(),
@@ -257,8 +263,8 @@ async def test_orm_default_utcnow(db_session):
     from inkflow.infrastructure.database.models.planner_session import PlannerSessionORM
     from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
 
-    wp = WritingPlanORM(id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), title="默认时间")
-    ps = PlannerSessionORM(id=str(uuid.uuid4()), project_id=str(uuid.uuid4()), one_liner="默认时间")
+    wp = WritingPlanORM(id=str(uuid.uuid4()), project_id=_pid().int, title="默认时间")
+    ps = PlannerSessionORM(id=str(uuid.uuid4()), project_id=_pid().int, one_liner="默认时间")
     db_session.add_all([wp, ps])
     await db_session.flush()
 
@@ -287,7 +293,7 @@ async def test_update_multi_chapter_progress_progression(repo):
     """
     plan = WritingPlan(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         title="多章进度",
         limits={"max_chapters": 3, "max_agent_calls": 3},
         created_at=_utcnow(),
@@ -321,7 +327,7 @@ async def test_update_multi_chapter_execution_refs(repo):
     """
     plan = WritingPlan(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         title="多章引用",
         limits={"max_chapters": 3, "max_agent_calls": 3},
         created_at=_utcnow(),
@@ -352,7 +358,7 @@ async def test_planner_session_v12_fields_roundtrip(repo):
     """confirmed_items/conflicts/confirming 落库回读（M13：确定项落会话可回溯）。"""
     session = PlannerSession(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         one_liner="写一本关于时间旅者的悬疑小说",
         round=1,
         confirmed_items=[
@@ -389,7 +395,7 @@ async def test_planner_session_v12_fields_default_empty(repo):
     """未显式传 v1.2 字段 → 默认空落库回读（向后兼容，零迁移）。"""
     session = PlannerSession(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         one_liner="一句话",
         created_at=_utcnow(),
         updated_at=_utcnow(),
@@ -409,7 +415,7 @@ async def test_update_planner_session_v12_fields(repo):
     """update 全字段覆写：confirming/confirmed_items 变更落库回读。"""
     session = PlannerSession(
         id=uuid.uuid4(),
-        project_id=uuid.uuid4(),
+        project_id=_pid(),
         one_liner="一句话",
         created_at=_utcnow(),
         updated_at=_utcnow(),

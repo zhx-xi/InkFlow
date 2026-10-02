@@ -96,8 +96,9 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 
 # ── 常量 ──────────────────────────────────────
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
-PROJECT_ID_2 = uuid.UUID("87654321-4321-8765-4321-876543218765")
+# ADR-063：project_preferences.project_id 已归一为 INTEGER，领域 UUID 须在 int64 内
+PROJECT_ID = uuid.UUID(int=1)
+PROJECT_ID_2 = uuid.UUID(int=2)
 
 
 @pytest.fixture
@@ -149,7 +150,8 @@ async def _insert_preference_direct(
 
     await db_session.execute(
         insert(ProjectPreferenceORM).values(
-            project_id=str(project_id),
+            # ADR-063：project_id 列为 INTEGER，raw INSERT 须传 int（非 str(uuid)）
+            project_id=uuid.UUID(str(project_id)).int,
             category=category,
             pattern=pattern,
             value=f"value-{pattern}",

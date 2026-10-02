@@ -164,7 +164,8 @@ async def _event_count(db_session: AsyncSession, project_id: uuid.UUID) -> int:
     result = await db_session.execute(
         select(func.count())
         .select_from(MemoryEventORM)
-        .where(MemoryEventORM.project_id == str(project_id))
+        # ADR-063：project_id 列为 INTEGER → 直查须用 int（非 str(uuid)）
+        .where(MemoryEventORM.project_id == project_id.int)
     )
     return int(result.scalar_one())
 
