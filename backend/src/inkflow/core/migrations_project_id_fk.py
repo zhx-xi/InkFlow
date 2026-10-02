@@ -149,15 +149,20 @@ def _out_of_int64(value: int) -> bool:
     return value < _INT64_MIN or value >= _INT64_MAX
 
 
+def _to_project_pk(raw: object) -> int:
+    """存量 project_id → int：已是 int 直接用，否则解析 uuid 文本。"""
+    if isinstance(raw, int):
+        return raw
+    return uuid.UUID(str(raw)).int
+
+
 def _normalize_project_pk(raw: object) -> int | None:
     """旧列文本 ``str(uuid)`` → int；不可解析/越界 → None（孤儿判据）."""
-    if isinstance(raw, int):
-        return None if _out_of_int64(raw) else raw
     try:
-        parsed = uuid.UUID(str(raw))
+        value = _to_project_pk(raw)
     except (ValueError, AttributeError, TypeError):
         return None
-    return None if _out_of_int64(parsed.int) else parsed.int
+    return None if _out_of_int64(value) else value
 
 
 def _orphan_rowids(conn: Connection, table: str) -> list[int]:
@@ -206,7 +211,7 @@ def _copy_rows(conn: Connection, table: str, orphan_rowids: list[int], *, conver
         values = list(row)
         if convert:
             raw = values[project_idx]
-            values[project_idx] = None if raw is None else uuid.UUID(str(raw)).int
+            values[project_idx] = None if raw is None else _to_project_pk(raw)
         converted.append(tuple(values))
 
     if not converted:

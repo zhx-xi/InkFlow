@@ -196,6 +196,33 @@ async def test_read_paths_treat_out_of_range_project_id_as_absent_1387(
     assert await SQLiteSemanticSummaryRepository(db_session).delete_by_project(foreign) == 0
 
 
+async def test_write_path_rejects_non_local_project_ids_1387(db_session: AsyncSession) -> None:
+    """ADR-063/ADR-060 D9 写路径契约：非法文本 / 裸 int / 越界 uuid 一律响亮失败（不写垃圾 FK）."""
+    from inkflow.infrastructure.agent import ExecutionStore
+
+    store = ExecutionStore(db_session)
+    with pytest.raises(ValueError):
+        await store.create_execution(pipeline="builtin:write_chapter", project_id="not-a-uuid")
+    with pytest.raises(TypeError):
+        await store.create_execution(
+            pipeline="builtin:write_chapter",
+            project_id=1,  # type: ignore[arg-type]  # 故意传裸 int：断言 ADR-060 D9 契约拒绝
+        )
+    with pytest.raises(ValueError):
+        await store.create_execution(pipeline="builtin:write_chapter", project_id=uuid.uuid4())
+
+
+async def test_read_path_treats_malformed_project_id_as_absent_1387(
+    db_session: AsyncSession,
+) -> None:
+    """读路径非法 project_id（非 uuid 文本 / 裸 int）→ 空结果，不抛异常（ADR-060 D9）."""
+    from inkflow.infrastructure.database.repositories.draft_repo import SQLiteDraftRepository
+
+    repo = SQLiteDraftRepository(db_session)
+    assert await repo.list(project_id="not-a-uuid") == ([], 0)
+    assert await repo.list(project_id=1) == ([], 0)  # type: ignore[arg-type]  # 裸 int：读口不炸
+
+
 def test_project_id_fk_migration_is_wired_1387() -> None:
     """接线守护（AST，禁 substring）：lifespan 调 runner，runner 转接 ensure helper.
 
