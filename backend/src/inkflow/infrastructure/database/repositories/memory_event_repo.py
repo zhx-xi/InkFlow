@@ -28,13 +28,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.memory_event import MemoryEvent, MemoryEventType
 from inkflow.infrastructure.database.models.preference import MemoryEventORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 def _orm_to_domain(orm: MemoryEventORM) -> MemoryEvent:
     """MemoryEvent ORM 行 → 领域实体（uuid 字符串 → UUID，类型字符串 → 枚举）."""
     return MemoryEvent(
         id=orm.id,
-        project_id=uuid.UUID(orm.project_id),
+        project_id=uuid.UUID(int=orm.project_id),
         draft_id=orm.draft_id,
         chapter_id=uuid.UUID(orm.chapter_id) if orm.chapter_id is not None else None,
         agent_run_id=orm.agent_run_id,
@@ -80,7 +84,7 @@ class SQLiteMemoryEventRepository:
             len(before_content or "")，created_at 由 ORM default 生成 UTC 时间）.
         """
         orm = MemoryEventORM(
-            project_id=str(project_id),
+            project_id=require_int_pk(project_id),
             draft_id=draft_id,
             chapter_id=str(chapter_id) if chapter_id is not None else None,
             agent_run_id=agent_run_id,
@@ -112,7 +116,9 @@ class SQLiteMemoryEventRepository:
         Returns:
             (页内 MemoryEvent 列表, 该项目事件总数).
         """
-        stmt = select(MemoryEventORM).where(MemoryEventORM.project_id == str(project_id))
+        stmt = select(MemoryEventORM).where(
+            MemoryEventORM.project_id == int_pk_for_filter(project_id)
+        )
         if event_type is not None:
             stmt = stmt.where(MemoryEventORM.event_type == event_type.value)
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -137,7 +143,7 @@ class SQLiteMemoryEventRepository:
         stmt = (
             select(MemoryEventORM)
             .where(
-                MemoryEventORM.project_id == str(project_id),
+                MemoryEventORM.project_id == int_pk_for_filter(project_id),
                 MemoryEventORM.event_type == MemoryEventType.DRAFT_EDITED.value,
             )
             .order_by(MemoryEventORM.created_at.asc())
@@ -160,7 +166,7 @@ class SQLiteMemoryEventRepository:
         stmt = (
             select(func.count())
             .select_from(MemoryEventORM)
-            .where(MemoryEventORM.project_id == str(project_id))
+            .where(MemoryEventORM.project_id == int_pk_for_filter(project_id))
         )
         # int() 收敛 Any（CI 全量 mypy no-any-return 防御）
         return int((await self._session.execute(stmt)).scalar_one())
@@ -175,7 +181,7 @@ class SQLiteMemoryEventRepository:
             删除的事件行数（0 = 项目原本无事件）.
         """
         result = await self._session.execute(
-            delete(MemoryEventORM).where(MemoryEventORM.project_id == str(project_id))
+            delete(MemoryEventORM).where(MemoryEventORM.project_id == int_pk_for_filter(project_id))
         )
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）

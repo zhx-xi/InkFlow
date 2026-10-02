@@ -150,7 +150,11 @@ class TestExecutionStoreHITL:
     async def test_update_status(self, store) -> None:
         """update_status 将执行记录 status 更新为 waiting_hitl。"""
         # 先创建执行记录（真实 create_execution）
-        exec_ = await store.create_execution(pipeline="builtin:write_chapter", project_id="p1")
+        exec_ = await store.create_execution(
+            pipeline="builtin:write_chapter",
+            # ADR-063：project_id 已归一为 INTEGER → 写路径须为本地 int 可归一形态
+            project_id="00000000-0000-0000-0000-000000000001",
+        )
         await store.update_status(exec_.id, "waiting_hitl")
         updated = await store.get_execution(exec_.id)
         assert updated is not None
@@ -159,14 +163,22 @@ class TestExecutionStoreHITL:
     @pytest.mark.asyncio
     async def test_get_hitl_payload_none(self, store) -> None:
         """get_hitl_payload 无 payload 时返回 None。"""
-        exec_ = await store.create_execution(pipeline="builtin:write_chapter", project_id="p1")
+        exec_ = await store.create_execution(
+            pipeline="builtin:write_chapter",
+            # ADR-063：project_id 已归一为 INTEGER → 写路径须为本地 int 可归一形态
+            project_id="00000000-0000-0000-0000-000000000001",
+        )
         payload = await store.get_hitl_payload(exec_.id)
         assert payload is None
 
     @pytest.mark.asyncio
     async def test_get_hitl_payload_roundtrip(self, store) -> None:
         """set/update payload → get_hitl_payload 读回。"""
-        exec_ = await store.create_execution(pipeline="builtin:write_chapter", project_id="p1")
+        exec_ = await store.create_execution(
+            pipeline="builtin:write_chapter",
+            # ADR-063：project_id 已归一为 INTEGER → 写路径须为本地 int 可归一形态
+            project_id="00000000-0000-0000-0000-000000000001",
+        )
         await store.update_status(exec_.id, "waiting_hitl")
         # 契约：update_status 支持可选 hitl_payload 参数（或独立 set 方法，实现确认）
         payload = await store.get_hitl_payload(exec_.id)

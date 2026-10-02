@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base, LenientJSON
@@ -42,12 +42,13 @@ class ProjectPreferenceORM(Base):
     )
     """偏好 UUID 主键（uuid4 字符串，兼容 SQLite）"""
 
-    project_id: Mapped[str] = mapped_column(
-        String(36),
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    """所属项目 UUID 字符串（已索引；无 FK——镜像 agent_runs/drafts 先例）"""
+    """所属项目 ID（INTEGER + FK(projects.id) ON DELETE CASCADE，ADR-063）"""
 
     category: Mapped[str] = mapped_column(
         String(20),
@@ -133,12 +134,13 @@ class MemoryEventORM(Base):
     )
     """事件 UUID 主键（uuid4 字符串，兼容 SQLite）"""
 
-    project_id: Mapped[str] = mapped_column(
-        String(36),
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    """所属项目 UUID 字符串（已索引；无 FK——镜像 agent_runs/drafts 先例）"""
+    """所属项目 ID（INTEGER + FK(projects.id) ON DELETE CASCADE，ADR-063）"""
 
     draft_id: Mapped[str | None] = mapped_column(
         String(36),

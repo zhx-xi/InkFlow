@@ -102,6 +102,7 @@ from inkflow.core.database import (
     ensure_world_root_unique_index,
     ensure_writing_plan_progress_reason_column,
     run_character_group_members_migration,
+    run_project_id_fk_migration,
 )
 from inkflow.core.log import setup_logging
 from inkflow.core.startup_reconcile import reconcile_stale_running_plans
@@ -174,6 +175,10 @@ async def lifespan(app: FastAPI):
     # 故在独立 AUTOCOMMIT 连接上以 FK=OFF 执行（见 run_character_group_members_migration），
     # 位于主迁移事务提交之后避免写锁冲突。
     await run_character_group_members_migration()
+    # #1387/ADR-063：8 张 String(36) project_id 子表归一为 INTEGER + FK CASCADE
+    # （含 agent_stage_results.execution_id 补 CASCADE）。同上需独立 AUTOCOMMIT
+    # 连接（FK=OFF 才能安全 table-rebuild），位于主迁移事务提交之后。
+    await run_project_id_fk_migration()
     # #106 F1：启动后幂等 seed 内置 4 provider（ProviderConfigService 同名跳过，
     # 全新安装注册表为空 → seed 补全；重复启动不重复插入）
     async with async_session_factory() as session:

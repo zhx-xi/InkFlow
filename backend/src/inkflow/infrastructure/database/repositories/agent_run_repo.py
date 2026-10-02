@@ -33,13 +33,17 @@ from inkflow.domain.models.agent_run import (
     AgentStep,
 )
 from inkflow.infrastructure.database.models.agent_run import AgentRunORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 def _orm_to_domain(orm: AgentRunORM) -> AgentRun:
     """AgentRun ORM 行 → 领域实体（uuid 字符串 → UUID；steps JSON → 领域对象）."""
     return AgentRun(
         id=orm.id,
-        project_id=uuid.UUID(orm.project_id),
+        project_id=uuid.UUID(int=orm.project_id),
         chapter_id=uuid.UUID(orm.chapter_id) if orm.chapter_id is not None else None,
         mode=orm.mode,
         status=AgentRunStatus(orm.status),
@@ -80,7 +84,7 @@ class SQLiteAgentRunRepository:
             ORM default 生成的 UTC 时间）.
         """
         orm = AgentRunORM(
-            project_id=str(project_id),
+            project_id=require_int_pk(project_id),
             chapter_id=str(chapter_id) if chapter_id is not None else None,
             mode=mode,
         )
@@ -110,7 +114,7 @@ class SQLiteAgentRunRepository:
         Returns:
             (页内 AgentRun 列表, 该项目 run 总数).
         """
-        base = select(AgentRunORM).where(AgentRunORM.project_id == str(project_id))
+        base = select(AgentRunORM).where(AgentRunORM.project_id == int_pk_for_filter(project_id))
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self._session.execute(count_stmt)).scalar_one()
         base = base.order_by(AgentRunORM.created_at.desc()).limit(limit)
@@ -181,7 +185,7 @@ class SQLiteAgentRunRepository:
         if orm is None:
             orm = AgentRunORM(
                 id=run.id,
-                project_id=str(run.project_id),
+                project_id=require_int_pk(run.project_id),
                 chapter_id=str(run.chapter_id) if run.chapter_id is not None else None,
                 mode=run.mode,
             )

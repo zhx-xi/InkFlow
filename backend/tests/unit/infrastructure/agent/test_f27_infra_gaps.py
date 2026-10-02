@@ -19,7 +19,7 @@ from inkflow.core.database import Base
 
 pytestmark = pytest.mark.asyncio
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+PROJECT_ID = uuid.UUID(int=1)  # ADR-063：agent_runs.project_id 已归一为 INTEGER
 CHAPTER_ID = uuid.UUID("87654321-4321-8765-4321-876543218765")
 DRAFT_ID = "draft-0001"
 RUN_ID = "run-0001"

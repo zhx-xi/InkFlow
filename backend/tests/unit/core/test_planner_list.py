@@ -51,7 +51,8 @@ def _session(**kw: object) -> PlannerSession:
     """构造 PlannerSession 领域对象（键值覆盖默认值）。"""
     return PlannerSession(
         id=kw.pop("id", uuid.uuid4()),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
-        project_id=kw.pop("project_id", uuid.uuid4()),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
+        # ADR-063：planner_sessions.project_id 已归一为 INTEGER（存 projects.id）
+        project_id=kw.pop("project_id", uuid.UUID(int=1)),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
         status=kw.pop("status", "drafting"),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
         one_liner=kw.pop("one_liner", "测试一句话"),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
         round=kw.pop("round", 1),  # type: ignore[misc]  # 测试 helper：kw.pop 键值覆盖返回 object
@@ -127,7 +128,8 @@ class TestBookRepositoryListPlannerSessions:
     async def test_list_planner_sessions_filters(self, db_session) -> None:
         """project_id/status 精确过滤。"""
         repo = SQLiteBookRepository(db_session)
-        pid = uuid.uuid4()
+        # ADR-063：project_id 须为本地 int 可归一形态（UUID(int=projects.id)）
+        pid = uuid.UUID(int=1)
         await repo.add_planner_session(
             _session(project_id=pid, status="drafting", created_at=_dt(2))
         )
@@ -135,7 +137,7 @@ class TestBookRepositoryListPlannerSessions:
             _session(project_id=pid, status="completed", created_at=_dt(1))
         )
         await repo.add_planner_session(
-            _session(project_id=uuid.uuid4(), status="completed", created_at=_dt(3))
+            _session(project_id=uuid.UUID(int=2), status="completed", created_at=_dt(3))
         )
 
         items, total = await repo.list_planner_sessions(project_id=pid, status="completed")

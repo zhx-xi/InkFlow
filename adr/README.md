@@ -57,6 +57,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-003](database/ADR-003.md) | Repository 模式封装 SQLAlchemy | ✅ 已接受 | 2026-07-30 |
 | [ADR-004](database/ADR-004.md) | Pydantic v2 作为统一数据契约 | ✅ 已接受 | 2026-07-30 |
 | [ADR-054](database/ADR-054.md) | SQLite schema 迁移 — 引入 Alembic（混合方案 C：骨架 + 版本权威 + ensure_* 平移复用） | ✅ 已接受 | 2026-09-08 |
+| [ADR-063](database/ADR-063.md) | 无 FK 的 `String(36) project_id` 子表根治 — 归一为 `INTEGER + FK(projects.id) ON DELETE CASCADE` | ✅ 已接受 | 2026-10-02 |
 
 ### service 层（service）
 

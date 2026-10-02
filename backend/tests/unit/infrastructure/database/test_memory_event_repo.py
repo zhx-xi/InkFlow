@@ -103,8 +103,9 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 
 # ── 常量 ──────────────────────────────────────
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
-PROJECT_ID_2 = uuid.UUID("87654321-4321-8765-4321-876543218765")
+# ADR-063：memory_events.project_id 已归一为 INTEGER + FK(projects.id) → 领域 UUID 须在 int64 内
+PROJECT_ID = uuid.UUID(int=1)
+PROJECT_ID_2 = uuid.UUID(int=2)
 CHAPTER_ID = uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 
 
@@ -152,7 +153,8 @@ async def _insert_event_direct(db_session, *, project_id, event_type, draft_id, 
 
     await db_session.execute(
         insert(MemoryEventORM).values(
-            project_id=str(project_id),
+            # ADR-063：project_id 列为 INTEGER，raw INSERT 须传 int（非 str(uuid)）
+            project_id=uuid.UUID(str(project_id)).int,
             event_type=event_type,
             draft_id=draft_id,
             diff_chars=0,

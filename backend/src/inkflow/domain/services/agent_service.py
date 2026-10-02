@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import uuid
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import replace
@@ -517,7 +518,7 @@ class AgentService(AgentServiceStreamMixin, AgentServiceContextMixin):
         return {
             "execution_id": execution.id,
             "pipeline": execution.pipeline,
-            "project_id": execution.project_id,
+            "project_id": str(uuid.UUID(int=execution.project_id)),
             "status": execution.status,
             "stages": execution.stages,
             "relations": getattr(execution, "relations", None) or [],

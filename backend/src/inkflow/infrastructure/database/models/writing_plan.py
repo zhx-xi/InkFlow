@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base, LenientJSON
@@ -39,12 +39,13 @@ class WritingPlanORM(Base):
     )
     """计划 UUID 主键（uuid4 字符串，兼容 SQLite）."""
 
-    project_id: Mapped[str] = mapped_column(
-        String(36),
+    project_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    """所属项目 UUID 字符串（已索引；无 FK - 镜像 AgentRunORM 先例）."""
+    """所属项目 ID（INTEGER + FK(projects.id) ON DELETE CASCADE，ADR-063）."""
 
     title: Mapped[str] = mapped_column(
         String(200),

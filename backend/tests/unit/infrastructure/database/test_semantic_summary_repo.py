@@ -95,9 +95,10 @@ pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 S
 
 # ── 常量 ──────────────────────────────────────
 
-PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
-PROJECT_ID_2 = uuid.UUID("87654321-4321-8765-4321-876543218765")
-PROJECT_ID_3 = uuid.UUID("abcdefab-1234-4abc-8def-abcdefabcdef")
+# ADR-063：semantic_summaries.project_id 已归一为 INTEGER，领域 UUID 须在 int64 内
+PROJECT_ID = uuid.UUID(int=1)
+PROJECT_ID_2 = uuid.UUID(int=2)
+PROJECT_ID_3 = uuid.UUID(int=3)
 LLM_DEFAULT_MODEL = "deepseek/deepseek-v4-flash"  # #415 拍板：配置文件唯一默认源
 
 
@@ -173,7 +174,8 @@ async def _insert_summary_direct(
     await db_session.execute(
         insert(SemanticSummaryORM).values(
             scope=scope,
-            project_id=str(project_id) if project_id is not None else None,
+            # ADR-063：project_id 列为 INTEGER，raw INSERT 须传 int（非 str(uuid)）
+            project_id=(uuid.UUID(str(project_id)).int if project_id is not None else None),
             content=content,
             anchor_hash=anchor_hash,
             anchor_count=5,
@@ -435,7 +437,7 @@ async def test_orm_repr_includes_id_and_content() -> None:
 
     orm = SemanticSummaryORM(
         scope="project",
-        project_id=str(PROJECT_ID),
+        project_id=PROJECT_ID.int,
         content="叙述偏好：称呼主角用全名「林晚」而非代词",
         anchor_hash="hash-1",
         anchor_count=5,

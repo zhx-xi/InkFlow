@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.infrastructure.database.models.agent import AgentExecutionORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 class ExecutionStore:
@@ -20,7 +26,7 @@ class ExecutionStore:
     async def create_execution(
         self,
         pipeline: str,
-        project_id: str,
+        project_id: uuid.UUID | str,
         chapter_id: str | None = None,
         *,
         thread_id: str | None = None,
@@ -35,7 +41,7 @@ class ExecutionStore:
         """
         execution = AgentExecutionORM(
             pipeline=pipeline,
-            project_id=project_id,
+            project_id=require_int_pk(project_id),
             chapter_id=chapter_id,
             id=execution_id,
             thread_id=thread_id,
@@ -125,18 +131,19 @@ class ExecutionStore:
 
     async def list_executions(
         self,
-        project_id: str,
+        project_id: uuid.UUID | str,
         limit: int = 20,
     ) -> tuple[list[AgentExecutionORM], int]:
         """按 project_id 分页查询（按 created_at 降序）。"""
+        pid = int_pk_for_filter(project_id)
         total = await self._session.scalar(
             select(func.count())
             .select_from(AgentExecutionORM)
-            .where(AgentExecutionORM.project_id == project_id)
+            .where(AgentExecutionORM.project_id == pid)
         )
         result = await self._session.execute(
             select(AgentExecutionORM)
-            .where(AgentExecutionORM.project_id == project_id)
+            .where(AgentExecutionORM.project_id == pid)
             .order_by(AgentExecutionORM.created_at.desc())
             .limit(limit)
         )

@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inkflow.core.database import Base
@@ -47,11 +47,13 @@ class SemanticSummaryORM(Base):
     )
     """归属范围（project/user，spec §2.3 SummaryScope）"""
 
-    project_id: Mapped[str | None] = mapped_column(
-        String(36),
+    project_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=True,
     )
-    """项目 UUID 字符串（scope=user 时为 None，用户级总结全局单一，spec §5.3）"""
+    """项目 ID（INTEGER + FK(projects.id) ON DELETE CASCADE；scope=user 时 None，
+    用户级总结全局单一，spec §5.3 / ADR-063）"""
 
     content: Mapped[str] = mapped_column(
         Text,

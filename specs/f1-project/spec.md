@@ -321,6 +321,19 @@ inkflow project delete --id 1 --force
 
 硬删除 (`?force=true`) 从数据库中物理删除记录。与软删除不同，硬删除**不可恢复**。
 
+删除完整性由 **DB 级 FK 级联**保证（ADR-063）：所有子表的 `project_id` 均为
+`INTEGER` + `FOREIGN KEY(projects.id) ON DELETE CASCADE`（`agent_stage_results.execution_id`
+同为 `ON DELETE CASCADE`）→ 删除 `projects` 行即由 SQLite 级联清空全部子表，
+不再依赖应用层逐表清理。
+
+**旧库升级**（ADR-054 `ensure_*` 惯例，helper `ensure_project_id_fk_children`，幂等）：
+
+- 历史 `VARCHAR(36)` 的 `project_id`（存 `str(uuid.UUID(int=projects.id))`）经 table-rebuild 转为 `INTEGER`
+  并补 `FK(projects.id) ON DELETE CASCADE`（SQLite 无法 `ALTER` 加 FK）；
+- **指向不存在项目的孤儿行**（含 #275 全零 UUID 缺陷数据）复制到 `<table>__orphan_1387`
+  备份表后从主表移除，并打印每表计数 —— 迁移**不静默删除**数据（#1409 判定层/数据层分离）；
+- 无孤儿时不创建备份表；连续两次启动不报错、不重复写。
+
 ### 5.4 配置导出/导入
 
 ProjectConfig 使用 Pydantic 模型验证，通过 `model_dump(mode="json")` 导出为 JSON。

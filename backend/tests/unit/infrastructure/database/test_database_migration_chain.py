@@ -591,16 +591,28 @@ def _lifespan_called_names() -> set[str]:
     return names
 
 
-def _indirect_via_group_migration() -> set[str]:
-    """run_character_group_members_migration 内部转接的 ensure_*（间接接线）。"""
+def _indirect_via_runner_migrations() -> set[str]:
+    """runner 函数内部转接的 ensure_*（间接接线）。
+
+    #831 的 ``run_character_group_members_migration`` 与 ADR-063 的
+    ``run_project_id_fk_migration`` 都在独立 AUTOCOMMIT（FK=OFF）连接上
+    ``run_sync`` 各自的 ensure_* —— lifespan 只调 runner，被转接的 helper 必须
+    计入「已接线」，否则门禁误报为漏接线。
+    """
     import inspect
 
-    source = inspect.getsource(db_module.run_character_group_members_migration)
-    tree = ast.parse(source)
     names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id.startswith("ensure_"):
-            names.add(node.id)
+    for runner_name in (
+        "run_character_group_members_migration",
+        "run_project_id_fk_migration",
+    ):
+        runner = getattr(db_module, runner_name, None)
+        if runner is None:
+            continue
+        tree = ast.parse(inspect.getsource(runner))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id.startswith("ensure_"):
+                names.add(node.id)
     return names
 
 
@@ -608,7 +620,7 @@ def test_d3_lifespan_wiring_covers_all_registered_migrations() -> None:
     """门禁：注册集合 == lifespan 直接接线 ∪ 间接接线（漏接线/幻影注册都红）。"""
     registered = _registered_ensure_fns()
     wired = _lifespan_called_names() & registered
-    indirect = _indirect_via_group_migration() & registered
+    indirect = _indirect_via_runner_migrations() & registered
 
     # 提取器健全性护栏（防恒真断言：registered 非空、lifespan 至少接一大半）
     assert len(registered) >= 20, f"注册集提取异常: {sorted(registered)}"

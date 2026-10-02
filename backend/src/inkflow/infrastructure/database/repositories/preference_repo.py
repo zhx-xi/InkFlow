@@ -31,13 +31,17 @@ from inkflow.domain.models.preference import (
     ProjectPreference,
 )
 from inkflow.infrastructure.database.models.preference import ProjectPreferenceORM
+from inkflow.infrastructure.database.repositories._id_guard import (
+    int_pk_for_filter,
+    require_int_pk,
+)
 
 
 def _orm_to_domain(orm: ProjectPreferenceORM) -> ProjectPreference:
     """ProjectPreference ORM 行 → 领域实体（uuid 字符串 → UUID，分类字符串 → 枚举）."""
     return ProjectPreference(
         id=orm.id,
-        project_id=uuid.UUID(orm.project_id),
+        project_id=uuid.UUID(int=orm.project_id),
         category=PreferenceCategory(orm.category),
         pattern=orm.pattern,
         value=orm.value,
@@ -89,7 +93,7 @@ class SQLitePreferenceRepository:
             由 ORM default 生成的 UTC 时间）.
         """
         orm = ProjectPreferenceORM(
-            project_id=str(project_id),
+            project_id=require_int_pk(project_id),
             category=category.value,
             pattern=pattern,
             value=value,
@@ -126,7 +130,7 @@ class SQLitePreferenceRepository:
             (偏好列表, 该项目偏好总数).
         """
         stmt = select(ProjectPreferenceORM).where(
-            ProjectPreferenceORM.project_id == str(project_id)
+            ProjectPreferenceORM.project_id == int_pk_for_filter(project_id)
         )
         if category is not None:
             stmt = stmt.where(ProjectPreferenceORM.category == category.value)
@@ -151,7 +155,7 @@ class SQLitePreferenceRepository:
         stmt = (
             select(func.count())
             .select_from(ProjectPreferenceORM)
-            .where(ProjectPreferenceORM.project_id == str(project_id))
+            .where(ProjectPreferenceORM.project_id == int_pk_for_filter(project_id))
         )
         return (await self._session.execute(stmt)).scalar_one()
 
@@ -223,7 +227,9 @@ class SQLitePreferenceRepository:
             删除的偏好行数（0 = 项目原本无偏好）.
         """
         result = await self._session.execute(
-            delete(ProjectPreferenceORM).where(ProjectPreferenceORM.project_id == str(project_id))
+            delete(ProjectPreferenceORM).where(
+                ProjectPreferenceORM.project_id == int_pk_for_filter(project_id)
+            )
         )
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 类型未声明 rowcount（属性在底层 cursor）

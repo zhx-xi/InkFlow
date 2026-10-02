@@ -36,6 +36,9 @@ from inkflow.core.migrations_character_relation import (
     ensure_character_relations_merged_into_knowledge,
 )
 from inkflow.core.migrations_project import ensure_projects_drop_legacy_genre_column
+
+# 注：ensure_project_id_fk_children 不在此 re-export；900 行护栏，见 test_project_id_fk_1387.py。
+from inkflow.core.migrations_project_id_fk import run_project_id_fk_migration
 from inkflow.core.migrations_timeline_position import (
     ensure_timeline_composite_positions,
     rollback_timeline_composite_positions,
@@ -61,6 +64,7 @@ __all__ = [
     "ensure_timeline_composite_positions",
     "rollback_entity_uuid_columns",
     "rollback_timeline_composite_positions",
+    "run_project_id_fk_migration",
 ]
 
 _TE = TypeVar("_TE", bound=TypeEngine[Any])
