@@ -70,6 +70,7 @@ Agent 实体变更（`agent_entity_service.py` 现 `tool_ids: list[str]`）：
 
 - 新增 `grants: list[GrantEntry]`（序列化存 JSON 列，镜像 `tool_ids` 的 LenientJSON 形态）。
 - **迁移语义**（ADR-050 §3）：`tool_ids` 列保留为兼容读取口，读取时若 `grants` 为空且 `tool_ids` 非空 → 按反查表推断 grants；写入路径只写 `grants`。
+  - **#1356 落地口径**：内置 seed 亦属写入路径 —— `BUILTIN_AGENT_SPECS` **不含 `tool_ids` 键**（手写副本已删），`seed_builtin_agents` 只写 `grants`（新行 `tool_ids=[]`）。回退分支保留，因存量行实测全为 tool_ids-only（见 §5.1）。
 
 ### 2.2 GRANT_TOOL_MAP 映射表（`infrastructure/agent/tools/registry.py` 新增，唯一真相源）
 
@@ -148,7 +149,7 @@ AgentEditDialog 表单「工具 checkbox 分组」替换为 **scope 矩阵**：
 - 行 = ToolDomain（i18n 词条：`agent.scope.domain.outline` 等，F57 双层键体系）；列 = read/write/delete。
 - 列头 tooltip 说明删除列语义（"暴露删除工具；每次删除仍需会话确认"）。
 - 详情弹窗展示勾选矩阵回显 + resolved 工具数（不展示展开后的工具名清单，防噪声；可展开查看）。
-- 内置 Agent 卡片沿用现状，但其 `tool_ids` 定义同步改 grants（内置模板 `agent_entity_service.py:79-154`）。**#1327 起**：内置 6 Agent 的 grants 出厂值以 `specs/f39-multi-agent/spec.md §5.3` 的 grants 表为契约锚点；同表的 `tool_ids` 列标记为**历史字面值、不再同步维护**（该列是弃用别名，写入路径只写 grants）。
+- 内置 Agent 卡片沿用现状，但其 `tool_ids` 定义同步改 grants（内置模板 `agent_entity_service.py:79-154`）。**#1327 起**：内置 6 Agent 的 grants 出厂值以 `specs/f39-multi-agent/spec.md §5.3` 的 grants 表为唯一契约锚点；**#1356 起**该表的 `tool_ids` 字面值列已删除（手写副本退役）——seed 不再写 `tool_ids`，写入路径只写 `grants`。
 - 旧数据兼容：grants 缺失但 tool_ids 存在 → 反查推断后渲染。
 
 ---
@@ -156,6 +157,7 @@ AgentEditDialog 表单「工具 checkbox 分组」替换为 **scope 矩阵**：
 ## 5. 迁移契约（⚠️ 关键，存量数据资产保护）
 
 1. **DB**：`agents.tool_ids` 列保留（不删），新增 `grants` JSON 列（默认 `[]`/NULL）。轻量幂等迁移（create_all + 幂等 ALTER 先例）：新列存在即跳过。
+   - **#1356 实测（本地库）**：存量 7/7 行均为 tool_ids-only（`grants` 为空，含 6 内置 + 1 自定义）→ §5.3 的回退分支是存量行**当前唯一的读取路径**，不可关停；列保留属**必需**而非遗留。
 2. **推断规则**（反查表 = GRANT_TOOL_MAP 的逆映射 + 改名映射）：
    - `create_outline`/`update_outline` → outline·write（含全部新写工具，层级由 LLM 按需选择，授权不区分层）
    - `delete_outline` 等核心删除工具：不在白名单语义内（is_core），不受迁移影响

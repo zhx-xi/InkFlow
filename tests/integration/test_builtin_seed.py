@@ -44,11 +44,12 @@
    本文件模拟旧表同样用 raw SQL（CREATE TABLE skills + INSERT + SELECT
    COUNT），全程不 import SkillORM。
 
-5. 【Agent.skill_ids 目录名语义】seed_builtin_agents 保留（async，session
-   注入）：出厂 6 Agent 的 skill_ids = [对应英文 slug]（不再 DB 主键字符串
-   化）；tool_ids 集合不变。WHITELIST_MAP = {Agent 名: (tool_ids 集合,
-   slug)}；内置 Agent 出厂 name 保持中文（架构师/写手/审校员/修订师/世界观
-   顾问/润色师）。
+5. 【Agent.skill_ids 目录名语义 + #1356 写入语义】seed_builtin_agents 保留
+   （async，session 注入）：出厂 6 Agent 的 skill_ids = [对应英文 slug]（不再
+   DB 主键字符串化）；**写入路径只写 grants**（F58 §2.1），seed 不再写
+   tool_ids（BUILTIN_AGENT_SPECS 无该键 → 落库 tool_ids=[]）；
+   SKILL_SLUG_MAP = {Agent 名: slug}；内置 Agent 出厂 name 保持中文
+   （架构师/写手/审校员/修订师/世界观顾问/润色师）。
 
 6. 【内置只读 API 409】目录名 ∈ BUILTIN slug → source="builtin"；PATCH/DELETE
    → 409 detail「内置 skill 只读」。经 API 验证：skills_root 用 tmp，ensure
@@ -151,38 +152,19 @@ BUILTIN_SKILL_NAMES = [
 ]
 """内置 6 Skill 英文 slug（设计假设 #2；顺序 = 出厂序）。"""
 
-WHITELIST_MAP = {
-    "架构师": (
-        {"search_characters", "check_foreshadowing", "get_prior_summary"},
-        "architecture-methodology",
-    ),
-    "写手": (
-        {
-            "search_characters",
-            "check_foreshadowing",
-            "get_prior_summary",
-            # #1180（2026-09-16）：world 只读工具随世界观解锁一并出厂
-            "list_world_settings",
-            "get_world_setting",
-            "save_draft",
-        },
-        "writing-methodology",
-    ),
-    "审校员": (
-        {"audit_chapter", "count_words", "search_characters"},
-        "audit-methodology",
-    ),
-    "修订师": (
-        {"get_prior_summary", "count_words", "save_draft"},
-        "revision-methodology",
-    ),
-    "世界观顾问": (
-        {"search_characters", "check_foreshadowing"},
-        "worldview-methodology",
-    ),
-    "润色师": ({"count_words", "get_prior_summary"}, "polishing-methodology"),
+SKILL_SLUG_MAP = {
+    "架构师": "architecture-methodology",
+    "写手": "writing-methodology",
+    "审校员": "audit-methodology",
+    "修订师": "revision-methodology",
+    "世界观顾问": "worldview-methodology",
+    "润色师": "polishing-methodology",
 }
-"""出厂表白名单映射：Agent 名 → (tool_ids 集合, 内置 skill slug)（设计假设 #5）。"""
+"""出厂表映射：Agent 名 → 内置 skill slug（设计假设 #5）。
+
+#1356：原 WHITELIST_MAP 的 tool_ids 集合（手写副本）已删除——工具面唯一真源是
+grants（GRANTS_WHITELIST_MAP），手写 tool_ids 是它的过期投影，锁定它即锁定漂移。
+"""
 
 _N2_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 """N2 名称规则：小写字母数字 + 单连字符（设计假设 #2）。"""
@@ -447,7 +429,11 @@ class TestWhitelistSync:
             assert _N2_PATTERN.fullmatch(slug), f"slug 必须满足 N2: {slug!r}"
 
     async def test_skill_ids_are_directory_names(self, db_session):
-        """seed_builtin_agents 后：tool_ids 集合不变；skill_ids == [对应 slug]（#5）。
+        """seed_builtin_agents 后：skill_ids == [对应 slug]，tool_ids 恒空（#5/#1356）。
+
+        #1356 语义：grants 是唯一写入面（F58 §2.1「写入路径只写 grants」），
+        tool_ids 降为存量兼容只读列 → 新 seed 行必须为空。tool_ids 非空即
+        「手写副本复活」（双写回归）→ 本断言 FAIL。
 
         RED 期旧实现存 DB 主键字符串化 ["1"]..["6"] → AssertionError FAILED。
         """
@@ -458,11 +444,13 @@ class TestWhitelistSync:
         rows = (await db_session.execute(select(AgentORM))).scalars().all()
         by_name = {a.name: a for a in rows}
         assert set(by_name) == set(BUILTIN_AGENT_NAMES)
-        for name, (tool_ids, slug) in WHITELIST_MAP.items():
+        for name, slug in SKILL_SLUG_MAP.items():
             agent = by_name[name]
-            assert set(agent.tool_ids) == tool_ids, f"{name} tool_ids 不符: {agent.tool_ids}"
             assert agent.skill_ids == [slug], (
                 f"{name} skill_ids 必须为 [目录名 slug]: {agent.skill_ids}"
+            )
+            assert list(agent.tool_ids) == [], (
+                f"{name} seed 不得写 tool_ids（写入路径只写 grants）: {agent.tool_ids}"
             )
 
 
@@ -543,9 +531,9 @@ class TestSeedAgents:
 # ── #954 F58 grants 数据面 — 内置 Agent grants 出厂字面值契约（RED-3，contract §3/§9）──────
 #
 # 依据：contract-954 §3 表格逐字（内置 6 Agent grants 出厂字面值 = §2.3 反查推断）+ §9 RED-3。
-# spec §5.1（tool_ids 列保留不删，双写）——本段【G】守护 tool_ids 旧集合
-
-# 不变，【R】聚焦 grants。
+# #1356（终局拍板·方案 C）：工具面唯一真源 = grants；tool_ids 降为「存量兼容只读列」
+# （DB 列保留不删，存量行靠 resolve_grants 回退反查；写入路径只写 grants）。
+# 本段断言 grants 出厂字面值 + tool_ids 恒空（双写回归 → FAIL）。
 #
 # RED 预期形态（当前 AgentORM 无 grants 列 / BUILTIN_AGENT_SPECS 无 grants 键 /
 # GrantEntry 不存在）：
@@ -553,7 +541,7 @@ class TestSeedAgents:
 # - 静态断言：GrantEntry 于函数体内 import → ImportError FAILED；且 spec 无 'grants' 键
 #   → "grants" in spec AssertionError FAILED。
 #
-# 【G】= WHITELIST_MAP tool_ids 旧集合断言零改动；【R】= 本段全部新用例。
+# 【R】= 本段全部新用例（#1356 重写：不再锁定任何手写 tool_ids 副本）。
 
 
 GRANTS_WHITELIST_MAP = {
@@ -664,12 +652,12 @@ def _grants_to_map(grants) -> dict:
 @pytest.mark.asyncio
 @pytest.mark.integration
 class TestBuiltinGrants:
-    """内置 Agent grants 出厂字面值契约（contract-954 §3 逐字；双写【G】tool_ids 不变）."""
+    """内置 Agent grants 出厂字面值契约（contract-954 §3 逐字；#1356 tool_ids 恒空）."""
 
     async def test_seed_grants_match_literal(self, db_session):
         """seed 后每个内置 agent.grants 归一 == GRANTS_WHITELIST_MAP[name]；
 
-        tool_ids 旧集合不变（双写）."""
+        tool_ids 恒空（#1356：写入路径只写 grants）."""
         assert await seed_builtin_agents(db_session) == 6
 
         from inkflow.infrastructure.database.models import AgentORM
@@ -677,13 +665,15 @@ class TestBuiltinGrants:
         rows = (await db_session.execute(select(AgentORM))).scalars().all()
         by_name = {a.name: a for a in rows}
         assert set(by_name) == set(BUILTIN_AGENT_NAMES)
-        for name, (tool_ids, _slug) in WHITELIST_MAP.items():
+        for name in GRANTS_WHITELIST_MAP:
             agent = by_name[name]
             assert _grants_to_map(agent.grants) == GRANTS_WHITELIST_MAP[name], (
                 f"{name} grants 与出厂字面值不符: {agent.grants}"
             )
-            # 双写契约【G】：tool_ids 旧集合不变（spec §5.1 tool_ids 保留列）
-            assert set(agent.tool_ids) == tool_ids, f"{name} tool_ids 集合被破坏: {agent.tool_ids}"
+            # #1356：tool_ids 不再是写入面（DB 列仅为存量兼容读取口）
+            assert list(agent.tool_ids) == [], (
+                f"{name} seed 不得写 tool_ids（写入路径只写 grants）: {agent.tool_ids}"
+            )
 
     async def test_builtin_agent_specs_have_grants(self):
         """BUILTIN_AGENT_SPECS 每项含 'grants' 键且归一值 == GRANTS_WHITELIST_MAP
@@ -703,3 +693,21 @@ class TestBuiltinGrants:
                 f"{name} grants 元素必须为 GrantEntry"
             )
             assert _grants_to_map(spec["grants"]) == grants_map, f"{name} spec grants 与字面值不符"
+
+
+def test_builtin_specs_have_no_tool_ids_key():
+    """#1356 语义守卫：BUILTIN_AGENT_SPECS 不得再出现 tool_ids 键 / 字段。
+
+    手写 tool_ids 副本是 grants 的过期投影 —— 一旦复活（双写回归），
+    「写入路径只写 grants」（F58 §2.1）这条语义即被破坏。本断言锁定它不可回来。
+    """
+    from inkflow.domain.services.agent_entity_service import (
+        BUILTIN_AGENT_SPECS,
+        _BuiltinAgentSpec,
+    )
+
+    assert "tool_ids" not in _BuiltinAgentSpec.__annotations__, (
+        "_BuiltinAgentSpec 不得再声明 tool_ids 字段（#1356 已删手写副本）"
+    )
+    for spec in BUILTIN_AGENT_SPECS:
+        assert "tool_ids" not in spec, f"{spec['name']} spec 复活了 tool_ids 手写副本"

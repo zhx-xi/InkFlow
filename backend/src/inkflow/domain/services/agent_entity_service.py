@@ -5,8 +5,9 @@
 - 同名唯一性校验（422）：create 前 / update 改名时经 agent_repository.get_by_name
   检查，命中 → AgentNameConflictError
 - 工具白名单校验（422，#838）：tool_ids 逐个对照统一目录 ALL_TOOL_SPECS（工具名
-  唯一真源，spec §6）；目录外或 allow_custom_agent=False（核心工具，自定义
-  agent 不可勾选）→ ToolReferenceError
+  唯一真源，spec §6）；此处 tool_ids 为存量兼容的 deprecated 别名路径，仅供
+  legacy 读取，非工具面真源（工具面真源见 grants，#1356）；目录外或
+  allow_custom_agent=False（核心工具，自定义 agent 不可勾选）→ ToolReferenceError
 - skill 引用校验（422，#522 目录名语义）：skill_ids 逐个检查
   skills_root/<name>/SKILL.md 存在（Path.is_file），任一缺失 →
   SkillReferenceError（不再 int() 解析 DB 主键）
@@ -64,7 +65,6 @@ class _BuiltinAgentSpec(TypedDict):
     icon: str
     system_prompt: str
     grants: list[GrantEntry]
-    tool_ids: list[str]
     skill_name: str
     role_key: str | None
 
@@ -90,7 +90,6 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             # create/update_*_outline + plot_point 共 7 个写工具交给架构师。
             GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.READ]),
         ],
-        "tool_ids": ["search_characters", "check_foreshadowing", "get_prior_summary"],
         "skill_name": "architecture-methodology",
         "role_key": "architect",
     },
@@ -116,15 +115,6 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             # 否则「大纲已确认」的写作前提在工具层不成立。只 READ。
             GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.READ]),
         ],
-        "tool_ids": [
-            "search_characters",
-            "check_foreshadowing",
-            "get_prior_summary",
-            # #1180：world 只读工具（与 grants 的 WORLD.READ 同源语义）
-            "list_world_settings",
-            "get_world_setting",
-            "save_draft",
-        ],
         "skill_name": "writing-methodology",
         "role_key": "writer",
     },
@@ -145,7 +135,6 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             # → 世界观设定矛盾检不出。#1180 已证明写手需 WORLD.READ，审计更需。
             GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
-        "tool_ids": ["audit_chapter", "count_words", "search_characters"],
         "skill_name": "audit-methodology",
         "role_key": "auditor",
     },
@@ -167,7 +156,6 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             GrantEntry(domain=ToolDomain.CHARACTER, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
-        "tool_ids": ["get_prior_summary", "count_words", "save_draft"],
         "skill_name": "revision-methodology",
         "role_key": "reviser",
     },
@@ -189,7 +177,6 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             # → 只能凭角色/伏笔间接推断。补 WORLD.READ（只读，不授予写权）。
             GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
         ],
-        "tool_ids": ["search_characters", "check_foreshadowing"],
         "skill_name": "worldview-methodology",
         "role_key": "worldview",
     },
@@ -205,7 +192,6 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
         "grants": [
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ]),
         ],
-        "tool_ids": ["count_words", "get_prior_summary"],
         "skill_name": "polishing-methodology",
         "role_key": "polisher",
     },
@@ -329,12 +315,13 @@ class AgentEntityService:
         return await self._agent_repo.list()
 
     async def update(self, agent_id: int, data: AgentUpdate) -> Agent:
-        """部分更新 Agent（exclude_unset 浅合并，同 F1/F13；grants 授权双写）.
+        """部分更新 Agent（exclude_unset 浅合并，同 F1/F13；grants = 工具面唯一真源）.
 
         None 值 = 不修改（与未传入等价，合并前剔除）；仅 name 变更时查重
         （命中其他 id → 422）；grants/tool_ids/skill_ids 校验仅针对本次传入
-        字段；grants 提供 → tool_ids 清 []，tool_ids 提供 → strict 推断 grants
-        两列同写；updated_at 刷新为 now(UTC)，created_at 保留。
+        字段；grants 提供 → 清空存量 tool_ids（legacy 只读兼容列，不再作为工具
+        面写入目标）；tool_ids 提供 → strict 推断 grants（存量兼容入口）；
+        updated_at 刷新为 now(UTC)，created_at 保留。
         """
         existing = await self._agent_repo.get(agent_id)
         if existing is None:
@@ -449,6 +436,8 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
                 await agent_repo.update(existing)
             continue
         await agent_repo.add(
+            # #1356：写入路径只写 grants（F58 2.1）；tool_ids 列仅为存量兼容
+            # 只读列，seed 行留空。
             Agent(
                 id=None,
                 name=name,
@@ -456,7 +445,6 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
                 icon=spec["icon"],
                 system_prompt=spec["system_prompt"],
                 grants=list(spec["grants"]),
-                tool_ids=list(spec["tool_ids"]),
                 skill_ids=[spec["skill_name"]],
                 builtin=True,
                 role_key=spec["role_key"],

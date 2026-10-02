@@ -61,7 +61,7 @@ class Agent(BaseModel):
     description: str = ""            # 描述
     icon: str = ""                   # 图标（emoji 字符或图标键；空串 = 默认图标）
     system_prompt: str = ""          # system prompt（内置 Agent 只读；自定义 Agent 可编辑）
-    tool_ids: list[str] = Field(default_factory=list)      # 能力白名单：工具目录 name 列表
+    tool_ids: list[str] = Field(default_factory=list)      # 【存量兼容列·#1356】工具目录 name 列表（不再写入；读取口见 F58 §5.3）
     skill_ids: list[str] = Field(default_factory=list)     # 能力白名单：skill 目录名列表（#522）
     model_override: str | None = None        # 模型覆盖（provider/model 格式，None = 跟随默认）
     temperature_override: float | None = Field(default=None, ge=0.0, le=2.0)  # 温度覆盖
@@ -70,7 +70,9 @@ class Agent(BaseModel):
     updated_at: datetime | None = None
 ```
 
-- **`tool_ids` 存工具 `name`（snake_case 稳定标识）**——工具注册表唯一真源（§5.1），Agent 存 id 引用；下线工具在编辑页置灰提示（§5.5）。
+- **`tool_ids` 列已退役为「存量兼容只读口」（#1356）**——工具面唯一真源是 `grants`（F58 §2.1）；
+  `tool_ids` 保留 DB 列与领域字段只为存量行（`grants` 为空）读取时反查推断，**写入路径不再写它**
+  （原「存工具 `name` 白名单」语义仅对存量行有效；下线工具在编辑页置灰提示（§5.5））。
 - **`skill_ids` 存 skill 目录名列表（#522）**——与文件系统真源目录名（= frontmatter name，N2 规则）精确相等匹配（`agent_repository.list_agents_by_skill(skill_name)` 反查同语义）；不再存 DB 主键字符串化（ADR-039 D5 修订，§12）。
 - **`model_override` 强制 `provider/model` 格式**（与 `parse_model_string` 硬契约一致，F42 Q3 同口径）——不存裸模型名/裸 provider 名。
 - **`builtin` 折叠分析文档的 `source` 字段**（issue #258 字段清单仅列 `builtin`）：`builtin=True` 等价 `source="builtin"`，`builtin=False` 等价 `source="custom"`；内置 Agent 只读（PATCH/DELETE → 409）。
@@ -125,7 +127,7 @@ class ToolSpec:
 |------|------|------|
 | Agent 主键 / Skill 标识 | Agent 主键 int 自增（镜像 AgentTemplate）；Skill 无主键，标识 = 目录名（#522） | 项目全局惯例（F1-F19 全 int 自增）；Skill 去表后目录名即唯一标识（N2 规则） |
 | skill_ids 引用形态 | `list[str]` 存 skill 目录名（英文 slug，N2） | 与文件系统真源目录名对齐（deepagents 原生 name 引用，#522 ADR-039 D5）；删除级联按目录名精确清理 |
-| tool_ids 引用形态 | `list[str]` 存工具 `name` | 工具 name 是代码内稳定标识（snake_case），无独立工具表；`ToolSpec` 无 int id |
+| tool_ids 引用形态（#1356 退役） | `list[str]`（存量兼容只读口，不再写入） | 工具面唯一真源改为 `grants`（F58 §2.1）；保留列仅为存量行（grants 空）反查推断，避免迁移窗内丢权限 |
 | Skill.content 语义 | 文件内容原样（frontmatter + 正文，文件系统真源 #522） | content 是注入真相源（原样可预览/可追溯）；name/description 由 frontmatter 解析供列表展示 + 唯一性校验 |
 | 内置只读保护 | `builtin`(Agent) 字段 + `source`(Skill，由目录名判定) + 服务层 409 | 镜像 AgentTemplate `is_default` → 409 保护模式；「改坏了怎么恢复」的二次负担免于维护 |
 | 工具目录分组 | `ToolSpec.group` 字段扩展（非独立分组表） | 6 工具规模小，字段扩展最小改动；分组表过度设计 |
@@ -166,12 +168,14 @@ class ToolSpec:
   "description": "专注文笔润色的自定义角色",
   "icon": "✨",
   "system_prompt": "你是润色师……",
-  "tool_ids": ["count_words", "get_prior_summary", "save_draft"],
+  "grants": [{"domain": "writing", "ops": ["read", "write"]}],
   "skill_ids": ["writing-methodology", "polishing-methodology"],
   "model_override": "zhipu/glm-4.5",
   "temperature_override": 0.6
 }
 ```
+
+> `tool_ids` 为**弃用别名**（#1356：写入路径只写 `grants`；与 `grants` 同传 → 422）；`grants` 的展开工具面见 F58 §2.2 `GRANT_TOOL_MAP`。
 
 **POST /api/v1/skills**（上传 Skill，frontmatter 后端解析）：
 
@@ -292,18 +296,20 @@ def build_agentic_writer(
 
 **内置 Agent 出厂配置（6 个，`builtin=True` 只读）**：
 
-| Agent | 定位 | 出厂工具白名单（tool_ids） | 出厂 skill（skill_ids = 目录名 slug） |
-|-------|------|---------------------------|--------------------------------------|
-| 架构师 | 章节结构/大纲规划 | search_characters, check_foreshadowing, get_prior_summary | architecture-methodology |
-| 写手 | 正文生成 | 检索全 3 + list_world_settings, get_world_setting + save_draft | writing-methodology |
-| 审校员 | 一致性审计 | audit_chapter, count_words, search_characters | audit-methodology |
-| 修订师 | 修订打磨 | get_prior_summary, count_words, save_draft | revision-methodology |
-| 世界观顾问 | 世界观一致 | search_characters, check_foreshadowing | worldview-methodology |
-| 润色师 | 文笔润色 | count_words, get_prior_summary | polishing-methodology |
+| Agent | 定位 | 出厂 skill（skill_ids = 目录名 slug） |
+|-------|------|--------------------------------------|
+| 架构师 | 章节结构/大纲规划 | architecture-methodology |
+| 写手 | 正文生成 | writing-methodology |
+| 审校员 | 一致性审计 | audit-methodology |
+| 修订师 | 修订打磨 | revision-methodology |
+| 世界观顾问 | 世界观一致 | worldview-methodology |
+| 润色师 | 文笔润色 | polishing-methodology |
 
-> ⚠️ **`tool_ids` 列已弃用**（F58 §2.1/ADR-050：写入路径只写 `grants`，`tool_ids` 仅作兼容读取口）。
-> 上表 tool_ids 为历史出厂字面值，**不再随权限调整同步维护**（#1327 起）。运行期工具面的
-> 唯一真相源是 **grants**（见下表）；tool_ids 的清理/派生与上表退役另见后续 issue。
+> ✅ **出厂工具白名单的唯一真相源 = `grants`**（下表；代码侧 `BUILTIN_AGENT_SPECS[*]["grants"]`）。
+> #1356 终局清理：本表原先的 `tool_ids` 字面值列已**删除**（F58 §2.1/ADR-050「写入路径只写
+> `grants`」）——seed 不再写 `tool_ids`，`BUILTIN_AGENT_SPECS` 也不再保留该手写副本。
+> DB 的 `agents.tool_ids` **列保留**，仅为**存量行**（grants 为空）提供兼容读取口：读取时经
+> `resolve_grants` 反查推断 grants；新写入行的该列为空。
 
 **内置 Agent 出厂 grants（6 个，#1327 权限修正后的运行时真源）**：
 

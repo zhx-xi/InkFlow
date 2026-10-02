@@ -73,7 +73,7 @@ class AgentORM(EntityUuidMixin, Base):
         nullable=False,
         default=list,
     )
-    """能力白名单：工具目录 name 列表（JSON 列）."""
+    """legacy 只读兼容列（#1356）：工具目录 name 列表，保留不删除（JSON 列）."""
 
     grants: Mapped[list | None] = mapped_column(
         LenientJSON(fallback=[]),
