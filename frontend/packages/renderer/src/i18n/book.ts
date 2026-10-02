@@ -45,8 +45,9 @@ export const bookZh: Record<string, string> = {
   'book.run.live.connected': '实时 · 已连接',
   'book.run.chapters': '已写章节',
   'book.run.calls': 'Agent 调用',
-  'book.run.tokens': 'Token 用量',
-  'book.run.tokenWarning': 'Token 用量超限，将产生告警',
+  'book.run.tokens': '累计 Token 用量',
+  'book.run.tokens.run': '本轮 Token 用量',
+  'book.run.tokenWarning': '累计 Token 用量已超上限（含重置前的历史用量）；本轮用量单独计。',
   // #1440：force 覆盖成功 → N 章旧稿已备份可恢复
   'book.run.overwrite.notice': '{count} 章已备份，可恢复',
   // #903：终态失败/降级原因（服务端门控：仅 failed/degraded 非空）
@@ -138,8 +139,9 @@ export const bookEn: Record<string, string> = {
   'book.run.live.connected': 'Live · connected',
   'book.run.chapters': 'Chapters written',
   'book.run.calls': 'Agent calls',
-  'book.run.tokens': 'Token usage',
-  'book.run.tokenWarning': 'Token usage is over the limit and will warn',
+  'book.run.tokens': 'Cumulative token usage',
+  'book.run.tokens.run': 'This run',
+  'book.run.tokenWarning': 'Cumulative token usage exceeds the limit (includes pre-reset history); this run is counted separately.',
   // #1440: force-overwrite succeeded -> N chapters backed up, restorable
   'book.run.overwrite.notice': '{count} chapter(s) backed up, restorable',
   // #903: terminal failure/degraded reason (server-gated, non-empty only for failed/degraded)

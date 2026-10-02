@@ -106,8 +106,8 @@
     - **重置运行 `run-reset`**（#1288）：`runStatus !== 'running'` 时渲染（与后端 reset 对 `running` 抛 422「运行已在进行中，不可重置」同族防呆）→ 点击打开共享 `ConfirmDialog`（`testidPrefix='run-reset'`，`danger`；`run-reset-dialog` / `run-reset-cancel` / `run-reset-ok`）→ 确认后 `useBookStore().resetRun()` 调 `POST /runs/{run_id}/reset`（**无请求体**），成功后运行态整体归零（`runId` / `runStatus` / `progress` / `counters` / `progressReason` / `waitingHitl` / `hitlPayload` / `interveneDiff` / `summary`）→ 页级回到「计划就绪 + 开始写作」分支（`writingPlan` **保留**，重跑闭环）；取消 / Esc 关闭且**不发**请求。⚠️ 确认文案须含「**重置 ≠ 删除正文**」（只清执行状态、不删正文/草稿；旧正文需自行处理，否则重跑仍被安全闸 #1265 判据拦截）
     - 密度三档（本地 state，**零额外请求**）：`run-density-performance`（章行内干预控件）/ `run-density-dashboard` / `run-density-silent`（**不渲染** `run-progress-list`）；`aria-pressed` 标记当前档
     - `run-summary-toggle` → 切换 `BookSummaryPanel`；`run-diff-banner`（`interveneDiff` 非空时）+ `run-diff-close`
-    - 计数三行：`run-counter-chapters`（`chapters_written / max_chapters`）、`run-counter-calls`（`agent_calls / max_agent_calls`）、`run-counter-tokens`（仅 `max_tokens` 与 `tokens_used` 均定义时渲染）
-    - `run-token-warning`：`counters.tokens_warning === true` 时渲染
+    - 计数四行（`max_tokens` 与 `tokens_used` 均定义时 token 两行才渲染）：`run-counter-chapters`（`chapters_written / max_chapters`）、`run-counter-calls`（`agent_calls / max_agent_calls`）、`run-counter-tokens-run`（**#1431 本轮**：`max(0, tokens_used − tokenBaseline)`，`tokenBaseline` 为纯前端 store 字段，reset 成功时捕获的累计值；跨计划残留时归 0、不渲染负数）、`run-counter-tokens`（**#1431 累计账单**：`plan.limits.tokens_used / max_tokens`，**reset 不清零**）
+    - `run-token-warning`：`counters.tokens_warning === true` 时渲染（**#1431**：告警由后端的**累计**账单判定，故文案（`book.run.tokenWarning`）必须点名「累计」（含重置前历史），否则用户见「我明明重置了、怎么还告警」的困惑——本轮用量单独计）
     - 进度条 `run-progress-bar`：`done / total`，宽度 = `min(100, round(done/total*100))%`（`total > 0` 才渲染）
     - 进度列表 `run-progress-list`（**#1333 段 2 起被 `run-task-list` 包裹**）：数据源 = `GET /runs/{id}/summary` 的 `steps`（章名 / 卷名 / 章内步骤），状态取实时 `progress[outline_id]`；`steps` 未就绪时回退 `Object.entries(progress)`（旧形态，零回归）。逐行渲染 `ExecutionTraceRow`（**六态**徽标 + 默认折叠 + 卷分组）。🔴 **漂移 D-1 已修复**：`needs_review` 补入 `STATUS_LABEL_KEYS` / `STATUS_BADGE_CLASSES`（`badge-needs_review` + warn 色），不再落回 `pending`「待处理」。
       - **卷分组（N24）**：按 `steps[].volume_name` 连续分组 → `task-volume-<i>` / `task-volume-header-<i>` / `task-volume-toggle-<i>`；**全 done 的卷默认折叠**（章行不渲染，可展开）。
@@ -135,6 +135,7 @@
 | 密度三档（run-density-performance / dashboard / silent） | `aria-pressed` 标记当前档 | 切换本地密度 | — | 列表/控件密度即时变化 | — | `silent` 下**不渲染** `run-progress-list`；零额外请求 |
 | 回归摘要（run-summary-toggle） | 未展开 | 切换 `BookSummaryPanel` | — | 面板显隐 | — | 纯本地 state |
 | 重置运行（run-reset，#1288） | `runStatus !== 'running'` 时渲染 | 打开共享 `ConfirmDialog`（`run-reset-dialog`） | — | 确认 → `POST /runs/{run_id}/reset` **恰好一次** → 运行态归零、页级回「计划就绪 + 开始写作」（`writingPlan` 保留） | store `error`，面板保留（失败不假装成功） | 取消 / Esc → 关闭且**不发**请求；`running` 态**不渲染**该按钮（后端 422 防呆）；确认文案须含「重置 ≠ 删除正文」 |
+| Token 用量（run-counter-tokens-run 本轮 / run-counter-tokens 累计，#1431） | `max_tokens` 与 `tokens_used` 均定义时渲染两行 | — | 随轮询刷新 | 本轮 = 累计 − `tokenBaseline`（`Math.max(0, …)`，跨计划残留归 0） | — | 累计 = `plan.limits.tokens_used`，**reset 不清零**；`tokens_warning` 按累计判定，`run-token-warning` 文案点名「累计」 |
 | 原因展开（run-progress-reason-toggle） | 仅 `length > 200` 时渲染 | 展开/收起全文 | — | `line-clamp-3` 解除/恢复 | — | ≤200 字不渲染该按钮 |
 | diff 关闭（run-diff-close） | `interveneDiff` 非空时 | `clearInterveneDiff()` | — | banner 消失 | — | 只清展示，不回滚数据 |
 | 进度行展开（ExecutionTraceRow） | 默认折叠 | 展开该章摘要/干预控件 | — | 行内控件显示 | — | `done` 章干预控件禁用（422 防呆） |
@@ -246,7 +247,7 @@
 - N6：失败原因块仅在 `failed | degraded` 且非空时渲染 + >200 字截断与展开/收起
 - N7：干预按钮互斥（`running` → 暂停 / `paused` → 恢复）
 - N8：密度三档切换为本地态零请求；`silent` 下不渲染 `run-progress-list`
-- N9：计数三行 + token 预警（`tokens_warning`）+ 进度条（`total > 0`）按条件渲染
+- N9：计数四行（含 #1431 本轮 / 累计两行）+ token 预警（`tokens_warning`）+ 进度条（`total > 0`）按条件渲染
 - N10：`run-progress-list` 逐 `outlineId` 渲染 `ExecutionTraceRow`，五态徽标 + 默认折叠
 - N11（**#1333 段 2 改写**）：`runId === null` → `BookRunPanel` 返回 `null`（不渲染面板、不发请求）。原「`book.run.noRun`「暂无运行」纯文本」分支经实测**产品路径不可达**，已删除（连同 i18n key），见 N26
 - N12：轮询 1s 间隔、终态自动停（`status` 既非 `running` 也非 `pending`）
@@ -278,6 +279,12 @@
 - N24（§3.5-5 · 拍板）：任务列表按卷分组渲染，**已完成卷默认折叠**（可展开）；章数 ≥ 100 时不出现明显渲染卡顿
 - N25（§3.5-7 · 拍板）：同一计划重复启动 → 后端 409，前端只透错（**不静默新建 run**）
 - N26（§3.5-6）：`book.run.noRun` 分支可达性给出实测结论并回写 §1；不可达则删除该分支与对应 i18n key
+
+### #1431 验收（本轮 vs 累计 Token 用量）
+
+> **编号说明**：本节的实现轨验收项接续既有全局编号（段 1 = N1–N13、段 2 = N14–N26、§5 = N27–N29），故自 **N30** 起编，避免与段 2 已占用的 N14 冲突。
+
+- N30：运行面板把 token 用量拆成**两个独立 testid** 并存显示——`run-counter-tokens-run`（**本轮** = `Math.max(0, counters.tokens_used − tokenBaseline)`，`tokenBaseline` 为 reset 成功时捕获的累计值）与 `run-counter-tokens`（**累计**账单 = `plan.limits.tokens_used`，reset **不清零**）；两值来源不同、可辨（本轮行不得混入累计值）；`tokens_warning` 由**累计**档判定，故 `max_tokens` 告警（`run-token-warning`）文案必须点名「累计」
 
 ## 5. #1440 force 覆盖备份提示 + 「已有上一稿」GUI 读口
 

@@ -86,6 +86,9 @@ body[data-state="failed"] .r-text{display:block;overflow:visible}
    原型以专门态 overwrite-notice 演示——其余状态无该数据，提示不出现，故既有 5 张状态图不受影响） */
 .run-overwrite-notice{border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:var(--radius-m);background:var(--accent-weak);padding:6px 8px;font-size:12px;color:var(--ink-2)}
 body:not([data-state="overwrite-notice"]) .run-overwrite-notice{display:none}
+/* #1431：累计超限告警（仅 token-warn 态渲染；文案点名「累计」以消解「重置了还告警」困惑） */
+.run-token-warning{border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:var(--radius-m);background:color-mix(in srgb,var(--warn) 10%,transparent);padding:6px 8px;font-size:12px;color:var(--warn)}
+body:not([data-state="token-warn"]) .run-token-warning{display:none}
 /* trace 行徽标（五态，既有 badge-* 语义先例） */
 .trace{display:flex;flex-direction:column;gap:4px}
 .trace-row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);padding:6px 8px}
@@ -100,6 +103,8 @@ body:not([data-state="overwrite-notice"]) .run-overwrite-notice{display:none}
 /* 状态机：body[data-state] 驱动视图 */
 body[data-state="completed"] .run-progress-reason,
 body[data-state="reset-confirm"] .run-progress-reason,
+body[data-state="overwrite-notice"] .run-progress-reason,
+body[data-state="token-warn"] .run-progress-reason,
 body[data-state="running"] .run-progress-reason{display:none}
 body[data-state="degraded"] .r-toggle::after{content:"展开"}
 body[data-state="degraded-expanded"] .r-toggle::after{content:"收起"}
@@ -108,7 +113,7 @@ body[data-state="degraded-expanded"] .run-progress-reason .r-text{display:block;
 </head>
 <body data-state="degraded">
 <div class="stage">
-  <p class="caption">#903 增量：运行状态徽标按档位着色（completed 绿 / failed 红 / degraded 橙），degraded/failed 且 progress_reason 非空时渲染「失败原因」块（&gt;200 字 3 行截断 + 展开/收起）。<br />#1288 增量：工具栏新增「重置运行」（<code>run-reset</code>，仅非 running 态渲染）→ 确认框（<code>run-reset-dialog</code>）讲清「重置 ≠ 删除正文」→ 确认后清执行态、页级回「计划就绪」（正文/草稿不动）。切换下方状态到 <code>reset-confirm</code> 查看确认框。<br />#1440 增量：force 覆盖成功时 <code>POST /runs</code> 响应带 <code>overwrite</code> → 面板显示「N 章已备份，可恢复」（<code>run-overwrite-notice</code>；计数为 0 或响应无该键则不渲染）；切换状态到 <code>overwrite-notice</code> 查看。</p>
+  <p class="caption">#903 增量：运行状态徽标按档位着色（completed 绿 / failed 红 / degraded 橙），degraded/failed 且 progress_reason 非空时渲染「失败原因」块（&gt;200 字 3 行截断 + 展开/收起）。<br />#1288 增量：工具栏新增「重置运行」（<code>run-reset</code>，仅非 running 态渲染）→ 确认框（<code>run-reset-dialog</code>）讲清「重置 ≠ 删除正文」→ 确认后清执行态、页级回「计划就绪」（正文/草稿不动）。切换下方状态到 <code>reset-confirm</code> 查看确认框。<br />#1440 增量：force 覆盖成功时 <code>POST /runs</code> 响应带 <code>overwrite</code> → 面板显示「N 章已备份，可恢复」（<code>run-overwrite-notice</code>；计数为 0 或响应无该键则不渲染）；切换状态到 <code>overwrite-notice</code> 查看。<br />#1431 增量：token 用量区分「本轮」（<code>run-counter-tokens-run</code>，累计账单 − reset 基线）与「累计」（<code>run-counter-tokens</code>，<code>plan.limits</code> 账单、reset 不清零）；累计超限时 <code>run-token-warning</code> 文案点名「累计」。切换状态到 <code>token-warn</code> 查看。</p>
   <div class="book-run-panel" data-testid="book-run-panel">
     <div class="row-status">
       <span class="lbl">运行状态</span>
@@ -128,8 +133,11 @@ o-ch15: ConnectionError: 网络抖动导致流式中断</p>
     <div class="counters">
       <span>已写章节: 12 / 15</span>
       <span>Agent 调用: 34 / 60</span>
-      <span>Token 用量: 182340 / 400000</span>
+      <span data-testid="run-counter-tokens-run">本轮 Token 用量: 2340</span>
+      <span data-testid="run-counter-tokens">累计 Token 用量: 182340 / 400000</span>
     </div>
+    <!-- #1431：累计超限告警（仅 token-warn 态渲染；文案点名「累计」） -->
+    <div class="run-token-warning" data-testid="run-token-warning">累计 Token 用量已超上限（含重置前的历史用量）；本轮用量单独计。</div>
     <!-- #1440：force 覆盖成功 → 响应带 overwrite → 显示备份计数；否则不渲染 -->
     <div class="run-overwrite-notice" data-testid="run-overwrite-notice">3 章已备份，可恢复</div>
     <div class="bar">已写章节: 12 / 15
@@ -162,15 +170,21 @@ o-ch15: ConnectionError: 网络抖动导致流式中断</p>
     <option value="degraded-expanded">degraded（橙·展开）</option>
     <option value="reset-confirm">reset-confirm（#1288 重置确认框）</option>
     <option value="overwrite-notice">overwrite-notice（#1440 覆盖备份提示）</option>
+    <option value="token-warn">token-warn（#1431 累计超限告警）</option>
   </select></label>
   <label>主题 <select id="themeSel">
     <option value="paper">素笺</option><option value="night">夜墨</option><option value="ink">古砚</option>
   </select></label>
 </div>
 <script>
-const STATES=["running","completed","failed","degraded","degraded-expanded","reset-confirm","overwrite-notice"];
+const STATES=["running","completed","failed","degraded","degraded-expanded","reset-confirm","overwrite-notice","token-warn"];
 function setState(s){document.body.dataset.state=s;
-  document.querySelector('.run-status').textContent = s.startsWith('degraded')?'degraded':(s==='completed'||s==='reset-confirm'||s==='overwrite-notice'?'completed':(s==='failed'?'failed':'running'));
+  document.querySelector('.run-status').textContent = s.startsWith('degraded')?'degraded':(s==='completed'||s==='reset-confirm'||s==='overwrite-notice'||s==='token-warn'?'completed':(s==='failed'?'failed':'running'));
+  // #1431：token 两行 = 本轮 / 累计；仅 token-warn 态把累计顶到超限（420340 > 400000）
+  const runEl=document.querySelector('[data-testid="run-counter-tokens-run"]');
+  const totEl=document.querySelector('[data-testid="run-counter-tokens"]');
+  if(runEl) runEl.textContent = '本轮 Token 用量: 2340';
+  if(totEl) totEl.textContent = s==='token-warn' ? '累计 Token 用量: 420340 / 400000' : '累计 Token 用量: 182340 / 400000';
 }
 function setTheme(th){document.documentElement.dataset.theme=th;document.body.dataset.theme=th;}
 document.getElementById('stateSel').addEventListener('change',e=>setState(e.target.value));

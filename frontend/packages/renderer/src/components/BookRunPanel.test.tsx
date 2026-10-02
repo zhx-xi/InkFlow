@@ -773,3 +773,117 @@ describe('BookRunPanel — #903 状态徽标档位色 + progress_reason 渲染',
     });
   });
 });
+
+/**
+ * #1431：token 用量区分「本轮 vs 累计」（#1288 第 3 项拍板 (a) 的体感优化）。
+ *
+ * 语义（不改、不清零）：`counters.tokens_used` = `plan.limits` 的**累计账单**；
+ * 「本轮」= 自上次 reset 起算的用量 = 累计 − reset 时前端记下的基线
+ * （`useBookStore.tokenBaseline`，纯前端呈现态；后端零改动）。
+ * 告警 `tokens_warning` 按**累计**判定 → 文案必须点名「累计」，否则用户见
+ * 「我明明重置了，怎么还说超预算」的困惑（本单要解的正是这个体感）。
+ *
+ * ⚠️ 不变式：`run-counter-tokens`（累计，既有 testid）语义不变，既有用例零翻转；
+ * 本轮为**新增**独立 testid `run-counter-tokens-run`。
+ */
+describe('BookRunPanel — #1431 本轮 vs 累计 Token 用量', () => {
+  const tokenCounters = {
+    max_chapters: 3,
+    max_agent_calls: 5,
+    agent_calls: 1,
+    chapters_written: 1,
+    max_tokens: 300000,
+    tokens_used: 250000,
+    tokens_warning: false,
+  };
+
+  it('两值并存：本轮 = 累计 − reset 基线；两条独立 testid、数值可辨', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: { 'o-c1': 'done' },
+      counters: tokenCounters,
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: { 'o-c1': 'done' },
+      counters: null,
+      tokenBaseline: 50000,
+    });
+    render(<BookRunPanel />);
+
+    const runLine = await screen.findByTestId('run-counter-tokens-run');
+    expect(runLine).toHaveTextContent('200000'); // 250000 − 50000
+    const totalLine = screen.getByTestId('run-counter-tokens');
+    expect(totalLine).toHaveTextContent('250000'); // 累计账单（plan.limits）
+    expect(totalLine).toHaveTextContent('300000'); // 上限
+    // 两值来源不同 → 数值可辨（本轮行不得混入累计值）
+    expect(runLine.textContent).not.toContain('250000');
+  });
+
+  it('无重置（基线 0）→ 本轮 与 累计 同值（首次运行语义）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: { 'o-c1': 'done' },
+      counters: { ...tokenCounters, tokens_used: 12000 },
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: { 'o-c1': 'done' },
+      counters: null,
+      tokenBaseline: 0,
+    });
+    render(<BookRunPanel />);
+
+    const runLine = await screen.findByTestId('run-counter-tokens-run');
+    expect(runLine).toHaveTextContent('12000');
+    expect(screen.getByTestId('run-counter-tokens')).toHaveTextContent('12000');
+  });
+
+  it('tokens_warning=true → 告警文案明确指向「累计」（消解「重置了还告警」困惑）', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: { 'o-c1': 'done' },
+      counters: { ...tokenCounters, tokens_warning: true },
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: { 'o-c1': 'done' },
+      counters: null,
+      tokenBaseline: 50000,
+    });
+    render(<BookRunPanel />);
+
+    const warn = await screen.findByTestId('run-token-warning');
+    // 关键要点：告警由**累计**档触发，文案必须点名「累计」（否则用户以为本轮超了）
+    expect(warn).toHaveTextContent('累计');
+    // 本轮仅 250000−50000=200000 < 上限 300000 —— 告警与「本轮」无关，两值须共存可辨
+    expect(screen.getByTestId('run-counter-tokens-run')).toHaveTextContent('200000');
+  });
+
+  it('基线大于累计（跨计划残留）→ 本轮 归 0，不渲染负数', async () => {
+    apiFetchMock.mockResolvedValue({
+      run_id: 'wp-1',
+      status: 'completed',
+      progress: { 'o-c1': 'done' },
+      counters: { ...tokenCounters, tokens_used: 500 },
+    });
+    useBookStore.setState({
+      runId: 'wp-1',
+      runStatus: 'running',
+      progress: { 'o-c1': 'done' },
+      counters: null,
+      tokenBaseline: 999,
+    });
+    render(<BookRunPanel />);
+
+    const runLine = await screen.findByTestId('run-counter-tokens-run');
+    expect(runLine).toHaveTextContent('0');
+    expect(runLine.textContent).not.toContain('-');
+  });
+});
