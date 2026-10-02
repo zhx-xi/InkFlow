@@ -72,6 +72,34 @@ const SCENES = [
             const b = n ? n.querySelector('.badge') : null;
             return b ? b.textContent.trim() : 'MISSING';
           })(),
+          // #1334 ①C：geo 类分类 chip 带 🗺 / abstract 类不带；abstract 条目移出主树（DOM 保留）
+          cityChipIcon: (() => {
+            const b = q('[data-testid="world-cat-filter-城市"]');
+            return b ? b.textContent.includes('🗺') : 'MISSING';
+          })(),
+          secretChipIcon: (() => {
+            const b = q('[data-testid="world-cat-filter-秘境"]');
+            return b ? b.textContent.includes('🗺') : 'MISSING';
+          })(),
+          absChipIcon: (() => {
+            const b = q('[data-testid="world-cat-filter-势力"]');
+            return b ? b.textContent.includes('🗺') : 'MISSING';
+          })(),
+          treeAbstractRows: (() => {
+            const c = q('[data-testid="library-list"]');
+            return c ? c.querySelectorAll('.tree-row[data-kind="abstract"]').length : 'MISSING';
+          })(),
+          treeAbstractVisible: (() => {
+            const c = q('[data-testid="library-list"]');
+            if (!c) return 'MISSING';
+            return Array.from(c.querySelectorAll('.tree-row[data-kind="abstract"]')).some(
+              (el) => el.offsetParent !== null,
+            );
+          })(),
+          treeUnregisteredVisible: (() => {
+            const el = q('[data-testid="world-node-culture"]');
+            return !!(el && el.offsetParent !== null);
+          })(),
           noteB: cs(q('.plan-note[data-plan="B"]')) ? cs(q('.plan-note[data-plan="B"]')).display : 'MISSING',
           noteC: cs(q('.plan-note[data-plan="C"]')) ? cs(q('.plan-note[data-plan="C"]')).display : 'MISSING',
         };
@@ -99,6 +127,12 @@ const SCENES = [
       p('树含未注册类别条目（文化/科技）', d.treeHasCulture && d.treeHasTech);
       p('条目类别徽标 = 文化', d.badgeCulture === '文化');
       p('②B/C 说明条不在 ②A 形态显示', d.noteB === 'none' && d.noteC === 'none');
+      // #1334 ①C：chips 的 🗺 表达（geo 带 / abstract 不带）+ abstract 条目移出主树
+      p('#1334 geo 分类 chip 带 🗺（城市）', d.cityChipIcon === true);
+      p('#1334 geo 分类 chip 带 🗺（秘境）', d.secretChipIcon === true);
+      p('#1334 abstract 分类 chip 不带 🗺（势力）', d.absChipIcon === false);
+      p('#1334 abstract 条目不在主树（DOM 保留）', d.treeAbstractRows === 2 && d.treeAbstractVisible === false);
+      p('#1334 未注册分类条目仍在主树（按 geo 处理）', d.treeUnregisteredVisible === true);
       return { fails, d };
     },
   },
@@ -120,6 +154,19 @@ const SCENES = [
           xInside: !!(chip && x && chip.contains(x)),
           xOpacity: x ? getComputedStyle(x).opacity : 'MISSING',
           chipBorderColor: chip ? getComputedStyle(chip).borderTopColor : 'MISSING',
+          // #1334 ①C：选中 abstract 分类「势力」→ 分类筛选视图（该分类条目可见；不匹配条目被剪除）
+          abstractRowVisible: (() => {
+            const r = document.querySelector('[data-testid="library-list"] [data-testid="world-tree-toggle-2"]');
+            return !!(r && r.offsetParent !== null);
+          })(),
+          pathRowVisible: (() => {
+            const r = document.querySelector('[data-testid="library-list"] [data-testid="world-tree-toggle-1"]');
+            return !!(r && r.offsetParent !== null);
+          })(),
+          nonMatchRowVisible: (() => {
+            const r = document.querySelector('[data-testid="library-list"] [data-testid="world-node-culture"]');
+            return !!(r && r.offsetParent !== null);
+          })(),
         };
       });
       const fails = [];
@@ -132,6 +179,9 @@ const SCENES = [
       p('①A 新建条目 title 提示选中分类', typeof d.entryTitle === 'string' && d.entryTitle.includes('势力'));
       p('④ × 在 chip 框内', d.xInside === true);
       p('④ hover 后 × 显示（opacity 1）', d.xOpacity === '1');
+      // #1334 ①C：abstract 条目仅在其分类筛选视图可见（主树外 → 选中后回树）
+      p('#1334 选中 abstract 分类 → 该分类条目在筛选视图可见', d.abstractRowVisible === true);
+      p('#1334 筛选视图仅留匹配节点 + 祖先路径', d.pathRowVisible === true && d.nonMatchRowVisible === false);
       return { fails, d };
     },
   },

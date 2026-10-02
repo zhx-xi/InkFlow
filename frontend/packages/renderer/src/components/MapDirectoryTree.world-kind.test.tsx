@@ -79,4 +79,31 @@ describe('MapDirectoryTree — #721 kind 分流', () => {
     // 条目本身仍不渲染（abstract 分流契约不变）
     expect(screen.queryByText('蜀山势力')).not.toBeInTheDocument();
   });
+
+  /**
+   * #1334 反例守护（同口径）：列表页树与地图树共用同一 kind 判据
+   * （`lib/worldCategoryKind.ts`）——分类未注册（不在分类表）按 geo 处理 ⇒ 进树。
+   */
+  it('反例守护：未注册分类条目按 geo 处理 → 进树（与列表页 #1334 同一判据）', async () => {
+    const user = userEvent.setup();
+    render(
+      <MapDirectoryTree
+        maps={[]}
+        activeMapId={null}
+        onSelectMap={vi.fn()}
+        onCreateChild={vi.fn()}
+        onDeleteMap={vi.fn()}
+        onRenameMap={vi.fn()}
+        onReparent={vi.fn()}
+        onCycleReject={vi.fn()}
+        worldItems={[
+          { id: 'w-root', name: '蜀山修仙宇宙', category: '', content: '', parent_id: null },
+          { id: 'w-unreg', name: '祭剑大典', category: '文化', content: '', parent_id: 'w-root' },
+        ]}
+        worldCategories={worldCategories}
+      />,
+    );
+    await user.click(screen.getByTestId('map-tree-unmapped-toggle'));
+    expect(screen.getByText('祭剑大典')).toBeInTheDocument();
+  });
 });
