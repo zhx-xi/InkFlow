@@ -329,6 +329,10 @@ def build_agentic_writer(
 > `world:read` → `list_maps` / `list_world_settings` / `get_world_setting`。
 > 反向断言（#1327）：架构师不得有 `outline:write`（否则 `create/update_*_outline` 共 7 个
 > 写工具落入规划角色），审校员/世界观顾问不得有 `world:write`。
+>
+> ⚙️ **存量行同步（#1443）**：本表是**唯一真源**，由 `seed_builtin_agents` 每次启动对**同名
+> 存量内置行**做「归一签名不等即同步」（幂等 no-op）。否则老库的内置 agent 永远停留在旧
+> grants（或为空），而 `resolve_grants` 读的正是它 —— 本表的修正等于不生效。
 
 **内置 Skill 出厂配置（6 个，目录名 ∈ BUILTIN_SKILL_NAMES → `source="builtin"` 只读）**：与上表「出厂 skill」一一对应（架构/写作/审校/修订/世界观/润色六份方法论 SKILL.md，content 含 frontmatter name=slug + 中文正文，须通过 `parse_skill_metadata` 校验）。出厂 prompt 与 skill 正文为 ensure 内容（实现期编写，非契约字段），契约只定「6 Agent + 6 Skill slug + 上表白名单映射」。**（#1331 修订）** 正文自 0.16.0 起抽离为 `i18n/skills/builtin/zh/<slug>.md`（frontmatter 增 `version`；en 槽位留空回退 zh），播种为三态语义 —— 见 §12 D11/D12 与 ADR-062。
 

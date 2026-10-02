@@ -236,6 +236,11 @@ def _validate_grants(grants: list[GrantEntry]) -> None:
         seen.add(entry.domain)
 
 
+def _grants_signature(grants: list[GrantEntry]) -> set[tuple[ToolDomain, frozenset[ToolOp]]]:
+    """grants 归一签名（域 × ops 集合，抗序）——出厂同步比对用（#1443）."""
+    return {(g.domain, frozenset(g.ops)) for g in grants}
+
+
 class AgentEntityService:
     """Agent 实体业务服务 — CRUD + 同名查重 + tool/skill 白名单校验.
 
@@ -429,10 +434,23 @@ async def seed_builtin_agents(session: AsyncSession) -> int:
         name = spec["name"]
         existing = await agent_repo.get_by_name(name)
         if existing is not None:
+            changed = False
             # v1.5 #484 seed 升级钩子：存量同名（v1.5 前已 seed）role_key 为空且
             # spec 有 role_key → 补值 UPDATE（不重复插入）
             if existing.role_key is None and spec["role_key"] is not None:
                 existing.role_key = spec["role_key"]
+                changed = True
+            # #1443 seed 升级钩子：内置行 grants 是出厂派生态（spec 为唯一真源）。
+            # 存量行可能 grants 为空（F58 前遗留）或停留在旧出厂值（出厂调整前首装），
+            # 不同步则 #1180/#1327 的出厂权限修正对存量安装完全失效（chat 路径读
+            # resolve_grants）。内置行不可编辑、不可同名创建 → 无用户定制值可被覆盖；
+            # 相等即 no-op（幂等，重启不产生写入）。
+            if existing.builtin and _grants_signature(existing.grants) != _grants_signature(
+                list(spec["grants"])
+            ):
+                existing.grants = list(spec["grants"])
+                changed = True
+            if changed:
                 await agent_repo.update(existing)
             continue
         await agent_repo.add(

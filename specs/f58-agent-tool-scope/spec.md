@@ -158,6 +158,7 @@ AgentEditDialog 表单「工具 checkbox 分组」替换为 **scope 矩阵**：
 
 1. **DB**：`agents.tool_ids` 列保留（不删），新增 `grants` JSON 列（默认 `[]`/NULL）。轻量幂等迁移（create_all + 幂等 ALTER 先例）：新列存在即跳过。
    - **#1356 实测（本地库）**：存量 7/7 行均为 tool_ids-only（`grants` 为空，含 6 内置 + 1 自定义）→ §5.3 的回退分支是存量行**当前唯一的读取路径**，不可关停；列保留属**必需**而非遗留。
+   - **#1443 seed 升级钩子（加列不回填的代价归属）**：`seed_builtin_agents` 对**同名存量内置行**同步 `grants = spec["grants"]`（归一签名不等才写，幂等 no-op）。否则存量行 grants 恒为空（F58 前遗留）或停留旧出厂值（出厂调整前首装），**#1180/#1327 的出厂权限修正对存量安装完全失效**（chat 路径 `resolve_grants` → 旧窄集）。内置行不可编辑/不可同名创建 → 无用户定制值可被覆盖。
 2. **推断规则**（反查表 = GRANT_TOOL_MAP 的逆映射 + 改名映射）：
    - `create_outline`/`update_outline` → outline·write（含全部新写工具，层级由 LLM 按需选择，授权不区分层）
    - `delete_outline` 等核心删除工具：不在白名单语义内（is_core），不受迁移影响

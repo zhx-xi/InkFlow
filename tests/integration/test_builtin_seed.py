@@ -711,3 +711,108 @@ def test_builtin_specs_have_no_tool_ids_key():
     )
     for spec in BUILTIN_AGENT_SPECS:
         assert "tool_ids" not in spec, f"{spec['name']} spec 复活了 tool_ids 手写副本"
+
+
+# ── #1443：seed 升级钩子 —— 存量内置行 grants 出厂同步 ──────────────────────
+#
+# 缺陷：seed 的存量分支只回填 role_key 就 continue，grants 永不随出厂更新 →
+# #1327/#1180 的出厂权限修正对存量安装**完全失效**（chat 路径读 resolve_grants）。
+# 两类受影响行：(a) grants 空（F58 前遗留）(b) grants 为旧出厂值（出厂调整前首装）。
+#
+# RED 预期形态（旧实现）：(a) 不被填 → AssertionError；(b) 不同步 → AssertionError。
+
+
+async def _insert_agent_row(
+    db_session,
+    *,
+    name: str,
+    grants: list | None,
+    tool_ids: list[str],
+    builtin: bool,
+    role_key: str | None = None,
+):
+    """经 AgentORM 直插一行（模拟存量行；grants 可为 None / [] / 旧出厂值）。"""
+    from inkflow.infrastructure.database.models import AgentORM
+
+    row = AgentORM(
+        name=name,
+        tool_ids=tool_ids,
+        grants=grants,
+        skill_ids=[],
+        builtin=builtin,
+        role_key=role_key,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+    return row
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestBuiltinGrantsSeedSync:
+    """#1443：存量内置行 grants 必须随出厂 spec 同步（出厂 = 唯一真源）。"""
+
+    async def test_empty_grants_builtin_row_is_backfilled(self, db_session):
+        """(a) grants 空的内置行 → seed 后 grants == 出厂字面值（并回填 role_key）。"""
+        row = await _insert_agent_row(
+            db_session,
+            name="架构师",
+            grants=None,
+            tool_ids=["search_characters", "check_foreshadowing", "get_prior_summary"],
+            builtin=True,
+        )
+
+        assert await seed_builtin_agents(db_session) == 5, "存量行不计入新插入数（6 - 1 预置）"
+        await db_session.refresh(row)
+
+        assert _grants_to_map(row.grants) == GRANTS_WHITELIST_MAP["架构师"], (
+            f"存量内置行 grants 未被出厂回填: {row.grants}"
+        )
+        assert row.role_key == "architect", "role_key 回填语义不变"
+
+    async def test_stale_grants_builtin_row_is_resynced(self, db_session):
+        """(b) grants 为旧出厂值（缺 outline.read）→ 同步为当前出厂值。"""
+        stale = [{"domain": "character", "ops": ["read"]}]
+        row = await _insert_agent_row(
+            db_session, name="架构师", grants=stale, tool_ids=[], builtin=True
+        )
+
+        assert await seed_builtin_agents(db_session) == 5, "6 - 1 预置"
+        await db_session.refresh(row)
+
+        assert _grants_to_map(row.grants) == GRANTS_WHITELIST_MAP["架构师"], (
+            f"过期出厂 grants 未同步: {row.grants}"
+        )
+
+    async def test_equal_grants_builtin_row_is_noop(self, db_session):
+        """已等于出厂值 → 不写库（updated_at 不变，幂等：重启不产生写入）。"""
+        from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+
+        spec = next(s for s in BUILTIN_AGENT_SPECS if s["name"] == "润色师")
+        row = await _insert_agent_row(
+            db_session,
+            name="润色师",
+            grants=[g.model_dump(mode="json") for g in spec["grants"]],
+            tool_ids=[],
+            builtin=True,
+            role_key=spec["role_key"],
+        )
+        before = row.updated_at
+        assert before is not None, "fixture 前提：存量行已有 updated_at"
+
+        assert await seed_builtin_agents(db_session) == 5, "6 - 1 预置"
+        await db_session.refresh(row)
+
+        assert row.updated_at == before, "已等值的出厂 grants 不得触发写入（幂等）"
+
+    async def test_custom_agent_grants_not_touched(self, db_session):
+        """builtin=False 的自定义行 grants 为空 → 不被出厂同步填充（不越权）。"""
+        row = await _insert_agent_row(
+            db_session, name="自定义角色", grants=None, tool_ids=[], builtin=False
+        )
+
+        assert await seed_builtin_agents(db_session) == 6, "6 个内置行照常插入"
+        await db_session.refresh(row)
+
+        assert not row.grants, f"自定义 agent 不得被出厂 grants 同步: {row.grants}"
