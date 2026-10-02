@@ -105,6 +105,10 @@
 #1181 F39 白名单两条 factory 均未装配）。此类失效**只能靠测试断言取证**（#1185），
 门禁对此零判别力——不要因门禁全绿而认为写作链契约完好。
 
+> **例外（#1436）**：MCP 工具面已有**机械自检**覆盖「参数收了不用」的静态形态（声明即消费 +
+> 变异自证）→ `backend/tests/unit/mcp/test_mcp_field_wiring_1436.py`，随恒跑 job `unit-backend` 守卫；
+> 见下方 §MCP 工具面契约源 checklist 第 4 条。写作链/装配类的空转**仍**无此护栏。
+
 ## spec 状态标记证据要求（#1184a）
 
 **spec 中任何 `✅ 已实现` 标记必须附可验证证据**，形式为以下之一：
@@ -139,7 +143,14 @@ MCP 工具面（`backend/src/inkflow/mcp/tools/schemas.py` 的 19 个 `*Params` 
 2. 同步 `backend/tests/unit/mcp/test_mcp_schemas.py` 的 `_CONTRACT` 表与
    `test_mcp_tool_surface_*.py` 的 `_EXPECTED_NAMES` / `ALL_SCHEMAS` 计数断言；
 3. **无需**改 `ci.yml` 的 `contract` filter，也**无需**动 e2e（除非将来出现消费 MCP 工具面的 e2e spec——
-   `tests/e2e/**` 内新增「硬编码 MCP 工具名/字段名」的断言时，按 AGENTS.md §9 陷阱 #26 的扩容规则追加 filter + 在本文档登记）。
+   `tests/e2e/**` 内新增「硬编码 MCP 工具名/字段名」的断言时，按 AGENTS.md §9 陷阱 #26 的扩容规则追加 filter + 在本文档登记）；
+4. **「声明即消费」自检**（#1436 引入）：`backend/tests/unit/mcp/test_mcp_field_wiring_1436.py::TestDeclaredFieldsAreConsumed1436`
+   静态遍历 `*Params.model_fields`，断言每个声明字段**至少在 `mcp/tools/` 内被消费一次**；未接线集须**恰好等于**
+   该文件的 `_KNOWN_UNWIRED` 豁免表（双向断言：新形态必红、修好后不删豁免条目也必红）。
+   → 给 `*Params` 加字段却忘记接线（#1436 的 `order` 形态：`extra="forbid"` 拦不到**已声明**字段）→ 恒跑 job
+   `unit-backend` 即红。已知存量豁免：`WriteParams.instruction` / `ExportParams.output_path`（同族缺口，另单 #1437 跟踪）；
+5. 姊妹缺口（字段名与内核 DTO 不符 / 键被 DTO 静默忽略）：由 `test_mcp_field_wiring_1436.py` 的 DTO 逐字对齐 +
+   「经 **DTO 本体** `model_validate` 取证落点」两类断言守卫（同 A8 漂移护栏思路，见 spec f20 §13 A20/A21）。
 
 ## 改表 PR checklist（机械引用）
 

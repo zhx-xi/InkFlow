@@ -147,7 +147,11 @@ async def _route_write(client: _HTTPClient, params: WriteParams, timeout: float 
                         "outline": params.outline,
                         "context": params.context,
                         "style_hint": params.style_hint,
-                        "target_words": params.target_words,
+                        # #1436（B1）：`WritingRequest` 无 `target_words` 字段（只有
+                        # `min_words`/`max_words`），直发该键会被 pydantic `extra="ignore"`
+                        # 静默丢弃 → 映射为 `min_words`（镜像 CLI `write next --min-words`）。
+                        # 更小值由内核 `ge=2000` 约束显式 422（显式失败优于静默错误）。
+                        "min_words": params.target_words,
                     }
                 ),
                 timeout=timeout,
