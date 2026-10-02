@@ -19,7 +19,7 @@
  * RED 预期：GREEN 前 `src/api/chapters.ts` 不存在 → module-not-found（文件级失败）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchAllChapters, type ChapterListDto } from './chapters';
+import { fetchAllChapters, restorePreviousContent, type ChapterListDto } from './chapters';
 import { apiFetch } from './client';
 
 vi.mock('./client', async (importOriginal) => {
@@ -155,3 +155,32 @@ describe('fetchAllChapters — #1407 全量翻页契约', () => {
     expect(backend.calls).toHaveLength(1);
   });
 });
+
+/**
+ * #1440 恢复上一稿（GUI 入口接线）：契约面 = POST /api/v1/chapters/{id}/restore-previous。
+ *
+ * 后端（#1430 A2，已合入）语义：previous_content 写回 content（content ⇄ previous_content 互换）。
+ * 本封装**无请求体**；错误映射交由调用方（apiFetch 已抛 ApiError：404 章不存在 / 409 无可恢复旧稿）。
+ */
+describe('restorePreviousContent — #1440 恢复上一稿封装', () => {
+  it('POST /api/v1/chapters/{id}/restore-previous（无请求体）→ 返回章 JSON', async () => {
+    const restored = {
+      id: 'c1',
+      title: '第1章 初见',
+      volume_id: null,
+      order_index: 0,
+      word_count: 10,
+      content: '旧稿',
+      previous_content: '新稿',
+    };
+    apiFetchMock.mockResolvedValue(restored);
+
+    const res = await restorePreviousContent('c1');
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/chapters/c1/restore-previous', {
+      method: 'POST',
+    });
+    expect(res).toEqual(restored);
+  });
+});
+

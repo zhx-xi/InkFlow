@@ -18,6 +18,8 @@ export interface ChapterListDto {
   volume_id: string | null;
   order_index: number;
   word_count: number;
+  /** #1440：被 `book run --force` 覆盖前的旧正文（后端响应项透传；缺省 = 无上一稿） */
+  previous_content?: string | null;
   writing_requirements?: string | null;
 }
 
@@ -55,4 +57,28 @@ export async function fetchAllChapters(
     items.push(...page);
   }
   return { items, total };
+}
+
+/** 恢复上一稿响应（章 JSON；content 与 previous_content 互换后的值） */
+export interface ChapterRestoreDto {
+  id: string;
+  title: string;
+  volume_id: string | null;
+  order_index: number;
+  word_count: number;
+  content: string;
+  previous_content: string | null;
+  writing_requirements?: string | null;
+}
+
+/**
+ * #1440：恢复上一稿（POST /api/v1/chapters/{id}/restore-previous，**无请求体**）。
+ *
+ * 后端语义：`previous_content` 写回 `content` ⇒ 两者**互换**（可再调一次切回）。
+ * 错误由 apiFetch 抛 ApiError：404「章节不存在」/ 409「无可恢复的旧稿」。
+ */
+export async function restorePreviousContent(chapterId: string): Promise<ChapterRestoreDto> {
+  return apiFetch<ChapterRestoreDto>(`/api/v1/chapters/${chapterId}/restore-previous`, {
+    method: 'POST',
+  });
 }
