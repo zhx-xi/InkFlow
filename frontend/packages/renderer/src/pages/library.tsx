@@ -41,6 +41,7 @@ import { useForeshadowFilters } from '../hooks/useForeshadowFilters';
 import { useProjectStore } from '../stores/project';
 import { useToastStore } from '../stores/toast';
 import { cn } from '../lib/cn';
+import { buildKindByCategory, isWorldItemVisibleInTree } from '../lib/worldCategoryKind';
 type CatKey = 'characters' | 'world' | 'outline' | 'timeline' | 'foreshadow' | 'knowledge';
 /** F23 §15.6.2（#1088 A3）：本页关心的项目作用域变更域（含子实体独立域）；事件到达一律 FR。 */
 const LIBRARY_DATA_CHANGE_DOMAINS = [
@@ -267,10 +268,16 @@ export function LibraryPage() {
     return out;
   }, [activeCat, worldCatEntities, listItems]);
   // F43 P1 §5.3 世界观树；#588：已有根条目（parent_id===null）时仍保留「创建」入口，允许创建子分类
-  const worldRoots = useMemo(
-    () => (activeCat === 'world' ? buildWorldTree(listItems) : []),
-    [activeCat, listItems],
-  );
+  const worldRoots = useMemo(() => {
+    if (activeCat !== 'world') return [];
+    const kindByCategory = buildKindByCategory(worldCatEntities);
+    const treeItems = listItems.filter((item) => {
+      const category = item.category ?? '';
+      // #1334 ①C：abstract 分类条目移出主树；仅当该分类被选中筛选时可见（判据与 #721 同源）
+      return isWorldItemVisibleInTree(category, kindByCategory) || category === activeWorldCat;
+    });
+    return buildWorldTree(treeItems);
+  }, [activeCat, listItems, worldCatEntities, activeWorldCat]);
   // §5.4：分类筛选作用于整棵树（#567 单例：一项目一根，分类元素为根的子孙→保留匹配节点+子树）
   const filteredWorldRoots = useMemo(
     () => (activeCat === 'world' ? filterWorldTree(worldRoots, activeWorldCat) : []),

@@ -8,6 +8,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ChevronRight, Copy, GripVertical, Map as MapIcon, MapPlus, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '../lib/cn';
+import { buildKindByCategory, isWorldItemVisibleInTree } from '../lib/worldCategoryKind';
 import { useI18n } from '../i18n/useI18n';
 import type { WorldCategoryEntity } from '../hooks/useWorldCategories';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
@@ -650,15 +651,8 @@ export function MapDirectoryTree({
 
   // #721：分类 kind 分流——abstract 分类的条目不进树；空/未知分类按 geo 处理（根/未分类世界观仍显示）
   const visibleWorldItems = useMemo(() => {
-    const kindByCategory = new Map<string, 'geo' | 'abstract' | undefined>();
-    for (const c of worldCategories ?? []) {
-      kindByCategory.set(c.name, c.kind);
-    }
-    return worldItems.filter((item) => {
-      const category = item.category ?? '';
-      if (category === '') return true;
-      return kindByCategory.get(category) !== 'abstract';
-    });
+    const kindByCategory = buildKindByCategory(worldCategories);
+    return worldItems.filter((item) => isWorldItemVisibleInTree(item.category, kindByCategory));
   }, [worldItems, worldCategories]);
 
   // #1322：主树只显示图——无图条目出主树、进下方折叠区；有图条目的祖先链保留（承载路径）。

@@ -179,6 +179,14 @@ body[data-catplan="C"] .plan-note[data-plan="C"]{display:flex}
 .row-actions button:hover{background:var(--surface-3);color:var(--accent)}
 .row-actions button.del:hover{color:var(--err)}
 
+/* ── #1334 ①C：abstract 分类条目移出主树（判据=条目的分类的 kind；空/未注册分类按 geo 处理） ──
+   列表页主树（未选中 abstract 分类）：abstract 分类条目不在树中（DOM 保留，见下）；
+   分类筛选视图（选中 abstract 分类「势力」）：仅留匹配节点 + 祖先路径——与 filterWorldTree 语义一致。 */
+body[data-abstract-view=""] .lib-card[data-testid="library-list"] .tree-row[data-kind="abstract"]{display:none}
+body[data-abstract-view="势力"] .lib-card[data-testid="library-list"] .tree-row{display:none}
+body[data-abstract-view="势力"] .lib-card[data-testid="library-list"] .tree-row[data-cat="势力"],
+body[data-abstract-view="势力"] .lib-card[data-testid="library-list"] .tree-row[data-path="1"]{display:flex}
+
 /* ── 地图工作台（F43 P2：面包屑 + 左目录树 + 右画布/pin 列表） ── */
 .map-bc{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--ink-2);margin-bottom:12px;flex-wrap:wrap}
 .map-bc button{border:none;background:none;font-size:13px;color:var(--ink-2);padding:0}
@@ -246,7 +254,7 @@ body[data-shot="1"] .demo-bar{display:none}
 body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
 </style>
 </head>
-<body data-state="main" data-btns="A" data-catplan="A">
+<body data-state="main" data-btns="A" data-catplan="A" data-abstract-view="">
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
      #1375 原型阶段更新（四处设计点）：
@@ -346,11 +354,11 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
               <button class="chip-x" data-testid="world-cat-delete-地理" aria-label="删除">×</button>
             </span>
             <span class="cat-chip" data-cat="城市" data-testid="world-cat-chip-城市">
-              <button class="chip-name" data-testid="world-cat-filter-城市" aria-pressed="false">城市</button>
+              <button class="chip-name" data-testid="world-cat-filter-城市" aria-pressed="false"><span aria-hidden="true">🗺 </span>城市</button>
               <button class="chip-x" data-testid="world-cat-delete-城市" aria-label="删除">×</button>
             </span>
             <span class="cat-chip" data-cat="秘境" data-testid="world-cat-chip-秘境">
-              <button class="chip-name" data-testid="world-cat-filter-秘境" aria-pressed="false">秘境</button>
+              <button class="chip-name" data-testid="world-cat-filter-秘境" aria-pressed="false"><span aria-hidden="true">🗺 </span>秘境</button>
               <button class="chip-x" data-testid="world-cat-delete-秘境" aria-label="删除">×</button>
             </span>
             <span class="cat-chip" data-cat="势力" data-testid="world-cat-chip-势力">
@@ -426,66 +434,73 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
              服务端按 limit≤100 循环拉全，故此处【不渲染分页条】（分页条走树分支不可达，
              且旧实现只用第 1 页 50 条建树 → 51+ 条静默截断 + 孤儿降级）。见 specs/f19-gui/world.md N10。 -->
         <!-- F43 P1：世界观树视图 -->
+        <!-- #1334 ①C（已拍板 2026-10-02）：abstract 分类条目移出列表页主树，仅在该分类被选中（分类筛选视图）时可见。
+             判据 = 条目的分类的 kind（specs/f10-world-settings/spec.md §16.4；与 #721 地图树同源）：
+             · data-kind="abstract" 的行 → 主树不渲染（body[data-abstract-view=""] 规则隐藏；DOM 保留以便筛选视图）
+             · 分类为空（未分类）或分类未注册（示例「文化」「科技」）→ 按 geo 处理 → 主树照常显示
+             · 选中 abstract 分类（示例「势力」）→ 分类筛选视图：仅留匹配节点 + 祖先路径（data-path="1"）
+             低保真示意：行缩进为静态示例值，真实缩进由 buildWorldTree 的父链决定。 -->
         <div class="lib-card" data-testid="library-list">
-          <div class="tree-row" data-testid="world-tree-toggle-1">
+          <div class="tree-row" data-testid="world-tree-toggle-1" data-cat="地理" data-path="1">
             <button class="chev open"><span data-ic="chevron-right"></span></button>
             <span class="tcol"><span class="tname">青云山</span><span class="tdesc">青云宗所在主峰，云海之巅，剑鸣可闻百里。</span></span>
             <span class="badge">地理</span>
             <span class="badge">3 子条目</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row" style="padding-left:30px" data-testid="world-tree-toggle-2">
+          <div class="tree-row" style="padding-left:30px" data-testid="world-tree-toggle-2" data-cat="势力" data-kind="abstract">
             <button class="chev open"><span data-ic="chevron-right"></span></button>
             <span class="tcol"><span class="tname">青云宗</span><span class="tdesc">修仙宗门，以剑修闻名，坐落云海之巅。</span></span>
             <span class="badge">势力</span>
             <span class="badge">2 子条目</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row" style="padding-left:48px" data-testid="world-tree-toggle-3">
+          <div class="tree-row" style="padding-left:48px" data-testid="world-tree-toggle-3" data-cat="秘境">
             <button class="chev open"><span data-ic="chevron-right"></span></button>
             <span class="tcol"><span class="tname">剑冢</span><span class="tdesc">历代掌门葬剑之地，禁地，剑鸣可闻百里。</span></span>
             <span class="badge">秘境</span>
             <span class="badge">2 子条目</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row" style="padding-left:66px">
+          <div class="tree-row" style="padding-left:66px" data-cat="地理">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">万剑冢</span><span class="tdesc">葬剑主穴，石壁上刻满历代剑名。</span></span>
             <span class="badge">地理</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row" style="padding-left:66px">
+          <div class="tree-row" style="padding-left:66px" data-cat="地理">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">剑庐</span><span class="tdesc">守陵人修行之所。</span></span>
             <span class="badge">地理</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row" style="padding-left:48px">
+          <div class="tree-row" style="padding-left:48px" data-cat="地理">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">藏经阁</span><span class="tdesc">存放历代剑谱与功法秘典。</span></span>
             <span class="badge">地理</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <!-- #1375 ②：演示「有条目类别、无注册分类」的存量不一致数据（类别「文化」「科技」均未注册） -->
-          <div class="tree-row" data-testid="world-node-culture">
+          <!-- #1375 ②：演示「有条目类别、无注册分类」的存量不一致数据（类别「文化」「科技」均未注册）
+               #1334：未注册分类不在分类表 → 判据按 geo 处理 → 主树仍显示（反例守护锚点） -->
+          <div class="tree-row" style="padding-left:30px" data-testid="world-node-culture" data-cat="文化">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">祭剑大典</span><span class="tdesc">每十二年一届的宗门祭剑盛会，各方修士云集。</span></span>
             <span class="badge">文化</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row" data-testid="world-node-tech">
+          <div class="tree-row" style="padding-left:30px" data-testid="world-node-tech" data-cat="科技">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">传音符阵</span><span class="tdesc">以灵石驱动的短距传讯阵，百里内即时可达。</span></span>
             <span class="badge">科技</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row">
+          <div class="tree-row" data-testid="world-node-abs-func" data-cat="功法" data-kind="abstract">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">青云剑诀</span><span class="tdesc">宗门镇派剑法，共九式，修至第九式可御剑千里。</span></span>
             <span class="badge">功法</span>
             <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
           </div>
-          <div class="tree-row">
+          <div class="tree-row" data-cat="城市">
             <span style="width:20px;flex:none"></span>
             <span class="tcol"><span class="tname">天墉城</span><span class="tdesc">云海另一端的世俗雄城，与青云宗互为表里。</span></span>
             <span class="badge">城市</span>
@@ -775,6 +790,10 @@ function setActiveCat(name){
     const hint = menuEntry.querySelector('.menu-hint');
     if(hint) hint.style.display = enabled ? 'none' : '';
   }
+  /* #1334 ①C：abstract 分类条目默认移出主树（body[data-abstract-view=""]）；
+     选中抽象分类 → 进入分类筛选视图（仅留该分类条目 + 祖先路径） */
+  const ABSTRACT_VIEWS = ['势力'];
+  document.body.dataset.abstractView = ABSTRACT_VIEWS.includes(name) ? name : '';
   return enabled;
 }
 
