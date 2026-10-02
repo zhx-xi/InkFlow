@@ -77,6 +77,7 @@ export function BookRunPanel() {
   const progressReason = useBookStore((s) => s.progressReason);
   const progress = useBookStore((s) => s.progress);
   const counters = useBookStore((s) => s.counters);
+  const tokenBaseline = useBookStore((s) => s.tokenBaseline);
   const progressStats = useBookStore((s) => s.progressStats);
   const density = useBookStore((s) => s.density);
   const interveneDiff = useBookStore((s) => s.interveneDiff);
@@ -89,6 +90,9 @@ export function BookRunPanel() {
   const clearInterveneDiff = useBookStore((s) => s.clearInterveneDiff);
 
   const showTokens = counters?.max_tokens !== undefined && counters.tokens_used !== undefined;
+  // #1431：本轮 = 累计账单 − reset 基线（跨计划残留时归 0，不渲染负数）
+  const tokensUsed = counters?.tokens_used;
+  const tokensRun = tokensUsed !== undefined ? Math.max(0, tokensUsed - tokenBaseline) : undefined;
   const showReason =
     (runStatus === 'failed' || runStatus === 'degraded' || runStatus === 'blocked') &&
     progressReason !== null &&
@@ -307,9 +311,14 @@ export function BookRunPanel() {
           {t('book.run.calls')}: {counters ? `${counters.agent_calls} / ${counters.max_agent_calls}` : '–'}
         </div>
         {showTokens && (
-          <div data-testid="run-counter-tokens" className="text-[13px] text-ink-2">
-            {t('book.run.tokens')}: {counters.tokens_used} / {counters.max_tokens}
-          </div>
+          <>
+            <div data-testid="run-counter-tokens-run" className="text-[13px] text-ink-2">
+              {t('book.run.tokens.run')}: {tokensRun}
+            </div>
+            <div data-testid="run-counter-tokens" className="text-[13px] text-ink-2">
+              {t('book.run.tokens')}: {tokensUsed} / {counters.max_tokens}
+            </div>
+          </>
         )}
         {counters?.tokens_warning === true && (
           <div

@@ -66,6 +66,8 @@ interface BookState {
   progressReason: string | null;
   progress: Record<string, string>;
   counters: RunStatusCounters | null;
+  /** #1431：本轮 token 用量基线（纯前端呈现态）= 最近一次 reset 成功时观测到的累计账单 */
+  tokenBaseline: number;
   progressStats: ProgressStats;
   /** F44 阶段3 #337：卷级 HITL 确认对话框状态（waiting_hitl 时弹出） */
   waitingHitl: boolean;
@@ -155,6 +157,7 @@ export const useBookStore = create<BookState>((set, get) => ({
   progressReason: null,
   progress: {},
   counters: null,
+  tokenBaseline: 0,
   progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
   waitingHitl: false,
   hitlPayload: null,
@@ -412,12 +415,15 @@ export const useBookStore = create<BookState>((set, get) => ({
   resetRun: async () => {
     const runId = get().runId;
     if (runId === null) return false;
+    // #1431：在运行态被清零前捕获累计账单作为「本轮」基线（reset 不清累计，仅重设本轮起点）
+    const baseline = get().counters?.tokens_used ?? 0;
     set({ error: null });
     try {
       await resetBookRun(runId);
       // 运行态整体归零 → 页级 BookPlannerPanel 回到「计划就绪 + 开始写作」分支（重跑闭环）；
       // writingPlan 必须保留（否则计划卡消失、无处点「开始写作」）
       set({
+        tokenBaseline: baseline,
         runId: null,
         runStatus: null,
         runOverwrite: null,
@@ -458,6 +464,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       progressReason: null,
       progress: {},
       counters: null,
+      tokenBaseline: 0,
       progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
       waitingHitl: false,
       hitlPayload: null,

@@ -130,6 +130,38 @@ async def test_reset_does_not_touch_chapters_or_drafts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reset_preserves_token_accounting_no_clearing() -> None:
+    """#1431 反例守护（有牙）：reset 前后 limits 的 token 累计账单原样不变。
+
+    本单（#1431）只做**呈现层**「本轮 vs 累计」区分，语义仍按 #1288 拍板 (a)
+    （token 计数 = 累计账单，reset 不清零/不归档）。此用例是那条拍板的护栏：
+    若有人把 reset 改成清零 tokens_used / 归档到新键，本用例立即 FAIL。
+
+    有牙证明：把 book_service.reset_run 里加一行 ``plan.limits.pop("tokens_used")``
+    → 本用例 FAILED（属断言不属数据库）。
+    """
+    svc, repo = await _build_service(content_written=True)
+    plan = repo.get_writing_plan.return_value
+    plan.limits.update(
+        {
+            "max_tokens": 200_000,
+            "tokens_used": 182_340,
+            "prompt_tokens": 120_000,
+            "completion_tokens": 62_340,
+            "tokens_warning": False,
+        }
+    )
+    before = dict(plan.limits)
+
+    await svc.reset_run(str(_PLAN_ID))
+
+    assert plan.limits == before, (
+        "reset 不得清零/归档 token 累计账单（#1288 拍板 (a)）；"
+        f"reset 后 limits={plan.limits!r}，期望与 reset 前一致"
+    )
+
+
+@pytest.mark.asyncio
 async def test_prepare_run_after_reset_rejected_when_content_still_there() -> None:
     """reset 不绕过安全闸：正文仍在（content_checker=True）→ 重跑仍被拒。
 
