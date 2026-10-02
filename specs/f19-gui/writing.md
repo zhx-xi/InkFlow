@@ -482,3 +482,58 @@ writing-context-preselect-loading / writing-drafts-approval / writing-delete-aut
 `design/GUI/_tools/shot-writing-global-chat-and-sessions.cjs` 重出核对，writing 5 态中 4 张字节**完全一致**
 （`writing-streaming` 为流式态动画帧——同一 HTML 连跑两次字节亦不同，属既有非确定性渲染），
 故未提交任何 PNG 变更（避免把动画噪声当作本轨产物）。
+
+## 15. #1440 被覆盖章的「已有上一稿」徽标 + 恢复入口
+
+> 背景：#1430 A2（PR #1433）让 `book run --force` 覆盖正文前把旧稿落到 `chapters.previous_content`，
+> 并提供恢复读口（经 `update_chapter` 覆盖写 ⇒ `content` ⇄ `previous_content` **互换**，可再切回）。
+> GUI 侧此前**零消费**（无封装、无徽标、无入口）→ 本节锁前端三件：
+> ① 树内「已有上一稿」徽标（常显）；② 行内「恢复上一稿」入口 + 确认框；③ 恢复后正文/徽标同步刷新。
+> **后端零改动**（读面早已通过 `model_dump(mode="json")` 透出 `previous_content`；端点为 #1430 既有）。
+
+### 15.1 画面/布局补充
+
+- 章节行（`ProjectTree` 的 `renderChapter`）在 `previous_content` **非空白**（`(v ?? '').trim() !== ''`）时：
+  - 标题与字数**之间**渲染常显徽标 `chapter-prev-badge-<chapterId>`（文案 `write.chapter.previousBadge`；
+    `title` tooltip = `write.chapter.previousBadgeTitle`）；
+  - hover 操作区（`chapter-actions-<chapterId>`）内、编辑钮**之前**渲染恢复按钮
+    `chapter-restore-<chapterId>`（`aria-label = write.chapter.restore`，RotateCcw 图标；与编辑/删除同排）。
+- `previous_content` 缺字段 / 空串 / 纯空白 → 徽标与恢复按钮**均不渲染**（反例守护）。
+- 恢复失败错误行 `chapter-restore-error` 渲染于卷章树滚动区之后、`tree-actions` 之上（透传 `ApiError.detail`）。
+- ⚠️ **已知视觉代价（原型截图实证）**：208px 默认栏宽下，徽标占位会使该行标题**截断**（如「第 12 章 …」）。
+  缓解：行内 `<button title={ch.title}>` 悬浮显示完整标题；左栏可拖宽至 360px 且按项目持久化（§14）。
+  徽标文案因此取**紧凑式**（zh「旧稿」/ en「Prev」，「已有上一稿」的完整语义由 tooltip 承载）——
+  5 字文案实测会把标题挤成「第 …」，不可接受。
+
+原型基准：`design/GUI/writing/writing.html`
+- `writing-chapter-previous.png`（`editor-idle` 态：徽标常显于第 10 / 12 章，恢复入口在 hover 操作区）
+- `writing-chapter-restore.png`（`chapter-restore-confirm` 态：恢复确认框）
+
+生成/断言脚本：`design/GUI/_tools/shot-w8-restore-previous-1440.cjs`（结构/几何/文案断言全绿）。
+徽标为**常显**元素 → 渲染卷章树的既有状态图**全量重出**（同 PR 的 PNG diff）。
+
+### 15.2 动作样式补充
+
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 徽标（`chapter-prev-badge-<id>`） | 仅 `previous_content` 非空白时渲染；常显（非 hover 区）；`title` 承载完整语义 | 非交互（纯标识） | — | — | — | 纯空白/缺字段不渲染 |
+| 恢复上一稿（`chapter-restore-<id>`） | 仅 `previous_content` 非空白时渲染（hover 操作区，位于编辑钮之前） | 打开共享 `ConfirmDialog`（`testidPrefix=chapter-restore`，**danger**） | 无独立 loading（确认即关框） | 调 `useChapterStore.restorePreviousContent(id)` **恰好一次** → 章列表项合并响应 + 当前章正文刷新；徽标按互换后的 `previous_content` 更新（仍非空 → 仍在，**可再切回**） | 见下（明确错误行，非静默失败） | 取消 / Esc → 关框且**不发**请求 |
+
+- 确认框文案要点：`write.chapter.restore.message` **必须写明「双向切换（再恢复可切回）」**——
+  避免用户误以为是**一次性**操作（恢复后当前正文即被替换）。
+- 恢复失败（409「无可恢复的旧稿」/ 404「章节不存在」/ 网络错误）→ **关框** + 渲染
+  `chapter-restore-error`（`errorMessage(err)` 透传）；再次打开确认框时错误行清空。
+
+### 15.3 验收补充
+
+- N51：`previous_content` 非空白 → 该章渲染 `chapter-prev-badge-<id>` 与 `chapter-restore-<id>`；
+  **缺字段 / 纯空白 → 两者均不渲染**（反例守护）。
+- N52：点 `chapter-restore-<id>` → 弹 `chapter-restore-dialog`，文案含「双向切换」；此时**未发**请求。
+  取消 / Esc → 关框且**不发**请求（反向断言）。
+- N53：确认 → `POST /api/v1/chapters/{id}/restore-previous`（**无请求体**）**恰好一次**；
+  章列表项 `content` 与 `previous_content` **互换**（`currentChapterId === id` 时编辑器正文同步刷新）
+  → 徽标仍在（可再切回）。
+- N54：409（无可恢复旧稿）→ `chapter-restore-error` 显示「无可恢复的旧稿」；404 / 网络错误同走该错误行
+  （不静默失败、不假装成功）。
+- N55：可证伪自证 —— 把徽标渲染条件改为**无条件**渲染 → N51 的两条反例断言必须 FAIL；还原后复绿。
+

@@ -11,6 +11,7 @@ import {
   resetBookRun,
   startBookRun,
   startPlanner,
+  type BookRunOverwrite,
   type ConfirmedItem,
   type ConflictRecord,
   type HitlPayload,
@@ -59,6 +60,8 @@ interface BookState {
   writingPlan: WritingPlanDto | null;
   runId: string | null;
   runStatus: string | null;
+  /** #1440：最近一次 startRun 响应的 overwrite（仅 force 覆盖成功时有值；其余 null） */
+  runOverwrite: BookRunOverwrite | null;
   /** #903：终态失败/降级原因（服务端门控：仅 failed/degraded 非 null） */
   progressReason: string | null;
   progress: Record<string, string>;
@@ -148,6 +151,7 @@ export const useBookStore = create<BookState>((set, get) => ({
   writingPlan: null,
   runId: null,
   runStatus: null,
+  runOverwrite: null,
   progressReason: null,
   progress: {},
   counters: null,
@@ -325,7 +329,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       const res = await startBookRun(
         limits ? { writing_plan_id: planId, limits } : { writing_plan_id: planId },
       );
-      set({ runId: res.run_id, runStatus: res.status, loading: false });
+      set({ runId: res.run_id, runStatus: res.status, runOverwrite: res.overwrite ?? null, loading: false });
     } catch (err) {
       set({ error: errorMessage(err), loading: false });
     }
@@ -416,6 +420,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       set({
         runId: null,
         runStatus: null,
+        runOverwrite: null,
         progress: {},
         counters: null,
         progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
@@ -449,6 +454,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       writingPlan: null,
       runId: null,
       runStatus: null,
+      runOverwrite: null,
       progressReason: null,
       progress: {},
       counters: null,

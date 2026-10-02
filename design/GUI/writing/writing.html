@@ -110,6 +110,20 @@ button{font-family:inherit;cursor:pointer}
 .tree-chapter .wc{flex:none;font-size:11px;color:var(--ink-3)}
 .tree-chapter .row-actions{opacity:0;transition:opacity var(--dur)}
 .tree-chapter:hover .row-actions{opacity:1}
+/* #1440：章节树「已有上一稿」徽标（常显）+ 行内「恢复上一稿」入口（hover 操作区） */
+.tree-chapter .prev-badge{flex:none;border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);border-radius:4px;background:color-mix(in srgb,var(--warn) 10%,transparent);padding:1px 5px;font-size:10px;white-space:nowrap;color:var(--warn)}
+.row-actions button.restore:hover{color:var(--warn)}
+/* #1440：恢复上一稿确认框（共享 ConfirmDialog，testidPrefix=chapter-restore；chapter-restore-confirm 态显示） */
+.chapter-restore-dialog{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
+body[data-state="chapter-restore-confirm"] .chapter-restore-dialog{display:flex}
+.chapter-restore-dialog .cr-card{width:420px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:24px}
+.chapter-restore-dialog h2{margin:0;font-family:var(--font-serif);font-size:18px;font-weight:600}
+.chapter-restore-dialog .cr-msg{margin-top:12px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.chapter-restore-dialog .cr-actions{margin-top:24px;display:flex;justify-content:flex-end;gap:8px}
+.chapter-restore-dialog .cr-actions button{border-radius:6px;padding:6px 16px;font-size:13px}
+.chapter-restore-dialog .cr-actions button[data-testid="chapter-restore-cancel"]{border:1px solid var(--line);background:none;color:var(--ink-2)}
+.chapter-restore-dialog .cr-actions button[data-testid="chapter-restore-cancel"]:hover{background:var(--surface-3)}
+.chapter-restore-dialog .cr-actions button[data-testid="chapter-restore-ok"]{border:1px solid color-mix(in srgb,var(--err) 40%,transparent);background:none;color:var(--err)}
 .tree-actions{display:flex;align-items:center;gap:4px;flex:none;padding:6px 8px;border-top:1px solid var(--line)}
 .tree-actions button{display:flex;flex:1;align-items:center;justify-content:center;gap:4px;border:1px dashed var(--line);border-radius:6px;background:none;padding:5px 0;font-size:12px;color:var(--ink-2)}
 .tree-actions button svg{width:12px;height:12px}
@@ -405,11 +419,11 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
             </div>
             <div style="padding-left:8px">
               <div class="tree-chapter"><button class="ch-title">第 9 章 山雨欲来</button><span class="wc">2,310</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
-              <div class="tree-chapter"><button class="ch-title">第 10 章 夜访剑冢</button><span class="wc">2,528</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+              <div class="tree-chapter"><button class="ch-title">第 10 章 夜访剑冢</button><span class="prev-badge" data-testid="chapter-prev-badge-ch10" title="已有上一稿，可恢复">旧稿</span><span class="wc">2,528</span><span class="row-actions"><button class="restore" data-testid="chapter-restore-ch10" aria-label="恢复上一稿"><span data-ic="rotate-ccw"></span></button><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
               <div class="tree-chapter"><button class="ch-title">第 11 章 密信</button><span class="wc">1,976</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
               <div class="tree-chapter current" data-testid="tree-chapter" data-current="true">
-                <button class="ch-title">第 12 章 剑心蒙尘</button><span class="wc">2,847</span>
-                <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
+                <button class="ch-title">第 12 章 剑心蒙尘</button><span class="prev-badge" data-testid="chapter-prev-badge-ch12" title="已有上一稿，可恢复">旧稿</span><span class="wc">2,847</span>
+                <span class="row-actions"><button class="restore" data-testid="chapter-restore-ch12" aria-label="恢复上一稿"><span data-ic="rotate-ccw"></span></button><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </div>
               <div class="tree-chapter"><button class="ch-title">第 13 章 断剑</button><span class="wc">2,142</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
             </div>
@@ -686,6 +700,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="context-preselect">上下文注入 · Agent 按大纲预选（子集勾选）</option>
       <option value="context-preselect-loading">上下文注入 · Agent 预选中（加载态）</option>
       <option value="drafts-approval">草稿审批弹层（#1377 驳回钮）</option>
+      <option value="chapter-restore-confirm">恢复上一稿确认框（#1440）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -706,6 +721,20 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
     <div class="delete-hitl-actions">
       <button type="button" data-testid="delete-confirm-cancel">取消</button>
       <button type="button" data-testid="delete-confirm-approve">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- #1440：恢复上一稿确认框（共享 ConfirmDialog 形态，testidPrefix=chapter-restore）—— chapter-restore-confirm 状态显示。
+     ⚠️ data-testid 与实现 frontend/.../components/ConfirmDialog.tsx 的 `${testidPrefix}-dialog/-cancel/-ok` 对齐；
+        message 要点 = 「双向切换（再恢复可切回）」，兄弟文案不出现真实创作素材。 -->
+<div class="chapter-restore-dialog" data-testid="chapter-restore-dialog" role="dialog" aria-modal="true" aria-label="恢复上一稿？">
+  <div class="cr-card">
+    <h2>恢复上一稿？</h2>
+    <div class="cr-msg">恢复将用上一稿替换当前正文（正文与上一稿互换）。这是双向切换：再恢复一次即可切回当前正文。</div>
+    <div class="cr-actions">
+      <button type="button" data-testid="chapter-restore-cancel">取消</button>
+      <button type="button" data-testid="chapter-restore-ok">恢复</button>
     </div>
   </div>
 </div>
@@ -789,6 +818,7 @@ const ICONS = {
   square:'<rect width="14" height="14" x="5" y="5" rx="1"/>',
   pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  'rotate-ccw':'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   palette:'<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
 };
 document.querySelectorAll('[data-ic]').forEach(el=>{
@@ -805,7 +835,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机：body[data-state] 驱动视图 ── */
-const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record','context-preselect','context-preselect-loading','drafts-approval'];
+const STATES = ['editor-idle','streaming','collapsed','empty','delete-auth','delete-hitl','global-chat','thinking-level','reasoning','context-injected','context-no-record','context-preselect','context-preselect-loading','drafts-approval','chapter-restore-confirm'];
 function setState(s){
   document.body.dataset.state = s;
   const streaming = s === 'streaming';

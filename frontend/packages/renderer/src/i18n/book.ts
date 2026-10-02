@@ -1,5 +1,6 @@
 /**
- * F44 书级编排 i18n（book.* 语义域，#903 拆出，先例 log.ts / chat-ux.ts）： * 访谈 / 计划 / HITL / 运行面板（含 #903 run-badge 档位色与失败原因键）。
+ * F44 书级编排 i18n（book.* 语义域，#903 拆出，先例 log.ts / chat-ux.ts）：
+ * 访谈 / 计划 / HITL / 运行面板（含 #903 run-badge 档位色与失败原因键）。
  * zh/en 成对维护（useI18n 合并进 dicts）。
  */
 export const bookZh: Record<string, string> = {
@@ -46,6 +47,8 @@ export const bookZh: Record<string, string> = {
   'book.run.calls': 'Agent 调用',
   'book.run.tokens': 'Token 用量',
   'book.run.tokenWarning': 'Token 用量超限，将产生告警',
+  // #1440：force 覆盖成功 → N 章旧稿已备份可恢复
+  'book.run.overwrite.notice': '{count} 章已备份，可恢复',
   // #903：终态失败/降级原因（服务端门控：仅 failed/degraded 非空）
   'book.run.reason': '失败原因',
   'book.run.reason.expand': '展开',
@@ -137,6 +140,8 @@ export const bookEn: Record<string, string> = {
   'book.run.calls': 'Agent calls',
   'book.run.tokens': 'Token usage',
   'book.run.tokenWarning': 'Token usage is over the limit and will warn',
+  // #1440: force-overwrite succeeded -> N chapters backed up, restorable
+  'book.run.overwrite.notice': '{count} chapter(s) backed up, restorable',
   // #903: terminal failure/degraded reason (server-gated, non-empty only for failed/degraded)
   'book.run.reason': 'Failure reason',
   'book.run.reason.expand': 'Expand',

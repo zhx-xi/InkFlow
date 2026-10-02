@@ -12,6 +12,8 @@ export interface ChapterMeta {
   volume_id: string | null;
   order_index: number;
   word_count: number;
+  /** #1440：被覆盖前的旧正文（后端响应项透传；NULL/缺省 = 无上一稿可恢复） */
+  previous_content?: string | null;
   /** #1017：章级写作要求（NULL=继承项目 config.writing_style，非空=本章覆盖） */
   writing_requirements?: string | null;
 }
@@ -41,7 +43,10 @@ export interface NormalizeTitlesResult {
 }
 
 import { create } from 'zustand';
-import { fetchAllChapters } from '../api/chapters';
+import {
+  fetchAllChapters,
+  restorePreviousContent as apiRestorePreviousContent,
+} from '../api/chapters';
 import { apiFetch, errorMessage } from '../api/client';
 import type { DraftDto } from '../api/drafts';
 
@@ -83,6 +88,8 @@ interface ChapterState {
   patchChapter: (chapterId: string, title: string) => Promise<ChapterMeta>;
   /** #1017：章级写作要求保存（传 null = 清除覆盖回继承） */
   patchWritingRequirements: (chapterId: string, value: string | null) => Promise<ChapterMeta>;
+  /** #1440：恢复上一稿（content 与 previous_content 互换；失败向上抛，由组件展示） */
+  restorePreviousContent: (chapterId: string) => Promise<void>;
   deleteChapter: (chapterId: string) => Promise<void>;
   /** #999：全书章节标题批量归一化（POST 成功 → 内部 loadChapterTree 刷新树） */
   normalizeChapterTitles: (projectId: string, format: 'arabic' | 'chinese') => Promise<NormalizeTitlesResult>;
@@ -231,6 +238,16 @@ export const useChapterStore = create<ChapterState>((set, get) => ({
     });
     set((s) => ({ chapters: s.chapters.map((c) => (c.id === patched.id ? patched : c)) }));
     return patched;
+  },
+
+  // #1440：恢复上一稿（POST /restore-previous）→ 章列表项合并响应 + 当前章正文刷新；
+  // 失败不吞：向上抛，由 ProjectTree 错误行展示（409 无可恢复旧稿等）
+  restorePreviousContent: async (chapterId) => {
+    const restored = await apiRestorePreviousContent(chapterId);
+    set((s) => ({
+      chapters: s.chapters.map((c) => (c.id === chapterId ? { ...c, ...restored } : c)),
+      ...(s.currentChapterId === chapterId ? { content: restored.content } : {}),
+    }));
   },
 
   // #999：全书标题批量归一化（body {format}）→ 成功后内部 loadChapterTree 双刷新（卷 + 章）

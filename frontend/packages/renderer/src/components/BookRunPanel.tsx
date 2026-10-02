@@ -73,6 +73,7 @@ export function BookRunPanel() {
   const [volumeExpanded, setVolumeExpanded] = useState<Record<number, boolean>>({});
   const runId = useBookStore((s) => s.runId);
   const runStatus = useBookStore((s) => s.runStatus);
+  const runOverwrite = useBookStore((s) => s.runOverwrite);
   const progressReason = useBookStore((s) => s.progressReason);
   const progress = useBookStore((s) => s.progress);
   const counters = useBookStore((s) => s.counters);
@@ -316,6 +317,14 @@ export function BookRunPanel() {
             className="rounded border border-warn/40 bg-warn/10 px-2 py-1 text-[12px] text-warn"
           >
             {t('book.run.tokenWarning')}
+          </div>
+        )}
+        {runOverwrite !== null && runOverwrite.chapters_to_backup > 0 && (
+          <div
+            data-testid="run-overwrite-notice"
+            className="rounded border border-accent/40 bg-accent/10 px-2 py-1 text-[12px] text-ink-2"
+          >
+            {t('book.run.overwrite.notice', { count: runOverwrite.chapters_to_backup })}
           </div>
         )}
         {progressStats.total > 0 && (

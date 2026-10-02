@@ -7,7 +7,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/book/ —— ① `book-run.html` + `book-run-<state>.png`（运行面板 6 态：running / completed / failed / degraded / degraded-expanded / reset-confirm，900×792）；② `book.html` + `book-<scheme>-<state>.png`（**段 2 任务列表**：scheme ∈ legacy（现状对照）/ a（侧栏）/ b（看板）/ c（单栏时间线），state ∈ running / blocked，另有 `book-legend.png` 状态语义图例；1280×800 @DPR1）。两套视口尺寸不同：① 是 #903/#1288 遗留资产，② 按项目标准视口（ui-prototype-workflow 坑 #27）
+- 原型引用：design/GUI/book/ —— ① `book-run.html` + `book-run-<state>.png`（运行面板 7 态：running / completed / failed / degraded / degraded-expanded / reset-confirm / overwrite-notice，900×792）；② `book.html` + `book-<scheme>-<state>.png`（**段 2 任务列表**：scheme ∈ legacy（现状对照）/ a（侧栏）/ b（看板）/ c（单栏时间线），state ∈ running / blocked，另有 `book-legend.png` 状态语义图例；1280×800 @DPR1）。两套视口尺寸不同：① 是 #903/#1288 遗留资产（#1440 加 `overwrite-notice` 态），② 按项目标准视口（ui-prototype-workflow 坑 #27）
 - ⚠️ **命名说明**：本页原型文件名为 `book-run.html`（非其它 14 页的 `<page>.html` 形态），与其它页命名不统一。本规格沿用现状、**不做改名**（改名会同时动原型资产与 `design/GUI/_tools/` 截图脚本，收益低于风险）。一致性门禁 `ci_cd/check_gui_spec_sync.py` 只校验**目录级**对应（`design/GUI/book/` ↔ `specs/f19-gui/book.md`），对目录内文件命名无语义要求。
 - ✅ **本页侧边栏入口（#1333 段 2 已落地）**：`AppNav` WRITING 组新增「成书」项 → `/book`（`nav-item-book`，i18n `nav.book` = 「成书」/「Book」）。此前 #597 D11=A 曾删除该入口（本页沦为只能靠路由 `App.tsx` 直达的孤儿），段 2 §3.5-4 拍板恢复（验收 N23）。
 > 低保真排版示意简图（区块+标签，非精确像素）
@@ -233,7 +233,7 @@
 |---|---|---|---|
 | **#1267** 审计阻断 | CLOSED（已实现） | 新增 run `blocked` + 章 `needs_review`，并把阻断原因写入 `progress_reason` | **必须对齐**：补 D-1/D-2/D-3 三处呈现 —— 任务看板的「状态语义完整性」以此为前提 |
 | **#1282 / #1288** reset 出口 | CLOSED（已实现） | `reset` 清 `progress` / `execution_refs`、plan 回 `ready`；GUI `run-reset` 非 running 态渲染 | 任务列表随 reset 归零（`runId = null` → 回计划卡分支）；**不改语义**，验收沿用 N13 |
-| **#1430** force 覆盖 + A2 备份 | CLOSED（已实现） | `chapters.previous_content` 落旧稿；`force` 须与 `confirm_overwrite` 成对 | 可选增量：被覆盖过的章在任务行加「已有上一稿」徽标 + 恢复入口 → **已建 #1440 挂 0.16.0**（#1430 已注明「GUI 入口可另开」），段 2 不纳入 |
+| **#1430** force 覆盖 + A2 备份 | CLOSED（已实现） | `chapters.previous_content` 落旧稿；`force` 须与 `confirm_overwrite` 成对 | 可选增量：被覆盖过的章在任务行加「已有上一稿」徽标 + 恢复入口 → 已建 **#1440**（#1430 已注明「GUI 入口可另开」），段 2 不纳入。**#1440 已交付（本仓同批）**：徽标 + 恢复入口落在**写作页章节树**（writing.md §15）；本页落「N 章已备份，可恢复」计数提示（§5）—— **任务行级徽标因 `steps[]` 无 `chapter_id` 不纳入**（见 §5.1） |
 | **#1333 段 1** | 已完成 | 本页规格 + 原型目录已非孤儿 | 本轨在段 1 基础上补设计定义；L4 自指指针**保留不动** |
 
 ## 4. 验收
@@ -278,3 +278,50 @@
 - N24（§3.5-5 · 拍板）：任务列表按卷分组渲染，**已完成卷默认折叠**（可展开）；章数 ≥ 100 时不出现明显渲染卡顿
 - N25（§3.5-7 · 拍板）：同一计划重复启动 → 后端 409，前端只透错（**不静默新建 run**）
 - N26（§3.5-6）：`book.run.noRun` 分支可达性给出实测结论并回写 §1；不可达则删除该分支与对应 i18n key
+
+## 5. #1440 force 覆盖备份提示 + 「已有上一稿」GUI 读口
+
+> 来源：§3.6 的转出项（「被覆盖过的章在任务行加『已有上一稿』徽标 + 恢复入口」）→ **本单（#1440）落地**。
+> 后端已具备（#1430 A2 / PR #1433）：`chapters.previous_content` + `POST /chapters/{id}/restore-previous`
+> （经 `update_chapter` 覆盖写 ⇒ `content` ⇄ `previous_content` **互换**，可再切回）。
+> 本节记录 **GUI 侧落地形态 + 范围裁量**；写作页章节树侧（徽标 + 恢复入口）见 `specs/f19-gui/writing.md` §15。
+
+### 5.1 画面/布局补充
+
+- 运行面板新增**备份提示** `run-overwrite-notice`：`runOverwrite !== null && chapters_to_backup > 0` 时渲染
+  （文案 `book.run.overwrite.notice` = 「{count} 章已备份，可恢复」/「{count} chapter(s) backed up, restorable」），
+  位置在 `run-token-warning` 之后、进度条之前。
+- 数据来源 = `POST /api/v1/agent/books/runs` 响应的**可选**字段
+  `overwrite = { forced, backup_target, chapters_to_backup }`（仅 `force=true` 覆盖成功时后端追加）→ `startRun` 收录进
+  store 的 `runOverwrite`；`resetRun` / `reset` 归零。
+- 🔴 **现状边界（如实记录）**：GUI 的 `startBookRun` **不传 `force` / `confirm_overwrite`**（本单未开放 force 开关，
+  破坏性覆盖不在授权范围）→ 该提示在**真实 GUI 交互中暂不可达**，属「响应带 `overwrite` 即展示」的忠实实现，
+  为后续开放 force 入口预留。**CLI / MCP 面本单不做**（`inkflow book run --force` 与 `manage_book run` 的
+  `force` / `confirm_overwrite` 已由 #1430 提供）。
+- ⚠️ **任务行级「已被覆盖过」徽标（§3.6 原设想的落点之一）经评估不纳入**：
+  任务行数据源 `GET /runs/{id}/summary` 的 `steps[]` 字段为
+  `{index, outline_id, name, status, execution_id, volume_name, substeps}` —— **不含 `chapter_id`**
+  （`backend/src/inkflow/domain/services/book_outline_mixin.py::_build_task_steps`）→ 前端无法把任务行**可靠**映射到
+  「哪一章的 `previous_content`」；按 `name` ↔ 章标题匹配属脆弱耦合，不取。
+  **故行级徽标落点移至写作页章节树**（`specs/f19-gui/writing.md` §15），本页以「N 章已备份」计数提示作总览。
+  如需任务行级徽标，须后端在 `steps[]` 补 `chapter_id`（另开单；本单**后端零改动**）。
+
+原型基准（`design/GUI/book/`）：
+- `book-run-overwrite-notice.png` —— `overwrite-notice` 态：提示条位于计数区与进度条之间；
+- 生成/断言脚本 `design/GUI/_tools/shot-w8-restore-previous-1440.cjs`
+  （断言：`overwrite-notice` 态可见 + 文案正确 + 其余 6 态**不渲染**；全绿）。
+- ⚠️ 本轨在 `book-run.html` 的 `caption` 追加了 #1440 说明行 → 该页**既有 6 张状态图全量重出**（同 PR diff）。
+
+### 5.2 动作样式补充
+
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 备份提示（`run-overwrite-notice`） | `runOverwrite` 非 `null` 且 `chapters_to_backup > 0` 时渲染 | 非交互（纯提示） | — | — | — | 计数为 0 / 响应无 `overwrite` 键 → **不渲染**（反例守护） |
+
+### 5.3 验收补充
+
+- N27：`POST /runs` 响应带 `overwrite.chapters_to_backup = 3` → 面板渲染 `run-overwrite-notice` 且文案含「3」与「可恢复」；
+  且 `startRun` 把该字段收录进 store 的 `runOverwrite`。
+- N28：`chapters_to_backup = 0` **或** 响应无 `overwrite` 键（非 force）→ `runOverwrite` 保持 `null`、提示**不渲染**
+  （反例守护）。
+- N29：`resetRun` / `reset` → `runOverwrite` 归零（重跑闭环不留旧提示）。

@@ -1,6 +1,7 @@
 /** 项目树（spec §4.2.1）：卷/章 + 字数 + 当前章高亮 + 底部新建章节（#648 卷管理：新建卷/编辑标题/删除卷） */
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { Check, Pencil, Trash2, X } from 'lucide-react';
+import { Check, Pencil, RotateCcw, Trash2, X } from 'lucide-react';
+import { errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
 import { hasChineseNumberingPrefix } from '../lib/chapterTitleFormat';
 import type { ChapterMeta, DraftTreeNode, Volume } from '../stores/chapter';
@@ -61,6 +62,9 @@ export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: Project
   const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
   const [editChapterTitle, setEditChapterTitle] = useState('');
   const [deleteChapterTarget, setDeleteChapterTarget] = useState<ChapterMeta | null>(null);
+  // #1440：恢复上一稿确认框目标章 + 错误行（失败透传 ApiError.detail）
+  const [restoreTarget, setRestoreTarget] = useState<ChapterMeta | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const [newVolumeId, setNewVolumeId] = useState<string | null>(null); // 新建章节目标卷（null=未分组）
   const [dragOverVolumeId, setDragOverVolumeId] = useState<string | null>(null); // 拖拽经过的卷高亮
   // #999：格式冲突弹窗 + 暂存待提交动作（取消 → 丢弃 pending）
@@ -116,6 +120,9 @@ export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: Project
   const renderChapter = (ch: ChapterMeta) => {
     const isCurrent = ch.id === currentChapterId;
     const isEditing = editingChapterId === ch.id;
+    // #1440：上一稿非空白才给入口（纯空白 = 后端无有效旧稿）
+    const hasPrevious =
+      typeof ch.previous_content === 'string' && ch.previous_content.trim() !== '';
     return (
       <div
         key={ch.id}
@@ -156,6 +163,15 @@ export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: Project
             <span className="truncate">{ch.title}</span>
           </button>
         )}
+        {hasPrevious && (
+          <span
+            data-testid={`chapter-prev-badge-${ch.id}`}
+            title={t('write.chapter.previousBadgeTitle')}
+            className="shrink-0 rounded border border-warn/30 bg-warn/10 px-1 py-0.5 text-[10px] text-warn"
+          >
+            {t('write.chapter.previousBadge')}
+          </span>
+        )}
         {/* #1094 方案 A：字数 ml-auto 贴列表右缘（非 shrink-0，保留 #980-2a 契约）；
             hover 操作钮绝对定位浮上来时显式淡出字数，避免与钮视觉重叠（废弃 -mr-14 让位机制） */}
         <span className="ml-auto text-[11px] text-ink-3 transition-all group-hover:opacity-0">
@@ -168,6 +184,20 @@ export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: Project
             data-testid={`chapter-actions-${ch.id}`}
             className="absolute right-2 flex items-center gap-0.5 rounded bg-surface opacity-0 transition-opacity duration-180 group-hover:opacity-100 focus-within:opacity-100"
           >
+            {hasPrevious && (
+              <button
+                type="button"
+                data-testid={`chapter-restore-${ch.id}`}
+                aria-label={t('write.chapter.restore')}
+                className="rounded p-1 text-ink-3 transition duration-150 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRestoreTarget(ch);
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
             <button
               type="button"
               data-testid={`chapter-edit-${ch.id}`}
@@ -388,6 +418,11 @@ export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: Project
           )}
         </div>
       </div>
+      {restoreError !== null && (
+        <p data-testid="chapter-restore-error" className="px-2 pb-1 text-[12px] text-err">
+          {restoreError}
+        </p>
+      )}
       <div data-testid="tree-actions" className="flex flex-col gap-2 border-t border-line p-2">
         {creatingVolume && (
           <div data-testid="tree-create-volume-row" className="flex items-center gap-1">
@@ -526,6 +561,28 @@ export function ProjectTree({ width = 208, onResizeWidth, onResizeEnd }: Project
           }}
           onOpenChange={(open) => {
             if (!open) setDeleteChapterTarget(null);
+          }}
+        />
+      )}
+      {restoreTarget !== null && (
+        <ConfirmDialog
+          open
+          title={t('write.chapter.restore.title')}
+          message={t('write.chapter.restore.message')}
+          confirmText={t('write.chapter.restore.confirm')}
+          danger
+          testidPrefix="chapter-restore"
+          onConfirm={() => {
+            const target = restoreTarget;
+            setRestoreTarget(null);
+            setRestoreError(null);
+            void useChapterStore
+              .getState()
+              .restorePreviousContent(target.id)
+              .catch((err: unknown) => setRestoreError(errorMessage(err)));
+          }}
+          onOpenChange={(open) => {
+            if (!open) setRestoreTarget(null);
           }}
         />
       )}

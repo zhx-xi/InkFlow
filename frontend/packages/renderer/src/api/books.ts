@@ -106,6 +106,15 @@ export interface BookRunRequest {
 export interface BookRunResponse {
   run_id: string;
   status: string;
+  /** #1440：force 覆盖成功时后端追加的备份信息（非 force 请求响应无该键） */
+  overwrite?: BookRunOverwrite;
+}
+
+/** #1440：force 覆盖成功时响应追加的备份信息（非 force 请求无该键） */
+export interface BookRunOverwrite {
+  forced: boolean;
+  backup_target: string | null;
+  chapters_to_backup: number;
 }
 
 export interface RunStatusCounters {
