@@ -769,7 +769,7 @@ export const zh = {
   'common.empty': '暂无数据',
   'common.modelNotConfigured': '请先在设置→模型管理 配置聊天模型（需保存 API Key）',
   // F44：书级编排（#335 阶段1 GUI：单面板访谈 + 子 agent 展开行）
-  'nav.book': '书级编排',
+  'nav.book': '成书',
   // #486 会话/记忆 UI
   'sessions.title': '会话列表',
   'sessions.planner.title': '访谈会话',

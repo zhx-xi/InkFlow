@@ -13,7 +13,11 @@ from inkflow.api.deps import get_db
 from inkflow.api.deps_draft import make_outline_bindder, make_volume_ensurer
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits
-from inkflow.domain.services.book_service import BookService, ChapterAlreadyWrittenError
+from inkflow.domain.services.book_service import (
+    BookService,
+    ChapterAlreadyWrittenError,
+    RunAlreadyActiveError,
+)
 from inkflow.domain.services.planner_service import PlannerService
 from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeline
 from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
@@ -601,6 +605,8 @@ async def start_run(
             data.writing_plan_id, limits, mode=data.mode, **prepare_kwargs
         )
     except ChapterAlreadyWrittenError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except RunAlreadyActiveError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except ValueError as e:
         detail = str(e)

@@ -27,7 +27,7 @@ class DataChangeEvent:
     """变更域（= 资源类型）：project|chapter|volume|character|character_group|
     character_relation|outline|plot_point|story_arc|world_setting|world_category|
     map|map_pin|foreshadowing|timeline_event|memory|agent_template|agent|
-    knowledge_relation|session|skill|settings|provider_config|draft。"""
+    knowledge_relation|session|skill|settings|provider_config|writing_plan|draft。"""
 
     op: str
     """操作类型：create|update|delete（语义化动作如 move/set_default 统一映射为 update）。"""

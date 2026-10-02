@@ -65,6 +65,10 @@ class ChapterAlreadyWrittenError(Exception):
     """
 
 
+class RunAlreadyActiveError(ValueError):
+    """book run already active (duplicate start)."""
+
+
 def _outline_to_chapter_dict(
     o: Outline,
     *,
@@ -250,6 +254,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             else None
         )
         await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        await self._publish_run_change(plan)
         return {"run_id": str(plan.id), "status": plan.status}
 
     async def write_book_volume(
@@ -320,6 +325,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             plan.status = "waiting_hitl"
             plan.hitl_payload = exc.payload
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+            await self._publish_run_change(plan)
             return {"run_id": str(plan.id), "status": "waiting_hitl"}
         plan.status = await self._sync_and_finalize(
             plan,
@@ -328,6 +334,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             fallback_reason="凭据无效或运行时错误，详见章执行日志",
         )
         await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        await self._publish_run_change(plan)
         return {"run_id": str(plan.id), "status": plan.status}
 
     async def confirm_run(self, run_id: str, *, approved: bool, decision: str = "") -> dict:
@@ -373,6 +380,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             await self._sync_usage_from_state(plan, self._volume_pipeline, thread_id=thread_id)
             plan.hitl_payload = exc.payload
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+            await self._publish_run_change(plan)
             return {
                 "run_id": str(plan.id),
                 "status": "waiting_hitl",
@@ -388,6 +396,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             )
             result["status"] = plan.status
         await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        await self._publish_run_change(plan)
         # execution_store 状态同步（书级运行执行记录 id 固定 = str(plan.id)，阶段 4）
         if self._execution_store is not None:
             await self._execution_store.update_status(  # type: ignore[attr-defined]  # 鸭子类型：execution_store 按 ExecutionStore 契约提供 update_status
@@ -410,7 +419,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
         )
         if plan is None:
             return None
-        reason = plan.progress_reason if plan.status in {"failed", "degraded"} else None
+        reason = plan.progress_reason if plan.status in {"failed", "degraded", "blocked"} else None
         return {
             "run_id": run_id,
             "status": plan.status,
@@ -458,6 +467,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
         plan.hitl_payload = None
         plan.status = "ready"
         await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+        await self._publish_run_change(plan)
         return {"run_id": run_id, "status": plan.status}
 
     async def intervene(
@@ -503,6 +513,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
                 raise ValueError("运行未处于可暂停状态")
             plan.status = "paused"
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+            await self._publish_run_change(plan)
             return {"run_id": str(plan.id), "status": "paused"}
         if action == "resume":
             if plan.status != "paused":
@@ -510,6 +521,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             mark_run_owner(plan)  # #1317：resume 亦属 running 写入点，须打实例归属
             plan.status = "running"
             await self._repo.update_writing_plan(plan)  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
+            await self._publish_run_change(plan)
             return {"run_id": str(plan.id), "status": "running"}
         if action == "redirect":
             if not target:
@@ -537,6 +549,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 鸭子类型：repo 按 BookRepositoryProtocol 提供 update_writing_plan
                 plan
             )
+            await self._publish_run_change(plan)
             return {
                 "run_id": str(plan.id),
                 "status": plan.status,
@@ -674,15 +687,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
         )
         if plan is None:
             return None
-        steps = [
-            {
-                "index": i,
-                "outline_id": oid,
-                "status": plan.progress.get(oid, "pending"),
-                "execution_id": plan.execution_refs.get(oid),
-            }
-            for i, oid in enumerate(plan.progress.keys())
-        ]
+        steps = await self._build_task_steps(plan)
         next_dict: dict[str, Any]
         if self._volume_pipeline is not None and plan.thread_id:
             state = await self._volume_pipeline.get_checkpoint_state(  # type: ignore[attr-defined]  # 鸭子类型：volume_pipeline 按 BookVolumePipeline 契约提供 get_checkpoint_state
@@ -699,7 +704,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
                 next_dict = {"finished": True}
         else:
             next_dict = {"finished": True}
-        reason = plan.progress_reason if plan.status in {"failed", "degraded"} else None
+        reason = plan.progress_reason if plan.status in {"failed", "degraded", "blocked"} else None
         return {
             "run_id": run_id,
             "status": plan.status,
@@ -724,22 +729,6 @@ class BookService(BookOutlineMixin, BookRunMixin):
         for _field in ("max_chapters", "max_agent_calls", "max_tokens", "max_sessions"):
             plan.limits[_field] = getattr(merged, _field)
         return merged
-
-    @staticmethod
-    def _build_counters(plan: WritingPlan) -> dict[str, Any]:
-        """书级运行计数器（get_status / get_summary 同构 9 键，缺省与阶段 1 常量一致）.
-        #902 §1.5：7 键基础上新增 prompt_tokens/completion_tokens（read plan.limits）."""
-        return {
-            "max_chapters": plan.limits.get("max_chapters", 1),
-            "max_agent_calls": plan.limits.get("max_agent_calls", 1),
-            "max_tokens": plan.limits.get("max_tokens", 200_000),
-            "tokens_used": plan.limits.get("tokens_used", 0),
-            "tokens_warning": plan.limits.get("tokens_warning", False),
-            "agent_calls": len(plan.execution_refs),
-            "chapters_written": sum(1 for v in plan.progress.values() if v == "done"),
-            "prompt_tokens": plan.limits.get("prompt_tokens", 0),
-            "completion_tokens": plan.limits.get("completion_tokens", 0),
-        }
 
     @staticmethod
     def _pipeline_accepts_thread_id(method: Callable[..., Any]) -> bool:

@@ -32,14 +32,20 @@ export const bookZh: Record<string, string> = {
   'book.trace.done': '已完成',
   'book.trace.failed': '失败',
   'book.trace.skipped': '已跳过',
+  // #1333：章级 needs_review 语义（审计阻断 → 待人工介入，不得落回「待处理」）
+  'book.trace.needs_review': '待人工介入',
   'book.trace.detail': '执行详情',
   'book.trace.execution': '执行引用',
+  // #1333：任务看板（卷分组章内步骤）
+  'book.task.substeps': '章内步骤',
   'book.run.status': '运行状态',
+  'book.run.status.blocked': '审计阻断 · 已停止',
+  'book.run.live.connecting': '实时 · 连接中',
+  'book.run.live.connected': '实时 · 已连接',
   'book.run.chapters': '已写章节',
   'book.run.calls': 'Agent 调用',
   'book.run.tokens': 'Token 用量',
   'book.run.tokenWarning': 'Token 用量超限，将产生告警',
-  'book.run.noRun': '暂无运行',
   // #903：终态失败/降级原因（服务端门控：仅 failed/degraded 非空）
   'book.run.reason': '失败原因',
   'book.run.reason.expand': '展开',
@@ -117,14 +123,20 @@ export const bookEn: Record<string, string> = {
   'book.trace.done': 'Done',
   'book.trace.failed': 'Failed',
   'book.trace.skipped': 'Skipped',
+  // #1333: chapter-level needs_review semantics (audit blocked -> needs review)
+  'book.trace.needs_review': 'Needs review',
   'book.trace.detail': 'Execution detail',
   'book.trace.execution': 'Execution ref',
+  // #1333: task board (volume grouping + chapter steps)
+  'book.task.substeps': 'Chapter steps',
   'book.run.status': 'Run status',
+  'book.run.status.blocked': 'Audit blocked · stopped',
+  'book.run.live.connecting': 'Live · connecting',
+  'book.run.live.connected': 'Live · connected',
   'book.run.chapters': 'Chapters written',
   'book.run.calls': 'Agent calls',
   'book.run.tokens': 'Token usage',
   'book.run.tokenWarning': 'Token usage is over the limit and will warn',
-  'book.run.noRun': 'No run yet',
   // #903: terminal failure/degraded reason (server-gated, non-empty only for failed/degraded)
   'book.run.reason': 'Failure reason',
   'book.run.reason.expand': 'Expand',

@@ -769,7 +769,7 @@ export const en: Record<string, string> = {
   'common.empty': 'No data',
   'common.modelNotConfigured': 'Please configure a chat model (with API key) in Settings → Models first',
   // F44: book-level orchestration (#335 stage-1 GUI: single-panel interview + sub-agent expandable rows)
-  'nav.book': 'Book Planner',
+  'nav.book': 'Book',
   // #486 Session / Memory UI
   'sessions.title': 'Session List',
   'sessions.planner.title': 'Interview Sessions',

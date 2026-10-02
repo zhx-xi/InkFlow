@@ -19,6 +19,15 @@ if TYPE_CHECKING:  # 循环导入防护：章 dict 类型定义于 book_service
     from inkflow.domain.services.book_service import ChapterDict, VolumeGroup
 
 
+#: #1333 agentic 轨章内步骤（按章状态派生；静态轨/卷级轨恒空）。
+_AGENTIC_SUBSTEPS: dict[str, tuple[tuple[str, str], ...]] = {
+    "done": (("write_chapter", "done"), ("audit_chapter", "done"), ("mark_done", "done")),
+    "needs_review": (("write_chapter", "done"), ("audit_chapter", "done")),
+    "in_progress": (("write_chapter", "now"),),
+    "failed": (("write_chapter", "done"),),
+}
+
+
 class BookOutlineMixin:
     async def _to_chapter_dicts(
         self, outlines: list[Outline], *, volume_outline_id: uuid.UUID | None = None
@@ -114,3 +123,68 @@ class BookOutlineMixin:
         except ValueError:
             return None
         return next((o for o in outlines if o.id == target_uuid), None)
+
+    async def _build_task_steps(self, plan: WritingPlan) -> list[dict]:
+        """#1333 任务视图 steps：章名/卷名 join（取不到回退 outline_id/None）+ agentic 轨 substeps.
+
+        顺序恒等 `plan.progress.keys()`；`name`/`volume_name`/`substeps` 键恒在（绝不缺键）；
+        outline 取不到（None / 抛异常 / 非 (list, total) 对）→ 章名回退 outline_id、卷名 None；
+        substeps 仅 agentic 轨（checkpoint state 含 route_history/audit_results）非空。
+        """
+        outlines: list[object] = []
+        if self._outline_repo is not None:  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
+            try:
+                listed = await self._outline_repo.list(  # type: ignore[attr-defined]  # 鸭子类型：outline_repo 按 OutlineRepositoryProtocol 提供 list
+                    plan.project_id
+                )
+            except Exception:
+                listed = None
+            if isinstance(listed, tuple) and len(listed) == 2 and isinstance(listed[0], list):
+                outlines = list(listed[0])
+        chapter_names: dict[str, object] = {}
+        volume_names: dict[str, object] = {}
+        for o in outlines:
+            oid = getattr(o, "id", None)
+            if oid is None:
+                continue
+            if getattr(o, "level", None) == "chapter":
+                chapter_names[str(oid)] = getattr(o, "name", None)
+            elif getattr(o, "level", None) == "volume":
+                volume_names[str(oid)] = getattr(o, "name", None)
+        chapter_volume: dict[str, object] = {
+            str(getattr(o, "id", "")): volume_names.get(str(getattr(o, "parent_id", None)))
+            for o in outlines
+            if getattr(o, "level", None) == "chapter"
+        }
+        agentic = False
+        if self._agentic_pipeline is not None:  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
+            try:
+                state = await self._agentic_pipeline.get_checkpoint_state(  # type: ignore[attr-defined]  # 鸭子类型：agentic_pipeline 按 BookAgenticPipeline 契约提供 get_checkpoint_state
+                    str(plan.id)
+                )
+            except Exception:
+                state = None
+            agentic = isinstance(state, dict) and (
+                "route_history" in state or "audit_results" in state
+            )
+        steps: list[dict] = []
+        for i, oid in enumerate(plan.progress.keys()):
+            status = plan.progress.get(oid, "pending")
+            name = chapter_names.get(str(oid))
+            volume_name = chapter_volume.get(str(oid))
+            steps.append(
+                {
+                    "index": i,
+                    "outline_id": oid,
+                    "name": name if isinstance(name, str) else oid,
+                    "status": status,
+                    "execution_id": plan.execution_refs.get(oid),
+                    "volume_name": volume_name if isinstance(volume_name, str) else None,
+                    "substeps": (
+                        [{"op": op, "status": st} for op, st in _AGENTIC_SUBSTEPS.get(status, ())]
+                        if agentic
+                        else []
+                    ),
+                }
+            )
+        return steps

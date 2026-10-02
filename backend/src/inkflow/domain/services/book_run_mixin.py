@@ -21,6 +21,7 @@ from loguru import logger
 
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits, WritingPlan
+from inkflow.domain.services._data_change import publish_change
 
 KERNEL_OWNER_PID_KEY = "kernel_owner_pid"
 """#1317：writing_plans.limits 的内核实例归属键（int pid）。
@@ -45,6 +46,26 @@ def mark_run_owner(plan: WritingPlan) -> None:
 
 class BookRunMixin:
     """书级运行后台任务辅助（预校验 + 异常兜底），供 BookService 混入。"""
+
+    async def _publish_run_change(self, plan) -> None:
+        """Publish writing_plan/update change event (best-effort, never blocks the write path)."""
+        await publish_change("writing_plan", "update", str(plan.id), plan.project_id)
+
+    @staticmethod
+    def _build_counters(plan: WritingPlan) -> dict[str, Any]:
+        """书级运行计数器（get_status / get_summary 同构 9 键，缺省与阶段 1 常量一致）.
+        #902 §1.5：7 键基础上新增 prompt_tokens/completion_tokens（read plan.limits）."""
+        return {
+            "max_chapters": plan.limits.get("max_chapters", 1),
+            "max_agent_calls": plan.limits.get("max_agent_calls", 1),
+            "max_tokens": plan.limits.get("max_tokens", 200_000),
+            "tokens_used": plan.limits.get("tokens_used", 0),
+            "tokens_warning": plan.limits.get("tokens_warning", False),
+            "agent_calls": len(plan.execution_refs),
+            "chapters_written": sum(1 for v in plan.progress.values() if v == "done"),
+            "prompt_tokens": plan.limits.get("prompt_tokens", 0),
+            "completion_tokens": plan.limits.get("completion_tokens", 0),
+        }
 
     async def prepare_run(
         self,
@@ -81,7 +102,10 @@ class BookRunMixin:
             ChapterAlreadyWrittenError: 任一目标章已有内容或执行已完成.
         """
         # 函数体 import：避免与 book_service 模块级循环依赖（错误类定义于彼）
-        from inkflow.domain.services.book_service import ChapterAlreadyWrittenError
+        from inkflow.domain.services.book_service import (
+            ChapterAlreadyWrittenError,
+            RunAlreadyActiveError,
+        )
 
         # #1430 入口不变量：双条件必须成对（与「是否有正文」无关），防自动化静默覆盖
         if force != confirm_overwrite:
@@ -92,7 +116,7 @@ class BookRunMixin:
         if plan is None:
             raise ValueError("计划不存在")
         if plan.status == "running":
-            raise ValueError("运行已在进行中")
+            raise RunAlreadyActiveError("运行已在进行中")
         merged = await self._resolve_merged_limits(plan, limits)  # type: ignore[attr-defined]  # 混入类：方法由 BookService 提供
         # 生效上限写回 plan.limits（M5：book status 显示真实配置；不覆盖 tokens_* 运行计数）
         for _field in ("max_chapters", "max_agent_calls", "max_tokens", "max_sessions"):
@@ -144,6 +168,7 @@ class BookRunMixin:
             await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
                 plan
             )
+            await self._publish_run_change(plan)
             result: dict[str, Any] = {"run_id": str(plan.id), "status": "completed"}
             if overwrite is not None:
                 result["overwrite"] = overwrite
@@ -153,6 +178,7 @@ class BookRunMixin:
         await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan
         )
+        await self._publish_run_change(plan)
         result = {"run_id": str(plan.id), "status": "running"}
         if overwrite is not None:
             result["overwrite"] = overwrite
@@ -189,6 +215,7 @@ class BookRunMixin:
         await self._repo.update_writing_plan(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
             plan
         )
+        await self._publish_run_change(plan)
         return {"run_id": run_id, "status": "failed"}
 
     @staticmethod

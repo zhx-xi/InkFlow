@@ -169,9 +169,9 @@ describe('BookRunPanel — 运行状态显示', () => {
     expect(screen.getByTestId('trace-row-status-o-ch1')).toHaveTextContent('已完成');
   });
 
-  it('无 runId → 渲染空态文案，不发请求', () => {
+  it('无 runId → 不渲染面板（#1333 N26：不可达空态分支已删除），不发请求', async () => {
     render(<BookRunPanel />);
-    expect(screen.getByTestId('book-run-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('book-run-panel')).not.toBeInTheDocument();
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
 });
@@ -206,13 +206,16 @@ describe('BookRunPanel — 轮询', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000);
       });
-      expect(apiFetchMock).toHaveBeenCalledTimes(2);
+      // #1333：任务列表会额外拉一次 /summary（章名/卷名），故按 status 端点计数
+      const statusCalls = () =>
+        apiFetchMock.mock.calls.filter(([p]) => p === '/api/v1/agent/books/runs/wp-1').length;
+      expect(statusCalls()).toBe(2);
       expect(await screen.findByTestId('run-status')).toHaveTextContent('completed');
       // 再推进 2s → 不再轮询
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2000);
       });
-      expect(apiFetchMock).toHaveBeenCalledTimes(2);
+      expect(statusCalls()).toBe(2);
     } finally {
       vi.useRealTimers();
     }
@@ -754,13 +757,16 @@ describe('BookRunPanel — #903 状态徽标档位色 + progress_reason 渲染',
         await act(async () => {
           await vi.advanceTimersByTimeAsync(1000);
         });
-        expect(apiFetchMock).toHaveBeenCalledTimes(2);
+        // #1333：按 status 端点计数（任务列表另拉 /summary 属预期）
+        const statusCalls = () =>
+          apiFetchMock.mock.calls.filter(([p]) => p === '/api/v1/agent/books/runs/wp-1').length;
+        expect(statusCalls()).toBe(2);
         expect(await screen.findByTestId('run-status')).toHaveTextContent('degraded');
         // 再推进 2s → 不再轮询（degraded 为终态，同族 completed）
         await act(async () => {
           await vi.advanceTimersByTimeAsync(2000);
         });
-        expect(apiFetchMock).toHaveBeenCalledTimes(2);
+        expect(statusCalls()).toBe(2);
       } finally {
         vi.useRealTimers();
       }

@@ -138,9 +138,9 @@ describe('BookRunPanel — #1288 reset 按钮（渲染条件）', () => {
     expect(screen.queryByTestId('run-reset')).not.toBeInTheDocument();
   });
 
-  it('runId === null（面板空态）→ 不渲染 run-reset', () => {
+  it('runId === null（无面板）→ 不渲染 run-reset（#1333 N26 已删除空态分支）', () => {
     render(<BookRunPanel />);
-    expect(screen.getByTestId('book-run-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('book-run-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('run-reset')).not.toBeInTheDocument();
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
