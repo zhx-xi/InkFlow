@@ -4,14 +4,15 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.3 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
+> **Spec 版本**: 1.4 | **日期**: 2026-10-02 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
 > **所属阶段**: 0.9.0 里程碑（世界观分类 CRUD，issue #389，估算 2-4 人天）
-> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）
+> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）、[#1334](https://github.com/zhx-xi/InkFlow/issues/1334)（v1.4 分类 kind 挂根设计定义 · 已拍板 ①C）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
 > **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 > **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
 
 > **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
+> **Spec 变更（v1.3 → v1.4，2026-10-02，#1334 设计单）**: 新增 §16「分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C）」——登记事实基线（#641 自动挂根 / #699 分类 kind / #721 地图树 kind 分流 / #834 一项目一根 / #1321 非根必填分类）+ ①abstract 条目父级三选项 (a)/(b)/(c) + ②geo 保持现状 + ③kind 判定权与无分类边界 + 迁移影响评估 + 原型 kind 表达自相矛盾收敛规则。**同步对齐 spec 漂移**：§2.6/§2.5 补 `WorldCategory.kind`（#699 已实现、此前未记）、§12 补登记 #699 决策。**本变更为设计定义，无实现**（① 已拍板 ①C，实施另起轨）。
 > **Spec 变更（v1.1 → v1.2，2026-08-16，issue #389）**: 世界观分类从「条目平铺属性」升级为「独立受控词表实体」（反转 v1.0 §2.2「不建独立分组表」决策）。① 新增 `world_categories` 表 + `WorldCategory` 领域实体（§2.2/§2.6）；② 新增分类 CRUD 四端点（§3.1，10→14 端点）；③ 分类重命名/删除反向同步条目 `category` 字符串——删除置空、重命名改名（§6.1/§7，拍板 D2=A）；④ 前端分类 chips 来源改为分类实体（移除 `DEFAULT_WORLD_CATS=['地图']` 硬编码），世界观 tab 导航修正（进分类列表视图非地图工作台）+「地图视图」独立入口（§14）；⑤ 镜像 F9 CharacterGroup 模式（§12）。
 
 > **Spec 变更（v1.0 → v1.1，2026-08-13，issue #211）**: 删除语义统一——普通实体软删→真删。① WorldSetting 移除 `is_deleted` 字段（§2.1/§2.5）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径），restore 端点/命令移除（§3/§4）；④ 提取合并移除「软删同名→新建+warning」分支（§5.4）；⑤ 跨模块 F9/F11/F12/F13/F14/F15 同步适配（§8.2 全量 MODIFY 清单）；⑥ `is_deleted` 列移除 + 存量软删数据迁移（§8.3）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**（§10）。
@@ -207,6 +208,7 @@ class WorldUpdate(BaseModel):
 | id | UUID | PK | 领域层 UUID，DB int 自增映射 |
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
 | name | str | NOT NULL, 1-50 字符, 去空白 | 分类名；**项目内唯一**（`(project_id, name)` 全唯一索引） |
+| kind | str | NOT NULL, DEFAULT `"geo"`，枚举 `geo` / `abstract`（`field_validator` 校验） | 分类类型（**新增**，对齐 #699 已实现）：`geo`=地理类可挂地图 / `abstract`=抽象类不可挂地图；条目挂根语义以此为准（§16） |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
@@ -222,6 +224,7 @@ class WorldCategory(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     name: str
+    kind: str = "geo"  # 新增（#699 已实现）：geo=地理类可挂地图 / abstract=抽象类不可挂地图
     created_at: datetime
     updated_at: datetime
 ```
@@ -877,6 +880,7 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 | 分类建模 / 条目关联 / 提取重试 / 温度 / 模板 / 端点布局 | 沿用 v1.0 决策 | 删除语义变更不影响这些决策 |
 | 分类建模反转（v1.2） | **条目平铺属性 → 独立受控词表实体 `WorldCategory`**（D1=B1） | #389 GUI 需「新建分类」CRUD + 分类独立于地图；反转 §2.2 v1.0「不建表」决策；条目 `category` 保留字符串快照，零存量迁移 |
 | 分类反向同步（v1.2） | **重命名改名 / 删除置空**（D2=A） | 受控词表一致性：条目 `category` 与分类实体名保持同步；删除后条目变「未分类」 |
+| 分类类型 kind（#699，**新增补记**） | **`WorldCategory` 增 `kind ∈ {geo, abstract}`**（默认 geo） | 区分「地理类（可挂地图）」与「抽象类（纯标签）」——地图树 kind 分流（`MapDirectoryTree.tsx` 中 abstract 分类的条目不进树）+ 地图入口门控；条目挂根语义见 §16 |
 
 ---
 
@@ -974,3 +978,125 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 - A4：extract text 空 → 422「章节文本不能为空」；LLM 解析失败重试 ≤2 仍失败 → 500「世界观提取失败: LLM 输出无法解析，请重试」
 - A5：重命名分类 → 同名字符串条目 category 同步改新名；删除分类 → 条目 category 置空（D2=A）
 - A6：extract 合并中途 DB 错误 → 单事务整体回滚（无部分落库）
+
+---
+
+## 16. 分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C · #1334）
+
+> **章节定位（#1334 设计单）**：本章是**设计定义**（选项 + 推荐 + 取舍 + 迁移影响），**不含实现**。**① 已于 2026-10-02 拍板 ①C**（用户「按照推荐」）；实施另起实现轨。
+>
+> **与既有章节的边界**：§6.1 定义「分类作为受控词表的语义」；本章只定义「分类 `kind` 如何影响**条目创建时的父级归属**」这一条推导链。**不改** §6.1 的分类重命名/删除反向同步，**不改** §5 提取合并语义，**不改** §2.4/§8.3 的索引与迁移机制（除非拍板 ①(a)/(b) 另开迁移）。
+>
+> **上游基线**：#641（自动挂根）/ #699（分类 kind + 地图树隔离）/ #721（地图树 kind 分流）/ #834（一项目一根）/ #1321（非根条目必填分类）/ #1322（树污染 + 地图树显示门控）。
+
+### 16.1 事实基线（实测，2026-10-02，worktree 基于 main @ 8429c6aa）
+
+**「按 kind 挂根」从未实现过**（git 实证）：`61f8b5de`（#641）引入自动挂根时**无 kind 概念**（一律挂根）；`0bb0ab8b`（#699）只给**分类**加 `kind` 字段 + 地图树隔离，**条目创建的挂根分支完全未动**。用户记忆中的设计实际是 #699 的**分类层门控**（不进地图树 / 隐藏地图入口）。
+
+| # | 现状（已实现） | 位置 |
+|---|---|---|
+| F1 | **自动挂根（#641）**：`POST /world-settings` body 无 `parent_id` → 取项目根；有根 → 挂根下；无根 → 建根 | `api/routers/world_settings.py:221-238`、`world_service.py:290-292` |
+| F2 | **一项目一根（#834）**：`parent_int is None and has_root → WorldRootConflictError`；有父但无根 → `WorldRootMissingError` | `world_service.py:160-168` |
+| F3 | **非根条目必填分类（#1321）**：`parent_int is not None and not category_stripped → WorldCategoryMissingError` | `world_service.py:189-194` |
+| F4 | **带 category 条目须先建分类（#834）**：分类实体不存在 → `WorldCategoryMissingError` | `world_service.py:174-179` |
+| F5 | **根单例 DB 兜底（#849）**：`uq_world_settings_root_per_project (project_id) WHERE parent_id IS NULL` | `infrastructure/database/models/world.py:54-59` |
+| F6 | **分类 kind（#699）**：`kind ∈ {geo, abstract}`，默认 geo；geo=可挂地图 / abstract=不可挂地图 | `domain/models/world.py:288`、ORM `world.py:173-178`、CLI `cli/commands/world.py:228` |
+| F7 | **前端 kind 分流（#721）**：`kindByCategory.get(category) !== 'abstract'` —— abstract 分类的条目不进**地图树**；**空/未知分类按 geo 处理** | `MapDirectoryTree.tsx:651-660` |
+
+**spec 漂移登记（已实现但本 spec 此前未记，本章同步对齐）**：
+
+- §2.6 `WorldCategory` 表 / §2.5 pydantic 原**未含 `kind` 字段** → 已补（标「新增」）。
+- §3.1/§3.2 原**未记载 #641 自动挂根**行为 → 本章 F1 补齐（§3 正文不动，以本章为登记面）。
+- §12 决策表原**未登记 #699 kind 决策** → 已补一行。
+
+**🔴 关键技术约束（决定选项可行性的根因）**：`kind` 是 `world_categories` 表的列，**`world_settings` 表没有 kind 列**。⇒ 任何「按 kind 分根」的 **DB 级约束**（#849 式部分唯一索引）**无法用现有表结构表达**——必须先在条目表冗余一列 kind（或由分类 kind 派生）。此约束使选项 (a) 的 DB 兜底成本显著高于 issue 正文估计（§16.5）。
+
+**原型证据表（不支持「按 kind 挂根」，且原型内部自相矛盾）**：
+
+| 项 | 实测 | 结论 |
+|---|---|---|
+| 树根数 | `design/GUI/world/world.html` 树视图 **多根森林**：**5 个节点皆 depth-0**（L430/470/476/482/488；原型示例条目名不复述） | 原型按「多根」画，但**不能证明**「按 kind 分根」——原型无 kind 表达 |
+| kind 视觉表达（①A 新 chips） | `world.html:344-376`：**仅「地理」带 🗺**；城市 / 秘境 / 势力 / 功法 / 文化 / 科技 **不带** | ❌ |
+| kind 视觉表达（legacy 对照 chips） | `world.html:381-385`：地理 / 城市 / 秘境 / 势力 / 功法 **全带 🗺** | ❌ 与上一行自相矛盾 |
+| kind 视觉表达（library world 面板） | `design/GUI/library/library.html:384-388`：地理🗺 / 城市🗺 / 秘境🗺 **带**；势力 / 功法 **不带** | ❌ 与 world.html 新 chips 不一致（同为 geo 的城市/秘境，一处带一处不带） |
+| 树行分类徽标 | `world.html:433/440/447/454/460/466/473/479/485/491` **全部无 🗺** | 与 chips 表达不一致 |
+| 新建条目对话框 | ❌ 原型无 | 对「默认挂根 / 选父」**零表达** |
+| 新建分类对话框 | ❌ 原型无（states 仅 main / cat-selected / cat-registered / btn-b / plan-b / plan-c / legacy / map / copy-dialog） | geo/abstract radio 是 **spec + 实现独有**（**规格领先原型**） |
+
+> ⚠️ **任务书勘误**：「world.html 五个 chip 全带 🗺」仅对 **legacy 对照 chips** 成立；①A 已实现形态的新 chips 只有「地理」带 🗺。三处（library 面板 / world 新 chips / world legacy）对同一 kind 语义有三种表达 ⇒ **原型不构成 kind 视觉规范，反而需要收敛**（§16.7）。
+
+### 16.2 ① abstract 条目的父是谁？
+
+| 选项 | 机制 | 代价 / 迁移影响 |
+|---|---|---|
+| **(a) 建第二个根** | 一项目两根（geo 根 + abstract 根）；`create_setting` 的 `parent_int is None` 分支从「有无根」改为「本 kind 是否已有根」 | 🔴 **推翻 #834 根单例不变量**，牵动 **#567 / #834 / #847 / #849** 四条契约；DB 兜底索引 `uq_world_settings_root_per_project` **无法用现有结构表达**（kind 在分类表 ⇒ 须先在条目表冗余 kind 列）→ 索引须改为 `(project_id, kind) WHERE parent_id IS NULL`；`update_setting` 置顶/改挂守卫（#847）按 kind 重写；**存量数据迁移**（现有项目全部条目在单一根下 → 须决定是否拆根/如何补 kind）；前端须渲染双根；**原型须重新出图** |
+| **(b) 挂固定「抽象根」** | 项目仍保持唯一根（`parent_id IS NULL`）；增设一个**约定节点**（如「抽象设定」）作为 abstract 类条目的父 | 🟡 **仍需区分「谁是约定根」**（约定节点是普通条目，须防用户误删/改挂，但无「不可删」语义）；**语义上仍「挂树」**——抽象条目依旧出现在树里，**不解决「树污染」诉求**（除非叠加 (c) 的树侧过滤）；后端改动中等（约定节点创建/查找/保护）+ 存量迁移 |
+| **(c) 不挂树**（✅ **已拍板 ①C**，2026-10-02） | **后端挂根行为不变**（#641 照旧一律挂根）；abstract 条目由**前端渲染层**从树过滤（复用 #721 `MapDirectoryTree` 的 kind 分流模式，扩展到列表页 `WorldNodeView`），仅在**分类筛选视图**（选中 abstract 分类）可见 | 🟢 **零后端改动**（无 DB / 无契约 / 无迁移）；前端须在**所有树渲染点**落地过滤（列表页 `WorldNodeView` + 地图树已有）；**局限**：后端数据层 abstract 条目仍挂在根下（`parent_id` 指向根）——其他消费方（CLI / MCP / agent 工具 / AI 提取读树）仍会看到其混在根下 |
+
+**①(c) 已拍板（2026-10-02，用户「按照推荐」）**：唯一「零后端改动 + 零迁移 + 与 #1322 前端树分区过渡方案同族」的选项；#1322 已合的「未挂图条目折叠区」是同一模式的延伸。
+
+### 16.3 ② geo 条目
+
+**保持现状（② 已拍板，2026-10-02）**（#641 自动挂根）：geo 类（及未分类 / 未知分类，见 §16.4）条目继续自动挂根。#641 行为**不变**，**无迁移**。
+
+### 16.4 ③ 谁判定 kind？（含无分类 / 未注册分类）
+
+- **判定源**：**条目的分类的 kind** —— 按条目 `category`（字符串快照）在 `world_categories` 中查同名分类，取 `kind`。
+- **边界 1（无分类）**：`category=""`（未分类）**合法**（§6.1「空类别 = 未分类」）→ 无分类可查 ⇒ **按 geo 处理（挂根）**。
+- **边界 2（有类别但未注册）**：`category` 有值但分类实体不存在（AI 提取管线豁免所致，见 `world_service.py:189-192` 注释；UI 表现为 #1375 ②A「待注册」chip）→ 同样**按 geo 处理**。
+- **判据统一（load-bearing）**：包「空/未知分类视为 geo」的口径**已在前端 #721 落地**（`kindByCategory.get(category) !== 'abstract'`，未命中 → geo）。**若选 (c)**，前端过滤直接沿用该判据，后端不参与；**若选 (a)/(b)**，后端 service 层新增判定**必须与前端同一判据**（否则 UI 与数据不一致）。
+- **判定位置**：唯一真相源随选项而定 —— (c) = 前端渲染层；(a)/(b) = 后端 service 层（`create_setting` / `update_setting`），因须与 DB 约束/守卫生效面一致。
+- **「未分类 / 未注册」为何不按 abstract**：若按 abstract 处理，则「无分类条目」会被静默排除出树——与 #722「根无分类」守护及 #1321「非根条目必填分类」的语义冲突（非根条目本应必有分类，空分类只应出现在根或历史豁免数据中）。按 geo 处理保持「默认可见」。
+- **③ 已拍板（2026-10-02，用户「按照推荐」）**：判定 = 条目的分类的 kind；`category=""` 或分类未注册 → 按 geo 处理。此为定论，实现轨按此执行。
+
+### 16.5 迁移影响评估（①C 不涉及；仅被否决的 (a)/(b) 需要）
+
+| 面 | (a) 建第二根 | (b) 约定节点 |
+|---|---|---|
+| 契约 #567（根单例） | 🔴 重写：由「一项目一根」→「一项目每 kind 一根」 | 🟡 不变（仍唯一根） |
+| 契约 #834（先建根 + 前置校验） | 🔴 重写 `parent_int is None` 分支（按 kind 判定根）+「先建根」按 kind | 🟡 部分（新增约定节点前置） |
+| 契约 #847（更新守卫：置顶/改挂） | 🔴 重写「变更后每 kind 仍恰有一根」不变量 | 🟡 扩展（禁改挂/删除约定节点） |
+| 契约 #849（DB 兜底） | 🔴 索引 → `(project_id, kind) WHERE parent_id IS NULL`；**须先给 `world_settings` 加 kind 列**（冗余分类 kind） | 🟡 不变（唯一根兜底仍成立） |
+| 端点 / CLI | `POST /world-settings` 自动挂根分支按 kind；CLI `world create` 增 kind 语义（或由分类派生） | 约定节点创建/查找（或惰性创建） |
+| 存量数据迁移 | 迁移函数（`create_all` + `ensure_*` 幂等，参照 `ensure_world_parent_id_column` 先例）：补 kind 冗余列；决定存量条目是否拆根 | 迁移：为存量 abstract 分类条目补挂约定节点 |
+| 原型重出图范围 | `design/GUI/world/`：树视图（双根）+ 新建条目对话框（选父/kind）+ 新建分类对话框（geo/abstract 与挂根联动）；两原型 kind 表达收敛（§16.7） | 同（约定节点须在原型可见 + 防误删表达） |
+| 测试面 | `backend/tests/unit/api/routers/test_world_api.py` 的 `TestWorldRootSingletonAPI`、`test_world_category_1321.py`、`MapDirectoryTree.*.test.tsx`、`library-p1/p2.test.tsx`、旅程 `stage4/stage5` 产物结构 | 同（+ 约定节点守护用例） |
+
+**规模估计**（父侧按 issue 正文 3-5 人天校准）：(a) 因 §16.1 的「kind 不在条目表」约束，**实际高于 3-5 人天**（须加列 + 索引重建 + 四条契约 + 迁移 + 原型）；(b) 中等（约定节点机制 + 守护 + 迁移）；(c) **小**（纯前端过滤 + 测试）。
+
+### 16.6 与 #1322 / #834 的关系
+
+- **#1322**（树污染 + 地图树显示门控，已合）：其「页面树污染」的**过渡解** = 地图工作台「未挂图条目折叠区」（前端分区）+ 地图树 #721 kind 分流。**#1334 是其完整解**——(c) 即把 #1322 的前端分区模式扩展到**列表页树**并覆盖 abstract 分类。**#1322 已声明**：「列表页 `WorldNodeView` 树不受影响（一项目一根 #834 + 后端 #641 自动挂根语义**不变**）」——(c) 顺此声明延伸，(a)/(b) 则**推翻**它。
+- **#834**（一项目一根，已合）：其「根单例」不变量是**当前后端硬语义**。(a) 直接推翻该不变量（成本最高）；(b) 保留不变量但未解决诉求；(c) **完全不触碰** #834 不变量——这正是 (c) 的最大优势。
+
+### 16.7 ①C 落地：原型统一规则（实现轨执行；本轨不产出原型）
+
+`design/GUI/` 三处 kind 表达自相矛盾（§16.1），须在实现轨按**单一规则**收敛：
+
+1. **分类 chip**（工具栏）：**geo 类带 🗺、abstract 类不带**（依 `kind`）⇒ `world.html` 新 chips 须给「城市 / 秘境」补 🗺（其语义为 geo）；`library.html` 已符合；`world.html` legacy chips（全带 🗺）**保留为「复刻旧现状」对照，不作目标态**。
+2. **树行分类徽标**：**不表达 kind**（只显示分类名），或与 chip 一致加 🗺——**二选一须统一**（现状为「树行一律无 🗺」）。**推荐：树行不表达 kind**（badge 空间有限，kind 由 chip + 树分区表达）。
+3. **树分区**：abstract 条目移出主树（折叠区 / 分类筛选视图）——与 #1322 折叠区形态对齐。
+
+> 上述规则**仅供实现轨**；本轨**不修改任何原型文件**（边界）。
+
+### 16.8 拍板结果（2026-10-02 · 用户确认「按照推荐」）
+
+| # | 决策点 | 结论（已拍板） |
+|---|---|---|
+| **①** | abstract 条目的父是谁？ | **①C — 不挂树**（后端挂根行为不变；abstract 条目由前端渲染层从树过滤，仅在分类筛选视图可见）。**否决**：(a) 建第二根、(b) 挂固定「抽象根」 |
+| **②** | geo 条目 | **保持现状**（#641 自动挂根不变，无迁移） |
+| **③** | 谁判定 kind | **条目的分类的 kind；`category=""` 或分类未注册 → 按 geo 处理**（与前端 #721 判据一致） |
+
+> 落地归属：①C 由**前端渲染层**实现（`WorldNodeView` 树侧过滤，复用 #721 kind 分流模式），**后端零改动**；③ 判据前端沿用 `kindByCategory.get(category) !== 'abstract'`。实施轨开工无需再确认。
+
+### 16.9 验收锚点（设计级，本章无实现）
+
+- D1：§16.2 三选项各含「机制 + 代价 + 迁移影响」，且已拍板项明示局限。
+- D2：§16.4 覆盖「无分类」「未注册分类」两个边界，并给出与前端 #721 一致的判据。
+- D3：§16.5 列出 (a)/(b) 须同步的四条契约（#567/#834/#847/#849）+ 唯一索引改动 + 存量迁移 + 原型重出图范围。
+- D4：§16.1 原型证据表纳入三处 kind 表达的自相矛盾项，并说明 (c) 下的统一规则（§16.7）。
+- D5：**①C 已拍板**（2026-10-02）——实现轨按 ①C 实施（前端树过滤），**后端零改动**，无需同步 §3.1/§7/§12/§13。
+
+---
+
+*本章为 #1334 设计定义。① 已于 2026-10-02 拍板 **①C**（不挂树，前端过滤）；实现轨可据此开工。*
