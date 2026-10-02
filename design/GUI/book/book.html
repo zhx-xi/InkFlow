@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<title>InkFlow 成书页 · 自动写作任务列表 — 多方案原型（#1333 段 2）</title>
+<style>
+/* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
+:root{
+  --radius-s:4px; --radius-m:6px; --radius-l:8px;
+  --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
+  --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  --dur:180ms; --ease:cubic-bezier(0.16,1,0.3,1);
+}
+[data-theme="paper"]{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F3F1EC; --surface-3:#EBE8E1;
+  --ink:#2A2A28; --ink-2:#6B6A66; --ink-3:#A4A29B; --line:#E5E2DA;
+  --accent:#3B5B7C; --accent-ink:#FFFFFF; --accent-hover:#325370; --accent-weak:rgba(59,91,124,.10);
+  --ring:rgba(59,91,124,.38); --ok:#4A7C59; --warn:#B07A2E; --err:#B04A3A;
+  --shadow:0 1px 2px rgba(42,42,40,.05),0 4px 16px rgba(42,42,40,.05);
+}
+[data-theme="night"]{
+  --bg:#1A1A18; --surface:#22221F; --surface-2:#282823; --surface-3:#4A493F;
+  --ink:#E8E6E1; --ink-2:#9B988F; --ink-3:#6E6B63; --line:#42413A;
+  --accent:#C9A24B; --accent-ink:#1A1A18; --accent-hover:#B8923F; --accent-weak:rgba(201,162,75,.13);
+  --ring:rgba(201,162,75,.45); --ok:#8FAE8E; --warn:#C9A24B; --err:#C97B63;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+}
+[data-theme="ink"]{
+  --bg:#F3EEE2; --surface:#FAF6EC; --surface-2:#EFE9DA; --surface-3:#C9BFA4;
+  --ink:#2B2A26; --ink-2:#6E6A5E; --ink-3:#A49F90; --line:#CBC0A4;
+  --accent:#A6402E; --accent-ink:#FAF6EC; --accent-hover:#96382A; --accent-weak:rgba(166,64,46,.09);
+  --ring:rgba(166,64,46,.38); --ok:#5A7A58; --warn:#9A7B3C; --err:#A6402E;
+  --shadow:0 1px 2px rgba(43,42,38,.06),0 4px 16px rgba(43,42,38,.06);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:13px;line-height:1.5}
+button{font-family:inherit;cursor:pointer}
+[data-ic]{display:inline-flex;align-items:center}
+[data-ic] svg{width:14px;height:14px;display:block}
+
+/* ═══════════ 应用外壳（顶栏 + 左导航，镜像 AppNav；本页当前无导航项 = 现状） ═══════════ */
+.shell{display:flex;height:100%;min-height:0}
+.app-nav{width:196px;flex:none;border-right:1px solid var(--line);background:var(--surface-2);padding:12px 8px;overflow-y:auto}
+.app-nav .ng{margin:0 0 10px}
+.app-nav .ng-t{font-size:11px;color:var(--ink-3);padding:0 8px 4px}
+.app-nav .ni{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--radius-m);color:var(--ink-2)}
+.app-nav .ni.on{background:var(--accent-weak);color:var(--accent)}
+/* §3.5-4 拍板：段 2 新增「成书」导航入口。legacy = 现状（无入口、项目高亮）；其余形态 = 目标态。 */
+.app-nav .ni-book{display:none}
+body:not([data-scheme="legacy"]) .ni-book{display:flex;background:var(--accent-weak);color:var(--accent)}
+body:not([data-scheme="legacy"]) .app-nav .ni-projects{background:none;color:var(--ink-2)}
+.page{flex:1;min-width:0;padding:14px 18px;overflow-y:auto}
+
+/* ═══════════ 运行摘要条（共享头部；镜像 BookRunPanel 的状态/计数/干预） ═══════════ */
+.page-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.proj{font-size:15px;font-weight:500}
+.run-status{border-radius:var(--radius-s);padding:2px 7px;font-size:12px;background:var(--surface-3);color:var(--ink)}
+.run-live{font-size:11px;color:var(--ink-3);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.counters{display:flex;gap:12px;font-size:12px;color:var(--ink-2)}
+.tbtn{border:1px solid var(--line);border-radius:var(--radius-m);background:none;color:var(--ink-2);font-size:12px;padding:2px 8px}
+.tbtn:hover{background:var(--surface-3)}
+.bar-track{flex:1;min-width:120px;height:6px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.bar-fill{height:100%;border-radius:999px;background:color-mix(in srgb,var(--accent) 70%,transparent)}
+.reason{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface-2);padding:6px 9px;font-size:12px;color:var(--ink-2);margin-bottom:10px}
+
+/* ═══════════ 状态语义（段 2 定义，含 #1267 新增 needs_review / blocked） ═══════════ */
+.st{border-radius:var(--radius-s);padding:2px 7px;font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.st-pending{background:var(--surface-3);color:var(--ink-3)}
+.st-progress{background:var(--accent-weak);color:var(--accent)}
+.st-done{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+.st-failed{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+.st-skipped{background:transparent;color:var(--ink-3);border:1px dashed var(--line)}
+.st-review{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+body[data-state="blocked"] .run-status{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+body[data-state="running"] .run-status{background:var(--accent-weak);color:var(--accent)}
+body[data-state="completed"] .run-status{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+/* 现状对照（legacy）：RUN_BADGE_CLASSES 只认 completed/failed/degraded，其余（含 running/blocked）走中性兜底 */
+body[data-scheme="legacy"]:not([data-state="completed"]) .run-status{background:var(--surface-3);color:var(--ink)}
+body[data-state="running"] .reason{display:none}
+/* 🔴 现状对照（legacy）：book 面板的失败原因块仅在 failed/degraded 渲染（showReason 判据），
+   故 run=blocked 时审计阻断原因对用户不可见 —— 这正是段 2 要修的第 ③ 处呈现缺陷。 */
+body[data-scheme="legacy"][data-state="blocked"] .reason{display:none}
+
+/* ═══════════ 任务卡/行（三方案共用原子件） ═══════════ */
+.card{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);padding:8px 10px}
+.card+.card{margin-top:8px}
+.card-h{display:flex;align-items:center;gap:8px}
+.card-t{font-weight:500;white-space:nowrap}
+.card-m{font-size:11px;color:var(--ink-3);margin-left:auto;white-space:nowrap}
+.card-sub{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);display:flex;gap:6px;flex-wrap:wrap}
+.step{font-size:11px;color:var(--ink-2);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+.step.done{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}
+.step.now{color:var(--accent);border-color:var(--accent);background:var(--accent-weak)}
+.card-note{margin-top:6px;font-size:11px;color:var(--warn)}
+.col-t{font-size:12px;color:var(--ink-3);margin:0 0 6px;display:flex;gap:6px;align-items:center}
+.panel{border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface-2);padding:10px}
+
+/* ═══════════ 方案容器（同一时刻只渲染一个） ═══════════ */
+.app{display:none}
+body[data-scheme="legacy"] .app-legacy{display:block}
+body[data-scheme="a"] .app-a{display:grid;grid-template-columns:1fr 330px;gap:12px}
+body[data-scheme="b"] .app-b{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:start}
+body[data-scheme="c"] .app-c{display:block}
+body[data-scheme="legend"] .app-legend{display:block}
+/* 窄容器（侧栏 / 看板列）内卡头允许换行，避免标题被压成竖排 */
+.app-a .card-h,.app-b .card-h{flex-wrap:wrap;row-gap:2px}
+.app-a .card-m,.app-b .card-m{margin-left:0}
+.app-a .aside-tasks{max-height:520px;overflow-y:auto}
+.app-b .col-list{max-height:520px;overflow-y:auto}
+.app-c .list{max-height:560px;overflow-y:auto}
+.legacy-list{max-height:520px;overflow-y:auto}
+.legacy-row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface-2);padding:6px 8px}
+.legacy-row+.legacy-row{margin-top:4px}
+
+/* ═══════════ 图例表 ═══════════ */
+table.legend{width:100%;border-collapse:collapse;font-size:12px}
+table.legend th,table.legend td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+table.legend th{background:var(--surface-2);color:var(--ink-2);font-weight:500}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--ink-2)}
+
+/* ═══════════ 设计注释条（评审注解，实现时不得做进产品 UI） ═══════════ */
+.design-note{display:none;align-items:flex-start;gap:8px;border:1px dashed var(--accent);border-radius:var(--radius-m);
+  background:var(--accent-weak);padding:7px 10px;margin-bottom:10px;font-size:12px;color:var(--ink-2)}
+.design-note .dn-tag{flex:none;color:var(--accent);font-weight:500}
+
+/* demo-bar（截图时隐藏） */
+.demo-bar{position:fixed;right:16px;bottom:16px;z-index:99;display:flex;gap:8px;align-items:center;border:1px solid var(--line);
+  border-radius:var(--radius-l);background:var(--surface);box-shadow:var(--shadow);padding:8px 12px;font-size:12px;color:var(--ink-2)}
+.demo-bar select{font:inherit;border:1px solid var(--line);border-radius:var(--radius-m);background:var(--surface);color:var(--ink);padding:2px 6px}
+body[data-shot="1"] .demo-bar{display:none}
+</style>
+</head>
+<body data-scheme="legacy" data-state="running">
+
+<div class="shell">
+  <!-- 全局导航（现状：无 book 项；「是否加导航入口」= §3 待拍板项 7） -->
+  <aside class="app-nav" data-testid="app-nav">
+    <div class="ng"><div class="ng-t">写作</div>
+      <div class="ni" data-ic="pen">写作</div>
+      <div class="ni ni-projects on" data-ic="book">项目</div>
+      <div class="ni ni-book" data-ic="book">成书</div>
+    </div>
+    <div class="ng"><div class="ng-t">设定库</div>
+      <div class="ni" data-ic="users">角色</div>
+      <div class="ni" data-ic="globe">世界观</div>
+      <div class="ni" data-ic="tree">大纲</div>
+    </div>
+    <div class="ng"><div class="ng-t">系统</div>
+      <div class="ni" data-ic="bot">Agent</div>
+      <div class="ni" data-ic="cog">设置</div>
+    </div>
+  </aside>
+
+  <main class="page">
+    <div class="page-top">
+      <span class="proj" data-testid="book-project">示例项目</span>
+      <span class="lbl" style="font-size:12px;color:var(--ink-3)">运行状态</span>
+      <span class="run-status" data-testid="run-status">running</span>
+      <span class="run-live" data-testid="run-live">实时 · 变更推送</span>
+      <span class="counters">
+        <span data-testid="run-counter-chapters">已写章节 3 / 8</span>
+        <span data-testid="run-counter-calls">Agent 调用 9 / 60</span>
+      </span>
+      <span class="bar-track"><span class="bar-fill" style="width:38%"></span></span>
+      <button class="tbtn" data-testid="run-intervene-pause">暂停</button>
+    </div>
+
+    <div class="reason" data-testid="run-progress-reason">第四章 · 章标题占位：审计阻断（人设漂移 severity=error），已停止后续章节</div>
+
+    <!-- ═══ 设计注释条：评审注解，实现时不得做进产品 UI ═══ -->
+    <div class="design-note" data-design-annotation="1" data-plan="legacy" data-testid="book-note-legacy">
+      <span class="dn-tag">现状对照（非方案）</span>
+      <span>当前实现的三处呈现缺陷：① 章状态 <span class="mono">needs_review</span>（#1267 审计阻断）无映射 → 兜底显示「待处理」中性灰，与真实语义相反；② run 状态 <span class="mono">blocked</span> 无档位 → 中性灰 + 直接渲染英文原文；③ 失败原因块仅在 <span class="mono">failed/degraded</span> 渲染 → <b>审计阻断原因对用户不可见</b>；④ 本页 <b>无导航入口</b>（<span class="mono">AppNav</span> 无 book 项）—— 段 2 已拍板新增「成书」项（见 §3.5-4），故 legacy 之外的形态左侧导航已出现该入口。</span>
+    </div>
+    <div class="design-note" data-design-annotation="1" data-plan="a" data-testid="book-note-a">
+      <span class="dn-tag">方案 A · 侧栏任务列表</span>
+      <span>任务列表常驻右栏（286px），主区留给运行面板与干预。收益：任务与主区操作可同时可见，与写作页「右栏面板」语言一致。代价：book 页需由单栏改双栏；窄窗口（&lt;1100px）需折叠侧栏。</span>
+    </div>
+    <div class="design-note" data-design-annotation="1" data-plan="b" data-testid="book-note-b">
+      <span class="dn-tag">方案 B · 主区看板（三列）</span>
+      <span>待处理 / 进行中 / 已完成 三列并置。收益：一眼看到全局分布，最接近「看板」字面。代价：本页章数可达数百（长篇），三列各自滚动后<b>总览价值消失</b>；单卡宽度被压到 ~1/3，章名与角标易截断；需重做行内交互（展开/干预）形态。</span>
+    </div>
+    <div class="design-note" data-design-annotation="1" data-plan="c" data-testid="book-note-c">
+      <span class="dn-tag">方案 C · 单栏任务时间线（推荐）</span>
+      <span>沿用现状单栏与既有 <span class="mono">ExecutionTraceRow</span> 语义：章级行为主，展开看章内步骤（agentic 轨的 write/audit/revise），行内标「当前动作」。收益：改动最小、与既有折叠/密度/干预控件一脉相承，数百章可滚动/分页。代价：无列分布视图（用顶部计数与进度条补足）。</span>
+    </div>
+    <div class="design-note" data-design-annotation="1" data-plan="legend" data-testid="book-note-legend">
+      <span class="dn-tag">状态语义图例</span>
+      <span>段 2 需补齐两个既有后端状态（#1267）的视觉语义；本图同时是页规格 §3 状态表的视觉锚。</span>
+    </div>
+
+    <!-- ═══ 现状（legacy）═══ -->
+    <section class="app app-legacy" data-testid="app-legacy">
+      <p class="col-t">运行面板 · 进度列表（现状五态，无 needs_review 映射）</p>
+      <div class="legacy-list" id="legacy-list" data-testid="legacy-list"></div>
+    </section>
+
+    <!-- ═══ 方案 A · 侧栏任务列表 ═══ -->
+    <section class="app app-a" data-testid="app-a">
+      <div class="panel">
+        <p class="col-t">主区 · 运行面板（状态 / 计数 / 进度条 / 干预 / 回归摘要）</p>
+        <div class="card"><div class="card-h"><span class="card-t">运行概览</span><span class="card-m">轮询 1s（兜底）</span></div>
+          <div class="card-sub"><span class="step done">章 3 / 8</span><span class="step">调用 9 / 60</span><span class="step">Token 182k / 400k</span></div>
+        </div>
+        <div class="card"><div class="card-h"><span class="card-t">观察密度</span><span class="card-m">表演 / 仪表 / 无声</span></div>
+          <div class="card-sub"><span class="step now">仪表</span><span class="step">干预：暂停</span><span class="step">回归摘要</span></div>
+        </div>
+      </div>
+      <aside class="panel aside-tasks" data-testid="a-task-panel">
+        <p class="col-t">任务列表（常驻侧栏）</p>
+        <div class="list" id="a-list" data-testid="a-list"></div>
+      </aside>
+    </section>
+
+    <!-- ═══ 方案 B · 主区看板 ═══ -->
+    <section class="app app-b" data-testid="app-b">
+      <div><p class="col-t">待处理 <span id="b-count-pending" data-testid="b-count-pending"></span></p><div class="col-list" id="b-col-pending" data-testid="b-col-pending"></div></div>
+      <div><p class="col-t">进行中 <span id="b-count-progress" data-testid="b-count-progress"></span></p><div class="col-list" id="b-col-progress" data-testid="b-col-progress"></div></div>
+      <div><p class="col-t">已完成 <span id="b-count-done" data-testid="b-count-done"></span></p><div class="col-list" id="b-col-done" data-testid="b-col-done"></div></div>
+    </section>
+
+    <!-- ═══ 方案 C · 单栏任务时间线 ═══ -->
+    <section class="app app-c" data-testid="app-c">
+      <p class="col-t">自动写作任务（章级 · 展开看章内步骤）</p>
+      <div class="list" id="c-list" data-testid="c-list"></div>
+    </section>
+
+    <!-- ═══ 状态语义图例 ═══ -->
+    <section class="app app-legend" data-testid="app-legend">
+      <p class="col-t">任务看板状态语义（段 2 定义；含 #1267 新增）</p>
+      <table class="legend" data-testid="legend-table">
+        <thead><tr><th>状态（值）</th><th>呈现</th><th>语义 / 来源</th><th>现状（legacy）</th></tr></thead>
+        <tbody id="legend-body"></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<div class="demo-bar">
+  <label>方案 <select id="schemeSel">
+    <option value="legacy">现状对照（legacy）</option>
+    <option value="a">方案 A · 侧栏任务列表</option>
+    <option value="b">方案 B · 主区看板</option>
+    <option value="c">方案 C · 单栏任务时间线</option>
+    <option value="legend">状态语义图例</option>
+  </select></label>
+  <label>场景 <select id="stateSel">
+    <option value="running">running（写作中）</option>
+    <option value="blocked">blocked（审计阻断）</option>
+    <option value="completed">completed（全部完成）</option>
+  </select></label>
+  <label>主题 <select id="themeSel">
+    <option value="paper">素笺</option><option value="night">夜墨</option><option value="ink">古砚</option>
+  </select></label>
+</div>
+
+<script>
+/* ═══════════ 内联 SVG 图标（禁 emoji：无头截图不稳定） ═══════════ */
+const ICONS = {
+  'chevron': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4l4 4-4 4"/></svg>',
+  'check':   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3.5 8.5l3 3 6-7"/></svg>',
+  'clock':   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/></svg>',
+  'alert':   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.5l5.5 10h-11z"/><path d="M8 6.5v3M8 11.2v.1"/></svg>',
+  'dot':     '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="2.6"/></svg>',
+  'skip':    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h8"/></svg>',
+  'pen':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13l1-3 7-7 2 2-7 7z"/></svg>',
+  'book':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h4.5A1.5 1.5 0 019 4.5V13a1.5 1.5 0 00-1.5-1.5H3zM13 3H8.5A1.5 1.5 0 007 4.5"/></svg>',
+  'users':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="2.2"/><path d="M2.5 13c0-2 1.6-3.2 3.5-3.2S9.5 11 9.5 13"/></svg>',
+  'globe':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11"/></svg>',
+  'tree':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3v10M4 6h6M4 11h6"/><circle cx="11" cy="6" r="1.2"/><circle cx="11" cy="11" r="1.2"/></svg>',
+  'bot':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="5" width="9" height="7" rx="2"/><path d="M8 3v2M6 8.2v.1M10 8.2v.1"/></svg>',
+  'cog':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 2.5v1.6M8 11.9v1.6M2.5 8h1.6M11.9 8h1.6M4.1 4.1l1.1 1.1M10.8 10.8l1.1 1.1M11.9 4.1l-1.1 1.1M5.2 10.8l-1.1 1.1"/></svg>',
+};
+
+/* ═══════════ 段 2 定义：章级任务状态语义（含 #1267 新增 needs_review） ═══════════ */
+const STATUS = {
+  pending:     { label:'待处理',      ic:'dot',   cls:'st-pending'  },
+  in_progress: { label:'进行中',      ic:'clock', cls:'st-progress' },
+  done:        { label:'已完成',      ic:'check', cls:'st-done'     },
+  failed:      { label:'失败',        ic:'alert', cls:'st-failed'   },
+  skipped:     { label:'已跳过',      ic:'skip',  cls:'st-skipped'  },
+  needs_review:{ label:'待人工介入',  ic:'alert', cls:'st-review'   },  /* #1267 审计阻断 */
+};
+/* 现状实现（BookRunPanel/ExecutionTraceRow）：五态，无 needs_review → 兜底「待处理」 */
+const LEGACY_STATUS = { pending:'待处理', in_progress:'进行中', done:'已完成', failed:'失败', skipped:'已跳过' };
+const LEGACY_PENDING = '待处理';
+
+/* ═══════════ 种子数据（通用占位符；三方案的差异要「肉眼可数」） ═══════════ */
+const TASKS = [
+  { no:'第一章', title:'章标题占位', status:'done',        meta:'3,120 字', steps:[['write_chapter','done'],['audit_chapter','done'],['mark_done','done']] },
+  { no:'第二章', title:'章标题占位', status:'done',        meta:'2,860 字', steps:[['write_chapter','done'],['audit_chapter','done'],['mark_done','done']] },
+  { no:'第三章', title:'章标题占位', status:'in_progress', meta:'进行中',   steps:[['write_chapter','now']], action:'write_chapter' },
+  { no:'第四章', title:'章标题占位', status:'needs_review',meta:'已停止',   steps:[['write_chapter','done'],['audit_chapter','done']],
+    note:'审计阻断：人设漂移（severity=error）→ 需人工介入后继续' },
+  { no:'第五章', title:'章标题占位', status:'pending',     meta:'待写', steps:[] },
+  { no:'第六章', title:'章标题占位', status:'pending',     meta:'待写', steps:[] },
+  { no:'第七章', title:'章标题占位', status:'skipped',     meta:'已跳过', steps:[] },
+  { no:'第八章', title:'章标题占位', status:'failed',      meta:'失败',   steps:[['write_chapter','done']],
+    note:'LLM provider 调用失败（credential invalid，已重试 3 次）' },
+];
+
+/* ===== 渲染 ===== */
+function badge(status){ const s = STATUS[status] || STATUS.pending;
+  return `<span class="st ${s.cls}" data-ic="${s.ic}">${s.label}</span>`; }
+function cardHtml(t, expand){
+  const steps = (expand && t.steps.length)
+    ? `<div class="card-sub">${t.steps.map(([k,s])=>`<span class="step ${s}">${k}</span>`).join('')}</div>` : '';
+  const note = t.note ? `<div class="card-note" data-ic="alert">${t.note}</div>` : '';
+  const action = t.action ? `<span class="card-m">当前动作 <span class="mono">${t.action}</span></span>` : '';
+  return `<div class="card" data-testid="task-${t.no}"><div class="card-h">${badge(t.status)}
+    <span class="card-t">${t.no}</span><span class="card-m">· ${t.title}</span>${action}
+    <span class="card-m">${t.meta}</span></div>${steps}${note}</div>`;
+}
+
+function renderLegacy(){
+  const host = document.getElementById('legacy-list');
+  host.innerHTML = TASKS.map((t)=>{
+    const label = LEGACY_STATUS[t.status] || LEGACY_PENDING;   /* 兜底 = 现状行为 */
+    const cls = t.status === 'done' ? 'st-done' : t.status === 'failed' ? 'st-failed'
+      : t.status === 'in_progress' ? 'st-progress' : 'st-pending'; /* 现状 badge 类 */
+    return `<div class="legacy-row" data-testid="legacy-row-${t.no}"><span class="st ${cls}">${label}</span>
+      <span class="mono">${t.no}</span></div>`;
+  }).join('');
+}
+function renderA(){ document.getElementById('a-list').innerHTML = TASKS.map(t=>cardHtml(t,false)).join(''); }
+function renderC(){ document.getElementById('c-list').innerHTML = TASKS.map(t=>cardHtml(t,true)).join(''); }
+function renderB(){
+  const buckets = { pending:[], in_progress:[], done:[] };
+  TASKS.forEach((t)=>{
+    const k = t.status === 'done' ? 'done' : t.status === 'in_progress' ? 'in_progress' : 'pending';
+    buckets[k].push(t);
+  });
+  document.getElementById('b-col-pending').innerHTML  = buckets.pending.map(t=>cardHtml(t,false)).join('');
+  document.getElementById('b-col-progress').innerHTML = buckets.in_progress.map(t=>cardHtml(t,false)).join('');
+  document.getElementById('b-col-done').innerHTML     = buckets.done.map(t=>cardHtml(t,false)).join('');
+  document.getElementById('b-count-pending').textContent  = buckets.pending.length;
+  document.getElementById('b-count-progress').textContent = buckets.in_progress.length;
+  document.getElementById('b-count-done').textContent     = buckets.done.length;
+}
+const LEGEND_ROWS = [
+  ['pending','待处理','未派发（progress 缺该键）','✅ 一致'],
+  ['in_progress','进行中','service 置 in_progress','✅ 一致'],
+  ['done','已完成','委托成功、正文落库','✅ 一致'],
+  ['failed','失败','委托异常','✅ 一致'],
+  ['skipped','已跳过','硬护栏超限跳过','✅ 一致'],
+  ['needs_review','待人工介入','#1267 审计阻断，等人工介入','🔴 兜底显示「待处理」，语义相反'],
+  ['（run）blocked','审计阻断 · 已停止','#1267 run 级终态（_derive_run_status）','🔴 无档位 → 中性灰 + 英文原文'],
+];
+function renderLegend(){
+  document.getElementById('legend-body').innerHTML = LEGEND_ROWS.map(([v,label,src,now])=>
+    `<tr><td class="mono">${v}</td><td>${v.startsWith('（')?'—':badge(v)}</td>
+     <td>${src}</td><td>${now}</td></tr>`).join('');
+}
+
+/* 运行摘要条随场景变化（blocked 才出原因块；现状靠 failed/degraded 门控 → 阻断原因不可见）
+   🔴 run 徽标文案：现状（legacy）直接渲染英文枚举原文；段 2 方案给出中文语义文案。 */
+const RUN_LABEL = { running:'写作中', blocked:'审计阻断 · 已停止', completed:'已完成' };
+function applyRunStatus(){
+  const el = document.querySelector('[data-testid="run-status"]');
+  const state = document.body.dataset.state;
+  const legacy = document.body.dataset.scheme === 'legacy';
+  el.textContent = legacy ? state : (RUN_LABEL[state] || state);
+}
+function applyState(state){
+  document.querySelector('[data-testid="run-counter-chapters"]').textContent =
+    state === 'completed' ? '已写章节 8 / 8' : '已写章节 3 / 8';
+  document.querySelector('.bar-fill').style.width = state === 'completed' ? '100%' : '38%';
+  applyRunStatus();
+}
+
+function injectIcons(root){
+  (root || document).querySelectorAll('[data-ic]').forEach((el)=>{
+    el.querySelectorAll('svg').forEach((s)=>s.remove());
+    const k = el.getAttribute('data-ic');
+    if(ICONS[k]) el.insertAdjacentHTML('afterbegin', ICONS[k]);
+  });
+}
+function setScheme(s){ document.body.dataset.scheme = s;
+  document.querySelectorAll('.design-note').forEach((n)=>{ n.style.display = (n.dataset.plan === s) ? 'flex' : 'none'; });
+  if(typeof applyRunStatus === 'function') applyRunStatus();
+}
+function setState(s){ document.body.dataset.state = s; applyState(s); }
+function setTheme(th){ document.documentElement.dataset.theme = th; document.body.dataset.theme = th; }
+
+function renderAll(){
+  renderLegacy(); renderA(); renderB(); renderC(); renderLegend();
+  injectIcons(document);
+  applyState(document.body.dataset.state);
+}
+renderAll();
+setScheme(document.body.dataset.scheme);
+
+/* 与既有 book-run.html 同族的驱动约定：hash 初始化 + hashchange + 直接调 setter */
+const SCHEMES = ['legacy','a','b','c','legend'];
+const STATES  = ['running','blocked','completed'];
+document.getElementById('schemeSel').addEventListener('change',(e)=>{ setScheme(e.target.value); injectIcons(document); });
+document.getElementById('stateSel').addEventListener('change',(e)=>setState(e.target.value));
+document.getElementById('themeSel').addEventListener('change',(e)=>setTheme(e.target.value));
+const h = location.hash.replace('#','').split(',');
+if(SCHEMES.includes(h[0])){ setScheme(h[0]); document.getElementById('schemeSel').value = h[0]; }
+if(STATES.includes(h[1])){ setState(h[1]); document.getElementById('stateSel').value = h[1]; }
+window.addEventListener('hashchange',()=>{
+  const p = location.hash.replace('#','').split(',');
+  if(SCHEMES.includes(p[0])){ setScheme(p[0]); document.getElementById('schemeSel').value = p[0]; injectIcons(document); }
+  if(STATES.includes(p[1])){ setState(p[1]); document.getElementById('stateSel').value = p[1]; }
+});
+</script>
+</body>
+</html>

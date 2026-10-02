@@ -2,12 +2,13 @@
 
 > 页面: book | 路由: /book | 组件: pages/book.tsx（BookPage）+ components/BookPlannerPanel + components/BookRunPanel
 > 对应 design/GUI/book/（官方简图 book-run.html + book-run-<state>.png）
+> **Spec 变更**（2026-10-02 · #1333 段 2）：§1 补任务列表三方案线框 + 原型引用；§2 新增控件行；§3 由「待定义」升级为完整设计定义（6 问结论 + 状态语义 + 漂移登记 + 待拍板）；§4 追加 N14-N21。**本轨为设计轨：不实现、不 push。**
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/book/book-run.html + book-run-<state>.png（completed/degraded/degraded-expanded/failed/reset-confirm/running）
+- 原型引用：design/GUI/book/ —— ① `book-run.html` + `book-run-<state>.png`（运行面板 6 态：running / completed / failed / degraded / degraded-expanded / reset-confirm，900×792）；② `book.html` + `book-<scheme>-<state>.png`（**段 2 任务列表**：scheme ∈ legacy（现状对照）/ a（侧栏）/ b（看板）/ c（单栏时间线），state ∈ running / blocked，另有 `book-legend.png` 状态语义图例；1280×800 @DPR1）。两套视口尺寸不同：① 是 #903/#1288 遗留资产，② 按项目标准视口（ui-prototype-workflow 坑 #27）
 - ⚠️ **命名说明**：本页原型文件名为 `book-run.html`（非其它 14 页的 `<page>.html` 形态），与其它页命名不统一。本规格沿用现状、**不做改名**（改名会同时动原型资产与 `design/GUI/_tools/` 截图脚本，收益低于风险）。一致性门禁 `ci_cd/check_gui_spec_sync.py` 只校验**目录级**对应（`design/GUI/book/` ↔ `specs/f19-gui/book.md`），对目录内文件命名无语义要求。
-- ⚠️ **本页无侧边栏入口**（`AppNav.tsx` 无 book 项），仅 `App.tsx:169` 保留路由 `<Route path="/book" element={<BookPage />} />`。用户当前无法从导航点入本页；本规格按「已合入实现」记录现状，**不新增入口**（是否启用另议）。
+- ⚠️ **本页无侧边栏入口**（`AppNav.tsx` 无 book 项），仅 `App.tsx:169` 保留路由 `<Route path="/book" element={<BookPage />} />`。用户当前无法从导航点入本页（以上为**已合入实现**的现状）。🔴 **段 2 已拍板（2026-10-02）新增 `AppNav`「成书」项 → `/book`**（i18n key `nav.book` 已存在，见 §3.5-4 / 验收 N23）—— 本规格在此登记为目标态，实现轨落地后本节改为「现状即已含入口」。
 > 低保真排版示意简图（区块+标签，非精确像素）
 
 ```text
@@ -47,12 +48,49 @@
 │             计数：run-counter-chapters / calls / tokens
 │             token 预警 run-token-warning
 │             进度条 run-progress-bar（done/total）
-│             进度列表 run-progress-list ★（见 §3 待定义）
+│             进度列表 run-progress-list ★（段 2 任务列表，见 §3.2 Q5 / §3.3）
 │               = 逐 outlineId 渲染 ExecutionTraceRow
 │                 （五态徽标 pending/in_progress/done/
 │                   failed/skipped，默认折叠可展开）
 │             回归摘要面板（run-summary-toggle 开启时）
 └──────────────────────────────────────────────────────────────┘
+```
+
+> 低保真排版示意简图 · 段 2 任务列表三方案（区块+标签，非精确像素；详见 §3）
+
+```text
+【方案 C · 单栏任务时间线（推荐）】
+┌────────────────────────────────────────────────────────────────────┐
+│ 顶栏：主题/语言 Select  窗口控制（壳层通用）                        │
+├────────────────────────────────────────────────────────────────────┤
+│ 项目名 book-project  [运行状态徽标 run-status]  [实时通道指示]      │
+│ 计数 run-counter-chapters / run-counter-calls  [进度条]  [暂停]     │
+│ 失败原因 run-progress-reason（failed / degraded / blocked 非空时）  │
+│ ┌ 任务列表 run-task-list ★段 2 新增 ─────────────────────────────┐ │
+│ │ [已完成]   第一章 · 章名                     3,120 字   [展开] │ │
+│ │ [进行中]   第三章 · 章名   当前动作 write_chapter      进行中  │ │
+│ │   └ 展开：write_chapter / audit_chapter / revise_chapter       │ │
+│ │ [待人工介入] 第四章 · 章名  ← 审计阻断原因行（warn 色）        │ │
+│ │ [待处理]   第五章 · 章名                              待写     │ │
+│ └────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────┘
+
+【方案 A · 侧栏任务列表】
+┌───────────────────────────────┬────────────────────────────────────┐
+│ 主区 · 运行面板               │ 任务列表（常驻侧栏 330px）★        │
+│  运行状态徽标 / 计数 / 进度条 │ [已完成] 第一章 · 章名   3,120 字  │
+│  干预 暂停 / 恢复             │ [进行中] 第三章  当前动作 write_…  │
+│  密度 表演 / 仪表 / 无声      │ [待人工介入] 第四章（审计原因行）  │
+│  回归摘要 / 重置运行          │ [失败] 第八章（provider 失败）     │
+└───────────────────────────────┴────────────────────────────────────┘
+
+【方案 B · 主区看板（三列）】
+┌─ 待处理 5 ──────┬─ 进行中 1 ──────┬─ 已完成 2 ───────┐
+│ [待人工介入] 四  │ [进行中] 第三章  │ [已完成] 第一章  │
+│  审计阻断原因行  │  当前动作 …      │  3,120 字        │
+│ [待处理] 第五章  │                  │ [已完成] 第二章  │
+│ [失败] 第八章    │                  │                  │
+└──────────────────┴──────────────────┴──────────────────┘
 ```
 
 - 参考锚点（真实实现，F44 阶段1 + 阶段4 #338 S4b + #903）：
@@ -70,10 +108,10 @@
     - 计数三行：`run-counter-chapters`（`chapters_written / max_chapters`）、`run-counter-calls`（`agent_calls / max_agent_calls`）、`run-counter-tokens`（仅 `max_tokens` 与 `tokens_used` 均定义时渲染）
     - `run-token-warning`：`counters.tokens_warning === true` 时渲染
     - 进度条 `run-progress-bar`：`done / total`，宽度 = `min(100, round(done/total*100))%`（`total > 0` 才渲染）
-    - 进度列表 `run-progress-list`：`Object.entries(progress)` → 逐 `outlineId` 渲染 `ExecutionTraceRow`（五态徽标 + 默认折叠）
+    - 进度列表 `run-progress-list`：`Object.entries(progress)` → 逐 `outlineId` 渲染 `ExecutionTraceRow`（**现状**五态徽标 + 默认折叠）。🔴 **漂移 D-1**（§3.4）：后端 #1267 已引入第六态 `needs_review`（审计阻断），前端 `STATUS_LABEL_KEYS` / `STATUS_BADGE_CLASSES` 无该项 → 兜底为 `pending`「待处理」，与真实语义相反。段 2 实现轨须补 6 态映射。
     - `VolumeHITLDialog`（卷级 HITL 确认框）
   - 未启动（**组件内部**分支）：`BookRunPanel` 内的 `runId === null` → `book.run.noRun`（「暂无运行」）纯文本，无工具栏
-    - ⚠️ **同名遮蔽注意**：页级 `runId`（`useBookStore`）与 `BookRunPanel` 读取的 `runId` 是**同一个 store 字段**，但两处判断的分支不同——页级为 `null` 时**根本不会渲染 `BookRunPanel`**（走计划卡分支），故 `book.run.noRun` 实际只在「已渲染面板但 store 的 runId 又被清空」时可见。规格按实现忠实记录，此分支可达性未实测（见 §3 待定义）
+    - ⚠️ **同名遮蔽注意**：页级 `runId`（`useBookStore`）与 `BookRunPanel` 读取的 `runId` 是**同一个 store 字段**，但两处判断的分支不同——页级为 `null` 时**根本不会渲染 `BookRunPanel`**（走计划卡分支），故 `book.run.noRun` 实际只在「已渲染面板但 store 的 runId 又被清空」时可见。规格按实现忠实记录，此分支可达性未实测（见 §3.5 待拍板项 6）
 - 布局说明：纵向单栏（`max-w-2xl`）；访谈态与「计划卡 / 运行面板」互斥（由 `sessionStatus` 切换），计划卡与运行面板互斥（由 `runId` 切换）；运行面板内区块按「状态 → 失败原因 → 工具栏 → diff → 计数 → 进度 → 列表 → 摘要」顺序堆叠
 
 ## 2. 动作样式（按钮 × 状态表）
@@ -81,13 +119,13 @@
 | 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
 |------|--------|--------|--------|------|------|------|
 | 去项目页（book-page-go-projects） | 无当前项目时显示 | `navigate('/projects')` | — | 跳转 | — | 仅空态分支渲染 |
-| 开始访谈（book-planner-start） | 一句话为空 → disabled | 提交一句话，进入对话流 | 禁用 | 追加 user 气泡 + assistant 提问 | `book-planner-error` | ESC/取消语义未定义（见 §3） |
+| 开始访谈（book-planner-start） | 一句话为空 → disabled | 提交一句话，进入对话流 | 禁用 | 追加 user 气泡 + assistant 提问 | `book-planner-error` | ESC/取消语义未定义（见 §3.5 待拍板项 8） |
 | 用模板（book-template-<qid>） | assistant 提问行内按钮 | 以模板文本填充回答 | — | 回答框可继续编辑 | — | 不直接提交（需再点发送） |
 | 发送（book-send） | 回答框非空白（`answer.trim() !== ''`） | 追加 user 气泡 | — | 生成下一问或确认卡 | err 行 | 空白不可提交 |
 | 确认卡确认（book-confirm-ok） | 确认卡渲染时 | 接受全部条目 | — | 进入下一阶段/启动 | err 行 | 逐项可先「编辑」再确认 |
 | 确认卡编辑（book-confirm-edit-<key> → submit） | 条目行内 | 展开 `book-confirm-edit-input-<key>` → 提交该条 | 提交中 | 条目文案更新 | err 行 | 提交后收起输入 |
 | 保存上限（book-limits-save） | 可点 | 提交 4 项上限（max_chapters / max_agent_calls / max_tokens / max_sessions） | `limits.saving` → disabled + 文案切 `set.saving` | 值回显 | `book-start-error` | 数值型输入（null → 空串显示），非法值由后端校验 |
-| 开始运行（book-start-run） | 计划态可点 | 启动 book run → `runId` 置值 | 禁用 | 切到运行面板 | `book-start-error` | 同一计划重复启动语义未定义（见 §3） |
+| 开始运行（book-start-run） | 计划态可点 | 启动 book run → `runId` 置值 | 禁用 | 切到运行面板 | `book-start-error` | 同一计划重复启动语义未定义（见 §3.5 待拍板项 7） |
 | 暂停（run-intervene-pause） | `running` 时渲染 | POST pause | — | 状态转 `paused` → 按钮换成 resume | err | 非 running 态不渲染该按钮 |
 | 恢复（run-intervene-resume） | `paused` 时渲染 | POST resume | — | 状态转 `running` | err | 非 paused 态不渲染该按钮 |
 | 密度三档（run-density-performance / dashboard / silent） | `aria-pressed` 标记当前档 | 切换本地密度 | — | 列表/控件密度即时变化 | — | `silent` 下**不渲染** `run-progress-list`；零额外请求 |
@@ -96,37 +134,102 @@
 | 原因展开（run-progress-reason-toggle） | 仅 `length > 200` 时渲染 | 展开/收起全文 | — | `line-clamp-3` 解除/恢复 | — | ≤200 字不渲染该按钮 |
 | diff 关闭（run-diff-close） | `interveneDiff` 非空时 | `clearInterveneDiff()` | — | banner 消失 | — | 只清展示，不回滚数据 |
 | 进度行展开（ExecutionTraceRow） | 默认折叠 | 展开该章摘要/干预控件 | — | 行内控件显示 | — | `done` 章干预控件禁用（422 防呆） |
+| 任务列表（run-task-list，新增 · §3.2 Q5=C） | 有进度时渲染 | 展开/收起该章章内步骤（本地 state） | — | 步骤 chips 显示 | — | 静态/卷级轨无章内步骤 → 不渲染展开入口；`silent` 密度不渲染 |
+| 状态语义补齐（新增 · §3.3） | needs_review / blocked 出现时 | — | — | — | — | 纯呈现：`needs_review` → 「待人工介入」warn 色；run `blocked` → 「审计阻断 · 已停止」warn 色且失败原因块渲染（修 D-1/D-2/D-3） |
+| 实时通道指示（run-live，新增 · §3.2 Q3=C） | 运行中渲染 | — | 连接中 → 已连接 | 推送到达即触发一次 run status 拉取 | 断开 → 静默降级为低频轮询 | 推送断连不得报错阻断页面；终态由轮询兜底确认 |
 
-## 3. 待定义（自动写作任务列表 — 挂 0.16.0）
+## 3. 自动写作任务列表 · 设计定义（#1333 段 2 · 0.16.0）
 
-> ⚠️ **本节记录用户原始设计意图，不做完整定义也不实现**（完整定义 + 实现属 **0.16.0**，见 #1333 段 2）。
+> **性质**：本节是段 2 的**设计交付**（设计轨产出，本轨不实现）。6 问结论见 §3.2，状态语义见 §3.3，
+> 与已合入实现的漂移登记见 §3.4，待用户拍板项见 §3.5，与关联 issue 的对齐见 §3.6。
+> 实现轨按本节 + §4 验收 N14-N21 落地。
+> **原型**：`design/GUI/book/book.html` + `book-<scheme>-<state>.png`（legacy / a / b / c 四形态 × running / blocked）
+> + `book-legend.png`（状态语义图例）。
+> ⚠️ 原型内 `data-design-annotation="1"` 的「方案取舍说明条」是**评审注解**，**实现时不得做进产品 UI**。
 
-**用户原话（2026-09-20）**：
+**用户原话（2026-09-20，设计意图来源）**：
 
 > 「我之前这个页面是想在**自动写作时让 agent 列出任务列表**，然后**用户可以实时看到当前进度**的，不过忘记实现了，先记上 issue，后续再完整定义并实现。」
 
-**现状与意图的差距（已实测，非推断）**：
+### 3.1 现状事实基线（实测，非推断）
 
-| 意图要素 | 现状 | 差距 |
+| # | 事实 | 证据 |
 |---|---|---|
-| agent **列出任务清单** | ❌ 无「任务清单」实体。`run-progress-list` 的条目是 `Object.entries(progress)` 按 `outlineId` **派生**（章级），任务由大纲结构隐含，**非 agent 显式产出** | 需定义「任务」的产生方与协议（LLM 输出 / 从 book run progress 派生） |
-| 任务**粒度** | 现状 = **章级**（1 outlineId = 1 行） | 是否下沉到「章内步骤级」未定 |
-| 实时**看到进度** | ✅ **已具备骨架**：`ExecutionTraceRow` 五态徽标（`pending` / `in_progress` / `done` / `failed` / `skipped`）+ 1s 轮询 + 进度条 | 粒度与刷新语义需按「任务」重定义 |
-| 状态**实时性** | 现状 = 1s 轮询 `GET /runs/{id}` 至终态 | 是否改走推送通道（F23 `/events/stream`）待定 |
+| F1 | **不存在「任务」实体**。`run-progress-list` 条目 = `Object.entries(progress)` 按 `outlineId` 派生（章级）；`get_summary.steps[]` 同为章级派生且**无章名** | `BookRunPanel.tsx:237`、`book_service.py:677-685` |
+| F2 | 「agent 决定下一步做什么」只在 **agentic 轨**：LLM supervisor 输出 `{action, op, outline_id}`，`op ∈ {write_chapter, audit_chapter, revise_chapter, mark_done, finish_book}`，`route_history` 累积 op 序列 | `book_agentic_pipeline.py:122-128`、`:213-243`、`:294-299` |
+| F3 | **静态轨 / 卷级轨无 agent 决策**：章按 `sort_order` 顺序派发，`progress` 由 service 直写 | `book_service.py:227-253` |
+| F4 | 实时通道现状 = **1s 轮询** `GET /runs/{id}`，终态自动停（`status ∉ {running, pending}`） | `BookRunPanel.tsx:63-73` |
+| F5 | 变更推送 `GET /api/v1/events/stream`（F23 §15）已存在、前端已封装；但 `DataChangeEvent.domain` 枚举**不含** `writing_plan` / book run → **run 状态跃迁（paused / waiting_hitl / blocked）不产生事件** | `domain/models/data_change_event.py:27-30`、`api/routers/events.py` |
+| F6 | book run 写正文经 `chapter_service.update_chapter` → **会**发 `chapter`/`update` 事件（可作「有变化」的失效信号） | `infrastructure/agent/_audit_bridge.py:271`、`domain/services/chapter_service.py:275` |
+| F7 | 后端已有 run 级 `blocked` 与章级 `needs_review`（#1267），**前端两者零映射** | `book_run_mixin.py:199-200`、`book_agentic_pipeline.py:673`；renderer grep 命中 0 |
+| F8 | 对外面完备：CLI `inkflow book run/status/confirm/intervene/summary` + `book plan *`；MCP `manage_book`（10 action）；API 8 端点 | `cli/commands/book_cmd.py`、`mcp/tools/book_tools.py`、`api/routers/books.py` |
 
-**待定义清单（段 2 需先出设计，勿直接实现）**：
+### 3.2 六个设计问题的结论
 
-1. **任务产生方**：agent 产出任务清单（LLM 输出协议）还是从既有 `book run` 的 `progress` / `counters` / `execution_refs` 派生
-2. **任务粒度**：章级 / 章内步骤级
-3. **实时通道**：沿用 1s 轮询 vs 走 F23 变更推送 `/events/stream`
-4. **与既有结构的关系**：`progress` / `counters` / `execution_refs` 是否需要扩展字段
-5. **GUI 呈现**：列表 / 进度条 / 状态徽标——原型 `book-run.html` + 5 张 PNG 是**起点**（非最终形态）
-6. **影响面**：是否波及 MCP / CLI 面
-7. **导航入口**：本页当前无侧边栏入口（`AppNav.tsx` 无 book 项）；「任务看板」若成为主路径，需一并决定入口与路由是否启用
-8. **未定义交互边界**（§2 表格中标注「见 §3」的两条）：① 同一计划重复启动 `book-start-run` 的语义（幂等 / 拒绝 / 新建 run）；② 访谈阶段是否需要 ESC / 取消语义（现实现无取消入口）
-9. **`book.run.noRun` 分支可达性**（§1 同名遮蔽条）：页级 `runId === null` 时走计划卡、不渲染 `BookRunPanel`，故该空态文案的可达条件未实测——段 2 顺带澄清（若不可达，属死分支，应一并清理）
+> **6 问结论已于 2026-10-02 全数拍板**（用户「全按照推荐」）→ 下表「推荐」列即**已拍板结论**，归档见 §3.5。
 
-**关联**：#1333 段 2（0.16.0）· 原型资产 `design/GUI/book/book-run.html` + 5 PNG。
+| # | 设计问题 | 候选 | **推荐** | 取舍（放弃了什么） |
+|---|---|---|---|---|
+| Q1 | agent 如何产出任务清单 | A 新增 LLM 预产出（结构化输出 / 工具调用 todo 协议）· B 从既有 `progress` 派生 · C 复用 agentic `route_history` 作动作流水 · **D = B + C 分轨** | **D**：静态/卷级轨 = B；agentic 轨 = B 为主 + C 作「当前动作」指示 | 取 D 得零新增 LLM 调用、零 schema 解析失败分支，且任务 = 真实执行面。**弃 A**：与 supervisor 决策职责重叠（两套「下一步」来源会打架）、新增 token 成本；A 另开 issue 挂后续里程碑（见 §3.5-2） |
+| Q2 | 任务粒度 | A 章级 · B 章内步骤级 · C **混合** | **C**：章级为主线 + 展开看章内步骤 | 章级 = 用户视角（「第 N 章写完了吗」）；子步骤仅 agentic 轨可得（F2），静态/卷级轨无可展开 → 隐藏入口。既有 `ExecutionTraceRow` 的「行 + 展开」正是 C 的容器，零新数据面 |
+| Q3 | 实时通道 | A 沿用 1s 轮询 · B 改走 F23 SSE · C **SSE 为主 + 轮询兜底** | **C**（配套 Q4-D2 补 `writing_plan` 发布点） | SSE 复用 ADR-053「事件 = 失效信号 → 拉取」语义；但 domain 枚举无 book run（F5）→ 不补发布点则暂停 / HITL / 阻断无信号。**弃纯 B**：单点依赖推送、断连即瞎；**弃纯 A**：1s 轮询在长任务上持续空转 |
+| Q4 | 与既有数据面关系 | ① 零新增字段（纯派生）· ② 新增 `tasks` JSON 列 · ③ **升级 `get_summary.steps` 为任务视图契约（零 DDL）** + D2 发布 `writing_plan` 变更事件 | **③ + D2** | 取 ③：`steps` 已是「章级派生」的正式契约，补 `name`（后端 join outline 取章名，现前端只能显示 `outlineId`）+ `substeps` 即可承载，**零 DDL**。**弃 ②**：任务状态是 `progress` 的重新表达，落独立列 = 双写来源必漂移。**弃 ①**：章名缺失使列表不可读（F1） |
+| Q5 | GUI 呈现 | A 侧栏任务列表 · B 主区看板三列 · C **单栏任务时间线** | **C**（A 为可选增强；B 不推荐） | 取 C：改动最小、与既有折叠/密度/干预控件一脉相承，数百章可滚动分页。**A** 收益（常驻可见）在本页不成立（整页即看板）且需单栏改双栏；**B** 在长篇（数百章）下三列各自滚动 → 总览价值消失、单卡宽压到约 1/3（实测见 `book-b-*.png`） |
+| Q6 | 是否影响 MCP / CLI 面 | A 不暴露 · B **复用既有 `status` / `summary`**（仅 `steps` 补字段） · C 新增 `book tasks` 命令 + MCP action | **B** | 任务清单是既有 `progress` / `steps` 的**呈现层重表达**，不新增语义 → CLI `inkflow book status` 与 MCP `manage_book action=status/summary` 天然覆盖，零新增对外契约面。**弃 C**：同一「任务」概念在 GUI/CLI/MCP/API 四层各造一套 = 漂移源 |
+
+### 3.3 状态语义（段 2 补齐 #1267 缺档）
+
+**章级任务态（`progress[outline_id]`，6 态）**
+
+| 值 | 文案（i18n key） | 语义色语义类 | 来源 |
+|---|---|---|---|
+| `pending` | 待处理（`book.trace.pending`） | 中性 `badge-pending` | `progress` 缺该键 / 显式 pending |
+| `in_progress` | 进行中（`book.trace.in_progress`） | accent `badge-in_progress` | service 置 `in_progress` |
+| `done` | 已完成（`book.trace.done`） | ok `badge-done` | 委托成功、正文落库 |
+| `failed` | 失败（`book.trace.failed`） | err `badge-failed` | 委托异常 |
+| `skipped` | 已跳过（`book.trace.skipped`） | 中性虚线 `badge-skipped` | 硬护栏超限跳过 |
+| `needs_review` | **待人工介入（新增 `book.trace.needs_review`）** | **warn** `badge-needs_review` | **#1267** `_finalize_audit_block` 审计阻断 |
+
+**run 级态（`GET /runs/{id}` 的 `status`）**：`ready` / `running` / `paused` / `waiting_hitl` / `completed` / `failed` / `degraded` / **`blocked`（#1267 新增档位）**。
+段 2 需给 `blocked` 独立语义：徽标文案「**审计阻断 · 已停止**」（新增 `book.run.status.blocked`）+ warn 色，
+且失败原因块渲染门控由 `failed | degraded` 扩为 `failed | degraded | blocked`（修 D-3）。
+
+**章内子步骤（仅 agentic 轨，Q2=C）**：`write_chapter` / `audit_chapter` / `revise_chapter` / `mark_done`
+（`_OPERATION_POOL`，F2），状态由 `route_history` + `audit_results` 派生为 `done` / `now` 两档。
+
+### 3.4 漂移登记（本轨只上报，不改实现）
+
+| # | 漂移 | 证据 | 处置建议（实现轨） |
+|---|---|---|---|
+| D-1 | 章状态 `needs_review` 前端无映射 → `STATUS_LABEL_KEYS` / `STATUS_BADGE_CLASSES` 兜底 `pending`「待处理」中性灰 → **被审计阻断的章显示成「还没写」**，语义相反 | `ExecutionTraceRow.tsx:20-35`、`book_agentic_pipeline.py:673` | 补 6 态映射 + 新增 `book.trace.needs_review` |
+| D-2 | run 状态 `blocked` 无档位 → `RUN_BADGE_CLASSES` 兜底中性灰，且徽标直接渲染英文枚举原文（`{runStatus ?? '–'}`） | `BookRunPanel.tsx:26-30`、`:90` | 补档位 + 中文文案（§3.3） |
+| D-3 | `progress_reason`（审计阻断原因）渲染门控是 `failed \|\| degraded` → **blocked 时原因对用户不可见**，与 #1267「审计结果必须有后果、返回给用户」相悖 | `BookRunPanel.tsx:55-58` | 门控扩为 `failed \|\| degraded \|\| blocked` |
+| D-4 | 段 1 页规格 §1 的「五态徽标 / run 四档」表述落后于 #1267 的六态 / 多档 | 本节 vs F7 | **本轨已就地更正**（§1 进度列表条 + §3.3） |
+
+### 3.5 拍板结果（2026-10-02 · 用户「全按照推荐」）
+
+| # | 决策点 | **结论（已拍板）** |
+|---|---|---|
+| 1 | 任务列表 GUI 方案（§3.2 Q5） | **C · 单栏任务时间线**（原型 `book-c-*.png` 即实现基准；A/B 保留作对照，不实现） |
+| 2 | 「真实 LLM 预产出任务清单」（§3.2 Q1 的 A 方案） | **另开 issue **#1439** 挂 0.17.0** —— 不塞本期（与 supervisor 决策职责重叠，收益/成本比低） |
+| 3 | 实时通道落地范围（§3.2 Q3 / Q4-D2） | **同批新增 `writing_plan` 域发布点**（run 状态跃迁发 `publish_change`）→ 须同步 F23 spec §15.2.1 枚举，属 MODIFY 既有模块；验收 N22 |
+| 4 | 导航入口（§1 第 7 项） | **新增 `AppNav`「成书」项 → `/book`**（i18n `nav.book` 已存在）；验收 N23 |
+| 5 | 长篇（数百章）列表规模策略 | **按卷分组 + 已完成卷默认折叠**（零新依赖）；验收 N24 |
+| 6 | `book.run.noRun` 分支可达性（§1 同名遮蔽条） | **实现轨实测后处置**（不可达即删）；结论回写 §1；验收 N26 |
+| 7 | 同一计划重复启动 `book-start-run` 语义 | **拒绝 409**（前端只透错，不静默新建 run）；验收 N25 |
+| 8 | 访谈阶段 ESC / 取消语义 | **不加**（超出本页任务看板主题，另议） |
+
+> 拍板后的增量验收 N22-N26 见 §4。被改期项（#2）已转独立 issue 挂 0.17.0；被否决项（§3.2 Q1-A / Q5-A / Q5-B / Q6-C）
+> 不实现，原型与本节保留作决策留痕。
+
+### 3.6 与关联 issue 的对齐说明
+
+| issue | 状态 | 对任务看板的影响 | 段 2 处置 |
+|---|---|---|---|
+| **#1267** 审计阻断 | CLOSED（已实现） | 新增 run `blocked` + 章 `needs_review`，并把阻断原因写入 `progress_reason` | **必须对齐**：补 D-1/D-2/D-3 三处呈现 —— 任务看板的「状态语义完整性」以此为前提 |
+| **#1282 / #1288** reset 出口 | CLOSED（已实现） | `reset` 清 `progress` / `execution_refs`、plan 回 `ready`；GUI `run-reset` 非 running 态渲染 | 任务列表随 reset 归零（`runId = null` → 回计划卡分支）；**不改语义**，验收沿用 N13 |
+| **#1430** force 覆盖 + A2 备份 | CLOSED（已实现） | `chapters.previous_content` 落旧稿；`force` 须与 `confirm_overwrite` 成对 | 可选增量：被覆盖过的章在任务行加「已有上一稿」徽标 + 恢复入口 → **已建 #1440 挂 0.16.0**（#1430 已注明「GUI 入口可另开」），段 2 不纳入 |
+| **#1333 段 1** | 已完成 | 本页规格 + 原型目录已非孤儿 | 本轨在段 1 基础上补设计定义；L4 自指指针**保留不动** |
 
 ## 4. 验收
 
@@ -143,3 +246,22 @@
 - N11：`runId === null` → `book.run.noRun`「暂无运行」纯文本，无工具栏
 - N12：轮询 1s 间隔、终态自动停（`status` 既非 `running` 也非 `pending`）
 - N13（#1288）：`runStatus !== 'running'` → `run-reset` 可点；点击弹 `run-reset-dialog`，文案含「重置 ≠ 删除正文」；取消 → 关闭且不发请求；确认 → `POST /runs/{run_id}/reset` 恰好一次 + 运行面板回空态（`runId` 清空，页级回「计划就绪」）；失败（422）→ 面板保留 + `error` 记录
+
+### 段 2 验收（#1333 · 设计定义见 §3）
+
+> **口径说明**：N16 / N17 扩展 N5（run 徽标「四档」）、N6（原因块门控）、N10（章徽标「五态」）的状态口径
+> —— 段 2 落地后以 N16 / N17 为准（四档 → 含 `blocked`；五态 → 六态含 `needs_review`）。
+
+- N14（§3.2 Q4=③）：任务列表 `run-task-list` 逐 `progress` 条目渲染章级行，**每行含章名**（`get_summary.steps[].name` 由后端 join outline 补齐，不得只显示 `outlineId`）
+- N15（§3.2 Q1/Q2）：章内步骤展开仅当该轨提供子步骤时渲染（agentic 轨 = `write_chapter` / `audit_chapter` / `revise_chapter` / `mark_done` 派生；静态轨 / 卷级轨**不渲染展开入口**）
+- N16（§3.3 · 修 D-2/D-3）：run `blocked` → 徽标渲染「审计阻断 · 已停止」+ warn 语义类（**不得**落回中性灰或英文原文）；且此时 `run-progress-reason` **渲染**（门控含 `blocked`）
+- N17（§3.3 · 修 D-1）：章 `needs_review` → 徽标渲染「待人工介入」+ warn 语义类（**不得**落回 `book.trace.pending`「待处理」）
+- N18（§3.2 Q3=C）：实时通道 = 推送为主 + 轮询兜底 —— 推送帧到达触发**一次** `GET /runs/{id}`；推送断连静默降级为低频轮询，**不报错、不阻断页面**；终态仍由轮询确认
+- N19：`silent` 密度下**不渲染**任务列表（沿用 N8 语义，任务列表属观察流）
+- N20：reset 后任务列表清空且页级回「计划就绪」（沿用 N13，追加断言 `progress` 归零）
+- N21：原型内 `data-design-annotation="1"` 的方案取舍说明条**不得**出现在产品 UI（评审注解，见 §3 头部声明）
+- N22（§3.5-3 · 拍板）：后端在 book run 状态跃迁写路径末尾发布 `publish_change("writing_plan", "update", plan.id, plan.project_id)`；`GET /api/v1/events/stream?project_id=` 可收到该域事件；F23 spec §15.2.1 的 `domain` 枚举同步登记 `writing_plan`
+- N23（§3.5-4 · 拍板）：`AppNav` 新增「成书」项（`nav.book`）→ 跳 `/book`；本页不再是只能靠路由直达的孤儿
+- N24（§3.5-5 · 拍板）：任务列表按卷分组渲染，**已完成卷默认折叠**（可展开）；章数 ≥ 100 时不出现明显渲染卡顿
+- N25（§3.5-7 · 拍板）：同一计划重复启动 → 后端 409，前端只透错（**不静默新建 run**）
+- N26（§3.5-6）：`book.run.noRun` 分支可达性给出实测结论并回写 §1；不可达则删除该分支与对应 i18n key
