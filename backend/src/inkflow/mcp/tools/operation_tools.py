@@ -193,7 +193,10 @@ async def _route_write(client: _HTTPClient, params: WriteParams, timeout: float 
             "/agent/drafts",
             params=_compact({"project_id": params.project_id, "status": params.status}),
         )
-    # revise：feedback 优先；instruction 仅校验用，不转发到端点
+    # revise：instruction 是内核 feedback 的回退别名
+    # （镜像 CLI `write revise --instruction` → body "feedback"）；
+    # feedback 存在时以 feedback 为准（既有契约，勿改）。
+    feedback = params.feedback if params.feedback is not None else params.instruction
     return await client.post(
         "/writing/revise",
         json=_compact(
@@ -201,7 +204,7 @@ async def _route_write(client: _HTTPClient, params: WriteParams, timeout: float 
                 "project_id": params.project_id,
                 "chapter_id": params.chapter_id,
                 "content": params.content,
-                "feedback": params.feedback,
+                "feedback": feedback,
             }
         ),
         timeout=timeout,
@@ -335,7 +338,8 @@ def build_write_tool() -> MCPTool:
                 "写作：续写下一章 / 续写指定章 / 按指令修订 "
                 "/ 草稿确认（confirm_draft/reject_draft/draft_list）；"
                 "mode=agentic 走自主编排（F27），"
-                "show_context=true 返回上下文装配结果（仅 action=generate）"
+                "show_context=true 返回上下文装配结果（仅 action=generate）；"
+                "revise 的 instruction 为内核 feedback 的回退别名"
             ),
             input_schema=WriteParams.model_json_schema(),
         ),
@@ -458,6 +462,12 @@ def build_export_tool() -> MCPTool:
                 f"HTTP 面导出仅支持 txt 格式，收到: {params.format}",
                 "请将 format 设为 txt；其余格式请走 GUI/CLI",
             )
+        if params.output_path is not None:
+            return _error(
+                "INVALID_ARGS",
+                "MCP export 直接返回导出文本，不支持 output_path（内核无服务端落盘能力）",
+                "请从返回的 data 字段取文本自行保存；MCP 工具不写调用方文件系统",
+            )
         try:
             from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
             from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
@@ -481,7 +491,10 @@ def build_export_tool() -> MCPTool:
     return MCPTool(
         spec=ToolSpec(
             name="export",
-            description="导出：项目导出为 TXT（HTTP 面当前仅支持 txt，其余格式请走 GUI/CLI）",
+            description=(
+                "导出：项目导出为 TXT（HTTP 面当前仅支持 txt，其余格式请走 GUI/CLI）；"
+                "不支持 output_path（直接返回文本，由调用方自行保存）"
+            ),
             input_schema=ExportParams.model_json_schema(),
         ),
         func=_impl,

@@ -306,13 +306,12 @@ class TestWriteGenerateWordTarget1436:
 
 # ── C：通用加固「声明即消费」自检 ────────────────────────────────────
 #
-# 已知存量缺口（#1436 范围外，同族；另单跟踪 #1437）。
+# #1437 已接线两处存量豁免（本表清空）：
+#   · ``WriteParams.instruction`` → revise 时映射为内核 ``feedback``（CLI 先例）；
+#   · ``ExportParams.output_path`` → 内核无路径能力 → 传即显式 ``INVALID_ARGS``。
 # 双向断言：豁免表 == 实际未接线集 —— 新形态必红，修好后不删豁免项也必红。
 
-_KNOWN_UNWIRED: dict[str, str] = {
-    "WriteParams.instruction": "revise 的 instruction 未接线（CLI 侧映射为 feedback）；见 #1437",
-    "ExportParams.output_path": "export 的 output_path 未接线（HTTP 面只回文本）；见 #1437",
-}
+_KNOWN_UNWIRED: dict[str, str] = {}
 
 
 def _consumed_names(sources: dict[str, str]) -> set[str]:
