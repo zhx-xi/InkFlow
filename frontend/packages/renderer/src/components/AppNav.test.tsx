@@ -77,6 +77,7 @@ const NAV_LINKS: Array<[string, string]> = [
   ['timeline', '/library?cat=timeline'],
   ['foreshadow', '/library?cat=foreshadow'],
   ['knowledge', '/library?cat=knowledge'],
+  ['book', '/book'],
   ['agent', '/settings?cat=agent'],
   ['settings', '/settings'],
 ];
@@ -104,15 +105,13 @@ describe('AppNav — 结构与分组', () => {
     expect(screen.getByTestId('nav-group-system')).toBeInTheDocument();
   });
 
-  it('11 个导航链接：testid 齐全 + NavLink href 与路由契约一致；模型管理入口已删除（#481）', () => {
+  it('12 个导航链接：testid 齐全 + NavLink href 与路由契约一致；模型管理入口已删除（#481）', () => {
     renderNav();
     for (const [key, href] of NAV_LINKS) {
       expect(screen.getByTestId(`nav-item-${key}`)).toHaveAttribute('href', href);
     }
     // #481：模型管理合并入设置页模型分类，独立导航项 nav-item-models 不存在
     expect(screen.queryByTestId('nav-item-models')).not.toBeInTheDocument();
-    // #597 D11=A：书级编排入口已从侧边栏删除（导航入口删除，/book 路由仍保留直达），nav-item-book 不存在
-    expect(screen.queryByTestId('nav-item-book')).not.toBeInTheDocument();
   });
 
   it('导航文案：写作/项目用既有 key，设定库/设置/RAG 用新 key', () => {
@@ -193,5 +192,35 @@ describe('AppNav — 日志入口（#496）', () => {
     const logsItem = screen.getByTestId('nav-item-logs');
     expect(logsItem).toHaveAttribute('href', '/logs');
     expect(logsItem).toHaveTextContent('日志');
+  });
+});
+
+/**
+ * #1333 段 2 · §3.5-4（2026-10-02 拍板）——「成书」导航入口。
+ *
+ * 背景：#597 D11=A 曾删除侧边栏 book 入口（本页沦为「只能靠路由直达的孤儿」）。
+ * 段 2 拍板**新增** `AppNav`「成书」→ `/book`（i18n key `nav.book` 已存在）。
+ * 本单推翻 #597 的「无入口」结论（验收 N23）。
+ */
+describe('AppNav — 成书入口（#1333 · N23）', () => {
+  it('nav-item-book 存在，挂在「写作区」组，href=/book，文案「成书」', () => {
+    renderNav();
+    const bookItem = screen.getByTestId('nav-item-book');
+    expect(bookItem).toHaveAttribute('href', '/book');
+    expect(bookItem).toHaveTextContent('成书');
+    expect(screen.getByTestId('nav-group-writing')).toContainElement(bookItem);
+  });
+
+  it('点击成书入口 → 跳 /book', async () => {
+    const user = userEvent.setup();
+    renderNav();
+    await user.click(screen.getByTestId('nav-item-book'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/book');
+  });
+
+  it('/book 下成书项高亮（aria-current="page"）', () => {
+    renderNav('/book');
+    expect(screen.getByTestId('nav-item-book')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByTestId('nav-item-projects')).not.toHaveAttribute('aria-current');
   });
 });

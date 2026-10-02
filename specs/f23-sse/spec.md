@@ -664,7 +664,7 @@ class DataChangeEvent:
     """变更域（= 资源类型）：project|chapter|volume|character|character_group|
     character_relation|outline|plot_point|story_arc|world_setting|world_category|
     map|map_pin|foreshadowing|timeline_event|memory|agent_template|agent|
-    knowledge_relation|session|skill|settings|provider_config|draft."""
+    knowledge_relation|session|skill|settings|provider_config|writing_plan|draft."""
 
     op: str
     """操作类型：create|update|delete."""
@@ -729,7 +729,7 @@ def get_event_bus() -> EventBus: ...
 
 | 类别 | 域 | `project_id` | 依据 |
 |------|-----|-------------|------|
-| **项目作用域** | project, chapter, volume, character, character_group, character_relation, outline, plot_point, story_arc, world_setting, world_category, map, map_pin, foreshadowing, timeline_event, knowledge_relation, draft | ✅ 有（实体带 `project_id`） | 实体模型逐条实测 |
+| **项目作用域** | project, chapter, volume, character, character_group, character_relation, outline, plot_point, story_arc, world_setting, world_category, map, map_pin, foreshadowing, timeline_event, knowledge_relation, writing_plan, draft | ✅ 有（实体带 `project_id`） | 实体模型逐条实测 |
 | **全局作用域** | **agent_template**, **agent**, **skill**, **settings**, **provider_config** | ❌ **无**（`project_id = None`） | `AgentTemplate`（`id/name/is_default`，无 project_id）/ `Skill`（`name` 键，无 project_id）/ `ProviderConfig` / `AppSettings` |
 | **双作用域** | **memory** | ⚠️ 部分（项目偏好有、用户偏好无） | `ProjectPreference`（`preference.py` L61 带 `project_id`）vs `UserPreference`（`user_preference.py` **无 project_id 字段**——跨项目累计 `source_projects`，事实全局单份） |
 

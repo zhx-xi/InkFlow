@@ -14,6 +14,10 @@ export interface ExecutionTraceRowProps {
   outlineId: string;
   status: string;
   executionId?: string;
+  /** #1333 N14：章名（summary.steps 透传；缺省时不渲染，保持既有 outlineId-only 形态） */
+  name?: string;
+  /** #1333 N15：章内步骤（仅 agentic 轨提供；空数组 = 静态/卷级轨，不渲染展开入口） */
+  substeps?: { op: string; status: 'done' | 'now' }[];
 }
 
 /** PlanNodeStatus → i18n key（pending/in_progress/done/failed/skipped） */
@@ -23,6 +27,7 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
   done: 'book.trace.done',
   failed: 'book.trace.failed',
   skipped: 'book.trace.skipped',
+  needs_review: 'book.trace.needs_review',
 };
 
 /** 阶段2 状态徽标语义类（五态可区分；低饱和色块，ui-design-taste 克制原则） */
@@ -32,6 +37,7 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   done: 'badge-done',
   failed: 'badge-failed',
   skipped: 'badge-skipped',
+  needs_review: 'badge-needs_review bg-warn/10 text-warn',
 };
 
 /** 干预 diff 展示文本（redirect：from→to；edit：diff 文本或 before/after） */
@@ -42,9 +48,10 @@ function renderDiffText(diff: InterveneDiff): string {
   return diff.after ?? diff.before ?? '';
 }
 
-export function ExecutionTraceRow({ outlineId, status, executionId }: ExecutionTraceRowProps) {
+export function ExecutionTraceRow({ outlineId, status, executionId, name, substeps }: ExecutionTraceRowProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const [substepsOpen, setSubstepsOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [brief, setBrief] = useState('');
   const density = useBookStore((s) => s.density);
@@ -81,6 +88,26 @@ export function ExecutionTraceRow({ outlineId, status, executionId }: ExecutionT
         >
           {t(labelKey)}
         </span>
+        {name !== undefined && (
+          <span
+            data-testid={`trace-row-name-${outlineId}`}
+            className="truncate text-[12px] text-ink-3"
+          >
+            {name}
+          </span>
+        )}
+        {substeps !== undefined && substeps.length > 0 && (
+          <button
+            type="button"
+            data-testid={`trace-substeps-toggle-${outlineId}`}
+            aria-label={t('book.task.substeps')}
+            aria-expanded={substepsOpen}
+            className="rounded px-1.5 py-0.5 text-[12px] text-ink-3 transition-colors hover:bg-surface-3 hover:text-ink"
+            onClick={() => setSubstepsOpen((v) => !v)}
+          >
+            {t('book.task.substeps')}
+          </button>
+        )}
         {density === 'performance' && (
           <div className="ml-auto flex items-center gap-1">
             <button
@@ -134,6 +161,25 @@ export function ExecutionTraceRow({ outlineId, status, executionId }: ExecutionT
           </div>
         )}
       </div>
+      {substeps !== undefined && substepsOpen && substeps.length > 0 && (
+        <div
+          data-testid={`trace-substeps-${outlineId}`}
+          className="flex flex-wrap items-center gap-1 border-t border-line px-3 py-1.5"
+        >
+          {substeps.map((step) => (
+            <span
+              key={step.op}
+              data-testid={`trace-substep-${outlineId}-${step.op}`}
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[12px]',
+                step.status === 'now' ? 'step-now bg-accent/15 text-accent' : 'bg-surface-3 text-ink-2',
+              )}
+            >
+              {step.op}
+            </span>
+          ))}
+        </div>
+      )}
       {density === 'performance' && editing && (
         <div data-testid={`trace-edit-area-${outlineId}`} className="border-t border-line px-3 py-2">
           <textarea

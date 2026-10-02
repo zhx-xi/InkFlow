@@ -226,6 +226,12 @@ export interface RunSummaryStep {
   outline_id: string;
   status: string;
   execution_id: string | null;
+  /** #1333 N14：章名（后端 steps 透传；缺省向后兼容） */
+  name?: string;
+  /** #1333 N24：所属卷名（null/undefined = 无卷分组，行内平铺） */
+  volume_name?: string | null;
+  /** #1333 N15：章内步骤（agentic 轨；静态/卷级轨为空） */
+  substeps?: { op: string; status: string }[];
 }
 
 /** 回归摘要 next 卷信息（无 checkpoint → {finished:true}） */

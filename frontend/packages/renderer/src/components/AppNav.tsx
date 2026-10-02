@@ -2,6 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink, useSearchParams } from 'react-router-dom';
 import {
+  BookMarked,
   BookOpen,
   Bot,
   Brain,
@@ -49,6 +50,7 @@ interface NavItemDef {
 const WRITING_ITEMS: NavItemDef[] = [
   { key: 'writing', href: '/writing', labelKey: 'nav.writing', icon: PenLine },
   { key: 'projects', href: '/projects', labelKey: 'nav.projects', icon: BookOpen },
+  { key: 'book', href: '/book', labelKey: 'nav.book', icon: BookMarked },
 ];
 
 const LIBRARY_ITEMS: NavItemDef[] = [

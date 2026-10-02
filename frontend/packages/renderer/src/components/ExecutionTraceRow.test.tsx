@@ -198,3 +198,55 @@ describe('ExecutionTraceRow — 阶段4 章级干预控件（#338，仅 performa
     });
   });
 });
+
+/**
+ * #1333 段 2 —— 任务看板状态语义与章内步骤（specs/f19-gui/book.md §3.3 / §4 N14-N17）。
+ *
+ * ① 修 D-1：后端 #1267 引入章级 `needs_review`（审计阻断 → 待人工介入），前端
+ *    `STATUS_LABEL_KEYS` / `STATUS_BADGE_CLASSES` 无该项 → 兜底 `pending`「待处理」，
+ *    **语义相反**（被阻断的章显示成「还没写」）。GREEN 必须补第 6 态映射。
+ * ② N14：章行须能显示章名（不得只显示 outlineId）。
+ * ③ N15：章内步骤展开入口**仅在该轨提供 substeps 时**渲染（静态 / 卷级轨不渲染）。
+ */
+describe('ExecutionTraceRow — #1333 章 needs_review 映射（修 D-1）', () => {
+  it('needs_review → 「待人工介入」+ badge-needs_review，不得落回「待处理」', () => {
+    render(<ExecutionTraceRow outlineId="o-nr" status="needs_review" />);
+    const badge = screen.getByTestId('trace-row-status-o-nr');
+    expect(badge).toHaveTextContent('待人工介入');
+    expect(badge).toHaveClass('badge-needs_review');
+    expect(badge).not.toHaveClass('badge-pending');
+    expect(badge).not.toHaveTextContent('待处理');
+  });
+});
+
+describe('ExecutionTraceRow — #1333 章名 + 章内步骤（N14 / N15）', () => {
+  it('name prop 存在 → 渲染章名（trace-row-name-<outlineId>）', () => {
+    render(<ExecutionTraceRow outlineId="o-named" status="done" name="开端" />);
+    expect(screen.getByTestId('trace-row-name-o-named')).toHaveTextContent('开端');
+  });
+
+  it('substeps 为空（静态 / 卷级轨）→ 不渲染章内步骤展开入口', () => {
+    render(<ExecutionTraceRow outlineId="o-static" status="done" name="开端" substeps={[]} />);
+    expect(screen.queryByTestId('trace-substeps-toggle-o-static')).not.toBeInTheDocument();
+  });
+
+  it('substeps 非空（agentic 轨）→ 渲染展开入口，点开显示 op chips + now 档高亮', async () => {
+    const user = userEvent.setup();
+    render(
+      <ExecutionTraceRow
+        outlineId="o-agentic"
+        status="in_progress"
+        name="转折"
+        substeps={[
+          { op: 'write_chapter', status: 'done' },
+          { op: 'audit_chapter', status: 'now' },
+        ]}
+      />,
+    );
+    expect(screen.queryByTestId('trace-substeps-o-agentic')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('trace-substeps-toggle-o-agentic'));
+    const list = await screen.findByTestId('trace-substeps-o-agentic');
+    expect(list).toHaveTextContent('write_chapter');
+    expect(screen.getByTestId('trace-substep-o-agentic-audit_chapter')).toBeInTheDocument();
+  });
+});

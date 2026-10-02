@@ -789,8 +789,8 @@ class TestGetSummary:
 
     async def test_get_summary_full_shape(self):
         """全量形态：{run_id, status, progress, counters(9 键同构), steps(
-        [{index, outline_id, status, execution_id}] 派生), next(checkpoint 状态)}；
-        get_checkpoint_state 用 plan.thread_id。RED：get_summary 缺失先行。
+        [{index, outline_id, name, status, execution_id, volume_name, substeps}] 派生),
+        next(checkpoint 状态)}；get_checkpoint_state 用 plan.thread_id。RED 缺失先行。
 
         #902 契约升级（§1.5）：counters 精确集迁移 9 键（+ prompt_tokens/
         completion_tokens）→ 迁移后转 RED（当前实现 7 键 → set 不匹配）。
@@ -842,7 +842,9 @@ class TestGetSummary:
         assert result["counters"]["tokens_used"] == 12_345
         assert result["counters"]["prompt_tokens"] == 7_407
         assert result["counters"]["completion_tokens"] == 4_938
-        assert result["steps"] == [
+        # #1333 段 2：steps 补 name/volume_name/substeps；此处锁旧 4 键投影（新键见专属契约文件）。
+        legacy = ("index", "outline_id", "status", "execution_id")
+        assert [{k: s[k] for k in legacy} for s in result["steps"]] == [
             {"index": 0, "outline_id": oid1, "status": "done", "execution_id": "exec-1"},
             {"index": 1, "outline_id": oid2, "status": "in_progress", "execution_id": None},
         ]
