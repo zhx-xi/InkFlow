@@ -21,6 +21,8 @@ from __future__ import annotations
 import io
 import zipfile
 from collections.abc import Awaitable
+from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -37,7 +39,11 @@ from inkflow.domain.ports.skill_errors import (
     SkillNameConflictError,
     SkillNotFoundError,
 )
-from inkflow.domain.services.skill_service import SkillService
+from inkflow.domain.services.skill_service import (
+    SkillService,
+    builtin_skill_diff,
+    builtin_skill_status,
+)
 from inkflow.infrastructure.database.repositories.agent_repo import (
     SQLiteAgentRepository,
 )
@@ -91,6 +97,11 @@ def _get_service(db: AsyncSession) -> SkillService:
         skills_root=config.data_dir / "skills",
         agent_repository=SQLiteAgentRepository(db),
     )
+
+
+def _skills_root() -> Path:
+    """内置 skill 文件系统真源根（= config.data_dir / "skills"，动态读取）."""
+    return config.data_dir / "skills"
 
 
 async def _run_service(coro: Awaitable[Any]) -> Any:
@@ -235,6 +246,28 @@ async def duplicate_skill(
     svc = _get_service(db)
     skill = await _run_service(svc.duplicate(skill_name))
     return _to_response(skill, agent_ids=[])
+
+
+@router.get("/builtin/status")
+@instrument(caller_type="api")
+async def builtin_status():
+    """内置 Skill 版本/定制状态（ADR-062 升级可见面）— {items, total} 信封.
+
+    只读文件系统（skills_root = config.data_dir / "skills"），不查 DB；
+    路由注册在 /{skill_name} 之前，两段静态路径不被详情端点吞。
+    """
+    items = [asdict(row) for row in builtin_skill_status(_skills_root())]
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/builtin/{name}/diff")
+@instrument(caller_type="api")
+async def builtin_diff(name: str):
+    """内置 Skill 安装版 vs 当期出厂版 unified diff；非内置 slug → 404「Skill 不存在」."""
+    result = builtin_skill_diff(name, _skills_root())
+    if result is None:
+        raise HTTPException(status_code=404, detail=DETAIL_NOT_FOUND)
+    return result
 
 
 @router.get("/{skill_name}")

@@ -105,6 +105,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-039](memory-skills/ADR-039.md) | Skills 文件系统真源（DB 退役） | ✅ 已接受 | 2026-08-20 |
 | [ADR-040](memory-skills/ADR-040.md) | 对话输入机密脱敏（A+B 双兜底） | ✅ 已接受 | 2026-08-23 |
 | [ADR-041](memory-skills/ADR-041.md) | chat 会话可重放 — 复用 agent_runs | ✅ 已接受 | 2026-08-24 |
+| [ADR-062](memory-skills/ADR-062.md) | 内置 Skill 版本化与项目级覆盖（三态播种 + 基线文件 + 解析面） | ✅ 已接受 | 2026-10-02 |
 
 ### 内核/运行时（kernel）
 

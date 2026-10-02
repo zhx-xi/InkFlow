@@ -1,14 +1,16 @@
 # F39: 多 Agent 能力（multi-agent）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.2
-**日期**: 2026-08-16（v1.2 修订 2026-08-20）
+**Spec 版本**: 1.3
+**日期**: 2026-08-16（v1.3 修订 2026-10-02）
 **依据**: 多 Agent 能力分析文档（`design/multi-agent-capability-analysis-2026-08-12.md`，已合入主仓）+ Issue #258（F39 后端核心）/ #259（F40 skill 上传绑定）/ #260（F41 自定义 Agent 编辑）+ 0.9.0 路线图拍板 Q1（`design/inkflow-0-9-0-roadmap-2026-08-15.md`：三 issue 合并一份 spec）
 **所属阶段**: 0.9.0（多 Agent 能力一期），估算 10-15 人天（F39 后端 5-7 + F40 前端 2-3 + F41 前端 3-5，F40/F41 依赖 F39 可并行）
 **关联 Issues**: [#258](https://github.com/zhx-xi/InkFlow/issues/258)（F39 后端核心，W2 启动）· [#259](https://github.com/zhx-xi/InkFlow/issues/259)（F40 skill 上传绑定，W3，🔗#258）· [#260](https://github.com/zhx-xi/InkFlow/issues/260)（F41 自定义 Agent 编辑，W3，🔗#258）
 **依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
 **参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
 **状态**: ✅ 已实现（F39 后端 PR #403；F40 PR #408；F41 PR #407，2026-08-16）
+
+> **Spec 变更**（v1.2 → v1.3，2026-10-02，#1331 内置 skill 版本化 + 项目级覆盖，ADR-062）：① 内置 6 方法论 skill 内容抽离为 `i18n/skills/builtin/{zh,en}/<slug>.md`（frontmatter 带 `version`，正文逐字不变，独立子树不与 F19 操作类镜像混流）；② `ensure_builtin_skills` 升为**三态**（缺失写 / 未改升级 / 改过保留），基线落 `<skills_root>/.builtin_state.json`（文件系统真源，零 DDL）；③ 新增 `builtin_skill_status` / `builtin_skill_diff`（升级可见面）与 `resolve_skill_md_path` / `is_project_override`（项目级覆盖**仅落解析面**，装配接线另开 issue）；④ API `GET /api/v1/skills/builtin/status`、`GET /api/v1/skills/builtin/{name}/diff`；CLI `inkflow skill status|diff`；⑤ §12 新增 D11/D12、§13 新增 M12。
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-20，#522 skill 存储架构重构去表）：① Skill 存储从 SQLite 表改为文件系统真源 `data_dir/skills/<name>/SKILL.md`（ADR-039）——§2.2/§3/§8/§10/§12 同步；② seed 语义改为 `ensure_builtin_skills(skills_root)`（同步回补）+ `migrate_skills_from_db(session, skills_root)`（一次性迁移）+ `seed_builtin_agents`（skill_ids=目录名）；③ 内置 6 skill 出厂名改英文 slug（N2 合规，§5.3 表）。
 
@@ -328,7 +330,7 @@ def build_agentic_writer(
 > 反向断言（#1327）：架构师不得有 `outline:write`（否则 `create/update_*_outline` 共 7 个
 > 写工具落入规划角色），审校员/世界观顾问不得有 `world:write`。
 
-**内置 Skill 出厂配置（6 个，目录名 ∈ BUILTIN_SKILL_NAMES → `source="builtin"` 只读）**：与上表「出厂 skill」一一对应（架构/写作/审校/修订/世界观/润色六份方法论 SKILL.md，content 含 frontmatter name=slug + 中文正文，须通过 `parse_skill_metadata` 校验）。出厂 prompt 与 skill 正文为 ensure 内容（实现期编写，非契约字段），契约只定「6 Agent + 6 Skill slug + 上表白名单映射」。
+**内置 Skill 出厂配置（6 个，目录名 ∈ BUILTIN_SKILL_NAMES → `source="builtin"` 只读）**：与上表「出厂 skill」一一对应（架构/写作/审校/修订/世界观/润色六份方法论 SKILL.md，content 含 frontmatter name=slug + 中文正文，须通过 `parse_skill_metadata` 校验）。出厂 prompt 与 skill 正文为 ensure 内容（实现期编写，非契约字段），契约只定「6 Agent + 6 Skill slug + 上表白名单映射」。**（#1331 修订）** 正文自 0.16.0 起抽离为 `i18n/skills/builtin/zh/<slug>.md`（frontmatter 增 `version`；en 槽位留空回退 zh），播种为三态语义 —— 见 §12 D11/D12 与 ADR-062。
 
 ### 5.4 F40 skill 上传与绑定（前端交互，#259）
 
@@ -526,6 +528,8 @@ def build_agentic_writer(
 | D8 | Skill 存储形态 | **文件系统真源** `data_dir/skills/<name>/SKILL.md`（#522 修订） | 与 F19-skills **共用同一目录**：启动 `ensure_builtin_skills` 回补 + `migrate_skills_from_db` 一次性迁移旧表（ADR-039）；反查经 Agent.skill_ids 目录名过滤 |
 | D9 | Agent/Skill 归属 | 全局定义（应用级）+ 项目引用（阶段 2 经 project config 落地） | Q0 拍板 A：方法论跨项目复用、与「设定库随项目走」分层不冲突；§2 实体无 project_id。否决：项目级定义（每项目重建，改动面大） |
 | D10 | 与 AgentTemplate 关系 | 本期解耦，二期 roles 扩展为 Agent 引用 | Q1 拍板 A：避免一次大改双配置源。否决：本期打通（+3-5 人天改造模板 + 管线，F42 已证执行层复杂度） |
+| D11 | 内置 skill 版本化与播种语义 | **三态播种**（缺失写 / 指纹==基线 → 升级 / 指纹≠基线 → 保留用户版）+ 基线 `<skills_root>/.builtin_state.json`；内容抽离为 `i18n/skills/builtin/{zh,en}/*.md`（frontmatter 带 version）（#1331 修订） | 取证确认「存在即跳过」不覆盖用户改动、但**未改副本也永不升级**——升级路径完全缺失。基线指纹可自证「未改」才升级，避免数据丢失。否决：无条件覆盖（丢用户方法论）/ 基线落 DB（违背 ADR-039 文件系统真源）/ 自指纹内嵌 md（用户编辑即破坏）|
+| D12 | 项目级 skill 覆盖 | 载体 `data_dir/projects/<id>/skills/<name>/SKILL.md`，查找顺序 项目级 → 全局；**本期只落解析原语**（`resolve_skill_md_path` / `is_project_override`），装配接线另期 | 修订 D9「项目差异留阶段 2」的起点：先交付可测的解析面，避免一次改动 agentic_writer/books/_chat_auth 三处装配点（回归面大）。否决：本期全链路接线（范围翻倍，与 D6 分阶段口径冲突）|
 
 ---
 
@@ -542,6 +546,7 @@ def build_agentic_writer(
 | M3 | 白名单装配确定性：`tool_ids` 只 build 命中工具、`skill_ids` 只拼命中 skill（base 前 skill 后）；`None` 向后兼容 | `pytest backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` |
 | M4 | 内置 seed 幂等：启动后 6 Agent 落库 + 6 Skill 文件回补就绪，重复启动不重复插入/写入 | `pytest tests/integration/test_builtin_seed.py` + 手工 `inkflow agent list`/`inkflow skill list` |
 | M5 | 内置只读（PATCH/DELETE 409）；被引用 user skill 删除级联清引用 | `pytest` 服务层 + 端点契约用例 |
+| M12 | 内置版本化三态（用户改过保留 / 未改升级 / 缺失写）+ 播种逐字一致 + 项目级覆盖解析顺序 + status/diff 可见面（#1331） | `pytest backend/tests/unit/domain/services/test_skill_versioning.py tests/api/test_skills_builtin_status_api.py tests/cli/test_cli_skill.py` + `pytest tests/integration/test_builtin_seed.py` |
 
 ### F40 skill 上传绑定（#259）
 

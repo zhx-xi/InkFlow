@@ -16072,6 +16072,67 @@
         ]
       }
     },
+    "/api/v1/skills/builtin/status": {
+      "get": {
+        "description": "内置 Skill 版本/定制状态（ADR-062 升级可见面）— {items, total} 信封.\n\n只读文件系统（skills_root = config.data_dir / \"skills\"），不查 DB；\n路由注册在 /{skill_name} 之前，两段静态路径不被详情端点吞。",
+        "operationId": "builtin_status_api_v1_skills_builtin_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Builtin Status",
+        "tags": [
+          "Skills"
+        ]
+      }
+    },
+    "/api/v1/skills/builtin/{name}/diff": {
+      "get": {
+        "description": "内置 Skill 安装版 vs 当期出厂版 unified diff；非内置 slug → 404「Skill 不存在」.",
+        "operationId": "builtin_diff_api_v1_skills_builtin__name__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Builtin Diff",
+        "tags": [
+          "Skills"
+        ]
+      }
+    },
     "/api/v1/skills/upload-url": {
       "post": {
         "description": "下载远端 SKILL.md 文本 → 复用 create 流程 → 201 实体（§3.4）.\n\nhttpx 异步下载（timeout=30s）；HTTP/网络失败 → 422（detail 可读）；\n同名/frontmatter 非法语义与 POST /skills 一致（422）。",

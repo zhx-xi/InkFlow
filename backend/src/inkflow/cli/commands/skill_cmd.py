@@ -89,3 +89,69 @@ def skill_list(
         refs = skill.get("agent_ids") or []
         source = skill.get("source") or "-"
         typer.echo(f"[{skill['id']}] {skill['name']}  source={source}  引用 {len(refs)} 个 Agent")
+
+
+@app.command("status")
+@instrument(caller_type="cli")
+def skill_status(
+    ctx: typer.Context,
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """查看内置 Skill 版本/定制状态（ADR-062 升级可见面）"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get("/skills/builtin/status")
+
+    data = _run_ctx(cli_ctx, _impl, json_output=json_output)
+    if data is None:
+        return
+    if json_output:
+        _print_json({"ok": True, "data": data})
+        return
+    items = data.get("items") or []
+    if not items:
+        typer.echo("📭 暂无内置 Skill")
+        return
+    for item in items:
+        installed = item.get("installed_version") or "-"
+        latest = item.get("latest_version") or "-"
+        flags = []
+        if item.get("user_modified"):
+            flags.append("用户定制")
+        if item.get("has_update"):
+            flags.append("可升级")
+        suffix = f"  [{' / '.join(flags)}]" if flags else ""
+        typer.echo(f"{item['name']}  installed={installed}  latest={latest}{suffix}")
+
+
+@app.command("diff")
+@instrument(caller_type="cli")
+def skill_diff(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="内置 Skill 名（英文 slug）"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """查看内置 Skill 安装版与出厂版的差异（ADR-062）"""
+    cli_ctx: CliContext = ctx.obj
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.get(f"/skills/builtin/{name}/diff")
+
+    data = _run_ctx(cli_ctx, _impl, json_output=json_output)
+    if data is None:
+        return
+    if json_output:
+        _print_json({"ok": True, "data": data})
+        return
+    diff_text = data.get("diff") or ""
+    if not diff_text:
+        typer.echo("✅ 无差异（已是最新出厂内容）")
+        return
+    typer.echo(diff_text)
