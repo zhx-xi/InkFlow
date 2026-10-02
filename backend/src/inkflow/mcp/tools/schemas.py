@@ -10,6 +10,9 @@ model_json_schema() 产物直接映射 MCP 协议 inputSchema（spec §2.2，Q1=
 #1436 接线：`ManageChapterParams` 的 `order` → `order_index`（create/update 透传，镜像内核 DTO）；
 `write action=generate` 的 `target_words` 映射为 `min_words`
 （`WritingRequest` 无 `target_words` 字段）。
+
+#1437 接线：`WriteParams.instruction` 作为内核 `feedback` 的回退别名（revise）；
+`ExportParams.output_path` 内核无落盘能力 → 传即显式 INVALID_ARGS（不再静默）。
 """
 
 from __future__ import annotations
@@ -190,6 +193,7 @@ class WriteParams(_MCPParams):
     show_context=True 返回上下文装配结果（仅 action=generate，镜像 CLI --show-context）。
     target_words：`generate` 映射为内核 `min_words`（#1436 B1）；
     `continue` 直发内核 `target_words`。
+    instruction：仅 `revise` 用，是内核 `feedback` 的回退别名（`feedback` 优先）。
     """
 
     action: Literal["generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"]
@@ -294,7 +298,10 @@ class ExtractParams(_MCPParams):
 
 
 class ExportParams(_MCPParams):
-    """导出工具参数：export（get_raw 原始文本）。"""
+    """导出工具参数：export（get_raw 原始文本）。
+
+    output_path：内核无对应能力，传入即 `INVALID_ARGS`（本工具直接返回文本）。
+    """
 
     action: Annotated[Literal["export"], WithJsonSchema({"type": "string", "enum": ["export"]})]
     project_id: str | None = None

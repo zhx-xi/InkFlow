@@ -148,9 +148,10 @@ MCP 工具面（`backend/src/inkflow/mcp/tools/schemas.py` 的 19 个 `*Params` 
    静态遍历 `*Params.model_fields`，断言每个声明字段**至少在 `mcp/tools/` 内被消费一次**；未接线集须**恰好等于**
    该文件的 `_KNOWN_UNWIRED` 豁免表（双向断言：新形态必红、修好后不删豁免条目也必红）。
    → 给 `*Params` 加字段却忘记接线（#1436 的 `order` 形态：`extra="forbid"` 拦不到**已声明**字段）→ 恒跑 job
-   `unit-backend` 即红。已知存量豁免：`WriteParams.instruction` / `ExportParams.output_path`（同族缺口，另单 #1437 跟踪）；
+   `unit-backend` 即红。**豁免表已清空**（#1437 接线完成：`WriteParams.instruction` → 内核 `feedback` 回退别名；
+   `ExportParams.output_path` → 显式 `INVALID_ARGS`，内核无落盘能力）；
 5. 姊妹缺口（字段名与内核 DTO 不符 / 键被 DTO 静默忽略）：由 `test_mcp_field_wiring_1436.py` 的 DTO 逐字对齐 +
-   「经 **DTO 本体** `model_validate` 取证落点」两类断言守卫（同 A8 漂移护栏思路，见 spec f20 §13 A20/A21）。
+   「经 **DTO 本体** `model_validate` 取证落点」两类断言守卫（同 A8 漂移护栏思路，见 spec f20 §13 A20/A21/A23/A24）。
 
 ## 改表 PR checklist（机械引用）
 
