@@ -6,6 +6,10 @@ model_json_schema() 产物直接映射 MCP 协议 inputSchema（spec §2.2，Q1=
 #1233 补面：19 个模型全部继承 `_MCPParams`（extra="forbid"，未声明字段 → INVALID_ARGS）；
 `WriteParams` 增 mode（deterministic/agentic）与 show_context（均仅 action=generate）；
 `ManageProjectParams` 增 config（create/update 字段级更新语义）。
+
+#1436 接线：`ManageChapterParams` 的 `order` → `order_index`（create/update 透传，镜像内核 DTO）；
+`write action=generate` 的 `target_words` 映射为 `min_words`
+（`WritingRequest` 无 `target_words` 字段）。
 """
 
 from __future__ import annotations
@@ -52,7 +56,8 @@ class ManageChapterParams(_MCPParams):
     id: str | None = None
     volume_id: str | None = None
     title: str | None = None
-    order: int | None = None
+    # #1436：与内核 ChapterCreate/ChapterUpdate 逐字对齐（原 `order` 名不符，且工具层零消费）
+    order_index: float | None = None
     content: str | None = None
     status: str | None = None
     to_volume: str | None = None
@@ -183,6 +188,8 @@ class WriteParams(_MCPParams):
 
     mode=agentic 走 F27 自主编排（仅 action=generate）；
     show_context=True 返回上下文装配结果（仅 action=generate，镜像 CLI --show-context）。
+    target_words：`generate` 映射为内核 `min_words`（#1436 B1）；
+    `continue` 直发内核 `target_words`。
     """
 
     action: Literal["generate", "continue", "revise", "confirm_draft", "reject_draft", "draft_list"]

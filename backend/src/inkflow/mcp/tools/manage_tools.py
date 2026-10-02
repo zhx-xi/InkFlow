@@ -141,6 +141,7 @@ async def _route_chapter(client: _HTTPClient, params: ManageChapterParams) -> ob
                 {
                     "title": params.title,
                     "volume_id": params.volume_id,
+                    "order_index": params.order_index,
                     "content": params.content,
                 }
             ),
@@ -156,7 +157,12 @@ async def _route_chapter(client: _HTTPClient, params: ManageChapterParams) -> ob
         return await client.patch(
             f"/chapters/{params.id}",
             json=_compact(
-                {"title": params.title, "content": params.content, "status": params.status}
+                {
+                    "title": params.title,
+                    "content": params.content,
+                    "status": params.status,
+                    "order_index": params.order_index,
+                }
             ),
         )
     if params.action == "delete":

@@ -17,7 +17,9 @@ session_tools.py 并列于 mcp/tools/）：
   ManageProjectParams:      action=create/list/get/update/delete/restore
                             id, name, tags, language, target_words, search, force, permanent
   ManageChapterParams:      action=create/list/get/update/delete/move
-                            project_id, id, volume_id, title, order, content, status, to_volume
+                            project_id, id, volume_id, title, order_index, content, status,
+                            to_volume（#1436：order → order_index，镜像内核
+                            ChapterCreate/ChapterUpdate 逐字对齐）
   ManageCharacterParams:    action=create/list/get/update/delete/restore
                             project_id, id, name, personality, background, goals,
                             group_id, search, force
@@ -124,7 +126,7 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
     ),
     "ManageChapterParams": (
         ["create", "list", "get", "update", "delete", "move"],
-        ["project_id", "id", "volume_id", "title", "order", "content", "status", "to_volume"],
+        ["project_id", "id", "volume_id", "title", "order_index", "content", "status", "to_volume"],
     ),
     "ManageCharacterParams": (
         ["create", "list", "get", "update", "delete", "restore"],
