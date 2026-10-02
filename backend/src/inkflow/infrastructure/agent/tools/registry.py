@@ -286,6 +286,9 @@ def grants_from_tool_ids(tool_ids: list[str], *, strict: bool) -> list[GrantEntr
 def resolve_grants(agent: object) -> list[GrantEntry]:
     """统一读取 Agent 授权（grants 非空优先，否则 tool_ids 宽松反查，双空 → []）.
 
+    tool_ids 回退分支为存量行刻意保留：本地 dev DB 实测 7/7 行均为 tool_ids-only
+    （grants 为空）；新写入只写 grants（#1356）。
+
     鸭子对象（Agent | SimpleNamespace | MagicMock）经 getattr 防御读取，镜像
     deps_chat_agent 既有形态。
     """

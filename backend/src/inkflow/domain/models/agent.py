@@ -1,8 +1,9 @@
 """Agent 领域模型 — Agent 实体与请求 DTO.
 
 Agent 是持久化实体（对应 agents 表，通过 SQLAlchemy ORM 映射），承载
-能力白名单（tool_ids 工具目录 name 列表 / skill_ids skill 目录名列表，
-ADR-039 #522）与自定义配置（名称唯一，去空白非空）。AgentCreate /
+工具面真源 grants（单一真相，#1356；tool_ids 仅为存量行保留的 legacy
+只读兼容列，新代码不再写入）、skill_ids skill 目录名列表（ADR-039 #522）
+与自定义配置（名称唯一，去空白非空）。AgentCreate /
 AgentUpdate 为请求 DTO；Create 无 id/builtin/时间戳字段，Update 全字段
 可选（exclude_unset 语义，同 F1/F13）。
 
@@ -37,7 +38,7 @@ class Agent(BaseModel):
         icon: 图标（emoji 字符或图标键；空串 = 默认图标）.
         system_prompt: system prompt（内置 Agent 只读；自定义 Agent 可编辑）.
         grants: F58 授权矩阵（domain × ops；空 = 无授权/存量按 tool_ids 推断）.
-        tool_ids: 能力白名单，工具目录 name 列表.
+        tool_ids: legacy 只读兼容列（#1356；仅存量行保留，新代码不写入）.
         skill_ids: 能力白名单，skill 目录名列表（#522 文件系统真源引用）.
         model_override: 模型覆盖（provider/model 格式，None = 跟随默认）.
         temperature_override: 温度覆盖（None = 跟随默认）.
