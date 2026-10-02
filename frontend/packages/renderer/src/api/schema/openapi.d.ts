@@ -3162,6 +3162,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills/builtin/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Builtin Status
+         * @description 内置 Skill 版本/定制状态（ADR-062 升级可见面）— {items, total} 信封.
+         *
+         *     只读文件系统（skills_root = config.data_dir / "skills"），不查 DB；
+         *     路由注册在 /{skill_name} 之前，两段静态路径不被详情端点吞。
+         */
+        get: operations["builtin_status_api_v1_skills_builtin_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/builtin/{name}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Builtin Diff
+         * @description 内置 Skill 安装版 vs 当期出厂版 unified diff；非内置 slug → 404「Skill 不存在」.
+         */
+        get: operations["builtin_diff_api_v1_skills_builtin__name__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/skills/upload-url": {
         parameters: {
             query?: never;
@@ -13020,6 +13063,57 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    builtin_status_api_v1_skills_builtin_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    builtin_diff_api_v1_skills_builtin__name__diff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

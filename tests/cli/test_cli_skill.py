@@ -315,3 +315,121 @@ class TestSkillListErrorBranches:
         result = _invoke(["skill", "list"])
         assert result.exit_code == 0
         assert result.output == ""
+
+
+# ════════════ #1331 内置 skill 版本化：status / diff 子命令 ════════════
+#
+# 契约（父侧 #1331 定稿）：
+# - `inkflow skill status [--json]` → GET /skills/builtin/status（相对 base_url）
+#   --json 信封 {ok: true, data: {items, total}}（镜像 list）
+#   人类输出：name 出现在 stdout（不锁精确格式）
+# - `inkflow skill diff <name> [--json]` → GET /skills/builtin/<name>/diff
+#   --json 信封 {ok: true, data: {name, installed_version, latest_version, diff}}
+#   404 → exit 1 + NOT_FOUND 信封（_run_ctx 既有错误映射，零新分支）
+
+STATUS_PATH = "/skills/builtin/status"
+
+
+class TestSkillStatus:
+    """`inkflow skill status` 契约（#1331）。"""
+
+    def test_status_json(self, fake_http_client):
+        """--json：GET /skills/builtin/status + 信封透传 items/total。"""
+        fake_http_client.get.return_value = {
+            "items": [
+                {
+                    "name": "architecture-methodology",
+                    "latest_version": "1.0.0",
+                    "installed": True,
+                    "installed_version": "1.0.0",
+                    "user_modified": False,
+                    "has_update": False,
+                }
+            ],
+            "total": 1,
+        }
+        result = _invoke(["skill", "status"], json_output=True)
+        assert result.exit_code == 0
+        path = fake_http_client.get.await_args.args[0]
+        assert path == STATUS_PATH, f"status path={path!r} 必须为 {STATUS_PATH}"
+        assert "/api/v1" not in path, f"status path={path!r} 含 /api/v1 双前缀"
+        data = json.loads(result.stdout)
+        assert data["ok"] is True
+        assert data["data"]["total"] == 1
+        assert data["data"]["items"][0]["name"] == "architecture-methodology"
+
+    def test_status_human(self, fake_http_client):
+        """无 --json：内置 slug 出现在 stdout。"""
+        fake_http_client.get.return_value = {
+            "items": [
+                {
+                    "name": "writing-methodology",
+                    "latest_version": "1.0.0",
+                    "installed": True,
+                    "installed_version": "1.0.0",
+                    "user_modified": False,
+                    "has_update": False,
+                }
+            ],
+            "total": 1,
+        }
+        result = _invoke(["skill", "status"])
+        assert result.exit_code == 0
+        stdout = _strip_ansi(result.stdout)
+        assert "writing-methodology" in stdout
+        assert "1.0.0" in stdout
+
+    def test_status_http_error_json(self, fake_http_client):
+        """HTTP 500 → exit 1 + INTERNAL_ERROR 信封。"""
+        fake_http_client.get.side_effect = _http_error(500, "内核内部错误")
+        result = _invoke(["skill", "status"], json_output=True)
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "INTERNAL_ERROR"
+
+
+class TestSkillDiff:
+    """`inkflow skill diff <name>` 契约（#1331）。"""
+
+    def test_diff_json(self, fake_http_client):
+        """--json：GET /skills/builtin/<name>/diff + 信封透传 diff。"""
+        fake_http_client.get.return_value = {
+            "name": "audit-methodology",
+            "installed_version": "0.9.0",
+            "latest_version": "1.0.0",
+            "diff": "--- a\n+++ b\n@@\n-version: 0.9.0\n+version: 1.0.0\n",
+        }
+        result = _invoke(["skill", "diff", "audit-methodology"], json_output=True)
+        assert result.exit_code == 0
+        path = fake_http_client.get.await_args.args[0]
+        assert path == "/skills/builtin/audit-methodology/diff", f"diff path={path!r}"
+        data = json.loads(result.stdout)
+        assert data["ok"] is True
+        assert data["data"]["name"] == "audit-methodology"
+        assert data["data"]["diff"]
+
+    def test_diff_human(self, fake_http_client):
+        """无 --json：diff 文本出现在 stdout。"""
+        fake_http_client.get.return_value = {
+            "name": "audit-methodology",
+            "installed_version": "0.9.0",
+            "latest_version": "1.0.0",
+            "diff": "-version: 0.9.0\n+version: 1.0.0\n",
+        }
+        result = _invoke(["skill", "diff", "audit-methodology"])
+        assert result.exit_code == 0
+        assert "1.0.0" in _strip_ansi(result.stdout)
+
+    def test_diff_unknown_name_404(self, fake_http_client):
+        """非内置 slug → HTTP 404 → exit 1 + NOT_FOUND 信封。"""
+        fake_http_client.get.side_effect = _http_error(404, "Skill 不存在")
+        result = _invoke(["skill", "diff", "nope"], json_output=True)
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "NOT_FOUND"
+
+    def test_status_and_diff_in_help(self):
+        """skill --help 列出 status / diff 子命令。"""
+        result = _invoke(["skill", "--help"])
+        assert result.exit_code == 0
+        stdout = _strip_ansi(result.stdout)
+        assert "status" in stdout
+        assert "diff" in stdout
