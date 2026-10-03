@@ -432,8 +432,8 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
                     pid = uuid.UUID(pid_str)
                 except ValueError:
                     continue
-                project = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-                    pid.int
+                project = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（领域 UUID 入参，ADR-060 D9）
+                    pid
                 )
                 if project is None:
                     ghost.append(pid_str)
@@ -623,8 +623,8 @@ class MemoryService(MemorySupersedeMixin, MemorySessionMixin):
                 for p in sorted(items, key=lambda p: p.count, reverse=True)
                 if getattr(p, "superseded_by", "") == ""
             ]
-        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（int 背书，F6 先例）
-            project_id.int
+        project: Project | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：project_repo 按契约提供 get（领域 UUID 入参，ADR-060 D9）
+            project_id
         )
         if project is None:
             return [

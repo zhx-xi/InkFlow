@@ -218,12 +218,18 @@ def _project(extra: dict) -> SimpleNamespace:
     return SimpleNamespace(config=SimpleNamespace(extra=extra))
 
 
-def _project_get_side_effect(deleted_ints: set):
-    """project_repo.get 按 int 主键分发（镜像 is_learning_enabled 鸭子调用）:
-    已删项目 → None，其余 → 存活项目."""
+def _project_get_side_effect(deleted_ids: set):
+    """project_repo.get 按**领域 UUID** 主键分发（#1291 契约：仓储入口只认 uuid.UUID）:
+    已删项目 → None，其余 → 存活项目.
 
-    def _impl(int_id: int):
-        if int_id in deleted_ints:
+    ⚠️ 契约升级（#1462 同族收口，2026-10-04）：本 helper 原按裸 int 主键（`GHOST.int`）
+    分发，锁的是 #1230 ⑤ 的 int 兼容面——该兼容面已随 #1291 退役，memory_service
+    的调用点改为直传领域 UUID 后，本 helper 必须同步升级为 UUID 键，否则
+    「已删项目」判据永不命中（幽灵项目重算三条用例假绿/翻红）。
+    """
+
+    def _impl(project_id: uuid.UUID):
+        if project_id in deleted_ids:
             return None
         return _project({"memory_learning": True})
 
@@ -522,7 +528,7 @@ async def test_list_user_preferences_recomputes_removes_deleted_project() -> Non
         source_projects=[str(PID_A), str(PID_B)],
     )
     deps["user_preference_repo"].list_all.return_value = ([up1, up2], 2)
-    deps["project_repo"].get.side_effect = _project_get_side_effect({GHOST.int})
+    deps["project_repo"].get.side_effect = _project_get_side_effect({GHOST})
     items, total = await service.list_user_preferences()
     # update 写回（仅 up-1 含已删项目 GHOST）
     deps["user_preference_repo"].update.assert_awaited_once()
@@ -553,7 +559,7 @@ async def test_list_user_preferences_recomputes_deletes_low_support() -> None:
         source_projects=[str(PID_A), str(GHOST)],
     )
     deps["user_preference_repo"].list_all.return_value = ([up1], 1)
-    deps["project_repo"].get.side_effect = _project_get_side_effect({GHOST.int})
+    deps["project_repo"].get.side_effect = _project_get_side_effect({GHOST})
     items, total = await service.list_user_preferences()
     assert [p.id for p in items] == []  # 已删偏好不返回
     assert total == 0
@@ -573,7 +579,7 @@ async def test_list_user_preferences_ghost_only_source_not_displayed() -> None:
         source_projects=[str(GHOST)],
     )
     deps["user_preference_repo"].list_all.return_value = ([up1], 1)
-    deps["project_repo"].get.side_effect = _project_get_side_effect({GHOST.int})
+    deps["project_repo"].get.side_effect = _project_get_side_effect({GHOST})
     items, total = await service.list_user_preferences()
     assert [p.id for p in items] == []
     assert total == 0
