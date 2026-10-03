@@ -32,7 +32,7 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 const projectP1 = {
-  id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
+  id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
@@ -49,7 +49,7 @@ function renderLibrary() {
 }
 
 /**
- * #1375 seed：根「世界观」+ 三个子条目——「青云山」category=地理（已注册）、
+ * #1375 seed：根「世界观」+ 三个子条目——「地点甲」category=地理（已注册）、
  * 「祭剑大典」category=文化（**未注册** → ②A 待注册并集来源）、
  * 「东荒」category=地图（保留类别 → **不进并集**：#389 地图归地图工作台，列表页不渲染该 chip）。
  * world-categories 只含「地理」；POST /world-categories 追加（一键注册断言 POST body + chips 转正式）。
@@ -57,7 +57,7 @@ function renderLibrary() {
 function seedWorld() {
   const items = [
     { id: 'w1', name: '世界观', parent_id: null, category: '', content: '', created_at: '', updated_at: '' },
-    { id: 'w2', name: '青云山', parent_id: 'w1', category: '地理', content: '', created_at: '', updated_at: '' },
+    { id: 'w2', name: '地点甲', parent_id: 'w1', category: '地理', content: '', created_at: '', updated_at: '' },
     { id: 'w3', name: '祭剑大典', parent_id: 'w1', category: '文化', content: '', created_at: '', updated_at: '' },
     { id: 'w4', name: '东荒', parent_id: 'w1', category: '地图', content: '', created_at: '', updated_at: '' },
   ];
@@ -190,7 +190,7 @@ describe('设定库页 — 世界观条目页四处（#1375）', () => {
     await user.click(screen.getByTestId('world-cat-filter-文化'));
     expect(screen.getByTestId('world-cat-filter-文化')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('library-list')).toHaveTextContent('祭剑大典');
-    expect(screen.getByTestId('library-list')).not.toHaveTextContent('青云山');
+    expect(screen.getByTestId('library-list')).not.toHaveTextContent('地点甲');
   });
 
   it('④ 删除按钮在 chip 框内：× 与筛选按钮同属 chip 容器；未 hover 隐藏（opacity-0 + group-hover:opacity-100）', async () => {

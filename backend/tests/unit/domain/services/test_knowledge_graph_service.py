@@ -550,7 +550,7 @@ class TestCreateRelation:
         """④ map_pin 校验链路（§2.2）：pin 存在 + 所属 map 项目匹配 → 通过."""
         mock_project_repo.get = AsyncMock(return_value=_project())
         wm = _map("大陆图")
-        pin = _pin("青云宗", map_id=wm.id)
+        pin = _pin("门派甲", map_id=wm.id)
         tgt_world = _world("清河县")
         mock_map_repo.get_pin = AsyncMock(return_value=pin)
         mock_map_repo.get = AsyncMock(return_value=wm)
@@ -575,7 +575,7 @@ class TestCreateRelation:
         13/2）."""
         mock_project_repo.get = AsyncMock(return_value=_project())
         wm = _map("大陆图")
-        pin = _pin("青云宗", map_id=wm.id)
+        pin = _pin("门派甲", map_id=wm.id)
         tgt_world = _world("清河县")
         mock_world_repo.get = AsyncMock(return_value=tgt_world)
 

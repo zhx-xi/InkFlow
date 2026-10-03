@@ -63,7 +63,7 @@ async def _seed(session: AsyncSession, *, with_outline: bool = True) -> None:
         ChapterORM(
             id=CHAPTER_ID.int,
             project_id=PROJECT_ID.int,
-            title="第一章 初入山门",
+            title="第一章 初入地点己",
             content="",
             status="draft",
             word_count=0,
@@ -80,7 +80,7 @@ async def _seed(session: AsyncSession, *, with_outline: bool = True) -> None:
         WorldSettingORM(
             id=WORLD_A.int,
             project_id=PROJECT_ID.int,
-            name="山门",
+            name="地点己",
             category="location",
             content="北方剑宗",
         )
@@ -122,7 +122,7 @@ async def _seed(session: AsyncSession, *, with_outline: bool = True) -> None:
             OutlineORM(
                 id=101,
                 project_id=PROJECT_ID.int,
-                name="第一章 初入山门",
+                name="第一章 初入地点己",
                 description="少年甲拜入乙门下，卷入玉佩之谜",
                 sort_order=1,
                 level="chapter",

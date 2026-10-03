@@ -33,7 +33,7 @@ from inkflow.infrastructure.database.models.conversation import ConversationORM
 PROJECT_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 CONV_ID = uuid.UUID("22345678-1234-5678-1234-567812345678")
 TS = datetime(2026, 8, 20, 10, 0, 0, tzinfo=UTC)
-TITLE = "第十二章 剑心蒙尘"
+TITLE = "第十二章 事件甲"
 RENAME_TITLE = "改名后的标题"
 
 # repo 真实 DB 用例专用：int 必须 ≤ SQLite INTEGER 上限（2^63-1），
@@ -107,8 +107,8 @@ class TestConversationTitleField:
 
     def test_title_strips_whitespace(self) -> None:
         """去空白：首尾空白剥除，内部保留。"""
-        conv = _make_conversation(title="  第十二章 剑心蒙尘  ")
-        assert conv.title == "第十二章 剑心蒙尘"
+        conv = _make_conversation(title="  第十二章 事件甲  ")
+        assert conv.title == "第十二章 事件甲"
 
 
 class TestConversationCreateTitle:

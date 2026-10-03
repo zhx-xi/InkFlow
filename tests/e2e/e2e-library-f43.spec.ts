@@ -311,7 +311,7 @@ test('设定库：角色编辑改等级+标签（E2E-A2）——PATCH 整体替�
     // 预置角色（带完整 extra：role_rank 必填 gate，编辑保存才 enabled）
     const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/characters`, {
       method: 'POST',
-      body: { name: '林晚', personality: 'E2E', extra: { role_rank: 'major', groups: ['主角团', '青云宗'] } },
+      body: { name: '林晚', personality: 'E2E', extra: { role_rank: 'major', groups: ['主角团', '门派甲'] } },
     });
     expect(res.status).toBe(201);
     const cid = ((await res.json()) as { id: string }).id;
@@ -328,9 +328,9 @@ test('设定库：角色编辑改等级+标签（E2E-A2）——PATCH 整体替�
     // 改等级 → 配角（exact）
     await dialog.getByTestId('library-create-rank').click();
     await window.getByRole('option', { name: '配角', exact: true }).click();
-    // 移除标签「青云宗」（chip 内 ×）+ 回车新增「新标签」
-    await dialog.getByTestId('lib-tag-chip-青云宗').getByRole('button').click();
-    await expect(dialog.getByTestId('lib-tag-chip-青云宗')).toHaveCount(0);
+    // 移除标签「门派甲」（chip 内 ×）+ 回车新增「新标签」
+    await dialog.getByTestId('lib-tag-chip-门派甲').getByRole('button').click();
+    await expect(dialog.getByTestId('lib-tag-chip-门派甲')).toHaveCount(0);
     const tagInput = dialog.getByTestId('lib-tag-input');
     await tagInput.fill('新标签');
     await tagInput.press('Enter');
@@ -344,7 +344,7 @@ test('设定库：角色编辑改等级+标签（E2E-A2）——PATCH 整体替�
     await expect(window.getByTestId(`lib-rank-${cid}`)).toHaveText('配角', { timeout: 15_000 });
     const tags = window.getByTestId(`lib-tags-${cid}`);
     await expect(tags).toContainText('新标签');
-    await expect(tags).not.toContainText('青云宗');
+    await expect(tags).not.toContainText('门派甲');
     // 内核落库：PATCH extra 整体替换（spec §3.2）生效
     await expect
       .poll(

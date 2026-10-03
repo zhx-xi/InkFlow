@@ -46,7 +46,7 @@ const FS_ITEMS: FsItem[] = [
   // resolved：带回收时间
   {
     id: 'f2',
-    title: '林晚照的旧玉佩',
+    title: '角色乙的旧玉佩',
     priority: 40,
     status: 'resolved',
     location: '第 8 章 · 初见',
@@ -177,7 +177,7 @@ const FS_CHAPTER_ITEMS: FsChapterItem[] = [
   // 章号命中但 location 为空 → 只显示「第 2 章」
   { id: 'g3', title: '无位置伏笔', priority: 50, status: 'open', location: '', first_chapter_id: 'c2' },
   // 章号不在章节序中（映射缺失）→ 回落 location，不伪造章号
-  { id: 'g4', title: '未知章节伏笔', priority: 50, status: 'open', location: '山门', first_chapter_id: 'cX' },
+  { id: 'g4', title: '未知章节伏笔', priority: 50, status: 'open', location: '地点己', first_chapter_id: 'cX' },
 ];
 
 function renderFsChapter(props?: Partial<Parameters<typeof LibraryItemList>[0]>) {
@@ -225,7 +225,7 @@ describe('#1350 伏笔位置徽标「第 N 章 · location」（结构化章号�
     renderFsChapter();
 
     const badge = screen.getByTestId('lib-fs-location-g4');
-    expect(badge).toHaveTextContent('山门');
+    expect(badge).toHaveTextContent('地点己');
     expect(badge).not.toHaveTextContent('第');
   });
 

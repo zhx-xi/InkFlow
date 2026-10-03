@@ -51,17 +51,17 @@ type FsRow = {
 };
 
 const FS_ROWS: FsRow[] = [
-  // 「剑」标题面命中 3 条
+  // 「地点」标题面命中 1 条（f6 标题含「地点」）
   { id: 'f1', title: '断剑的秘密', status: 'open', priority: 90, location: '第 11 章 · 闭关' },
-  { id: 'f2', title: '残剑的来历', status: 'open', priority: 75, location: '第 13 章 · 山门' },
+  { id: 'f2', title: '残剑的来历', status: 'open', priority: 75, location: '第 13 章 · 地点己' },
   // 「第 2 章」位置面命中 1 条（口径 1 正例）
   { id: 'f3', title: '旧玉佩之谜', status: 'open', priority: 60, location: '第 2 章 · 初见' },
-  // 「剑」位置面命中 2 条（标题不含「剑」→ 位置面命中的可判别证据）
-  { id: 'f4', title: '守陵人的来历', status: 'open', priority: 55, location: '第 10 章 · 剑冢' },
+  // 「地点」位置面命中 3 条（f2/f4/f6 的 location 含「地点」；f2/f4 标题不含 → 位置面命中的可判别证据）
+  { id: 'f4', title: '角色戊的来历', status: 'open', priority: 55, location: '第 10 章 · 地点乙' },
   { id: 'f5', title: '无名客的遗言', status: 'open', priority: 45, location: '开篇 · 序章梦境' },
   {
-    id: 'f6', title: '藏经阁的旧穗', status: 'resolved', priority: 40,
-    location: '第 8 章 · 剑阁', resolved_at: '2026-08-30T10:00:00Z',
+    id: 'f6', title: '地点丁的旧穗', status: 'resolved', priority: 40,
+    location: '第 8 章 · 地点庚', resolved_at: '2026-08-30T10:00:00Z',
   },
   {
     id: 'f7', title: '剑诀第九式的缺失', status: 'resolved', priority: 30,
@@ -186,7 +186,7 @@ describe('#1376 反例守护：不选任何筛选 = 改动前行为', () => {
 
     // 全量 8 条 + 原顺序（优先级降序，首条 90）
     expect(screen.getByTestId('fs-count')).toHaveTextContent('显示 8 / 共 8 条');
-    const rows = screen.getAllByText(/断剑的秘密|残剑的来历|守陵人的来历|未署名的旧信/);
+    const rows = screen.getAllByText(/断剑的秘密|残剑的来历|角色戊的来历|未署名的旧信/);
     expect(rows.length).toBeGreaterThanOrEqual(4);
     expect(screen.getByTestId('library-list').textContent?.indexOf('断剑的秘密')).toBeLessThan(
       screen.getByTestId('library-list').textContent?.indexOf('未署名的旧信') ?? -1,
@@ -208,7 +208,7 @@ describe('#1376 状态筛选：服务端下沉（total 跟随筛选口径）', (
     await waitFor(() => {
       const list = screen.getByTestId('library-list');
       // 已回收的两条被服务端滤掉
-      expect(list).not.toHaveTextContent('藏经阁的旧穗');
+      expect(list).not.toHaveTextContent('地点丁的旧穗');
       expect(list).not.toHaveTextContent('剑诀第九式的缺失');
       expect(list).toHaveTextContent('断剑的秘密');
     });
@@ -302,34 +302,33 @@ describe('#1376 排序：默认降序 · 切换升序 · 与分页共存', () =>
 });
 
 describe('#1376 检索（口径 1）：标题 OR 位置 文本子串', () => {
-  it('输入「剑」→ 请求带 search=剑；命中 = 标题 3 条 + 位置 2 条（并集 5），计数与列表同步', async () => {
+  it('输入「地点」→ 请求带 search=地点；命中 = 标题 1 条 + 位置 3 条（并集 3），计数与列表同步', async () => {
     seedFsApi();
     await renderForeshadowPage();
 
-    await userEvent.setup().type(screen.getByTestId('fs-search-input'), '剑');
+    await userEvent.setup().type(screen.getByTestId('fs-search-input'), '地点');
     await waitFor(() => expect(lastFsUrl()).toContain('search='));
 
     // 服务端收到的检索词与输入一致（编码后解码等值）
     const qs = new URL(lastFsUrl(), 'http://x').searchParams;
-    expect(qs.get('search')).toBe('剑');
+    expect(qs.get('search')).toBe('地点');
     // 检索仍走服务端分页（不退回一次性全量）
     expect(qs.get('limit')).toBe('50');
 
     await waitFor(() => {
       const list = screen.getByTestId('library-list');
       // 标题面命中
-      expect(list).toHaveTextContent('断剑的秘密');
-      expect(list).toHaveTextContent('剑诀第九式的缺失');
-      // 位置面命中（标题不含「剑」→ 仅可能由 location 文本命中）
-      expect(list).toHaveTextContent('守陵人的来历');
-      expect(list).toHaveTextContent('藏经阁的旧穗');
+      expect(list).toHaveTextContent('地点丁的旧穗');
+      // 位置面命中（标题不含「地点」→ 仅可能由 location 文本命中）
+      expect(list).toHaveTextContent('残剑的来历');
+      expect(list).toHaveTextContent('角色戊的来历');
       // 未命中的条目缺席（位置空 / 无子串）
       expect(list).not.toHaveTextContent('未署名的旧信');
       expect(list).not.toHaveTextContent('无名客的遗言');
     });
-    expect(screen.getByTestId('fs-count')).toHaveTextContent('显示 5 / 共 5 条');
+    expect(screen.getByTestId('fs-count')).toHaveTextContent('显示 3 / 共 3 条');
     await waitFor(() => {
-      expect(screen.getByTestId('library-page-info')).toHaveTextContent('共 5 条');
+      expect(screen.getByTestId('library-page-info')).toHaveTextContent('共 3 条');
     });
   });
 

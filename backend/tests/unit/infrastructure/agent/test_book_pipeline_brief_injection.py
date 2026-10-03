@@ -38,7 +38,7 @@ from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 
 # ── fixture 锚点值（真实可辨识，与实现字面量不同源）──────────────────
 
-REAL_CONTEXT = "【世界观】青鸾峰终年积雪，剑冢埋有前朝名剑\n【伏笔】青铜药臼应显裂纹"
+REAL_CONTEXT = "【世界观】青鸾峰终年积雪，地点乙埋有前朝名剑\n【伏笔】青铜药臼应显裂纹"
 REAL_STYLE = "慢热日常·白描·忌打脸立威"
 REAL_REQUIREMENT = "本章须以医馆场景开篇，禁止出现打脸立威桥段"
 PLACEHOLDER_MAIN = "主角自定"

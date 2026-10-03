@@ -583,7 +583,7 @@ describe('会话页 — #770 title 展示（空回退 project_name / titleEmpty�
         conversation_id: 'conv-1',
         project_id: 'p1',
         project_name: '仙侠长篇',
-        title: '第十二章 剑心蒙尘',
+        title: '第十二章 事件甲',
         last_message: '帮我写一段打斗场景',
         message_count: 3,
         is_deleted: false,
@@ -593,7 +593,7 @@ describe('会话页 — #770 title 展示（空回退 project_name / titleEmpty�
     renderSessionsPage();
     await screen.findAllByTestId('session-directory-card');
     // RED：当前实现展示 project_name（'仙侠长篇'）→ FAIL
-    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('第十二章 剑心蒙尘');
+    expect(screen.getByTestId('session-title-conv-conv-1')).toHaveTextContent('第十二章 事件甲');
   });
 
   it('title 为空 → 回退展示 project_name（守护用例，当前实现天然通过）', async () => {
@@ -718,14 +718,14 @@ describe('会话页 — #770 点击导航（title 匹配章节 → chapter_id；
         conversation_id: 'conv-1',
         project_id: 'p1',
         project_name: '仙侠长篇',
-        title: '第十二章 剑心蒙尘',
+        title: '第十二章 事件甲',
         last_message: '帮我写一段打斗场景',
         message_count: 3,
         is_deleted: false,
         updated_at: '2026-08-21T10:00:00Z',
       },
     ];
-    chapterItems = [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }];
+    chapterItems = [{ id: 'ch1', title: '第十二章 事件甲', volume_id: null, order_index: 0, word_count: 0 }];
     useChapterStore.setState({ chapters: chapterItems, treeProjectId: 'p1' });
     const user = userEvent.setup();
     renderSessionsPage();
@@ -750,7 +750,7 @@ describe('会话页 — #770 点击导航（title 匹配章节 → chapter_id；
       },
     ];
     // 章节存在但 title 不匹配（改名了）
-    chapterItems = [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }];
+    chapterItems = [{ id: 'ch1', title: '第十二章 事件甲', volume_id: null, order_index: 0, word_count: 0 }];
     useChapterStore.setState({ chapters: chapterItems, treeProjectId: 'p1' });
     const user = userEvent.setup();
     renderSessionsPage();

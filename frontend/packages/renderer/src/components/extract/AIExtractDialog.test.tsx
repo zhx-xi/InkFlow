@@ -74,7 +74,7 @@ const CHAPTERS_RESP = {
 };
 
 /** 章节全文（镜像 Chapter 含 content） */
-const CHAPTER_DETAIL = { id: 'ch1', title: '第三章 青云之巅', volume_id: null, order_index: 3, word_count: 3200, project_id: 'p1', content: '青云山巅，剑气纵横。' };
+const CHAPTER_DETAIL = { id: 'ch1', title: '第三章 青云之巅', volume_id: null, order_index: 3, word_count: 3200, project_id: 'p1', content: '地点甲巅，剑气纵横。' };
 
 /** 最近一次运行：GET extractions/runs 响应（ExtractionRun 形态） */
 const RUN_LIST = {
@@ -91,14 +91,14 @@ const RUN_LIST = {
 
 /** 角色提取结果（CharacterExtractionResult 形态） */
 const CHAR_RESULT = {
-  created: [{ id: 'c1', name: '苏云舟' }, { id: 'c2', name: '沈青梧' }],
-  updated: [{ id: 'c3', name: '顾长生' }],
+  created: [{ id: 'c1', name: '角色甲' }, { id: 'c2', name: '角色壬' }],
+  updated: [{ id: 'c3', name: '角色癸' }],
   relations_created: [], relations_updated: [], warnings: [], model: 'deepseek-chat',
 };
 
 /** 世界观提取结果（WorldExtractionResult 形态） */
 const WORLD_RESULT = {
-  created: [{ id: 'w1', name: '青云宗' }],
+  created: [{ id: 'w1', name: '门派甲' }],
   updated: [], warnings: [], model: 'deepseek-chat',
 };
 

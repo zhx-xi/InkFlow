@@ -61,7 +61,7 @@ XML_HEADERS = {"Content-Type": "application/xml"}
 
 def _mock_svc() -> MagicMock:
     svc = MagicMock()
-    svc.export_mxgraph = AsyncMock(return_value=(SAMPLE_XML, "青云志-knowledge-graph.drawio"))
+    svc.export_mxgraph = AsyncMock(return_value=(SAMPLE_XML, "项目甲-knowledge-graph.drawio"))
     svc.import_mxgraph = AsyncMock(
         return_value=KnowledgeGraphImportResult(
             mode="merge",

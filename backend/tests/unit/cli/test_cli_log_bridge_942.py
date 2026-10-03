@@ -334,7 +334,7 @@ class TestCliCheckpoint:
         assert body["params"]["project_id"] == "42"
 
     def test_option_values_never_leak(self, fake_cli_env, monkeypatch, cli_runner):
-        secret = "夜色沉沉，山门之内灯火通明，这段正文绝不该出现在审计日志里。"
+        secret = "夜色沉沉，地点己之内灯火通明，这段正文绝不该出现在审计日志里。"
         monkeypatch.setattr(
             FakeToolClient, "response", {"id": "x", "title": "第一章", "word_count": 1}
         )

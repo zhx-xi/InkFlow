@@ -271,10 +271,10 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
     // category='' 镜像 e2e-blackbox-contract presetWorldNodes 先例（父侧修复：
     // 非空分类须先经 world-categories 端点创建，否则 422「请先创建分类」gate）
     const world = await apiJson(kernel, 'POST', `/api/v1/projects/${pid}/world-settings`, {
-      name: '云州大陆',
+      name: '地点A',
       category: '',
       content:
-        '云州大陆地势西高东低，东临沧海，西接荒漠。宗门林立，以三山五派为尊，灵脉多藏于深山大泽之中。',
+        '地点A地势西高东低，东临沧海，西接荒漠。宗门林立，以三山五派为尊，灵脉多藏于深山大泽之中。',
     });
     expect(world.status).toBe(201);
 

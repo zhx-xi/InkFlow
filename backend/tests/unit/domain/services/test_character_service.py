@@ -213,7 +213,7 @@ class TestCharacterCrud:
     async def test_create_character_with_multiple_groups_success(self, service, mock_repo) -> None:
         """多分组：group_ids 数组全部属于该项目 → 角色同时归属多个分组（N:M）。"""
         g1 = _group(name="主角团")
-        g2 = _group(name="青云宗")
+        g2 = _group(name="门派甲")
         mock_repo.get_group = AsyncMock(side_effect=[g1, g2])
         created = await service.create_character(
             project_id=PID, name="林尘", group_ids=[g1.id, g2.id]
@@ -683,7 +683,7 @@ class TestUpdateCharacterGroup:
     async def test_update_character_replaces_group_ids_wholesale(self, service, mock_repo) -> None:
         """全量替换：原有多分组 → 更新为另一分组集合（旧分组不再保留）。"""
         g_old = _group(name="主角团")
-        g_new = _group(name="青云宗")
+        g_new = _group(name="门派甲")
         existing = _char(name="林尘", group_ids=[g_old.id])
         mock_repo.get = AsyncMock(return_value=existing)
         mock_repo.get_group = AsyncMock(return_value=g_new)

@@ -126,7 +126,7 @@ beforeEach(() => {
   confirmMock.mockReset();
   createChatCovMock.mockReset();
   saveChatMsgMock.mockReset();
-  createChatCovMock.mockResolvedValue({ conversation_id: 'conv-1', project_id: 'p1', project_name: '青云志', last_message: '', message_count: 0, is_deleted: false, updated_at: '2026-08-29T00:00:00Z' });
+  createChatCovMock.mockResolvedValue({ conversation_id: 'conv-1', project_id: 'p1', project_name: '项目甲', last_message: '', message_count: 0, is_deleted: false, updated_at: '2026-08-29T00:00:00Z' });
   saveChatMsgMock.mockResolvedValue({ id: 'm1', project_id: 'p1', conversation_id: 'conv-1', role: 'ai', content: 'x', intent: 'content', created_at: '2026-08-29T00:00:00Z' });
   capturedStream = null;
   // #474 前置校验依赖 models store：默认播种「已配置」+ provider-configs GET 返回同款，
@@ -149,7 +149,7 @@ beforeEach(() => {
     volumes: seedVolumes, chapters: seedChapters, treeProjectId: 'p1', currentChapterId: 'c1', content: '已有正文第一段。', loading: false, error: null,
   });
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
+    projects: [{ id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
 
@@ -206,7 +206,7 @@ describe('写作页 — 项目印章常驻（三主题）', () => {
   it.each(['paper', 'night', 'ink'] as const)('主题 %s 下印章均显示，文字取书名关键字', (theme) => {
     renderWritingPage();
     const seal = screen.getByTestId('project-seal');
-    expect(seal).toHaveTextContent('青');
+    expect(seal).toHaveTextContent('项');
     act(() => {
       useThemeStore.getState().setTheme(theme);
     });
@@ -507,7 +507,7 @@ describe('写作页 — HITL 确认流（#343 + #642-1：流式 start 无 HITL �
       projects: [
         {
           id: 'p1',
-          name: '青云志',
+          name: '项目甲',
           tags: ['玄幻'],
           language: 'zh-CN',
           target_words: 800000,

@@ -35,7 +35,7 @@ def make_ref(title: str = "事件", time_value: float | None = 317.5) -> Timelin
         id=EID,
         title=title,
         time_value=time_value,
-        time_display="青元历 317 年秋",
+        time_display="示例历 317 年秋",
         narrative_position=1,
         timeline_flag="",
     )
@@ -147,11 +147,11 @@ class TestTimelineEventCreateValidation:
             project_id=PID,
             title="事件",
             time_unit=" 年 ",
-            time_display=" 青元历 317 年秋 ",
+            time_display=" 示例历 317 年秋 ",
             timeline_flag=" flashback ",
         )
         assert event.time_unit == "年"
-        assert event.time_display == "青元历 317 年秋"
+        assert event.time_display == "示例历 317 年秋"
         assert event.timeline_flag == "flashback"
 
     def test_create_time_unit_too_long_raises(self):

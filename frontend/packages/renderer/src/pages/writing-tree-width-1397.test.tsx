@@ -86,7 +86,7 @@ const READY_PROVIDER: ProviderConfig = {
 
 const P1 = {
   id: 'p1',
-  name: '青云志',
+  name: '项目甲',
   tags: ['玄幻'],
   language: 'zh-CN',
   target_words: 800000,

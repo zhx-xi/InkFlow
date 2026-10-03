@@ -31,17 +31,17 @@ vi.mock('../api/client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
-const QY = '青元历';
-const XJ = '仙历';
+const QY = '示例历';
+const XJ = '示例仙历';
 const DEFAULT_KEY = '__none__';
 
-/** 事件（世界序顺序按数组序传入）：青元历×2 / 默认轴×1 / 仙历×1 */
+/** 事件（世界序顺序按数组序传入）：示例历×2 / 默认轴×1 / 示例仙历×1 */
 const e1: TimelineEventDTO = {
-  id: 'e1', title: '事件甲', time_value: 3, time_unit: '年', time_display: '青元历 3 年',
+  id: 'e1', title: '事件甲', time_value: 3, time_unit: '年', time_display: '示例历 3 年',
   narrative_position: 1, source_chapter_id: 'c11', extra: { era: QY, era_value: 3 },
 };
 const e4: TimelineEventDTO = {
-  id: 'e4', title: '事件丁（无纪元）', time_value: 1, time_unit: '年', time_display: '青元历 1 年',
+  id: 'e4', title: '事件丁（无纪元）', time_value: 1, time_unit: '年', time_display: '示例历 1 年',
   narrative_position: 2, source_chapter_id: null, extra: {},
 };
 const e3: TimelineEventDTO = {
@@ -49,7 +49,7 @@ const e3: TimelineEventDTO = {
   narrative_position: 3, source_chapter_id: null, extra: { era: XJ, era_value: 1024 },
 };
 const e2: TimelineEventDTO = {
-  id: 'e2', title: '事件乙', time_value: 9, time_unit: '年', time_display: '青元历 9 年',
+  id: 'e2', title: '事件乙', time_value: 9, time_unit: '年', time_display: '示例历 9 年',
   narrative_position: 4, source_chapter_id: 'c12', extra: { era: QY, era_value: 9 },
 };
 
@@ -67,7 +67,7 @@ function renderView(events: TimelineEventDTO[] = ERA_EVENTS) {
       projectId="p1"
       eventTimeline={events}
       narrativeOrder={events}
-      chapterTitles={{ c11: '第十一章 剑心为何物', c12: '第十二章 夜访剑冢' }}
+      chapterTitles={{ c11: '第十一章 事件乙', c12: '第十二章 夜访地点乙' }}
       chapterOrder={['c11', 'c12']}
     />,
   );
@@ -103,13 +103,13 @@ describe('#1353 轴选择器（世界序专属；≥2 条轴才出现）', () =>
     expect(screen.queryAllByTestId(/^tl-lane-/)).toHaveLength(0);
   });
 
-  it('T2 切世界序 → 选择器出现 + 3 chips，默认只勾选主力轴（青元历）', async () => {
+  it('T2 切世界序 → 选择器出现 + 3 chips，默认只勾选主力轴（示例历）', async () => {
     renderView();
     await switchToWorld();
 
     expect(screen.getByTestId('tl-axis-picker')).toBeTruthy();
     expect(screen.getAllByTestId(/^tl-axis-chip-/)).toHaveLength(3);
-    // 默认只显示主角/主力轴（事件数最多 = 青元历）
+    // 默认只显示主角/主力轴（事件数最多 = 示例历）
     expect(screen.getByTestId(`tl-axis-chip-${QY}`).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId(`tl-axis-chip-${DEFAULT_KEY}`).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByTestId(`tl-axis-chip-${XJ}`).getAttribute('aria-pressed')).toBe('false');

@@ -84,7 +84,7 @@ def _make_event(**overrides: object) -> dict:
         description="外门考核夜，林尘丹田中的古鼎第一次亮起。",
         time_value=317.5,
         time_unit="年",
-        time_display="青元历 317 年秋",
+        time_display="示例历 317 年秋",
         narrative_position=3,
         timeline_flag="",
         extra={},
@@ -103,7 +103,7 @@ def _make_conflict(**overrides: object) -> dict:
             "id": str(uuid.uuid4()),
             "title": "林尘觉醒金手指",
             "time_value": 317.5,
-            "time_display": "青元历 317 年秋",
+            "time_display": "示例历 317 年秋",
             "narrative_position": 2,
             "timeline_flag": "",
         },
@@ -111,13 +111,13 @@ def _make_conflict(**overrides: object) -> dict:
             "id": str(uuid.uuid4()),
             "title": "外门往事",
             "time_value": 312.0,
-            "time_display": "青元历 312 年",
+            "time_display": "示例历 312 年",
             "narrative_position": 3,
             "timeline_flag": "",
         },
         message=(
-            "叙事第 2 位事件「林尘觉醒金手指」（青元历 317 年秋）晚于叙事第 3 位"
-            "事件「外门往事」（青元历 312 年）：叙事顺序与世界内时间矛盾。"
+            "叙事第 2 位事件「林尘觉醒金手指」（示例历 317 年秋）晚于叙事第 3 位"
+            "事件「外门往事」（示例历 312 年）：叙事顺序与世界内时间矛盾。"
         ),
     )
     defaults.update(overrides)
@@ -186,7 +186,7 @@ class TestTimelineCreate:
                 "--time-unit",
                 "年",
                 "--time-display",
-                "青元历 317 年秋",
+                "示例历 317 年秋",
                 "--narrative-position",
                 "3",
                 "--timeline-flag",
@@ -206,7 +206,7 @@ class TestTimelineCreate:
                 "description": "外门考核夜，古鼎第一次亮起。",
                 "time_value": 317.5,
                 "time_unit": "年",
-                "time_display": "青元历 317 年秋",
+                "time_display": "示例历 317 年秋",
                 "narrative_position": 3,
                 "timeline_flag": "flashback",
             },
@@ -223,7 +223,7 @@ class TestTimelineCreate:
         assert result.exit_code == 0
         assert "事件创建成功" in result.output
         assert "林尘觉醒金手指" in result.output
-        assert "青元历 317 年秋" in result.output
+        assert "示例历 317 年秋" in result.output
         assert "叙事第 3 位" in result.output
 
     def test_create_project_not_found(self, cli_runner, fake_http_client):
@@ -329,7 +329,7 @@ class TestTimelineList:
 class TestTimelineView:
     def test_view_json(self, cli_runner, fake_http_client):
         """view --json → 双线视图完整信封."""
-        ev1 = _make_event(title="林尘拜入青云宗", time_value=315.0, narrative_position=1)
+        ev1 = _make_event(title="林尘拜入门派甲", time_value=315.0, narrative_position=1)
         ev2 = _make_event(title="宗门大比夺冠", time_value=319.0, narrative_position=4)
         fake_http_client.get.return_value = _make_view(
             total=2, event_timeline=[ev1, ev2], narrative_order=[ev1, ev2]
@@ -343,13 +343,13 @@ class TestTimelineView:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         assert data["data"]["total"] == 2
-        assert data["data"]["event_timeline"][0]["title"] == "林尘拜入青云宗"
+        assert data["data"]["event_timeline"][0]["title"] == "林尘拜入门派甲"
         assert data["data"]["narrative_order"][1]["title"] == "宗门大比夺冠"
         fake_http_client.get.assert_awaited_once_with(f"/projects/{PID}/timeline")
 
     def test_view_human(self, cli_runner, fake_http_client):
         """view 人类模式 → 双线总览摘要（两种视图标题）."""
-        ev1 = _make_event(title="林尘拜入青云宗", time_value=315.0, narrative_position=1)
+        ev1 = _make_event(title="林尘拜入门派甲", time_value=315.0, narrative_position=1)
         ev2 = _make_event(title="宗门大比夺冠", time_value=319.0, narrative_position=4)
         fake_http_client.get.return_value = _make_view(
             total=2, event_timeline=[ev1, ev2], narrative_order=[ev1, ev2]
@@ -362,7 +362,7 @@ class TestTimelineView:
         assert result.exit_code == 0
         assert "双线总览" in result.output
         assert "共 2 个事件" in result.output
-        assert "1. 林尘拜入青云宗(青元历 317 年秋)" in result.output
+        assert "1. 林尘拜入门派甲(示例历 317 年秋)" in result.output
         assert "2. 宗门大比夺冠" in result.output
 
     def test_view_project_not_found(self, cli_runner, fake_http_client):

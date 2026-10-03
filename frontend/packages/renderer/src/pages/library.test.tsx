@@ -54,11 +54,11 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 const projectP1 = {
-  id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
+  id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 const projectP2 = {
-  id: 'p2', name: '归墟记', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
+  id: 'p2', name: '项目乙', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
   created_at: '2026-08-02T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
@@ -136,11 +136,11 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
 
     // 项目选择器：Radix Select trigger（aria-label「当前项目」）显示当前项目名
     expect(screen.getByTestId('library-project-select')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: '当前项目' })).toHaveTextContent('青云志');
+    expect(screen.getByRole('combobox', { name: '当前项目' })).toHaveTextContent('项目甲');
 
-    // 面包屑「设定库 · 青云志 / 角色」
+    // 面包屑「设定库 · 项目甲 / 角色」
     const crumb = screen.getByTestId('library-breadcrumb');
-    expect(crumb).toHaveTextContent('青云志');
+    expect(crumb).toHaveTextContent('项目甲');
     expect(crumb).toHaveTextContent('角色');
 
     // 六 tab
@@ -221,12 +221,12 @@ describe('设定库页 — 项目上下文（spec §7.3）', () => {
     renderLibrary();
 
     await user.click(screen.getByRole('combobox', { name: '当前项目' }));
-    await user.click(await screen.findByRole('option', { name: '归墟记' }));
+    await user.click(await screen.findByRole('option', { name: '项目乙' }));
 
     await waitFor(() => {
       expect(useProjectStore.getState().currentProjectId).toBe('p2');
       expect(fetchCalled('/api/v1/projects/p2/characters')).toBe(true);
-      expect(screen.getByTestId('library-breadcrumb')).toHaveTextContent('归墟记');
+      expect(screen.getByTestId('library-breadcrumb')).toHaveTextContent('项目乙');
       expect(screen.getByTestId('library-list')).toHaveTextContent('沈砚');
     });
   });

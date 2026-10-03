@@ -109,7 +109,7 @@ class TestTimelineRepository:
                 description="外门考核夜，古鼎第一次亮起。",
                 time_value=317.5,
                 time_unit="年",
-                time_display="青元历 317 年秋",
+                time_display="示例历 317 年秋",
                 narrative_position=3,
                 timeline_flag="flashback",
                 extra={"参与角色": ["林尘"]},
@@ -122,7 +122,7 @@ class TestTimelineRepository:
         assert saved.description == "外门考核夜，古鼎第一次亮起。"
         assert saved.time_value == 317.5
         assert saved.time_unit == "年"
-        assert saved.time_display == "青元历 317 年秋"
+        assert saved.time_display == "示例历 317 年秋"
         assert saved.narrative_position == 3
         assert saved.timeline_flag == "flashback"
         assert saved.extra == {"参与角色": ["林尘"]}

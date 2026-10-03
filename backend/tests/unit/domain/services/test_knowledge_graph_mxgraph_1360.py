@@ -138,7 +138,7 @@ def _world(name: str, *, project_id: uuid.UUID = PID, wid: uuid.UUID | None = No
     )
 
 
-def _project(name: str = "青云志") -> Project:
+def _project(name: str = "项目甲") -> Project:
     return Project(id=PID, name=name, created_at=TS, updated_at=TS)
 
 
@@ -351,7 +351,7 @@ class TestSuggestDrawioFilename:
     """导出文件名建议（Windows 禁符清洗 + 后缀）。"""
 
     def test_normal_project_name(self) -> None:
-        assert _mxgraph_codec.suggest_drawio_filename("青云志") == "青云志-knowledge-graph.drawio"
+        assert _mxgraph_codec.suggest_drawio_filename("项目甲") == "项目甲-knowledge-graph.drawio"
 
     def test_blank_name_falls_back_to_untitled(self) -> None:
         assert _mxgraph_codec.suggest_drawio_filename("   ") == "untitled-knowledge-graph.drawio"
@@ -503,7 +503,7 @@ class TestExportMxgraph:
         assert 'label="属于"' in xml
         assert f'id="character:{CHAR_ID}"' in xml
         assert f'id="world:{WORLD_ID}"' in xml
-        assert filename == "青云志-knowledge-graph.drawio"
+        assert filename == "项目甲-knowledge-graph.drawio"
 
     @pytest.mark.asyncio
     async def test_export_is_byte_identical_across_two_calls(

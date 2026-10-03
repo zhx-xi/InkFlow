@@ -48,7 +48,7 @@ class TestFormatValidator:
         assert any("R5" in e for e in result.errors)
 
     def test_truncated_ending_detected(self) -> None:
-        content = "# 第一章\n\n林尘站在山门前，望着云雾缭绕的青云宗。他心中感慨万千。\n\n一切仿"
+        content = "# 第一章\n\n林尘站在地点己前，望着云雾缭绕的门派甲。他心中感慨万千。\n\n一切仿"
         result = FormatValidator.validate(content, min_words=10)
         assert result.valid is False
         assert any("R6" in e for e in result.errors)

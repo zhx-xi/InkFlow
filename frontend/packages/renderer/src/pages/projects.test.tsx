@@ -43,7 +43,7 @@ const PRESET_TAGS = ['玄幻', '科幻', '言情', '仙侠', '武侠', '都市',
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
@@ -75,7 +75,7 @@ beforeEach(() => {
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
     if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
       return {
-        items: [makeProject({ id: 'p1', name: '青云志', updated_at: new Date(Date.now() - 30_000).toISOString() }),
+        items: [makeProject({ id: 'p1', name: '项目甲', updated_at: new Date(Date.now() - 30_000).toISOString() }),
           makeProject({ id: 'p2', name: '山海经', tags: ['神话'], updated_at: new Date(Date.now() - 5 * 86_400_000).toISOString() })],
         total: 2, offset: 0, limit: 50,
       };
@@ -107,7 +107,7 @@ describe('项目页 — 卡片网格（spec §4.2.2）', () => {
 
     // 卡片出现（loadProjects 异步完成；mock 2 个项目 → 用 findAll 取第一张）
     const card1 = (await screen.findAllByTestId('project-card'))[0];
-    expect(card1).toHaveTextContent('青云志');
+    expect(card1).toHaveTextContent('项目甲');
     expect(card1).toHaveTextContent('玄幻');
     expect(card1).toHaveTextContent(/800,?000/); // 目标字数
     // 章节进度：第 3 章 / 12 章（written=3, total=12）
@@ -320,10 +320,10 @@ describe('项目页 — 卡片相对时间 naive UTC 归一（#1069）', () => {
  *   + navigate('/writing')（writing-probe 出现；复用 NewProjectDialog 创建成功跳转模式）
  * - 多项目切换：p1 / p2 卡片分别点击 → currentProjectId 对应切换
  * - 键盘可达：卡片 focus 后 Enter 触发同样跳转（Space 可选，契约不钉）
- * - 既有用例零回归：cards 数组顺序 = mock 返回顺序（p1 青云志 / p2 山海经）
+ * - 既有用例零回归：cards 数组顺序 = mock 返回顺序（p1 项目甲 / p2 山海经）
  */
 describe('项目页 — 点击卡片跳转写作页（#232）', () => {
-  it('点击第一张卡片（p1 青云志）→ currentProjectId 切换 + 跳转写作页', async () => {
+  it('点击第一张卡片（p1 项目甲）→ currentProjectId 切换 + 跳转写作页', async () => {
     const user = userEvent.setup();
     renderProjectsPage();
     const cards = await screen.findAllByTestId('project-card');
@@ -424,7 +424,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
       if (path === '/api/v1/projects' && !init?.method) {
         return {
-          items: [makeProject({ id: 'p1', name: '青云志' })],
+          items: [makeProject({ id: 'p1', name: '项目甲' })],
           total: 1, offset: 0, limit: 50,
         };
       }
@@ -443,9 +443,9 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
 
     const dialog = await screen.findByTestId('project-rename-dialog');
     const input = within(dialog).getByTestId('project-rename-input');
-    expect(input).toHaveValue('青云志'); // 预填现名
+    expect(input).toHaveValue('项目甲'); // 预填现名
     await user.clear(input);
-    await user.type(input, '青云志·改');
+    await user.type(input, '项目甲·改');
     await user.click(within(dialog).getByTestId('project-rename-save'));
 
     await waitFor(() => {
@@ -453,11 +453,11 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
         (c) => c[0] === '/api/v1/projects/p1' && c[1]?.method === 'PATCH',
       );
       expect(patchCall).toBeTruthy();
-      expect(patchCall![1]!.body).toEqual({ name: '青云志·改' });
+      expect(patchCall![1]!.body).toEqual({ name: '项目甲·改' });
     });
     await waitFor(() => {
       expect(screen.queryByTestId('project-rename-dialog')).not.toBeInTheDocument();
-      expect(screen.getByText('青云志·改')).toBeInTheDocument();
+      expect(screen.getByText('项目甲·改')).toBeInTheDocument();
       expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
     });
   });
@@ -466,7 +466,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects' && !init?.method) {
         return {
-          items: [makeProject({ id: 'p1', name: '青云志' })],
+          items: [makeProject({ id: 'p1', name: '项目甲' })],
           total: 1, offset: 0, limit: 50,
         };
       }
@@ -496,7 +496,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects' && !init?.method) {
         return {
-          items: [makeProject({ id: 'p1', name: '青云志' })],
+          items: [makeProject({ id: 'p1', name: '项目甲' })],
           total: 1, offset: 0, limit: 50,
         };
       }
@@ -512,7 +512,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     await user.click(screen.getByTestId('project-delete-p1'));
 
     const confirm = await screen.findByTestId('project-delete-dialog');
-    expect(confirm).toHaveTextContent('青云志');
+    expect(confirm).toHaveTextContent('项目甲');
     expect(confirm).toHaveTextContent('其章节、设定、大纲、时间线数据将全部删除');
     expect(confirm).toHaveTextContent('点击确认后立即移除，不可恢复');
     await user.click(within(confirm).getByTestId('project-delete-ok'));
@@ -524,7 +524,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
         ),
       ).toBe(true);
       expect(screen.queryByTestId('project-delete-dialog')).not.toBeInTheDocument();
-      expect(screen.queryByText('青云志')).not.toBeInTheDocument();
+      expect(screen.queryByText('项目甲')).not.toBeInTheDocument();
     });
   });
 
@@ -532,7 +532,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
       if (path === '/api/v1/projects' && !init?.method) {
         return {
-          items: [makeProject({ id: 'p1', name: '青云志' })],
+          items: [makeProject({ id: 'p1', name: '项目甲' })],
           total: 1, offset: 0, limit: 50,
         };
       }
@@ -573,7 +573,7 @@ describe('项目页 — F43 卡片菜单重命名/删除（P0）', () => {
  * 项目导出入口（RED 阶段契约，GREEN 未实现）：
  * - ProjectCard 卡片菜单「导出」（data-testid=`project-export-${id}`）→ ProjectsPage 打开 ExportDialog
  * - ExportDialog 容器 data-testid="project-export-dialog"，由 ProjectsPage 渲染（onExport 绑定当前 project）
- * - 文件名输入 data-testid="export-filename-input" 默认值 = `<project.name>.txt`（p1 青云志 → '青云志.txt'）
+ * - 文件名输入 data-testid="export-filename-input" 默认值 = `<project.name>.txt`（p1 项目甲 → '项目甲.txt'）
  * - ExportDialog 内部 fetch 走全局 fetch（vi.stubGlobal 桩，不落真实网络）
  *
  * RED 预期：菜单无导出项 + ExportDialog 未实现 → 本 describe FAIL。
@@ -595,7 +595,7 @@ describe('项目页 — 导出入口', () => {
     expect(await screen.findByTestId('project-export-dialog')).toBeInTheDocument();
   });
 
-  it('ExportDialog 绑定当前 project=p1：export-filename-input 默认值「青云志.txt」', async () => {
+  it('ExportDialog 绑定当前 project=p1：export-filename-input 默认值「项目甲.txt」', async () => {
     const user = userEvent.setup();
     renderProjectsPage();
     await screen.findAllByTestId('project-card');
@@ -604,14 +604,14 @@ describe('项目页 — 导出入口', () => {
     await user.click(screen.getByTestId('project-export-p1'));
 
     const dialog = await screen.findByTestId('project-export-dialog');
-    expect(within(dialog).getByTestId('export-filename-input')).toHaveValue('青云志.txt');
+    expect(within(dialog).getByTestId('export-filename-input')).toHaveValue('项目甲.txt');
   });
 });
 
 describe('项目页 — F6 错误态重试闭环（S3e）', () => {
   it('错误态显示错误文案 + 重试按钮；点击重试重新拉取并成功渲染卡片', async () => {
     const user = userEvent.setup();
-    // 首次失败（挂载 loadProjects），重试成功（默认 mock 返回青云志）
+    // 首次失败（挂载 loadProjects），重试成功（默认 mock 返回项目甲）
     apiFetchMock.mockRejectedValueOnce(new Error('加载失败，请重试'));
     renderProjectsPage();
     await screen.findByText(/加载失败，请重试/);
@@ -623,7 +623,7 @@ describe('项目页 — F6 错误态重试闭环（S3e）', () => {
 
     const cards = await screen.findAllByTestId('project-card');
     expect(cards.length).toBeGreaterThan(0);
-    expect(within(cards[0]).getByText('青云志')).toBeInTheDocument();
+    expect(within(cards[0]).getByText('项目甲')).toBeInTheDocument();
   });
 
   it('错误态不渲染空态/骨架/卡片（与加载空态区分）', async () => {

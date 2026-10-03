@@ -82,7 +82,7 @@ beforeEach(() => {
     token: 't',
     file: fileApi,
   } as unknown as typeof window.INKFLOW_API;
-  exportMock.mockResolvedValue({ filename: '青云志-knowledge-graph.drawio', content: XML });
+  exportMock.mockResolvedValue({ filename: '项目甲-knowledge-graph.drawio', content: XML });
   importMock.mockResolvedValue({
     mode: 'merge',
     total: 3,
@@ -119,7 +119,7 @@ describe('#1360 drawio 工具栏', () => {
     await waitFor(() =>
       expect(fileApi.saveExport).toHaveBeenCalledWith({
         path: 'C:\\Users\\test\\Desktop',
-        filename: '青云志-knowledge-graph.drawio',
+        filename: '项目甲-knowledge-graph.drawio',
         content: XML,
       }),
     );

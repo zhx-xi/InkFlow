@@ -100,7 +100,7 @@ def retest_env(tmp_path_factory):
             project_id = r.json()["id"]
             r = client.post(
                 f"/api/v1/projects/{project_id}/chapters",
-                json={"title": "第一章", "content": "夜色渐深，山门灯火未熄。" * 30},
+                json={"title": "第一章", "content": "夜色渐深，地点己灯火未熄。" * 30},
             )
             r.raise_for_status()
             chapter_id = r.json()["id"]
@@ -227,7 +227,7 @@ def _tool_call_matrix(env: SimpleNamespace) -> list[tuple[str, dict]]:
         ("manage_foreshadowing", {"action": "list", "project_id": pid}),
         ("manage_session", {"action": "list"}),
         ("audit", {"action": "project", "project_id": pid}),
-        ("extract", {"action": "retrieve", "project_id": pid, "query": "山门"}),
+        ("extract", {"action": "retrieve", "project_id": pid, "query": "地点己"}),
         (
             "export",
             {

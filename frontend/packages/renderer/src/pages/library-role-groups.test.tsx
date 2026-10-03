@@ -61,7 +61,7 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 const projectP1 = {
-  id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
+  id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
@@ -80,7 +80,7 @@ const CHARACTER_SEED: Array<Record<string, unknown>> = [
 /** §T2 种子：分组列表响应行（GET /projects/p1/character-groups） */
 const GROUP_SEED: Array<Record<string, unknown>> = [
   { id: 'g1', name: '主角团', description: '主线核心', sort_order: 1, member_count: 1 },
-  { id: 'g2', name: '青云宗', description: '宗门势力', sort_order: 2, member_count: 2 },
+  { id: 'g2', name: '门派甲', description: '宗门势力', sort_order: 2, member_count: 2 },
 ];
 
 /** 状态化数组（beforeEach 重置；POST unshift / PATCH 合并 / DELETE splice，供「变化后」断言） */
@@ -192,7 +192,7 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     renderLibrary();
 
     const panel = await openDetailPanel(user);
-    // 勾选「青云宗」（g2）→ PATCH /api/v1/characters/c1 body {group_ids: ['g1','g2']}
+    // 勾选「门派甲」（g2）→ PATCH /api/v1/characters/c1 body {group_ids: ['g1','g2']}
     await user.click(within(within(panel).getByTestId('character-group-option-g2')).getByRole('checkbox'));
 
     await waitFor(() => {
@@ -228,7 +228,7 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     expect(rowG1).toHaveTextContent('主角团');
     expect(rowG1).toHaveTextContent('1');
     const rowG2 = within(managePanel).getByTestId('character-group-row-g2');
-    expect(rowG2).toHaveTextContent('青云宗');
+    expect(rowG2).toHaveTextContent('门派甲');
     expect(rowG2).toHaveTextContent('2');
     await waitFor(() => {
       expect(fetchCalled('/api/v1/projects/p1/character-groups')).toBe(true);
@@ -364,6 +364,6 @@ describe('T2 角色分组 #651（角色详情面板分组区契约）', () => {
     const optionLabels = (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');
     expect(optionLabels).toContain('主角');
     expect(optionLabels).not.toContain('主角团');
-    expect(optionLabels).not.toContain('青云宗');
+    expect(optionLabels).not.toContain('门派甲');
   });
 });

@@ -577,7 +577,7 @@ test('G4 大纲驱动：预置大纲（关联章节）→ 点「生成」→ fin
     });
     expect(chRes.status).toBe(201);
     const chapter = (await chRes.json()) as { id: string };
-    const outlineName = `青云宗试炼${Date.now() % 100000}`;
+    const outlineName = `门派甲试炼${Date.now() % 100000}`;
     const outlineKeyword = `剑意觉醒`;
     await presetOutline(
       kernel,

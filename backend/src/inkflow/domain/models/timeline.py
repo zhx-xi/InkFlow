@@ -243,7 +243,7 @@ class TimelineEvent(BaseModel):
     description: str = ""
     time_value: float | None = None  # None = 世界内时间未知
     time_unit: str = ""  # time_value 的物理尺度（年/月/日…），参与归一排序（§2.7）
-    time_display: str = ""  # 原始时间表达（如「青元历 317 年秋」）
+    time_display: str = ""  # 原始时间表达（如「示例历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""  # ""/flashback/flashforward（建议值，自由文本）
     source_chapter_id: uuid.UUID | None = None  # F14 提取来源章节（Q3 联动）; None = 手工事件

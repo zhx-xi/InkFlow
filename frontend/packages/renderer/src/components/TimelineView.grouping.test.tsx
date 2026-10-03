@@ -48,7 +48,7 @@ const apiFetchMock = vi.mocked(apiFetch);
 /**
  * Seed（章分组可严格区分）：
  * - 章 c11「师父闭关前夜」：evA（叙事序 1）
- * - 章 c12「夜访剑冢」：evC（叙事序 2）、evE（叙事序 3）→ **同章两个事件**
+ * - 章 c12「夜访地点乙」：evC（叙事序 2）、evE（叙事序 3）→ **同章两个事件**
  * - 未归章（source_chapter_id 空）：evB（叙事序 4）
  */
 const evA: TimelineEventDTO = {
@@ -57,7 +57,7 @@ const evA: TimelineEventDTO = {
   source_chapter_id: 'c11',
 };
 const evC: TimelineEventDTO = {
-  id: 'evC', title: '夜访剑冢', time_value: 100, time_unit: 'year',
+  id: 'evC', title: '夜访地点乙', time_value: 100, time_unit: 'year',
   time_display: '100 年', narrative_position: 2, timeline_flag: false,
   source_chapter_id: 'c12',
 };
@@ -73,8 +73,8 @@ const evB: TimelineEventDTO = {
 };
 
 const CHAPTER_TITLES: Record<string, string> = {
-  c11: '第十一章 剑心为何物',
-  c12: '第十二章 夜访剑冢',
+  c11: '第十一章 事件乙',
+  c12: '第十二章 夜访地点乙',
 };
 
 interface ViewProps {
@@ -109,7 +109,7 @@ describe('#1323 + #1374 时间线章刻度（去重 + 真实章名 + 未分章 +
     const ids = nodes.map((el) => el.getAttribute('data-testid')!.replace('tl-axis-node-', ''));
     expect(new Set(ids).size).toBe(4);
     // 反向断言：事件标题文本在整页只出现一次（旧实现在轴 + 列表各渲染一次 → 2 次）
-    for (const t of ['师父闭关前夜', '夜访剑冢', '发现异动痕迹', '无章事件']) {
+    for (const t of ['师父闭关前夜', '夜访地点乙', '发现异动痕迹', '无章事件']) {
       expect(screen.getAllByText(t)).toHaveLength(1);
     }
     expect(screen.getByTestId('library-list')).toBeInTheDocument();
@@ -132,8 +132,8 @@ describe('#1323 + #1374 时间线章刻度（去重 + 真实章名 + 未分章 +
   it('B3 章号正确：刻度用**真实章节标题**（反向断言：刻度不含「第{n}章」拼接形式的错误章号）', async () => {
     renderView();
     // 真实章节标题（来自 chapterTitles 映射）
-    expect(screen.getByTestId('tl-chtick-c11')).toHaveTextContent('第十一章 剑心为何物');
-    expect(screen.getByTestId('tl-chtick-c12')).toHaveTextContent('第十二章 夜访剑冢');
+    expect(screen.getByTestId('tl-chtick-c11')).toHaveTextContent('第十一章 事件乙');
+    expect(screen.getByTestId('tl-chtick-c12')).toHaveTextContent('第十二章 夜访地点乙');
     // 反向断言：刻度与主轴绝不出现「第{n}章」这种由 narrative_position 拼出的伪章号
     // （narrative_position 只用于排序，spec f12:91 明确它不携带章节语义）
     const ticks = screen
@@ -142,7 +142,7 @@ describe('#1323 + #1374 时间线章刻度（去重 + 真实章名 + 未分章 +
       .join('|');
     const mains = screen.getAllByTestId(/^tl-axis-main-/).map((el) => el.textContent ?? '').join('|');
     // 注：真实章节标题本身形如「第十一章 …」（#999 归一化产物），此处仅排除「第 N 章」空拼接
-    expect(ticks).toContain('剑心为何物');
+    expect(ticks).toContain('事件乙');
     expect(mains).not.toMatch(/第\s*[0-9]+\s*章/);
   });
 
@@ -178,7 +178,7 @@ describe('#1323 + #1374 时间线章刻度（去重 + 真实章名 + 未分章 +
       expect(screen.queryAllByTestId(/^tl-chgroup-/)).toHaveLength(0);
       expect(screen.getAllByTestId(/^tl-axis-node-/)).toHaveLength(4);
     });
-    expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 剑心为何物');
+    expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 事件乙');
   });
 
   it('B6 无 chapterTitles（映射缺失）时刻度退化为「未知章节」占位，不崩溃、事件不消失', async () => {

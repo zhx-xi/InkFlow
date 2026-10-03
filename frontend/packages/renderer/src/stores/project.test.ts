@@ -45,7 +45,7 @@ const apiFetchMock = vi.mocked(apiFetch);
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
@@ -95,7 +95,7 @@ describe('project store — 状态与状态转换', () => {
   });
 
   it('loadProjects 成功：填充列表 + 计算章节进度 + 复位 loading/error', async () => {
-    const projects = [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })];
+    const projects = [makeProject({ id: 'p1', name: '项目甲' }), makeProject({ id: 'p2', name: '山海经' })];
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: projects, total: 2, offset: 0, limit: 50 };
       if (path === '/api/v1/projects/p1/chapters') {
@@ -112,7 +112,7 @@ describe('project store — 状态与状态转换', () => {
 
     const s = useProjectStore.getState();
     expect(s.projects).toHaveLength(2);
-    expect(s.projects[0].name).toBe('青云志');
+    expect(s.projects[0].name).toBe('项目甲');
     expect(s.loading).toBe(false);
     expect(s.error).toBeNull();
     expect(s.chapterProgress).toEqual({ p1: { written: 3, total: 12 }, p2: { written: 0, total: 0 } });
@@ -180,7 +180,7 @@ describe('project store — 状态与状态转换', () => {
  */
 describe('project store — 进度失败兜底与 setter 组（#105 补测）', () => {
   it('loadProjects：单项目进度拉取失败 → 忽略（列表仍可用，仅缺该进度）', async () => {
-    const projects = [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })];
+    const projects = [makeProject({ id: 'p1', name: '项目甲' }), makeProject({ id: 'p2', name: '山海经' })];
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: projects, total: 2, offset: 0, limit: 50 };
       if (path === '/api/v1/projects/p1/chapters') throw new Error('进度获取失败');
@@ -265,7 +265,7 @@ describe('project store — #107 模板引用（template_id）', () => {
 
   it('updateConfig：PATCH /api/v1/projects/{id} body {config} 含 template_id → 本地 config 更新（项目内切换模板）', async () => {
     useProjectStore.setState({
-      projects: [makeProject({ id: 'p1', name: '青云志' })],
+      projects: [makeProject({ id: 'p1', name: '项目甲' })],
       currentProjectId: 'p1',
     });
     apiFetchMock.mockResolvedValue({ ok: true });
@@ -312,36 +312,36 @@ describe('project store — F43 重命名/删除 actions', () => {
 
   it('renameProject：PATCH /api/v1/projects/{id} body {name} → 本地 name 更新', async () => {
     useProjectStore.setState({
-      projects: [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })],
+      projects: [makeProject({ id: 'p1', name: '项目甲' }), makeProject({ id: 'p2', name: '山海经' })],
       currentProjectId: 'p1',
     });
     apiFetchMock.mockResolvedValue({ ok: true });
 
     await act(async () => {
-      await stateWithCrud().renameProject('p1', '青云志·改');
+      await stateWithCrud().renameProject('p1', '项目甲·改');
     });
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/projects/p1', {
       method: 'PATCH',
-      body: { name: '青云志·改' },
+      body: { name: '项目甲·改' },
     });
     const s = useProjectStore.getState();
-    expect(s.projects.find((p) => p.id === 'p1')?.name).toBe('青云志·改');
+    expect(s.projects.find((p) => p.id === 'p1')?.name).toBe('项目甲·改');
     // 其它项目不受影响
     expect(s.projects.find((p) => p.id === 'p2')?.name).toBe('山海经');
   });
 
   it('renameProject 失败：rethrow（rejects）+ 本地不变（spec §5.6 不吞错）', async () => {
-    useProjectStore.setState({ projects: [makeProject({ id: 'p1', name: '青云志' })] });
+    useProjectStore.setState({ projects: [makeProject({ id: 'p1', name: '项目甲' })] });
     apiFetchMock.mockRejectedValue(new Error('改名失败'));
 
     await expect(stateWithCrud().renameProject('p1', '新名')).rejects.toThrow('改名失败');
-    expect(useProjectStore.getState().projects[0].name).toBe('青云志');
+    expect(useProjectStore.getState().projects[0].name).toBe('项目甲');
   });
 
   it('deleteProject：DELETE /api/v1/projects/{id} → 本地移除 + chapterProgress 清理', async () => {
     useProjectStore.setState({
-      projects: [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })],
+      projects: [makeProject({ id: 'p1', name: '项目甲' }), makeProject({ id: 'p2', name: '山海经' })],
       currentProjectId: 'p2',
       chapterProgress: { p1: { written: 3, total: 12 }, p2: { written: 0, total: 0 } },
     });
@@ -363,7 +363,7 @@ describe('project store — F43 重命名/删除 actions', () => {
 
   it('deleteProject 删除当前项目 → currentProjectId 置 null（spec E7）', async () => {
     useProjectStore.setState({
-      projects: [makeProject({ id: 'p1', name: '青云志' }), makeProject({ id: 'p2', name: '山海经' })],
+      projects: [makeProject({ id: 'p1', name: '项目甲' }), makeProject({ id: 'p2', name: '山海经' })],
       currentProjectId: 'p1',
       chapterProgress: { p1: { written: 3, total: 12 } },
     });
@@ -380,7 +380,7 @@ describe('project store — F43 重命名/删除 actions', () => {
 
   it('deleteProject 失败：rethrow（rejects）+ 本地不变', async () => {
     useProjectStore.setState({
-      projects: [makeProject({ id: 'p1', name: '青云志' })],
+      projects: [makeProject({ id: 'p1', name: '项目甲' })],
       currentProjectId: 'p1',
     });
     apiFetchMock.mockRejectedValue(new Error('删除失败'));
@@ -412,7 +412,7 @@ describe('project store — #1407 进度全量口径（响应体 total）', () =
     const all = Array.from({ length: 138 }, (_, i) =>
       makeChapter({ id: `c${i}`, word_count: i < 60 ? 800 : 0 }),
     );
-    const projects = [makeProject({ id: 'p1', name: '青云志' })];
+    const projects = [makeProject({ id: 'p1', name: '项目甲' })];
     apiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/v1/projects') return { items: projects, total: 1, offset: 0, limit: 50 };
       if (!path.startsWith(CHAPTERS_PATH)) throw new Error(`unexpected path: ${path}`);

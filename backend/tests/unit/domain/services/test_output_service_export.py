@@ -141,7 +141,7 @@ def _event() -> TimelineEvent:
         project_id=PID,
         title="大战",
         description="两军对垒",
-        time_display="青元历 317 年秋",
+        time_display="示例历 317 年秋",
         narrative_position=1,
         created_at=TS,
         updated_at=TS,

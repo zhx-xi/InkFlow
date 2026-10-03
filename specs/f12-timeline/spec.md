@@ -64,7 +64,7 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 | description | str | NOT NULL, DEFAULT "", ≤ 5000 字符 | 事件描述（该时刻发生了什么） |
 | time_value | float? | NULLABLE, 已索引 | **世界内时间数值键**（可排序、可比较）——**语义 = 相对项目时基的累计时长，尺度由 `time_unit` 给定**（终局定义见 §2.7）；None = 世界内时间未知（事件时间线排末尾、不参与一致性检查，见 §5）；约束：有限数值，\|v\| ≤ 10^12（允许负数 = 纪元前） |
 | time_unit | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间单位标签，**`time_value` 的物理尺度**（可知单位：年/岁=365 日、月=30 日、周/星期=7 日、日/天=1 日；`时/时辰`=当天时刻；未列举/空串 = 视同时基裸值，因子 1）。**参与归一排序**（§2.7/§5.2）。同一项目内应统一单位（提取默认「日」） |
-| time_display | str | NOT NULL, DEFAULT "", ≤ 100 字符 | 原始时间表达（如「青元历 317 年秋」），time_value 的人工可读镜像；不参与排序 |
+| time_display | str | NOT NULL, DEFAULT "", ≤ 100 字符 | 原始时间表达（如「示例历 317 年秋」），time_value 的人工可读镜像；不参与排序 |
 | narrative_position | int | NOT NULL, DEFAULT 0, ≥ 0, 已索引 | **叙事位置**（单一线性序号，小者在前 = 先被叙述）；创建缺省 = 项目内 max+1（叙事末尾追加）；允许重复（排序按 `(narrative_position ASC, created_at ASC)` 稳定输出） |
 | timeline_flag | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间线标记（建议值：`""` = 正叙、`flashback` = 倒叙、`flashforward` = 插叙/预叙；自由文本，未在建议词表中的值等同未标记，见 §6.2） |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（参与角色、地点、标签等 Phase 2+ 字段预留）；**0.16.0 起承载多纪元轴**：`extra.era` = 纪元/轴名、`extra.era_value` = 轴内值（§2.8）——**仍是这个既有 JSON 列，零 DDL** |
@@ -170,7 +170,7 @@ class TimelineEvent(BaseModel):
     description: str = ""
     time_value: float | None = None      # None = 世界内时间未知
     time_unit: str = ""                  # time_value 的尺度（年/月/周/日/时），参与归一排序（§2.7）
-    time_display: str = ""               # 原始时间表达（如「青元历 317 年秋」）
+    time_display: str = ""               # 原始时间表达（如「示例历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""              # ""/flashback/flashforward（建议值，自由文本）
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -422,9 +422,9 @@ Content-Type: application/json
   "description": "外门考核夜，林尘丹田中的古鼎第一次亮起。",
   "time_value": 317.5,
   "time_unit": "年",
-  "time_display": "青元历 317 年秋",
+  "time_display": "示例历 317 年秋",
   "timeline_flag": "",
-  "era": "青元历",
+  "era": "示例历",
   "era_value": 317.5
 }
 ```
@@ -433,9 +433,9 @@ Content-Type: application/json
 {
   "id": "9b1c2d3e-...", "project_id": "3f2e1d4a-...", "title": "林尘觉醒金手指",
   "description": "外门考核夜，林尘丹田中的古鼎第一次亮起。",
-  "time_value": 317.5, "time_unit": "年", "time_display": "青元历 317 年秋",
+  "time_value": 317.5, "time_unit": "年", "time_display": "示例历 317 年秋",
   "narrative_position": 3, "timeline_flag": "",
-  "extra": {"era": "青元历", "era_value": 317.5},
+  "extra": {"era": "示例历", "era_value": 317.5},
   "created_at": "2026-08-01T10:00:00Z", "updated_at": "2026-08-01T10:00:00Z"
 }
 ```
@@ -457,7 +457,7 @@ GET /api/v1/projects/3f2e1d4a-.../timeline/events?search=金手指&sort_by=time_
 {
   "items": [
     {"id": "9b1c2d3e-...", "title": "林尘觉醒金手指", "time_value": 317.5,
-     "time_display": "青元历 317 年秋", "narrative_position": 3, ...}
+     "time_display": "示例历 317 年秋", "narrative_position": 3, ...}
   ],
   "total": 1, "offset": 0, "limit": 20
 }
@@ -488,12 +488,12 @@ GET /api/v1/projects/3f2e1d4a-.../timeline
   "project_id": "3f2e1d4a-...",
   "total": 3,
   "event_timeline": [
-    {"id": "...", "title": "林尘拜入青云宗", "time_value": 315.0, "time_display": "青元历 315 年春", "narrative_position": 1},
-    {"id": "...", "title": "林尘觉醒金手指", "time_value": 317.5, "time_display": "青元历 317 年秋", "narrative_position": 2},
-    {"id": "...", "title": "宗门大比夺冠", "time_value": 319.0, "time_display": "青元历 319 年夏", "narrative_position": 4}
+    {"id": "...", "title": "林尘拜入门派甲", "time_value": 315.0, "time_display": "示例历 315 年春", "narrative_position": 1},
+    {"id": "...", "title": "林尘觉醒金手指", "time_value": 317.5, "time_display": "示例历 317 年秋", "narrative_position": 2},
+    {"id": "...", "title": "宗门大比夺冠", "time_value": 319.0, "time_display": "示例历 319 年夏", "narrative_position": 4}
   ],
   "narrative_order": [
-    {"id": "...", "title": "林尘拜入青云宗", "time_value": 315.0, "narrative_position": 1},
+    {"id": "...", "title": "林尘拜入门派甲", "time_value": 315.0, "narrative_position": 1},
     {"id": "...", "title": "林尘觉醒金手指", "time_value": 317.5, "narrative_position": 2},
     {"id": "...", "title": "宗门大比夺冠", "time_value": 319.0, "narrative_position": 4}
   ]
@@ -514,10 +514,10 @@ GET /api/v1/projects/3f2e1d4a-.../timeline/check?include_flashbacks=true
     {
       "conflict_type": "order_conflict",
       "prev": {"id": "...", "title": "林尘觉醒金手指", "time_value": 317.5,
-               "time_display": "青元历 317 年秋", "narrative_position": 2, "timeline_flag": ""},
+               "time_display": "示例历 317 年秋", "narrative_position": 2, "timeline_flag": ""},
       "next": {"id": "...", "title": "外门往事", "time_value": 312.0,
-               "time_display": "青元历 312 年", "narrative_position": 3, "timeline_flag": ""},
-      "message": "叙事第 2 位事件「林尘觉醒金手指」（青元历 317 年秋）晚于叙事第 3 位事件「外门往事」（青元历 312 年）：叙事顺序与世界内时间矛盾。若为倒叙/插叙请给后叙事件标记 timeline_flag=flashback（或前叙事件标记 flashforward）；否则请修正事件时间或叙事位置。"
+               "time_display": "示例历 312 年", "narrative_position": 3, "timeline_flag": ""},
+      "message": "叙事第 2 位事件「林尘觉醒金手指」（示例历 317 年秋）晚于叙事第 3 位事件「外门往事」（示例历 312 年）：叙事顺序与世界内时间矛盾。若为倒叙/插叙请给后叙事件标记 timeline_flag=flashback（或前叙事件标记 flashforward）；否则请修正事件时间或叙事位置。"
     }
   ],
   "flashbacks": [],
@@ -540,10 +540,10 @@ GET /api/v1/projects/3f2e1d4a-.../timeline/check
     {
       "conflict_type": "flashback",
       "prev": {"id": "...", "title": "宗门大比夺冠", "time_value": 319.0,
-               "time_display": "青元历 319 年夏", "narrative_position": 4, "timeline_flag": ""},
+               "time_display": "示例历 319 年夏", "narrative_position": 4, "timeline_flag": ""},
       "next": {"id": "...", "title": "外门往事", "time_value": 312.0,
-               "time_display": "青元历 312 年", "narrative_position": 5, "timeline_flag": "flashback"},
-      "message": "叙事第 5 位事件「外门往事」声明为倒叙（flashback）：其世界内时间（青元历 312 年）早于前叙事件（青元历 319 年夏），已标记，判定合法。"
+               "time_display": "示例历 312 年", "narrative_position": 5, "timeline_flag": "flashback"},
+      "message": "叙事第 5 位事件「外门往事」声明为倒叙（flashback）：其世界内时间（示例历 312 年）早于前叙事件（示例历 319 年夏），已标记，判定合法。"
     }
   ],
   "event_timeline": [ ... ],
@@ -632,12 +632,12 @@ inkflow timeline normalize --project-id <uuid> [--apply] [--json]   # #1409 项�
 
 ```bash
 # 默认人类可读
-✅ 事件创建成功: [林尘觉醒金手指]（青元历 317 年秋，叙事第 3 位）
+✅ 事件创建成功: [林尘觉醒金手指]（示例历 317 年秋，叙事第 3 位）
 ✅ 事件已删除: [林尘觉醒金手指]
-📋 双线总览: 共 5 个事件 — 事件时间线（世界内时间升序）: 1. 林尘拜入青云宗(315.0) 2. ...；叙事顺序: 1. 林尘拜入青云宗 2. ...
+📋 双线总览: 共 5 个事件 — 事件时间线（世界内时间升序）: 1. 林尘拜入门派甲(315.0) 2. ...；叙事顺序: 1. 林尘拜入门派甲 2. ...
 🔍 一致性检查: ✅ 一致（检查 4 个事件，跳过 1 个时间未知）
 🔍 一致性检查: ⚠️ 发现 2 个冲突（检查 5 个事件，跳过 0 个）
-   [冲突] 叙事第 2 位「林尘觉醒金手指」(青元历 317 年秋) 晚于叙事第 3 位「外门往事」(青元历 312 年) —— 未标记的倒叙/插叙
+   [冲突] 叙事第 2 位「林尘觉醒金手指」(示例历 317 年秋) 晚于叙事第 3 位「外门往事」(示例历 312 年) —— 未标记的倒叙/插叙
 🔍 一致性检查: 💡 1 个已声明倒叙/插叙（不视为冲突）: 叙事第 5 位「外门往事」(flashback)
 
 # --json 输出
@@ -752,7 +752,7 @@ consistent = (len(conflicts) == 0)
 - **未知/空单位不变（§2.7 S5）**：`time_unit` 为空或未列举 → 因子 1，比较结论与本 spec v1.1 完全一致（反例守护）
 - `time_value` 为 None（时间未知）：**跳过**（计入 `skipped`，不参与比较、不报冲突）——未知时间没有「错误」可言
 - `include_flashbacks=false` 时 `flashbacks` 返回空列表（服务层不收集），`conflicts` 与 `consistent` 不受影响
-- **冲突消息同时给出原始表达与当前数值（#1409）**：`_time_label` 输出形如 `青元历 317 年秋（time_value=317.5）`、`3.0月（time_value=3.0），归一=90日`；无 `time_display`/`time_unit` 时保持裸数值（向后兼容）。**避免「改了数据看不出变化」**——消息必须显示**当前** `time_value`，而不是仅显示原始表达
+- **冲突消息同时给出原始表达与当前数值（#1409）**：`_time_label` 输出形如 `示例历 317 年秋（time_value=317.5）`、`3.0月（time_value=3.0），归一=90日`；无 `time_display`/`time_unit` 时保持裸数值（向后兼容）。**避免「改了数据看不出变化」**——消息必须显示**当前** `time_value`，而不是仅显示原始表达
 
 ### 5.5 输入约束与边界
 
@@ -1152,7 +1152,7 @@ F12 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加；--era/--era-value 可选） | 「✅ 事件创建成功: [林尘觉醒金手指]（青元历 317 年秋，叙事第 3 位）」/ --json（含 `extra.era`） | 404 NOT_FOUND；422 VALIDATION_ERROR（`era` 超长 / `era_value` 非有限） | — |
+| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加；--era/--era-value 可选） | 「✅ 事件创建成功: [林尘觉醒金手指]（示例历 317 年秋，叙事第 3 位）」/ --json（含 `extra.era`） | 404 NOT_FOUND；422 VALIDATION_ERROR（`era` 超长 / `era_value` 非有限） | — |
 | timeline list | 项目存在 | 列表（--sort 5 种） | 列表 / JSON | 404 | — |
 | timeline view | 项目存在 | 双线总览 | 「📋 双线总览: 共 5 个事件 — ...」 | 404 | — |
 | timeline check | 项目存在 | 一致性检查（--include-flashbacks 默认开） | 「🔍 一致性检查: ✅ 一致（检查 4 个事件，跳过 1 个时间未知）」/「⚠️ 发现 2 个冲突」/「💡 1 个已声明倒叙/插叙」 | 404 | 发现冲突退出码仍 0 |

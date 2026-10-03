@@ -253,7 +253,7 @@ beforeEach(() => {
     font: 'sans', closeBehavior: 'tray', trayHintDismissed: false,
   } as unknown as Partial<ThemeStoreF32>);
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
+    projects: [{ id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
   useAgentStore.setState({ config: {}, apiKeyDraft: '', testStatus: 'idle', testMessage: null });
@@ -318,8 +318,8 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
       default_words: 800000,
       is_default: true,
       used_by: [
-        { id: 'p1', name: '青云志' },
-        { id: 'p2', name: '归墟记' },
+        { id: 'p1', name: '项目甲' },
+        { id: 'p2', name: '项目乙' },
       ],
       created_at: '2026-08-01T10:00:00Z',
       updated_at: '2026-08-05T10:00:00Z',
@@ -403,7 +403,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
     const user = await openTemplatesPanel();
     await user.click(within(await screen.findByTestId('template-card-1')).getByTestId('template-delete-1'));
     const confirm = screen.getByTestId('template-confirm-dialog');
-    expect(confirm).toHaveTextContent('该模板正在被 2 个项目使用（青云志、归墟记）');
+    expect(confirm).toHaveTextContent('该模板正在被 2 个项目使用（项目甲、项目乙）');
     await user.click(within(confirm).getByTestId('template-confirm-ok'));
     await waitFor(() => {
       expect(apiFetchMock).toHaveBeenCalledWith(
@@ -671,7 +671,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
     // 既有「点击→同步 getByTestId(confirm)」用例因 GET mock 数据源不变语义不受影响；
     // 时序上确认框由「同步出现」变「重拉后出现」，既有断言如红按 #989 迁移 findByTestId。
     describe('#989 模板快照竞态修复', () => {
-      /** 状态化 GET：第 1 次（mount）stale（tpl1 无引用），第 2 次起 fresh（引用青云志） */
+      /** 状态化 GET：第 1 次（mount）stale（tpl1 无引用），第 2 次起 fresh（引用项目甲） */
       function mockStaleThenFresh(): () => number {
         let getList = 0;
         const base = {
@@ -691,7 +691,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
             void init?.body;
             if (path === '/api/v1/agent-templates' && !init?.method) {
               getList++;
-              const usedBy = getList <= 1 ? [] : [{ id: 'p1', name: '青云志' }];
+              const usedBy = getList <= 1 ? [] : [{ id: 'p1', name: '项目甲' }];
               return {
                 items: [
                   { ...base, used_by: usedBy },
@@ -701,7 +701,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
               };
             }
             if (path === '/api/v1/agent-templates/1' && init?.method === 'PATCH') {
-              return { ...base, used_by: [{ id: 'p1', name: '青云志' }] };
+              return { ...base, used_by: [{ id: 'p1', name: '项目甲' }] };
             }
             return { ok: true };
           },
@@ -720,7 +720,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
         await waitFor(() => expect(getCallCount()).toBeGreaterThanOrEqual(2));
         // 【R】现状：pendingDelete=stale（used_by 空）→ 确认框走通用文案分支，无引用句
         const confirm = await screen.findByTestId('template-confirm-dialog');
-        expect(confirm).toHaveTextContent('该模板正在被 1 个项目使用（青云志）');
+        expect(confirm).toHaveTextContent('该模板正在被 1 个项目使用（项目甲）');
       });
 
       it('编辑保存入口重拉：stale 无引用 + 服务端已有引用 → 保存前重拉并弹影响确认（勿直存）', async () => {
@@ -736,7 +736,7 @@ describe('设置页 — 模板分类（#107 RED 契约）', () => {
         // 【R】现状：editing.used_by=[] → handleUpdate 直存不弹确认；GREEN 先重拉判 fresh 引用
         const confirm = await screen.findByTestId('template-confirm-dialog');
         expect(getCallCount()).toBeGreaterThanOrEqual(2);
-        expect(confirm).toHaveTextContent('青云志');
+        expect(confirm).toHaveTextContent('项目甲');
       });
     });
   });

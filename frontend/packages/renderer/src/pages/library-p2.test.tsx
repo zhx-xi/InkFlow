@@ -76,11 +76,11 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 const projectP1 = {
-  id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
+  id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 const projectP2 = {
-  id: 'p2', name: '归墟记', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
+  id: 'p2', name: '项目乙', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
   created_at: '2026-08-02T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
@@ -369,7 +369,7 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     await clickCanvasCenter(user);
     const dialog = await screen.findByTestId('pin-dialog');
     // 名称（必填）
-    await user.type(within(dialog).getByTestId('pin-name'), '苏云舟');
+    await user.type(within(dialog).getByTestId('pin-name'), '角色甲');
     // 类型四档：地点/角色/事件/其他（lib.pinType.*）
     await user.click(within(dialog).getByTestId('pin-type'));
     expect(screen.getByRole('option', { name: '地点' })).toBeInTheDocument();
@@ -387,7 +387,7 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
       );
       expect(postCall).toBeTruthy();
       const body = postCall![1]!.body as Record<string, unknown>;
-      expect(body).toEqual(expect.objectContaining({ type: 'role', ref_id: 'c1', label: '苏云舟' }));
+      expect(body).toEqual(expect.objectContaining({ type: 'role', ref_id: 'c1', label: '角色甲' }));
       // 中心点击画布（rect mock）→ 坐标 50/50
       expect(body.x).toBeCloseTo(50, 5);
       expect(body.y).toBeCloseTo(50, 5);
@@ -396,8 +396,8 @@ describe('设定库页 — F43 P2 地图工作台（世界观 tab，spec §5.8-5
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'ok')).toBe(true);
     });
-    // #979 迁移：画布 pin 渲染 label 后全局 findByText('苏云舟') 双命中（画布 + 列表），收窄到列表作用域
-    expect(await within(screen.getByTestId('map-pin-list')).findByText('苏云舟')).toBeInTheDocument();
+    // #979 迁移：画布 pin 渲染 label 后全局 findByText('角色甲') 双命中（画布 + 列表），收窄到列表作用域
+    expect(await within(screen.getByTestId('map-pin-list')).findByText('角色甲')).toBeInTheDocument();
   });
 
   it('M9 一图多标记：3 个 pin → 画布 map-pin 3 个 + 列表 3 行 + 类型筛选 chips 四档', async () => {

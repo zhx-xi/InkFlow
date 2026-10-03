@@ -43,18 +43,18 @@ ENV_TOKEN = "INKFLOW_SERVER_TOKEN"
 # pytest-asyncio STRICT，async 测试须显式 mark（镜像 test_agent_pipeline.py 惯例）
 pytestmark = pytest.mark.asyncio
 
-PROJECT_NAME = "蜀山剑冢录"
+PROJECT_NAME = "蜀山地点乙录"
 VOL_A = ("蜀山卷", 1.0)
 VOL_B = ("雪域卷", 2.0)
 CH_A_1 = ("第一章·雪夜入蜀山", 1.0, "大雪封山，玄明独自踏上蜀山石阶，剑穗沾满霜雪。")
-CH_A_2 = ("第二章·剑冢", 2.0, "剑冢之内，万剑陈列，锈迹斑斑之下剑气犹存。")
+CH_A_2 = ("第二章·地点乙", 2.0, "地点乙之内，万剑陈列，锈迹斑斑之下剑气犹存。")
 CH_B_1 = ("第一章·雪域寻踪", 1.0, "雪域深处，一行足迹蜿蜒没入暴风雪中。")
 CH_UNGROUPED = ("外传·雪夜", 5.0, "一场大雪掩去旧日恩怨，灯火阑珊处有人独立。")
 # 设定档案（仅 include_settings=true 时出现；正文刻意不含下列名/词，断言有区分度）
 CHARACTER_NAME = "宁晚"
 CHARACTER = ("宁晚", "外冷内热，剑心通明", "雪域孤女，幼年被蜀山长老收养", "寻回失传的御剑心法")
 WORLD_NAME = "蜀山剑派"
-WORLD = ("蜀山剑派", "geo", "剑气冲霄，万剑归宗，山门立于蜀山之巅。")
+WORLD = ("蜀山剑派", "geo", "剑气冲霄，万剑归宗，地点己立于蜀山之巅。")
 
 
 def _export_url(project_id: int, include_settings: bool | None = None) -> str:
@@ -190,7 +190,7 @@ async def test_export_full_order_and_encoding(db_session, client, override_get_d
     anchors = [
         "第 1 卷 蜀山卷",
         "第一章·雪夜入蜀山",
-        "第二章·剑冢",
+        "第二章·地点乙",
         "第 2 卷 雪域卷",
         "第一章·雪域寻踪",
         "外传·雪夜",

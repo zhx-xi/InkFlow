@@ -19,7 +19,7 @@ import type { Project } from '../stores/project';
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: [],
     language: 'zh-CN',
     target_words: 0,
@@ -53,7 +53,7 @@ describe('项目卡片 ProjectCard — 标签展示（#595 D7=A / #596）', () =
   it('空标签：不渲染标签行（target_words=0 防止 toLocaleString 逗号干扰断言）', () => {
     render(<ProjectCard project={makeProject({ tags: [], target_words: 0 })} isCurrent={false} />);
     const card = screen.getByTestId('project-card');
-    expect(card).toHaveTextContent('青云志');
+    expect(card).toHaveTextContent('项目甲');
     expect(card.textContent).not.toContain('玄幻');
     expect(card.textContent).not.toContain('，'); // 无标签行（0 → '0' 无逗号）
   });

@@ -217,7 +217,7 @@ class TestOutlineSource:
         pid, cid, vid = _uuid(1), _uuid(2), _uuid(9)
         outlines = [
             _make_outline(1, 30, "主线", "overall", "全书主线", sort_order=0),
-            _make_outline(1, 31, "第一卷", "volume", "青云宗", sort_order=0, volume_id=vid),
+            _make_outline(1, 31, "第一卷", "volume", "门派甲", sort_order=0, volume_id=vid),
             _make_outline(1, 32, "第一章", "chapter", "开局", sort_order=0, chapter_id=cid),
         ]
         repo = AsyncMock()

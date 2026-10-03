@@ -63,7 +63,7 @@ from inkflow.domain.services.planner_service import (
 
 _LONG_ONE_LINER = (
     "写一本武侠仙侠门派经营小说，主角玄明继承破落宗门，"
-    "带领师弟师妹在修真世界崛起，重振山门威名远扬天下"
+    "带领师弟师妹在修真世界崛起，重振地点己威名远扬天下"
 )
 """49 字 one_liner（>30 字触发短化契约；模拟 #927 用户实测输入形态）。"""
 

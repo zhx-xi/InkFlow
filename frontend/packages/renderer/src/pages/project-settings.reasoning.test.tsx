@@ -78,7 +78,7 @@ type ProjectWithReasoning = ProjectConfig & { reasoning_effort?: string | null }
 function seedProjectConfig(config: ProjectWithReasoning) {
   useProjectStore.setState({
     projects: [{
-      id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
+      id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
       config,
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     }],
@@ -90,7 +90,7 @@ beforeEach(() => {
   apiFetchMock.mockReset();
   useProjectStore.setState({
     projects: [{
-      id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
+      id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
       config: {},
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     }],

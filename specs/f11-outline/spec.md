@@ -486,7 +486,7 @@ DELETE /api/v1/outlines/9b1c2d3e-...   → 204（物理删除，情节点级联�
 POST /api/v1/outlines/9b1c2d3e-.../plot-points
 Content-Type: application/json
 
-{ "name": "主角登场", "type": "开篇", "description": "林尘在青云宗外门测试中展露废柴体质", "arc_id": null }
+{ "name": "主角登场", "type": "开篇", "description": "林尘在门派甲外门测试中展露废柴体质", "arc_id": null }
 ```
 → 201（PlotPoint JSON，position 自动分配 = 大纲末尾 +1）
 
