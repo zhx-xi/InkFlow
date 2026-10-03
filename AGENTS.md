@@ -77,12 +77,21 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
 3. `specs/f19-gui/<page>.md` —— 页交互规格
 
 ⚠️ 原型 HTML 是「设计基准」，页规格是「实现的对照面」。**两者都不更新 = 漂移**（#1326 实测 8 页）。
-⚠️ PNG 由 `design/GUI/_tools/*.cjs` 截图脚本生成（本地 headless，**非 CI**）
-   → **门禁无法自动验证 PNG 内容，只能靠人工自查**。
+⚠️ PNG 由 `design/GUI/_tools/*.cjs` 截图脚本生成（本地 headless）；内容同源性由**层②门禁**自动校验（见下）。
 ⚠️ 门禁 `ci_cd/check_gui_spec_sync.py` 校验三件：① `design/GUI/` 目录 ↔ `specs/f19-gui/*.md`
    **双向一一对应**（防孤儿/幽灵）② 页规格 **L4 头部必含自指指针** `> 对应 design/GUI/<page>/`
    （#1338）③ 页规格 L8 统一为「目录 + 主文件名 + 状态枚举」形态（#1338 已统一 15 页）。
    **仍拦不住「改了没同步」**——那条靠本纪律 + 下面的 PR 提醒 + 人工自查。
+⚠️ 门禁 `ci_cd/check_gui_png_homology.py`（层②，#1330）：改了 `design/GUI/**` 下**任何**原型 HTML
+   或出图脚本，必须**同 PR 重出受影响的 PNG**——CI job `gui-png-homology` 会重跑
+   `design/GUI/_tools/shot-*.cjs` 并与**已提交版**逐像素比对；真实漂移即 FAIL，并打印
+   「页 / 状态 / px / maxdiff / bbox」。噪声级差异（像素 ≤20 或最大通道差 ≤3）不报（#1363 实测量级）。
+   - **能查**：图是否仍与当前 HTML 同源；无脚本覆盖的图是否登记在 `ci_cd/gui_png_homology_exempt.json`
+     （**未登记且无脚本产出 = FAIL** —— 禁止静默跳过）。
+   - **查不出**：像素归零只证「图 == 用当前 HTML 重出的图」，**不证图是对的**（重出后仍需 `vision`
+    目视复核）；跨机器渲染差异（字体/GPU/合成取整）可能整体偏移，判据是像素差不是语义；层③ 原型↔实现；
+    **截图未覆盖的画面**改动不可见（#1330 变异实测：改 knowledge 页 H1 文案 → 10 张图零差异，
+    该页 `.page-lib` 滚动到了画布处，页头在视口外）。
 ⚠️ PR 提醒：`.github/workflows/ui-spec-sync-reminder.yml` 在「改了 renderer 真 UI 源码
    （`*.tsx` 非测试）却未同步 `design/GUI/` 或 `specs/f19-gui/`」时**评论警告**。
    **不阻断合并**（实测误报率约 17%：i18n 抽取/测试补强/泄漏修复等会触碰 tsx 但无 UI 语义）

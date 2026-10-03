@@ -92,6 +92,7 @@ jobs:
       contract: ${{ steps.filter.outputs.contract }}
       ci: ${{ steps.filter.outputs.ci }}
       docs: ${{ steps.filter.outputs.docs }}
+      gui_png: ${{ steps.filter.outputs.gui_png }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -164,6 +165,12 @@ jobs:
               - 'docs/**'
               - 'design/**'
               - 'specs/**'
+            # 层② 原型 PNG↔HTML 同源性门禁（#1330）的判定输入：原型资产（HTML + 已提交 PNG +
+            # 出图脚本）或门禁自身。specs/f19-gui 不在内（那是层① 的输入）。
+            gui_png:
+              - 'design/GUI/**'
+              - 'ci_cd/check_gui_png_homology.py'
+              - 'ci_cd/gui_png_homology_exempt.json'
 
   # ── Lint: ruff check + mypy type check ──
   lint-backend:
@@ -255,6 +262,51 @@ jobs:
         run: |
           uv run pytest ../ci_cd/tests/ -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # ── 层② 原型 PNG ↔ HTML 同源性门禁（#1330）──
+  # 重跑 design/GUI/_tools/shot-*.cjs 并与「已提交版」逐像素比对：原型 HTML 改了但同 PR 未重出
+  # 旧状态图 = FAIL（#1049/#1343/#1354 三次均如此；#1363 实测 writing 11 张漂 4 张，
+  # #1369 实测其余 14 页 86 张漂 14 张）。与层① ci_cd/check_gui_spec_sync.py（目录↔页规格对应）
+  # 职责正交；本 job 不校验层③（原型↔实现，#1452）。
+  # 形态选择（#1330 障碍 2）：本机实测 18 脚本 / 97 张截图 / 69s（#1369 清单）→ 走 CI job；
+  # pre-push 钩子本仓未安装（.git/hooks 下只有 pre-commit），不可强制执行，故不采用。
+  # ⚠️ 未设 required（改分支保护需 admin，另议）；但「全 job 绿才 merge」纪律已覆盖它。
+  gui-png-homology:
+    needs: [changes]
+    if: needs.changes.outputs.gui_png == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (playwright)
+        working-directory: frontend
+        run: pnpm --filter inkflow-electron exec playwright install chromium
+
+      - name: Check prototype PNG <-> HTML homology
+        run: python ci_cd/check_gui_png_homology.py .
 
   # ── Unit tests (fast, no DB, < 10s) ──
   # 只跑核心代码 + unit 测试代码变更；集成/E2E 测试变更不触发
