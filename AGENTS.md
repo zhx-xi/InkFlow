@@ -86,12 +86,16 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
    或出图脚本，必须**同 PR 重出受影响的 PNG**。该门禁重跑 `design/GUI/_tools/shot-*.cjs`
    并与**已提交版**逐像素比对；真实漂移即 FAIL，并打印「页 / 状态 / px / maxdiff / bbox」。
    噪声级差异（像素 ≤20 或最大通道差 ≤3）不报（#1363 实测量级）。
-   - **触发面 = 本地 pre-commit 钩子**（`backend/.pre-commit-config.yaml` 的 `gui-png-homology`，
-     仅在改动 `design/GUI/**` 或门禁自身时跑；挂在**已安装的 pre-commit 阶段**，无需额外安装）：
-     **不设 CI job**——像素比对绑定「出图机器」，
-     原型 serif 栈在 CI runner 上解析到不同字体，共享 chrome 会大面积假漂移
-     （#1330 实测：CI 上 91/107 假漂移，本机 107/107 通过）。
-     真正的根治 = 原型自托管字体（#1460，0.17.0），完成后可重新评估进 CI。
+   - **触发面 = CI job + pre-push 双面**（两面判据同一个 `ci_cd/check_gui_png_homology.py`）：
+     · **CI 面**：job `gui-png-homology`（`.github/workflows/ci.yml`），命中
+     `design/GUI/**`、`ci_cd/check_gui_png_homology.py`、`ci_cd/gui_png_homology_exempt.json`
+     或 CI 配置变更时跑——兜底「没装钩子 / 绕过钩子」的提交。
+     · **本地/pre-push 面**：`backend/.pre-commit-config.yaml` 的 `gui-png-homology` 钩子，
+     仅在改动 `design/GUI/**` 或门禁自身时跑；挂在**已安装的 pre-commit 阶段**，无需额外安装。
+     **为什么现在能进 CI**（#1460，0.17.0）：serif 字体已随仓库**自托管**
+     （`design/GUI/_assets/fonts/`，OFL-1.1，子集 woff2，@font-face 族名 `InkFlow Serif`），
+     原型渲染不再解析 CI runner 上的系统字体 → 像素比对**不再绑定「出图机器」**
+     （未自托管时 CI 实测 91/107 假漂移、maxdiff 129–215，见 #1330）。
    - **能查**：图是否仍与当前 HTML 同源；无脚本覆盖的图是否登记在 `ci_cd/gui_png_homology_exempt.json`
      （**未登记且无脚本产出 = FAIL** —— 禁止静默跳过）。
    - **查不出**：像素归零只证「图 == 用当前 HTML 重出的图」，**不证图是对的**（重出后仍需 `vision`

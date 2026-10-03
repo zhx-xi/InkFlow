@@ -1,0 +1,66 @@
+{
+  "charset_sha256": "886f4a469efbbc75f0dbeaff1ba5d76c5e17508e80846b9f4e101af66bd277e4",
+  "charset_size": 1152,
+  "fonts": {
+    "serif": {
+      "family": "InkFlow Serif",
+      "license": "OFL-1.1",
+      "source": "Noto Serif SC (static) v2.003-H1 — Google Fonts CDN legacy kit",
+      "files": {
+        "inkflow-serif-400.woff2": {
+          "bytes": 191640,
+          "sha256": "be7401e390d745150813c9c292e967473626bd638f0e36e6c56c8671163f6e2d",
+          "glyphs": 1183,
+          "covered": 1143
+        },
+        "inkflow-serif-600.woff2": {
+          "bytes": 194764,
+          "sha256": "bf82c2f0b797e16f4623a6bb6951183e3cc1672e2b98664c639b728c4fd9022a",
+          "glyphs": 1183,
+          "covered": 1143
+        }
+      },
+      "missing_codepoints": [
+        "U+000A",
+        "U+25B8",
+        "U+25BE",
+        "U+2705",
+        "U+FE0F",
+        "U+1F4CE",
+        "U+1F534",
+        "U+1F5FA",
+        "U+1F9E0"
+      ]
+    },
+    "sans": {
+      "family": "InkFlow Sans",
+      "license": "OFL-1.1",
+      "source": "Noto Sans SC (static) — Google Fonts CDN legacy kit",
+      "files": {
+        "inkflow-sans-400.woff2": {
+          "bytes": 149996,
+          "sha256": "781df822ac47b5c05700a85900e7e782dc9e9a0d5b2ab4e1ad5cf53c0d41382a",
+          "glyphs": 1183,
+          "covered": 1143
+        },
+        "inkflow-sans-600.woff2": {
+          "bytes": 152348,
+          "sha256": "e52b5a771667bcf31811f6f6c0afc55a8ddd7926955b2b622ba72dc784abaf2b",
+          "glyphs": 1183,
+          "covered": 1143
+        }
+      },
+      "missing_codepoints": [
+        "U+000A",
+        "U+25B8",
+        "U+25BE",
+        "U+2705",
+        "U+FE0F",
+        "U+1F4CE",
+        "U+1F534",
+        "U+1F5FA",
+        "U+1F9E0"
+      ]
+    }
+  }
+}
