@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
 // #1000 钉死测试时区基准 Asia/Shanghai —— 使「本地时间显示」类契约断言与 runner/CI
@@ -10,6 +10,13 @@ process.env.TZ = 'Asia/Shanghai';
 // RTL 自动清理（globals 模式下 afterEach 自动注册）
 afterEach(() => {
   cleanup();
+});
+
+// #1464：每个用例前清空 localStorage，避免按章持久化跨用例泄漏。
+// ⚠️ node env 集成测试（文件头 `// @vitest-environment node`，如 sse-frame 黑盒）无 localStorage
+// → 必须判存在再清，否则该环境 setup 即 ReferenceError。
+beforeEach(() => {
+  if (typeof localStorage !== 'undefined') localStorage.clear();
 });
 
 // userEvent 在 fake timers 下每次 API 调用收尾会 await setTimeout(0)（wait()），
