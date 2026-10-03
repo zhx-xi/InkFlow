@@ -155,19 +155,18 @@ const SCENES = [
   {
     id: 'search-title',
     out: 'foreshadow-search-title.png',
-    desc: '⑤ 检索（拍板项 1）：输入「剑」→ 标题面 4 条 + 位置面 1 条 = 5 条',
+    desc: '⑤ 检索（拍板项 1）：输入「剑」→ 标题面 3 条（脱敏后语料：断剑的秘密 / 无名剑客的遗言 / 角色丁袖中的剑穗）',
     check: (d, p) => {
       p('检索：输入框可见', d.searchVisible === true && d.chapterTextDisplay !== 'none');
       p('检索：查询值回显 = 剑', d.searchValue === '剑');
       p('检索：placeholder 标明两面', String(d.searchPlaceholder).includes('标题'));
-      p('检索：命中 5 条', d.rowCount === 5);
+      p('检索：命中 3 条', d.rowCount === 3);
       p(
-        '检索：命中集 = 标题面 4 + 位置面 1',
-        JSON.stringify(d.rowIds) ===
-          JSON.stringify(['fs-row-2', 'fs-row-4', 'fs-row-5', 'fs-row-6', 'fs-row-7']),
+        '检索：命中集 = 标题面 3（脱敏后无位置面命中）',
+        JSON.stringify(d.rowIds) === JSON.stringify(['fs-row-2', 'fs-row-5', 'fs-row-6']),
       );
-      p('检索：降序命中优先级', JSON.stringify(d.rowPris) === JSON.stringify([75, 55, 45, 40, 30]));
-      p('检索：计数 5/8', d.countA === '显示 5 / 共 8 条');
+      p('检索：降序命中优先级', JSON.stringify(d.rowPris) === JSON.stringify([75, 45, 40]));
+      p('检索：计数 3/8', d.countA === '显示 3 / 共 8 条');
       p('注释条 = 检索标题面', JSON.stringify(d.notePlansVisible) === JSON.stringify(['search-title']));
       p(
         '注释条同时标注标题面与位置面',
@@ -184,7 +183,7 @@ const SCENES = [
       p('口径 1：结构化控件隐藏', d.chapterStructDisplay === 'none');
       p('口径 1：查询值回显', d.searchValue === '第 2 章');
       p('口径 1：命中 1 条', d.rowCount === 1);
-      p('口径 1：命中项 = 林晚照的旧玉佩（id3）', JSON.stringify(d.rowIds) === JSON.stringify(['fs-row-3']));
+      p('口径 1：命中项 = 角色乙的旧玉佩（id3）', JSON.stringify(d.rowIds) === JSON.stringify(['fs-row-3']));
       p('口径 1：计数 1/8', d.countA === '显示 1 / 共 8 条');
       p('注释条 = 口径 1', JSON.stringify(d.notePlansVisible) === JSON.stringify(['chapter-match-text']));
       p('注释条显式写明「必然漏掉」', d.noteTextVisible[0].includes('漏') && d.noteTextVisible[0].includes('为空'));

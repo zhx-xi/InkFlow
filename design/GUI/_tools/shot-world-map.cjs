@@ -48,7 +48,7 @@ async function runChecks(page) {
   push('resize handle rendered', d.handle !== 'MISSING');
   push('handle cursor col-resize', d.handleCursor === 'col-resize');
   push('left column 260px', d.leftWidth === 260);
-  push('main tree has map rows', d.inMain.includes('青云山') && d.inMain.includes('剑冢区域'));
+  push('main tree has map rows', d.inMain.includes('地点甲') && d.inMain.includes('地点乙区域'));
   push('unmapped section lists unmapped entries', d.inUnmapped.includes('未挂图条目'));
   push('no horizontal scroll', d.scrollW <= d.innerW);
   push('icons resolved', d.icons.svg === d.icons.ic);

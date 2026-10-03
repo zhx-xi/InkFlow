@@ -128,21 +128,21 @@ function checkAll(d, state) {
     chk('世界序专属：无轴选择器', d.pickerDisplay === 'none');
     chk(`无泳道（实际 ${d.laneCount}）`, d.laneCount === 0);
     const expTicks = isFilter
-      ? ['第十二章 夜访剑冢']
-      : ['第十一章 剑心为何物', '第十二章 夜访剑冢', '第十三章 剑心蒙尘', '未分章'];
+      ? ['第十二章 夜访地点乙']
+      : ['第十一章 事件乙', '第十二章 夜访地点乙', '第十三章 事件甲', '未分章'];
     chk(`章刻度=${JSON.stringify(expTicks)}（实际 ${JSON.stringify(d.tickTexts)}）`,
       JSON.stringify(d.tickTexts) === JSON.stringify(expTicks));
     const expNodes = isFilter ? 2 : 6;
     chk(`事件数=${expNodes} 且无重复（实际 ${d.nodeCount} dup=${d.dup}）`,
       d.nodeCount === expNodes && d.dup === 0);
     if (!isFilter) {
-      chk(`行内时间小字=青元历 17 年（实际 ${d.main1}）`, d.main1 === '青元历 17 年');
+      chk(`行内时间小字=示例历 17 年（实际 ${d.main1}）`, d.main1 === '示例历 17 年');
       chk('时间小字为降级态（tl-main--dim）', String(d.main1Cls).includes('tl-main--dim'));
       chk(`c12 组内章内序=['2','3']（实际 ${JSON.stringify(d.c12Ids)}）`,
         JSON.stringify(d.c12Ids) === JSON.stringify(['2', '3']));
       chk(`筛选标签=章：全部（实际 ${d.filterLabel}）`, d.filterLabel === '章：全部');
     } else {
-      chk(`行内时间小字=青元历 217 年（实际 ${d.main2}）`, d.main2 === '青元历 217 年');
+      chk(`行内时间小字=示例历 217 年（实际 ${d.main2}）`, d.main2 === '示例历 217 年');
       chk('时间小字为降级态（tl-main--dim）', String(d.main2Cls).includes('tl-main--dim'));
       chk('筛选钮 on 态', d.filterBtnOn === true);
       chk(`筛选面板展开（实际 ${d.panelDisplay}）`, d.panelDisplay !== 'none' && d.panelDisplay !== 'MISSING');
@@ -157,8 +157,8 @@ function checkAll(d, state) {
     chk(`无纪元泳道（实际 ${d.laneCount}）`, d.laneCount === 0);
     chk(`事件序=时间升序（未知末尾）[1..4,6,5]（实际 ${JSON.stringify(d.nodeIds)}）`,
       JSON.stringify(d.nodeIds) === JSON.stringify(['1', '2', '3', '4', '6', '5']));
-    chk(`时间刻度 tl-axis-main-1=青元历 17 年（实际 ${d.main1}）`, d.main1 === '青元历 17 年');
-    chk(`来源章小字 tl-src-1=第十一章…（实际 ${d.src1}）`, d.src1 === '第十一章 剑心为何物');
+    chk(`时间刻度 tl-axis-main-1=示例历 17 年（实际 ${d.main1}）`, d.main1 === '示例历 17 年');
+    chk(`来源章小字 tl-src-1=第十一章…（实际 ${d.src1}）`, d.src1 === '第十一章 事件乙');
     chk(`来源章小字 tl-src-5=未分章（实际 ${d.src5}）`, d.src5 === '未分章');
     chk(`事件数=6 且无重复（实际 ${d.nodeCount}）`, d.nodeCount === 6 && d.dup === 0);
   }
@@ -178,13 +178,13 @@ function checkAll(d, state) {
     chk(`无章分组（实际 ${d.groupKeys.length}）`, d.groupKeys.length === 0);
     chk(`图例含「纪元」（实际 ${d.legend}）`, String(d.legend).includes('纪元'));
     if (isMulti) {
-      chk(`仙历泳道=['6']（实际 ${JSON.stringify(d.laneXianjieIds)}）`,
+      chk(`示例仙历泳道=['6']（实际 ${JSON.stringify(d.laneXianjieIds)}）`,
         JSON.stringify(d.laneXianjieIds) === JSON.stringify(['6']));
       chk(`默认轴泳道=['5']（实际 ${JSON.stringify(d.laneNoneIds)}）`,
         JSON.stringify(d.laneNoneIds) === JSON.stringify(['5']));
       chk(`默认轴泳道名=未分纪元（实际 ${d.laneNoneName}）`, String(d.laneNoneName).includes('未分纪元'));
       chk(`事件数=6 且无重复（实际 ${d.nodeCount} dup=${d.dup}）`, d.nodeCount === 6 && d.dup === 0);
-      chk(`标签回落：tl-axis-main-6=仙界 · 仙历 1024（实际 ${d.main6}）`, d.main6 === '仙界 · 仙历 1024');
+      chk(`标签回落：tl-axis-main-6=示例仙界 · 示例仙历 1024（实际 ${d.main6}）`, d.main6 === '示例仙界 · 示例仙历 1024');
     }
   }
 

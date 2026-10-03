@@ -383,7 +383,7 @@ const SCENES = [
       p('① 地图入口新文案可见', d.newLabelDisplay !== 'none');
       p('#1322 左栏宽 260px', d.leftWidth === 260);
       p('#1322 resize 手柄 cursor', d.handleCursor === 'col-resize');
-      p('#1322 主树含挂图条目', d.mainTreeText.includes('青云山'));
+      p('#1322 主树含挂图条目', d.mainTreeText.includes('地点甲'));
       p('#1322 未挂图折叠区在场', d.unmappedText.includes('未挂图条目'));
       return { fails, d };
     },
@@ -409,7 +409,7 @@ const SCENES = [
         if (!ok) fails.push(label);
       };
       p('复制对话框 overlay 显示', d.overlayDisplay === 'flex');
-      p('复制目标项目在场', d.targetText.includes('归墟记'));
+      p('复制目标项目在场', d.targetText.includes('项目乙'));
       p('复制范围 chips 在场', d.scopeText.includes('本体'));
       return { fails, d };
     },

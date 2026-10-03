@@ -243,10 +243,10 @@ body[data-shot="1"] .demo-bar{display:none}
       <h1>设定库</h1>
       <div class="lib-ctx">
         <span class="lib-project" data-testid="library-project-select">
-          <span>青云志</span><span data-ic="chevron-down"></span>
+          <span>项目甲</span><span data-ic="chevron-down"></span>
         </span>
         <span class="lib-breadcrumb" data-testid="library-breadcrumb">
-          设定库 · 青云志 <span class="sep">/</span> <span class="cur">伏笔</span>
+          设定库 · 项目甲 <span class="sep">/</span> <span class="cur">伏笔</span>
         </span>
       </div>
       <div class="lib-tabs" data-testid="library-tabs" role="tablist" aria-label="设定库">
@@ -321,9 +321,9 @@ body[data-shot="1"] .demo-bar{display:none}
               <select class="fs-select" data-testid="fs-location-select">
                 <option>全部位置</option>
                 <option>第 11 章 · 闭关</option>
-                <option>第 13 章 · 山门</option>
+                <option>第 13 章 · 地点己</option>
                 <option>第 2 章 · 初见</option>
-                <option>第 10 章 · 剑冢</option>
+                <option>第 10 章 · 地点乙</option>
                 <option>开篇 · 序章梦境</option>
               </select>
               <span class="fs-tag">位置枚举</span>
@@ -352,7 +352,7 @@ body[data-shot="1"] .demo-bar{display:none}
         </div>
         <div class="design-note" data-design-annotation="1" data-plan="search-title" data-testid="fs-note-search-title">
           <span class="dn-tag">检索 · 标题面</span>
-          <span>输入「剑」→ 命中 <b>5 条</b>：<b>4 条命中标题</b>（断剑的秘密 / 无名剑客的遗言 / 白眉道人袖中的剑穗 / 青云剑诀第九式的缺失）+ <b>1 条命中位置</b>（守陵人的来历 · 第 10 章 · 剑冢）。标题面 = 后端已有 <code>?search=</code>（title icontains，零改动、可服务端化）；位置面见口径 1 取舍。标签「标题 + 位置」如实标注匹配面。</span>
+          <span>输入「剑」→ 命中 <b>3 条</b>，<b>全部命中标题</b>（断剑的秘密 / 无名剑客的遗言 / 角色丁袖中的剑穗）；本页种子语料脱敏后无「剑」位置面命中，位置口径见「口径 1 / 口径 2」两态。标题面 = 后端已有 <code>?search=</code>（title icontains，零改动、可服务端化）。标签「标题 + 位置」如实标注匹配面。</span>
         </div>
         <div class="design-note" data-design-annotation="1" data-plan="chapter-match-text" data-testid="fs-note-chapter-match-text">
           <span class="dn-tag">口径 1 · 位置文本</span>
@@ -404,7 +404,7 @@ body[data-shot="1"] .demo-bar{display:none}
     <div class="statusbar" data-testid="statusbar">
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
-      <span>项目: 青云志</span>
+      <span>项目: 项目甲</span>
       <span>伏笔 8 条 · 未回收 6</span>
     </div>
   </div>
@@ -521,12 +521,12 @@ function injectIcons(root){
        chapters 为口径 2 演示专用字段：真实后端**尚无**该关联（本轮标注为需后端先行） ── */
 const DATA = [
   { id:1, title:'师父闭关的真相',        status:'open',     priority:90, location:'第 11 章 · 闭关',      chapters:['第 11 章'] },
-  { id:2, title:'断剑的秘密',            status:'open',     priority:75, location:'第 13 章 · 山门',      chapters:['第 13 章'] },
-  { id:3, title:'林晚照的旧玉佩',        status:'open',     priority:60, location:'第 2 章 · 初见',       chapters:['第 2 章'] },
-  { id:4, title:'守陵人的来历',          status:'open',     priority:55, location:'第 10 章 · 剑冢',      chapters:['第 10 章'] },
+  { id:2, title:'断剑的秘密',            status:'open',     priority:75, location:'第 13 章 · 地点己',      chapters:['第 13 章'] },
+  { id:3, title:'角色乙的旧玉佩',        status:'open',     priority:60, location:'第 2 章 · 初见',       chapters:['第 2 章'] },
+  { id:4, title:'角色戊的来历',          status:'open',     priority:55, location:'第 10 章 · 地点乙',      chapters:['第 10 章'] },
   { id:5, title:'无名剑客的遗言',        status:'open',     priority:45, location:'开篇 · 序章梦境',      chapters:['第 2 章'] },
-  { id:6, title:'白眉道人袖中的剑穗',    status:'resolved', priority:40, location:'第 8 章 · 藏经阁',     chapters:['第 8 章'],  resolvedAt:'2026-08-30' },
-  { id:7, title:'青云剑诀第九式的缺失',  status:'resolved', priority:30, location:'第 6 章 · 剑阁',       chapters:['第 6 章'],  resolvedAt:'2026-09-02' },
+  { id:6, title:'角色丁袖中的剑穗',    status:'resolved', priority:40, location:'第 8 章 · 地点丁',     chapters:['第 8 章'],  resolvedAt:'2026-08-30' },
+  { id:7, title:'功法甲第九式的缺失',  status:'resolved', priority:30, location:'第 6 章 · 地点庚',       chapters:['第 6 章'],  resolvedAt:'2026-09-02' },
   { id:8, title:'未署名的旧信',          status:'open',     priority:20, location:'',                     chapters:['第 2 章'] },
 ];
 

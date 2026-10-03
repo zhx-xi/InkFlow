@@ -343,7 +343,7 @@
   **仅当该类勾选数 > 0 时可用**（0 时 `disabled`）。
 
 原型基准：`design/GUI/writing/writing.html` 的 `context-preselect` / `context-preselect-loading` 两状态；
-截图 `writing-context-preselect.png`（子集勾选：苏云舟保留 / 林晚照排除 + 标题行「清除」「全选」同框）、
+截图 `writing-context-preselect.png`（子集勾选：角色甲保留 / 角色乙排除 + 标题行「清除」「全选」同框）、
 `writing-context-preselect-loading.png`（加载态状态条 + 面板暂为全选）；
 生成/断言脚本 `design/GUI/_tools/shot-writing-context-preselect.cjs`（结构/几何断言全绿）。
 
@@ -536,4 +536,3 @@ writing-context-preselect-loading / writing-drafts-approval / writing-delete-aut
 - N54：409（无可恢复旧稿）→ `chapter-restore-error` 显示「无可恢复的旧稿」；404 / 网络错误同走该错误行
   （不静默失败、不假装成功）。
 - N55：可证伪自证 —— 把徽标渲染条件改为**无条件**渲染 → N51 的两条反例断言必须 FAIL；还原后复绿。
-
