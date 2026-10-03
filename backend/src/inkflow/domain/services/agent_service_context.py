@@ -59,8 +59,7 @@ class AgentServiceContextMixin:
             return variables
         try:
             project_uuid = uuid.UUID(project_id)
-            project_int = project_uuid.int
-            project = await self._project_repo.get(project_int)
+            project = await self._project_repo.get(project_uuid)
             if project is None:
                 return variables
             parts: list[str] = []

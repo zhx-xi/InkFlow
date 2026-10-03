@@ -13,6 +13,8 @@ from inkflow.api.deps import get_db
 from inkflow.api.deps_draft import make_outline_bindder, make_volume_ensurer
 from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import BookLimits
+from inkflow.domain.ports.character_errors import CharacterServiceError
+from inkflow.domain.ports.outline_errors import OutlineServiceError
 from inkflow.domain.services.book_service import (
     BookService,
     ChapterAlreadyWrittenError,
@@ -185,6 +187,7 @@ def get_planner_service(db: AsyncSession = Depends(get_db)) -> PlannerService:
         project_context_getter=_project_context_getter,
         prompt_manager=LangChainPromptManager(),
         outline_repo=SQLiteOutlineRepository(db),
+        character_repo=SQLiteCharacterRepository(db),
         project_repo=SQLiteProjectRepository(db),
         llm_default_model=config.llm_default_model,
     )
@@ -534,6 +537,12 @@ async def respond_planner(
         if "不存在" in detail:
             raise HTTPException(status_code=404, detail=detail) from e
         raise HTTPException(status_code=422, detail=detail) from e
+    except OutlineServiceError as e:
+        # 大纲域业务校验失败（含 OutlineNameConflictError，#1463）→ 422 + 可读 detail
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except CharacterServiceError as e:
+        # 角色域业务校验失败（含 CharacterNameConflictError，#1463）→ 422 + 可读 detail
+        raise HTTPException(status_code=422, detail=str(e)) from e
     return {
         "session_id": str(result.session_id),
         "round": result.round,

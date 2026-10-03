@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.11（#1430 方案 A：`book run --force` 显式覆盖正文 + A2 旧稿备份落点 `chapters.previous_content` + 恢复读口 + 请求面双条件，2026-10-02；1.10 #1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.12（#1462/#1463 planner 完成路径缺陷修复：项目级模型解析链路修正（repo 入参领域 UUID）+ 完成路径幂等（总纲/主角同名复用）+ 领域业务冲突 → 422 可读 detail，2026-10-04；1.11 #1430 方案 A：`book run --force` 显式覆盖正文 + A2 旧稿备份落点 `chapters.previous_content` + 恢复读口 + 请求面双条件，2026-10-02；1.10 #1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -9,6 +9,11 @@
 **依赖**: ✅ F39 Agent 实体 + 能力白名单（0.9.0 #258）· ✅ F27 writer-agent（已交付）· ✅ F42 管线 write_auto/write_continue（已交付）· ✅ F29 Supervisor（已交付）· ✅ F6 context（已交付）· ✅ outline 三级结构（F43 P3+P4 已交付）· ⏳ `langgraph-checkpoint-sqlite`（阶段 4 新增依赖，Spike ⑤ 实证缺）
 **参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 **状态**: ✅ 已实现（PR #441/#443/#445/#446/#447/#448/#453/#454 + #505/#504 访谈 LLM v1.2，2026-08-19）
+
+> **Spec 变更**（v1.11 → v1.12，2026-10-04，#1462/#1463 缺陷修复）：
+> - **#1462（项目级模型永不生效）**：`PlannerService._generate_questions` 用 `session.project_id.int` 调 `project_repo.get`——ADR-060 D9 / #1291 之后仓储入口只认 `uuid.UUID`（`require_uuid_pk` 对裸 int 抛 `TypeError`），该异常被 `except Exception: project_model = None` 静默吞成「未配模型」→ `resolve_model` 的「项目」一级恒空 → 访谈降级模板题库 + `confirming` 永不置位 + `confirm` 恒 422。修订：入参改传领域 UUID；`except TypeError` 记 ERROR 后**原样抛出**（契约违规不得静默降级），其余可预期失败仍回退全局默认（#977 语义保持）。同族漏网（`memory_service` 2 处 · `agent_service_context` 1 处）一并收口。
+> - **#1463（完成路径无幂等）**：`_complete` 对两个养成实体各做一次**确定性命名**的 create（总纲名 = `one_liner[:30]` 派生；主角名 = `confirmed_items` 派生、无信息时回退字面量「主角」）→ 同项目第二次完成必撞同名唯一约束 → `OutlineNameConflictError` / `CharacterNameConflictError` 未在 API 层映射 → 500「内部错误（无详情）」→ 用户永久无法完成访谈。修订：建前**按名查重复用**既有实体（并发窗口：创建撞名后二次查名复用；无从复用则原样抛出，不静默吞）；两个领域异常家族（`OutlineServiceError` / `CharacterServiceError`）在 `POST /planner/{session_id}/respond` 映射 **422 + 消息即 detail**（与 `extractions.py` / `characters.py` 既有惯例一致）。
+> - **正文修订位置**：§3.5（异常映射表 +2 行）+ §5.1（完成路径幂等 + 模型解析链）+ §7（场景 18/19）+ §8.2（MODIFY +3 行）+ §9.1（测试文件 +2 行）+ §12（D14）+ §13.7（M18-M19）+ §14.4（A12/A13）+ 本节版本行。
 
 > **Spec 变更**（v1.9 → v1.10，2026-09-18，#1187 用户拍板「B+C 综合」）：卷级轨同卷章节**并行扇出互不知情**（无承接、无因果、无「上一章结尾的悬念」），卷边界 HITL 时作者才第一次看到 30-40 章各自成文的成品。修订 = **保留并行（不取消，那是方案 A，用户未选）**，在并行下补承接保障，两阶段：
 > - **B 阶段（写前定「承接点 + 章末钩子」）**：新增 `prepare_continuity` 节点，位于 `volume_fan_out` **之前**——**一次 LLM 调用生成整卷承接表**（输入 = 卷纲 + 各章章纲 + 前一章章纲，**不依赖任何正文**，因扇出前无正文），产出落 `VolumeState["continuity"]`（`{str(outline_id): {"carry": str, "hook": str}}`），经 `Send` payload 带进各章分支并注入章 brief（**复用既有 `_build_chapter_brief` / `resolve_brief_setting` 通道，不新造注入路径**）。LLM 失败/解析失败 → 降级空承接表（不阻断写作）。
@@ -310,6 +315,8 @@ v1.2 #475 注：访谈问题由 LLM 按 `one_liner` + 项目设定动态生成�
 | 非 waiting_hitl 确认 | 422 | 卷确认仅在 interrupt 暂停点可用（F29 confirm 同构） |
 | 非 confirming 阶段 confirm（v1.2 #475） | 422 | 末尾总体确认仅在 `confirming=true` 时可用（`confirm` 请求体；F29 confirm 同构防呆） |
 | outline 撞名 | 409 | 复用既有唯一索引语义（批量生成撞 IntegrityError → 服务层捕获转 409，见 §6） |
+| planner 完成路径·总纲同名（v1.12 #1463） | 422 | `_complete` 按名查重复用既有总纲；无从复用（未装配查重面 / 并发窗口二次查名仍缺）→ `OutlineNameConflictError` → 422 + 消息即 detail。**区别上方 409**：那行是**批量生成**路径的 DB `IntegrityError` 捕获，本行是完成路径的领域前置校验异常（与 `extractions.py` 既有映射同源） |
+| planner 完成路径·主角同名（v1.12 #1463） | 422 | 同上（`CharacterNameConflictError`，F9 `CharacterServiceError` 家族，与 `characters.py` 既有映射一致） |
 
 ## 4. CLI 命令签名
 
@@ -348,6 +355,8 @@ inkflow book summary <run_id> [--export <file.json>]                      # 回�
 - 大纲/主角 = **必须对话确认**（通用必答项服务端强约束，见后端契约）；配角/细节 = 显式授权后自定（`authorized` 字段，「完成度授权」）
 - 「全部你决定」= 拒访谈 → 完全自主生成 = 跑 F42 `write_auto`（委托契约见下），WritingPlan 仍创建（状态=auto）
 - 访谈会话载体 = `PlannerSession`（§2.2，v1.2 扩展 confirmed_items/conflicts/confirming）；完成后创建 `WritingPlan`（§2.1）+ planner 产出**直接写 outline/character 实体**（§2.1 决策论证表）
+- **模型解析链**（v1.12 #1462）：提问引擎的模型经 `resolve_model(None, 项目 config.model, 全局默认)` 单点解析（优先级 `agent > 项目 > 全局`）；项目配置经 `project_repo.get(session.project_id)` 读取——**入参为领域 UUID**（ADR-060 D9，`require_uuid_pk` 在 repo 内完成 UUID→int 归一，调用方**不得**自行 `.int`）。可预期失败（DB 抖动）→ 回退全局默认（零告警，§7 场景 15 语义不变）；**契约违规（如裸 int 入参 → `TypeError`）必须冒泡**，不得静默降级成「未配置模型」
+- **完成路径幂等**（v1.12 #1463）：`_complete`（LLM confirm 与确定性降级**两条路径共用**）对总纲与主角均**先按项目内名称查重复用**（`outline_repo.get_by_name` / `character_repo.get_by_name`），命中即复用既有行并回填 `root_outline_id` / `character_ids`；创建时撞名（并发窗口）→ 二次查名复用；未装配查重面且撞名 → 原样抛出（**不得**静默跳过创建，也**不得**改生成名新建）；两种冲突经 API 映射 422 + 可读 detail（§3.5）
 - **产物质量护栏**（#927，v1.7）：① LLM 失败降级的兜底题材题**中性化**——题面保留「题材」必答关键词但不得自带任何具体题材预设（如「悬疑」），避免与 one_liner 语境脱节；② `WritingPlan.title` = one_liner 前 **30 字**短标题（对齐会话自动命名 30 字先例，≤30 字保持原文），outline name = 短标题 +「（书级大纲）」、完整 one_liner 进 description；③ planner 建主角经装配闭包构造 `CharacterCreate` DTO（#833 role_rank 必填校验不旁路），缺省补 `extra.role_rank=protagonist`；主角名短名化护栏（#995：LLM prompt 约束「主角」value=纯人名 + 服务端首顿号/逗号分段、>50 字符 [:20] 截断兜底）；④ `_complete` 落库 limits **从访谈 answers/confirmed_items 文本提取**章数（见下「上限」）
 
 **LLM 动态提问引擎**（PR-1 后端契约，S3 实现轨，v1.2 #475）：
@@ -678,6 +687,8 @@ START → bootstrap → prepare_continuity（B：写前定承接表，一次 LLM
 | 15 | LLM 动态提问失败/超时（v1.2 #475） | 重试 1 次 → 仍失败 → 回退 ROUND1/ROUND2 确定性常量（v1.1 兜底保留，问题即模板、分批节奏不变）→ 访谈不阻塞；LLM 恢复后下轮回到动态提问 | 1 |
 | 16 | 回答与已确定项/设定冲突或不合理（v1.2 #475） | conflicts 记录（resolution=pending）+ 生成 kind=conflict 回问题请用户重新确认；用户新回答 resolve 后继续（不得静默采纳冲突值，§6 R11） | 1 |
 | 17 | 末尾总体确认被用户修改（v1.2 #475） | confirming=true 时用户提交修改项 → 回 questioning 重问该确定项（新值进 confirmed_items，旧值留痕 conflicts 或覆盖并记录历史）→ 重新确认 | 1 |
+| 18 | 完成路径总纲/主角已存在（v1.12 #1463） | 按名查重 → **复用**既有实体（不新建、不改名）；并发窗口撞名 → 二次查名复用；仍取不到 → 领域异常经 API 映射 422 + 可读 detail（**不得**静默吞、不得 500 无详情、不得静默跳过创建） | 1 |
+| 19 | 仅配项目级模型（全局默认为空）（v1.12 #1462） | `resolve_model(None, 项目 config.model, 全局)` 取项目级 → 访谈走 LLM 动态提问（**不得**因 repo 入参契约违规而静默降级模板题库）；真无任何模型 → 保留模板题库降级（恰好一次 WARN）；非契约类失败（DB 抖动）→ 回退全局默认（零 WARN） | 1 |
 
 ## 8. 文件结构
 
@@ -727,6 +738,9 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | `domain/services/draft_service.py` | `DraftService` 增可选注入 `volume_ensurer`；confirm D4 建章前沿来源 outline 上溯卷父 ensure 卷并透传 `create_chapter(volume_id=…)`（v1.8 #1097，§5.2） | v1.8 |
 | `api/deps_draft.py` | 新增 `make_volume_ensurer(db)` 工厂（镜像 `make_outline_bindder`）（v1.8 #1097） | v1.8 |
 | `api/deps.py` · `api/routers/books.py` | DraftService 装配注入 `volume_ensurer`（通用轨 + book 轨双注入）（v1.8 #1097） | v1.8 |
+| `domain/services/planner_service.py` | ① `_generate_questions` 项目查询入参改传领域 UUID（ADR-060 D9）+ 契约违规（`TypeError`）冒泡（不再静默吞成「未配模型」）；② `_complete` 总纲/主角建前按名查重复用（新增可选注入 `character_repo`）（v1.12 #1462/#1463，§5.1） | v1.12 |
+| `domain/services/memory_service.py` · `domain/services/agent_service_context.py` | #1462 同族漏网收口：`project_repo.get` 入参由裸 int 改传领域 UUID（`agent_service_context` 的漏网点在 #1319 三源 `list()` 收口时被漏掉，其 `except Exception` 整体失败隔离把 `TypeError` 吞成「设定注入失败」） | v1.12 |
+| `api/routers/books.py`（`respond_planner` + `get_planner_service`） | `respond_planner` 映射 `OutlineServiceError` / `CharacterServiceError` → 422 + 消息即 detail；`get_planner_service` 装配 `character_repo`（v1.12 #1463，§3.5） | v1.12 |
 
 > Q2=C 注（v1.1）：多维上限默认载体 = **ProjectConfig.extra 项目级扩展字典**（F1 既有字段，四层已透传）——**零 MODIFY**，无需 F32 settings 扩展键（§11 F32 行已改「不 MODIFY」；读取优先级见 §2.4）。
 
@@ -739,6 +753,8 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | 单元 | `backend/tests/unit/domain/models/test_writing_plan_model.py` / `test_book_service.py` / `test_planner_service.py` | 模型校验、上限校验（至少一道护栏）、进度状态机、安全阀判定（纯逻辑，mock 仓储）、访谈循环（mock LLM，v1.2：动态提问/确定项提取/冲突回问/总体确认/失败降级） | `pytest tests/unit/` |
 | 集成 | `tests/integration/test_book_repository.py` | WritingPlan/PlannerSession 仓储（in-memory SQLite）、thread_id 落库、confirmed_items/conflicts JSON 列读写（v1.2） | 顶层集成 job |
 | API | `tests/api/test_books_api.py` | 端点契约：planner 启谈/回复/confirm/auto（LLM mock）、runs 启动/状态、confirm、intervene、summary、异常映射（404/409/422） | integration-agent-backend 链登记 |
+| 单元（v1.12 #1462/#1463） | `backend/tests/unit/domain/services/test_planner_service_1462_1463.py` / `test_repo_id_contract_1462.py` / `backend/tests/unit/api/routers/test_books_planner_conflict_1463.py` | 项目级模型解析（契约违规冒泡 + 可预期降级两向 + 真无模型降级）、完成路径幂等（总纲/主角 × 两条调用路径 × 并发窗口 × 无从复用响亮失败）、同族 `.int` 漏网静态回归锁、领域冲突 → 422 | `pytest tests/unit/` |
+| API（v1.12 #1462） | `tests/api/test_books_planner_project_model_1462.py` | 仅配项目级模型（全局为空）下 book plan 全链路（真实 SQLite repo + 假 LLM）：LLM 动态提问 → `confirming=true` → confirm 200；同项目同 one_liner 第二次访谈同样成功 | integration-agent-backend 链登记 |
 | CLI | `tests/cli/test_book_cmd.py` | `inkflow book` 命令组（CliRunner + 临时 SQLite，isolated_db 双 patch 模式） | integration-cli-backend 链登记 |
 | E2E | `tests/e2e/test_book_long_run.py` | 长任务端到端：真实 LLM 走 **e2e-ai-backend 开关模式**（CI 默认 skip，本地 `INKFLOW_E2E_LLM_*` env 真实 API；LLM 依赖测试不放默认 CI 链，F39 实证） | `pytest tests/e2e/` + env |
 | 前端组件（Vitest） | `frontend/packages/renderer/src/components/__tests__/book*.test.tsx` | 访谈对话流（v1.2 对话式：确定项汇总卡片/冲突警示/confirm）、子 agent 展开行、章级进度 UI、HITL 确认对话框、干预控件、三层密度切换、回归摘要面板（mock API，F43 前端测试模式） | `pnpm test`（→ `pnpm --filter renderer test` → `vitest run`，frontend CI job） |
@@ -820,6 +836,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | D11 | 上限配置载体 | **ProjectConfig.extra 项目级默认 + 请求体 BookLimits**（读取优先级 = 请求显式 > 项目级 extra > 默认常量；Q2=C 拍板，v1.1） | 项目级上限语义更贴合「每本书独立约束」（extra 为 F1 既有字段，四层已透传零 MODIFY） | 全局 settings 扩展键（A，否决——与「每本书独立约束」语义分道，徒增跨模块 MODIFY）；仅请求体（B，否决——默认不可改） |
 | D12 | 干预粒度 | 卷级锚点 + 章级被动动作（skip/retry/标记）——Q3=A 拍板确认（v1.1，正文 v1.0 已一致，仅标 ✅） | 设计 §2.3-2 interrupt 只放卷边界；章级干预不引入新 checkpoint | 章级精细 checkpoint（违反设计约束 + 大成本） |
 | D13 | 访谈提问引擎（v1.2 #475 D1 拍板） | **LLM 动态提问**：单次 LLM 调用返回问题 + 确定项提取 + 冲突标记（结构化 JSON）——通用必答 + 针对性并存；服务端强约束必答项校验；LLM 失败降级到确定性常量（ROUND1/ROUND2） | #475 用户拍板 D1（问题必须感知用户输入：按 one_liner + 项目设定动态生成；提取已确定项只问未确定项；冲突回问；末尾总体确认；确定项落会话供 #486/记忆/审计）；确定性状态机不感知输入（用户否决——v1.1 现状） | 纯确定性状态机（不感知输入，用户否决）；纯 LLM 无服务端校验（必答项可能漏问，违背「大纲/主角必须对话确认」） |
+| D14 | 完成路径实体幂等（v1.12 #1463） | 建前按项目内名称**查重复用**既有实体（总纲 / 主角）；并发窗口撞名 → 二次查名复用；无从复用 → 原样抛领域异常 → API 映射 **422** + 消息即 detail | 与 §5.2 章级幂等写、`make_volume_ensurer`「同项目同名卷复用」同惯例；客户端超时/进程被杀后**同一项目第二次完成不得永久失败**；复用既有行保住 `root_outline_id` / `character_ids` 结构锚点。另 #1462：`project_repo.get` 入参必须是领域 UUID（ADR-060 D9），契约违规（`TypeError`）不得被 `except Exception` 静默降级 | 改生成名重试（§6 R1 旧措辞——用户可见名漂移 + 新建孤儿结构）；静默跳过创建（丢主角且无提示）；修 `require_uuid_pk` 放开裸 int（违反 ADR-060 D9）；通用「唯一索引冲突框架」（§10 范围外） |
 
 ## 13. 验收标准
 
@@ -875,6 +892,13 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M15 | 迁移三形态 + 幂等（旧库补列且**存量 previous_content 恒 NULL**（零回填）/ 新库 no-op / 表不存在 no-op / 连续两次调用等价）；ORM 基线已重导 | `pytest backend/tests/unit/infrastructure/database/test_chapters_previous_content_migration_1430.py`；`uv run python ci_cd/check_orm_migration_drift.py --regen` 后 `git diff --exit-code ci_cd/orm_migration_baseline.json` |
 | M16 | 备份「覆盖前必落」（旧正文逐字进 `previous_content`）+「旧值为空不留空壳」+ 恢复读口可写回（且恢复自身遵守覆盖口径 = 双向切换）；`chapters.previous_content` 随章资源可回读 | `pytest backend/tests/unit/domain/services/test_chapter_previous_content_1430.py tests/api/test_chapter_restore_previous_1430.py` |
 | M17 | 双条件拒绝（只给 force / 只给 confirm_overwrite → 422）；force 抵达后台执行体；备份落点随 force 响应可见；**非 force 路径零变化**（既有安全闸用例全绿 + 非 force 请求调用面逐字不变） | `pytest backend/tests/unit/domain/services/test_book_run_force_1430.py tests/api/test_book_force_overwrite_1430.py backend/tests/unit/domain/services/test_book_service_safety_gate_1265.py backend/tests/unit/domain/services/test_book_reset_1282.py tests/cli/test_cli_book_force_1430.py` |
+
+### 13.7 v1.12 #1462/#1463（planner 完成路径缺陷修复）：M18-M19
+
+| M | 验收 | 验证命令/方式 |
+|---|------|--------------|
+| M18 | 仅配项目级模型（全局默认为空）→ 访谈走 LLM 动态提问（不落模板题库）；`resolve_model` 的「项目」一级非空；**契约违规（裸 int）不被吞**（显式失败）；真未配任何模型仍降级模板题库；非契约类失败（DB 抖动）仍回退全局默认 | `pytest backend/tests/unit/domain/services/test_planner_service_1462_1463.py`；`pytest tests/api/test_books_planner_project_model_1462.py`（真实 repo + 假 LLM，全链路 start → respond → confirm） |
+| M19 | 完成路径幂等：同项目第二次 confirm / 第二次访谈**复用**既有总纲与主角（各只 create 一次，`root_outline_id` / `character_ids` 指向既有行）；并发窗口二次查名复用；无从复用 → 422 + 可读 detail（非 500 无详情）；同族 `.int` 漏网（`memory_service` ×2 / `agent_service_context` ×1）收口且静态回归锁生效 | `pytest backend/tests/unit/domain/services/test_planner_service_1462_1463.py backend/tests/unit/domain/services/test_repo_id_contract_1462.py backend/tests/unit/api/routers/test_books_planner_conflict_1463.py` |
 
 ## 待澄清问题（阻塞级，已拍板固化 v1.1 + v1.2 Q4）
 
@@ -976,3 +1000,5 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 - A9：干预指令 pause/resume/redirect/edit + diff 字段；已完成章干预 422（M11）
 - A10：回归摘要 + 结构化运行日志导出（M12）
 - A11：访谈 LLM 动态提问（M13）+ 前端对话式 UI（M14）
+- A12：仅配项目级模型 → 访谈走 LLM 动态提问 + confirm 200（M18）
+- A13：同项目重复完成 → 复用既有总纲/主角，不 500（M19）

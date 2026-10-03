@@ -38,6 +38,8 @@ from inkflow.core.config import config
 from inkflow.domain.models.outline import Outline
 from inkflow.domain.models.planner_session import PlannerSession
 from inkflow.domain.models.writing_plan import STAGE1_LIMITS, WritingPlan
+from inkflow.domain.ports.character_errors import CharacterNameConflictError
+from inkflow.domain.ports.outline_errors import OutlineNameConflictError
 from inkflow.domain.services._outline_generator import _extract_json_fragment
 from inkflow.domain.services._planner_limits import extract_limits_from_interview
 from inkflow.domain.services.model_resolution import resolve_model
@@ -157,10 +159,14 @@ class PlannerService(PlannerMustAnswerMixin):
             None = 空上下文.
         prompt_manager: PromptTemplateProtocol 鸭子对象（load/render）；
             None = 不渲染模板、直接构建最小 prompt.
-        outline_repo: 鸭子对象（async get(id) / list(project_id, offset, limit)
-            -> (items, total)）；None = 分支起点不可用（#544）.
-        project_repo: 鸭子对象（async get(int) -> Project | None）；None = 未装配时
-            视为无项目模型，回退全局默认（#977）.
+        outline_repo: 鸭子对象（async get(id) -> Outline | None /
+            list(project_id, offset, limit) -> (items, total) /
+            get_by_name(project_id, name) -> Outline | None）；None = 分支起点与
+            总纲同名查重不可用（#544 / #1463）.
+        character_repo: 鸭子对象（async get_by_name(project_id, name) -> Character | None）；
+            None = 同名主角查重复用面不可用（#1463）.
+        project_repo: 鸭子对象（async get(uuid.UUID) -> Project | None，ADR-060 D9）；
+            未装配时视为无项目模型，回退全局默认（#977）.
         llm_default_model: 全局默认模型（#977）——项目 config.model 为 None 时回退该值.
     """
 
@@ -175,7 +181,9 @@ class PlannerService(PlannerMustAnswerMixin):
         project_context_getter: Callable[[uuid.UUID], Awaitable[str]] | None = None,
         prompt_manager: object | None = None,
         outline_repo: object | None = None,
-        project_repo: object | None = None,  # 新增：#520 形态鸭子 .get(int)->Project|None
+        character_repo: object | None = None,
+        # #520 形态鸭子 .get(uuid.UUID)->Project|None（ADR-060 D9，入参为领域 UUID）
+        project_repo: object | None = None,
         llm_default_model: str | None = None,  # 新增：镜像 character_service.py:94
     ) -> None:
         self._repo = repo
@@ -186,6 +194,7 @@ class PlannerService(PlannerMustAnswerMixin):
         self._project_context_getter = project_context_getter
         self._prompt_manager = prompt_manager
         self._outline_repo = outline_repo
+        self._character_repo = character_repo
         self._project_repo = project_repo
         # #936 A 项：默认参惰性化（构造期读当前配置，避免 import 快照冻结）
         self._llm_default_model = (
@@ -464,19 +473,55 @@ class PlannerService(PlannerMustAnswerMixin):
         elif session.start_type == "continue" and session.source_outline_id is not None:
             plan.root_outline_id = session.source_outline_id
         elif self._outline_service is not None:
-            outline = await self._outline_service(  # type: ignore[operator]  # 鸭子类型：outline_service 为可调用，产出 outline 实体（含 id）
-                project_id=session.project_id,
-                name=self._outline_name(session),
-                description=session.one_liner,
-                level="overall",
-            )
+            overall_name = self._outline_name(session)
+            outline: object | None = None
+            if self._outline_repo is not None:
+                outline = await self._outline_repo.get_by_name(  # type: ignore[attr-defined]  # 鸭子类型：构造注入
+                    session.project_id, overall_name
+                )
+            if outline is None:
+                try:
+                    outline = await self._outline_service(  # type: ignore[operator]  # 鸭子类型：outline_service 为可调用，产出 outline 实体（含 id）
+                        project_id=session.project_id,
+                        name=overall_name,
+                        description=session.one_liner,
+                        level="overall",
+                    )
+                except OutlineNameConflictError:
+                    # 并发窗口：查重后落库前被抢先建好 → 再查一次复用；
+                    # outline_repo 未装配/仍取不到 → 原样抛出，不得吞（#1463）
+                    if self._outline_repo is None:
+                        raise
+                    outline = await self._outline_repo.get_by_name(  # type: ignore[attr-defined]  # 鸭子类型：构造注入
+                        session.project_id, overall_name
+                    )
+                    if outline is None:
+                        raise
             plan.root_outline_id = getattr(outline, "id", None)
         if self._character_service is not None:
-            character = await self._character_service(  # type: ignore[operator]  # 鸭子类型：character_service 为可调用，产出 character 实体（含 id）
-                project_id=session.project_id,
-                name=self._protagonist_name(session),
-                extra={"role_rank": "protagonist"},
-            )
+            protagonist_name = self._protagonist_name(session)
+            character: object | None = None
+            if self._character_repo is not None:
+                character = await self._character_repo.get_by_name(  # type: ignore[attr-defined]  # 鸭子类型：构造注入
+                    session.project_id, protagonist_name
+                )
+            if character is None:
+                try:
+                    character = await self._character_service(  # type: ignore[operator]  # 鸭子类型：character_service 为可调用，产出 character 实体（含 id）
+                        project_id=session.project_id,
+                        name=protagonist_name,
+                        extra={"role_rank": "protagonist"},
+                    )
+                except CharacterNameConflictError:
+                    # 未装配查重面：无处复用 → 原样抛出，不得静默跳过（#1463）
+                    if self._character_repo is None:
+                        raise
+                    # 并发窗口：查重后落库前被抢先建好 → 再查一次复用；仍取不到 → 原样抛
+                    character = await self._character_repo.get_by_name(  # type: ignore[attr-defined]  # 鸭子类型：构造注入
+                        session.project_id, protagonist_name
+                    )
+                    if character is None:
+                        raise
             char_id = getattr(character, "id", None)
             if char_id is not None:
                 plan.character_ids.append(char_id)
@@ -611,11 +656,18 @@ class PlannerService(PlannerMustAnswerMixin):
         if self._project_repo is not None:
             try:
                 project: object | None = await self._project_repo.get(  # type: ignore[attr-defined]  # 鸭子类型：#520 形态
-                    session.project_id.int
+                    session.project_id
                 )
                 if project is not None:
                     project_model = project.config.model  # type: ignore[attr-defined]  # 鸭子类型：Project 领域对象
+            except TypeError:
+                # 契约违规（如裸 int 传参）：调用点 bug，不得静默降级成「未配置模型」（#1462）
+                logger.error("planner 读取项目模型时触发契约违规（repo 入口只接受 uuid.UUID）")
+                raise
             except Exception:
+                # 可预期失败（DB 抖动/项目查询不可用）→ 回退全局默认（#977 语义保持）。
+                # 注：此处不落 WARNING——#977/A-4 契约要求该降级路径零告警。
+                logger.debug("planner 读取项目模型失败，回退全局默认模型")
                 project_model = None
         model = resolve_model(None, project_model, self._llm_default_model)
         if not model:
