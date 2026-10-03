@@ -29,6 +29,7 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   const respondAuto = useBookStore((s) => s.respondAuto);
   const respondConfirm = useBookStore((s) => s.respondConfirm);
   const startRun = useBookStore((s) => s.startRun);
+  const hydrate = useBookStore((s) => s.hydrate);
 
   const [oneLiner, setOneLiner] = useState('');
   const [answer, setAnswer] = useState('');
@@ -42,6 +43,11 @@ export function BookPlannerPanel({ projectId }: BookPlannerPanelProps) {
   /** F44 v1.2 #475：确认卡片修改编辑态（key + 新值） */
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+
+  /** #1466：首屏 + projectId 变更时从后端水合既有 plan/run（决定三态） */
+  useEffect(() => {
+    void hydrate(projectId);
+  }, [projectId, hydrate]);
 
   /** #544：continue/branch 时拉取选中项目的大纲列表（切换项目/模板重拉；new 隐藏不拉） */
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
   getBookRunStatus,
   getPlannerSession,
   interveneBookRun,
+  listBookPlans,
   respondPlanner,
   resetBookRun,
   startBookRun,
@@ -98,6 +99,8 @@ interface BookState {
   respondAuto: () => Promise<void>;
   respondConfirm: () => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
+  /** #1466：按项目从后端水合既有 plan/run（首屏 + projectId 变更时调用） */
+  hydrate: (projectId: string | null) => Promise<void>;
   startRun: (planId: string, limits?: Record<string, number>) => Promise<void>;
   loadRunStatus: (runId: string) => Promise<void>;
   confirmRun: (approved: boolean, decision?: string) => Promise<boolean>;
@@ -320,6 +323,46 @@ export const useBookStore = create<BookState>((set, get) => ({
         conflicts: dto.conflicts ?? [],
         sessionConfirming: dto.confirming === true,
         loading: false,
+      });
+    } catch (err) {
+      set({ error: errorMessage(err), loading: false });
+    }
+  },
+
+  hydrate: async (projectId) => {
+    // 无项目 / 本会话已开始 → 不发请求（不覆盖会话内的 plan/run）
+    if (projectId === null || projectId === '') return;
+    if (get().sessionId !== null) return;
+    set({ loading: true, error: null });
+    try {
+      const res = await listBookPlans(projectId);
+      const plan = res.items.length > 0 ? res.items[0] : null; // 后端按 updated_at DESC
+      if (plan === null) {
+        set({
+          loading: false,
+          sessionStatus: 'idle',
+          writingPlan: null,
+          runId: null,
+          runStatus: null,
+          progress: {},
+          counters: null,
+          progressStats: { total: 0, done: 0, inProgress: 0, failed: 0, skipped: 0, pending: 0 },
+          progressReason: null,
+        });
+        return;
+      }
+      // planner 落库的两种「未启动」态 = ready/auto；其余 status 视为 run 已启动
+      const started = plan.status !== 'ready' && plan.status !== 'auto';
+      set({
+        loading: false,
+        sessionStatus: 'completed',
+        writingPlan: plan,
+        runId: started ? plan.id : null,
+        runStatus: started ? plan.status : null,
+        progress: started ? plan.progress : {},
+        progressStats: deriveProgressStats(started ? plan.progress : {}),
+        counters: null,
+        progressReason: null,
       });
     } catch (err) {
       set({ error: errorMessage(err), loading: false });

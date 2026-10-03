@@ -219,6 +219,8 @@ def test_book_repository_protocol_exists():
     assert callable(BookRepositoryProtocol.add_planner_session)
     assert callable(BookRepositoryProtocol.get_planner_session)
     assert callable(BookRepositoryProtocol.update_planner_session)
+    # #1466：按项目列 plan（成书页水合）
+    assert callable(BookRepositoryProtocol.list_writing_plans)
 
 
 # ── Coverage-Gap 补测（2026-08-17 CI coverage-backend 98.39% 缺口）──
@@ -431,3 +433,115 @@ async def test_update_planner_session_v12_fields(repo):
     assert got is not None
     assert got.confirming is True
     assert got.confirmed_items == [{"key": "题材", "value": "悬疑", "source": "user"}]
+
+
+# ── #1466：按项目列 WritingPlan（成书页水合）────────────────────────
+# 权威来源：issue #1466（后端无「列项目 plan / run」端点 → GUI 对既有
+# plan/run 不可见）。语义 = 该项目全部 writing_plan **按 updated_at DESC**
+# （最新在前，前端水合取 items[0] 为「当前计划」）。
+
+
+def _plan_at(project_id: uuid.UUID, title: str, day: int) -> WritingPlan:
+    """构造指定 updated_at 的计划（day = 2026-10-day，用于排序断言）。"""
+    ts = datetime(2026, 10, day, tzinfo=UTC)
+    return WritingPlan(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        title=title,
+        created_at=ts,
+        updated_at=ts,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_writing_plans_filters_by_project(repo):
+    """project_id 精确过滤 + total = 该项目计数（跨项目不串）。"""
+    pid_a = uuid.UUID(int=11)
+    pid_b = uuid.UUID(int=12)
+    await repo.add_writing_plan(_plan_at(pid_a, "A1", 1))
+    await repo.add_writing_plan(_plan_at(pid_a, "A2", 2))
+    await repo.add_writing_plan(_plan_at(pid_b, "B1", 3))
+
+    items, total = await repo.list_writing_plans(project_id=pid_a)
+
+    assert total == 2
+    assert {p.title for p in items} == {"A1", "A2"}
+    assert all(p.project_id == pid_a for p in items)
+
+
+@pytest.mark.asyncio
+async def test_list_writing_plans_orders_by_updated_at_desc(repo):
+    """按 updated_at DESC 排序（最新在前——前端取 items[0] 作当前计划）。"""
+    pid = uuid.UUID(int=13)
+    await repo.add_writing_plan(_plan_at(pid, "最早", 1))
+    await repo.add_writing_plan(_plan_at(pid, "最新", 3))
+    await repo.add_writing_plan(_plan_at(pid, "中间", 2))
+
+    items, total = await repo.list_writing_plans(project_id=pid)
+
+    assert total == 3
+    assert [p.title for p in items] == ["最新", "中间", "最早"]
+
+
+@pytest.mark.asyncio
+async def test_list_writing_plans_empty_project_returns_empty(repo):
+    """无计划的项目 → ([], 0)（不抛异常；端点层据此返回 200 空列表非 404）。"""
+    items, total = await repo.list_writing_plans(project_id=uuid.UUID(int=777))
+
+    assert items == []
+    assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_list_writing_plans_pagination(repo):
+    """offset/limit 分页；total 恒为分页前总数。"""
+    pid = uuid.UUID(int=14)
+    for day in range(1, 6):
+        await repo.add_writing_plan(_plan_at(pid, f"P{day}", day))
+
+    page1, total = await repo.list_writing_plans(project_id=pid, offset=0, limit=2)
+    page2, _ = await repo.list_writing_plans(project_id=pid, offset=2, limit=2)
+
+    assert total == 5
+    assert [p.title for p in page1] == ["P5", "P4"]
+    assert [p.title for p in page2] == ["P3", "P2"]
+
+
+@pytest.mark.asyncio
+async def test_list_writing_plans_project_none_returns_all(repo):
+    """project_id=None → 全量（镜像 list_planner_sessions 语义）。"""
+    await repo.add_writing_plan(_plan_at(uuid.UUID(int=21), "X", 1))
+    await repo.add_writing_plan(_plan_at(uuid.UUID(int=22), "Y", 2))
+
+    items, total = await repo.list_writing_plans(project_id=None)
+
+    assert total == 2
+    assert [p.title for p in items] == ["Y", "X"]
+
+
+@pytest.mark.asyncio
+async def test_list_writing_plans_run_state_roundtrip(repo):
+    """列表项携带 run 状态摘要（status/progress/updated_at 完整回读）。"""
+    pid = uuid.UUID(int=23)
+    plan = WritingPlan(
+        id=uuid.uuid4(),
+        project_id=pid,
+        title="跑完一轮",
+        status="completed",
+        limits={"max_chapters": 10, "max_agent_calls": 20, "tokens_used": 1234},
+        progress={"o-c1": "done", "o-c2": "done"},
+        execution_refs={"o-c1": "exec-1"},
+        created_at=datetime(2026, 10, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 10, 9, tzinfo=UTC),
+    )
+    await repo.add_writing_plan(plan)
+
+    items, total = await repo.list_writing_plans(project_id=pid)
+
+    assert total == 1
+    got = items[0]
+    assert got.id == plan.id
+    assert got.status == "completed"
+    assert got.progress == {"o-c1": "done", "o-c2": "done"}
+    assert got.limits["tokens_used"] == 1234
+    assert got.updated_at == plan.updated_at

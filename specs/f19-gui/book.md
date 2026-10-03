@@ -22,6 +22,13 @@
 │ 有项目（data-testid=book-page，max-w-2xl 单栏）：            │
 │  ┌─ 项目名（book-project，15px）                             │
 │  └─ book-planner-panel  ★ 三态（先判 sessionStatus，再判 runId）
+│     ├─ 态 0（**水合态**，#1466）：首屏挂载 / projectId prop 变更 →
+│     │   `GET /agent/books/plans?project_id=`（取 items[0]，后端 updated_at DESC）
+│     │   · plan.status ∉ {ready, auto}（run 已启动）→ runId=plan.id（→ 态 3 运行面板）
+│     │   · plan.status ∈ {ready, auto}（有计划无 run）→ 计划卡（→ 态 2）
+│     │   · items 空 → 起点表单（→ 态 1）
+│     │   · 跳过条件：projectId 为空 / 本会话已开始（sessionId 非空）→ 不发请求
+│     │   ⚠️ 水合是**加载中间态**，不新增视觉状态（复现既有三态），见 §4 N31-N33
 │     ├─ 态 1（sessionStatus !== 'completed'）＝ 访谈 / 起点配置：
 │     │   [项目 Select] [起点模式 Select] [源大纲 Select]
 │     │   一句话输入（book-one-liner，必填才启用开始）
@@ -116,7 +123,13 @@
     - `VolumeHITLDialog`（卷级 HITL 确认框）
   - ~~未启动（**组件内部**分支）：`book.run.noRun`（「暂无运行」）纯文本~~ → 🔴 **#1333 段 2 实测结论：该分支产品路径不可达，已删除**（连同 i18n key `book.run.noRun`）。`BookRunPanel` 唯一生产消费者是 `BookPlannerPanel.tsx:137`（以 `runId !== null` 门控）；`runId` 转 null 时消费者自身改走计划卡分支 → 面板被卸载。现 `BookRunPanel` 在 `runId === null` 时直接返回 `null`（验收 N26 / §3.5-6）。
     - ⚠️ **同名遮蔽（历史记录）**：页级 `runId` 与 `BookRunPanel` 读取的是**同一个 store 字段**，两处分支不同——页级为 `null` 时根本不渲染 `BookRunPanel`。这正是上条「不可达」的成因，段 2 据此删除该分支。
-- 布局说明：纵向单栏（`max-w-2xl`）；访谈态与「计划卡 / 运行面板」互斥（由 `sessionStatus` 切换），计划卡与运行面板互斥（由 `runId` 切换）；运行面板内区块按「状态 → 失败原因 → 工具栏 → diff → 计数 → 进度 → 列表 → 摘要」顺序堆叠
+  - **水合（#1466）**：`components/BookPlannerPanel.tsx` 挂载 / `projectId` prop 变更时经 `useEffect` 调 `useBookStore().hydrate(projectId)`；store（`stores/book.ts`）经 `listBookPlans`（`api/books.ts`）请求 `GET /api/v1/agent/books/plans?project_id=&offset=0&limit=50`，取 `items[0]`（后端 `updated_at DESC` 最新在前）：
+    - `plan.status ∉ {ready, auto}`（run 已启动：running / paused / waiting_hitl / completed / failed / degraded / blocked …）→ `sessionStatus='completed'` + `writingPlan=plan` + `runId=plan.id` + `runStatus=plan.status` + `progress` 同步（渲染**运行面板**；`counters` 由 `BookRunPanel` 既有 `GET /runs/{id}` 轮询补，水合不重复取）
+    - `plan.status ∈ {ready, auto}`（planner 落库的两种未启动态，含 reset 后退回 ready）→ `sessionStatus='completed'` + `writingPlan=plan` + `runId=null`（渲染**计划卡**）
+    - `items` 空 → `sessionStatus='idle'` + `writingPlan=null` + `runId=null`（渲染**起点表单**）
+    - 边界：`projectId` 为 `null`/`''` **或** 本会话已开始（`sessionId !== null`）→ **不发请求**（不覆盖会话内 state）；请求失败仅记 `error`，三态不伪造
+    - 🔴 语义前提：**run 载体 = `WritingPlan.id`**（`book_service.get_status`「run_id（= WritingPlan.id 字符串）」）→ plan 与 run 一一对应，「plans + 各自最近 run」退化为 plans 列表本身，**不新增第二套状态判断**（渲染仍由既有 `sessionStatus` + `runId` 驱动）
+  - 布局说明：纵向单栏（`max-w-2xl`）；访谈态与「计划卡 / 运行面板」互斥（由 `sessionStatus` 切换），计划卡与运行面板互斥（由 `runId` 切换）；运行面板内区块按「状态 → 失败原因 → 工具栏 → diff → 计数 → 进度 → 列表 → 摘要」顺序堆叠
 
 ## 2. 动作样式（按钮 × 状态表）
 
@@ -285,6 +298,17 @@
 > **编号说明**：本节的实现轨验收项接续既有全局编号（段 1 = N1–N13、段 2 = N14–N26、§5 = N27–N29），故自 **N30** 起编，避免与段 2 已占用的 N14 冲突。
 
 - N30：运行面板把 token 用量拆成**两个独立 testid** 并存显示——`run-counter-tokens-run`（**本轮** = `Math.max(0, counters.tokens_used − tokenBaseline)`，`tokenBaseline` 为 reset 成功时捕获的累计值）与 `run-counter-tokens`（**累计**账单 = `plan.limits.tokens_used`，reset **不清零**）；两值来源不同、可辨（本轮行不得混入累计值）；`tokens_warning` 由**累计**档判定，故 `max_tokens` 告警（`run-token-warning`）文案必须点名「累计」
+
+### #1466 验收（成书页水合 —— 让已有 plan/run 可见）
+
+> **编号说明**：接续既有全局编号（段 1 = N1–N13、段 2 = N14–N26、§5 = N27–N29、#1431 = N30），自 **N31** 起编。
+> **缺陷来源**：0.16.0-rc1 实测——CLI 已建书并跑完 book run（10 章落库），进「成书」页仍只有空白起点表单；
+> 根因两层：① 后端无「列项目 plan / run」端点（`GET /agent/books/runs?project_id=` → **405**）；
+> ② `stores/book.ts` 从不水合（纯内存态）。
+
+- N31（后端）：`GET /api/v1/agent/books/plans?project_id=<uuid>` → 200 + `{items, total, offset, limit}`（**不再是 405**，信封同 `GET /planner` 列表）；`items` 元素为 `WritingPlan`（自带 `status`/`progress`/`limits` = run 状态摘要），按 `updated_at DESC` 最新在前；空项目 → 200 + `items=[]`（**非 404**）；非法 `project_id` → 422；只读无副作用（GET 语义）
+- N32（前端）：成书页首屏挂载 / `projectId` prop 变更 → 调 `hydrate(projectId)`，据水合结果落三态——有已启动 run（`plan.status ∉ {ready, auto}`）→ **运行面板**（`runId` 非空）；有计划无 run（`ready`/`auto`）→ **计划卡**；都无 → **起点表单**
+- N33（边界 + 反例守护）：`projectId` 为 `null`/`''` **或** 本会话已开始（`sessionId !== null`）→ **不发请求**；**当前会话内新建 plan/run 的原有三态路径不受影响**（`sessionStatus`/`runId` 驱动不变，未新增第二套状态判断）
 
 ## 5. #1440 force 覆盖备份提示 + 「已有上一稿」GUI 读口
 

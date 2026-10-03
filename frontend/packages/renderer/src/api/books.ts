@@ -281,3 +281,25 @@ export interface ResetRunResponse {
 export async function resetBookRun(runId: string): Promise<ResetRunResponse> {
   return apiFetch<ResetRunResponse>(`/api/v1/agent/books/runs/${runId}/reset`, { method: 'POST' });
 }
+
+/** #1466：书级计划列表（成书页水合）——该项目 writing_plan，plan 自带 status/progress = run 摘要 */
+export interface BookPlanListResponse {
+  items: WritingPlanDto[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** 列某项目的书级计划（GET /agent/books/plans；空项目 → items=[]，非 404） */
+export async function listBookPlans(
+  projectId: string,
+  offset = 0,
+  limit = 50,
+): Promise<BookPlanListResponse> {
+  const qs = new URLSearchParams({
+    project_id: projectId,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  return apiFetch<BookPlanListResponse>(`/api/v1/agent/books/plans?${qs.toString()}`);
+}

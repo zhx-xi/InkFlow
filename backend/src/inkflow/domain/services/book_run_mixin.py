@@ -51,6 +51,15 @@ class BookRunMixin:
         """Publish writing_plan/update change event (best-effort, never blocks the write path)."""
         await publish_change("writing_plan", "update", str(plan.id), plan.project_id)
 
+    async def list_plans(
+        self, project_id: uuid.UUID | None, offset: int = 0, limit: int = 50
+    ) -> tuple[list[WritingPlan], int]:
+        """书级计划列表（#1466 成书页水合）：该项目 writing_plan（自带 run 状态摘要）."""
+        found: tuple[list[WritingPlan], int] = await self._repo.list_writing_plans(  # type: ignore[attr-defined]  # 混入类：属性由 BookService 提供
+            project_id=project_id, offset=offset, limit=limit
+        )
+        return found
+
     @staticmethod
     def _build_counters(plan: WritingPlan) -> dict[str, Any]:
         """书级运行计数器（get_status / get_summary 同构 9 键，缺省与阶段 1 常量一致）.
