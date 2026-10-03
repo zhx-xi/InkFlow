@@ -20,15 +20,21 @@
 - 产出集判据（mtime 变化）前先把每张图 mtime 归零到远古基准（``os.utime(ns=(0, 0))``）：
   NTFS 时间粒度 ~15.6ms → 同刻度原样重出不可见 → 故归零基准；还原在 finally（与字节还原一起）。
 
-为什么是本机钩子而不是 CI job（#1330 实测）：
-- 本门禁的判据是「已提交 PNG ↔ 用当前 HTML 重出的 PNG」的像素差，**绑定出图机器**。
-- 原型 serif 栈 ``--font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif``
-  在 CI runner 上解析到与本机不同的字体 → 共享 app chrome（品牌字/页标题）字形不同 →
-  大面积假漂移（实测：CI 上 91/107 假漂移、maxdiff 129–215；本机 107/107 通过）。
-- 故触发面 = ``backend/.pre-commit-config.yaml`` 的 ``gui-png-homology`` 钩子，挂在**已安装的
+触发面 = **CI job + pre-push 双面**（两面判据同一 = 本文件）：
+- **CI 面**：``.github/workflows/ci.yml`` 的 ``gui-png-homology`` job，兜底「没装钩子 / 绕过钩子」
+  的提交。
+- **本地面**：``backend/.pre-commit-config.yaml`` 的 ``gui-png-homology`` 钩子，挂在**已安装的
   pre-commit 阶段**（仅在改动 ``design/GUI/**`` 或本文件时运行；entry 用
   ``uv run --no-project python``，因 pre-commit 的 system runner 解析不到 PATH 上的
-  ``python`` 别名）。根治解 = 原型自托管字体（#1460，0.17.0）。
+  ``python`` 别名），价值 = 出图机器上 pre-push 前自查。
+为什么现在能进 CI：**#1460 把 serif 字体子集随仓库自托管**
+（``design/GUI/_assets/fonts/``，OFL-1.1，见该目录 README），原型渲染与字体环境无关 →
+像素比对不再绑定「出图机器」。
+历史事实（#1330/#1459）：自托管前，原型 serif 栈
+（``--font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif``）
+在 CI runner 上解析到与本机不同的字体 → 共享 app chrome（品牌字/页标题）字形不同 →
+大面积假漂移（实测：CI 上 91/107 假漂移、maxdiff 129–215；本机 107/107 通过）→ 当时只能退到
+本机钩子。
 
 ⚠️ **不校验什么**（能力边界，务必知晓）：
 - 能查：有脚本覆盖的 PNG 是否仍与当前 HTML 同源；无脚本覆盖的图是否已显式登记豁免。

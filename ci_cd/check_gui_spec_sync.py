@@ -9,7 +9,7 @@
 本护栏做**存在性对应 + 头部指针**检查，防止再出现孤儿/幽灵，以及页规格失去原型指引。
 
 规则（判定）：
-- 页面目录集 = `design/GUI/*/` 下全部子目录，**排除** `_tools`（截图脚本，非页面）。
+- 页面目录集 = `design/GUI/*/` 下全部子目录，**排除** `_tools`/`_assets`（非页面）。
 - 页规格集 = `specs/f19-gui/*.md`，**排除** `spec.md`（壳/内核/渲染层联合契约，非页面规格）。
 - 有目录无规格 → 报「孤儿」（orphan）：原型在但无规格，后续会话找不到实现对照面。
 - 有规格无目录 → 报「幽灵」（ghost）：规格在但无原型资产，规格失去设计基准。
@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 # 非页面目录/文件排除名单（相对 design/GUI/ 与 specs/f19-gui/）
-EXCLUDED_PROTO_DIRS = frozenset({"_tools"})
+EXCLUDED_PROTO_DIRS = frozenset({"_tools", "_assets"})
 EXCLUDED_SPEC_FILES = frozenset({"spec.md"})
 
 PROTO_DIR_REL = ("design", "GUI")
@@ -53,7 +53,7 @@ POINTER_LINE_INDEX = 3  # 0-based → 文件第 4 行
 
 
 def _page_dirs(repo_root: Path) -> list[str]:
-    """design/GUI/ 下的页面目录名（排除 _tools 等非页面项）。"""
+    """design/GUI/ 下的页面目录名（排除 _tools/_assets 等非页面项）。"""
     proto_root = repo_root.joinpath(*PROTO_DIR_REL)
     if not proto_root.is_dir():
         return []

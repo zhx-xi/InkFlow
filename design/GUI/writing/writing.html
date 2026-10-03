@@ -5,10 +5,12 @@
 <title>InkFlow 写作页 — 官方简图原型</title>
 <style>
 /* ═══════════ 设计 Token（对齐 frontend/packages/renderer/src/theme/tokens.css） ═══════════ */
+@font-face{font-family:'InkFlow Serif';font-style:normal;font-weight:400;font-display:block;src:url(../_assets/fonts/inkflow-serif-400.woff2) format('woff2')}
+@font-face{font-family:'InkFlow Serif';font-style:normal;font-weight:600;font-display:block;src:url(../_assets/fonts/inkflow-serif-600.woff2) format('woff2')}
 :root{
   --radius-s:4px; --radius-m:6px; --radius-l:8px;
   --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
-  --font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
+  --font-serif:"InkFlow Serif","Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif;
   --dur:180ms; --ease:cubic-bezier(0.16,1,0.3,1);
 }
 [data-theme="paper"]{

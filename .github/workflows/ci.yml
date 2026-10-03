@@ -92,6 +92,7 @@ jobs:
       contract: ${{ steps.filter.outputs.contract }}
       ci: ${{ steps.filter.outputs.ci }}
       docs: ${{ steps.filter.outputs.docs }}
+      design: ${{ steps.filter.outputs.design }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -164,6 +165,13 @@ jobs:
               - 'docs/**'
               - 'design/**'
               - 'specs/**'
+            # 层② 门禁（#1460）：原型资产 / PNG↔HTML 同源性门禁本身变化 → 触发
+            # gui-png-homology。单独建 output（而非复用 docs）——docs 命中面太宽
+            # （AGENTS.md/ADR/specs 全算），会让像素比对在无关 PR 上白跑 25 分钟。
+            design:
+              - 'design/GUI/**'
+              - 'ci_cd/check_gui_png_homology.py'
+              - 'ci_cd/gui_png_homology_exempt.json'
 
   # ── Lint: ruff check + mypy type check ──
   lint-backend:
@@ -255,6 +263,55 @@ jobs:
         run: |
           uv run pytest ../ci_cd/tests/ -q --reruns 2 --reruns-delay 1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # ── 层②：原型 HTML ↔ 原型 PNG 同源性（重跑 shot-*.cjs + 逐像素比对）──
+  # 为什么这个 job 现在可以进 CI（#1460）：原型 serif 字体已随仓库**自托管**
+  # （design/GUI/_assets/fonts/，OFL-1.1 子集 woff2，@font-face 族名 InkFlow Serif），
+  # 渲染不再解析 CI runner 上的系统字体 → 像素比对不再绑定「出图机器」。
+  # 字体未自托管时，CI 上实测 91/107 张图假漂移（#1330，maxdiff 129–215）——
+  # 这正是原先「不设 CI job、只挂 pre-commit」的原因，现已由 #1460 消除。
+  # 本地/pre-push 面仍保留同名钩子（backend/.pre-commit-config.yaml 的 gui-png-homology）：
+  # 两面判据同一（ci_cd/check_gui_png_homology.py），CI 面兜底「没装钩子/绕过钩子」的提交。
+  gui-png-homology:
+    needs: [changes]
+    if: needs.changes.outputs.design == 'true' || needs.changes.outputs.ci == 'true'
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # pnpm 必须先于 setup-node：后者带 cache: pnpm 时要跑 `pnpm store path` 定位缓存
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # 出图脚本用 chromium.launch()（非 E2E 的 _electron）→ 必须装浏览器本体
+      - name: Install Playwright Chromium (screenshot scripts)
+        working-directory: frontend
+        run: pnpm --filter inkflow-electron exec playwright install chromium
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: GUI prototype ↔ PNG homology (pixel diff)
+        run: python ci_cd/check_gui_png_homology.py .
 
   # ── Unit tests (fast, no DB, < 10s) ──
   # 只跑核心代码 + unit 测试代码变更；集成/E2E 测试变更不触发
