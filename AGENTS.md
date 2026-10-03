@@ -86,10 +86,11 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
    或出图脚本，必须**同 PR 重出受影响的 PNG**。该门禁重跑 `design/GUI/_tools/shot-*.cjs`
    并与**已提交版**逐像素比对；真实漂移即 FAIL，并打印「页 / 状态 / px / maxdiff / bbox」。
    噪声级差异（像素 ≤20 或最大通道差 ≤3）不报（#1363 实测量级）。
-   - **触发面 = pre-push 钩子**（`backend/.pre-commit-config.yaml` 的 `gui-png-homology`，
-     仅在推送 `design/GUI/**` 或门禁自身时跑）：**不设 CI job**——像素比对绑定「出图机器」，
+   - **触发面 = 本地 pre-commit 钩子**（`backend/.pre-commit-config.yaml` 的 `gui-png-homology`，
+     仅在改动 `design/GUI/**` 或门禁自身时跑；挂在**已安装的 pre-commit 阶段**，无需额外安装）：
+     **不设 CI job**——像素比对绑定「出图机器」，
      原型 serif 栈在 CI runner 上解析到不同字体，共享 chrome 会大面积假漂移
-     （#1330 实测：CI 上 91/107 假漂移，本机 107/107 通过）。安装：`pre-commit install --hook-type pre-push`。
+     （#1330 实测：CI 上 91/107 假漂移，本机 107/107 通过）。
      真正的根治 = 原型自托管字体（#1460，0.17.0），完成后可重新评估进 CI。
    - **能查**：图是否仍与当前 HTML 同源；无脚本覆盖的图是否登记在 `ci_cd/gui_png_homology_exempt.json`
      （**未登记且无脚本产出 = FAIL** —— 禁止静默跳过）。
