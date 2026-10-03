@@ -161,6 +161,19 @@
  * 端点契约（backend api/routers/books.py reset_run 实证，勿重新推断）：
  * - POST /runs/{run_id}/reset（200）→ {run_id, status: 'ready'}；**无请求体**
  *   404 运行不存在 / 422 运行已在进行中不可重置；清 progress/execution_refs，不动正文
+ *
+ * ⚠️ #1466（成书页水合）增量——GREEN 必须追加：
+ *
+ * export interface BookPlanListResponse {
+ *   items: WritingPlanDto[]; total: number; offset: number; limit: number;
+ * }
+ * export function listBookPlans(projectId: string, offset?: number, limit?: number):
+ *   Promise<BookPlanListResponse>
+ *
+ * 端点契约（backend api/routers/books.py list_plans 实证，勿重新推断）：
+ * - GET /plans?project_id=&offset=&limit=（200）→ {items, total, offset, limit}
+ *   （与 GET /planner 列表同信封）；空项目 → items=[]（**非 404**）；
+ *   project_id 为 UUID 查询参数（非法 → 422）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -173,6 +186,7 @@ import {
   interveneBookRun,
   getBookRunSummary,
   resetBookRun,
+  listBookPlans,
 } from './books';
 import { apiFetch } from './client';
 
@@ -465,5 +479,46 @@ describe('resetBookRun — POST /runs/{run_id}/reset（#1288 方案 B：不删�
     // 透传断言（api 层零加工）
     expect(res.run_id).toBe('wp-1');
     expect(res.status).toBe('ready');
+  });
+});
+
+describe('listBookPlans — GET /plans（#1466 成书页水合：列项目 plan/run）', () => {
+  it('GET 路径 + project_id/offset/limit query 透传，返回 {items,total,offset,limit}', async () => {
+    const planDto = {
+      id: 'wp-1',
+      project_id: 'p1',
+      title: '既有写作计划',
+      status: 'running',
+      root_outline_id: null,
+      character_ids: [],
+      limits: { max_chapters: 3, max_agent_calls: 6 },
+      progress: { 'o-c1': 'done' },
+      execution_refs: {},
+      thread_id: null,
+      created_at: '2026-10-01T00:00:00Z',
+      updated_at: '2026-10-02T00:00:00Z',
+    };
+    apiFetchMock.mockResolvedValue({ items: [planDto], total: 1, offset: 0, limit: 50 });
+
+    const res = await listBookPlans('p1');
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/plans?project_id=p1&offset=0&limit=50');
+    expect(res.total).toBe(1);
+    expect(res.offset).toBe(0);
+    expect(res.limit).toBe(50);
+    // 透传断言（api 层零加工）：plan 自带 status/progress = run 状态摘要
+    expect(res.items[0].id).toBe('wp-1');
+    expect(res.items[0].status).toBe('running');
+    expect(res.items[0].progress).toEqual({ 'o-c1': 'done' });
+  });
+
+  it('分页参数显式透传；空项目 → items=[] 非 404', async () => {
+    apiFetchMock.mockResolvedValue({ items: [], total: 0, offset: 20, limit: 10 });
+
+    const res = await listBookPlans('p2', 20, 10);
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/books/plans?project_id=p2&offset=20&limit=10');
+    expect(res.items).toEqual([]);
+    expect(res.total).toBe(0);
   });
 });

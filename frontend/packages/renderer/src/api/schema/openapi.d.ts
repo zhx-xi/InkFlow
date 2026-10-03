@@ -166,6 +166,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/books/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Plans
+         * @description 书级计划列表（#1466）：该项目 writing_plan（plan 自带 status/progress = run 摘要）.
+         *
+         *     run 载体 = WritingPlan.id（plan 与 run 一一对应）——本端点补齐「按项目列
+         *     plan/run」列表面（#1466 原报错 GET /runs → 405）；items 为 WritingPlan JSON
+         *     （model_dump mode=json，镜像既有 GET /planner 列表信封）。只读无副作用：
+         *     空项目 → 200 + items=[]（非 404）；非法 project_id → 422（查询参数 UUID 校验）。
+         */
+        get: operations["list_plans_api_v1_agent_books_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/books/runs": {
         parameters: {
             query?: never;
@@ -6776,6 +6801,39 @@ export interface operations {
                 "application/json": components["schemas"]["PlannerRespondRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_plans_api_v1_agent_books_plans_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

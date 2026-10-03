@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,11 @@ from inkflow.infrastructure.database.repositories._id_guard import (
     int_pk_for_filter,
     require_int_pk,
 )
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    """补时区：SQLite DateTime 读回丢 tzinfo，测试契约断言 aware UTC（镜像 session_repo）."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _writing_plan_orm_to_domain(orm: WritingPlanORM) -> WritingPlan:
@@ -47,8 +53,8 @@ def _writing_plan_orm_to_domain(orm: WritingPlanORM) -> WritingPlan:
         thread_id=orm.thread_id,
         hitl_payload=orm.hitl_payload,
         progress_reason=orm.progress_reason,
-        created_at=orm.created_at,
-        updated_at=orm.updated_at,
+        created_at=_ensure_utc(orm.created_at),
+        updated_at=_ensure_utc(orm.updated_at),
     )
 
 
@@ -69,8 +75,8 @@ def _planner_session_orm_to_domain(orm: PlannerSessionORM) -> PlannerSession:
         writing_plan_id=(
             uuid.UUID(orm.writing_plan_id) if orm.writing_plan_id is not None else None
         ),
-        created_at=orm.created_at,
-        updated_at=orm.updated_at,
+        created_at=_ensure_utc(orm.created_at),
+        updated_at=_ensure_utc(orm.updated_at),
     )
 
 
@@ -160,6 +166,40 @@ class SQLiteBookRepository:
         orm.progress_reason = plan.progress_reason
         orm.updated_at = plan.updated_at
         await self._session.commit()
+
+    async def list_writing_plans(
+        self,
+        project_id: uuid.UUID | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[WritingPlan], int]:
+        """分页查询书级计划列表（#1466 成书页水合）.
+
+        列表按 updated_at DESC 排序（最新在前，前端取 items[0] 作当前计划）；
+        project_id 精确过滤；total = 未分页过滤总数（镜像 list_planner_sessions 模式）.
+
+        Args:
+            project_id: 所属项目 UUID 精确过滤（不传 = 全部）.
+            offset: 分页偏移.
+            limit: 分页大小.
+
+        Returns:
+            (书级计划列表, 总数) 元组.
+        """
+        base = select(WritingPlanORM)
+        if project_id is not None:
+            base = base.where(WritingPlanORM.project_id == int_pk_for_filter(project_id))
+
+        # 总数（分页前）
+        count_stmt = select(func.count()).select_from(base.subquery())
+        count_result = await self._session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        # 排序 + 分页（updated_at DESC：run 最新态在前）
+        stmt = base.order_by(WritingPlanORM.updated_at.desc()).offset(offset).limit(limit)
+        result = await self._session.execute(stmt)
+        orms = result.scalars().all()
+        return [_writing_plan_orm_to_domain(o) for o in orms], total
 
     # ---- PlannerSession ----
 

@@ -57,6 +57,27 @@ class BookRepositoryProtocol(Protocol):
         """
         ...
 
+    async def list_writing_plans(
+        self,
+        project_id: uuid.UUID | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[builtins.list[WritingPlan], int]:
+        """分页查询书级计划列表（#1466 成书页水合）.
+
+        列表按 updated_at DESC 排序；project_id 精确过滤；
+        total = 未分页过滤总数.
+
+        Args:
+            project_id: 所属项目 UUID 精确过滤（不传 = 全部）.
+            offset: 分页偏移.
+            limit: 分页大小.
+
+        Returns:
+            (书级计划列表, 总数) 元组.
+        """
+        ...
+
     # ─── PlannerSession ───
 
     async def add_planner_session(self, session: PlannerSession) -> PlannerSession:

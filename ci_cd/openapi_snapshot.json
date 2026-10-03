@@ -6560,6 +6560,78 @@
         ]
       }
     },
+    "/api/v1/agent/books/plans": {
+      "get": {
+        "description": "书级计划列表（#1466）：该项目 writing_plan（plan 自带 status/progress = run 摘要）.\n\nrun 载体 = WritingPlan.id（plan 与 run 一一对应）——本端点补齐「按项目列\nplan/run」列表面（#1466 原报错 GET /runs → 405）；items 为 WritingPlan JSON\n（model_dump mode=json，镜像既有 GET /planner 列表信封）。只读无副作用：\n空项目 → 200 + items=[]（非 404）；非法 project_id → 422（查询参数 UUID 校验）。",
+        "operationId": "list_plans_api_v1_agent_books_plans_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Plans",
+        "tags": [
+          "Books"
+        ]
+      }
+    },
     "/api/v1/agent/books/runs": {
       "post": {
         "description": "启动书级运行（202 异步语义）：prepare_run 预校验（错误立即 404/409/422）→\n返回 {run_id, status}；status=running 时后台 asyncio task fire-and-forget\n执行（#456 F44 阶段4 后台任务）。",

@@ -759,3 +759,27 @@ async def get_run_summary(
     if result is None:
         raise HTTPException(status_code=404, detail="运行不存在")
     return result
+
+
+@router.get("/plans")
+@instrument(caller_type="api")
+async def list_plans(
+    project_id: uuid.UUID | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    svc: BookService = Depends(get_book_service),
+):
+    """书级计划列表（#1466）：该项目 writing_plan（plan 自带 status/progress = run 摘要）.
+
+    run 载体 = WritingPlan.id（plan 与 run 一一对应）——本端点补齐「按项目列
+    plan/run」列表面（#1466 原报错 GET /runs → 405）；items 为 WritingPlan JSON
+    （model_dump mode=json，镜像既有 GET /planner 列表信封）。只读无副作用：
+    空项目 → 200 + items=[]（非 404）；非法 project_id → 422（查询参数 UUID 校验）。
+    """
+    items, total = await svc.list_plans(project_id=project_id, offset=offset, limit=limit)
+    return {
+        "items": [p.model_dump(mode="json") for p in items],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
