@@ -31,15 +31,17 @@ repos:
         language: system
         stages: [pre-push]
       # 层② 原型 PNG ↔ HTML 同源性门禁（#1330）：
-      # 改了 design/GUI/** 或门禁自身 → push 前重跑 shot-*.cjs 并逐像素比对，真实漂移即拦。
-      # 为何是 pre-push 而非 CI job：像素比对绑定「出图机器」——原型的 serif 栈
+      # 改了 design/GUI/** 或门禁自身 → 提交时重跑 shot-*.cjs 并逐像素比对，真实漂移即拦。
+      # 为何是本地钩子而非 CI job：像素比对绑定「出图机器」——原型的 serif 栈
       # （"Noto Serif SC"/"Source Han Serif SC"/SimSun/…）在 CI runner 上解析到不同字体，
-      # 共享 chrome 大面积误报（PR #1459 的 CI 实测 91/107 假漂移）。本地 = 出图机器，
-      # 比对才有意义。安装：pre-commit install --hook-type pre-push
+      # 共享 chrome 大面积误报（PR #1459 的 CI 实测 91/107 假漂移）。本地 = 出图机器，比对才有意义。
+      # 挂在**已安装**的 pre-commit 阶段（无需额外 install pre-push）。
+      # entry 用 `uv run --no-project python`：本机 PATH 上的 `python` 是 WindowsApps 别名，
+      # pre-commit 的 system 钩子 runner 解析不到（exit 9009）→ 走仓库既定的 uv 工具链。
       - id: gui-png-homology
         name: GUI prototype PNG <-> HTML homology
-        entry: python ci_cd/check_gui_png_homology.py .
+        entry: uv run --no-project python ci_cd/check_gui_png_homology.py .
         language: system
         files: '^(design/GUI/|ci_cd/check_gui_png_homology\.py$)'
         pass_filenames: false
-        stages: [pre-push]
+        stages: [pre-commit]
