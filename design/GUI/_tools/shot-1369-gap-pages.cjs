@@ -28,12 +28,11 @@
  *   timeline      6  shot-1374.cjs
  *   world         9  shot-1375-world-page.cjs（shot-world-map.cjs 与 world-map.png 重叠）
  *
- *   ⚠️ 已知重叠：book-run-overwrite-notice.png 被 shot-book-token-scope-1431.cjs(900×792)
- *      与 shot-w8-restore-previous-1440.cjs(1280×800) **双重写出且视口不同** → 后跑者胜。
- *      与其余 book-run-*.png 保持一致时应跑 token-scope。
+ *   ✅ 已修（#1455）：book-run-overwrite-notice.png 现由 shot-book-token-scope-1431.cjs
+ *      **独占**（900×792，与同组一致）；shot-w8-restore-previous-1440.cjs 只保留断言、不再截这一张。
  *
- *   ⚠️ 「有 HTML 状态、无 PNG」的补图缺口（不在本脚本范围，待另开 issue）：
- *      memory:noproject · search:confirm,noproject · settings:saving,note
+ *   ⚠️ 补图缺口（#1454 已补）：memory:noproject · search:confirm,noproject · settings:saving,note
+ *      —— 5 张新图已纳入本脚本 PAGES（此前「有 HTML 状态、无 PNG」）。
  *
  * 视口/截图口径与既有资产一致：1280×800、deviceScaleFactor=1、body[data-shot="1"]。
  * agent/library/outline/projects 四页 HTML 自身没有 body[data-shot="1"] 规则
@@ -81,6 +80,7 @@ const PAGES = [
       ['stats', 'memory-stats.png'],
       ['extracting', 'memory-extracting.png'],
       ['add', 'memory-add-form.png'],
+      ['noproject', 'memory-noproject.png'],
     ],
   },
   {
@@ -109,6 +109,8 @@ const PAGES = [
       ['results', 'search-results.png'],
       ['empty', 'search-empty.png'],
       ['rebuilding', 'search-rebuilding.png'],
+      ['confirm', 'search-confirm.png'],
+      ['noproject', 'search-noproject.png'],
     ],
   },
   {
@@ -119,6 +121,8 @@ const PAGES = [
       ['models', 'settings-models.png'],
       ['account', 'settings-account.png'],
       ['saved', 'settings-saved.png'],
+      ['saving', 'settings-saving.png'],
+      ['note', 'settings-note.png'],
     ],
   },
 ];
