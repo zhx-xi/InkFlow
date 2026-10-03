@@ -355,7 +355,7 @@ class TestDispatcherAudit:
     @pytest.mark.asyncio
     async def test_arguments_never_leak_into_body(self, fake_env, fake_log):
         """🔴 原始 arguments 不落桥接 body（正文/载荷防泄漏）。"""
-        secret_text = "夜色沉沉，山门之内灯火通明，这段正文绝不该出现在审计日志里。"
+        secret_text = "夜色沉沉，地点己之内灯火通明，这段正文绝不该出现在审计日志里。"
         with mcp_log_sink():
             await call_tool_result(
                 build_mcp_tools(),

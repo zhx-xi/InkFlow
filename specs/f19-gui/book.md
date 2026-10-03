@@ -315,7 +315,8 @@
 
 原型基准（`design/GUI/book/`）：
 - `book-run-overwrite-notice.png` —— `overwrite-notice` 态：提示条位于计数区与进度条之间；
-- 生成/断言脚本 `design/GUI/_tools/shot-w8-restore-previous-1440.cjs`
+- 生成脚本 `design/GUI/_tools/shot-book-token-scope-1431.cjs`（900×792，与 `book-run-*.png` 家族同视口）；
+  断言脚本 `design/GUI/_tools/shot-w8-restore-previous-1440.cjs`
   （断言：`overwrite-notice` 态可见 + 文案正确 + 其余 6 态**不渲染**；全绿）。
 - ⚠️ 本轨在 `book-run.html` 的 `caption` 追加了 #1440 说明行 → 该页**既有 6 张状态图全量重出**（同 PR diff）。
 

@@ -139,7 +139,7 @@ Content-Type: application/json
   "project_id": "3f2e1d4a-...",
   "chapter_id": "9c1b2a3d-...",
   "outline": "主角首次踏入宗门试炼场，遭遇同门挑衅，展露隐藏实力",
-  "context": "主角：林尘，废柴体质觉醒者；宗门：青云宗，内门试炼",
+  "context": "主角：林尘，废柴体质觉醒者；宗门：门派甲，内门试炼",
   "min_words": 2000,
   "style_hint": "热血少年，轻快节奏"
 }
@@ -147,7 +147,7 @@ Content-Type: application/json
 → 200
 ```json
 {
-  "content": "# 试炼场风波\n\n清晨的薄雾尚未散尽，青云宗的试炼场已经人声鼎沸……",
+  "content": "# 试炼场风波\n\n清晨的薄雾尚未散尽，门派甲的试炼场已经人声鼎沸……",
   "word_count": 2347,
   "mode": "generate",
   "format_valid": true,

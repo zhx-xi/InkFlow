@@ -328,7 +328,7 @@ POST /api/v1/projects/3f2e1d4a-.../characters
 **更新角色（清除分组）**:
 ```http
 PATCH /api/v1/characters/9b1c2d3e-...
-{ "goals": "成为青云宗首席弟子", "group_id": null }
+{ "goals": "成为门派甲首席弟子", "group_id": null }
 ```
 → 200（更新后 Character JSON，group_id 为 null）
 

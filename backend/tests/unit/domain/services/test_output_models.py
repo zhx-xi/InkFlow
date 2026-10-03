@@ -281,7 +281,7 @@ class TestBookSetting:
 
     def test_json_roundtrip(self):
         """JSON roundtrip 无损。"""
-        s = make_setting(type_="timeline", name="大战", content="青元历 317 年秋｜大战")
+        s = make_setting(type_="timeline", name="大战", content="示例历 317 年秋｜大战")
         assert BookSetting.model_validate(s.model_dump()) == s
 
 

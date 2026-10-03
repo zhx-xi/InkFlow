@@ -94,8 +94,8 @@ def _sources(with_outline: bool = True) -> dict[ContextSourceType, MockSource]:
             [
                 _item(
                     ContextSourceType.WORLD_SETTING,
-                    "世界观：山门",
-                    "山门：北方剑宗",
+                    "世界观：地点己",
+                    "地点己：北方剑宗",
                     {"world_setting_id": str(WORLD_A), "category": "location"},
                 ),
                 _item(
@@ -129,7 +129,7 @@ def _sources(with_outline: bool = True) -> dict[ContextSourceType, MockSource]:
                 _item(
                     ContextSourceType.OUTLINE,
                     "大纲",
-                    "章：初入山门 —— 少年甲拜入乙门下",
+                    "章：初入地点己 —— 少年甲拜入乙门下",
                     {"level": "chapter", "outline_id": str(uuid.uuid4())},
                     priority=10,
                 ),
@@ -190,7 +190,7 @@ class TestPreselectSubset:
             str(CHAR_A),
             str(CHAR_B),
         }
-        assert "初入山门" in outline_text
+        assert "初入地点己" in outline_text
         assert requirements == "续写第 3 章"
         assert model == "openai/gpt-4o"
 

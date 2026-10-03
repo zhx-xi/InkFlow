@@ -105,7 +105,7 @@ class TestCreateEvent:
             description="古鼎第一次亮起",
             time_value=317.5,
             time_unit="年",
-            time_display="青元历 317 年秋",
+            time_display="示例历 317 年秋",
             narrative_position=3,
             timeline_flag="",
         )
@@ -117,7 +117,7 @@ class TestCreateEvent:
         assert added.description == "古鼎第一次亮起"
         assert added.time_value == 317.5
         assert added.time_unit == "年"
-        assert added.time_display == "青元历 317 年秋"
+        assert added.time_display == "示例历 317 年秋"
         assert added.narrative_position == 3
         assert added.timeline_flag == ""
 
@@ -215,7 +215,7 @@ class TestUpdateEvent:
         existing = _event(
             "林尘觉醒金手指",
             time_value=317.5,
-            time_display="青元历 317 年秋",
+            time_display="示例历 317 年秋",
             narrative_position=2,
         )
         mock_repo.get = AsyncMock(return_value=existing)
@@ -231,7 +231,7 @@ class TestUpdateEvent:
         assert merged.id == existing.id
         assert merged.title == "林尘觉醒金手指（改）"
         assert merged.time_value is None  # "" = 清除世界内时间（置为未知）
-        assert merged.time_display == "青元历 317 年秋"  # 未传入字段保持不变
+        assert merged.time_display == "示例历 317 年秋"  # 未传入字段保持不变
         assert merged.narrative_position == 2
         assert merged.timeline_flag == "flashback"
         assert merged.created_at == TS
@@ -244,7 +244,7 @@ class TestUpdateEvent:
         existing = _event(
             "林尘觉醒金手指",
             time_value=317.5,
-            time_display="青元历 317 年秋",
+            time_display="示例历 317 年秋",
             timeline_flag="flashback",
         )
         mock_repo.get = AsyncMock(return_value=existing)

@@ -187,7 +187,7 @@ X-Accel-Buffering: no        # 云端部署防代理缓冲（ADR-021 一条代�
 
 ```text
 $ inkflow write next --project-id <uuid> --chapter-id <uuid> --outline "……"
-清晨的薄雾尚未散尽，青云宗的试炼场已经人声鼎沸……   ← 逐 token 追加（ev.delta 连续打印，无换行）
+清晨的薄雾尚未散尽，门派甲的试炼场已经人声鼎沸……   ← 逐 token 追加（ev.delta 连续打印，无换行）
                                                       ← 流结束
 ✅ 章节生成成功: 2347 字 (deepseek/deepseek-chat)
 ```
@@ -317,7 +317,7 @@ POST /api/v1/writing/stream
 → 200 text/event-stream
 
 data: {"delta": "清晨的薄雾尚未散尽", "done": false}
-data: {"delta": "，青云宗的试炼场已经", "done": false}
+data: {"delta": "，门派甲的试炼场已经", "done": false}
 data: {"delta": "人声鼎沸……", "done": false}
 data: {"done": true, "format_valid": true, "word_count": 2347, "model": "deepseek/deepseek-chat", "token_usage": {"prompt_tokens": 1820, "completion_tokens": 2600, "total_tokens": 4420}}
 ```

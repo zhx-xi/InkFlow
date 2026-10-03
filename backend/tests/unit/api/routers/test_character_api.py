@@ -273,16 +273,16 @@ class TestCharacterCRUDAPI:
         svc = _mock_svc(mock_get_svc)
         char = _char("林尘")
         g1, g2 = uuid.uuid4(), uuid.uuid4()
-        updated = char.model_copy(update={"goals": "成为青云宗首席弟子", "group_ids": [g1, g2]})
+        updated = char.model_copy(update={"goals": "成为门派甲首席弟子", "group_ids": [g1, g2]})
         svc.update_character = AsyncMock(return_value=updated)
 
         response = client.patch(
             f"/api/v1/characters/{char.id}",
-            json={"goals": "成为青云宗首席弟子", "group_ids": [str(g1), str(g2)]},
+            json={"goals": "成为门派甲首席弟子", "group_ids": [str(g1), str(g2)]},
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["goals"] == "成为青云宗首席弟子"
+        assert data["goals"] == "成为门派甲首席弟子"
         assert data["group_ids"] == [str(g1), str(g2)]
         update = svc.update_character.await_args.args[1]
         assert update.group_ids == [g1, g2]
@@ -570,7 +570,7 @@ class TestExtractAPI:
 
         response = client.post(
             "/api/v1/characters/extract",
-            json={"project_id": str(PID), "text": "林尘是青云宗弟子，与青云真人是师徒。"},
+            json={"project_id": str(PID), "text": "林尘是门派甲弟子，与青云真人是师徒。"},
         )
         assert response.status_code == 200
         data = response.json()

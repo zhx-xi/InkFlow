@@ -62,32 +62,32 @@ class TestCreateEventEraAPI:
     def test_create_with_era_passes_kwargs_and_returns_extra(self, mock_get_svc: MagicMock) -> None:
         svc = _mock_svc(mock_get_svc)
         svc.create_event = AsyncMock(
-            return_value=_event("事件甲", extra={"era": "青元历", "era_value": 317.5})
+            return_value=_event("事件甲", extra={"era": "示例历", "era_value": 317.5})
         )
 
         response = client.post(
             CREATE_URL,
             json={
                 "title": "事件甲",
-                "time_display": "青元历 317 年秋",
-                "era": "青元历",
+                "time_display": "示例历 317 年秋",
+                "era": "示例历",
                 "era_value": 317.5,
             },
         )
 
         assert response.status_code == 201
         # 读回一致：响应 extra 即承载键（GUI/CLI 的轴族派生数据面）
-        assert response.json()["extra"] == {"era": "青元历", "era_value": 317.5}
+        assert response.json()["extra"] == {"era": "示例历", "era_value": 317.5}
         svc.create_event.assert_awaited_once_with(
             PID,
             "事件甲",
             description="",
             time_value=None,
             time_unit="",
-            time_display="青元历 317 年秋",
+            time_display="示例历 317 年秋",
             narrative_position=None,
             timeline_flag="",
-            era="青元历",
+            era="示例历",
             era_value=317.5,
         )
 
@@ -119,7 +119,7 @@ class TestCreateEventEraAPI:
 
     def test_create_era_value_non_numeric_422(self) -> None:
         response = client.post(
-            CREATE_URL, json={"title": "事件甲", "era": "青元历", "era_value": "abc"}
+            CREATE_URL, json={"title": "事件甲", "era": "示例历", "era_value": "abc"}
         )
 
         assert response.status_code == 422
@@ -147,16 +147,16 @@ class TestUpdateEventEraAPI:
         svc = _mock_svc(mock_get_svc)
         event_id = uuid.uuid4()
         svc.update_event = AsyncMock(
-            return_value=_event("事件甲", extra={"era": "仙历", "era_value": 1024.0})
+            return_value=_event("事件甲", extra={"era": "示例仙历", "era_value": 1024.0})
         )
 
         response = client.patch(
             f"/api/v1/timeline/events/{event_id}",
-            json={"era": "仙历", "era_value": 1024.0},
+            json={"era": "示例仙历", "era_value": 1024.0},
         )
 
         assert response.status_code == 200
-        assert response.json()["extra"] == {"era": "仙历", "era_value": 1024.0}
+        assert response.json()["extra"] == {"era": "示例仙历", "era_value": 1024.0}
 
     def test_patch_era_value_non_numeric_422(self) -> None:
         response = client.patch(

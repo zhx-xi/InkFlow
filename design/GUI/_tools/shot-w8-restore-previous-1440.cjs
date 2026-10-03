@@ -150,8 +150,9 @@ const push = (label, ok) => {
   push('book overwrite-notice：提示可见', on.display !== 'none');
   push('book overwrite-notice：文案为「N 章已备份，可恢复」', on.text === '3 章已备份，可恢复');
   push('book overwrite-notice：状态徽标为 completed', on.status === 'completed');
-  await page.screenshot({ path: path.join(ROOT, 'book', 'book-run-overwrite-notice.png') });
-  console.log(`[book-run-overwrite-notice] -> ${path.join(ROOT, 'book', 'book-run-overwrite-notice.png')}`);
+  // 截图为 shot-book-token-scope-1431.cjs 的职责（900×792，与 book-run-*.png 家族同视口）
+  // —— 见 #1455：同一 PNG 不允许两个脚本以不同视口写出，本脚本只做断言。
+  console.log('[book-run-overwrite-notice] 截图归 shot-book-token-scope-1431.cjs，本脚本仅断言');
 
   // ④ 其余状态：提示不显示（无 overwrite 数据）
   for (const state of ['running', 'completed', 'failed', 'degraded', 'degraded-expanded', 'reset-confirm']) {

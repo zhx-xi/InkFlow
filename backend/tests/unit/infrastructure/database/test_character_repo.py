@@ -126,7 +126,7 @@ class TestCharacterRepository:
                 project,
                 "林尘",
                 personality="沉稳",
-                background="青云宗弟子",
+                background="门派甲弟子",
                 goals="成仙",
                 extra={"外貌": "青衫"},
             )
@@ -136,7 +136,7 @@ class TestCharacterRepository:
         assert saved.id == uuid.UUID(int=saved.id.int)
         assert saved.name == "林尘"
         assert saved.personality == "沉稳"
-        assert saved.background == "青云宗弟子"
+        assert saved.background == "门派甲弟子"
         assert saved.goals == "成仙"
         assert saved.group_ids == []
         assert saved.extra == {"外貌": "青衫"}

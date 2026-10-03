@@ -54,7 +54,7 @@ def _event(title: str, **overrides: object) -> TimelineEvent:
         "description": "外门考核夜，林尘丹田中的古鼎第一次亮起。",
         "time_value": 317.5,
         "time_unit": "年",
-        "time_display": "青元历 317 年秋",
+        "time_display": "示例历 317 年秋",
         "narrative_position": 3,
         "timeline_flag": "",
         "created_at": TS,
@@ -70,7 +70,7 @@ def _view() -> TimelineView:
         project_id=PID,
         total=2,
         event_timeline=[
-            _event("林尘拜入青云宗", time_value=315.0, narrative_position=1),
+            _event("林尘拜入门派甲", time_value=315.0, narrative_position=1),
             _event("林尘觉醒金手指", time_value=317.5, narrative_position=2),
         ],
         narrative_order=[
@@ -89,7 +89,7 @@ def _report(*, include_flashbacks: bool = True) -> ConsistencyReport:
                 id=uuid.uuid4(),
                 title="林尘觉醒金手指",
                 time_value=317.5,
-                time_display="青元历 317 年秋",
+                time_display="示例历 317 年秋",
                 narrative_position=2,
                 timeline_flag="",
             ),
@@ -97,7 +97,7 @@ def _report(*, include_flashbacks: bool = True) -> ConsistencyReport:
                 id=uuid.uuid4(),
                 title="外门往事",
                 time_value=312.0,
-                time_display="青元历 312 年",
+                time_display="示例历 312 年",
                 narrative_position=3,
                 timeline_flag="",
             ),
@@ -112,7 +112,7 @@ def _report(*, include_flashbacks: bool = True) -> ConsistencyReport:
                     id=uuid.uuid4(),
                     title="宗门大比夺冠",
                     time_value=319.0,
-                    time_display="青元历 319 年夏",
+                    time_display="示例历 319 年夏",
                     narrative_position=4,
                     timeline_flag="",
                 ),
@@ -120,7 +120,7 @@ def _report(*, include_flashbacks: bool = True) -> ConsistencyReport:
                     id=uuid.uuid4(),
                     title="外门往事",
                     time_value=312.0,
-                    time_display="青元历 312 年",
+                    time_display="示例历 312 年",
                     narrative_position=5,
                     timeline_flag="flashback",
                 ),
@@ -166,7 +166,7 @@ class TestTimelineEventCRUDAPI:
                 "description": "外门考核夜，林尘丹田中的古鼎第一次亮起。",
                 "time_value": 317.5,
                 "time_unit": "年",
-                "time_display": "青元历 317 年秋",
+                "time_display": "示例历 317 年秋",
                 "timeline_flag": "",
             },
         )
@@ -182,7 +182,7 @@ class TestTimelineEventCRUDAPI:
             description="外门考核夜，林尘丹田中的古鼎第一次亮起。",
             time_value=317.5,
             time_unit="年",
-            time_display="青元历 317 年秋",
+            time_display="示例历 317 年秋",
             narrative_position=None,
             timeline_flag="",
         )
@@ -305,7 +305,7 @@ class TestTimelineEventCRUDAPI:
         data = response.json()
         assert data["project_id"] == str(PID)
         assert data["total"] == 2
-        assert data["event_timeline"][0]["title"] == "林尘拜入青云宗"
+        assert data["event_timeline"][0]["title"] == "林尘拜入门派甲"
         assert data["narrative_order"][0]["title"] == "林尘觉醒金手指"
         svc.get_timeline_view.assert_awaited_once_with(PID)
 

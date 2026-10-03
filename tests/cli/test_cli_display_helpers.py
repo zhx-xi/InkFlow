@@ -205,8 +205,8 @@ class TestTimelineDisplay:
     def test_time_label_display_priority(self):
         """time_display 优先。"""
         assert (
-            timeline_mod._time_label({"time_display": "青元历 317 年秋", "time_value": 317.5})
-            == "青元历 317 年秋"
+            timeline_mod._time_label({"time_display": "示例历 317 年秋", "time_value": 317.5})
+            == "示例历 317 年秋"
         )
 
     def test_time_label_fallback_value(self):

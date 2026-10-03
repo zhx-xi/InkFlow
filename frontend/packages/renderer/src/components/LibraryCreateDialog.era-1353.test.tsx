@@ -54,14 +54,14 @@ describe('#1353 时间线对话框纪元字段', () => {
     const user = userEvent.setup();
 
     await user.type(screen.getByTestId('library-create-name'), '事件甲');
-    await user.type(screen.getByTestId('library-create-era'), '  青元历  ');
+    await user.type(screen.getByTestId('library-create-era'), '  示例历  ');
     await user.type(screen.getByTestId('library-create-era-value'), '317.5');
     await user.click(screen.getByTestId('library-create-save'));
 
     expect(onSave).toHaveBeenCalledTimes(1);
     const body = onSave.mock.calls[0][0] as Record<string, unknown>;
     expect(body.title).toBe('事件甲');
-    expect(body.era).toBe('青元历');
+    expect(body.era).toBe('示例历');
     expect(body.era_value).toBe(317.5);
   });
 
@@ -70,11 +70,11 @@ describe('#1353 时间线对话框纪元字段', () => {
     const user = userEvent.setup();
 
     await user.type(screen.getByTestId('library-create-name'), '事件甲');
-    await user.type(screen.getByTestId('library-create-era'), '青元历');
+    await user.type(screen.getByTestId('library-create-era'), '示例历');
     await user.click(screen.getByTestId('library-create-save'));
 
     const body = onSave.mock.calls[0][0] as Record<string, unknown>;
-    expect(body.era).toBe('青元历');
+    expect(body.era).toBe('示例历');
     expect(body.era_value).toBe('');
   });
 
@@ -82,11 +82,11 @@ describe('#1353 时间线对话框纪元字段', () => {
     renderTimelineDialog({
       id: 'ev1',
       title: '事件甲',
-      time_display: '青元历 317 年秋',
-      extra: { era: '青元历', era_value: 317.5 },
+      time_display: '示例历 317 年秋',
+      extra: { era: '示例历', era_value: 317.5 },
     });
 
-    expect((screen.getByTestId('library-create-era') as HTMLInputElement).value).toBe('青元历');
+    expect((screen.getByTestId('library-create-era') as HTMLInputElement).value).toBe('示例历');
     expect((screen.getByTestId('library-create-era-value') as HTMLInputElement).value).toBe('317.5');
   });
 
@@ -95,12 +95,12 @@ describe('#1353 时间线对话框纪元字段', () => {
     const user = userEvent.setup();
 
     await user.type(screen.getByTestId('library-create-name'), '事件甲');
-    await user.type(screen.getByTestId('library-create-era'), '青元历');
+    await user.type(screen.getByTestId('library-create-era'), '示例历');
     await user.type(screen.getByTestId('library-create-era-value'), '甲子');
     await user.click(screen.getByTestId('library-create-save'));
 
     const body = onSave.mock.calls[0][0] as Record<string, unknown>;
-    expect(body.era).toBe('青元历');
+    expect(body.era).toBe('示例历');
     expect(body.era_value).toBe('甲子');
   });
 

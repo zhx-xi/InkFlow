@@ -88,7 +88,7 @@ const PROVIDERS: ProviderConfig[] = [
 function seedProjectConfig(config: ProjectConfig) {
   useProjectStore.setState({
     projects: [{
-      id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
+      id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
       config,
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     }],
@@ -100,7 +100,7 @@ beforeEach(() => {
   apiFetchMock.mockReset();
   useProjectStore.setState({
     projects: [{
-      id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
+      id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000,
       config: {},
       created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
     }],
@@ -144,7 +144,7 @@ describe('ProjectSettingsPage — #482 项目聚合设置页', () => {
     render(<ProjectSettingsPage />);
 
     expect(screen.getByTestId('project-settings-page')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /青云志/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /项目甲/ })).toBeInTheDocument();
     // 四区块
     expect(screen.getByTestId('ps-model-select')).toBeInTheDocument();
     expect(screen.getByTestId('agent-chain-card')).toBeInTheDocument();

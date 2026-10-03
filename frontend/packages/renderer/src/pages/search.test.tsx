@@ -69,7 +69,7 @@ const searchResponseDto: SearchResponseDto = {
   total: 2,
   hits: [
     { entity_type: 'character', entity_id: 'e1', project_id: 'p1', title: '林惊羽', snippet: '青云门弟子…', score: 0.87 },
-    { entity_type: 'chapter', entity_id: 'e2', project_id: 'p1', title: '第一章 青云山', snippet: '青云山脚下…', score: 0.72 },
+    { entity_type: 'chapter', entity_id: 'e2', project_id: 'p1', title: '第一章 地点甲', snippet: '地点甲脚下…', score: 0.72 },
   ],
   query: '青云',
   types: null,
@@ -80,7 +80,7 @@ const searchResponseDto: SearchResponseDto = {
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,
@@ -166,7 +166,7 @@ describe('检索页 — 检索交互（#480）', () => {
 
     await user.type(screen.getByRole('textbox', { name: /检索/ }), '青云');
     await user.click(screen.getByTestId('search-project-select'));
-    await user.click(await screen.findByRole('option', { name: '青云志' }));
+    await user.click(await screen.findByRole('option', { name: '项目甲' }));
     await user.click(screen.getByRole('button', { name: '检索' }));
 
     await waitFor(() => {
@@ -296,7 +296,7 @@ describe('检索页 — 命中跳转（#683）', () => {
     const selectChapterSpy = vi
       .spyOn(useChapterStore.getState(), 'selectChapter')
       .mockResolvedValue();
-    await searchHits([makeHit('chapter', 'e2', '第一章 青云山')]);
+    await searchHits([makeHit('chapter', 'e2', '第一章 地点甲')]);
     const user = userEvent.setup();
     await user.click(screen.getByTestId('search-hit'));
     expect(screen.getByTestId('location-display')).toHaveTextContent('/writing');

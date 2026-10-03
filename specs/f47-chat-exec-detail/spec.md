@@ -505,7 +505,7 @@ write.detail.unknown        // 未知
 | 迁移 | conversations 表加 `title` 列（幂等 `ensure_conversation_title_column`，lifespan 注册） |
 
 命名规则：
-- 章节内新建会话 → `title` = 章节名（如「第十二章 剑心蒙尘」）
+- 章节内新建会话 → `title` = 章节名（如「第十二章 事件甲」）
 - 全局 chat 页新建会话 → `title` = 首条用户消息前 **30 字**（少于 30 字取全部）
 - 手动改名 → PATCH，任意 ≤200 字符
 

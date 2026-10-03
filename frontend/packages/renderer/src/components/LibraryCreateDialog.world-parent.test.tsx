@@ -34,12 +34,12 @@ describe('LibraryCreateDialog — #1322 world 创建带 parent_id', () => {
         onOpenChange={vi.fn()}
       />,
     );
-    await user.type(screen.getByTestId('library-create-name'), '青云山');
+    await user.type(screen.getByTestId('library-create-name'), '地点甲');
     await user.click(screen.getByTestId('library-create-save'));
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0][0]).toMatchObject({
-      name: '青云山',
+      name: '地点甲',
       category: '国家',
       parent_id: 'w-root',
     });
@@ -58,7 +58,7 @@ describe('LibraryCreateDialog — #1322 world 创建带 parent_id', () => {
         onOpenChange={vi.fn()}
       />,
     );
-    await user.type(screen.getByTestId('library-create-name'), '青云山');
+    await user.type(screen.getByTestId('library-create-name'), '地点甲');
     await user.click(screen.getByTestId('library-create-save'));
 
     expect(onSave.mock.calls[0][0]).toMatchObject({ parent_id: null });

@@ -68,11 +68,11 @@ vi.mock('../api/client', async (importOriginal) => {
 const apiFetchMock = vi.mocked(apiFetch);
 
 const projectP1 = {
-  id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
+  id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 const projectP2 = {
-  id: 'p2', name: '归墟记', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
+  id: 'p2', name: '项目乙', tags: ['仙侠'], language: 'zh-CN', target_words: 500000, config: {},
   created_at: '2026-08-02T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
@@ -271,7 +271,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
   it('R4 建议标签（项目内 groups 并集）点击追加 + 回车创建 + 重复/空白忽略', async () => {
     mockCharacters([
       { ...fullChar, id: 'c1', name: '林晚', extra: { role_rank: 'major', groups: ['主角团'] } },
-      { ...fullChar, id: 'c2', name: '沈砚', extra: { role_rank: 'minor', groups: ['青云宗'] } },
+      { ...fullChar, id: 'c2', name: '沈砚', extra: { role_rank: 'minor', groups: ['门派甲'] } },
     ]);
     const user = userEvent.setup();
     renderLibrary();
@@ -281,10 +281,10 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const dialog = await screen.findByTestId('library-create-dialog');
     // 建议 = 当前项目角色 extra.groups 并集（D-13 数据驱动）
     expect(within(dialog).getByTestId('lib-tag-suggest-主角团')).toBeInTheDocument();
-    expect(within(dialog).getByTestId('lib-tag-suggest-青云宗')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('lib-tag-suggest-门派甲')).toBeInTheDocument();
     // 点击建议 → chip 出现
-    await user.click(within(dialog).getByTestId('lib-tag-suggest-青云宗'));
-    expect(within(dialog).getByTestId('lib-tag-chip-青云宗')).toBeInTheDocument();
+    await user.click(within(dialog).getByTestId('lib-tag-suggest-门派甲'));
+    expect(within(dialog).getByTestId('lib-tag-chip-门派甲')).toBeInTheDocument();
     // 输入回车 → 新 chip
     const input = within(dialog).getByTestId('lib-tag-input');
     await user.type(input, '新标签{Enter}');
@@ -298,7 +298,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
   });
 
   it('R5 标签 × 移除 → chip 消失；保存 body extra.groups 不含该标签', async () => {
-    mockCharacters([{ ...fullChar, extra: { role_rank: 'major', groups: ['主角团', '青云宗'] } }]);
+    mockCharacters([{ ...fullChar, extra: { role_rank: 'major', groups: ['主角团', '门派甲'] } }]);
     const user = userEvent.setup();
     renderLibrary();
 
@@ -317,7 +317,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
       );
       expect(patchCall).toBeTruthy();
       const body = patchCall![1]!.body as { extra: { role_rank: string; groups: string[] } };
-      expect(body.extra).toEqual({ role_rank: 'major', groups: ['青云宗'] });
+      expect(body.extra).toEqual({ role_rank: 'major', groups: ['门派甲'] });
     });
   });
 
@@ -345,7 +345,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     await screen.findByTestId('library-list');
     await user.click(screen.getByTestId('lib-edit-c1'));
     const dialog = await screen.findByTestId('library-create-dialog');
-    await user.type(within(dialog).getByTestId('lib-tag-input'), '青云宗{Enter}');
+    await user.type(within(dialog).getByTestId('lib-tag-input'), '门派甲{Enter}');
     await user.click(within(dialog).getByTestId('library-create-save'));
     await waitFor(() => {
       const patchCall = apiFetchMock.mock.calls.find(
@@ -354,19 +354,19 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
       expect(patchCall).toBeTruthy();
       const body = patchCall![1]!.body as { extra: { role_rank: string; groups: string[] } };
       // 编辑总是发送完整 extra（role_rank + groups 合并，避免整体替换丢字段）
-      expect(body.extra).toEqual({ role_rank: 'major', groups: ['主角团', '青云宗'] });
+      expect(body.extra).toEqual({ role_rank: 'major', groups: ['主角团', '门派甲'] });
     });
   });
 
   it('R7 角色列表行渲染等级徽标 lib-rank-c1（「重要配角」）+ 标签区 lib-tags-c1 含 chips', async () => {
-    mockCharacters([{ ...fullChar, extra: { role_rank: 'major', groups: ['主角团', '青云宗'] } }]);
+    mockCharacters([{ ...fullChar, extra: { role_rank: 'major', groups: ['主角团', '门派甲'] } }]);
     renderLibrary();
 
     await screen.findByTestId('library-list');
     expect(screen.getByTestId('lib-rank-c1')).toHaveTextContent('重要配角');
     const tags = screen.getByTestId('lib-tags-c1');
     expect(tags).toHaveTextContent('主角团');
-    expect(tags).toHaveTextContent('青云宗');
+    expect(tags).toHaveTextContent('门派甲');
   });
 
   it('R8 世界观树渲染：parent_id 层级 + toggle 展开/收起（子节点显隐）', async () => {
@@ -445,8 +445,8 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     expect(within(dialog).getByTestId('world-copy-scope-self')).toBeInTheDocument();
     // 目标项目：排除当前项目（E20：p1 不可选）
     await user.click(within(dialog).getByTestId('world-copy-target'));
-    const p2Option = await screen.findByRole('option', { name: '归墟记' });
-    expect(screen.queryByRole('option', { name: '青云志' })).not.toBeInTheDocument();
+    const p2Option = await screen.findByRole('option', { name: '项目乙' });
+    expect(screen.queryByRole('option', { name: '项目甲' })).not.toBeInTheDocument();
     await user.click(p2Option);
     // 确认 → POST copy（subtree 默认：无 self_only 或 false）
     await user.click(within(dialog).getByTestId('world-copy-ok'));
@@ -461,12 +461,12 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
       expect(body).toEqual(expect.objectContaining({ source_project_id: 'p1', root_setting_id: 'w1' }));
       expect(body.self_only === undefined || body.self_only === false).toBe(true);
     });
-    // 成功 → 对话框关闭 + ok toast 含创建数（lib.copy.result：已复制 2 条到「归墟记」）
+    // 成功 → 对话框关闭 + ok toast 含创建数（lib.copy.result：已复制 2 条到「项目乙」）
     await waitFor(() => {
       expect(screen.queryByTestId('world-copy-dialog')).not.toBeInTheDocument();
       expect(
         useToastStore.getState().toasts.some(
-          (t) => t.type === 'ok' && t.message.includes('已复制 2 条到「归墟记」'),
+          (t) => t.type === 'ok' && t.message.includes('已复制 2 条到「项目乙」'),
         ),
       ).toBe(true);
     });
@@ -482,7 +482,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     const dialog = await screen.findByTestId('world-copy-dialog');
     await user.click(within(dialog).getByTestId('world-copy-scope-self'));
     await user.click(within(dialog).getByTestId('world-copy-target'));
-    await user.click(await screen.findByRole('option', { name: '归墟记' }));
+    await user.click(await screen.findByRole('option', { name: '项目乙' }));
     await user.click(within(dialog).getByTestId('world-copy-ok'));
     await waitFor(() => {
       const copyCall = apiFetchMock.mock.calls.find(
@@ -507,7 +507,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     expect(within(dialog).queryByTestId('world-copy-scope-subtree')).not.toBeInTheDocument();
     expect(within(dialog).queryByTestId('world-copy-scope-self')).not.toBeInTheDocument();
     await user.click(within(dialog).getByTestId('world-copy-target'));
-    await user.click(await screen.findByRole('option', { name: '归墟记' }));
+    await user.click(await screen.findByRole('option', { name: '项目乙' }));
     await user.click(within(dialog).getByTestId('world-copy-ok'));
     await waitFor(() => {
       const copyCall = apiFetchMock.mock.calls.find(
@@ -528,7 +528,7 @@ describe('设定库页 — F43 P1 角色等级/标签/世界观树/复制（#284
     await user.click(screen.getByTestId('world-copy-w1'));
     const dialog = await screen.findByTestId('world-copy-dialog');
     await user.click(within(dialog).getByTestId('world-copy-target'));
-    await user.click(await screen.findByRole('option', { name: '归墟记' }));
+    await user.click(await screen.findByRole('option', { name: '项目乙' }));
     await user.click(within(dialog).getByTestId('world-copy-ok'));
     await waitFor(() => {
       expect(useToastStore.getState().toasts.some((t) => t.type === 'err')).toBe(true);

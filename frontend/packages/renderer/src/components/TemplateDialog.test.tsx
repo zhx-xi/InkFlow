@@ -162,8 +162,8 @@ const EDITING_TEMPLATE: AgentTemplate = {
   default_words: 800000,
   is_default: true,
   used_by: [
-    { id: 'p1', name: '青云志' },
-    { id: 'p2', name: '归墟记' },
+    { id: 'p1', name: '项目甲' },
+    { id: 'p2', name: '项目乙' },
   ],
   created_at: '2026-08-01T10:00:00Z',
   updated_at: '2026-08-05T10:00:00Z',

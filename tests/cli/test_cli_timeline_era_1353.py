@@ -84,7 +84,7 @@ def _payload(client: AsyncMock) -> dict:
 class TestCreateEventEraCLI:
     def test_create_with_era_sends_both_keys(self, cli_runner: CliRunner, fake_http_client) -> None:
         fake_http_client.post.return_value = _event_json(
-            extra={"era": "青元历", "era_value": 317.5}
+            extra={"era": "示例历", "era_value": 317.5}
         )
 
         result = cli_runner.invoke(
@@ -96,7 +96,7 @@ class TestCreateEventEraCLI:
                 "--title",
                 "事件甲",
                 "--era",
-                "青元历",
+                "示例历",
                 "--era-value",
                 "317.5",
             ],
@@ -105,10 +105,10 @@ class TestCreateEventEraCLI:
 
         assert result.exit_code == 0
         payload = _payload(fake_http_client)
-        assert payload["era"] == "青元历"
+        assert payload["era"] == "示例历"
         assert payload["era_value"] == 317.5
         assert json.loads(result.stdout)["data"]["extra"] == {
-            "era": "青元历",
+            "era": "示例历",
             "era_value": 317.5,
         }
 
@@ -145,17 +145,17 @@ class TestUpdateEventEraCLI:
 
     def test_update_with_era_and_value(self, cli_runner: CliRunner, fake_http_client) -> None:
         fake_http_client.patch.return_value = _event_json(
-            extra={"era": "仙历", "era_value": 1024.0}
+            extra={"era": "示例仙历", "era_value": 1024.0}
         )
 
         result = cli_runner.invoke(
             app,
-            ["update", "--id", str(EID), "--era", "仙历", "--era-value", "1024"],
+            ["update", "--id", str(EID), "--era", "示例仙历", "--era-value", "1024"],
             obj=CliContext(json_output=True),
         )
 
         assert result.exit_code == 0
-        assert _payload(fake_http_client) == {"era": "仙历", "era_value": 1024.0}
+        assert _payload(fake_http_client) == {"era": "示例仙历", "era_value": 1024.0}
 
     def test_update_era_value_non_numeric_rejected_locally(
         self, cli_runner: CliRunner, fake_http_client
@@ -167,7 +167,7 @@ class TestUpdateEventEraCLI:
         """
         result = cli_runner.invoke(
             app,
-            ["update", "--id", str(EID), "--era", "仙历", "--era-value", "abc"],
+            ["update", "--id", str(EID), "--era", "示例仙历", "--era-value", "abc"],
             obj=CliContext(json_output=True),
         )
 
@@ -191,7 +191,7 @@ class TestUpdateEventEraCLI:
                 "--title",
                 "事件甲",
                 "--era",
-                "青元历",
+                "示例历",
                 "--era-value",
                 "nan",
             ],

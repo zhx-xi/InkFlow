@@ -262,10 +262,10 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <h1>设定库</h1>
       <div class="lib-ctx">
         <span class="lib-project" data-testid="library-project-select">
-          <span>青云志</span><span data-ic="chevron-down"></span>
+          <span>项目甲</span><span data-ic="chevron-down"></span>
         </span>
         <span class="lib-breadcrumb" data-testid="library-breadcrumb">
-          设定库 · 青云志 <span class="sep">/</span> <span class="cur">时间线</span>
+          设定库 · 项目甲 <span class="sep">/</span> <span class="cur">时间线</span>
         </span>
       </div>
       <div class="lib-tabs" data-testid="library-tabs" role="tablist" aria-label="设定库">
@@ -317,7 +317,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
     <div class="statusbar" data-testid="statusbar">
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
-      <span>项目: 青云志</span>
+      <span>项目: 项目甲</span>
       <span>事件 6 条</span>
     </div>
   </div>
@@ -396,9 +396,9 @@ const CK_SVG = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strok
 /* ── 演示数据（沿用本页原型既有数据集；演示数据 = 假想结构，非真实项目素材） ── */
 const DEMO = {
   chapters: [
-    { key:'c11', title:'第十一章 剑心为何物' },
-    { key:'c12', title:'第十二章 夜访剑冢' },
-    { key:'c13', title:'第十三章 剑心蒙尘' },
+    { key:'c11', title:'第十一章 事件乙' },
+    { key:'c12', title:'第十二章 夜访地点乙' },
+    { key:'c13', title:'第十三章 事件甲' },
   ],
   noneKey: '__none__',
   noneTitle: '未分章',
@@ -406,20 +406,20 @@ const DEMO = {
      轴顺序 = 事件流中**首次出现**的顺序；`on` = 该演示态的勾选态
      （真实实现：默认只勾选**主力轴** = 事件数最多的轴；至少保留一条轴） */
   axes: [
-    { key:'qingyuan', name:'青云界 · 青元历', on:true },
+    { key:'qingyuan', name:'示例界 · 示例历', on:true },
     { key:'none',     name:'未分纪元',        on:false },
-    { key:'xianjie',  name:'仙界 · 仙历',     on:false },
+    { key:'xianjie',  name:'示例仙界 · 示例仙历',     on:false },
   ],
   /* time = 轴内值（extra.era_value，仅轴内排序/标签用）；timeText = time_display（原样优先）
      标签回落链（#1353）：time_display → 「轴名 + 轴内值」→ 未知（事件 6 无 time_display 即走回落）
      时间文案 = 纪年式（用户 2026-09-22 拍板：不用相对时间「xx 年前」） */
   events: [
-    { id:'1', ch:'c11', axis:'qingyuan', time:17,   timeText:'青元历 17 年',  title:'师父闭关前夜，问苏云舟「剑心为何物」' },
-    { id:'2', ch:'c12', axis:'qingyuan', time:217,  timeText:'青元历 217 年', title:'苏云舟下山，林晚照追随' },
-    { id:'3', ch:'c12', axis:'qingyuan', time:297,  timeText:'青元历 297 年', title:'夜访剑冢，发现二十年前异动痕迹' },
-    { id:'4', ch:'c13', axis:'qingyuan', time:314,  timeText:'青元历 314 年', title:'剑心蒙尘，断剑于山门' },
-    { id:'5', ch:null,  axis:'none',     time:null, timeText:'未知',          title:'守陵人失踪（手工录入，未归章、未设纪元）' },
-    { id:'6', ch:null,  axis:'xianjie',  time:1024, timeText:'',              title:'仙界法旨降下（另一纪元轴事件）' },
+    { id:'1', ch:'c11', axis:'qingyuan', time:17,   timeText:'示例历 17 年',  title:'师父闭关前夜，问角色甲「事件乙」' },
+    { id:'2', ch:'c12', axis:'qingyuan', time:217,  timeText:'示例历 217 年', title:'角色甲下山，角色乙追随' },
+    { id:'3', ch:'c12', axis:'qingyuan', time:297,  timeText:'示例历 297 年', title:'夜访地点乙，发现二十年前异动痕迹' },
+    { id:'4', ch:'c13', axis:'qingyuan', time:314,  timeText:'示例历 314 年', title:'事件甲，断剑于地点己' },
+    { id:'5', ch:null,  axis:'none',     time:null, timeText:'未知',          title:'角色戊失踪（手工录入，未归章、未设纪元）' },
+    { id:'6', ch:null,  axis:'xianjie',  time:1024, timeText:'',              title:'示例仙界法旨降下（另一纪元轴事件）' },
   ],
 };
 const chTitle = (key) => {

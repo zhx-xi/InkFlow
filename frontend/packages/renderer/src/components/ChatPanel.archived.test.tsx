@@ -82,7 +82,7 @@ const READY_PROVIDER: ProviderConfig = {
 const ARCHIVED_CONV = {
   conversation_id: 'conv-arch',
   project_id: 'p1',
-  project_name: '青云志',
+  project_name: '项目甲',
   title: '归档对话',
   last_message: '',
   message_count: 0,
@@ -92,7 +92,7 @@ const ARCHIVED_CONV = {
 const ACTIVE_CONV = {
   conversation_id: 'conv-act',
   project_id: 'p1',
-  project_name: '青云志',
+  project_name: '项目甲',
   title: '活动对话',
   last_message: '在写第七章',
   message_count: 2,

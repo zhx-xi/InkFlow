@@ -25,7 +25,7 @@ const SCENES = [
   { id: 'graph', out: 'knowledge-graph.png', scroll: 'canvas', desc: '产品默认：着色 A + 折叠面板（展开）+ 类别=全部' },
   { id: 'color-a', out: 'knowledge-graph-color-a.png', scroll: 'bar', desc: '着色 A【采用】· 面板收起 → 画布全宽 + 底部折叠栏' },
   { id: 'color-b', out: 'knowledge-graph-color-b.png', scroll: 'bar', desc: '着色 B【备选】· 面板收起 → 画布全宽 + 底部折叠栏' },
-  { id: 'filter-b', out: 'knowledge-graph-filter-b.png', scroll: 'canvas', desc: '筛选 B【采用】· 面板展开 + 角色/苏云舟' },
+  { id: 'filter-b', out: 'knowledge-graph-filter-b.png', scroll: 'canvas', desc: '筛选 B【采用】· 面板展开 + 角色/角色甲' },
   { id: 'filter-b-collapsed', out: 'knowledge-graph-filter-b-collapsed.png', scroll: 'bar', desc: '筛选 B 折叠态 · 底部折叠栏 + 画布全宽' },
   { id: 'filter-a', out: 'knowledge-graph-filter-a.png', scroll: 'canvas', desc: '筛选 A【备选】· 顶部 chip 组' },
   { id: 'list', out: 'knowledge-list.png', scroll: 'list', desc: '关系列表视图（不筛选）' },
@@ -311,14 +311,14 @@ function checks(d, scene) {
 
   if (scene.id === 'filter-b') {
     push('筛选说明条 B 可见（采用态）', d.noteFB && !d.noteFA && !d.noteFC);
-    push(`类别=角色 + 实体=苏云舟 → 5 个邻接角色（实际 ${d.nodes.length}）`, d.nodes.length === 5);
+    push(`类别=角色 + 实体=角色甲 → 5 个邻接角色（实际 ${d.nodes.length}）`, d.nodes.length === 5);
     push('可见节点全为角色类', d.nodes.every((n) => n.type === 'character'));
     push('面板可见 / 折叠栏隐藏', d.panel !== 'none' && d.bar === 'none');
     push(`面板类别「角色」勾选（实际 ${d.panelCatChecked}）`, d.panelCatChecked === true);
-    push(`面板实体「苏云舟」勾选（实际 ${d.panelEntityChecked}）`, d.panelEntityChecked === true);
+    push(`面板实体「角色甲」勾选（实际 ${d.panelEntityChecked}）`, d.panelEntityChecked === true);
     push(`面板行 = 6 类 + 20 实体（实际 ${d.panelRows}）`, d.panelRows === 26);
-    push(`摘要含「角色 · 苏云舟 · 显示 5 个实体」（实际 ${d.panelSummary}）`,
-      /角色 · 苏云舟 · 显示 5 个实体/.test(d.panelSummary));
+    push(`摘要含「角色 · 角色甲 · 显示 5 个实体」（实际 ${d.panelSummary}）`,
+      /角色 · 角色甲 · 显示 5 个实体/.test(d.panelSummary));
     push('筛选生效标记已置位', d.filterActive === true);
     push('筛选态隐藏节点详情卡', d.detail === 'none');
   }
@@ -329,8 +329,8 @@ function checks(d, scene) {
     push(`折叠后画布恢复全宽 > 900（实际 ${Math.round(canvasW)}）`, canvasW > 900);
     push(`折叠后筛选仍生效 → 5 个节点（实际 ${d.nodes.length}）`, d.nodes.length === 5);
     push('可见节点全为角色类', d.nodes.every((n) => n.type === 'character'));
-    push(`折叠栏摘要含「角色 · 苏云舟 · 显示 5 个实体」（实际 ${d.barSummary}）`,
-      /角色 · 苏云舟 · 显示 5 个实体/.test(d.barSummary));
+    push(`折叠栏摘要含「角色 · 角色甲 · 显示 5 个实体」（实际 ${d.barSummary}）`,
+      /角色 · 角色甲 · 显示 5 个实体/.test(d.barSummary));
     push('收起后仍有「展开筛选」+「清除筛选」入口',
       d.expandBtn !== 'none' && d.barClearBtn !== 'none');
     push('筛选生效时折叠栏有 accent 强调（filterActive）', d.filterActive === true);
@@ -392,13 +392,13 @@ async function behavioural(page) {
   push('① 无记忆时默认：类别=全部 + 面板展开 + 20 节点',
     d.panel !== 'none' && d.bar === 'none' && d.nodes.length === 20 && d.filterActive === false);
 
-  /* 用户在面板里选择：类别=角色 → 实体=苏云舟 */
+  /* 用户在面板里选择：类别=角色 → 实体=角色甲 */
   await page.click('[data-testid="library-kg-filter-panel-cat-character"]');
   await page.waitForTimeout(150);
   await page.click('[data-testid="library-kg-filter-panel-entity-character-2"]');
   await page.waitForTimeout(150);
   d = await probe(page);
-  push(`② 选择后筛选生效（角色+苏云舟 → 5 节点；实际 ${d.nodes.length}）`, d.nodes.length === 5);
+  push(`② 选择后筛选生效（角色+角色甲 → 5 节点；实际 ${d.nodes.length}）`, d.nodes.length === 5);
   push(`② 选择即落记忆（实际 ${d.stored}）`,
     typeof d.stored === 'string' && /"category":"character"/.test(d.stored) && /"entity":"character:2"/.test(d.stored));
 
@@ -414,7 +414,7 @@ async function behavioural(page) {
   await page.waitForTimeout(300);
   d = await probe(page);
   push('④ 重载后：面板仍折叠 + 筛选仍生效 5 节点 + 折叠栏摘要正确',
-    d.panel === 'none' && d.nodes.length === 5 && /角色 · 苏云舟/.test(d.barSummary));
+    d.panel === 'none' && d.nodes.length === 5 && /角色 · 角色甲/.test(d.barSummary));
 
   /* 展开 → 面板恢复，勾选态从记忆回填 */
   await page.click('[data-testid="library-kg-filterbar-expand"]');

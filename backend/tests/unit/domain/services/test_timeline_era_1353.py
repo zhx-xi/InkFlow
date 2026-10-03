@@ -89,18 +89,18 @@ class TestCreateEventEra:
     async def test_create_with_era_and_value_writes_extra(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        created = await service.create_event(PID, "事件甲", era="青元历", era_value=317.5)
+        created = await service.create_event(PID, "事件甲", era="示例历", era_value=317.5)
 
-        assert created.extra == {"era": "青元历", "era_value": 317.5}
+        assert created.extra == {"era": "示例历", "era_value": 317.5}
         stored = mock_repo.add.await_args.args[0]
-        assert stored.extra == {"era": "青元历", "era_value": 317.5}
+        assert stored.extra == {"era": "示例历", "era_value": 317.5}
 
     async def test_create_with_era_without_value(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        created = await service.create_event(PID, "事件甲", era="青元历")
+        created = await service.create_event(PID, "事件甲", era="示例历")
 
-        assert created.extra == {"era": "青元历"}
+        assert created.extra == {"era": "示例历"}
 
     async def test_create_without_era_keeps_empty_extra(
         self, service: TimelineService, mock_repo: MagicMock
@@ -118,7 +118,7 @@ class TestUpdateEventEra:
     async def test_update_era_empty_removes_both_keys(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        existing = _event("事件甲", extra={"era": "青元历", "era_value": 317.5, "tags": ["甲"]})
+        existing = _event("事件甲", extra={"era": "示例历", "era_value": 317.5, "tags": ["甲"]})
         mock_repo.get = AsyncMock(return_value=existing)
 
         updated = await service.update_event(existing.id, TimelineEventUpdate(era=""))
@@ -129,63 +129,63 @@ class TestUpdateEventEra:
     async def test_update_era_value_alone_is_ignored(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        existing = _event("事件甲", extra={"era": "青元历", "era_value": 317.5})
+        existing = _event("事件甲", extra={"era": "示例历", "era_value": 317.5})
         mock_repo.get = AsyncMock(return_value=existing)
 
         updated = await service.update_event(existing.id, TimelineEventUpdate(era_value=999.0))
 
         assert updated is not None
-        assert updated.extra == {"era": "青元历", "era_value": 317.5}
+        assert updated.extra == {"era": "示例历", "era_value": 317.5}
 
     async def test_update_rename_axis_keeps_value(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
-        existing = _event("事件甲", extra={"era": "青元历", "era_value": 317.5})
+        existing = _event("事件甲", extra={"era": "示例历", "era_value": 317.5})
         mock_repo.get = AsyncMock(return_value=existing)
 
-        updated = await service.update_event(existing.id, TimelineEventUpdate(era="仙历"))
+        updated = await service.update_event(existing.id, TimelineEventUpdate(era="示例仙历"))
 
         assert updated is not None
-        assert updated.extra == {"era": "仙历", "era_value": 317.5}
+        assert updated.extra == {"era": "示例仙历", "era_value": 317.5}
 
     async def test_update_era_value_empty_with_axis_clears_value_only(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
         """§2.8 E4 ③：era 非空 + era_value="" ⇒ 只删轴内值键，保留轴名。"""
-        existing = _event("事件甲", extra={"era": "青元历", "era_value": 317.5})
+        existing = _event("事件甲", extra={"era": "示例历", "era_value": 317.5})
         mock_repo.get = AsyncMock(return_value=existing)
 
         updated = await service.update_event(
-            existing.id, TimelineEventUpdate(era="青元历", era_value="")
+            existing.id, TimelineEventUpdate(era="示例历", era_value="")
         )
 
         assert updated is not None
-        assert updated.extra == {"era": "青元历"}
+        assert updated.extra == {"era": "示例历"}
 
     async def test_update_era_value_empty_without_axis_is_ignored(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
         """§2.8 E4 ①：era 未传 ⇒ extra 整体不变（`era_value=""` 亦被忽略，不产生静默改写）。"""
-        existing = _event("事件甲", extra={"era": "青元历", "era_value": 317.5})
+        existing = _event("事件甲", extra={"era": "示例历", "era_value": 317.5})
         mock_repo.get = AsyncMock(return_value=existing)
 
         updated = await service.update_event(existing.id, TimelineEventUpdate(era_value=""))
 
         assert updated is not None
-        assert updated.extra == {"era": "青元历", "era_value": 317.5}
+        assert updated.extra == {"era": "示例历", "era_value": 317.5}
 
     async def test_update_without_era_keeps_extra_untouched(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
         """反例守护：只改标题 → extra 原样（纪元不受影响）。"""
-        existing = _event("事件甲", extra={"era": "青元历", "era_value": 317.5})
+        existing = _event("事件甲", extra={"era": "示例历", "era_value": 317.5})
         mock_repo.get = AsyncMock(return_value=existing)
 
         updated = await service.update_event(existing.id, TimelineEventUpdate(title="事件乙"))
 
         assert updated is not None
         assert updated.title == "事件乙"
-        assert updated.extra == {"era": "青元历", "era_value": 317.5}
+        assert updated.extra == {"era": "示例历", "era_value": 317.5}
 
 
 class TestEraDoesNotAffectCheck:
@@ -200,7 +200,7 @@ class TestEraDoesNotAffectCheck:
             _event("事件丙", time_value=None, narrative_position=3),
         ]
         with_era = [
-            e.model_copy(update={"extra": {"era": "青元历", "era_value": float(i)}})
+            e.model_copy(update={"extra": {"era": "示例历", "era_value": float(i)}})
             if e.time_value is not None
             else e
             for i, e in enumerate(plain, start=1)

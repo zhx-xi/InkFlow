@@ -230,7 +230,7 @@ const extractedContent = '提取后：用户偏好「林晚」「低声道」，
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,

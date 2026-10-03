@@ -26,7 +26,7 @@ const t = (key: string) => (key === 'lib.tlTimeUnknown' ? '未知' : key);
 
 const ev: TimelineEventDTO = {
   id: 'ev1', title: '事件甲',
-  time_value: 217, time_unit: '年', time_display: '青元历 217 年',
+  time_value: 217, time_unit: '年', time_display: '示例历 217 年',
   narrative_position: 2, source_chapter_id: 'c12',
 };
 
@@ -42,8 +42,8 @@ describe('#1374 axisLabels 双序分流（叙事序降级小字 / 世界序主�
   });
 
   it('L2 两序 main 均为世界内时间（time_display 原样优先 —— 纪年式）', () => {
-    expect(axisLabels(ev, 'narrative', t).main).toBe('青元历 217 年');
-    expect(axisLabels(ev, 'world', t).main).toBe('青元历 217 年');
+    expect(axisLabels(ev, 'narrative', t).main).toBe('示例历 217 年');
+    expect(axisLabels(ev, 'world', t).main).toBe('示例历 217 年');
   });
 
   it('L3 回退链：time_display 空 → time_value+time_unit；两者皆空 → 「未知」占位', () => {

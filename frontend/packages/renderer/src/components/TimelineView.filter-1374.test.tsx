@@ -40,15 +40,15 @@ const apiFetchMock = vi.mocked(apiFetch);
  * - evB：未分章 · 正叙（'梦境' 未标记自由文本）· 未知时间 · 叙事序 4
  */
 const evA: TimelineEventDTO = {
-  id: 'evA', title: '甲事件', time_value: 10, time_unit: '年', time_display: '青元历 10 年',
+  id: 'evA', title: '甲事件', time_value: 10, time_unit: '年', time_display: '示例历 10 年',
   narrative_position: 1, timeline_flag: '', source_chapter_id: 'c11',
 };
 const evC: TimelineEventDTO = {
-  id: 'evC', title: '乙事件（倒叙）', time_value: 20, time_unit: '年', time_display: '青元历 20 年',
+  id: 'evC', title: '乙事件（倒叙）', time_value: 20, time_unit: '年', time_display: '示例历 20 年',
   narrative_position: 2, timeline_flag: '倒叙', source_chapter_id: 'c12',
 };
 const evD: TimelineEventDTO = {
-  id: 'evD', title: '丙事件（插叙）', time_value: 30, time_unit: '年', time_display: '青元历 30 年',
+  id: 'evD', title: '丙事件（插叙）', time_value: 30, time_unit: '年', time_display: '示例历 30 年',
   narrative_position: 3, timeline_flag: '插叙', source_chapter_id: 'c12',
 };
 const evB: TimelineEventDTO = {
@@ -57,8 +57,8 @@ const evB: TimelineEventDTO = {
 };
 
 const CHAPTER_TITLES: Record<string, string> = {
-  c11: '第十一章 剑心为何物',
-  c12: '第十二章 夜访剑冢',
+  c11: '第十一章 事件乙',
+  c12: '第十二章 夜访地点乙',
 };
 
 function renderView() {
@@ -111,7 +111,7 @@ describe('#1374 时间线筛选（按章 / 按事件类型，两序共用）', (
     expect(screen.queryByTestId('tl-axis-node-evA')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tl-axis-node-evB')).not.toBeInTheDocument();
     // 按钮标签回显
-    expect(screen.getByTestId('tl-filter-chapter')).toHaveTextContent('第十二章 夜访剑冢');
+    expect(screen.getByTestId('tl-filter-chapter')).toHaveTextContent('第十二章 夜访地点乙');
   });
 
   it('F3 章筛选「未分章」：只显示 source_chapter_id 空的事件', async () => {

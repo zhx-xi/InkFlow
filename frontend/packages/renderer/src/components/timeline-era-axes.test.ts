@@ -39,13 +39,13 @@ function ev(id: string, extra?: Record<string, unknown> | null): TimelineEventDT
   };
 }
 
-const QY = '青元历';
-const XJ = '仙历';
+const QY = '示例历';
+const XJ = '示例仙历';
 
 describe('#1353 eraKeyOf / eraNameOf / eraValueOf（承载键读取）', () => {
   it('R1 era 非空字符串 → 轴名（去空白）；era_value 数值 → 轴内值', () => {
-    const e = ev('1', { era: '  青元历  ', era_value: 317.5 });
-    expect(eraNameOf(e)).toBe('青元历');
+    const e = ev('1', { era: '  示例历  ', era_value: 317.5 });
+    expect(eraNameOf(e)).toBe('示例历');
     expect(eraKeyOf(e)).toBe(QY);
     expect(eraValueOf(e)).toBe(317.5);
   });

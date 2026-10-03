@@ -26,7 +26,7 @@ from inkflow.domain.ports.llm_errors import LLMRequestError
 def _preset_result(mode: str) -> WritingResult:
     """预设 WritingResult — 模拟 WritingService 的返回。"""
     return WritingResult(
-        content="# 试炼场风波\n\n清晨的薄雾尚未散尽，青云宗的试炼场已经人声鼎沸……",
+        content="# 试炼场风波\n\n清晨的薄雾尚未散尽，门派甲的试炼场已经人声鼎沸……",
         word_count=2347,
         mode=WritingMode(mode),
         format_valid=True,
@@ -288,7 +288,7 @@ class TestStreamGenerate:
         from inkflow.domain.models.writing import WritingStreamEvent
 
         mock_writing_service.stream_generate = _stream_stub(
-            WritingStreamEvent(delta="清晨的薄雾尚未散尽，青云宗的试炼场已经"),
+            WritingStreamEvent(delta="清晨的薄雾尚未散尽，门派甲的试炼场已经"),
             WritingStreamEvent(delta="人声鼎沸……"),
             WritingStreamEvent(
                 done=True,
@@ -315,11 +315,11 @@ class TestStreamGenerate:
         assert content_type.startswith("text/event-stream")
         assert len(frames) == 3
         assert frames[0]["done"] is False
-        assert frames[0]["delta"] == "清晨的薄雾尚未散尽，青云宗的试炼场已经"
+        assert frames[0]["delta"] == "清晨的薄雾尚未散尽，门派甲的试炼场已经"
         assert frames[1]["done"] is False
         assert frames[1]["delta"] == "人声鼎沸……"
         joined = "".join(f["delta"] for f in frames[:2])
-        assert joined == "清晨的薄雾尚未散尽，青云宗的试炼场已经人声鼎沸……"
+        assert joined == "清晨的薄雾尚未散尽，门派甲的试炼场已经人声鼎沸……"
         done = frames[2]
         assert done["done"] is True
         assert done["format_valid"] is True

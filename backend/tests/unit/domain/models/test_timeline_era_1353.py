@@ -50,12 +50,12 @@ class TestApplyEraPairSemantics:
 
     def test_era_none_keeps_extra_untouched(self) -> None:
         """era 未传 → extra 不变（此时 era_value 被忽略）。"""
-        extra = {ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5, "tags": ["甲"]}
+        extra = {ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5, "tags": ["甲"]}
         assert apply_era(extra, None, 999.0) == extra
 
     def test_era_empty_clears_both_keys(self) -> None:
         """era="" → 删除两键（回到默认轴），其余键保留。"""
-        extra = {ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5, "tags": ["甲"]}
+        extra = {ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5, "tags": ["甲"]}
         assert apply_era(extra, "", None) == {"tags": ["甲"]}
 
     def test_era_empty_on_extra_without_era_is_noop(self) -> None:
@@ -63,27 +63,27 @@ class TestApplyEraPairSemantics:
         assert apply_era({"tags": []}, "", None) == {"tags": []}
 
     def test_era_non_empty_writes_name_and_value(self) -> None:
-        assert apply_era({}, "  青元历  ", 317.5) == {ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5}
+        assert apply_era({}, "  示例历  ", 317.5) == {ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5}
 
     def test_era_without_value_keeps_existing_value(self) -> None:
         """era 非空 + era_value 未传 → 保留原轴内值（改轴名不丢值）。"""
-        extra = {ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5}
-        assert apply_era(extra, "仙历", None) == {ERA_KEY: "仙历", ERA_VALUE_KEY: 317.5}
+        extra = {ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5}
+        assert apply_era(extra, "示例仙历", None) == {ERA_KEY: "示例仙历", ERA_VALUE_KEY: 317.5}
 
     def test_era_without_value_on_new_era_has_no_value_key(self) -> None:
         """新建带轴名不带值时，extra 里**不存在** era_value 键（轴内值未知）。"""
-        assert apply_era({}, "青元历", None) == {ERA_KEY: "青元历"}
+        assert apply_era({}, "示例历", None) == {ERA_KEY: "示例历"}
 
     def test_era_value_empty_string_clears_value_only(self) -> None:
         """era_value="" → 只删轴内值，保留轴名。"""
-        assert apply_era({ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5}, "青元历", "") == {
-            ERA_KEY: "青元历"
+        assert apply_era({ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5}, "示例历", "") == {
+            ERA_KEY: "示例历"
         }
 
     def test_apply_era_does_not_mutate_input(self) -> None:
-        extra = {ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5}
+        extra = {ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5}
         apply_era(extra, "", None)
-        assert extra == {ERA_KEY: "青元历", ERA_VALUE_KEY: 317.5}
+        assert extra == {ERA_KEY: "示例历", ERA_VALUE_KEY: 317.5}
 
 
 class TestCreateDtoEraValidation:
@@ -95,8 +95,8 @@ class TestCreateDtoEraValidation:
         assert event.era_value is None
 
     def test_era_stripped(self) -> None:
-        event = TimelineEventCreate(project_id=PID, title="事件甲", era="  青元历  ")
-        assert event.era == "青元历"
+        event = TimelineEventCreate(project_id=PID, title="事件甲", era="  示例历  ")
+        assert event.era == "示例历"
 
     def test_era_too_long_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -109,15 +109,15 @@ class TestCreateDtoEraValidation:
     def test_era_value_non_finite_rejected(self) -> None:
         for bad in (math.nan, math.inf, -math.inf):
             with pytest.raises(ValidationError):
-                TimelineEventCreate(project_id=PID, title="事件甲", era="青元历", era_value=bad)
+                TimelineEventCreate(project_id=PID, title="事件甲", era="示例历", era_value=bad)
 
     def test_era_value_empty_string_allowed(self) -> None:
-        event = TimelineEventCreate(project_id=PID, title="事件甲", era="青元历", era_value="")
+        event = TimelineEventCreate(project_id=PID, title="事件甲", era="示例历", era_value="")
         assert event.era_value == ""
 
     def test_era_value_non_numeric_string_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            TimelineEventCreate(project_id=PID, title="事件甲", era="青元历", era_value="abc")
+            TimelineEventCreate(project_id=PID, title="事件甲", era="示例历", era_value="abc")
 
 
 class TestUpdateDtoEraValidation:

@@ -131,7 +131,7 @@ class TestCharacterGroupMembers:
         """list_groups_by_character 返回角色所属的全部分组（M 端，N:M）."""
         repo = SQLiteCharacterRepository(db_session)
         g1 = await repo.add_group(_group(project, "主角团"))
-        g2 = await repo.add_group(_group(project, "青云宗"))
+        g2 = await repo.add_group(_group(project, "门派甲"))
         c = await repo.add(_char(project, "林尘"))
         await repo.add_group_member(c.id, g1.id)
         await repo.add_group_member(c.id, g2.id)

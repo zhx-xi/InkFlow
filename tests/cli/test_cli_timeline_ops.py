@@ -83,7 +83,7 @@ def _make_event(**overrides: object) -> dict:
         description="外门考核夜，林尘丹田中的古鼎第一次亮起。",
         time_value=317.5,
         time_unit="年",
-        time_display="青元历 317 年秋",
+        time_display="示例历 317 年秋",
         narrative_position=3,
         timeline_flag="",
         extra={},
@@ -102,7 +102,7 @@ def _make_conflict(**overrides: object) -> dict:
             "id": str(uuid.uuid4()),
             "title": "林尘觉醒金手指",
             "time_value": 317.5,
-            "time_display": "青元历 317 年秋",
+            "time_display": "示例历 317 年秋",
             "narrative_position": 2,
             "timeline_flag": "",
         },
@@ -110,13 +110,13 @@ def _make_conflict(**overrides: object) -> dict:
             "id": str(uuid.uuid4()),
             "title": "外门往事",
             "time_value": 312.0,
-            "time_display": "青元历 312 年",
+            "time_display": "示例历 312 年",
             "narrative_position": 3,
             "timeline_flag": "",
         },
         message=(
-            "叙事第 2 位事件「林尘觉醒金手指」（青元历 317 年秋）晚于叙事第 3 位"
-            "事件「外门往事」（青元历 312 年）：叙事顺序与世界内时间矛盾。"
+            "叙事第 2 位事件「林尘觉醒金手指」（示例历 317 年秋）晚于叙事第 3 位"
+            "事件「外门往事」（示例历 312 年）：叙事顺序与世界内时间矛盾。"
         ),
     )
     defaults.update(overrides)
@@ -316,7 +316,7 @@ class TestTimelineHumanOutput:
         )
         assert result.exit_code == 0
         assert "共 1 个事件" in result.output
-        assert "#3 [林尘觉醒金手指]（青元历 317 年秋）" in result.output
+        assert "#3 [林尘觉醒金手指]（示例历 317 年秋）" in result.output
 
     def test_view_human_empty(self, cli_runner, fake_http_client):
         """view 人类模式空时间线 → 暂无事件."""
@@ -342,7 +342,7 @@ class TestTimelineHumanOutput:
             "标题:",
             "林尘觉醒金手指",
             "世界内时间:",
-            "青元历 317 年秋",
+            "示例历 317 年秋",
             "叙事位置:",
             "时间线标记:",
             "（正叙）",
@@ -350,7 +350,7 @@ class TestTimelineHumanOutput:
             assert token in result.output
         # #1000（ADR-055）：创建/更新时间显示本地时区，原始 ISO 不再直出；
         # 「世界内时间/原始时间表达」= 小说语义时间，不转换（ADR-055 例外条款）
-        assert "青元历 317 年秋" in result.output
+        assert "示例历 317 年秋" in result.output
         assert local_display("2026-08-02T12:00:00") in result.output
         assert "2026-08-02T12:00:00" not in result.output
 
@@ -367,7 +367,7 @@ class TestTimelineHumanOutput:
                 "--time-unit",
                 "月",
                 "--time-display",
-                "青元历 318 年春",
+                "示例历 318 年春",
                 "--narrative-position",
                 "5",
                 "--timeline-flag",
@@ -378,7 +378,7 @@ class TestTimelineHumanOutput:
         assert result.exit_code == 0
         body: dict = fake_http_client.patch.await_args.kwargs["json"]
         assert body["time_unit"] == "月"
-        assert body["time_display"] == "青元历 318 年春"
+        assert body["time_display"] == "示例历 318 年春"
         assert body["narrative_position"] == 5
         assert body["timeline_flag"] == "flashforward"
         assert "title" not in body
@@ -544,7 +544,7 @@ class TestHumanOutputShowsTimeValue:
             title="林尘觉醒金手指",
             time_value=317.5,
             time_unit="年",
-            time_display="青元历 317 年秋",
+            time_display="示例历 317 年秋",
         )
         result = cli_runner.invoke(
             app,
@@ -552,7 +552,7 @@ class TestHumanOutputShowsTimeValue:
             obj=CliContext(json_output=False),
         )
         assert result.exit_code == 0
-        assert "青元历 317 年秋" in result.output
+        assert "示例历 317 年秋" in result.output
         assert "time_value=317.5" in result.output
 
     def test_get_human_unknown_time_unchanged(self, cli_runner, fake_http_client):

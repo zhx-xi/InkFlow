@@ -288,7 +288,7 @@ class TestB1Models:
         RED 形态: MapPinCreate 无 type/ref_id 字段 → Pydantic extra='ignore' 静默丢字段
         （构造不报错）→ dto.type 属性访问 AttributeError（FAILED 非 ERROR）。
         """
-        dto = MapPinCreate(type="role", ref_id=REF_ID, x=42.5, y=68.0, label="苏云舟")
+        dto = MapPinCreate(type="role", ref_id=REF_ID, x=42.5, y=68.0, label="角色甲")
         assert dto.type == "role"
         assert dto.ref_id == REF_ID
 
@@ -486,15 +486,15 @@ class TestB6ApiPassthrough:
         svc = _mock_svc(mock_get_svc)
         map_id = uuid.uuid4()
         ref = uuid.uuid4()
-        svc.add_pin = AsyncMock(return_value=_pin(map_id=map_id, x=42.5, y=68.0, label="苏云舟"))
+        svc.add_pin = AsyncMock(return_value=_pin(map_id=map_id, x=42.5, y=68.0, label="角色甲"))
 
         response = client.post(
             f"/api/v1/maps/{map_id}/pins",
-            json={"type": "role", "ref_id": str(ref), "x": 42.5, "y": 68.0, "label": "苏云舟"},
+            json={"type": "role", "ref_id": str(ref), "x": 42.5, "y": 68.0, "label": "角色甲"},
         )
         assert response.status_code == 201
         svc.add_pin.assert_awaited_once_with(
-            map_id, None, 42.5, 68.0, "苏云舟", type="role", ref_id=ref
+            map_id, None, 42.5, 68.0, "角色甲", type="role", ref_id=ref
         )
 
     @patch("inkflow.api.routers.maps.get_map_service")

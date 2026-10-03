@@ -59,8 +59,8 @@ const evC: TimelineEventDTO = {
 };
 
 const CHAPTER_TITLES: Record<string, string> = {
-  c11: '第十一章 剑心为何物',
-  c12: '第十二章 夜访剑冢',
+  c11: '第十一章 事件乙',
+  c12: '第十二章 夜访地点乙',
 };
 
 function renderView(props: Partial<Parameters<typeof TimelineView>[0]> = {}) {
@@ -106,8 +106,8 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
   it('A3 叙事序：轴刻度 = 章（tl-chtick-<chapterId> = 真实章节标题）；主轴不含伪章号', async () => {
     renderView();
     // 章刻度存在且用真实章节标题（来自 chapterTitles 映射）
-    expect(screen.getByTestId('tl-chtick-c11')).toHaveTextContent('第十一章 剑心为何物');
-    expect(screen.getByTestId('tl-chtick-c12')).toHaveTextContent('第十二章 夜访剑冢');
+    expect(screen.getByTestId('tl-chtick-c11')).toHaveTextContent('第十一章 事件乙');
+    expect(screen.getByTestId('tl-chtick-c12')).toHaveTextContent('第十二章 夜访地点乙');
     // 反向断言：主轴（tl-axis-main）绝不承载 narrative_position 拼出的「第 N 章」
     const mains = screen.getAllByTestId(/^tl-axis-main-/).map((el) => el.textContent ?? '').join('|');
     expect(mains).not.toMatch(/第\s*[0-9]+\s*章/);
@@ -155,8 +155,8 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
     // 反向断言：世界序不再按章分组（#1374 拍板「含世界序去章分组」）
     expect(screen.queryAllByTestId(/^tl-chgroup-/)).toHaveLength(0);
     // 行尾来源章胶囊：已归章 = 章节标题；未归章 = 「未分章」
-    expect(screen.getByTestId('tl-src-evC')).toHaveTextContent('第十二章 夜访剑冢');
-    expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 剑心为何物');
+    expect(screen.getByTestId('tl-src-evC')).toHaveTextContent('第十二章 夜访地点乙');
+    expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 事件乙');
     expect(screen.getByTestId('tl-src-evB')).toHaveTextContent('未分章');
   });
 });

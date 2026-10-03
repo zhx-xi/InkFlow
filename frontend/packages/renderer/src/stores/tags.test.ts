@@ -20,7 +20,7 @@ import { useProjectStore, type Project } from './project';
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: [],
     language: 'zh-CN',
     target_words: 0,

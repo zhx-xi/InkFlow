@@ -690,13 +690,13 @@ async def test_export_timeline_summary_with_time_display():
     """timeline 摘要: {time_display}｜{description}（§6.3）。"""
     deps = _Deps(
         events=[
-            _event(uuid.uuid4(), "大战", time_display="青元历 317 年秋", description="两军对垒")
+            _event(uuid.uuid4(), "大战", time_display="示例历 317 年秋", description="两军对垒")
         ]
     )
 
     doc = await deps.service().export(PID, include_settings=True)
 
-    assert _settings_by_type(doc, "timeline")[0].content == "青元历 317 年秋｜两军对垒"
+    assert _settings_by_type(doc, "timeline")[0].content == "示例历 317 年秋｜两军对垒"
 
 
 async def test_export_timeline_summary_falls_back_to_title():

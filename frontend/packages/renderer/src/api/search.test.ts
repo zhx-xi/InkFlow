@@ -52,7 +52,7 @@ const searchResponseDto: SearchResponseDto = {
   total: 2,
   hits: [
     { entity_type: 'character', entity_id: 'e1', project_id: PID, title: '林惊羽', snippet: '青云门弟子…', score: 0.87 },
-    { entity_type: 'chapter', entity_id: 'e2', project_id: PID, title: '第一章 青云山', snippet: '青云山脚下…', score: 0.72 },
+    { entity_type: 'chapter', entity_id: 'e2', project_id: PID, title: '第一章 地点甲', snippet: '地点甲脚下…', score: 0.72 },
   ],
   query: '青云',
   types: null,

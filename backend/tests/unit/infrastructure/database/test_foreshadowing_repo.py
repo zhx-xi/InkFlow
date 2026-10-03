@@ -269,20 +269,20 @@ class TestForeshadowingRepository:
         口径 1 固有代价如实断言：location 为空者位置面**必然不命中**。
         """
         repo = SQLiteForeshadowingRepository(db_session)
-        await repo.add(_foreshadowing(project, "断剑的秘密", location="第 11 章 · 闭关"))
-        await repo.add(_foreshadowing(project, "守陵人的来历", location="第 10 章 · 剑冢"))
+        await repo.add(_foreshadowing(project, "断剑的秘密", location="第 11 章 · 地点甲"))
+        await repo.add(_foreshadowing(project, "地点甲的来历", location="第 10 章 · 地点乙"))
         await repo.add(_foreshadowing(project, "未署名的旧信", location=""))
         pid = uuid.UUID(int=project.id)
 
-        # 标题面命中 1（断剑的秘密）+ 位置面命中 1（守陵人的来历）= 并集 2
-        items, total = await repo.list(pid, search="剑")
+        # 标题面命中 1（地点甲的来历）+ 位置面命中 1（断剑的秘密 · 第 11 章 · 地点甲）= 并集 2
+        items, total = await repo.list(pid, search="地点甲")
         assert total == 2
-        assert {f.title for f in items} == {"断剑的秘密", "守陵人的来历"}
+        assert {f.title for f in items} == {"断剑的秘密", "地点甲的来历"}
 
         # 仅位置面命中（标题不含查询串）——「扩展 search 覆盖面」的可判别证据
         items2, total2 = await repo.list(pid, search="第 10 章")
         assert total2 == 1
-        assert items2[0].title == "守陵人的来历"
+        assert items2[0].title == "地点甲的来历"
 
         # location 为空者不因「章号」命中（口径 1 的漏项代价，如实体现）
         _, total3 = await repo.list(pid, search="第 2 章")

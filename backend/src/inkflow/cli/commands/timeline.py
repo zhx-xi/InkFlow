@@ -85,7 +85,7 @@ def _time_label(event: dict) -> str:
 def _time_label_with_value(event: dict) -> str:
     """事件时间表达 + **当前** `time_value`（#1409 拍板 3：详情必须显示当前数值）.
 
-    形如「青元历 317 年秋（time_value=317.5）」——数据修好后人类输出必须能看出
+    形如「示例历 317 年秋（time_value=317.5）」——数据修好后人类输出必须能看出
     数值已变，否则会以为改动没生效。无 `time_display` 时 `time_value` 本身即当前
     数值，不重复附注；`time_value is None` 且无 `time_display` → 「时间未知」。
     """
@@ -139,7 +139,7 @@ def create_event_cmd(
         help="时间单位（`time_value` 的尺度：年/月/周/日；参与归一排序，#1409 §2.7）",
     ),
     time_display: str = typer.Option(
-        "", "--time-display", help="原始时间表达（如「青元历 317 年初」）"
+        "", "--time-display", help="原始时间表达（如「示例历 317 年初」）"
     ),
     narrative_position: int | None = typer.Option(
         None, "--narrative-position", help="叙事位置（缺席 = 叙事末尾追加）"

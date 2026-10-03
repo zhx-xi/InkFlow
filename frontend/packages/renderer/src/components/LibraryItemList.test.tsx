@@ -48,7 +48,7 @@ const ITEMS: Array<LibraryItemDTO & { group_id?: string | number | null }> = [
 /** GET /projects/{pid}/character-groups 种子 */
 const GROUPS: CharacterGroup[] = [
   { id: 'g1', name: '主角团', description: '主线核心', sort_order: 1, member_count: 2 },
-  { id: 'g2', name: '青云宗', description: '宗门势力', sort_order: 2, member_count: 1 },
+  { id: 'g2', name: '门派甲', description: '宗门势力', sort_order: 2, member_count: 1 },
 ];
 
 function renderList(props?: Partial<Parameters<typeof LibraryItemList>[0]>) {
@@ -91,7 +91,7 @@ describe('#679 角色列表等级选项卡(总览/分览) + 分组卡片 + 等�
     expect(within(g1).getByText('林晚')).toBeInTheDocument();
     expect(within(g1).getByText('沈砚')).toBeInTheDocument();
     const g2 = screen.getByTestId('lib-group-g2');
-    expect(within(g2).getByTestId('lib-group-title-g2')).toHaveTextContent('青云宗');
+    expect(within(g2).getByTestId('lib-group-title-g2')).toHaveTextContent('门派甲');
     expect(within(g2).getByText('叶孤城')).toBeInTheDocument();
     const ungrouped = screen.getByTestId('lib-group-ungrouped');
     expect(within(ungrouped).getByTestId('lib-group-ungrouped-title')).toHaveTextContent('未分组');
@@ -113,7 +113,7 @@ describe('#679 角色列表等级选项卡(总览/分览) + 分组卡片 + 等�
     expect(screen.queryByText('叶孤城')).not.toBeInTheDocument();
     expect(screen.queryByText('路人甲')).not.toBeInTheDocument();
     expect(screen.queryByText('路人乙')).not.toBeInTheDocument();
-    // 无主角成员的分组（青云宗）隐藏
+    // 无主角成员的分组（门派甲）隐藏
     expect(screen.queryByTestId('lib-group-g2')).not.toBeInTheDocument();
 
     // 点「全部·总览」回到总览

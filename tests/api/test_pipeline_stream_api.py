@@ -75,8 +75,8 @@ class TestPipelineStreamSuccess:
         """帧序列：delta → delta → done(final_output, intent=content) 逐帧 JSON 精确锁定。"""
         svc = _mock_svc(
             _ev_frame("delta", delta="序章：风起"),
-            _ev_frame("delta", delta="青云山巅。"),
-            _ev_frame("done", done=True, final_output="序章：风起青云山巅。", intent="content"),
+            _ev_frame("delta", delta="地点甲巅。"),
+            _ev_frame("done", done=True, final_output="序章：风起地点甲巅。", intent="content"),
         )
         with patch("inkflow.api.routers.agent._svc", return_value=svc):
             async with (
@@ -90,11 +90,11 @@ class TestPipelineStreamSuccess:
                 frames = [json.loads(ev.data) async for ev in sse.aiter_sse()]
         assert len(frames) == 3
         assert frames[0] == {"type": "delta", "delta": "序章：风起", "done": False}
-        assert frames[1] == {"type": "delta", "delta": "青云山巅。", "done": False}
+        assert frames[1] == {"type": "delta", "delta": "地点甲巅。", "done": False}
         assert frames[2] == {
             "type": "done",
             "done": True,
-            "final_output": "序章：风起青云山巅。",
+            "final_output": "序章：风起地点甲巅。",
             "intent": "content",
         }
 

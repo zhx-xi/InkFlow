@@ -35,8 +35,8 @@
  * - 未选择项目空态：data-testid="library-empty" + 文案 t('lib.empty.title')（「选择或新建项目开始构建设定」）
  *   + 按钮 data-testid="library-go-projects"（t('lib.empty.goProjects')「前往项目页」）→ 点击回 /projects
  * - 项目选择器：data-testid="library-project-select"，aria-label「当前项目」（原生 <select> 或 Radix combobox；
- *   option 可访问名 = 项目名如「青云志」；原生 select 时 option value = 项目 id）
- * - 选择项目后：data-testid="library-breadcrumb" 含项目名与当前分类（如「设定库 · 青云志 / 角色」）
+ *   option 可访问名 = 项目名如「项目甲」；原生 select 时 option value = 项目 id）
+ * - 选择项目后：data-testid="library-breadcrumb" 含项目名与当前分类（如「设定库 · 项目甲 / 角色」）
  *   + data-testid="library-tabs" 六分类 tab：角色/世界观/大纲/时间线/伏笔/知识图谱
  *   （i18n keys：lib.tab.characters / lib.tab.world / lib.tab.outline / lib.tab.timeline /
  *   lib.tab.foreshadow / lib.tab.knowledge）
@@ -104,7 +104,7 @@ beforeEach(() => {
     if (path === '/api/v1/projects' && (!init?.method || init.method === 'GET')) {
       return {
         items: [{
-          id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
+          id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {},
           created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
         }],
         total: 1, offset: 0, limit: 50,
@@ -146,7 +146,7 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: '我的项目' })).toBeInTheDocument();
     // 项目列表异步加载 → 卡片出现（RED：占位页无 loadProjects）
-    expect(await screen.findByTestId('project-card')).toHaveTextContent('青云志');
+    expect(await screen.findByTestId('project-card')).toHaveTextContent('项目甲');
   });
 
   it('侧边导航「写作」→ 写作页：三栏 + 项目树卷/章渲染', async () => {
@@ -185,11 +185,11 @@ describe('App 路由集成（HashRouter 四页 + 侧边导航）', () => {
       await user.selectOptions(selector, 'p1');
     } else {
       await user.click(selector);
-      await user.click(await screen.findByRole('option', { name: '青云志' }));
+      await user.click(await screen.findByRole('option', { name: '项目甲' }));
     }
     // 面包屑「设定库 · 项目名 / 分类」
     await waitFor(() => {
-      expect(within(library).getByTestId('library-breadcrumb')).toHaveTextContent('青云志');
+      expect(within(library).getByTestId('library-breadcrumb')).toHaveTextContent('项目甲');
 });
     // 六分类 tab
     const tabs = within(library).getByTestId('library-tabs');

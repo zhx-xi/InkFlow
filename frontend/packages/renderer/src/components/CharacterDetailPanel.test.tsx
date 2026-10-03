@@ -122,7 +122,7 @@ describe('#701 角色多分组 N:M：分组区多选 checkbox 列表 + 全量 gr
   /** 分组种子（多选选项来源） */
   const GROUPS: CharacterGroup[] = [
     { id: 'g1', name: '主角团', description: '主线核心', sort_order: 1, member_count: 2 },
-    { id: 'g2', name: '青云宗', description: '宗门势力', sort_order: 2, member_count: 1 },
+    { id: 'g2', name: '门派甲', description: '宗门势力', sort_order: 2, member_count: 1 },
     { id: 'g3', name: '天机阁', description: '情报组织', sort_order: 3, member_count: 1 },
   ];
   /** 已在两个分组中的角色（N:M 回显种子） */

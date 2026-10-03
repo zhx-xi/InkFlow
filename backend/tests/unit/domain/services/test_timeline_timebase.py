@@ -178,7 +178,7 @@ def test_reanchor_unifies_unit_to_days_and_archives_display() -> None:
     assert change.new_time_unit == "日"
     assert change.new_time_display == "3.0月"  # 原表达式归档（display 原为空）
     # 已有 display 的事件不改 display
-    kept = _ev("有表达", value=1.0, unit="月", pos=3, display="青元历三月")
+    kept = _ev("有表达", value=1.0, unit="月", pos=3, display="示例历三月")
     plan2 = plan_reanchor([_ev("甲", value=5.0, pos=1), kept])
     c2 = next(c for c in plan2.changes if c.event_id == kept.id)
     assert c2.new_time_display is None

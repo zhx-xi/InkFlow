@@ -293,7 +293,7 @@ class TestOutlineRepository:
         repo = SQLiteOutlineRepository(db_session)
         o = await repo.add(_outline(project, "第一卷大纲"))
         p = await repo.add_point(
-            _point(o, project, "主角登场", type="开篇", description="林尘踏入青云宗", position=1)
+            _point(o, project, "主角登场", type="开篇", description="林尘踏入门派甲", position=1)
         )
 
         got = await repo.get_point(p.id)
@@ -303,7 +303,7 @@ class TestOutlineRepository:
         assert got.project_id == uuid.UUID(int=project.id)
         assert got.name == "主角登场"
         assert got.type == "开篇"
-        assert got.description == "林尘踏入青云宗"
+        assert got.description == "林尘踏入门派甲"
         assert got.position == 1
         assert got.arc_id is None
 

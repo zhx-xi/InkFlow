@@ -46,7 +46,7 @@ function item(overrides: Partial<ChatConversationWithTitle> = {}): ChatConversat
   return {
     conversation_id: 'c1',
     project_id: 'p1',
-    project_name: '青云志',
+    project_name: '项目甲',
     title: '默认标题',
     last_message: '默认消息',
     message_count: 1,
@@ -170,13 +170,13 @@ describe('SessionBar — 点击会话项跳转 + 空态（#762/#770）', () => {
 describe('SessionBar — #770 会话 title 展示（空回退 last_message）', () => {
   it('会话项展示 title（非空）', async () => {
     fetchMock.mockResolvedValue({
-      items: [item({ conversation_id: 'c-title', title: '第十二章 剑心蒙尘', last_message: '最后消息' })],
+      items: [item({ conversation_id: 'c-title', title: '第十二章 事件甲', last_message: '最后消息' })],
       total: 1,
     });
     renderBar();
     const entry = await screen.findByTestId('session-item-c-title');
     // RED：当前实现展示 last_message（'最后消息'）→ FAIL
-    expect(entry).toHaveTextContent('第十二章 剑心蒙尘');
+    expect(entry).toHaveTextContent('第十二章 事件甲');
   });
 
   it('title 为空 → 回退展示 last_message（守护用例，当前实现天然通过）', async () => {
@@ -193,12 +193,12 @@ describe('SessionBar — #770 会话 title 展示（空回退 last_message）', 
 describe('SessionBar — #770 点击导航（title 匹配章节 → /writing?chapter_id；否则 → /writing?conversation_id）', () => {
   it('title 与当前项目章节标题同名 → /writing?chapter_id=<章ID>', async () => {
     fetchMock.mockResolvedValue({
-      items: [item({ conversation_id: 'c-match', title: '第十二章 剑心蒙尘' })],
+      items: [item({ conversation_id: 'c-match', title: '第十二章 事件甲' })],
       total: 1,
     });
     // 播种当前项目章节（GREEN 读 useChapterStore；测试契约同步播种）
     useChapterStore.setState({
-      chapters: [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }],
+      chapters: [{ id: 'ch1', title: '第十二章 事件甲', volume_id: null, order_index: 0, word_count: 0 }],
       treeProjectId: 'p1',
     });
     const user = userEvent.setup();
@@ -214,7 +214,7 @@ describe('SessionBar — #770 点击导航（title 匹配章节 → /writing?cha
       total: 1,
     });
     useChapterStore.setState({
-      chapters: [{ id: 'ch1', title: '第十二章 剑心蒙尘', volume_id: null, order_index: 0, word_count: 0 }],
+      chapters: [{ id: 'ch1', title: '第十二章 事件甲', volume_id: null, order_index: 0, word_count: 0 }],
       treeProjectId: 'p1',
     });
     const user = userEvent.setup();

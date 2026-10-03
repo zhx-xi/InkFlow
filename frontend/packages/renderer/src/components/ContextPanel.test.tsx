@@ -300,7 +300,7 @@ describe('ContextPanel — 分组「＋ 选择注入」搜索选择器多选追�
 
   it('点「＋ 选择注入」→ 弹出搜索选择器（搜索框 + 多选列表）', async () => {
     assembleMock.mockResolvedValue(result([characterBlock('c-a', '林晚')]));
-    vi.mocked(listProjectCharacters).mockResolvedValue({ items: [{ id: 'c-a', name: '林晚' }, { id: 'c-b', name: '顾沉' }, { id: 'c-c', name: '白小宛' }], total: 3, offset: 0, limit: 50 });
+    vi.mocked(listProjectCharacters).mockResolvedValue({ items: [{ id: 'c-a', name: '林晚' }, { id: 'c-b', name: '顾沉' }, { id: 'c-c', name: '角色子' }], total: 3, offset: 0, limit: 50 });
     render(<ContextPanel {...OPTS} />);
     await screen.findByTestId('context-block-character_setting');
     fireEvent.click(within(screen.getByTestId('context-block-character_setting')).getByRole('button', { name: /选择注入/ }));

@@ -60,7 +60,7 @@ beforeEach(() => {
     volumes: seedVolumes, chapters: seedChapters, treeProjectId: 'p1', currentChapterId: 'c1', content: '已有正文第一段。', loading: false, error: null,
   });
   useProjectStore.setState({
-    projects: [{ id: 'p1', name: '青云志', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '', updated_at: '' }],
+    projects: [{ id: 'p1', name: '项目甲', tags: ['玄幻'], language: 'zh-CN', target_words: 800000, config: {}, created_at: '', updated_at: '' }],
     currentProjectId: 'p1', loading: false, error: null,
   });
   // ChatPanel（章节内）挂载即解析活动线程：GET 空 → createChatConversation 建新 → GET 消息
@@ -81,7 +81,7 @@ beforeEach(() => {
         return {
           conversation_id: `conv-${b.project_id}`,
           project_id: b.project_id,
-          project_name: '青云志',
+          project_name: '项目甲',
           title: b.title ?? '',
           last_message: '',
           message_count: 0,

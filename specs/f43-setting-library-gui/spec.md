@@ -369,7 +369,7 @@ P0 已消费的 PATCH/DELETE 端点不变（§3.2 请求体扩展 extra）。P1 
 
 | 场景 | body | 后端模型 |
 |------|------|---------|
-| 角色创建 | `{ name, personality, background, goals, extra: { role_rank: 'major', groups: ['主角团','青云宗'] } }` | CharacterCreateBody（P1 加 `extra`） |
+| 角色创建 | `{ name, personality, background, goals, extra: { role_rank: 'major', groups: ['主角团','门派甲'] } }` | CharacterCreateBody（P1 加 `extra`） |
 | 角色编辑 | `{ name?, personality?, ..., extra: { role_rank, groups } }` | CharacterUpdate（P1 加 `extra`，exclude_unset 整体替换） |
 
 - **编辑时前端总是发送完整 `extra`**（role_rank + groups 合并）——避免整体替换语义下丢字段（P1 前端契约：buildBody 组装 `extra: { role_rank, groups }`）。
@@ -452,7 +452,7 @@ class MapPinCreate(BaseModel):
 ```json
 // type=role（关联角色）
 POST /api/v1/maps/9/pins
-{"type": "role", "ref_id": "c7...", "x": 42.5, "y": 68.0, "label": "苏云舟"}
+{"type": "role", "ref_id": "c7...", "x": 42.5, "y": 68.0, "label": "角色甲"}
 
 // type=location（F36 既有语义，向后兼容）
 {"type": "location", "location_id": "7", "x": 30.0, "y": 40.0, "label": "清河县城"}

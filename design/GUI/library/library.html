@@ -217,6 +217,10 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
 .demo-bar{position:fixed;right:14px;bottom:14px;z-index:200;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:8px 12px;font-size:12px;color:var(--ink-2)}
 .demo-bar select{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:12px;padding:3px 6px}
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
+
+/* #1400/#1402 同款截图态规则（本页由 #1457 补齐）：隐藏 demo-bar + 冻结动效 */
+body[data-shot="1"] .demo-bar{display:none}
+body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
 </style>
 </head>
 <body data-state="main" data-cat="characters">
@@ -280,10 +284,10 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
       <!-- 项目上下文：选择器 + 面包屑 + 保存指示 -->
       <div class="lib-ctx">
         <span class="lib-project" data-testid="library-project-select">
-          <span>青云志</span><span data-ic="chevron-down"></span>
+          <span>项目甲</span><span data-ic="chevron-down"></span>
         </span>
         <span class="lib-breadcrumb" data-testid="library-breadcrumb">
-          设定库 · 青云志 <span class="sep">/</span> <span class="cur" data-testid="lib-bc-cat">角色</span>
+          设定库 · 项目甲 <span class="sep">/</span> <span class="cur" data-testid="lib-bc-cat">角色</span>
         </span>
         <span class="lib-save" data-testid="lib-save-indicator" style="margin-left:auto;display:none">已保存</span>
       </div>
@@ -324,44 +328,44 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
               <button class="rank-chip idle">场景角色</button>
               <button class="rank-chip idle">一次性角色</button>
             </div>
-            <div class="group-title">青云宗 · 4人</div>
+            <div class="group-title">门派甲 · 4人</div>
             <ul class="divide-y">
               <li class="lib-row">
-                <button class="name">苏云舟</button>
+                <button class="name">角色甲</button>
                 <span class="badge badge-accent">主角</span>
-                <span class="tag-chip">青云宗</span><span class="tag-chip">剑修</span>
+                <span class="tag-chip">门派甲</span><span class="tag-chip">剑修</span>
                 <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </li>
               <li class="lib-row">
-                <button class="name">林晚照</button>
+                <button class="name">角色乙</button>
                 <span class="badge badge-accent-soft">重要配角</span>
-                <span class="tag-chip">青云宗</span><span class="tag-chip">医修</span>
+                <span class="tag-chip">门派甲</span><span class="tag-chip">医修</span>
                 <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </li>
               <li class="lib-row">
-                <button class="name">顾沉舟</button>
+                <button class="name">角色丙</button>
                 <span class="badge badge-neutral">配角</span>
-                <span class="tag-chip">青云宗</span>
+                <span class="tag-chip">门派甲</span>
                 <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </li>
               <li class="lib-row">
-                <button class="name">白眉道人</button>
+                <button class="name">角色丁</button>
                 <span class="badge badge-dim">场景角色</span>
-                <span class="tag-chip">藏经阁</span>
+                <span class="tag-chip">地点丁</span>
                 <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </li>
             </ul>
-            <div class="group-title">剑冢守卫 · 2人</div>
+            <div class="group-title">地点乙守卫 · 2人</div>
             <ul class="divide-y">
               <li class="lib-row">
-                <button class="name">守陵人</button>
+                <button class="name">角色戊</button>
                 <span class="badge badge-dim2">一次性角色</span>
                 <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </li>
               <li class="lib-row">
-                <button class="name">剑侍·阿九</button>
+                <button class="name">剑侍·角色己</button>
                 <span class="badge badge-neutral">配角</span>
-                <span class="tag-chip">剑冢</span>
+                <span class="tag-chip">地点乙</span>
                 <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
               </li>
             </ul>
@@ -393,33 +397,33 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
           <div class="lib-card">
             <div class="tree-row">
               <button class="chev open"><span data-ic="chevron-right"></span></button>
-              <span class="tcol"><span class="tname">青云山</span><span class="tdesc">青云宗所在主峰，云海之巅，剑鸣可闻百里。</span></span>
+              <span class="tcol"><span class="tname">地点甲</span><span class="tdesc">门派甲所在主峰，云海之巅，剑鸣可闻百里。</span></span>
               <span class="badge badge-neutral">地理</span>
               <span class="badge badge-neutral">3 子条目</span>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
             </div>
             <div class="tree-row" style="padding-left:30px">
               <button class="chev open"><span data-ic="chevron-right"></span></button>
-              <span class="tcol"><span class="tname">青云宗</span><span class="tdesc">修仙宗门，以剑修闻名，坐落云海之巅。</span></span>
+              <span class="tcol"><span class="tname">门派甲</span><span class="tdesc">修仙宗门，以剑修闻名，坐落云海之巅。</span></span>
               <span class="badge badge-neutral">势力</span>
               <span class="badge badge-neutral">2 子条目</span>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
             </div>
             <div class="tree-row" style="padding-left:48px">
               <span style="width:20px;flex:none"></span>
-              <span class="tcol"><span class="tname">剑冢</span><span class="tdesc">历代掌门葬剑之地，禁地。</span></span>
+              <span class="tcol"><span class="tname">地点乙</span><span class="tdesc">历代掌门葬剑之地，禁地。</span></span>
               <span class="badge badge-neutral">秘境</span>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
             </div>
             <div class="tree-row" style="padding-left:48px">
               <span style="width:20px;flex:none"></span>
-              <span class="tcol"><span class="tname">藏经阁</span><span class="tdesc">存放历代剑谱与功法秘典。</span></span>
+              <span class="tcol"><span class="tname">地点丁</span><span class="tdesc">存放历代剑谱与功法秘典。</span></span>
               <span class="badge badge-neutral">地理</span>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
             </div>
             <div class="tree-row">
               <span style="width:20px;flex:none"></span>
-              <span class="tcol"><span class="tname">青云剑诀</span><span class="tdesc">宗门镇派剑法，共九式。</span></span>
+              <span class="tcol"><span class="tname">功法甲</span><span class="tdesc">宗门镇派剑法，共九式。</span></span>
               <span class="badge badge-neutral">功法</span>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
             </div>
@@ -435,7 +439,7 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
             <div class="tree-row">
               <button class="chev open"><span data-ic="chevron-right"></span></button>
               <span class="badge badge-neutral">整体</span>
-              <span class="tcol"><span class="tname">青云志 · 全书</span></span>
+              <span class="tcol"><span class="tname">项目甲 · 全书</span></span>
               <button class="outline-add">＋卷</button>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
             </div>
@@ -449,13 +453,13 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
             <div class="tree-row" style="padding-left:48px">
               <button class="chev open"><span data-ic="chevron-right"></span></button>
               <span class="badge badge-neutral">章</span>
-              <span class="tcol"><span class="tname">第 12 章 剑心蒙尘</span></span>
-              <span class="chref">📎 第 12 章 剑心蒙尘</span>
+              <span class="tcol"><span class="tname">第 12 章 事件甲</span></span>
+              <span class="chref">📎 第 12 章 事件甲</span>
               <button class="outline-add">＋情节点</button>
               <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span>
             </div>
             <div style="padding:4px 12px 8px 66px">
-              <div class="point-row">夜访剑冢<span class="badge badge-neutral">事件</span></div>
+              <div class="point-row">夜访地点乙<span class="badge badge-neutral">事件</span></div>
               <div class="point-row" style="margin-top:4px">师父闭关的真相<span class="badge badge-neutral">揭秘</span></div>
             </div>
             <div class="arc-head" style="border-top:1px solid var(--line)">
@@ -463,7 +467,7 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
               <button class="btn-sm">＋新建故事弧</button>
             </div>
             <div class="divide-y">
-              <div class="lib-row"><span class="name plain">剑心蒙尘</span><span class="badge badge-neutral">3</span></div>
+              <div class="lib-row"><span class="name plain">事件甲</span><span class="badge badge-neutral">3</span></div>
               <div class="lib-row"><span class="name plain">下山历练</span><span class="badge badge-neutral">5</span></div>
             </div>
           </div>
@@ -480,10 +484,10 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
             <span class="tl-legend">点=叙事顺序 · 时间轴=世界内时间</span>
           </div>
           <div class="lib-card divide-y">
-            <div class="lib-row"><span class="name plain">师父闭关前夜，问苏云舟剑心为何物</span><span class="badge badge-neutral">第 11 章</span><button class="check-btn">单事件检查</button></div>
-            <div class="lib-row"><span class="name plain">苏云舟下山，林晚照追随</span><span class="badge badge-neutral">第 12 章</span><button class="check-btn">单事件检查</button></div>
-            <div class="lib-row"><span class="name plain">夜访剑冢，发现二十年前异动痕迹</span><span class="badge badge-neutral">第 12 章</span><button class="check-btn">单事件检查</button></div>
-            <div class="lib-row"><span class="name plain">剑心蒙尘，断剑于山门</span><span class="badge badge-neutral">第 13 章</span><button class="check-btn">单事件检查</button></div>
+            <div class="lib-row"><span class="name plain">师父闭关前夜，问角色甲事件乙</span><span class="badge badge-neutral">第 11 章</span><button class="check-btn">单事件检查</button></div>
+            <div class="lib-row"><span class="name plain">角色甲下山，角色乙追随</span><span class="badge badge-neutral">第 12 章</span><button class="check-btn">单事件检查</button></div>
+            <div class="lib-row"><span class="name plain">夜访地点乙，发现二十年前异动痕迹</span><span class="badge badge-neutral">第 12 章</span><button class="check-btn">单事件检查</button></div>
+            <div class="lib-row"><span class="name plain">事件甲，断剑于地点己</span><span class="badge badge-neutral">第 13 章</span><button class="check-btn">单事件检查</button></div>
           </div>
         </div>
 
@@ -492,7 +496,7 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
           <div class="lib-card divide-y">
             <div class="lib-row"><span class="name plain">师父闭关的真相</span><span class="fs-status fs-open">未回收</span><span class="tag-chip">优先级 90</span><span class="tag-chip">第 11 章</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
             <div class="lib-row"><span class="name plain">断剑的秘密</span><span class="fs-status fs-open">未回收</span><span class="tag-chip">优先级 75</span><span class="tag-chip">第 13 章</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
-            <div class="lib-row"><span class="name plain">林晚照的旧玉佩</span><span class="fs-status fs-resolved">已回收</span><span class="tag-chip">优先级 40</span><span class="tag-chip">第 8 章</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
+            <div class="lib-row"><span class="name plain">角色乙的旧玉佩</span><span class="fs-status fs-resolved">已回收</span><span class="tag-chip">优先级 40</span><span class="tag-chip">第 8 章</span><span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button></span></div>
           </div>
         </div>
 
@@ -519,12 +523,12 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
               <text x="620" y="95" text-anchor="middle" fill="var(--ink-2)" font-size="10">掌教</text>
               <text x="670" y="300" text-anchor="middle" fill="var(--ink-2)" font-size="10">属于</text>
             </svg>
-            <div class="kg-node" style="left:60px;top:60px;background:#fef2f2;border-color:#fecaca;color:#991b1b"><span class="dot" style="background:#ef4444"></span>苏云舟</div>
-            <div class="kg-node" style="left:240px;top:180px;background:#eff6ff;border-color:#bfdbfe;color:#1e40af"><span class="dot" style="background:#3b82f6"></span>青云宗</div>
-            <div class="kg-node" style="left:460px;top:90px;background:#f0fdf4;border-color:#bbf7d0;color:#166534"><span class="dot" style="background:#22c55e"></span>剑冢</div>
+            <div class="kg-node" style="left:60px;top:60px;background:#fef2f2;border-color:#fecaca;color:#991b1b"><span class="dot" style="background:#ef4444"></span>角色甲</div>
+            <div class="kg-node" style="left:240px;top:180px;background:#eff6ff;border-color:#bfdbfe;color:#1e40af"><span class="dot" style="background:#3b82f6"></span>门派甲</div>
+            <div class="kg-node" style="left:460px;top:90px;background:#f0fdf4;border-color:#bbf7d0;color:#166534"><span class="dot" style="background:#22c55e"></span>地点乙</div>
             <div class="kg-node" style="left:500px;top:270px;background:#f5f3ff;border-color:#ddd6fe;color:#5b21b6"><span class="dot" style="background:#8b5cf6"></span>师父闭关的真相</div>
-            <div class="kg-node" style="left:640px;top:60px;background:#fefce8;border-color:#fde68a;color:#854d0e"><span class="dot" style="background:#eab308"></span>夜访剑冢</div>
-            <div class="kg-node" style="left:700px;top:290px;background:#fff7ed;border-color:#fed7aa;color:#9a3412"><span class="dot" style="background:#f97316"></span>剑冢禁地</div>
+            <div class="kg-node" style="left:640px;top:60px;background:#fefce8;border-color:#fde68a;color:#854d0e"><span class="dot" style="background:#eab308"></span>夜访地点乙</div>
+            <div class="kg-node" style="left:700px;top:290px;background:#fff7ed;border-color:#fed7aa;color:#9a3412"><span class="dot" style="background:#f97316"></span>地点乙禁地</div>
           </div>
         </div>
       </div>
@@ -540,7 +544,7 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
     <div class="statusbar" data-testid="statusbar">
       <span>内核已连接</span>
       <span>模型: deepseek-chat</span>
-      <span>项目: 青云志</span>
+      <span>项目: 项目甲</span>
       <span>角色 6 条</span>
     </div>
   </div>

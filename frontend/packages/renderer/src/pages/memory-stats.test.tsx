@@ -81,7 +81,7 @@ const summaryContent = '用户偏好使用「低声道」替代「说」，主�
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'p1',
-    name: '青云志',
+    name: '项目甲',
     tags: ['玄幻'],
     language: 'zh-CN',
     target_words: 800000,

@@ -113,7 +113,7 @@ class TimelineEventORM(EntityUuidMixin, Base):
         nullable=False,
         default="",
     )
-    """原始时间表达 (≤ 100 字符，如「青元历 317 年秋」；time_value 的人工可读镜像)."""
+    """原始时间表达 (≤ 100 字符，如「示例历 317 年秋」；time_value 的人工可读镜像)."""
 
     narrative_position: Mapped[int] = mapped_column(
         Integer,
