@@ -1,9 +1,24 @@
-"""构建原型自托管 serif 字体子集（#1460）。
+"""构建原型自托管字体子集（#1460）：serif 主栈 + sans 兜底层。
 
-为什么需要：``design/GUI/*/*.html`` 的 ``--font-serif`` 原先是本地字体栈
-（"Noto Serif SC" / "Source Han Serif SC" / SimSun / 宋体 / Georgia），
-在 CI runner 上解析到的字体与出图机器不同 → 层② PNG↔HTML 同源性门禁大面积假漂移
-（PR #1459 实测 91/107）。把字体随仓库分发即可让渲染与字体环境无关。
+为什么需要
+----------
+``design/GUI/*/*.html`` 的两个字体 token 原先是本地字体栈：
+
+- ``--font-serif``（"Noto Serif SC" / "Source Han Serif SC" / SimSun / 宋体 / Georgia）
+- ``--font-ui``（"PingFang SC" / "Microsoft YaHei" / "Noto Sans SC" / "Segoe UI" / sans-serif）
+
+字体栈是「机器相关」的：CI runner 上解析到的字体与出图机器不同 → 字形栅格化不同
+→ 层② 原型 PNG↔HTML 同源性门禁（``ci_cd/check_gui_png_homology.py``）假漂移。
+把字体随仓库分发即可让渲染与字体环境无关：
+
+- 未自托管前 PR #1459 实测 **91/107 漂移**（serif 栈）；
+- serif 自托管后仍剩 **2/107**（world state=plan-b/plan-c 的评审注解行）——根因是
+  ``--font-ui`` 里的 ``"Noto Sans SC"`` 是**本机专有条目**（出图机器装了、CI runner 没装），
+  Microsoft YaHei 缺的 3 个字形 ``↔``(U+2194) ``⇒``(U+21D2) ``⚠``(U+26A0) 两端解析不同
+  （本机 13px Noto Sans SC / CI 11px Segoe UI）→ 整行换行不同。
+
+因此本脚本同时构建两族子集：``InkFlow Serif``（``--font-serif`` 首选项）与
+``InkFlow Sans``（插在 ``"Microsoft YaHei"`` 之后、``"Noto Sans SC"`` 之前）。
 
 做法（可复现，需网络）：
 1. 从 Google Fonts CSS API 取「完整字体」——普通 UA 拿到的是按 unicode-range 切片的
@@ -11,8 +26,9 @@
    **EOT**（Embedded OpenType，其 body 就是完整 SFNT/TTF）。
 2. 剥离 EOT 头得到 TTF（解析头部而非搜 magic，避免误命中）。
 3. 用 ``fonttools.subset`` 按「原型 HTML 实际出现的字符集」子集化 → woff2。
-4. 重命名字体族为 ``InkFlow Serif``：与系统里可能安装的 "Noto Serif SC" 区分开，
-   @font-face 若加载失败会立刻表现为回退到别的字体（而不是「看起来一样」，掩盖故障）。
+4. 重命名字体族为 ``InkFlow Serif`` / ``InkFlow Sans``：与系统里可能安装的
+   "Noto Serif SC" / "Noto Sans SC" 区分开，@font-face 若加载失败会立刻表现为回退到
+   别的字体（而不是「看起来一样」，掩盖故障）。
 
 用法（仓库根执行）::
 
@@ -24,7 +40,7 @@
 
 字体来源与许可
 --------------
-- 字体：Noto Serif SC v2.003-H1（(c) 2017-2024 Adobe，(c) 2012 Google Inc.）
+- 字体：Noto Serif SC v2.003-H1 / Noto Sans SC（(c) 2017-2024 Adobe，(c) 2012 Google Inc.）
 - 许可：SIL Open Font License 1.1（OFL-1.1）→ 见同目录 ``OFL.txt``
 - 分发：Google Fonts（fonts.googleapis.com / fonts.gstatic.com）
 """
@@ -44,10 +60,24 @@ from fontTools.ttLib import TTFont
 
 # Google Fonts 对 legacy UA 返回 EOT；body 即完整 SFNT。
 LEGACY_UA = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)"
-CSS_TMPL = "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@{w}&display=swap"
+CSS_TMPL = "https://fonts.googleapis.com/css2?family={family}:wght@{w}&display=swap"
 WEIGHTS = (400, 600)
-OUT_FAMILY = "InkFlow Serif"
 MANIFEST_NAME = "subset-manifest.json"
+# 两个族：--font-serif 首选项（serif） + --font-ui 兜底层（sans，插在 YaHei 之后）。
+FAMILIES = {
+    "serif": {
+        "google_family": "Noto Serif SC",
+        "out_family": "InkFlow Serif",
+        "file_tmpl": "inkflow-serif-{weight}.woff2",
+        "source": "Noto Serif SC (static) v2.003-H1 — Google Fonts CDN legacy kit",
+    },
+    "sans": {
+        "google_family": "Noto Sans SC",
+        "out_family": "InkFlow Sans",
+        "file_tmpl": "inkflow-sans-{weight}.woff2",
+        "source": "Noto Sans SC (static) — Google Fonts CDN legacy kit",
+    },
+}
 # 保留全部 layout feature（kern/palt 等）以贴近完整字体的排版结果。
 SUBSET_OPTS = [
     "--layout-features=*",
@@ -75,11 +105,14 @@ def _charset_from_prototypes() -> list[str]:
     return sorted(chars)
 
 
-def _kit_url(weight: int) -> str:
-    css = _fetch(CSS_TMPL.format(w=weight), ua=LEGACY_UA).decode("utf-8")
+def _kit_url(google_family: str, weight: int) -> str:
+    url = CSS_TMPL.format(family=google_family.replace(" ", "+"), w=weight)
+    css = _fetch(url, ua=LEGACY_UA).decode("utf-8")
     match = re.search(r"src:\s*url\((https://fonts\.gstatic\.com/[^)]+)\)", css)
     if match is None:
-        raise SystemExit(f"未能从 Google Fonts CSS 解析 wght={weight} 的字体 URL：\n{css}")
+        raise SystemExit(
+            f"未能从 Google Fonts CSS 解析 {google_family!r} wght={weight} 的字体 URL：\n{css}"
+        )
     return match.group(1)
 
 
@@ -123,8 +156,8 @@ def _rename(font: TTFont, family: str, subfamily: str) -> None:
         record.string = value
 
 
-def _build(weight: int, chars: list[str]) -> bytes:
-    ttf = _strip_eot(_fetch(_kit_url(weight), ua=LEGACY_UA))
+def _build(google_family: str, out_family: str, weight: int, chars: list[str]) -> bytes:
+    ttf = _strip_eot(_fetch(_kit_url(google_family, weight), ua=LEGACY_UA))
     # recalcTimestamp=False：否则 head.modified 每次保存都写成「当前时间」→ 输出非确定
     # （实测同一 charset 连跑三次得到三个不同 SHA256，差异只在 head 表）。
     font = TTFont(io.BytesIO(ttf), recalcTimestamp=False)
@@ -134,7 +167,7 @@ def _build(weight: int, chars: list[str]) -> bytes:
     subsetter = Subsetter(options=options)
     subsetter.populate(text="".join(chars))
     subsetter.subset(font)
-    _rename(font, OUT_FAMILY, "Regular")
+    _rename(font, out_family, "Regular")
     buffer = io.BytesIO()
     font.flavor = "woff2"
     font.save(buffer)
@@ -144,39 +177,48 @@ def _build(weight: int, chars: list[str]) -> bytes:
 def main() -> int:
     chars = _charset_from_prototypes()
     print(f"[build-subset] 原型字符集：{len(chars)} 个")
-    files: dict[str, dict[str, int | str]] = {}
-    missing: list[str] = []
-    for weight in WEIGHTS:
-        data = _build(weight, chars)
-        dest = _HERE / f"inkflow-serif-{weight}.woff2"
-        dest.write_bytes(data)
-        subset = TTFont(io.BytesIO(data))
-        cmap = subset.getBestCmap()
-        covered = sum(1 for c in chars if ord(c) in cmap)
-        missing = sorted(c for c in chars if ord(c) not in cmap)
-        files[dest.name] = {
-            "bytes": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "glyphs": subset["maxp"].numGlyphs,
-            "covered": covered,
+    fonts: dict[str, dict[str, object]] = {}
+    for key, spec in FAMILIES.items():
+        files: dict[str, dict[str, int | str]] = {}
+        missing: list[str] = []
+        for weight in WEIGHTS:
+            data = _build(spec["google_family"], spec["out_family"], weight, chars)
+            dest = _HERE / spec["file_tmpl"].format(weight=weight)
+            dest.write_bytes(data)
+            subset = TTFont(io.BytesIO(data))
+            cmap = subset.getBestCmap()
+            covered = sum(1 for c in chars if ord(c) in cmap)
+            missing = sorted(c for c in chars if ord(c) not in cmap)
+            files[dest.name] = {
+                "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "glyphs": subset["maxp"].numGlyphs,
+                "covered": covered,
+            }
+            print(
+                f"[build-subset] {dest.name}: {len(data):,} B, "
+                f"glyphs={subset['maxp'].numGlyphs}, covered={covered}/{len(chars)}"
+            )
+        fonts[key] = {
+            "family": spec["out_family"],
+            "license": "OFL-1.1",
+            "source": spec["source"],
+            "files": files,
+            "missing_codepoints": [f"U+{ord(c):04X}" for c in missing],
         }
         print(
-            f"[build-subset] {dest.name}: {len(data):,} B, "
-            f"glyphs={subset['maxp'].numGlyphs}, covered={covered}/{len(chars)}"
+            f"[build-subset] {key}: {spec['out_family']!r} 缺字 {len(missing)} 个："
+            f"{''.join(missing)!r}"
         )
     manifest = {
-        "family": OUT_FAMILY,
-        "source": "Noto Serif SC (static) v2.003-H1 — Google Fonts CDN legacy kit",
-        "license": "OFL-1.1",
         "charset_sha256": hashlib.sha256("".join(chars).encode("utf-8")).hexdigest(),
         "charset_size": len(chars),
-        "files": files,
-        "missing_codepoints": [f"U+{ord(c):04X}" for c in missing],
+        "fonts": fonts,
     }
     (_HERE / MANIFEST_NAME).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"[build-subset] {MANIFEST_NAME} 已写出；缺字 {len(missing)} 个：{''.join(missing)!r}")
+    print(f"[build-subset] {MANIFEST_NAME} 已写出")
     return 0
 
 
