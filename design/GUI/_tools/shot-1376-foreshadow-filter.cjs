@@ -208,7 +208,7 @@ const SCENES = [
       p('口径 2：计数 3/8', d.countA === '显示 3 / 共 8 条');
       p('口径 2：location 为空者不渲染位置徽标（id8）', d.row8HasBadge === false);
       p('注释条 = 口径 2', JSON.stringify(d.notePlansVisible) === JSON.stringify(['chapter-match-struct']));
-      p('注释条标明需 F14 且本期不可用', d.noteTextVisible[0].includes('F14') && d.noteTextVisible[0].includes('不可用'));
+      p('注释条标明字段已落地但筛选 UI 未实现（#1350/#1429）', d.noteTextVisible[0].includes('#1350') && d.noteTextVisible[0].includes('仍未实现'));
     },
   },
   {
@@ -267,7 +267,7 @@ function commonChecks(d, p) {
   p('无水平滚动', d.scrollW <= d.innerW);
   p('截图态 demo-bar 已隐藏', d.demoBar === 'none');
   p('注释条全部带设计标注属性', d.allNotesAnnotated === true);
-  p('注释条总数 = 10（每方案一条）', d.noteTotal === 10);
+  p('注释条总数 = 11（每方案一条；#1429 新增「位置徽标」一条）', d.noteTotal === 11);
   // 卡片隐藏态（空态）无几何值；可见态要求卡片在视口内（#1342）
   p(
     '卡片未被滚出视口（可见时）',
