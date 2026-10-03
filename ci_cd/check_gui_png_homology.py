@@ -20,6 +20,14 @@
 - 产出集判据（mtime 变化）前先把每张图 mtime 归零到远古基准（``os.utime(ns=(0, 0))``）：
   NTFS 时间粒度 ~15.6ms → 同刻度原样重出不可见 → 故归零基准；还原在 finally（与字节还原一起）。
 
+为什么是 pre-push 而不是 CI job（#1330 实测）：
+- 本门禁的判据是「已提交 PNG ↔ 用当前 HTML 重出的 PNG」的像素差，**绑定出图机器**。
+- 原型 serif 栈 ``--font-serif:"Noto Serif SC","Source Han Serif SC","SimSun","宋体",Georgia,serif``
+  在 CI runner 上解析到与本机不同的字体 → 共享 app chrome（品牌字/页标题）字形不同 →
+  大面积假漂移（实测：CI 上 91/107 假漂移、maxdiff 129–215；本机 107/107 通过）。
+- 故触发面 = ``backend/.pre-commit-config.yaml`` 的 ``gui-png-homology`` pre-push 钩子
+  （仅在推送 ``design/GUI/**`` 或本文件时运行）。根治解 = 原型自托管字体（#1460，0.17.0）。
+
 ⚠️ **不校验什么**（能力边界，务必知晓）：
 - 能查：有脚本覆盖的 PNG 是否仍与当前 HTML 同源；无脚本覆盖的图是否已显式登记豁免。
 - **不校验**：像素归零只证「图 == 用当前 HTML 重出的图」，**不证图是对的**——重出后仍需人工/
