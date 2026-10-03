@@ -16,6 +16,23 @@ import {
 } from '../api/context';
 import { ApiError, errorMessage } from '../api/client';
 import { useI18n } from '../i18n/useI18n';
+import {
+  clearContextOverride,
+  contextOverrideEquals,
+  readContextOverride,
+  writeContextOverride,
+} from '../lib/contextOverride';
+import {
+  GroupHeader,
+  INJECTED_SECTIONS,
+  PICKER_SOURCES,
+  SOURCE_ORDER,
+  SOURCE_TITLE_KEYS,
+  collectIds,
+  countInjected,
+  groupBySource,
+} from './contextPanelParts';
+import type { PickerOption } from './contextPanelParts';
 
 export interface ContextPanelProps {
   projectId: string | null;
@@ -30,122 +47,6 @@ export interface ContextPanelProps {
   onWritingRequirementsChange?: (value: string | null) => void;
   /** #1342：勾选集合外传到父层（受控回调）；缺省 = 组件内部 state（既有行为不变） */
   onOverrideChange?: (override: ContextOverride) => void;
-}
-
-/** source 分组渲染顺序（7 来源；preference 为后端保留来源） */
-const SOURCE_ORDER: ContextSourceType[] = [
-  'writing_requirements',
-  'outline',
-  'character_setting',
-  'world_setting',
-  'chapter_summary',
-  'foreshadowing',
-  'preference',
-];
-
-/** source → 卡片标题 i18n key；无专用 key 的来源回退条目自身 title */
-const SOURCE_TITLE_KEYS: Partial<Record<ContextSourceType, string>> = {
-  writing_requirements: 'write.context.required',
-  outline: 'write.context.outline',
-  character_setting: 'write.context.characters',
-  world_setting: 'write.context.world',
-  foreshadowing: 'write.context.foreshadow',
-};
-
-/**
- * #1349 章级回执面：三源渲染顺序 + 标题 i18n key。
- * 只含「面板可勾选」的三源 —— 大纲源无 override 面且非用户可选，不进回执面。
- */
-const INJECTED_SECTIONS: Array<{ key: keyof ContextOverride; titleKey: string }> = [
-  { key: 'character_ids', titleKey: 'write.context.characters' },
-  { key: 'world_ids', titleKey: 'write.context.world' },
-  { key: 'foreshadowing_ids', titleKey: 'write.context.foreshadow' },
-];
-
-/** 明细总条数（回执面徽章） */
-function countInjected(detail: ContextOverride): number {
-  return (
-    detail.character_ids.length + detail.world_ids.length + detail.foreshadowing_ids.length
-  );
-}
-
-/** 按 source 分组 blocks（保持出现顺序） */
-function groupBySource(blocks: ContextBlock[]): Map<ContextSourceType, ContextBlock[]> {
-  const groups = new Map<ContextSourceType, ContextBlock[]>();
-  for (const block of blocks) {
-    const list = groups.get(block.item.source) ?? [];
-    list.push(block);
-    groups.set(block.item.source, list);
-  }
-  return groups;
-}
-
-/** 提取某来源条目 id（metadata[metaKey]），供勾选 override 使用 */
-function collectIds(blocks: ContextBlock[], source: ContextSourceType, metaKey: string): string[] {
-  return blocks
-    .filter((block) => block.item.source === source)
-    .map((block) => String(block.item.metadata?.[metaKey] ?? ''))
-    .filter((id) => id !== '');
-}
-
-/** #704：搜索选择器本地选项行 */
-interface PickerOption {
-  id: string;
-  label: string;
-}
-
-/** #704：带「＋ 选择注入」按钮的分组（仅 character_setting / world_setting / foreshadowing） */
-const PICKER_SOURCES: ReadonlySet<ContextSourceType> = new Set([
-  'character_setting',
-  'world_setting',
-  'foreshadowing',
-]);
-
-/** #1017：分组头 + 「＋ 选择注入」按钮（正常分支内嵌 / 空态·错误态精简复用的同一渲染块） */
-function GroupHeader({
-  title,
-  source,
-  onPick,
-  checkedCount = 0,
-  onClear,
-}: {
-  title: string;
-  source: ContextSourceType;
-  onPick: (source: ContextSourceType) => void;
-  checkedCount?: number;
-  onClear?: (source: ContextSourceType) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="min-w-0 truncate text-[13px] font-medium">{title}</span>
-      {PICKER_SOURCES.has(source) && (
-        <div className="flex shrink-0 items-center gap-1.5">
-          {onClear && (
-            <button
-              type="button"
-              data-testid={`context-clear-${source}`}
-              aria-label={`${t('write.context.clearCategory')} ${title}`}
-              disabled={checkedCount === 0}
-              className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => onClear(source)}
-            >
-              {t('write.context.clearCategory')}
-            </button>
-          )}
-          <button
-            type="button"
-            data-testid={`context-pick-${source}`}
-            aria-label={t('write.context.injectSelect')}
-            className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[12px] text-ink-2 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            onClick={() => onPick(source)}
-          >
-            {t('write.context.injectSelect')}
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function ContextPanel({
@@ -321,6 +222,20 @@ export function ContextPanel({
         setError(t('write.context.emptyRequired'));
       } else {
         // #1235：初始不传 override（缺省 = 全注入）；显式空数组在新语义下 = 全不注入
+        const persisted = readContextOverride(chapterId);
+        if (persisted !== null) {
+          // #1464：该章有持久化收窄覆盖 → 先跑全量（记录「全选」基准），
+          // 再按记录收窄（最后一次 assemble 决定渲染）；用户显式选择优先于预选 → 不跑 runPreselect。
+          let cancelled = false;
+          void (async () => {
+            await runAssemble(undefined);
+            if (cancelled) return;
+            await runAssemble(persisted);
+          })();
+          return () => {
+            cancelled = true;
+          };
+        }
         void runAssemble(undefined);
         // #1379：并发发起预选（不阻塞面板）；成功则用子集覆盖初始全选
         void runPreselect();
@@ -345,15 +260,26 @@ export function ContextPanel({
    * 仅在有数据（已完成一次组装）时上报，避免空态/切章瞬间用空数组覆盖父层（会把「全注入」误判为「不注入」）。
    */
   useEffect(() => {
-    if (!onOverrideChange || !data) return;
-    onOverrideChange({
+    if (!data) return;
+    const next: ContextOverride = {
       character_ids: checkedCharacterIds,
       foreshadowing_ids: checkedForeshadowingIds,
       world_ids: checkedWorldIds,
-    });
+    };
+    onOverrideChange?.(next);
+    // #1464：仅当用户手动改过才落盘；回到全选（等于全量基准）→ 抹掉记录（恢复缺省全注入）
+    if (userTouchedRef.current && chapterId) {
+      const full = fullIdsRef.current;
+      if (full && contextOverrideEquals(next, full)) {
+        clearContextOverride(chapterId);
+      } else {
+        writeContextOverride(chapterId, next);
+      }
+    }
   }, [
     onOverrideChange,
     data,
+    chapterId,
     checkedCharacterIds,
     checkedForeshadowingIds,
     checkedWorldIds,
