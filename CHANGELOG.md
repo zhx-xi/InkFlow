@@ -2,9 +2,36 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v13](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v14](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
 ## [Unreleased]
+
+## [0.16.0] - 2026-10-04
+
+### 新增
+
+- **知识图谱三连（ADR-061）**：drawio mxGraph XML 导入/导出（#1329/#1360）· 节点按实体着色 + 类别/角色筛选面板（#1373/#1414）· 同类型实体着色扩槽（6 槽哈希碰撞，8 角色实测仅 4 色，#1418）· 空态原型↔实现漂移对齐（#1419）。
+- **伏笔结构化与筛选**：`first_chapter_id` 结构化列（#1350）+ 伏笔页「是否回收 / 章节出现」筛选与优先级排序（#1376）。
+- **时间线世界序多纪元**：纪元轴族 + 轴选择器（#1353）+ 双序校验单位口径修复（`time_unit` 语义化，修大量假「未声明的倒叙」，#1409）。
+- **世界观分类 kind 分流**：`geo` 自动挂根 / `abstract` 不挂根（#1334）。
+- **成书页与 book 轨收口**：页规格 + 自动写作任务列表（#1333）· token 用量「本轮 vs 累计」拆分（#1431）· 被覆盖章「已有上一稿」徽标与恢复入口（#1440）· `book run --force` 覆盖正文 + 旧稿备份落点（#1288/#1430）。
+- **内置 Skill 版本化与项目级覆盖（ADR-062）**：三态播种 + 基线文件 + 解析面（#1331）。
+- **MCP 工具面补齐（#1233 同族）**：`write` 补 agentic/show-context、`config` 与章级要求可写（#1233）；`manage_chapter.order` 零消费（应为 `order_index`）与 `write generate` 的 `target_words` 静默忽略（#1436）；`write.revise.instruction` 与 `export.output_path` 声明但零消费（#1437）。
+- **原型同源性治理（层②）**：PNG↔HTML 同源性门禁进 CI（#1330）+ serif 字体自托管让门禁脱离「出图机器」（#1460）+ 补图缺口 5 态（#1454）+ `book-run-overwrite-notice.png` 双脚本视口冲突（#1455）+ agent/library/outline/projects 四页截图态规则（#1457）+ 14 页全量盘点与重出（#1369）。
+- **数据治理**：无 FK 的 `String(36) project_id` 子表根治 → `INTEGER + FK CASCADE`（#1387，ADR-063）· 公开仓库原型/规格/夹具真实素材脱敏 117 文件（#1456）· `tool_ids` 三处重复定义清理（#1356）· 存量内置 agent `grants` 随出厂更新（#1443，修 #1327 权限修正对存量安装失效）。
+
+### 修复
+
+- **planner 项目级模型永不生效（#1462）**：`_generate_questions` 用 `session.project_id.int` 调仓储，ADR-060 D9/#1291 后入口只认 `uuid.UUID` → `TypeError` 被 `except Exception` 静默吞成「未配置模型」→ `resolve_model` 的「项目」一级恒空 → 访谈降级模板题库 + `confirming` 永不置位 + `confirm` 恒 422。改传领域 UUID；`except TypeError` 记 ERROR 后上抛（契约违规不静默降级）。**同族漏网三处一并收口**：`memory_service` ×2（用户级偏好列表 / 偏好注入读口，未捕获直接 500）、`agent_service_context` ×1（设定注入被整体失败隔离吞成「设定注入失败」→ agent 轨 `variables["setting"]` 永不写入）；新增静态回归锁禁止 `_project_repo.get(...int)` 形态。
+- **访谈 `_complete` 无幂等（#1463）**：总纲名由 `one_liner[:30]` 派生 → 同项目第二次完成必撞同名唯一约束 → `OutlineNameConflictError` / `CharacterNameConflictError` 未映射 → 500「内部错误（无详情）」→ 重试即永久失败。建前按名查重复用既有实体（含并发窗口二次查名）；域异常映射 4xx + 可读 detail。
+- **写作页上下文「一键清除」不持久化（#1464）**：override 仅存组件 state，切章/刷新即复活。改按 `chapter:{id}` 落 `localStorage`（`inkflow.context_override.<chapterId>`），零后端改动 / 零 DDL。
+- **成书页看不到已有 plan/run（#1466）**：后端补 `GET /agent/books/plans?project_id=`（原 `GET /runs?project_id=` 恒 405）；前端 book store 增 `hydrate(projectId)`，据 `plan.status` 落三态（运行面板 / 计划卡 / 起点表单）。
+- **分页只见前 50 章（#1407）**：章节树 / 项目进度 / AI 提取下拉三处同族漏网。
+- **审计明细不可恢复（#1420）**：客户端超时后 findings 丢失（`audit_logs` 只落摘要）。
+- **提取 `--type knowledge_relation` 不可用（#1408）**：CLI 收 7 种、服务层只注册 6 种。
+- **RAG**：重建索引 embedding 单请求超 64 条上限（400 code 1214，#1404）。
+- **GUI**：上下文注入「角色/伏笔/世界观」分类一键清除（#1405）。
+- **内核可观测性**：GUI 拉起的内核 stderr 不落盘（#1382）· `%TEMP%\inkflow-kernel.log` 内核 stdout 走 ANSI/GBK 致文件混合编码、严格 UTF-8 读崩（#1388）。
 
 ## [0.15.0] - 2026-09-23
 
