@@ -28,7 +28,7 @@
 ## 1. 项目概览
 **InkFlow** 是一个 AI 辅助小说创作工具。帮助作者使用 AI 规划大纲、撰写章节、修订文本、审阅质量。
 
-> 版本里程碑（0.1.0 → 2.0.0，ADR-019 v12）、功能全表、模块类型谱系 → 见 `FEATURES.md`；架构见 `ARCHITECTURE.md`。
+> 版本里程碑（0.1.0 → 2.0.0，ADR-019 v14）、功能全表、模块类型谱系 → 见 `FEATURES.md`；架构见 `ARCHITECTURE.md`。
 
 ## 2. 技术栈（易错项）
 权威源：`constitution §三`（技术约束）+ `backend/pyproject.toml`（依赖与工具配置）。以下 3 条易错事实无法从代码推导：
