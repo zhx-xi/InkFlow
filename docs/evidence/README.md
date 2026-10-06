@@ -13,6 +13,7 @@
 | `contract-975-976-980-writing-pane.md` | `.hermes/plans/contract-975-976-980-writing-pane.md` | `test_book_service.py`、`test_book_pipeline.py` |
 | `red-contract-writer-factory-authorization.py` | `.hermes/pending-w2/tests/api/…` | `tests/api/test_writer_factory_authorization.py` |
 | `m6-1494-world-first-open.png` | `.tmp/m6-first-open.png`（本轮生成） | PR #1499（#1494 世界观页首开 · M6 真实内核实证截图：新建项目 → 首开 = 1 个默认根 + 根下引导行） |
+| `m6-1465-kg-default.png` 等 4 张 | `.verify-1465/`（本轮生成） | PR（#1465 知识图谱筛选语义与布局四改 · M6 实证：真实 React 渲染 4 态 —— 默认全选/等高、多选过滤随类别、折叠左侧竖条、实体列表内滚；脚本 = Vite dev + `page.route` mock，23 条几何/行为断言 ALL PASS） |
 
 ## ⚠️ 已知悬空引用（原件已丢失）
 
