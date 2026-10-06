@@ -11,7 +11,8 @@ base 前 skill 后）。skill_lookup 由装配层经 AgenticWriterDeps.skill_loo
   ReaderToolDeps/SaveDraftToolDeps）
 - build_writer_agent_system_prompt: 渲染 writer_agent.yaml system_prompt
   （模板无变量写死——render 空 dict 原样返回）
-- build_agentic_writer: build_reader_tools(5 只读) + build_save_draft_tool
+- build_agentic_writer: build_reader_tools(写作轨白名单过滤，10 只读) +
+  build_save_draft_tool（写作轨专用 11 项，#1507）
   → build_deep_agent（deepagents ReAct 循环，工具循环在 agent 内建）
 - _append_skills: skill 白名单拼接纯函数（已下沉 `domain/services/skill_assembly.py`，
   本模块以别名引用同一实现；base 前 skill 后，查不到跳过；#1472）
@@ -27,48 +28,80 @@ from typing import cast
 
 from inkflow.domain.services.skill_assembly import append_skills as _append_skills
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
-from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps, build_reader_tools
+from inkflow.infrastructure.agent.tools.reader_tools import (
+    _TOOL_SPECS,
+    ReaderToolDeps,
+    build_reader_tools,
+)
 from inkflow.infrastructure.agent.tools.save_draft_tool import (
     SaveDraftToolDeps,
     build_save_draft_tool,
 )
 from inkflow.logging import instrument
 
-_WRITER_READER_NAMES = [
+_READER_TOOL_NAMES: frozenset[str] = frozenset(spec.name for spec in _TOOL_SPECS)
+"""reader 工具目录全名集（= `reader_tools._TOOL_SPECS` 口径）——#1507 守卫基准。"""
+
+_WRITER_TRACK_TOOL_NAMES: list[str] = [
+    # ── reader 目录 10（序 = reader_tools._TOOL_SPECS 原序）──
     "search_characters",
+    "get_character",
     "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
     "get_prior_summary",
     "audit_chapter",
     "count_words",
-    # #1180（2026-09-16 显式扩列）：world 只读工具纳入写作轨兜底。
-    # #956 §4 的原始意图是防 reader 目录扩权被**静默**带入——此处为**显式**
-    # 加入（世界观不可达是 P1-3 缺陷：设定漂移的结构性成因），不违背该意图。
-    "list_world_settings",
-    "get_world_setting",
+    # ── 落草稿写工具（reader 目录外，写作轨唯一写面）──
+    "save_draft",
 ]
-"""writer 轨只读工具白名单（#956 §4）：tool_ids=None 时显式锁旧 5 只读，
-防 §1.3 reader 目录扩权（10/8）把新检索工具静默带入写作轨。
+"""写作轨**专用**工具白名单（#1507）——写作轨 ≠ chat 写手角色。
 
-#1180：扩列 2 个 world 只读工具——未配置 grants 的项目也能拿到世界观
-（与「显式授权」主路径互补：缺一都会留下缺陷面）。"""
+⚠️ 与 chat 轨写手角色的 grants 展开（18 名）**刻意不同口径**：写手 grants 里
+`list_outlines` / `get_outline` / `list_plot_points` / `list_maps` / `generate` /
+`continue` / `revise` 7 名对写作轨是超职责授权（写手 system_prompt 只点名前文摘要 /
+`search_characters` / `check_foreshadowing` / `save_draft`；大纲走 `{outline}` 模板
+变量注入而非工具）→ 本清单如实声明写作轨真用到的 11 项（reader 目录 10 + `save_draft`）。
+chat 轨写手角色仍走 grants（18 个），两轨互不影响（specs/f27-writer-agent §5.1）。
+
+本常量是 `tool_ids is None` 的**唯一默认来源**，也是 `resolve_writer_authorization()`
+的返回源——旧实现「grants 18 / 物化 11 / 静默丢弃 7」的三口径分叉由此消除。"""
+
+
+def _validate_writer_track_tools(names: list[str]) -> None:
+    """写作轨工具面守卫（#1507）：除 `save_draft` 外，工具名必须 ∈ reader 目录。
+
+    旧实现把 grants 展开（18）直接喂 `build_reader_tools(include=…)`，目录外 7 名被
+    **静默**滤掉——授权面与物化面长期分叉，之后改 grants 不生效也不报错（#1476 同族
+    「装配链静默断」）。此处把「目录外语工具名」由静默丢弃改为**响亮失败**，杜绝退化。
+    """
+    outside = sorted(n for n in names if n not in _READER_TOOL_NAMES and n != "save_draft")
+    if outside:
+        raise ValueError(
+            "写作轨工具名必须 ∈ reader 目录（或 save_draft），目录外名会被静默丢弃 → 拒收："
+            f"{outside}。若确需扩权，请改 `_WRITER_TRACK_TOOL_NAMES` 并同步 "
+            "specs/f27-writer-agent（#1507）。"
+        )
 
 
 def resolve_writer_authorization() -> tuple[list[str], list[str]]:
-    """写作轨授权来源（#1181）：内置「写手」Agent 实体的 grants/技能白名单。
+    """写作轨授权来源（#1181 → #1507）：写作轨**专用**工具清单 + 写手 skill 目录名。
 
-    写作轨（T1 单章 / T2-T4 book 三轨）无请求级 Agent 实例，其语义对应物即
-    出厂内置的 `role_key="writer"` Agent（`builtin=True`、不可编辑 → 确定性
-    常量）。取 spec.grants 经 `expand_grants` 展开为工具名清单（F58 真数据面，
-    与 chat 轨 resolve_grants → build_tools_by_grants 同源语义）。
+    ⚠️ 写作轨 ≠ chat 写手角色（#1507）：工具面取自本模块私有白名单
+    `_WRITER_TRACK_TOOL_NAMES`（11 项），**不再**复用内置「写手」Agent 的 grants
+    展开（18 名里 7 名对写作轨超职责 → 旧实现按 reader 目录过滤时被静默丢弃，授权面
+    与物化面分叉）。skill 目录名仍取自内置写手实体（`writing-methodology`，职责同源，
+    无分叉问题）。
 
     Returns:
-        (tool_ids, skill_ids)：工具名清单 + skill 目录名清单（F39 #522）。
+        (tool_ids, skill_ids)：写作轨专用工具名清单 + skill 目录名清单（F39 #522）。
     """
     from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
-    from inkflow.infrastructure.agent.tools.registry import expand_grants
 
     spec = next(s for s in BUILTIN_AGENT_SPECS if s["role_key"] == "writer")
-    return expand_grants(list(spec["grants"])), [spec["skill_name"]]
+    return list(_WRITER_TRACK_TOOL_NAMES), [spec["skill_name"]]
 
 
 @dataclass
@@ -189,10 +222,11 @@ def build_agentic_writer(
         base_url: OpenAI 兼容 base_url（可空）.
         deps: 装配依赖（5 只读 service + draft/audit service）.
         system_prompt: writer_agent 系统提示（build_writer_agent_system_prompt 产物）.
-        tool_ids: 工具白名单（工具目录 name 列表）；None = 旧 5 只读
-            （_WRITER_READER_NAMES 显式锁定，含 save_draft，F27 现行为向后兼容）；
+        tool_ids: 写作轨工具白名单（工具目录 name 列表）；None = 写作轨专用默认清单
+            （`_WRITER_TRACK_TOOL_NAMES`，reader 10 + save_draft，#1507 唯一默认源）；
             [names] = 只 build 白名单命中项，
-            save_draft 仅当白名单含 "save_draft" 时追加.
+            目录外名（非 "save_draft"）→ ValueError（#1507 响亮失败，不再静默丢弃），
+            save_draft 仅当 None 或白名单含 "save_draft" 时追加.
         skill_ids: skill 白名单（skill 目录名列表，#522）；None = 不拼 skill
             （F27 现行为）；[names] = 按白名单顺序把命中 skill content 追加
             到 system_prompt 之后（base 前 skill 后，查不到跳过）.
@@ -225,7 +259,10 @@ def build_agentic_writer(
         # （reader_tools.py 过滤条件），单改白名单无效。
         world_service=deps.world_service,
     )
-    # #956 §4：writer 轨 tool_ids=None → include 显式兜底旧 5（reader 目录扩权不波及）
+    # #1507：写作轨工具名先经守卫——目录外名（非 save_draft）→ ValueError（响亮失败，
+    # 不再静默丢弃）。默认源 = 写作轨专用白名单（`tool_ids=None`）。
+    include_names = tool_ids if tool_ids is not None else _WRITER_TRACK_TOOL_NAMES
+    _validate_writer_track_tools(include_names)
     # #1476：检索工具的项目上下文注入——`build_reader_tools` 的 `project_id` 形参才是
     # #680 的闭包绑定入口（工具 schema 不含 project_id，由装配期绑定）。写作轨此前漏传
     # → `bound_project_id=None` → 6 个项目域检索工具全按 None 查库（issue #1476：
@@ -235,7 +272,7 @@ def build_agentic_writer(
     tools = build_reader_tools(
         reader_deps,
         project_id=expected_project_id,
-        include=tool_ids if tool_ids is not None else _WRITER_READER_NAMES,
+        include=include_names,
     )
     if tool_ids is None or "save_draft" in tool_ids:
         tools.append(

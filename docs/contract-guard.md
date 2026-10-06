@@ -98,7 +98,7 @@
 
 | 契约源 | 锁定符号 | 联保测试 |
 |--------|----------|----------|
-| `backend/src/inkflow/infrastructure/agent/agentic_writer.py` | `_WRITER_READER_NAMES` / `build_writer_agent_system_prompt` | `backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` |
+| `backend/src/inkflow/infrastructure/agent/agentic_writer.py` | `_WRITER_TRACK_TOOL_NAMES` / `resolve_writer_authorization` / `build_writer_agent_system_prompt` | `backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` |
 | `backend/src/inkflow/infrastructure/agent/book_agentic_pipeline.py` | `_build_chapter_brief` / `_delegate_audit` | `backend/tests/unit/infrastructure/agent/test_book_agentic_pipeline.py` |
 | `backend/src/inkflow/domain/services/book_service.py` | 章 brief 构造 | `backend/tests/unit/domain/services/test_book_service.py` |
 | `backend/src/inkflow/infrastructure/agent/book_pipeline.py` | 章 brief 构造 | `backend/tests/unit/infrastructure/agent/test_book_pipeline.py` |

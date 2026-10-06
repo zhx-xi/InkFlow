@@ -1,7 +1,7 @@
 # F27: Writer Agent 闭环（writer-agent）功能规格
 > **端**: backend
 
-**Spec 版本**: 1.2
+**Spec 版本**: 1.3
 **日期**: 2026-08-10
 **依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 1 + F26 spec v1.1（specs/f26-agent-tools/spec.md §5.7）+ Spike 0 报告（docs/deepagents-evaluation-2026-08-10.md ② 空 content）+ 0.7.0 路线图拍板记录（2026-08-10）
 **所属阶段**: 0.7.0（Agent 化升级第二批），估算 8-12 人天
@@ -13,6 +13,8 @@
 > **Spec 变更**（v1.0 → v1.1，2026-10-06，#1479 缺陷修复）：草稿清理路径补齐——① 新增 `DELETE /api/v1/agent/drafts/{draft_id}`（真删语义，清理出口；此前该路径无路由 → 405）；② `POST /agent/drafts/prune-orphans` 的「孤儿」判据扩展——由「仅 `project_id` 全零 GUID」扩为「**或**所属 `projects` 行不存在 / `projects.is_deleted` 为真」（旧判据保留不删）。动机：软删项目 + 已置 rejected 的草稿既不在 `#1371` 的硬删级联面、也不在旧 prune 判据面 → 永久残留且无接口可清（issue #1479 实测）。正文修订位置：§3.1（端点总览 +3 行 + 「修改履历」列）、§15.1（端点状态流 +2 行）、§15.2（CLI 状态流 +2 行，新增 `inkflow agent draft delete`）。**不含** GUI 草稿页清理入口（另开 UI 轨）。
 
 > **Spec 变更**（v1.1 → v1.2，2026-10-06，#1476 缺陷修复）：写作轨**检索工具的项目上下文注入**补齐——`build_agentic_writer` 调 `build_reader_tools` 时漏传 `project_id`（#680 的闭包绑定入口）→ 6 个项目域检索工具全以 `None` 查库，`write next --mode agentic` 实测 4 个被调用工具中 3 个返回 `{"ok": false, "error": "项目不存在"}`（`get_prior_summary` 因摘要服务对 None 宽容而假绿），Agent 因此盲写自造人名地名（设定漂移的结构性来源）。修法：装配期以 `expected_project_id`（请求真实项目）绑定，与 chat 轨 `tools/registry.py::_build_all_tools(project_id=…)` 同源语义；**不**把 `project_id` 放回 tool schema（那会推翻 #680 并放开孤儿数据面）。正文修订位置：§5.1（新增「工具的项目上下文注入方式」）、§13（+M10 验收）。
+
+> **Spec 变更**（v1.2 → v1.3，2026-10-07，#1507 缺陷修复）：写作轨**工具面与授权面口径对齐**——`resolve_writer_authorization()` 此前复用内置「写手」Agent 的 grants 展开（18 名），而 `build_agentic_writer` 只按 reader 目录（`reader_tools._TOOL_SPECS`，10 项）过滤 → `list_outlines`/`get_outline`/`list_plot_points`/`list_maps`/`generate`/`continue`/`revise` **7 名被静默丢弃**（授权面 18 / 物化面 11）。修法（拍板方案 A）：写作轨改为**私有显式白名单**（§5.1「写作轨专用工具面清单」= reader 10 + `save_draft` = 11 项），`resolve_writer_authorization()` 不再读 grants；目录外工具名由静默丢弃改为 **`ValueError`**（响亮）。chat 轨写手角色的 grants（18）**零改动**。正文修订位置：§1.1（工具列改 11 项口径）、§5.1（新增「写作轨专用工具面清单」+ 死代码处置）、§13（+M11 验收）。
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
 
@@ -27,7 +29,7 @@ F27 交付判据 B+C（升级路径 v1.1 §1）：**writer_node 升级为 ReAct 
 | 模式 | 默认 | 控制流 | 工具 | 产出 | 状态流转 |
 |------|------|--------|------|------|----------|
 | `deterministic` | ✅ 默认 | 既有静态链（Architect→Writer→Auditor→Reviser，代码写死） | 无 | 直接写章节内容 | 现有语义不动 |
-| `agentic` | 显式开启 | LLM 自主（deepagents ReAct 循环） | 5 只读 + save_draft | **草稿**（用户确认后生效） | draft →（确认）→ final |
+| `agentic` | 显式开启 | LLM 自主（deepagents ReAct 循环） | 写作轨专用 11 项（reader 只读 10 + save_draft，§5.1） | **草稿**（用户确认后生效） | draft →（确认）→ final |
 
 - 双模式开关：`pipeline.mode: deterministic | agentic`，项目级配置 + CLI/请求覆盖（F13 同构，升级路径 v1.1 adr/agent/ADR-031.md）。
 - **deterministic 零改动**：现有 `builtin:write_chapter` 静态链、writing API、CLI 默认路径全部不动（回归零破坏是本模块验收项 M4）。
@@ -247,16 +249,49 @@ CLI/API 请求 (--mode agentic)
   → AgenticWriterService.run(request)
       → 校验项目/章节/预算参数
       → build_deep_agent(model, api_key, base_url,
-                         tools=[5 只读 + save_draft],   # F26 build_reader_tools + 新写工具
+                         tools=[写作轨专用 11 项],   # build_reader_tools(include=白名单) + save_draft（§5.1）
                          system_prompt=writer_agent_prompt)
       → agent.invoke({"messages": [...]})               # deepagents ReAct 循环（内建）
       → 后处理: 空 content 重试护栏（§5.4）/ 结果落 agent_run / 草稿关联
 ```
 
-- **复用 F26**：`build_deep_agent`（ChatOpenAI 直传 + 模型名前缀剥离 + HarnessProfile）+ `build_reader_tools`（5 只读）。
+- **复用 F26**：`build_deep_agent`（ChatOpenAI 直传 + 模型名前缀剥离 + HarnessProfile）+ `build_reader_tools`（reader 目录 10 项，经 `include=` 白名单过滤，§5.1）。
 - **新增**：`build_save_draft_tool(deps) -> Tool`（§5.2）。
 - **注入**：工具工厂需要 chapter_service（确认/校验）、draft repo（草稿落库）、audit repo（审计日志）、agent_run repo（运行记录）——`AgenticWriterDeps` dataclass（鸭子类型，镜像 ReaderToolDeps 模式）。
-- **system_prompt**：writer_agent 专用（继承既有 writer 角色提示 + 工具使用指引 + 「写正文前可查角色/伏笔/前文」「完成后输出正文，不要输出 JSON」）。模板放 `infrastructure/llm/templates/`（既有 yaml 模板体系）。
+- **system_prompt**：writer_agent 专用（继承既有 writer 角色提示 + 工具使用指引 + 「写正文前可查角色/伏笔/前文」「完成后输出正文，不要输出 JSON」）。模板放 `infrastructure/llm/templates/`（既有 yaml 体系）。
+
+**写作轨专用工具面清单（#1507 融入，2026-10-07）**：
+
+写作轨（T1 单章 + T2-T4 book 三轨）的工具面 = `agentic_writer._WRITER_TRACK_TOOL_NAMES`（**私有显式白名单，11 项**，序 = `reader_tools._TOOL_SPECS` 原序 + `save_draft` 殿后）：
+
+| # | 工具名 | 来源 | 物化条件 |
+|---|--------|------|----------|
+| 1 | `search_characters` | reader 目录 | — |
+| 2 | `get_character` | reader 目录 | — |
+| 3 | `check_foreshadowing` | reader 目录 | — |
+| 4 | `list_foreshadowing` | reader 目录 | — |
+| 5 | `get_foreshadowing` | reader 目录 | — |
+| 6 | `list_world_settings` | reader 目录 | 需 `world_service` 注入（两 factory 均注入） |
+| 7 | `get_world_setting` | reader 目录 | 需 `world_service` 注入 |
+| 8 | `get_prior_summary` | reader 目录 | — |
+| 9 | `audit_chapter` | reader 目录 | — |
+| 10 | `count_words` | reader 目录 | — |
+| 11 | `save_draft` | `save_draft_tool.py`（写工具） | — |
+
+🔴 **写作轨 ≠ chat 写手角色（两套口径，刻意不同）**：
+
+| 口径 | 消费方 | 工具面来源 | 物化数 |
+|------|--------|-----------|--------|
+| 写作轨（agentic writer） | `resolve_writer_authorization()` → `build_agentic_writer(tool_ids=…)` | `_WRITER_TRACK_TOOL_NAMES`（**私有显式 11 项**） | 11 |
+| chat 写手角色 | `deps_chat_agent._run_single_agent` → `build_tools_by_grants(resolve_grants(agent))` | 内置「写手」Agent 的 **grants** 展开（`agent_entity_service.BUILTIN_AGENT_SPECS`） | 18 |
+
+内置写手 grants（`CHARACTER.READ` / `FORESHADOWING.READ` / `WRITING.READ+WRITE` / `WORLD.READ` / `OUTLINE.READ`）展开为 **18** 名，其中 `list_outlines` / `get_outline` / `list_plot_points` / `list_maps` / `generate` / `continue` / `revise` 7 名对**写作轨**是超职责授权（写手 `system_prompt` 只点名「前文摘要 / `search_characters` / `check_foreshadowing` / `save_draft`」；大纲走 `{outline}` **模板变量**注入而非工具）——它们在 **chat 轨**（交互写作工具 `generate`/`continue`/`revise` + 大纲读权）合理，故 **chat 轨 grants 零改动**，仅写作轨改为私有白名单。
+
+- **⚠️ 历史缺陷（#1507 根因）**：旧 `resolve_writer_authorization()` 复用写手 grants（18），而 `build_agentic_writer` 只按 reader 目录（10）过滤 → 差集 **7 名被静默丢弃**（授权面 18 / 物化面 11，无任何告警）。副作用：①「职责 ↔ 授权域」审计（#1327 族）看到 `OUTLINE.READ` 会误判写手能读大纲（实际不能）；② 后续改 grants 不生效也不报错（#1476 同族「装配链静默断」的另一形态）。
+- **修法（拍板方案 A）**：写作轨改为私有显式白名单（上表 11 项），授权面即真话；`resolve_writer_authorization()` **不再读 grants**（chat 写手角色仍读）。
+- **目录外工具名响亮失败**：`build_agentic_writer` 在调 `build_reader_tools` 前经 `_validate_writer_track_tools` 校验 `include`，凡 reader 目录外（且非 `save_draft`）的名 → **`ValueError`**（不再静默丢弃）。
+- **死代码处置（#1507 二选一）**：选 **②转正**——原兜底常量 `_WRITER_READER_NAMES`（#956 §4/#1180，7 名，F58 后已陈旧）**删除**；写作轨白名单 `_WRITER_TRACK_TOOL_NAMES`（11）**转正为 `tool_ids is None` 的唯一默认来源**，同时也是 `resolve_writer_authorization()` 的唯一返回源 → 该分支可达（`build_agentic_writer(tool_ids=None)`）且被断言锁定（默认 == resolve 返回 == 显式 11），不留「永不命中」的分支/常量。理由：若改选 ① 删除，则 `tool_ids=None` 将落回 `include=None`（reader 目录全量）——那是**静默扩权**，违背 #956 §4 初衷；② 保留安全默认且消除陈旧双口径。
+- **三条消费链同源**：`api/deps_agentic_writer.py::_build_agent`（T1）、`api/routers/books.py::_writer_factory`（T2-T4）、`infrastructure/agent/assembly_observability.py`（#1480 装配观测面）**都经同一** `resolve_writer_authorization()` → 观测面 `tools` 输出随之为真话（11）。
 
 **工具的项目上下文注入方式（#1476 融入，2026-10-06）**：
 
@@ -536,6 +571,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 - **M8 修改率基线**: agentic vs deterministic 各 N 章（Q3 拍板值），产出基线报告 `design/agent-baseline-YYYY-MM-DD.md`（修改率均值/重新生成率，F28 对照值）
 - **M9 决策轨迹可查**: `inkflow agent run show <run_id> --json` 输出完整 steps（工具调用序列 + 结果 + token），`--json` 信封字段契约测试覆盖
 - **M10 检索工具项目上下文注入全绿（#1476）**: `build_agentic_writer` 装配出的项目域检索工具闭包绑定 `bound_project_id == expected_project_id`（6 个工具逐个断言 service 收到的项目 id；`None` 时保持防御语义）；4 个被调用工具（`search_characters` / `list_world_settings` / `list_foreshadowing` / `get_prior_summary`）实测返回 `{"ok": true, …}` 而非「项目不存在」；跨项目隔离不回归（schema 无 `project_id`）。测试：`backend/tests/unit/infrastructure/agent/test_agentic_writer_project_binding_1476.py`
+- **M11 写作轨工具面口径对齐（#1507）**: ① `resolve_writer_authorization()[0]` == 显式 11 项（reader 目录 10 + `save_draft`），且与 `reader_tools._TOOL_SPECS` 口径一致（含全部 10 个目录名）；② 目录外工具名（如 `list_outlines`）入写作轨 → **`ValueError`**（不再静默丢弃）；③ `_WRITER_TRACK_TOOL_NAMES` 转正为 `tool_ids=None` 唯一默认源（默认 == resolve 返回，断言锁定）；④ **chat 轨零回归**：写手 grants 仍展开 18 名且逐条在场；⑤ 两条 factory 链（`deps_agentic_writer.py` / `books.py`）走同一 11 项清单。测试：`backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py`、`tests/api/test_writer_factory_authorization.py`
 
 ---
 

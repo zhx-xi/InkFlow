@@ -41,6 +41,25 @@ from inkflow.infrastructure.database.models.writing_plan import WritingPlanORM
 SEED_PROJECT_ID = uuid.UUID(int=1)
 """projects.id 为 INTEGER 主键 → 领域 id = uuid.UUID(int=orm.id)。"""
 
+EXPECTED_WRITER_TRACK_NAMES = [
+    "search_characters",
+    "get_character",
+    "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "list_world_settings",
+    "get_world_setting",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+    "save_draft",
+]
+"""写作轨专用工具白名单（#1507）：两条 factory 链须透传**同一**清单（reader 10 + save_draft）。
+
+RED 形态（旧实现）：factory 透传 resolve_writer_authorization() = 写手 grants 展开（18）
+→ 下方 `== EXPECTED_WRITER_TRACK_NAMES` 断言 FAIL。
+"""
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -128,6 +147,9 @@ async def test_books_writer_factory_forwards_authorization(db_session, monkeypat
 
     assert "tool_ids" in captured, "books.py writer factory 必须透传 tool_ids"
     assert "skill_ids" in captured, "books.py writer factory 必须透传 skill_ids"
+    assert captured["tool_ids"] == EXPECTED_WRITER_TRACK_NAMES, (
+        "books.py 链须透传写作轨专用 11 项清单（#1507）"
+    )
 
 
 # ── A9：deps_agentic_writer.py factory 透传 tool_ids / skill_ids ───────
@@ -162,6 +184,9 @@ async def test_deps_agentic_writer_factory_forwards_authorization(monkeypatch):
 
     assert "tool_ids" in captured, "deps_agentic_writer.py 必须透传 tool_ids"
     assert "skill_ids" in captured, "deps_agentic_writer.py 必须透传 skill_ids"
+    assert captured["tool_ids"] == EXPECTED_WRITER_TRACK_NAMES, (
+        "deps_agentic_writer.py 链须透传写作轨专用 11 项清单（#1507，两链同源）"
+    )
 
 
 # ── A11：F3 轨 context_provider 注入非 Null ────────────────────────────
