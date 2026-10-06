@@ -1,9 +1,9 @@
 # F4: Agent 编排 (agent_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
+> **Spec 版本**: 1.1 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
 > **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#4](https://github.com/zhx-xi/InkFlow/issues/4)
+> **关联 Issues**: [#4](https://github.com/zhx-xi/InkFlow/issues/4) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（CLI `--watch` 语义 + `agent status` 信封）
 > **依赖**: F1 (project_service) ✅, F3 (writing_service), F5 (llm_service)
 > **状态**: ✅ 已实现（PR #22）
 
@@ -301,7 +301,8 @@ inkflow agent run \
     [--pipeline builtin:write_chapter] \
     [--var key=value] ...        # 可重复，注入 Prompt 变量
     [--override role.field=value] ...  # 如 writer.temperature=0.9
-    [--watch]                    # 阻塞轮询直到完成，实时打印阶段进度
+    [--watch]                    # 阻塞轮询直到终态（实时打印状态迁移 + 阶段完成）
+    [--watch-timeout <秒>]       # --watch 总超时，默认 600（#1478）
     [--json]
 
 inkflow agent status \
@@ -320,24 +321,47 @@ inkflow agent template list \
 
 ```bash
 # 默认人类可读（--watch）
-🚀 管线启动: builtin:write_chapter (项目 #1)
-⏳ [1/4] architect  架构师       ... 完成 (8.3s)
-⏳ [2/4] writer     写手         ... 完成 (45.1s)
-⏳ [3/4] auditor    审阅         ... 重试 1/3 ...
-⏳ [3/4] auditor    审阅         ... 完成 (12.1s)
-⏳ [4/4] reviser    修订         ... 完成 (23.1s)
-✅ 管线完成 (88.6s)
+🚀 管线启动: builtin:write_chapter
+  执行 ID: 5e8f2c1a-...
+  状态: pending
+⏳ 状态: running
+  · architect completed (8320ms)
+  · writer completed (45120ms)
+  · auditor completed (12050ms)
+✅ 管线完成 (耗时 88600ms)
 
-# 失败
+# 失败（终态，退出码仍为 0——结果非 CLI 错误）
 ❌ 管线失败: 阶段 'writer' 重试 3 次后仍失败: LLM 超时
 
-# --json
+# --watch 总超时（--watch-timeout 默认 600s）→ 退出码 1，错误消息保留 run_id
+❌ 等待管线完成超时（600s）：执行 ID 5e8f2c1a-... 仍在执行，可用 `inkflow agent status --run-id 5e8f2c1a-...` 继续查询
+
+# --json（命令级 --json 与根级 --json 等价）
 inkflow agent run --project-id 1 --json
-→ {"execution_id": "5e8f2c1a-...", "status": "pending"}
+→ {"execution_id": "5e8f2c1a-...", "status": "pending"}   # 不带 --watch：立即返回启动记录（裸 JSON，保持既有契约）
+
+inkflow agent run --project-id 1 --watch --json
+→ {"execution_id": "...", "status": "completed", "stages": [...], "total_duration_ms": 88600, "error": null}   # 阻塞到终态后输出终态记录
 
 inkflow agent status --run-id 5e8f2c1a-... --json
-→ {"execution_id": "...", "status": "completed", "stages": [...], "final_output": "..."}
+→ {"ok": true, "data": {"execution_id": "...", "status": "completed", "stages": [...], "final_output": "..."}}   # F7 §5 统一信封
 ```
+
+> **为何阶段行只有 `stage_id` 而无角色显示名/进度条**：`GET executions/{id}` 的 `stages` 快照只含 `stage_id` / `status` / `retry_count` / `duration_ms`（§2.5），角色显示名与逐阶段实时进度由 SSE 推送（`POST /agent/pipelines/stream`，Phase 2 增强）提供；`--watch` 轮询轨不做 Phase 2 承诺。
+
+### 4.2 `--watch` 轮询语义（#1478）
+
+| 项 | 契约 |
+|----|------|
+| 轮询端点 | `GET /api/v1/agent/pipelines/executions/{execution_id}`（§3.1） |
+| 终态判定 | `status` **不在** `{pending, running, waiting_hitl}` 内即为终态——`completed`/`failed` 及未来新增状态一律按终态处理（防未知状态死循环）；`waiting_hitl` 等人工确认，CLI 不代确认 → 继续等待 |
+| 退避 | 首轮间隔 1s → 2s → 4s → … 封顶 30s（`_WATCH_INITIAL_INTERVAL` / `_WATCH_MAX_INTERVAL`） |
+| 总超时 | `--watch-timeout`（默认 **600 秒**）。单次查询的传输超时沿用 #926 的 `LLM_TASK_TIMEOUT`（300s）——内核跑长任务期间事件循环可能繁忙，默认 30s 会假失败；`--watch-timeout` 约束的是轮询节奏（两次查询之间的累计等待上限） |
+| 超时语义 | 退出码 **1** + 明确错误（人类模式 → stderr；`--json` → `{"ok": false, "error": {"code": "WATCH_TIMEOUT", "message": ...}}`）；**消息含 run_id**，用户可继续用 `agent status --run-id <id>` 轮询 |
+| 终态 failed | 退出码 **0**（终态是执行结果而非 CLI 失败，同 `agent status` 语义）+ `❌ 管线失败: <error>` |
+| 轮询失败 | 内核非 2xx → 按 F7 §7 错误映射报错退出（`--json` → 错误信封），**不静默成功** |
+| 不带 `--watch` | 行为不变：立即返回启动记录（202 语义），零轮询 |
+| 人类/json | 进度渲染仅人类模式；`--json` 模式静默轮询，终态后输出终态记录一条 |
 
 ---
 
@@ -797,8 +821,8 @@ stage_results = [
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| inkflow agent run --project-id [--chapter-id --pipeline --var key=value --override role.field=value --watch --json] | 项目存在 | 创建执行 → 轮询至完成 | 🚀 管线启动 → ⏳ 各阶段进度 → ✅ 管线完成 (88.6s) / --json {execution_id, status} | 404/422 → 退出码 1；失败 → ❌ 管线失败: 阶段 'writer' 重试 3 次后仍失败: LLM 超时 | --watch 阻塞轮询；--var / --override 可重复 |
-| inkflow agent status --run-id [--json] | 执行记录存在 | 查询状态/结果 | 人类可读 / --json Execution JSON | 404「执行记录不存在」 → 退出码 1 | — |
+| inkflow agent run --project-id [--chapter-id --pipeline --var key=value --override role.field=value --watch --watch-timeout <秒> --json] | 项目存在 | 创建执行（202）→（`--watch` 时）轮询至终态 | 不带 `--watch`：🚀 管线启动 + 执行 ID + 状态（立即返回）；`--watch`：⏳ 状态迁移 + 阶段完成 → ✅ 管线完成 (耗时 Xms) / ❌ 管线失败: `<error>`。`--json` → 启动记录（不带 watch）/ 终态记录（`--watch`），命令级与根级 `--json` 等价 | 404/422 → 退出码 1（`--json` → 错误信封）；`--watch` 总超时 → 退出码 1 + `WATCH_TIMEOUT`（消息含 run_id）；`--watch` 轮询非 2xx → 报错退出（不静默） | `--watch` 退避 1s→2s→…封顶 30s（§4.2）；终态 failed → 退出码 0（结果非错误）；`--var`/`--override` 可重复 |
+| inkflow agent status --run-id [--json] | 执行记录存在 | 查询状态/结果 | 人类可读（执行 ID / 管线 / 状态 / 耗时 / 错误行）/ `--json` → F7 §5 统一信封 `{ok, data: <执行记录>}` | 404「执行记录不存在」 → 退出码 1（`--json` → `NOT_FOUND` 错误信封） | 重复查询幂等（§5.3） |
 | inkflow agent validate --file <pipeline.yaml> [--json] | 无 | 结构校验（走 Protocol.validate） | 校验结果 / --json | 422 → 退出码 1 | Phase 1 即支持 |
 | inkflow agent template list [--json] | 无 | 列出内置模板 | {items} / --json | — | — |
 
@@ -810,3 +834,12 @@ stage_results = [
 - A4：执行记录不存在 → 404「执行记录不存在」
 - A5：未知模板 id → 422「未知管线模板: xxx」
 - A6：validate 非法图（input_from 引用不存在阶段）→ {valid: false, errors: [...]}，文案与 §7 一致
+
+---
+
+## 14. 修改履历
+
+| 版本 | 日期 | 变更 | 关联 |
+|------|------|------|------|
+| 1.1 | 2026-10-06 | CLI `run --watch` 如实实现：轮询退避（1s→2s→…封顶 30s）+ `--watch-timeout` 总超时（默认 600s）+ 超时报错退出码 1 且保留 run_id + 轮询失败不静默 + 终态 failed 退出码 0；`agent status --json` 改走 F7 §5 统一信封（根级/命令级 `--json` 等价）；新增 §4.2 轮询语义表，§4 / §4.1 / §13.2 同步 | [#1478](https://github.com/zhx-xi/InkFlow/issues/1478) |
+| 1.0 | 2026-07-31 | 首版（PR #22） | [#4](https://github.com/zhx-xi/InkFlow/issues/4) |

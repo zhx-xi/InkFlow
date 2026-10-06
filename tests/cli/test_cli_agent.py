@@ -20,6 +20,17 @@ HTTP 契约（实现者以本文件为准，F38 §3.1）:
   → 「❌ {detail}」stderr + 退出码 1；422（其余 AgentServiceError 语义）同形；
   HttpApiError 惰性 import（infrastructure.http RED 阶段不存在）
 ══════════════════════════════════════════════════════════════════════════
+#1478 契约增量（RED 载于 TestAgentStatusExecution / TestAgentRunWatch）:
+- status --json（命令级与根级 --json 等价）→ stdout 信封 {"ok": true, "data": <执行记录>}；
+  非 2xx → print_error 错误信封（stdout）+ 退出码 1；人类可读输出（无 --json）逐字不变
+- run --watch → 阻塞轮询 GET /agent/pipelines/executions/{id} 直到终态
+  （终态 = 不在 {pending, running, waiting_hitl} 内）才返回；退避 1s→2s→…封顶
+  _WATCH_MAX_INTERVAL；总超时 --watch-timeout（默认 600s）
+- run --watch 总超时 → 退出码 1 + 明确错误（含 run_id，可继续 status 轮询）；
+  json 模式 → {"ok": false, "error": {"code": "WATCH_TIMEOUT", ...}}
+- run --watch 轮询失败（内核非 2xx）→ 报错退出（不静默成功）
+- run 不带 --watch → 立即返回（行为与 #1478 前一致）
+══════════════════════════════════════════════════════════════════════════
 """
 
 import json
@@ -32,6 +43,7 @@ import pytest
 from typer.testing import CliRunner
 
 from inkflow.__main__ import app
+from inkflow.cli.commands import agent_cmd
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest
 
 runner = CliRunner()
@@ -52,10 +64,12 @@ class TestAgentCLI:
 
     @pytest.mark.agent
     def test_agent_run_help(self):
-        """inkflow agent run --help 输出帮助信息。"""
+        """agent run --help 含 --watch / --watch-timeout（#1478）。"""
         result = runner.invoke(app, ["agent", "run", "--help"])
         assert result.exit_code == 0
         assert "--project-id" in self._strip_ansi(result.stdout)
+        assert "--watch" in self._strip_ansi(result.stdout)
+        assert "--watch-timeout" in self._strip_ansi(result.stdout)
 
     @pytest.mark.agent
     def test_agent_status_help(self):
@@ -121,6 +135,22 @@ def _http_err(status_code: int, detail: str, code: str | None = None):
 def _run_result(*extra_args):
     """agent run 调用（--project-id 自动补合法 UUID）。"""
     return runner.invoke(app, ["agent", "run", "--project-id", str(uuid.uuid4()), *extra_args])
+
+
+def _exec_record(**overrides) -> dict:
+    """执行记录 dict（GET executions/{id} 响应形态，见 agent_service.get_status）。"""
+    record = {
+        "execution_id": "exec-1",
+        "pipeline": "builtin:write_chapter",
+        "project_id": "p-1",
+        "status": "pending",
+        "stages": [],
+        "final_output": None,
+        "total_duration_ms": 0,
+        "error": None,
+    }
+    record.update(overrides)
+    return record
 
 
 class TestAgentRunExecution:
@@ -211,12 +241,22 @@ class TestAgentRunExecution:
         assert "🚀 管线启动" not in result.stdout
 
     @pytest.mark.agent
-    def test_run_watch_hint(self, fake_http_client):
-        """--watch（非 json）：输出 Phase 2 占位提示。"""
+    def test_run_global_json_flag(self, fake_http_client):
+        """根级 --json agent run（不带 --watch）→ 立即返回，stdout 为 run_id 结果 JSON（#1478）。"""
         fake_http_client.post.return_value = self._EXEC_RESULT
-        result = _run_result("--watch")
+        result = runner.invoke(app, ["--json", "agent", "run", "--project-id", str(uuid.uuid4())])
         assert result.exit_code == 0
-        assert "(--watch 功能将在 Phase 2 完善)" in result.stdout
+        assert json.loads(result.stdout) == self._EXEC_RESULT
+
+    @pytest.mark.agent
+    def test_run_without_watch_returns_immediately(self, fake_http_client):
+        """负例：不带 --watch → 不轮询（get 零调用）+ 人类启动行（#1478 前行为守住）。"""
+        fake_http_client.post.return_value = self._EXEC_RESULT
+        result = _run_result()
+        assert result.exit_code == 0
+        fake_http_client.get.assert_not_awaited()
+        assert "🚀 管线启动: builtin:write_chapter" in result.stdout
+        assert "(--watch" not in result.stdout
 
     @pytest.mark.agent
     def test_run_kernel_startup_error(self):
@@ -251,6 +291,142 @@ class TestAgentRunExecution:
         assert ro.temperature is None
         assert ro.model is None
         assert ro.prompt is None
+
+    @pytest.mark.agent
+    def test_run_none_result_returns(self, fake_http_client):
+        """POST 返回 None → 静默 return 不输出（同 runs list/show 的 None 语义，#1478 补守卫）。"""
+        fake_http_client.post.return_value = None
+        result = _run_result()
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+
+class TestAgentRunWatch:
+    """#1478 ②：`run --watch` 阻塞轮询（退避 + 总超时 + 轮询失败不静默）。"""
+
+    @pytest.fixture(autouse=True)
+    def _fast_backoff(self, monkeypatch):
+        """退避封顶压到 0 → 轮询不真实等待（min(interval, 0) == 0，退避算术照走）。"""
+        monkeypatch.setattr(agent_cmd, "_WATCH_MAX_INTERVAL", 0.0)
+
+    @staticmethod
+    def _started() -> dict:
+        return {
+            "execution_id": "exec-1",
+            "pipeline": "builtin:write_chapter",
+            "status": "pending",
+        }
+
+    @pytest.mark.agent
+    def test_watch_blocks_until_terminal_and_renders_progress(self, fake_http_client):
+        """--watch：轮询到终态才返回；状态迁移与阶段完成各打印一次（去重），终态不打状态行。"""
+        fake_http_client.post.return_value = self._started()
+        fake_http_client.get.side_effect = [
+            _exec_record(
+                status="running",
+                stages=[{"stage_id": "architect", "status": "completed", "duration_ms": 100}],
+            ),
+            _exec_record(
+                status="running",
+                stages=[
+                    {"stage_id": "architect", "status": "completed", "duration_ms": 100},
+                    {"stage_id": "writer", "status": "running", "duration_ms": 0},
+                    {"status": "completed", "duration_ms": 7},  # 无 stage_id → 跳过
+                ],
+            ),
+            _exec_record(status="completed", total_duration_ms=1234),
+        ]
+        result = _run_result("--watch")
+        assert result.exit_code == 0
+        assert fake_http_client.get.await_count == 3
+        assert fake_http_client.get.await_args.args[0] == "/agent/pipelines/executions/exec-1"
+        assert "🚀 管线启动: builtin:write_chapter" in result.stdout
+        assert result.stdout.count("⏳ 状态: running") == 1
+        assert result.stdout.count("· architect completed (100ms)") == 1
+        assert "· writer" not in result.stdout
+        assert "✅ 管线完成 (耗时 1234ms)" in result.stdout
+
+    @pytest.mark.agent
+    def test_watch_waits_through_hitl(self, fake_http_client):
+        """waiting_hitl 非终态 → 继续轮询（CLI 不代人工确认），直到终态才返回。"""
+        fake_http_client.post.return_value = self._started()
+        fake_http_client.get.side_effect = [
+            _exec_record(status="waiting_hitl"),
+            _exec_record(status="completed", total_duration_ms=9),
+        ]
+        result = _run_result("--watch")
+        assert result.exit_code == 0
+        assert fake_http_client.get.await_count == 2
+        assert "⏳ 状态: waiting_hitl" in result.stdout
+        assert "✅ 管线完成 (耗时 9ms)" in result.stdout
+
+    @pytest.mark.agent
+    def test_watch_failed_terminal_reports_error(self, fake_http_client):
+        """终态 failed → ❌ 管线失败 行；退出码 0（终态是结果非 CLI 错误，同 status 语义）。"""
+        fake_http_client.post.return_value = self._started()
+        fake_http_client.get.side_effect = [
+            _exec_record(status="failed", error="阶段 'writer' 重试 3 次后仍失败: LLM 超时"),
+        ]
+        result = _run_result("--watch")
+        assert result.exit_code == 0
+        assert "❌ 管线失败: 阶段 'writer' 重试 3 次后仍失败: LLM 超时" in result.stdout
+
+    @pytest.mark.agent
+    def test_watch_timeout_exit_nonzero_keeps_run_id(self, fake_http_client):
+        """总超时（mock 永不完成）→ 退出码 1 + 明确错误（含 run_id，可继续 status 轮询）。"""
+        fake_http_client.post.return_value = self._started()
+        fake_http_client.get.return_value = _exec_record(status="running")
+        result = _run_result("--watch", "--watch-timeout", "0")
+        assert result.exit_code == 1
+        assert "超时" in result.stderr
+        assert "exec-1" in result.stderr
+        assert fake_http_client.get.await_count == 1
+
+    @pytest.mark.agent
+    def test_watch_timeout_json_error_envelope(self, fake_http_client):
+        """根级 --json + 总超时 → 错误信封 WATCH_TIMEOUT（stdout）+ 退出码 1。"""
+        fake_http_client.post.return_value = self._started()
+        fake_http_client.get.return_value = _exec_record(status="running")
+        result = runner.invoke(
+            app,
+            [
+                "--json",
+                "agent",
+                "run",
+                "--project-id",
+                str(uuid.uuid4()),
+                "--watch",
+                "--watch-timeout",
+                "0",
+            ],
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "WATCH_TIMEOUT"
+        assert "exec-1" in payload["error"]["message"]
+
+    @pytest.mark.agent
+    def test_watch_poll_error_not_silent_success(self, fake_http_client):
+        """负例：轮询期间内核非 2xx → stderr ❌ + 退出码 1（不静默成功）。"""
+        fake_http_client.post.return_value = self._started()
+        fake_http_client.get.side_effect = _http_err(500, "内核内部错误", "INTERNAL_ERROR")
+        result = _run_result("--watch")
+        assert result.exit_code == 1
+        assert "❌ 内核内部错误" in result.stderr
+
+    @pytest.mark.agent
+    def test_watch_json_returns_final_record(self, fake_http_client):
+        """根级 --json + --watch → 阻塞到终态后 stdout 为终态记录（单一 JSON，无人类行）。"""
+        fake_http_client.post.return_value = self._started()
+        final = _exec_record(status="completed", total_duration_ms=4321)
+        fake_http_client.get.side_effect = [_exec_record(status="running"), final]
+        result = runner.invoke(
+            app, ["--json", "agent", "run", "--project-id", str(uuid.uuid4()), "--watch"]
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == final
+        assert "🚀 管线启动" not in result.stdout
 
 
 class TestAgentStatusExecution:
@@ -302,12 +478,33 @@ class TestAgentStatusExecution:
 
     @pytest.mark.agent
     def test_status_json(self, fake_http_client):
-        """status --json：stdout 为单一可解析 JSON == get_status 返回值。"""
+        """status --json（命令级）→ stdout 信封 {"ok": true, "data": <执行记录>}（#1478 ①）。"""
         fake_http_client.get.return_value = self._STATUS_RESULT
         result = runner.invoke(app, ["agent", "status", "--run-id", "exec-9", "--json"])
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == self._STATUS_RESULT
+        assert json.loads(result.stdout) == {"ok": True, "data": self._STATUS_RESULT}
         assert "执行 ID:" not in result.stdout
+
+    @pytest.mark.agent
+    def test_status_global_json_envelope(self, fake_http_client):
+        """根级 --json agent status → 信封含 run_id + 状态（#1478 ①：全局 --json 曾被忽略）。"""
+        fake_http_client.get.return_value = self._STATUS_RESULT
+        result = runner.invoke(app, ["--json", "agent", "status", "--run-id", "exec-9"])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload == {"ok": True, "data": self._STATUS_RESULT}
+        assert payload["data"]["execution_id"] == "exec-9"
+        assert payload["data"]["status"] == "running"
+
+    @pytest.mark.agent
+    def test_status_global_json_error_envelope(self, fake_http_client):
+        """根级 --json + 404 → 错误信封（stdout）+ 退出码 1（print_error 通道）。"""
+        fake_http_client.get.side_effect = _http_err(404, "执行记录不存在")
+        result = runner.invoke(app, ["--json", "agent", "status", "--run-id", "ghost"])
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"] == {"code": "NOT_FOUND", "message": "执行记录不存在"}
 
     @pytest.mark.agent
     def test_status_none_result_exit_1(self, fake_http_client):

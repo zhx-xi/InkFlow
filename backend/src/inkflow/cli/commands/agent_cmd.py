@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -20,7 +21,12 @@ import yaml
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest, RoleOverride
-from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
+from inkflow.infrastructure.http import (
+    LLM_TASK_TIMEOUT,
+    HttpApiError,
+    InkFlowHTTPClient,
+    map_http_error,
+)
 from inkflow.infrastructure.kernel import KernelStartupError, ensure_kernel
 from inkflow.logging import instrument
 
@@ -58,6 +64,74 @@ def _run_ctx(cli_ctx: CliContext, coro_fn):
         print_error(cli_ctx, code, message)
     except KernelStartupError as exc:
         print_error(cli_ctx, "KERNEL_ERROR", f"内核启动失败: {exc}")
+
+
+# ── #1478：`run --watch` 轮询参数（语义见 specs/f4-pipeline-engine/spec.md §4/§13.2）──
+_WATCH_DEFAULT_TIMEOUT: float = 600.0  # --watch 总超时默认值（秒）
+_WATCH_INITIAL_INTERVAL: float = 1.0  # 首次轮询间隔（秒），随后指数退避
+_WATCH_MAX_INTERVAL: float = 30.0  # 退避封顶（秒）
+# 「未完成」状态：需继续轮询。waiting_hitl 等人工确认，CLI 不代确认 → 仍属未完成；
+# 其余（completed/failed/未知新状态）一律按终态处理——未知即终态可防新增状态时死循环。
+_WATCH_PENDING_STATUSES: frozenset[str] = frozenset({"pending", "running", "waiting_hitl"})
+_WATCH_DONE_STAGE_STATUSES: frozenset[str] = frozenset({"completed", "failed", "skipped"})
+
+
+class _WatchProgress:
+    """`--watch` 人类可读进度：状态迁移 + 阶段完成（去重，仅在变化时打印）."""
+
+    def __init__(self, initial_status: str | None) -> None:
+        self._last_status = initial_status
+        self._seen_stages: set[str] = set()
+
+    def __call__(self, record: dict) -> None:
+        status = record.get("status")
+        if status != self._last_status:
+            typer.echo(f"⏳ 状态: {status}")
+            self._last_status = status
+        for stage in record.get("stages") or []:
+            stage_id = stage.get("stage_id")
+            if not stage_id or stage_id in self._seen_stages:
+                continue
+            if stage.get("status") in _WATCH_DONE_STAGE_STATUSES:
+                self._seen_stages.add(stage_id)
+                typer.echo(
+                    f"  · {stage_id} {stage.get('status')} ({stage.get('duration_ms', 0)}ms)"
+                )
+
+
+def _echo_pipeline_started(started: dict) -> None:
+    """人类可读启动摘要（#1478 前后逐字不变）."""
+    typer.echo(f"🚀 管线启动: {started['pipeline']}")
+    typer.echo(f"  执行 ID: {started['execution_id']}")
+    typer.echo(f"  状态: {started['status']}")
+
+
+async def _watch_execution(
+    execution_id: str, timeout: float, progress: _WatchProgress | None
+) -> dict | None:
+    """轮询执行记录直到终态；总超时 → 返回 None（调用方报错退出，保留 run_id）.
+
+    单次查询用 #926 的 300s per-request 覆盖：内核跑长任务期间事件循环可能繁忙，
+    默认 30s 传输超时会假失败（总等待仍由 ``timeout`` 约束轮询节奏）。
+    """
+    handle = await ensure_kernel()
+    client = InkFlowHTTPClient(handle)
+    async with client:
+        deadline = time.monotonic() + timeout
+        interval = _WATCH_INITIAL_INTERVAL
+        while True:
+            record = await client.get(
+                f"/agent/pipelines/executions/{execution_id}", timeout=LLM_TASK_TIMEOUT
+            )
+            if record.get("status") not in _WATCH_PENDING_STATUSES:
+                return record
+            if progress is not None:
+                progress(record)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(interval, remaining))
+            interval = min(interval * 2, _WATCH_MAX_INTERVAL)
 
 
 @app.command("list")
@@ -127,6 +201,7 @@ def agent_show(
 @app.command("run")
 @instrument(caller_type="cli")
 def run_pipeline(
+    ctx: typer.Context,
     project_id: str = typer.Option(..., "--project-id", help="项目 ID（UUID）"),
     chapter_id: str | None = typer.Option(None, "--chapter-id", help="章节 ID"),
     pipeline: str = typer.Option("builtin:write_chapter", "--pipeline", help="管线模板 ID"),
@@ -134,10 +209,16 @@ def run_pipeline(
     override: list[str] = typer.Option(
         [], "--override", help="角色覆盖 role.field=value（可重复）"
     ),
-    watch: bool = typer.Option(False, "--watch", help="阻塞轮询直到完成"),
+    watch: bool = typer.Option(False, "--watch", help="阻塞轮询直到终态（指数退避，超时报错）"),
+    watch_timeout: float = typer.Option(
+        _WATCH_DEFAULT_TIMEOUT, "--watch-timeout", help="--watch 总超时（秒）"
+    ),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """执行 Agent 管线"""
+    cli_ctx: CliContext = ctx.obj if isinstance(ctx.obj, CliContext) else CliContext()
+    if json_output:
+        cli_ctx.json_output = True
     # 解析 --var key=value
     variables = {}
     for v in var:
@@ -179,25 +260,54 @@ def run_pipeline(
                 json=request.model_dump(mode="json", exclude_none=True),
             )
 
-    result = _run(_impl)
+    started = _run_ctx(cli_ctx, _impl)
+    if started is None:
+        return
 
-    if json_output:
-        _print_json(result)
+    if not watch:
+        if cli_ctx.json_output:
+            _print_json(started)
+        else:
+            _echo_pipeline_started(started)
+        return
+
+    # --watch：阻塞轮询到终态；进度渲染仅人类模式（json 模式只输出终态记录）
+    progress: _WatchProgress | None = None
+    if not cli_ctx.json_output:
+        _echo_pipeline_started(started)
+        progress = _WatchProgress(started.get("status"))
+
+    final = _run_ctx(
+        cli_ctx,
+        lambda: _watch_execution(started["execution_id"], watch_timeout, progress),
+    )
+    if final is None:
+        print_error(
+            cli_ctx,
+            "WATCH_TIMEOUT",
+            f"等待管线完成超时（{watch_timeout:g}s）：执行 ID {started['execution_id']} 仍在执行，"
+            f"可用 `inkflow agent status --run-id {started['execution_id']}` 继续查询",
+        )
+    if cli_ctx.json_output:
+        _print_json(final)
+        return
+    if final.get("status") == "failed":
+        typer.echo(f"❌ 管线失败: {final.get('error') or '未知原因'}")
     else:
-        typer.echo(f"🚀 管线启动: {result['pipeline']}")
-        typer.echo(f"  执行 ID: {result['execution_id']}")
-        typer.echo(f"  状态: {result['status']}")
-        if watch:
-            typer.echo("  (--watch 功能将在 Phase 2 完善)")
+        typer.echo(f"✅ 管线完成 (耗时 {final.get('total_duration_ms', 0)}ms)")
 
 
 @app.command("status")
 @instrument(caller_type="cli")
 def check_status(
+    ctx: typer.Context,
     run_id: str = typer.Option(..., "--run-id", help="执行 ID"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
     """查看管线执行状态"""
+    cli_ctx: CliContext = ctx.obj if isinstance(ctx.obj, CliContext) else CliContext()
+    if json_output:
+        cli_ctx.json_output = True
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -205,19 +315,18 @@ def check_status(
         async with client:
             return await client.get(f"/agent/pipelines/executions/{run_id}")
 
-    result = _run(_impl)
+    result = _run_ctx(cli_ctx, _impl)
     if result is None:
-        typer.echo("❌ 执行记录不存在", err=True)
-        raise typer.Exit(code=1)
-    if json_output:
-        _print_json(result)
-    else:
-        typer.echo(f"执行 ID: {result['execution_id']}")
-        typer.echo(f"管线: {result['pipeline']}")
-        typer.echo(f"状态: {result['status']}")
-        typer.echo(f"耗时: {result['total_duration_ms']}ms")
-        if result["error"]:
-            typer.echo(f"错误: {result['error']}")
+        print_error(cli_ctx, "NOT_FOUND", "执行记录不存在")
+    if cli_ctx.json_output:
+        print_result(cli_ctx, result)
+        return
+    typer.echo(f"执行 ID: {result['execution_id']}")
+    typer.echo(f"管线: {result['pipeline']}")
+    typer.echo(f"状态: {result['status']}")
+    typer.echo(f"耗时: {result['total_duration_ms']}ms")
+    if result["error"]:
+        typer.echo(f"错误: {result['error']}")
 
 
 def _load_pipeline_config(file: str) -> dict:

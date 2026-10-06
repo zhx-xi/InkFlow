@@ -1,9 +1,9 @@
 # F7: CLI 命令行接口 (cli_interface) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
+> **Spec 版本**: 1.1 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
 > **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7)
+> **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（`agent status --json` 走统一信封）
 > **依赖**: F1-F6 全部（对外统一入口）
 > **参考 ADR**: [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru 日志), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁)
 > **状态**: ✅ 已实现（PR #28）
@@ -203,6 +203,7 @@ inkflow config set <key> <value> [--json]
 - 人类可读模式使用 emoji 前缀（✅/❌）与简洁文案（沿用 F1/F2 既有风格）
 - 敏感信息（API Key）在任何模式下都只输出掩码
 - 现有 F1/F2 `project`/`chapter` 命令输出为裸对象，**F7 落地时统一迁移为信封格式**（`data` 即原裸对象），并同步更新 F1/F2 对应 CLI 测试
+- `agent status --run-id <id>`（#1478）：`data` = 执行记录（F4 §3.2 `GET /agent/pipelines/executions/{id}` 响应体，含 `execution_id`/`status`/`stages`/`error`）；**根级 `--json` 与命令级 `--json` 等价**（两者都走本命令的信封分支）；404 → 错误信封 `{"ok": false, "error": {"code": "NOT_FOUND", ...}}` 退出码 1
 
 **示例**:
 
@@ -437,3 +438,12 @@ F7 被依赖:
 - A4：llm set-key 交互输入不回显；任何模式 Key 只输出掩码（明文不落盘不输出）
 - A5：config set 白名单外 key → 退出码 2；set 非法值（temperature=3.0）→ 退出码 1
 - A6：write 命令 LLM 失败 → LLM_ERROR 信封 + 退出码 1（人类模式错误 → stderr）
+
+---
+
+## 15. 修改履历
+
+| 版本 | 日期 | 变更 | 关联 |
+|------|------|------|------|
+| 1.1 | 2026-10-06 | §5 补 `agent status --json` 信封条目（`data` = 执行记录；根级 `--json` 与命令级 `--json` 等价；404 → 错误信封）；`agent run --watch` 的 CLI 语义归 F4 §4.2 | [#1478](https://github.com/zhx-xi/InkFlow/issues/1478) |
+| 1.0 | 2026-07-31 | 首版（PR #28） | [#7](https://github.com/zhx-xi/InkFlow/issues/7) |
