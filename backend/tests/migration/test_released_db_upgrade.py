@@ -9,7 +9,8 @@
 - M3 数据保全: 业务表行数按 MANIFEST 对账；关系表按当前 ORM 形态条件断言
   （#495 前: character_relations 保留；#495 后: 表消失 + 行迁入
   knowledge_relations 的 character↔character 子空间——断言随 ORM 真值源自动
-  切换，两态都锁「关系数据不丢」）
+  切换，两态都锁「关系数据不丢」）；**#1481 例外**：world_settings 允许
+  「存量 + 无根项目补默认根」增长（补根只 INSERT；存量行按 id 单调留存逐行锁定）
 - M4 语义可用: repo 层真实 CRUD（读项目/角色/章节 + 写更新 + 建删角色）
 - M5 缺列自动补全: 当前 ORM 全部表 SELECT 探针（旧库缺列 → OperationalError 即红）
 - M6 FK 完好 + integrity_check + 重启幂等（lifespan 第二遍，行数不变）
@@ -171,11 +172,20 @@ async def test_m2_m6_full_upgrade(fixture_dir: Path, tmp_path: Path) -> None:
         manifest = env.manifest
         expected = manifest["tables"]
 
+        # #1481 基线：升级前摄取 world_settings 存量行数与最大 id、无根项目数——
+        # 用于锁定「补根只 INSERT」：存量行逐行留存 + 新增恰为无根项目数
+        legacy_world_count = await env.scalar("SELECT COUNT(*) FROM world_settings")
+        legacy_world_max_id = await env.scalar("SELECT COALESCE(MAX(id), 0) FROM world_settings")
+        rootless_projects = await env.scalar(
+            "SELECT COUNT(*) FROM projects p WHERE p.is_deleted = 0 AND NOT EXISTS "
+            "(SELECT 1 FROM world_settings w WHERE w.project_id = p.id AND w.parent_id IS NULL)"
+        )
+
         # ── M2 升级无错（第一遍 lifespan）──
         await env.run_lifespan()
 
         # ── M3 数据保全 ──
-        # 业务核心表：行数与发布版落盘时一致
+        # 业务核心表：行数与发布版落盘时一致（#1481 的 world_settings 除外，见下）
         for table in (
             "projects",
             "characters",
@@ -187,10 +197,27 @@ async def test_m2_m6_full_upgrade(fixture_dir: Path, tmp_path: Path) -> None:
             "foreshadowings",
             "character_group_members",
         ):
-            if table in expected:
-                assert await env.scalar(f"SELECT COUNT(*) FROM {table}") == expected[table], (
-                    f"{table} 行数漂移：升级迁移破坏存量数据"
+            if table not in expected:
+                continue
+            got = await env.scalar(f"SELECT COUNT(*) FROM {table}")
+            if table == "world_settings":
+                # #1481：无根存量项目在启动期被补默认根（只 INSERT）→ 允许按无根项目数增长
+                assert legacy_world_count == expected[table], (
+                    f"fixture 基线漂移：升级前 world_settings {legacy_world_count} "
+                    f"≠ MANIFEST {expected[table]}"
                 )
+                assert got == expected[table] + rootless_projects, (
+                    f"world_settings 补根后应为 {expected[table] + rootless_projects}，实际 {got}"
+                )
+                # 存量行逐行留存（补根新增行 id 必大于原 max_id）
+                assert (
+                    await env.scalar(
+                        f"SELECT COUNT(*) FROM world_settings WHERE id <= {legacy_world_max_id}"
+                    )
+                    == legacy_world_count
+                ), "存量 world_settings 行被破坏（#1481 补根必须只 INSERT）"
+                continue
+            assert got == expected[table], f"{table} 行数漂移：升级迁移破坏存量数据"
 
         # 关系表条件断言（#495 数据面统一前后两态都锁「关系数据不丢」）
         cr_in_orm = "character_relations" in Base.metadata.tables
