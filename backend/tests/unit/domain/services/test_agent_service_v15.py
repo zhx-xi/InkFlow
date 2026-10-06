@@ -37,6 +37,20 @@ class MockAgentRepo:
         return list(self.agents)
 
 
+def _isolate_data_dir(monkeypatch, tmp_path) -> None:
+    """把 config.data_dir 指向空 tmp（skills_root 无内容）。
+
+    #1473 起 `_attach_agent_skills` 会读真实 skill 库并把「未被任何 Agent 挂载」
+    的 skill 作为通用注入所有 stage——本用例断言的是 stage prompt **逐字符等于**
+    Agent 真源 prompt，故须隔离数据目录（否则宿主机的通用 skill 会污染断言）。
+    隔离后断言强度不变（只验 Agent 真源 stage 构造）。
+    """
+    import importlib
+
+    cfg_mod = importlib.import_module("inkflow.core.config")
+    monkeypatch.setattr(cfg_mod.config, "data_dir", tmp_path)
+
+
 class TestExecuteAgentSourceV15:
     """v1.5 #484 execute 装配 Agent 真源（spec §5.7.4 + §13 M9 ⑤⑦）。
 
@@ -44,9 +58,11 @@ class TestExecuteAgentSourceV15:
     （签名未扩）；或注入后 execute 不加载 → worldview stage 缺失断言 FAIL。
     """
 
-    async def test_execute_worldview_stage_from_agent_source(self):
+    async def test_execute_worldview_stage_from_agent_source(self, monkeypatch, tmp_path):
         """agent_worldview 启用 + order 含 worldview → 执行层构造真源 stage。"""
         from inkflow.domain.models.agent import Agent
+
+        _isolate_data_dir(monkeypatch, tmp_path)
 
         config = ProjectConfig(
             agent_order=[
@@ -92,10 +108,12 @@ class TestExecuteAgentSourceV15:
         # 终点：worldview 排最后 → 成品身份合法（不触发回退）
         assert pipeline.executed_stages[-1].id == "worldview"
 
-    async def test_execute_custom_agent_from_entity_source(self):
+    async def test_execute_custom_agent_from_entity_source(self, monkeypatch, tmp_path):
         """自定义 Agent（Agent 管理创建，role_key 分配）经 agent_roles 启用 →
         stage 从 AgentEntity.system_prompt 真源构造（无模板 roles 也执行，§5.7.4）。"""
         from inkflow.domain.models.agent import Agent
+
+        _isolate_data_dir(monkeypatch, tmp_path)
 
         config = ProjectConfig(
             agent_order=[["agent_architect"], ["agent_writer"], ["agent_researcher"]],

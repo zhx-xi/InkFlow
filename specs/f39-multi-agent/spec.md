@@ -10,6 +10,8 @@
 **参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
 **状态**: ✅ 已实现（F39 后端 PR #403；F40 PR #408；F41 PR #407，2026-08-16）
 
+> **Spec 变更**（v1.4 → v1.5，2026-10-06，#1473 通用 skill 全局生效）：本版**推翻 #1472 的取集语义**（原：只拼该 Agent 白名单命中项）——改为**有效技能集 = 显式挂载 ∪ 通用**：`agent.skill_ids`（显式挂载）∪ `{skills_root 下未被任何 Agent 挂载的 skill}`（通用，对所有 Agent 自动生效）。「防串味」仍成立的部分：被**其他** Agent 显式挂载的 skill 不得注入本 Agent（仅「无人挂载」者才算通用）。同一规则落于管线链路（`_build_pipeline_context`）、写手轨目标装配（`assembly_observability`）与 `inkflow skill list` 的 `[通用]/[专属]` 标注。§5.2 同步。
+
 > **Spec 变更**（v1.3 → v1.4，2026-10-06，#1472 管线链路 skill 装配）：① **补齐管线链路（`agent run --pipeline`）的 skill 装配**——此前全仓 `_append_skills` 唯一调用点在写手轨（`infrastructure/agent/agentic_writer.py`），管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids`，用户 skill 在管线链路**静默失效**；本版在 `_build_pipeline_context` 汇合后按 `stage.id == Agent.role_key` 取该 Agent `skill_ids`，用同一拼接函数把命中 skill 正文追加到 `stage.agent.system_prompt` 之后（与写手轨同语义）；② 拼接纯函数 `_append_skills` **下沉 domain**（`domain/services/skill_assembly.py` 导出 `append_skills`），infrastructure 与 domain 共用同一实现（domain 不得 import infrastructure，AGENTS.md §4.2）；③ §5.2 新增「管线链路装配」段落与装配点表（含修改履历列）、负例契约。**不含**「通用 skill 全局生效」（#1473，W3 轨）。
 
 > **Spec 变更**（v1.2 → v1.3，2026-10-02，#1331 内置 skill 版本化 + 项目级覆盖，ADR-062）：① 内置 6 方法论 skill 内容抽离为 `i18n/skills/builtin/{zh,en}/<slug>.md`（frontmatter 带 `version`，正文逐字不变，独立子树不与 F19 操作类镜像混流）；② `ensure_builtin_skills` 升为**三态**（缺失写 / 未改升级 / 改过保留），基线落 `<skills_root>/.builtin_state.json`（文件系统真源，零 DDL）；③ 新增 `builtin_skill_status` / `builtin_skill_diff`（升级可见面）与 `resolve_skill_md_path` / `is_project_override`（项目级覆盖**仅落解析面**，装配接线另开 issue）；④ API `GET /api/v1/skills/builtin/status`、`GET /api/v1/skills/builtin/{name}/diff`；CLI `inkflow skill status|diff`；⑤ §12 新增 D11/D12、§13 新增 M12。
@@ -237,9 +239,11 @@ inkflow agent show --id <N> [--json]
   退出码: 0 成功 / 1 运行错误（含 404 不存在）/ 2 参数错误
 
 inkflow skill list [--json]
-  列出全部 Skill（name + source + 被引用 Agent 数）
+  列出全部 Skill（name + source + 被引用 Agent 数 + **`[通用]`/`[专属]` 生效范围标注**，#1473）
   退出码: 0 成功 / 1 运行错误 / 2 参数错误
 ```
+
+> **#1473 修订（2026-10-06）**：`skill list` 在「引用 N 个 Agent」旁增标**生效范围**——被任一 Agent 引用（N>0）标 `[专属]`（仅该 Agent 获取）；未被任何 Agent 引用（N=0）标 `[通用]`（所有 Agent 自动获取）。判据同装配侧 `mounted_names`（同一 `agents.skill_ids` 数据面），零新增 API 字段。
 
 - 实现位置：MODIFY `backend/src/inkflow/cli/commands/agent_cmd.py`（`agent` 组新增 `list`/`show` 子命令）+ CREATE `backend/src/inkflow/cli/commands/skill_cmd.py`（`skill` 组）+ MODIFY `backend/src/inkflow/cli/app.py`（注册 `skill` 子组）。
 - **命名区分（防撞）**：`inkflow agent list`（本 spec，列 Agent 实体）≠ `inkflow agent template list`（F19，列模板）≠ `inkflow agent tools list`（F26，本地枚举工具）；`inkflow skill list`（本 spec，单数，REST 实体域，文件系统真源 #522）≠ `inkflow skills list`（F19-skills，复数，文件系统导入）。
@@ -256,6 +260,8 @@ inkflow skill list [--json]
 2. 按 agent.skill_ids 过滤 skill 库 → 只拼白名单 skill 内容进 system prompt
 3. 白名单外的一切对 LLM 不可见 → 行为差异 = 确定性，非概率
 ```
+
+> **#1473 修订（2026-10-06）**：第 2 条的 skill 取集从「仅 `agent.skill_ids` 白名单」扩为「**显式挂载 ∪ 通用**」——未被任何 Agent 挂载的库内 skill（通用规范）对**所有** Agent 自动生效（详见 §5.2）。工具白名单（第 1 条）语义不变。
 
 ### 5.1 工具目录与分组（`infrastructure/agent/tools/` MODIFY）
 
@@ -293,17 +299,21 @@ def build_agentic_writer(
 
 **管线链路装配（#1472，2026-10-06 融入）**：
 
-`agent run --pipeline`（static 与 supervisor 两模式）的每个 stage，在 `_build_pipeline_context` 汇合后按 `stage.id`（= 该 stage 对应内置 Agent 的 `role_key`）查 Agent 实体的 `skill_ids`，用同一拼接函数把命中的 skill 正文追加到 `stage.agent.system_prompt` 之后——与写手轨同语义（base 前 skill 后，查不到跳过）。这是「工具 + skill 白名单确定性强制」不变式在**管线链路**上的落点：此前 `_append_skills` 全仓唯一调用点在写手轨，管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids` → 用户 skill 在管线链路**静默失效**（#1472 根因）。
+`agent run --pipeline`（static 与 supervisor 两模式）的每个 stage，在 `_build_pipeline_context` 汇合后按 `stage.id`（= 该 stage 对应内置 Agent 的 `role_key`）查 Agent 实体的 `skill_ids`，用同一拼接函数把命中的 skill 正文追加到 `stage.agent.system_prompt` 之后——与写手轨同语义（base 前 skill 后，查不到跳过）。这是「工具 + skill 白名单确定性强制」不变式在**管线链路**上的落点：此前 `_append_skills` 全仓唯一调用点在写手轨，管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids` → 用户 skill 在管线链路**静默失效**（#1472 根因）。**#1473 修订（2026-10-06）**：取集从「仅该 Agent 的 `skill_ids`」扩为「显式 ∪ 通用」——库中未被任何 Agent 挂载的 skill 对所有 stage 自动生效（见下方取集规则）；`_attach_agent_skills` 的通用部分由 `resolve_effective_skills` 以全库 `skill_ids` 并集（`mounted_names`）判定。
 
 | 装配点 | 落点 | 白名单来源 | 修改履历 |
 |--------|------|-----------|----------|
-| 写手轨（agentic writer） | `infrastructure/agent/agentic_writer.py` `build_agentic_writer` | `resolve_writer_authorization()`（内置 writer Agent 的 grants/skill） | 2026-08-16 初版（F39 #258） |
-| 管线链路（pipeline stage） | `domain/services/agent_service_stream.py` `_build_pipeline_context` | `AgentRepository.list()` 按 `stage.id == role_key` 取 `skill_ids` | 2026-10-06 新增（#1472） |
+| 写手轨（agentic writer） | `infrastructure/agent/agentic_writer.py` `build_agentic_writer` | `resolve_writer_authorization()`（内置 writer Agent 的 grants/skill）∪ 通用（观测面） | 2026-08-16 初版（F39 #258）；2026-10-06 通用语义（#1473，观测面） |
+| 管线链路（pipeline stage） | `domain/services/agent_service_stream.py` `_build_pipeline_context` | `AgentRepository.list()` 取 `stage.id == role_key` 的 `skill_ids`（显式）∪ 全库未挂载者（通用） | 2026-10-06 新增（#1472）；同日修订引入通用取集（#1473） |
 
-- **拼接函数下沉**：`_append_skills` 纯函数下沉至 `domain/services/skill_assembly.py`（导出名 `append_skills`），infrastructure 与 domain 双方引用**同一实现**（`agentic_writer.py` 以 `_append_skills = append_skills` 别名保留既有导入面，`api/.../assembly_observability.py` 与既有测试零改动）。理由：管线 stage 构造在 domain 层，而 domain 层**不得 import infrastructure**（AGENTS.md §4.2）；纯字符串拼接零依赖，下沉不引入循环。
+- **拼接函数下沉**：`_append_skills` 纯函数下沉至 `domain/services/skill_assembly.py`（导出名 `append_skills`），infrastructure 与 domain 双方引用**同一实现**（`agentic_writer.py` 以 `_append_skills = append_skills` 别名保留既有导入面；`api/.../assembly_observability.py` 亦引用同一实现——**#1473 起其 `resolve_effective_skills` 委托 domain `skill_assembly.resolve_effective_skills`，仅补 `bytes` 字段**，两份取集逻辑合一）。理由：管线 stage 构造在 domain 层，而 domain 层**不得 import infrastructure**（AGENTS.md §4.2）；纯字符串拼接零依赖，下沉不引入循环。
 - **skill 内容读取**：`domain/services/skill_assembly.py` 提供 `read_skill_content(skills_root, name)` / `file_skill_lookup(skills_root)`，真源 = `<data_dir>/skills/<name>/SKILL.md`（ADR-039 #522 文件系统真源）；目录/文件缺失 → 跳过（防御语义，镜像 `_append_skills` 的查不到跳过）。
-- **负例契约**：① 未挂载到该 Agent 的 skill **不得**出现在其 stage prompt（只拼白名单命中项，防串味）；② Agent `skill_ids` 为空 → stage prompt 与装配前**逐字符一致**（零回归）。
-- **不含**：「通用 skill 全局生效」（库中未被任何 Agent 挂载的 skill 自动注入）属 **#1473**（0.17.0 W3 轨）；本轨只做「Agent 挂载白名单」在管线链路的落地。
+- **取集规则（#1473 修订，2026-10-06，推翻 #1472 的「只拼白名单」语义）**：每个 Agent 的有效技能集 = `agent.skill_ids`（**显式挂载**）∪ `{skills_root 下未被任何 Agent 挂载的 skill}`（**通用**）——通用 skill 对**所有** Agent 自动生效（「一次放置、全局生效」，不必逐个挂载；内置 Agent 不可编辑时尤为需要）。
+  - **覆盖顺序**：显式挂载优先于通用（同名去重取显式那份）。
+  - **「未被任何 Agent 挂载」判据**：全库 Agent `skill_ids` 并集（同 `AgentRepository.list_agents_by_skill(name)` 返回空 / `inkflow skill list` 的「引用 N 个 Agent」为 0）。
+  - **防串味仍成立的部分**：被**其他** Agent 显式挂载的 skill **不得**注入本 Agent（只有「无人挂载」者才算通用）。
+  - **实现落点**：`domain/services/skill_assembly.py` 的 `resolve_effective_skills`（纯函数，`mounted_names` 由装配侧从 `AgentRepository.list()` 一次性聚合，零额外查询）；写手轨目标装配 `assembly_observability.resolve_effective_skills` 同源。
+- **负例契约**：① 被其他 Agent 显式挂载的 skill 不出现在本 Agent 的 stage prompt（防串味）；② Agent 无任何有效 skill（`skill_ids` 为空且全库无通用）→ stage prompt 与装配前**逐字符一致**（零回归）。
 
 ### 5.3 内置出厂配置 seed / 启动回补（`app.py` lifespan MODIFY，#522 修订）
 

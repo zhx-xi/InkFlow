@@ -6,6 +6,8 @@
 
 > **Spec 变更**（v1.1 → v1.2，2026-08-29，#762-#765 增量）：将对话/写作会话提升为全局一等对象——左侧新增与「设定库」同级的独立**会话栏**（#762，取代 #752 会话入设定库栏 + 折叠/展开）；续写/生成按钮改为**创建新会话**而非页脚内联进度条（#763）；移除右栏「草稿审批」面板（审批/保存收敛到章节页顶部按钮，右栏只留上下文注入，D3，#764）；右栏折叠按钮移到左缘 +「折叠」提示（#765）。详见 §15。
 
+> **Spec 变更**（v1.3 → v1.4，2026-10-06，#1474 增量）：`builtin:chat` 的 stage system_prompt 漏消费设定变量——`variables.setting`（#366 G1 装配）已就绪但模板只含 `{prompt}`，LLM **完全看不到项目设定**（与 §2.2 承诺相反）。本版明确 **chat 模板必须含 `{setting}` 占位符**（§2.2），使对话助手真能「结合设定库」作答；前文摘要不作为（chat 主路径无 `chapter_id`）。详见 §2.2。
+
 > **Spec 变更**（v1.2 → v1.3，2026-09-14，#1161 增量）：修复 ChatPanel 挂载期历史加载与发送/删除的三处竞态缺陷（#1155 排查确认，E2E 侧已由 #1160 测试时序绕过，本增量修产品侧根因）：① 加载落地不得覆盖加载期间产生的本地新状态；② `conversationIdRef` 本地优先（加载不得回写覆盖 handleSend 已建的会话）；③ 发送的用户消息落库后回填服务端 id，删除必须真落服务端——**含 testid 契约变更**（`chat-msg-delete-user-<seq>` → 落库后 `chat-msg-delete-<uuid>`）。详见 §18。
 
 ## 1. 概述
@@ -78,8 +80,8 @@ BUILTIN_TEMPLATES["builtin:chat"] = PipelineConfig(
 - 输入 variables：`prompt`（必填，用户对话文本）、可选 `chapter_context`（当前章正文/前文，由前端拼接传入）。
 - 输出：`final_output` = LLM 回复文本。
 - 单阶段、无工具循环（v1 范围；工具增强挂后续 issue）。
-- `_run_pipeline` 的设定注入（#366 G1）对 chat 同样生效（角色/世界观/大纲摘要进 `variables.setting`），
-  对话助手可感知项目设定。
+- **设定注入（#1474 修订，2026-10-06）**：`_run_pipeline` / `stream_pipeline` 的设定注入（#366 G1）对 chat 同样生效（角色/世界观/伏笔/大纲摘要进 `variables.setting`），**且模板 `system_prompt` 必须含 `{setting}` 占位符**，由 `_render` 渲染进 system 消息——否则设定变量虽被装配、LLM 仍不可见（#1474 根因：原模板只有 `{prompt}`，与本条下一句的承诺不符，Agent 只能索要设定）。
+  - **前文摘要（`{context}`）不纳入 chat**：它由 `_assemble_continue_context`（`ensure_summary`）产出、仅 `builtin:write_continue` 触发；chat 主路径（`project_id` + `prompt`，无 `chapter_id`）不携带章节语义，强制注入会引入额外 LLM 调用（违反「对话不产生写章副作用」的负例约束）。前端如需当前章正文，走既有 `chapter_context` 变量（本 spec v1.0 契约，前端拼接传入）。
 
 ### 2.3 PipelineResult 扩展
 

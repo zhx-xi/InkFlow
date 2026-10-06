@@ -77,7 +77,10 @@ def resolve_effective_skills(
     explicit_ids: list[str],
     mounted_names: set[str],
 ) -> list[SkillEntry]:
-    """解析**有效技能集** = 显式挂载（`explicit`）∪ 未被任何 Agent 挂载的通用 skill（`general`）.
+    """解析**有效技能集** = 显式挂载（`explicit`）∪ 未被任何 Agent 挂载的通用 skill（`general`）。
+
+    #1473 起委托 domain 纯函数 `skill_assembly.resolve_effective_skills`（装配侧同一实现），
+    本函数仅补 `bytes` 字段（观测面形状，spec f6 §5.2）。
 
     Args:
         skills_root: skill 库根（`data_dir/skills`）.
@@ -88,21 +91,24 @@ def resolve_effective_skills(
         条目列表；顺序 = explicit（按白名单序）→ general（按名升序）；
         库中不存在的目录名跳过；`bytes` = 该 SKILL.md 的 UTF-8 字节数。
     """
+    from inkflow.domain.services.skill_assembly import (
+        resolve_effective_skills as _domain_resolve_effective_skills,
+    )
+
     entries: list[SkillEntry] = []
-    seen: set[str] = set()
-    for name in explicit_ids:
-        content = _skill_content(skills_root, name)
+    for entry in _domain_resolve_effective_skills(
+        skills_root=skills_root, explicit_ids=explicit_ids, mounted_names=mounted_names
+    ):
+        content = _skill_content(skills_root, entry.name)
         if content is None:
             continue
-        entries.append({"name": name, "bytes": len(content.encode("utf-8")), "source": "explicit"})
-        seen.add(name)
-    for name in list_library_skills(skills_root):
-        if name in seen or name in mounted_names:
-            continue
-        content = _skill_content(skills_root, name)
-        if content is None:
-            continue
-        entries.append({"name": name, "bytes": len(content.encode("utf-8")), "source": "general"})
+        entries.append(
+            {
+                "name": entry.name,
+                "bytes": len(content.encode("utf-8")),
+                "source": entry.source,
+            }
+        )
     return entries
 
 

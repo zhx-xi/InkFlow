@@ -180,8 +180,8 @@ class AgentServiceStreamMixin:
         if request.mode == "supervisor":
             # supervisor 模式（spec §5.1）：角色池 = 模板 stages（装配模型/温度/prompt，不静态重排；
             # _apply_agent_order 只在 static 模式调用——supervisor 动态路由取代静态拓扑）
-            # #1472：supervisor 路径同样取 Agent 真源以装配白名单 skill
-            agents_by_role = await self._load_agents_by_role()
+            # #1472/#1473：supervisor 路径同样取 Agent 真源以装配有效技能集（显式 ∪ 通用）
+            agents_by_role, mounted_skill_names = await self._load_agents_by_role()
             if request.supervisor is None:
                 raise AgentServiceError("supervisor 配置缺失")
             template_stages = list(template.stages)
@@ -194,8 +194,9 @@ class AgentServiceStreamMixin:
         else:
             # v1.5 #484（spec §5.7.4）：装配 Agent 真源（role_key → {name, system_prompt}）
             # 供 _apply_agent_order 构造模板缺失角色占位 stage；未注入/加载失败 → 降级模板装配
-            # #1472：同一真源同时携带 skill_ids，供下方 _attach_agent_skills 装配管线 stage
-            agents_by_role = await self._load_agents_by_role()
+            # #1472/#1473：同一真源同时携带 skill_ids，供下方 _attach_agent_skills 装配管线 stage；
+            # mounted_skill_names = 全库挂载集（通用判据）
+            agents_by_role, mounted_skill_names = await self._load_agents_by_role()
             agent_source = (
                 {
                     role: {"name": agent.name, "system_prompt": agent.system_prompt}
@@ -217,8 +218,8 @@ class AgentServiceStreamMixin:
             stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
             pipeline_impl = self._pipeline
 
-        # #1472：管线 stage prompt 装配该 stage 对应 Agent 的白名单 skill（static/supervisor 共用）
-        stages = self._attach_agent_skills(stages, agents_by_role)
+        # #1472/#1473：管线 stage prompt 装配有效技能集（显式 ∪ 通用，static/supervisor 共用）
+        stages = self._attach_agent_skills(stages, agents_by_role, mounted_skill_names)
         context = PipelineContext(
             project_id=str(request.project_id),
             chapter_id=str(request.chapter_id) if request.chapter_id else None,
@@ -233,13 +234,16 @@ class AgentServiceStreamMixin:
             project.config.agent_relations,
         )
 
-    async def _load_agents_by_role(self) -> dict[str, Any]:
-        """加载 Agent 真源：role_key → Agent 领域对象（含 skill_ids）。
+    async def _load_agents_by_role(self) -> tuple[dict[str, Any], set[str]]:
+        """加载 Agent 真源：role_key → Agent 领域对象（含 skill_ids）+ 全库挂载 skill 名集合。
 
-        #484 真源供 static 占位 stage（`_apply_agent_order`）与 #1472 管线 skill
-        装配共用。未注入 `_agent_repo` 且持有 `_db_session` → `SQLiteAgentRepository`
-        兜底（镜像原 static 分支逻辑，getattr 防御 `__new__` 构造的测试实例）；
-        加载失败 → warning + 空 dict（降级模板装配，不阻断生成主链路）。
+        #484/#1472 真源供 static 占位 stage（`_apply_agent_order`）与管线 skill
+        装配共用。**同时**返回全库（含无 `role_key` 的自定义 Agent）`skill_ids`
+        并集——#1473 通用 skill 的判据（「未被**任何** Agent 挂载」= 通用）必须覆盖
+        全部 Agent，而 role 映射只取带 `role_key` 者（无 role 者不会成为 stage）。
+        未注入 `_agent_repo` 且持有 `_db_session` → `SQLiteAgentRepository` 兜底
+        （镜像原 static 分支逻辑，getattr 防御 `__new__` 构造的测试实例）；
+        加载失败 → warning + 空（降级模板装配，不阻断生成主链路）。
         """
         agent_repo = getattr(self, "_agent_repo", None)
         if agent_repo is None and getattr(self, "_db_session", None) is not None:
@@ -249,37 +253,62 @@ class AgentServiceStreamMixin:
 
             agent_repo = SQLiteAgentRepository(self._db_session)
         if agent_repo is None:
-            return {}
+            return {}, set()
         try:
-            return {a.role_key: a for a in await agent_repo.list() if a.role_key}
+            agents = await agent_repo.list()
         except Exception:
             logger.warning("Agent 真源加载失败，降级模板 roles 装配", exc_info=True)
-            return {}
+            return {}, set()
+        mounted_names = {
+            str(skill_id)
+            for agent in agents
+            for skill_id in (getattr(agent, "skill_ids", None) or [])
+        }
+        return {a.role_key: a for a in agents if a.role_key}, mounted_names
 
     def _attach_agent_skills(
-        self, stages: list[PipelineStage], agents_by_role: dict[str, Any]
+        self,
+        stages: list[PipelineStage],
+        agents_by_role: dict[str, Any],
+        mounted_names: set[str],
     ) -> list[PipelineStage]:
-        """把各 stage 对应 Agent 的 skill_ids 命中内容拼到 stage.agent.system_prompt 之后（#1472）。
+        """把各 stage 的**有效技能集**拼到 stage.agent.system_prompt 之后（#1472 + #1473）。
 
         映射 = `stage.id == Agent.role_key`（内置 architect/writer/auditor/reviser/
-        worldview/polisher）。只拼白名单命中项——未挂载 skill 不注入（防串味）；
-        Agent 缺失 / skill_ids 为空 / 库中无该目录 → 跳过（prompt 逐字符不变，零回归）。
+        worldview/polisher）。有效技能集 = `agent.skill_ids`（**显式挂载**）∪
+        `{skills_root 下未被任何 Agent 挂载的 skill}`（**通用**，对所有 Agent 生效）——
+        显式优先（同名去重）；被**其他** Agent 显式挂载的 skill 不算通用（防串味）。
+        `mounted_names`（全库 Agent `skill_ids` 并集）由 `_load_agents_by_role` 一次性
+        聚合后传入（零额外查询）。Agent 真源缺失 / 无任何有效 skill / 库中无该目录
+        → 跳过（prompt 逐字符不变，零回归）。
         """
         if not stages or not agents_by_role:
             return stages
-        skill_ids_by_role = {
-            role: list(getattr(agent, "skill_ids", None) or [])
-            for role, agent in agents_by_role.items()
-        }
-        if not any(skill_ids_by_role.values()):
-            return stages
         from inkflow.core.config import config
-        from inkflow.domain.services.skill_assembly import append_skills, file_skill_lookup
+        from inkflow.domain.services.skill_assembly import (
+            append_skills,
+            file_skill_lookup,
+            resolve_effective_skills,
+        )
 
         skills_root = getattr(self, "_skills_root", None) or (config.data_dir / "skills")
+        # 通用集与具体 Agent 无关 → 一次解析，循环复用（explicit_ids=[] ⇒ 只出 general）
+        general_names = [
+            entry.name
+            for entry in resolve_effective_skills(
+                skills_root=skills_root, explicit_ids=[], mounted_names=mounted_names
+            )
+        ]
+        has_explicit = any(getattr(agent, "skill_ids", None) for agent in agents_by_role.values())
+        if not has_explicit and not general_names:
+            return stages
+
         lookup = file_skill_lookup(skills_root)
         for stage in stages:
-            skill_ids = skill_ids_by_role.get(stage.id)
+            agent = agents_by_role.get(stage.id)
+            explicit_ids = list(getattr(agent, "skill_ids", None) or []) if agent else []
+            seen = set(explicit_ids)
+            skill_ids = [*explicit_ids, *(g for g in general_names if g not in seen)]
             if not skill_ids:
                 continue
             stage.agent.system_prompt = append_skills(stage.agent.system_prompt, skill_ids, lookup)
