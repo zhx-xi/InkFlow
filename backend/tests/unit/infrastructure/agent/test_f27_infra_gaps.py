@@ -193,7 +193,12 @@ def test_build_writer_agent_system_prompt():
 
 
 async def test_build_agentic_writer_assembles_six_tools():
-    """build_agentic_writer → build_deep_agent 收到 6 工具（5 只读 + save_draft）+ 模板 prompt。"""
+    """build_agentic_writer → build_deep_agent 收到写作轨白名单工具 + 模板 prompt。
+
+    #1507：写作轨白名单 = reader 目录 10 + save_draft（11 项）。本用例 deps 未注入
+    `world_service` → world 只读 2 不物化（#1180 第 2 重锁）→ 实际 9 工具
+    （8 只读 + save_draft）。
+    """
     from inkflow.infrastructure.agent.agentic_writer import (
         AgenticWriterDeps,
         build_agentic_writer,
@@ -223,16 +228,18 @@ async def test_build_agentic_writer_assembles_six_tools():
     assert hasattr(agent, "invoke")  # 服务层契约：仍可 invoke(messages)
     kwargs = mock_build.call_args.kwargs
     assert kwargs["system_prompt"] == "SP"
-    assert len(kwargs["tools"]) == 6
     names = [t.spec.name for t in kwargs["tools"]]
-    assert names[:5] == [
+    assert names == [
         "search_characters",
+        "get_character",
         "check_foreshadowing",
+        "list_foreshadowing",
+        "get_foreshadowing",
         "get_prior_summary",
         "audit_chapter",
         "count_words",
+        "save_draft",
     ]
-    assert names[5] == "save_draft"
     # 适配器 invoke 包装行为：裸消息列表 → {"messages": [...]} dict（真实 graph 形态）
     fake_agent.invoke = AsyncMock(return_value={"messages": [{"type": "ai", "content": "正文。"}]})
     result = await agent.invoke([{"type": "user", "content": "你好"}])

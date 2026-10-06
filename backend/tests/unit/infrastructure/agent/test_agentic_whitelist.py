@@ -103,14 +103,59 @@ EXPECTED_READER_NAMES = [
     "count_words",
 ]
 
-# #1180（2026-09-16 显式扩列）：writer 轨兜底白名单 = 旧 5 只读 + world 只读 2
-# （未配置 grants 的项目也能拿到世界观）；#956 §4 防的是「静默」扩权，此处为显式
-# 加入，随断言同步升级。独立常量——EXPECTED_READER_NAMES 另供「目录原序」用例。
-EXPECTED_WRITER_FALLBACK_NAMES = [
-    *EXPECTED_READER_NAMES,
+# #1507（2026-10-07）：写作轨**专用**显式白名单 = reader 目录 10 + save_draft（11 项），
+# 序 = reader_tools._TOOL_SPECS 原序 + save_draft 殿后（= _WRITER_TRACK_TOOL_NAMES）。
+# 旧兜底常量 _WRITER_READER_NAMES（7 名，F58 后已陈旧）已删除；本常量转正为
+# `tool_ids is None` 唯一默认源，同时是 resolve_writer_authorization() 的返回源。
+EXPECTED_WRITER_TRACK_NAMES = [
+    "search_characters",
+    "get_character",
+    "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
     "list_world_settings",
     "get_world_setting",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+    "save_draft",
 ]
+
+# chat 轨写手角色 grants 展开 = 18 名（#1507 零回归守据；序 = GRANT_TOOL_MAP 插入序）。
+# 其中 7 名（list_outlines/get_outline/list_plot_points/list_maps/generate/continue/revise）
+# 对**写作轨**是超职责授权，但对 chat 写手角色合理（交互写作工具 + 大纲读权）。
+EXPECTED_CHAT_WRITER_GRANT_NAMES = [
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "search_characters",
+    "get_character",
+    "list_maps",
+    "list_world_settings",
+    "get_world_setting",
+    "check_foreshadowing",
+    "list_foreshadowing",
+    "get_foreshadowing",
+    "get_prior_summary",
+    "audit_chapter",
+    "count_words",
+    "save_draft",
+    "generate",
+    "continue",
+    "revise",
+]
+
+# 写作轨**不该**出现的 grants 名（reader 目录外、非 save_draft）——「静默变响亮」用例的输入。
+WRITER_TRACK_OUT_OF_DOMAIN_NAMES = [
+    "list_outlines",
+    "get_outline",
+    "list_plot_points",
+    "list_maps",
+    "generate",
+    "continue",
+    "revise",
+]
+
 
 # #956 §1.3：deps 无 world_service（4 字段）时 include=None 全量 = §1.3 序去 world 2 的 8 名
 READER_NAMES_NO_WORLD = [
@@ -241,12 +286,14 @@ class TestBuildAgenticWriterToolWhitelist:
     @patch("inkflow.infrastructure.agent.agentic_writer.build_save_draft_tool")
     @patch("inkflow.infrastructure.agent.agentic_writer.build_reader_tools")
     def test_tool_ids_none_full_tools_and_prompt_unchanged(self, m_rt, m_sd, m_da):
-        """tool_ids=None/skill_ids=None → 现 F27 行为：全量旧 5 只读 + save_draft，
-        system_prompt 原样透传（向后兼容守护，RED 阶段即 PASS）。
+        """tool_ids=None/skill_ids=None → 写作轨默认白名单（_WRITER_TRACK_TOOL_NAMES，11 项）:
+        10 只读 + save_draft，system_prompt 原样透传。
 
-        #1180：兜底白名单已显式扩列 world 只读 2（EXPECTED_WRITER_FALLBACK_NAMES）。
+        #1507：旧 7 名兜底 _WRITER_READER_NAMES 已删；本分支 = 写作轨白名单唯一默认源
+        （可达 + 有断言，不再是「永不命中」的死分支）。
         """
-        m_rt.return_value = [_fake_tool(name) for name in EXPECTED_WRITER_FALLBACK_NAMES]
+        reader_names = [n for n in EXPECTED_WRITER_TRACK_NAMES if n != "save_draft"]
+        m_rt.return_value = [_fake_tool(name) for name in reader_names]
         m_sd.return_value = _fake_tool("save_draft")
 
         agent = build_agentic_writer(
@@ -258,18 +305,14 @@ class TestBuildAgenticWriterToolWhitelist:
         )
 
         assert m_rt.call_count == 1
-        # #956 §4：writer 轨 tool_ids=None → 显式锁兜底白名单（include=_WRITER_READER_NAMES）
+        # #1507：写作轨 tool_ids=None → include = 白名单（唯一默认源）
         assert (
-            _kwarg_or_positional(m_rt.call_args, "include", 1, None)
-            == EXPECTED_WRITER_FALLBACK_NAMES
+            _kwarg_or_positional(m_rt.call_args, "include", 1, None) == EXPECTED_WRITER_TRACK_NAMES
         )
         assert m_sd.call_count == 1
         assert m_da.call_count == 1
         tools = _kwarg_or_positional(m_da.call_args, "tools", 3, None)
-        assert [tool.spec.name for tool in tools] == [
-            *EXPECTED_WRITER_FALLBACK_NAMES,
-            "save_draft",
-        ]
+        assert [tool.spec.name for tool in tools] == EXPECTED_WRITER_TRACK_NAMES
         prompt = _kwarg_or_positional(m_da.call_args, "system_prompt", 4, None)
         assert prompt == BASE_PROMPT
         assert isinstance(agent, DeepAgentInvokeAdapter)
@@ -605,19 +648,18 @@ class TestWriterSystemPromptDeadParams:
 
 
 class TestWriterTrackWorldToolWhitelist:
-    """A2：writer 白名单须含 world 工具（P1-3 世界观双重锁死）.
+    """A2：写作轨白名单须含 world 工具（P1-3 世界观双重锁死）.
 
-    `_WRITER_READER_NAMES`（agentic_writer.py:35-43）现只有 5 只读，无 world。
-
-    ⚠️ 「常量含 world」断言属 W2 范畴（#1185 盲区），2026-09-15 已拆出至
-    `.hermes/pending-w2/`；此处保留已绿的「world 工具物化」用例。
+    #1507：白名单常量由 `_WRITER_READER_NAMES`（7 名陈旧兜底）改为
+    `_WRITER_TRACK_TOOL_NAMES`（11 项写作轨专用，含 world 只读 2）。
     """
 
     def test_writer_whitelist_includes_world_tools(self):
-        """`_WRITER_READER_NAMES` 须含 world 检索工具（世界观可达 writer）."""
-        from inkflow.infrastructure.agent.agentic_writer import _WRITER_READER_NAMES
+        """`_WRITER_TRACK_TOOL_NAMES` 须含 world 检索工具（世界观可达 writer）."""
+        from inkflow.infrastructure.agent.agentic_writer import _WRITER_TRACK_TOOL_NAMES
 
-        assert "get_world_setting" in _WRITER_READER_NAMES
+        assert "list_world_settings" in _WRITER_TRACK_TOOL_NAMES
+        assert "get_world_setting" in _WRITER_TRACK_TOOL_NAMES
 
     def test_build_agentic_writer_materializes_world_tool(self):
         """world_service 注入 → world 工具实际物化进 tools（P1-3 第 2 重锁）."""
@@ -640,7 +682,7 @@ class TestWriterFactoryPassesToolAndSkillIds:
     - `api/routers/books.py` `_writer_factory`（T2/T3/T4 共享面）
     - `api/deps_agentic_writer.py` `_build_agent`（T1 独立实现）
 
-    当前两者都不传 → 走 `_WRITER_READER_NAMES` 硬编码兜底、skill_ids 恒 None
+    当前两者都不传 → 走 `_WRITER_TRACK_TOOL_NAMES` 硬编码兜底、skill_ids 恒 None
     → `_append_skills` 永不执行（F39 skill 注入在所有写作轨失效）。
 
     两 factory 均为**依赖函数内的闭包**，只能经装配层驱动；行为断言落在
@@ -648,3 +690,94 @@ class TestWriterFactoryPassesToolAndSkillIds:
     patch `build_agentic_writer`、断言 kwargs 透传）。
     本文件只锁「白名单常量」这类可直接观测的面。
     """
+
+
+# ── #1507 · 写作轨工具面口径对齐（私有白名单 / 响亮失败 / chat 零回归）──
+
+
+class TestWriterTrackAuthorization1507:
+    """#1507：写作轨工具面 = 私有显式白名单（11），与 chat 写手 grants（18）口径分离。
+
+    RED 形态（旧实现）：`resolve_writer_authorization()` 返回写手 grants 展开（18）→
+    下面前 5 条全 FAIL；`_WRITER_TRACK_TOOL_NAMES` / `_validate_writer_track_tools`
+    不存在 → ImportError；「响亮失败」用例因无守卫 → `pytest.raises` 不触发 → FAIL。
+    """
+
+    def test_resolve_writer_authorization_returns_explicit_writer_track_list(self):
+        """`resolve_writer_authorization()[0]` == 显式 11 项（reader 10 + save_draft）。"""
+        from inkflow.infrastructure.agent.agentic_writer import resolve_writer_authorization
+
+        tool_ids, skill_ids = resolve_writer_authorization()
+
+        assert tool_ids == EXPECTED_WRITER_TRACK_NAMES
+        assert skill_ids == ["writing-methodology"]
+
+    def test_resolve_writer_track_matches_reader_catalog(self):
+        """写作轨清单的 reader 部分 == reader 目录全集（口径一致，零差集）。"""
+        from inkflow.infrastructure.agent.agentic_writer import resolve_writer_authorization
+        from inkflow.infrastructure.agent.tools.reader_tools import _TOOL_SPECS
+
+        tool_ids, _ = resolve_writer_authorization()
+        reader_names = {spec.name for spec in _TOOL_SPECS}
+
+        assert reader_names <= set(tool_ids)
+        assert set(tool_ids) - reader_names == {"save_draft"}
+        assert len(tool_ids) == len(set(tool_ids)), "白名单不得有重复名"
+
+    def test_out_of_domain_tool_name_is_loud(self):
+        """目录外工具名（旧实现被静默丢弃）→ 写作轨 ValueError（静默变响亮）。"""
+        import pytest
+
+        from inkflow.infrastructure.agent.agentic_writer import build_agentic_writer
+
+        with pytest.raises(ValueError, match="reader 目录"):
+            build_agentic_writer(
+                model=MODEL,
+                api_key=API_KEY,
+                base_url=BASE_URL,
+                deps=_make_deps(),
+                system_prompt=BASE_PROMPT,
+                tool_ids=["search_characters", "list_outlines"],
+            )
+
+    def test_none_default_equals_resolve_output(self):
+        """`tool_ids=None` 默认源 == resolve 返回（分支可达 + 唯一来源，无死分支）。"""
+        from inkflow.infrastructure.agent.agentic_writer import (
+            _WRITER_TRACK_TOOL_NAMES,
+            resolve_writer_authorization,
+        )
+
+        tool_ids, _ = resolve_writer_authorization()
+
+        assert list(_WRITER_TRACK_TOOL_NAMES) == tool_ids
+
+    def test_writer_grants_no_longer_consulted(self, monkeypatch):
+        """写作轨不再读 grants：写手 grants 清空 → resolve 输出不变（解耦，防护跑偏）。"""
+        from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+        from inkflow.infrastructure.agent.agentic_writer import resolve_writer_authorization
+
+        writer = next(s for s in BUILTIN_AGENT_SPECS if s["role_key"] == "writer")
+        monkeypatch.setitem(writer, "grants", [])
+
+        tool_ids, skill_ids = resolve_writer_authorization()
+
+        assert tool_ids == EXPECTED_WRITER_TRACK_NAMES
+        assert skill_ids == ["writing-methodology"]
+
+    def test_chat_writer_grants_still_18(self):
+        """chat 轨零回归：写手 grants 仍展开 18 名（逐条在场 + 顺序）。"""
+        from inkflow.domain.services.agent_entity_service import BUILTIN_AGENT_SPECS
+        from inkflow.infrastructure.agent.tools.registry import expand_grants
+
+        writer = next(s for s in BUILTIN_AGENT_SPECS if s["role_key"] == "writer")
+        names = expand_grants(list(writer["grants"]))
+
+        assert names == EXPECTED_CHAT_WRITER_GRANT_NAMES
+        assert len(names) == 18
+
+    def test_writer_track_excludes_chat_only_names(self):
+        """7 个超职责名（chat 写手角色合理）**不得**出现在写作轨白名单。"""
+        from inkflow.infrastructure.agent.agentic_writer import _WRITER_TRACK_TOOL_NAMES
+
+        for name in WRITER_TRACK_OUT_OF_DOMAIN_NAMES:
+            assert name not in _WRITER_TRACK_TOOL_NAMES

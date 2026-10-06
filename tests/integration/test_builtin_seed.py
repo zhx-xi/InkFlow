@@ -555,7 +555,8 @@ GRANTS_WHITELIST_MAP = {
         "outline": {"read"},
     },
     # #1180（2026-09-16 显式扩权）：写手加 WORLD.READ——世界观在写作轨原为
-    # 双重锁死（P1-3），主路径 resolve_writer_authorization 由此拿到 world 工具。
+    # 双重锁死（P1-3）。⚠️ #1507：写作轨工具面已改为私有白名单
+    # （agentic_writer._WRITER_TRACK_TOOL_NAMES），本 grants 面仅服务 chat 轨写手角色。
     # #1327：写手补 OUTLINE.READ——按既定大纲写正文须能读卷纲/章纲/情节点。
     "写手": {
         "character": {"read"},
