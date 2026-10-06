@@ -1,7 +1,7 @@
 # F30: 内核冷启动基建（kernel_bootstrap）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-08-07（1.3 修订 2026-09-22） | **依据**: ADR-030（本地内核服务化 ②）、ADR-059（实例类型化并发约束）、ADR-021（内核进程化交付契约）、Constitution P1-P6
+> **Spec 版本**: 1.4 | **日期**: 2026-08-07（1.4 修订 2026-10-06） | **依据**: ADR-030（本地内核服务化 ②）、ADR-059（实例类型化并发约束）、ADR-021（内核进程化交付契约）、**ADR-064（内核日志分片与自管理运行期轮转）**、Constitution P1-P6
 >
 > **Spec 变更**（1.0 → 1.1）: Q1-Q3 全部拍板（2026-08-07 用户选 A/A/A）——Q1 冷启动超时默认 30s + env `INKFLOW_KERNEL_TIMEOUT` 覆盖；Q2 版本校验 major 相同即复用；Q3 保留 `inkflow kernel status` 调试命令（dev 标注）
 >
@@ -15,15 +15,23 @@
 > - §6.3 **新增**「日志启动期归档」——该日志为机器级共享且此前无 size cap / rotate / 清理，
 >   实测累积 918MB / ≈421 万行；现按 50MB 阈值归档为 `.1`/`.2`（保留 2 份，最旧被删）
 >
-> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 1 个模块，估算 3-4 人天）；1.2 修订挂 0.14.0
+> **Spec 变更**（1.3 → 1.4，#1477 / ADR-064）:
+> - §6.2 **修订**：日志拆三文件 —— **内核运行日志 / 客户端事件日志 / 引导日志**（程序日志与内核日志不再混装）
+> - §6.3 **重写**：「日志启动期归档」→「**分片 + 自管理运行期轮转**」。1.3 的方案**实测不可行**：存活内核
+>   以继承句柄常驻该文件（Windows 无 `FILE_SHARE_DELETE`）⇒ 任何进程（含内核自己）都无法重命名，
+>   运行期与启动期兜底**双双静默失效**（实测 246.2MB 且目录下无任何归档）。改为内核自持句柄 + 现成日志库轮转
+> - §5.6 **补注**：存活期互斥的持有者是**客户端进程**（非内核）⇒ 内核存活不受互斥约束；GUI(Electron) spawn
+>   不参与互斥 ⇒ 跨数据目录的 prod 可并存（**遗留 → #1487**，不在本修订范围）
 >
-> **关联 Issues**: #166（本模块）；#167（GUI 托盘，**依赖本模块**）；#168（CLI 产物，**依赖本模块**）；#169（CLI 恒 HTTP，**依赖本模块**）；#49（F20 MCP，**依赖本模块**）；**#1153（1.2 修订来源）**；**#1380（1.3 修订来源）**
+> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 1 个模块，估算 3-4 人天）；1.2 修订挂 0.14.0；**1.4 修订挂 0.17.0**
+>
+> **关联 Issues**: #166（本模块）；#167（GUI 托盘，**依赖本模块**）；#168（CLI 产物，**依赖本模块**）；#169（CLI 恒 HTTP，**依赖本模块**）；#49（F20 MCP，**依赖本模块**）；**#1153（1.2 修订来源）**；**#1380（1.3 修订来源）**；**#1477（1.4 修订来源）**；#1487（内核单实例化补全——1.4 记录的遗留）
 >
 > **依赖**: ✅ F19（serve 命令 + INKFLOW_READY 交付契约 + `--port-file` 原子写入）· ✅ F1（config.data_dir = %APPDATA%\InkFlow）· ⏳ 无
 >
-> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-059](../../adr/kernel/ADR-059.md)（实例类型化并发约束——**修订 ADR-030 ②**）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-059](../../adr/kernel/ADR-059.md)（实例类型化并发约束——**修订 ADR-030 ②**）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-064](../../adr/kernel/ADR-064.md)（内核日志分片与自管理运行期轮转）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
-> **状态**: ✅ 已实现（PR #171，#166 2026-08-08）；1.2 修订实施中（#1153）；1.3 修订实施中（#1380）
+> **状态**: ✅ 已实现（PR #171，#166 2026-08-08）；1.2 修订实施中（#1153）；1.3 修订实施中（#1380）；1.4 修订实施中（#1477）
 
 ---
 
@@ -187,7 +195,7 @@ async def ensure_kernel(
    - 获取失败（183）→ 轮询 kernel.json（≤ timeout）直至可用 → 返回复用
 4. **stale 清理**：判定 stale 后先重命名 `kernel.json.stale-<ts>`（保留现场）再继续
 
-**异常**：冷启动超时 / INKFLOW_READY 解析失败 / 内核秒退 → 抛 `KernelStartupError`（含日志指引 `%TEMP%\inkflow-kernel.log`）
+**异常**：冷启动超时 / INKFLOW_READY 解析失败 / 内核秒退 → 抛 `KernelStartupError`（含**分片后**的引导日志 + 内核运行日志指引，见 §6.2）
 
 ---
 
@@ -270,6 +278,8 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 | `dev` | **同 data_dir 单内核** | 同走存活期互斥，互斥名带 data_dir 摘要（不同 data_dir / worktree 互不阻塞） | `InkFlowKernelDev-<sha256(data_dir)[:16]>` |
 
 > **1.3 修订（#1188）**：`dev` 从「允许多开（不获取互斥）」改为「同 data_dir 单内核」；`release` 重命名为 `prod`（输入别名 `release` 归一为 `prod`）。三 kind **统一走存活期互斥**，差异仅在互斥名——「data_dir 是否参与判定」由 `_lifetime_mutex_name(kind, state_file)` 单点决定。
+>
+> **1.4 补注（#1477 实测，**语义澄清**）**：存活期互斥的**持有者是「客户端进程」**（`ensure_kernel()` 的调用方），**不是内核进程**——该互斥永不释放，随**调用方**进程退出由 OS 回收（`bootstrap.py` 自述）。⇒ ①上表「机器级限 1」约束的是**客户端的拉起动作**，不是「内核存活」；②客户端退出后内核可成为孤儿（实测：本机 76 个 pytest 孤儿内核）；③GUI(Electron) 自己 spawn 内核、**不经过** `_acquire_lifetime_mutex` ⇒ 跨数据目录的 prod 内核可并存（→ **#1487**）。
 
 **语义对照（本 1.2 修订的实质）**：
 
@@ -320,32 +330,62 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
   - `rc` / `prod` → **同 kind 限 1 个**（机器级存活期互斥 §5.6）；跨 kind 互不阻塞（rc 与 prod 可各 1 个）
   - 注册表（§2.4.2）承载「有哪些实例」的可见性，kernel.json 仍只承载「默认实例」发现
 
-### 6.2 日志
+### 6.2 日志文件布局（1.4 修订 #1477）
 
-- ensure_kernel 操作日志：`%TEMP%\inkflow-kernel.log`（追加：启动/复用/stale 清理/失败，带时间戳）——与调度器日志（F25 已移除）无关，纯冷启动排障
-- 内核自身日志：serve 输出重定向到该文件（`Popen(stdout=log_file, stderr=STDOUT)`）——冷启动失败可查死因
+内核相关输出按**职责**拆三个文件（程序运行日志与内核日志不再混装，对齐 JVM 日志 / 应用日志分离惯例）：
 
-### 6.3 日志启动期归档（1.3 新增，#1380）
+| 文件 | 内容 | 写入方 | 轮转 |
+|------|------|--------|------|
+| `%TEMP%\inkflow-kernel-<kind>-<hash>.log` | **内核运行日志**：内核进程自身输出（uvicorn / `print` / traceback / 应用日志） | 内核进程（Loguru FileSink，**自己持有句柄**） | Loguru `rotation="10 MB"` + `retention`（10 份 **或** 30 天） |
+| `%TEMP%\inkflow-kernel-events.log` | **客户端事件日志**：`ensure_kernel` 操作行（启动/复用/stale 清理/失败） | 客户端 `_log_kernel_event` | `_rotate_kernel_log`（10MB / 10 份） |
+| `%TEMP%\inkflow-kernel-<kind>-<hash>.boot.log` | **引导日志**：spawn 到内核接管 stdout 之间的原始输出（**冷启动死因**） | `_spawn_kernel` 的 `Popen(stdout=…)`（继承句柄） | 启动期兜底（`_rotate_kernel_log`，内核退出后由下个启动者归档） |
 
-`%TEMP%\inkflow-kernel.log` 是**机器级共享**（CLI 内核 / GUI 内核 / 跑测试拉起的内核全部追加同一文件），
-且承载内核**全量运行期 stdout/stderr**。修复前无 size cap / 无 rotate / 无启动期清理，
-本机实测 918MB（962,730,079 B）/ ≈421 万行 / 8,826 次内核启动累积（#1380）。
+- `<kind>` ∈ {`dev`,`rc`,`prod`}`；`<hash>` = `sha256(resolve(data_dir))[:8]`——**一律含 data_dir**
+  （不复用 `_lifetime_mutex_name` 的「rc/prod 不含 data_dir」分支：互斥可以不区分数据目录，但**日志分片必须区分**，
+  否则多数据目录并存的内核（见 #1487）会重新争抢同一文件）
+- 事件日志与引导日志**不分片**：二者都没有「长期持有句柄的写者」（客户端 append 后即 close），
+  故 `_rotate_kernel_log` 的「认领 + 归档链」多进程安全设计对它们**有效**
 
-- **阈值与份数**：`_KERNEL_LOG_MAX_BYTES = 50MB`、`_KERNEL_LOG_BACKUPS = 2`（模块级常量，调用方可显式覆盖）
-- **触发点**：写入前统一调用 `_rotate_kernel_log(log_file)`——`_log_kernel_event`（事件行）与
-  `_spawn_kernel`（内核 stdout/stderr 重定向前）**共用同一实现**（§5.3 一处统一，不设第二套逻辑）
-- **归档链**：删最旧 `.N` → `.N-1 → .N` → … → `.1 → .2` → `log → .1`；**未超限则不动文件**
-- **幂等 / 并发安全**（多内核并发启动）：先 `os.replace` 的一方胜出，后到者源文件已不在 → 跳过本次归档；
-  每一步 `OSError` 单独吞掉——**归档失败不阻塞启动、不截断原文件**；`os.replace` 原子故不产生半截文件
-- **实时路径不变**：`%TEMP%\inkflow-kernel.log` 仍是唯一指引路径（错误消息无需同步）；
-  `.1` / `.2` 仅在需要更早历史时查
-- ⚠️ **归档只在「无进程持有该文件」时生效**（实测）：Windows `os.replace` 遇到持有句柄会失败
-  （`PermissionError [WinError 32]`），而存活内核的 stdout/stderr 句柄常驻该文件 → 本次归档**静默跳过**、
-  原文件**不截断**、继续增长，下次启动再试。
-  → **增长上界 = 「一次内核存活期」，而非修复前的无界累积**（修复前：6 周 / 918MB 一路增长）。
-  代价：内核长时间存活期间该文件仍会增长，且此时 `.1` 不存在（归档尚未发生）。
-- ⚠️ 该文件**不是合法 UTF-8**（内含内核 stdout 原始字节，本机为 GBK 代码页）→ 排障时按
-  **bytes / `errors="replace"`** 读；直接 `read_text(encoding="utf-8")` 会 `UnicodeDecodeError`。
+### 6.3 内核日志：分片 + 自管理运行期轮转（1.3 新增 #1380；1.4 重写 #1477）
+
+**为什么必须重写**（#1477 实测矩阵）：Windows `MoveFileEx` / `os.replace` 要求目标文件**所有**句柄都带
+`FILE_SHARE_DELETE`；存活内核以 `Popen(stdout=…)` 的**继承句柄**常驻该文件（Python `open()` 默认无此标志）
+
+| 场景 | 结果 |
+|------|------|
+| 外部进程调 `_rotate_kernel_log` | ❌ 文件原样（`WinError 32`） |
+| **持有者自己**调 | ❌ 同上 |
+| 持有者 `dup2(devnull)` / `close(fd1)` 让位后调 | ❌ 同上（继承句柄另有持有来源，无法自释） |
+| 改成 `FILE_SHARE_DELETE` 句柄 | ⚠️ rename 成功，但内核输出**继续写进归档件**（内容错位） |
+| **进程自己 open 的句柄** + 库自管理轮转 | ✅ |
+
+⇒ 唯一可行路径 = **日志文件由内核自己持有、由现成日志库负责轮转**（`rotation` 内部 close → rename → reopen）。
+这正是 1.3「启动期兜底」失效的原因：只要内核存活，归档就不会发生（实测：246.2MB 且目录下无任何归档）。
+
+- **轮转**：Loguru `rotation="10 MB"`；`retention=` **callable**（库不接受 `"N files"` 或 list，实测 0.7.3）
+  —— 两个上限**同时生效**：「超出 10 份」**或**「超过 30 天」即清理（最多留 10 份、最老不超 30 天）；
+  ⚠️ 该 callable 收到 `list[str]`（路径，时间升序）且**返回值被库忽略** ⇒ 必须**自行删除**
+- **触发**：每次写入按大小判定 ⇒ **运行期天然覆盖**，无需周期任务
+- **装配位置**：`serve` 只设 `INKFLOW_KERNEL_LOG_FILE`（分片路径**标记**）；sink 由
+  `core.log.setup_logging` 的**内核分支**装配——该函数开头 `logger.remove()` 会清空全部 handler，
+  提前装 sink 必被清掉（实测：分片文件只记到 uvicorn 前两行，其余全落回 stderr）
+- 🔴 **内核分支不加 stderr sink**：内核 stderr 已被 `_spawn_kernel` 重定向到引导日志，
+  全量日志再灌进去正是 #1477 的膨胀根因（实测 `%TEMP%\inkflow-kernel.log` 达 246MB～348MB）
+- **uvicorn 桥接**：`uvicorn_log_config` 把 default/access handler 换成 `LoguruHandler`
+  （uvicorn 的 logger `propagate=False`，不走既有的 root `InterceptHandler`）
+- 🔴 **不替换 `sys.stdout` / `sys.stderr`**（实测：与 Typer CliRunner 的流隔离冲突 →
+  `ValueError: I/O operation on closed file`，且会吞掉 GUI 依赖的 `INKFLOW_READY` 交付行）；
+  未接入 logging 的原始 stdout（`typer.echo` / `print`）仍落**引导日志**，由启动期归档兜底
+- **`_spawn_kernel`**：`stdout` 改为 **boot 文件**（不再指向内核日志）；boot 的启动期归档在 open **之前**调用
+- **`_log_kernel_event`**：改写事件日志文件，继续 `_rotate_kernel_log`（**复用既有函数的并发安全实现**）
+- **`_rotate_kernel_log` 常量**：`_KERNEL_LOG_MAX_BYTES` 50MB → **10MB**、`_KERNEL_LOG_BACKUPS` 2 → **10**
+  （对齐「单文件 10MB / 保留 10 份」默认；**不含时间维度**——多进程安全的归档链用手写时间判断不划算，
+  份数封顶已限制总量上界）
+- ⚠️ **旧路径契约作废**：`%TEMP%\inkflow-kernel.log` 不再是唯一指引路径 → 错误消息 / 文档改为**动态指引**
+  （`_log_hint()`：引导日志 + 内核运行日志两条分片路径）
+- ⚠️ **不做**：给 `Popen` 换 `FILE_SHARE_DELETE` 句柄（rename 成功但输出错位，见上表第 4 行）
+- ⚠️ **遗留（不在本 issue 范围）**：存活期互斥的持有者是**客户端进程**、且 GUI（Electron）spawn 不参与互斥
+  → 内核存活不受互斥约束、跨数据目录的 prod 可并存（→ **#1487**）
 
 ---
 
@@ -365,6 +405,7 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 | 10 | spawn 命令不存在（CLI 打包缺 serve） | KernelStartupError（明确提示「CLI 产物缺失 serve 能力」） |
 | 11 | %APPDATA% 不可写 | KernelStartupError（权限问题，日志记录路径） |
 | 12 | 内核已运行但由其他进程拉起（非本模块） | 状态文件存在 + pid 存活 + /health 200 → 正常复用（不关心拉起方） |
+| 13 | **（1.4）内核日志 sink 装配失败**（日志目录不可写 / 磁盘满） | **静默降级**：无内核文件日志（其余 sink 照常），内核正常启动（`setup_logging` 内核分支内 `suppress`，不抛） |
 
 ---
 
@@ -427,6 +468,7 @@ CLI 测试: kernel status（信封/退出码/未运行语义）              ~4 
 8. **kind 判定**（1.2 新增）：env 显式值优先 / frozen→release / 预发布版本→rc / 其余→dev；非法值回落推断
 9. **存活期互斥**（1.2 新增）：kind=rc 且互斥被占 → 抛 KernelStartupError（消息含既有实例 port/pid/data_dir），不放 Popen；kind=dev → 不获取存活期互斥、两实例均正常拉起（多开）
 10. **注册表**（1.2 新增）：拉起成功后写入 `<kind>-<pid>.json`（七字段）；读注册表时 pid 已死的条目被清理（惰性 GC）；跨 kind 条目并存互不干扰
+11. **日志分片与自管理轮转**（1.4 新增 #1477）：① 运行期（**不重启**）超阈轮转 + 归档产生；② 两个上限 retention（超 10 份 **或** 超 30 天即清，含纯逻辑边界）；③ 分片路径随 kind/data_dir 变化；④ 事件日志与内核运行日志**分离**；⑤ uvicorn logging 桥接落日志文件；⑥ sink 装配失败**静默降级**不阻塞内核（`test_kernel_logging.py` + `test_kernel_log_rotation.py`）
 
 ### 覆盖率目标
 
@@ -498,6 +540,8 @@ F30 被依赖:
 | M8 | **（1.2 新增）实例类型判定 + 触发路径** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_instance_kind.py -v` 全绿（env 显式 / frozen / 预发布 / 缺省 / 非法值五路径） |
 | M9 | **（1.2 新增）rc 存活期互斥 + dev 多开** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_concurrency_kind.py -v` 全绿（rc 第二个被拒且消息含既有实例信息；dev 两实例均放行） |
 | M10 | **（1.2 新增）注册表读写 + 惰性 GC** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_registry.py -v` 全绿（写入七字段 / pid 死条目被清理 / 跨 kind 并存） |
+| M11 | **（1.4 新增）日志分片 + 自管理运行期轮转** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_log_rotation.py -v` 全绿：① 分片路径随 kind/data_dir 变化 ② 运行期（不重启）超阈轮转 ③ 幂等（连续两次不产生额外归档） ④ 并发认领（两进程归档链不半截、不丢最新一代） ⑤ 未超阈不动任何文件 ⑥ stat 失败静默返回 False ⑦ 事件日志与内核日志分离 |
+| M12 | **（1.4 新增）内核日志装配（`setup_logging` 内核分支）+ uvicorn 桥接** | `pytest backend/tests/unit/infrastructure/kernel/test_kernel_logging.py -v` 全绿：运行期轮转 / retention 两上限（含纯逻辑边界）/ `uvicorn_log_config` 指向 Loguru 桥 / 装配失败静默降级 |
 
 > Issue #166 验收标准映射：kernel.json 写入正确 = M1/M5；复用不 spawn = M2/M5；双客户端只一个内核 = M2（互斥用例）；崩溃残留 stale 清理 = M1/M6。
 

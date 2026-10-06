@@ -295,7 +295,7 @@ agent → MCP server（stdio）
 
 - MCP server 进程短命（agent 拉起 → stdio 会话结束退出），**不持有常驻资源**（无连接池跨会话复用需求——每次 tools/call 内部 `async with InkFlowHTTPClient(handle)`，F38 §5.2 语义）。
 - **stdout 协议纪律**：MCP 协议帧独占 stdout；`loguru`（ADR-016）日志输出重定向到 stderr（或 `%TEMP%\inkflow-mcp.log`），严禁日志污染 stdout。
-- 内核侧日志照旧（`%TEMP%\inkflow-kernel.log`，F30 §6.2）。
+- 内核侧日志见 F30 §6.2（1.4 起为**分片文件** + 自管理运行期轮转）。
 
 ### 6.3 token 传递与安全
 

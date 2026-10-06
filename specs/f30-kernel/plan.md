@@ -34,7 +34,7 @@
 - `bootstrap.py`：`async def ensure_kernel(*, spawn_cmd=None, timeout=30.0, health_timeout=2.0, state_file=None, version_check=True) -> KernelHandle`；
   装配缝：互斥获取（模块级函数，183 → 走轮询）、`subprocess.Popen`、health 探测（http 客户端）、
   `_default_spawn_cmd()`（sys.frozen 分支）
-- `kernel_errors.py`：`KernelStartupError(Exception)`，消息含 `%TEMP%\inkflow-kernel.log` 指引
+- `kernel_errors.py`：`KernelStartupError(Exception)`，消息含**分片后**的日志指引（F30 §6.2）
 - CLI：`inkflow kernel status [--json]`——信封 `{"ok": true, "data": {...}}`，未运行 = `{"ok": true, "data": {"running": false}}` 退出码 0
 
 ## 完成门禁

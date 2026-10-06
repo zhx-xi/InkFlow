@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import inspect
 import logging
+import os
 import sys
+from contextlib import suppress
 from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -105,25 +107,58 @@ def resolve_log_dir() -> Path:
     return backend_root / "logs"
 
 
+#: #1477：内核进程标记 —— `serve` 设该 env 后，日志改落内核分片文件（且不再加 stderr sink）
+_KERNEL_LOG_FILE_ENV = "INKFLOW_KERNEL_LOG_FILE"
+
+
+def _add_kernel_file_sink(log_path: str) -> None:
+    """内核日志 sink：分片文件 + 库轮转（10MB / 10 份 **或** 30 天；spec f30 §6.3 / ADR-064）。
+
+    阈值与保留策略复用 `infrastructure.kernel.kernel_logging`（与内核侧同一份实现，
+    避免两套轮转参数漂移）。装配失败**静默降级**——日志基建不得阻塞内核启动。
+    """
+    from inkflow.infrastructure.kernel import kernel_logging
+
+    with suppress(Exception):
+        logger.add(
+            log_path,
+            level="DEBUG",
+            rotation=kernel_logging.KERNEL_LOG_ROTATION,
+            retention=kernel_logging.retention_policy,
+            encoding="utf-8",
+            backtrace=True,
+            diagnose=False,
+        )
+
+
 def setup_logging(log_dir: Path | None = None) -> None:
     """初始化全局日志配置。
+
+    1.4（#1477）：**内核进程**（`serve` 设 ``INKFLOW_KERNEL_LOG_FILE``）走专用分支——
+    日志落**内核分片文件**（10MB / 保留 10 份 **或** 30 天，spec f30 §6.3 / ADR-064），
+    **不再加 stderr sink**：内核的 stderr 已被 `_spawn_kernel` 重定向到引导日志，
+    全量日志再灌进去正是 #1477 的膨胀根因（实测 246MB 且无归档）。
 
     Args:
         log_dir: 日志目录（绝对路径）。默认基于包根解析为 backend/logs，
             避免相对路径导致日志落点随进程 cwd 漂移（Issue #11）。
     """
     logger.remove()  # 移除默认 handler
-    logger.add(
-        sys.stderr,
-        level="DEBUG" if config.debug else config.log_level,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> "
-            "| <level>{level: <8}</level> "
-            "| <cyan>{name}</cyan>:<cyan>{line}</cyan> "
-            "- <level>{message}</level>"
-        ),
-        colorize=True,
-    )
+    kernel_log_file = os.environ.get(_KERNEL_LOG_FILE_ENV)
+    if kernel_log_file:
+        _add_kernel_file_sink(kernel_log_file)
+    else:
+        logger.add(
+            sys.stderr,
+            level="DEBUG" if config.debug else config.log_level,
+            format=(
+                "<green>{time:YYYY-MM-DD HH:mm:ss}</green> "
+                "| <level>{level: <8}</level> "
+                "| <cyan>{name}</cyan>:<cyan>{line}</cyan> "
+                "- <level>{message}</level>"
+            ),
+            colorize=True,
+        )
     target_dir = log_dir if log_dir is not None else resolve_log_dir()
     logger.add(
         target_dir / "inkflow_{time:YYYY-MM-DD}.log",

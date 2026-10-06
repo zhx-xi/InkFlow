@@ -58,7 +58,7 @@ bootstrap.py 公开契约（spec §3.2 + Q1 拍板）：
   4. stale 清理：判定 stale（pid 死 / health 失败 / 版本不匹配）后先调
      ``state.mark_stale`` 重命名备份再拉起。
   5. 超时：拉起等待 / 183 轮询超时 → 抛 KernelStartupError，消息须含日志
-     指引（"inkflow-kernel.log"）。
+     指引（分片日志路径）。
   6. 秒退重试：spawn 后 Popen.poll() 非 None（进程立即退出）→ 清理重试
      ≤2 次（总 spawn 尝试 ≤3）→ 仍失败抛 KernelStartupError。
   7. 互斥生命周期：_acquire_mutex 成功后，成功与异常路径均须
@@ -81,7 +81,7 @@ bootstrap.py 模块级装配缝（测试 patch 点，全部**同步**函数—�
     def _spawn_kernel(cmd: list[str], log_file: Path) -> subprocess.Popen
         # Popen(stdout=log_file 打开的文件句柄, stderr=STDOUT,
         #   creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)；
-        # log_file = %TEMP%/inkflow-kernel.log（spec §6.2，路径钉死）
+        # boot_log = %TEMP%/inkflow-kernel-<kind>-<hash>.boot.log（spec §6.2 分片）
     def _probe_health(port: int, token: str, timeout: float) -> bool
         # GET http://127.0.0.1:{port}/health 带 X-InkFlow-Token 头；
         # 200 → True；超时/异常/非 200 → False
@@ -91,7 +91,7 @@ bootstrap.py 模块级装配缝（测试 patch 点，全部**同步**函数—�
         # 首轮 ≈ 生效超时）；abort_probe（#1142）每轮间隙回调，返回 True 即放弃等待
         # ——183 分支据此探测「互斥已可接管」/「持有者已死」，调用方据回调状态区分。
     def _log_kernel_event(msg: str) -> None
-        # 追加写 %TEMP%/inkflow-kernel.log（带时间戳；启动/复用/stale/失败）
+        # 追加写 %TEMP%/inkflow-kernel-events.log（带时间戳；启动/复用/stale/失败）
 
 跨模块依赖契约（state.py / kernel_errors.py，同样待实现——本文件 from-import
 属预期 RED；GREEN 落地后自动转绿）：
@@ -421,7 +421,7 @@ async def test_ensure_kernel_spawns_new_kernel_when_no_state(tmp_path, kernel_mo
     """拉起：无状态 → 互斥成功 → spawn → 轮询就绪 → 写状态 → reused=False。
 
     spec §5.1 拉起分支 + §9 场景 2：断言 spawn 收到显式 spawn_cmd 覆盖
-    （spec §5.2 GUI 形态）、日志文件名为 inkflow-kernel.log（§6.2 路径钉死）、
+    （spec §5.2 GUI 形态）、重定向目标为**引导日志**（1.4：inkflow-kernel-<kind>-<hash>.boot.log）、
     write_kernel_state 收到 (state_file, KernelState)、互斥默认名与释放、
     KernelHandle 字段与就绪状态一致且 reused=False。
     """
@@ -434,7 +434,10 @@ async def test_ensure_kernel_spawns_new_kernel_when_no_state(tmp_path, kernel_mo
 
     m.spawn.assert_called_once()
     assert m.spawn.call_args.args[0] == SPAWN_CMD
-    assert m.spawn.call_args.args[1].name == "inkflow-kernel.log"
+    assert m.spawn.call_args.args[1].name.startswith("inkflow-kernel-")
+    assert m.spawn.call_args.args[1].name.endswith(".boot.log"), (
+        "1.4：spawn 的重定向目标是引导日志（内核运行日志由内核自持句柄）"
+    )
     assert m.read.call_args.args[0] == sf
     # 父侧裁定（2026-08-07）：write_kernel_state 收 dict（state.py 序列化层契约，
     # 与 test_kernel_state.py 一致）——bootstrap 把 KernelState 转 dict 再写入
@@ -505,7 +508,7 @@ async def test_ensure_kernel_mutex_183_timeout_raises(tmp_path, kernel_mocks):
     """互斥 183 且轮询超时 → KernelStartupError（含日志指引）。
 
     spec §5.1 183 分支「轮询 ≤ timeout」+ §7 行 6：轮询一直无合法状态 →
-    抛 KernelStartupError，消息含 %TEMP%/inkflow-kernel.log 指引。
+    抛 KernelStartupError，消息含**分片后**的日志指引。
     """
     m = kernel_mocks
     m.mutex.return_value = None
@@ -514,7 +517,7 @@ async def test_ensure_kernel_mutex_183_timeout_raises(tmp_path, kernel_mocks):
     with pytest.raises(KernelStartupError) as exc:
         await ensure_kernel(state_file=tmp_path / "kernel.json", timeout=0.3)
 
-    assert "inkflow-kernel.log" in str(exc.value)
+    assert "inkflow-kernel" in str(exc.value)  # 1.4：路径已分片（inkflow-kernel-<kind>-<hash>…）
     assert m.spawn.call_count == 0
     assert m.poll.call_count >= 1
     m.log.assert_called()
@@ -593,7 +596,7 @@ async def test_ensure_kernel_spawn_wait_timeout_raises(tmp_path, kernel_mocks):
     with pytest.raises(KernelStartupError) as exc:
         await ensure_kernel(state_file=tmp_path / "kernel.json", timeout=0.3)
 
-    assert "inkflow-kernel.log" in str(exc.value)
+    assert "inkflow-kernel" in str(exc.value)  # 1.4：路径已分片（inkflow-kernel-<kind>-<hash>…）
     assert m.release.call_count >= 1
     m.log.assert_called()
 
@@ -611,7 +614,7 @@ async def test_ensure_kernel_immediate_exit_retries_then_raises(tmp_path, kernel
         await ensure_kernel(state_file=tmp_path / "kernel.json", timeout=0.5)
 
     assert 2 <= m.spawn.call_count <= 3
-    assert "inkflow-kernel.log" in str(exc.value)
+    assert "inkflow-kernel" in str(exc.value)  # 1.4：路径已分片（inkflow-kernel-<kind>-<hash>…）
     assert m.release.call_count >= 1
     m.log.assert_called()
 
