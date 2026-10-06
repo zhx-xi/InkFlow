@@ -442,3 +442,49 @@ class TestAgentRolesValidation:
             ),
         )
         mock_repo.update.assert_awaited_once()
+
+
+class TestCreateProjectRootInitializer:
+    """#1481 建项目自动建根 — `root_initializer` 钩子（镜像既有 map_cleanup 钩子）.
+
+    RED 形态：ProjectService.__init__ 尚无 root_initializer 参数 → TypeError → FAILED。
+    钩子入参 = 新建项目的领域 UUID（= repo.add 返回项目的 id）。
+    """
+
+    async def test_root_initializer_called_with_created_project_id(self, mock_repo) -> None:
+        """建项目 → 钩子以**新建项目 id** 被 await 恰好一次（覆盖全部创建调用方）."""
+        seen: list[uuid.UUID] = []
+
+        async def _seed(project_id: uuid.UUID) -> None:
+            seen.append(project_id)
+
+        service = ProjectService(db_session=MagicMock(), root_initializer=_seed)
+        service._repo = mock_repo
+
+        created = await service.create_project(name="新书")
+
+        assert seen == [created.id], "钩子必须收到 repo.add 返回项目的 id"
+        mock_repo.add.assert_awaited_once()
+
+    async def test_root_initializer_failure_propagates(self, mock_repo) -> None:
+        """钩子失败 → 异常向上传播（「根必存在」不变量优先，不静默降级）."""
+        from inkflow.domain.ports.world_errors import WorldServiceError
+
+        async def _boom(_project_id: uuid.UUID) -> None:
+            raise WorldServiceError("根创建失败")
+
+        service = ProjectService(db_session=MagicMock(), root_initializer=_boom)
+        service._repo = mock_repo
+
+        with pytest.raises(WorldServiceError):
+            await service.create_project(name="新书")
+
+    async def test_without_root_initializer_create_still_works(self, mock_repo) -> None:
+        """未注入钩子（缺省 None，如既有单测/集成装配）→ create_project 行为不变."""
+        service = ProjectService(db_session=MagicMock())
+        service._repo = mock_repo
+
+        created = await service.create_project(name="新书")
+
+        assert created.name == "新书"
+        mock_repo.add.assert_awaited_once()

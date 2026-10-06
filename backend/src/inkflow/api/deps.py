@@ -30,6 +30,7 @@ from inkflow.api.deps_draft import (
     make_outline_bindder,
     make_volume_ensurer,
 )
+from inkflow.api.deps_world_root import make_world_root_initializer
 from inkflow.core.database import async_session_factory, get_session
 from inkflow.domain.models.vector_fingerprint import CHUNKER_VERSION
 from inkflow.domain.ports.context_sources import ContextSourceProtocol
@@ -177,10 +178,14 @@ async def get_db() -> AsyncGenerator[AsyncSession]:
 def get_project_service(
     db: AsyncSession,
 ) -> ProjectService:
-    """获取 ProjectService 实例（注入数据库 session + F36 项目硬删钩子）."""
+    """获取 ProjectService 实例（注入数据库 session + F36 项目硬删钩子 + #1481 建项目自动建根）."""
     map_svc = get_map_service(db)
     # #1291：钩子入参为领域 UUID（不再 int 中转）
-    return ProjectService(db, map_cleanup=lambda pid: map_svc.cleanup_project(pid))
+    return ProjectService(
+        db,
+        map_cleanup=lambda pid: map_svc.cleanup_project(pid),
+        root_initializer=make_world_root_initializer(db),
+    )
 
 
 def get_chapter_service(

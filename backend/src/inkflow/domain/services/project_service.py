@@ -11,6 +11,7 @@ import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from inkflow.domain.models.project import (
     AgentRelation,
@@ -169,6 +170,10 @@ class ProjectService:
         db_session: SQLAlchemy 异步 session.
         map_cleanup: 项目硬删钩子（F36 D10=b）：项目硬删后清理地图与 pin
             （MapService.cleanup_project）；失败仅 log warning 不阻断主流程.
+        root_initializer: 建项目自动建根钩子（#1481）：项目落库后以新项目 UUID 调用，
+            通常注入 `WorldService.ensure_root_setting`（`api/deps.get_project_service`）；
+            未注入（None）→ 不建根（既有单测/集成装配零影响）。异常**向上传播**
+            ——「每项目唯一根」是不变量，不允许「项目建成但无根」的成功返回.
     """
 
     def __init__(
@@ -176,9 +181,11 @@ class ProjectService:
         db_session,
         *,
         map_cleanup: Callable[[uuid.UUID], Awaitable[int]] | None = None,
+        root_initializer: Callable[[uuid.UUID], Awaitable[Any]] | None = None,
     ) -> None:
         self._repo = SQLiteProjectRepository(db_session)
         self._map_cleanup = map_cleanup
+        self._root_initializer = root_initializer
 
     async def create_project(
         self,
@@ -212,6 +219,10 @@ class ProjectService:
             updated_at=_utcnow(),
         )
         created = await self._repo.add(project)
+        # #1481：建项目自动建根 —— 「每项目恒有且仅有一个根」不变量在创建即成立。
+        # 失败向上传播（不静默降级）：见 __init__ root_initializer 说明。
+        if self._root_initializer is not None:
+            await self._root_initializer(created.id)
         log_structured(
             level="INFO",
             caller_type="api",

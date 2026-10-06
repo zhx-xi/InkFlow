@@ -12,6 +12,7 @@
 > **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
 
 > **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
+> **Spec 变更（v1.4 → v1.5，2026-10-06，#1481）**: 新增 §8.4「建项目自动建根 + 存量兜底（跨模块 MODIFY 清单）」——登记**默认根条目形态**（`name="世界观总纲"` / `parent_id=NULL` / `category=""` / `content=""`，常量 `DEFAULT_WORLD_ROOT_NAME`）+ 跨模块改动落点（`world_service.ensure_root_setting` / `project_service.create_project` 的 `root_initializer` 钩子 / `deps.py` 接线 / `core/database.py` 的 `ensure_world_root_for_projects` 幂等迁移 / `app.py` lifespan）。**根必存在不变量**（建项目即建根 + 存量补根）由本模块与 F35 共同定义——数据模型与端点契约（§2/§3）**无变化**，仅新增默认条目与启动期迁移。**前置核验**：issue 报的 `'NoneType' object is not subscriptable` 系用户脚本自身，服务端现状已是 422 校验提示（无 500 路径）。
 > **Spec 变更（v1.3 → v1.4，2026-10-02，#1334 设计单）**: 新增 §16「分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C）」——登记事实基线（#641 自动挂根 / #699 分类 kind / #721 地图树 kind 分流 / #834 一项目一根 / #1321 非根必填分类）+ ①abstract 条目父级三选项 (a)/(b)/(c) + ②geo 保持现状 + ③kind 判定权与无分类边界 + 迁移影响评估 + 原型 kind 表达自相矛盾收敛规则。**同步对齐 spec 漂移**：§2.6/§2.5 补 `WorldCategory.kind`（#699 已实现、此前未记）、§12 补登记 #699 决策。**本变更为设计定义，无实现**（① 已拍板 ①C，实施另起轨）。
 > **Spec 变更（v1.1 → v1.2，2026-08-16，issue #389）**: 世界观分类从「条目平铺属性」升级为「独立受控词表实体」（反转 v1.0 §2.2「不建独立分组表」决策）。① 新增 `world_categories` 表 + `WorldCategory` 领域实体（§2.2/§2.6）；② 新增分类 CRUD 四端点（§3.1，10→14 端点）；③ 分类重命名/删除反向同步条目 `category` 字符串——删除置空、重命名改名（§6.1/§7，拍板 D2=A）；④ 前端分类 chips 来源改为分类实体（移除 `DEFAULT_WORLD_CATS=['地图']` 硬编码），世界观 tab 导航修正（进分类列表视图非地图工作台）+「地图视图」独立入口（§14）；⑤ 镜像 F9 CharacterGroup 模式（§12）。
 
@@ -774,6 +775,39 @@ DROP 旧表、RENAME、重建 `uq_characters_active_name` 等索引）。
 > **#495 备注（2026-09-17）**：`character_relations` 表此后已被并入 `knowledge_relations`（新增幂等迁移
 > `ensure_character_relations_merged_into_knowledge`，链上顺序在本段 helper **之后**）；本段为**旧库升级
 > 路径**的历史语境——新库/已迁移库该表不存在，helper 的 `character_relations` 分支持续 no-op。
+
+### 8.4 #1481 建项目自动建根 + 存量兜底（跨模块 MODIFY 清单）
+
+**默认根条目形态**（f10 侧定义；根规则与树语义见 f35 §2.1 规则 7 / §5.7）：
+
+| 字段 | 值 | 说明 |
+|------|-----|------|
+| `name` | `"世界观总纲"`（常量 `DEFAULT_WORLD_ROOT_NAME`，`domain/models/world.py`） | 条目名同级唯一 ⇒ 项目内顶层不再允许同名条目 |
+| `parent_id` | `NULL` | 根（顶层），受 `uq_world_settings_root_per_project` 部分唯一索引兜底 |
+| `category` | `""` | **根无分类**（#722 语义）⇒ 不触发 #834/#1321 分类前置校验 |
+| `content` | `""` | 空内容（用户后续自行填写） |
+| `extra` | `{}` | 无扩展属性 |
+
+**跨模块 MODIFY 清单**：
+
+```text
+domain/models/world.py                    ← MODIFY: 新增常量 DEFAULT_WORLD_ROOT_NAME = "世界观总纲"
+domain/services/world_service.py          ← MODIFY: 新增 ensure_root_setting(project_id)（幂等：有根返回既有根，
+                                              无根以空分类建默认根；复用 create_setting 校验链与 data_change 事件）
+domain/services/project_service.py        ← MODIFY: create_project 新增 root_initializer 钩子参数
+                                              （Callable[[uuid.UUID], Awaitable[Any]] | None，镜像 map_cleanup），
+                                              项目落库后调用——唯一项目创建入口，覆盖 API/CLI/agent 全部调用方
+api/deps.py                               ← MODIFY: get_project_service 注入 root_initializer
+                                              （延迟构造 WorldService，避免非创建端点承担构造开销）
+core/migrations_world_root.py             ← CREATE: ensure_world_root_for_projects(conn)（幂等补根迁移；
+                                              database.py 900 行护栏 → 拆模块 + re-export 进 __all__）
+core/database.py                          ← MODIFY: re-export ensure_world_root_for_projects（+ __all__ 登记）
+api/app.py                                ← MODIFY: lifespan 接线（ensure_world_root_unique_index 之后、
+                                              ensure_entity_uuid_columns 之前）
+```
+
+⚠️ **不动**：`api/routers/world_settings.py` 的 #641 懒创建分支（无 `parent_id` → 有根挂根 / 无根建根）保持不变
+——它是旧库与异常路径的兜底，且「无根建根」在「根必存在」后自然不可达（防御性保留）。
 
 ---
 

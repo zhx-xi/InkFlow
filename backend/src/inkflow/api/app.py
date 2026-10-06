@@ -99,6 +99,7 @@ from inkflow.core.database import (
     ensure_world_categories_kind_column,
     ensure_world_drop_is_deleted,
     ensure_world_parent_id_column,
+    ensure_world_root_for_projects,
     ensure_world_root_unique_index,
     ensure_writing_plan_progress_reason_column,
     run_character_group_members_migration,
@@ -149,6 +150,9 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_drafts_source_outline_id_column)
         await conn.run_sync(ensure_world_drop_is_deleted)
         await conn.run_sync(ensure_world_root_unique_index)
+        # #1481：为无根存量项目补默认根（幂等）；须在根单例索引就位之后、
+        # ensure_entity_uuid_columns 之前（新行 uuid 身份列由后者回填）
+        await conn.run_sync(ensure_world_root_for_projects)
         await conn.run_sync(ensure_character_drop_is_deleted)
         await conn.run_sync(ensure_character_relations_merged_into_knowledge)
         await conn.run_sync(ensure_characters_brief_column)

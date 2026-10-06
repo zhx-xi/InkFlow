@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from inkflow.core.config import config
 from inkflow.domain.models.project import Project
 from inkflow.domain.models.world import (
+    DEFAULT_WORLD_ROOT_NAME,
     WorldCategory,
     WorldExtractionResult,
     WorldExtractRequest,
@@ -293,6 +294,33 @@ class WorldService:
         """
         roots, _ = await self._repo.list(_to_uuid(project_id), top_level_only=True, limit=1)
         return roots[0] if roots else None
+
+    async def ensure_root_setting(self, project_id: uuid.UUID) -> WorldSetting:
+        """确保项目存在根世界观条目 —— 幂等「根必存在」原语（#1481）.
+
+        「每项目恒有且仅有一个根」（specs/f35-world-tree §2.1 规则 7 / §5.7）的服务层
+        唯一入口：有根 → 原样返回；无根 → 建默认根「世界观总纲」（`parent_id=None`、
+        `category=""`、`content=""`）。建项目自动建根（`ProjectService.root_initializer`
+        钩子注入，见 `api/deps.get_project_service`）即调本方法，故脚本/Agent 不再需要
+        「先探测根、不存在则先建」的手工前置。
+
+        Args:
+            project_id: 所属项目 UUID（领域标识；建项目钩子传 `created.id`）.
+
+        Returns:
+            既有根，或本次新建的默认根.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（create_setting 落库前校验，#1138）.
+            WorldRootConflictError: 校验窗口内他人已建根（并发竞态）；
+                纯并发双建根由 DB 部分唯一索引兜底（`IntegrityError`），
+                启动期 `ensure_world_root_for_projects` 迁移可修复残留无根项目.
+        """
+        existing = await self.get_root_setting(project_id)
+        if existing is not None:
+            return existing
+        # 根以空分类创建：category="" ⇒ #1321/#834 分类前置校验均不适用（根无分类，#722）
+        return await self.create_setting(project_id, DEFAULT_WORLD_ROOT_NAME)
 
     async def update_setting(
         self, setting_id: uuid.UUID, update: WorldUpdate

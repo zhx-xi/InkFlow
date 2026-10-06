@@ -1,7 +1,9 @@
 # F35: 世界观地点层级（world-location-tree）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-09 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、F10 spec（世界观既有模块）、Constitution P1-P6
+> **Spec 版本**: 1.3 | **日期**: 2026-10-06 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、F10 spec（世界观既有模块）、Constitution P1-P6
+>
+> **Spec 变更**（1.2 → 1.3，2026-10-06，#1481）：**「每项目恒有且仅有一个根」不变量收紧——根不再只靠懒创建**。① **建项目自动建根（默认行为）**：`ProjectService.create_project` 落库后经 `root_initializer` 钩子调 `WorldService.ensure_root_setting(project_id)`，为全新项目建默认根「世界观总纲」（`parent_id IS NULL`、`category=""`、`content=""`）；② **存量兜底（幂等迁移）**：`core/database.py` 新增 `ensure_world_root_for_projects`（app lifespan 接线），为**每个无根的非删除项目**补默认根，不破坏既有数据、可重复执行；③ 既有 #641 懒创建分支（`POST /world-settings` 无 `parent_id` → 无根时建根）**保留不动**（旧库/异常兜底）。§2.1 规则 6-7 / §5.7（新增）/ §7 边界 17-18 / §13 M9 同步。**前置核验（M2）**：issue #1481 报的 `'NoneType' object is not subscriptable` 系用户脚本自身（`root=None` 后 `root["id"]`）——服务端现状已是 **422 校验提示**（实测无 500 路径），故本轨**不**做「内部异常 → 校验提示」（已成立），只落「根必存在」。
 >
 > **Spec 变更**（1.1 → 1.2，2026-09-18，#211 文档同步补齐）：#211「F10 删除语义统一（软删→真删）」**已落地**（f10 spec v1.1），本模块原「F10 单条软删保持现状（边界 X）」的表述随之作废——无参 `DELETE /world-settings/{id}` 现为**真删**（不可恢复），`restore` 端点不存在。§1 边界声明 / §3.1 状态流 / §5.5 声明 / §12 决策表 / Q1 同步。本模块自身的树级真删语义（cascade/reparent）不变。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后（原变更日期 2026-08-13）。
 > **Spec 变更**（1.0 → 1.1，2026-08-09 拍板）：Q1-Q3 全拍板——**Q1 删除语义=真删 + 子地点级联/reparent（D1/D2/D4/D6，非归档级联）**；**Q2 提取建树后置给内置 Agent（D8，本轮不做模板增强）**；Q3=列表 parent_id 过滤（A）。**边界 X（D7 + 0.8.0 #211）**：F10 既有单条删除/restore（软删）保持现状不动，本模块新增树级删除操作为**真删**——差异显式声明（§1.2/§5.5）；统一改造登记 [#211](https://github.com/zhx-xi/InkFlow/issues/211)（0.8.0）。
@@ -76,6 +78,7 @@ F35 增量:  + parent_id 自引用列（可空=顶层）
 4. **循环引用防护**：创建/更新时校验「父节点 ≠ 自身或其子孙」（§5.2）
 5. **name 唯一性语义演进**：项目内**全局唯一** → **同级唯一**（§2.4），这是 F10 语义的**有意变更**——连带影响 F10 提取合并锚点（§2.4 声明）
 6. **根世界单例（#834/#847/#848/#849）**：一个项目**至多一个根**（`parent_id IS NULL` 的条目）；create/update/copy 全写入路径强制——置顶非根条目、把唯一根改挂他父、复制顶层节点到已有根目标均拒绝；DB 层 `(project_id) WHERE parent_id IS NULL` 部分唯一索引兜底并发双建根竞态。
+7. **每项目恒有且仅有一个根（#1481，0.17.0）**：「至多一根」（规则 6）收紧为「**必有且仅有一个根**」——**建项目即自动创建默认根**「世界观总纲」（§5.7；`root_initializer` 钩子 → `WorldService.ensure_root_setting`），**存量无根项目由启动期幂等迁移 `ensure_world_root_for_projects` 补根**。效果：脚本/Agent 不再需要「先探测根、不存在则先建」的手工前置；#1482（跨项目复制）/ #1485（提取写回）可直接依赖「根必存在」。默认根形态：`name="世界观总纲"`、`category=""`（根无分类，与 #722 一致）、`content=""`、`parent_id IS NULL`。
 
 ### 2.2 领域模型变更（`domain/models/world.py`）
 
@@ -417,6 +420,56 @@ reparent:  1) 直接子地点集合 = list(parent_id == id)
 
 **本轮 F10 提取端点行为**：不变（提取条目全部落顶层，按 F10 现状同名合并）。
 
+### 5.7 建项目自动建根 + 存量兜底（#1481，0.17.0）
+
+**目标**：「每项目恒有且仅有一个根」不变量在**项目创建即成立**，脚本/Agent 不再需要「先探测根、不存在则先建」的手工前置。
+
+**① 建项目自动建根（默认行为）**
+
+```text
+POST /api/v1/projects  →  ProjectService.create_project(name, ...)
+    ├─ SQLiteProjectRepository.add(project)              # 落库（commit）
+    └─ root_initializer(project.id)                      # 注入钩子（deps.get_project_service 接线）
+          └─ WorldService.ensure_root_setting(project_id)
+                ├─ get_root_setting(pid) 有根 → 原样返回（幂等，不建第二根）
+                └─ 无根 → create_setting(pid, DEFAULT_WORLD_ROOT_NAME)   # category="" / parent_id=None
+```
+
+- **落点理由**：`ProjectService.create_project` 是**唯一**项目创建入口（CLI `inkflow project create` 亦经
+  `POST /projects` 走它；全仓 `grep create_project` 只此一处调用方）⇒ 覆盖全部调用方。
+- **钩子形态**：`root_initializer: Callable[[uuid.UUID], Awaitable[Any]] | None`（镜像既有
+  `map_cleanup` 钩子），`deps.get_project_service` 注入 `lambda pid: get_world_service(db).ensure_root_setting(pid)`。
+  ProjectService 不感知世界观的任何细节 ⇒ 不引入 domain 层跨服务循环导入（`world_service` 只依赖
+  `ProjectRepositoryProtocol` 端口，不反向依赖 `project_service`）。
+- **失败语义**：根创建异常**向上传播**（不静默降级）——「根必存在」是不变量，不允许「项目建成但无根」的
+  成功返回；最坏情形（如并发竞态撞 `uq_world_settings_root_per_project`）由启动期 ② 兜底修复。
+- **根条目本身不触发分类校验**：默认根 `category=""` ⇒ #1321「非根条目必填分类」与 #834「带 category 须先建分类」
+  两条前置均不适用（`category_stripped` 为空串 → 跳过）。实现时**必须**以空分类建根。
+
+**② 存量兜底（幂等迁移 `ensure_world_root_for_projects`）**
+
+```python
+# core/migrations_world_root.py（database.py 已达 900 行护栏 → 按既有先例拆模块，
+#   由 core/database.py re-export 供 api/app.py 接线，见下）
+def ensure_world_root_for_projects(conn: Connection) -> None:
+    """#1481：为每个无根的非删除项目补默认根「世界观总纲」（幂等）。"""
+    # ① world_settings / projects 表不存在（全新环境）→ no-op（create_all 负责）
+    # ② INSERT ... SELECT 每项目：NOT EXISTS (该 project_id 下 parent_id IS NULL 的行)
+    #    → 补一行 (name='世界观总纲', parent_id=NULL, category='', content='', extra='{}', created_at/updated_at=now)
+    # ③ 已有根的项目 → NOT EXISTS 不成立 → 不插入（幂等；重复启动零副作用）
+```
+
+- **函数归属**：`core/migrations_world_root.py`（`core/database.py` 处于 **900 行护栏**上界 →
+  按既有先例拆模块，再由 `core/database.py` re-export 进 `__all__`，故
+  `from inkflow.core.database import ensure_world_root_for_projects` 仍可用；
+  `test_database_migration_chain.py` 的 D3 wiring 门禁（`vars(db_module)` 注册集 vs lifespan 接线）自动覆盖）。
+- **接线位置**：`api/app.py` lifespan 主迁移事务内，**`ensure_world_root_unique_index` 之后
+  （根单例索引已就位）、`ensure_entity_uuid_columns` 之前**（新行的 `uuid` 列由后者回填），与既有
+  `ensure_*` 同处。接线顺序在 `ensure_world_drop_is_deleted` / `ensure_world_parent_id_column` 之后。
+- **幂等性**：以 `NOT EXISTS (… parent_id IS NULL)` 为判据 ⇒ 重复执行不重复建、不改既有根、不产生第二根。
+- **数据安全**：只做 INSERT（`INSERT … SELECT`），**不 UPDATE/DELETE 任何既有行**；软删项目（`is_deleted=1`）跳过。
+- **失败不阻塞启动**：与既有 `ensure_*` 一致，异常由 lifespan 事务统一处理。
+
 ---
 
 ## 6. 组织规则
@@ -448,6 +501,10 @@ reparent:  1) 直接子地点集合 = list(parent_id == id)
 | 14 | 深树（>10 层）递归 CTE | SQLite 默认 recursion limit 1000，几千条量级无风险（设计书 §4.3） |
 | 15 | 迁移时表不存在（全新环境） | no-op，create_all 建新表自动含列+索引 |
 | 16 | `?parent_id=none` 过滤 | 返回顶层地点（parent_id IS NULL）；`?parent_id=<id>` 返回直接子级；缺省全量（向后兼容） |
+| 17 | 建项目（`POST /projects` / CLI `project create`）| **自动创建默认根**「世界观总纲」（`parent_id IS NULL`、`category=""`、`content=""`）→ 项目创建完成后 `GET /projects/{id}/world-settings` 立即含**恰好 1 个**根（#1481；agent 工具/CLI 同受益，均经此入口） |
+| 18 | 存量项目（旧库，无根）启动 | lifespan `ensure_world_root_for_projects` 幂等补根（#1481）；重复启动不重复建、不产生第二根、不改既有根 |
+| 19 | 已有根的项目启动 | 迁移 `NOT EXISTS (… parent_id IS NULL)` 判据不成立 → **零副作用**（#1481） |
+| 20 | 软删项目（`is_deleted=1`）启动 | 迁移**跳过**（不为回收站项目建根；恢复后首次写世界观条目由 #641 懒创建兜底）（#1481） |
 
 ---
 
@@ -570,6 +627,8 @@ F35 被依赖:
 | M6 | CLI（ancestors/descendants/--parent/delete 参数） | `pytest ../tests/cli/test_cli_world.py -v` 全绿 |
 | M7 | 手工验证 | 创建 3 层树 → ancestors 面包屑正确 → 无参删父（422）→ cascade 真删（子树消失）→ 重建后 reparent（子改挂）→ 循环挂接被拒（422） |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；覆盖率达 ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过 |
+| M9 | **建项目自动建根（#1481，默认行为）** | 新建项目 → `GET /projects/{id}/world-settings` 立即含**恰好 1 个**根（`category==""`、`parent_id is None`）；两个项目各自独立一根；`ProjectService.create_project` 经 `root_initializer` 钩子（唯一入口，CLI 亦覆盖）；根条目本身不触发「分类未创建」校验 |
+| M10 | **存量兜底幂等迁移（#1481）** | `ensure_world_root_for_projects` 三形态用例全绿——表缺失/无项目 → no-op；无根项目 → 补根（含「有子条目但无根」的破损态，既有行零改动）；有根项目 → 零副作用 + 重复调用幂等；软删项目跳过 |
 
 > Issue #173 验收标准映射：parent_id 邻接表 = M1/M2；递归 CTE = M2；同级唯一 + 顶层应用层校验 = M3；循环防护 = M3；真删级联/reparent = M4；幂等迁移 = M1；提取建树 → 后置（§10 登记，0.7.0 内置 Agent）；列表过滤 = M5。
 

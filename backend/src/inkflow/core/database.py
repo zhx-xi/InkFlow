@@ -30,14 +30,12 @@ from inkflow.core.migrations_chapter import (
 )
 from inkflow.core.migrations_chapter_audit import ensure_audit_logs_findings_column
 
-# 列/表迁移已抽至 core/migrations_{chapter,project,timeline_position,character_relation}.py
-# （900 行护栏）。
+# 列/表迁移已抽至 core/migrations_*.py（900 行护栏）；ensure_project_id_fk_children
+# 不在此 re-export（见 test_project_id_fk_1387.py）。
 from inkflow.core.migrations_character_relation import (
     ensure_character_relations_merged_into_knowledge,
 )
 from inkflow.core.migrations_project import ensure_projects_drop_legacy_genre_column
-
-# 注：ensure_project_id_fk_children 不在此 re-export；900 行护栏，见 test_project_id_fk_1387.py。
 from inkflow.core.migrations_project_id_fk import run_project_id_fk_migration
 from inkflow.core.migrations_timeline_position import (
     ensure_timeline_composite_positions,
@@ -48,6 +46,7 @@ from inkflow.core.migrations_uuid import (
     ensure_entity_uuid_columns,
     rollback_entity_uuid_columns,
 )
+from inkflow.core.migrations_world_root import ensure_world_root_for_projects
 
 __all__ = [
     "ENTITY_UUID_TABLES",
@@ -62,6 +61,7 @@ __all__ = [
     "ensure_entity_uuid_columns",
     "ensure_projects_drop_legacy_genre_column",
     "ensure_timeline_composite_positions",
+    "ensure_world_root_for_projects",
     "rollback_entity_uuid_columns",
     "rollback_timeline_composite_positions",
     "run_project_id_fk_migration",
