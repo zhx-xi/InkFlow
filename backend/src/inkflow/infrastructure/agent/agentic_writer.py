@@ -13,7 +13,8 @@ base 前 skill 后）。skill_lookup 由装配层经 AgenticWriterDeps.skill_loo
   （模板无变量写死——render 空 dict 原样返回）
 - build_agentic_writer: build_reader_tools(5 只读) + build_save_draft_tool
   → build_deep_agent（deepagents ReAct 循环，工具循环在 agent 内建）
-- _append_skills: skill 白名单拼接纯函数（base 前 skill 后，查不到跳过）
+- _append_skills: skill 白名单拼接纯函数（已下沉 `domain/services/skill_assembly.py`，
+  本模块以别名引用同一实现；base 前 skill 后，查不到跳过；#1472）
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import cast
 
+from inkflow.domain.services.skill_assembly import append_skills as _append_skills
 from inkflow.infrastructure.agent.deepagents.harness import build_deep_agent
 from inkflow.infrastructure.agent.tools.reader_tools import ReaderToolDeps, build_reader_tools
 from inkflow.infrastructure.agent.tools.save_draft_tool import (
@@ -260,29 +262,6 @@ def _no_skill_lookup(_skill_name: str) -> object | None:
     return None
 
 
-def _append_skills(
-    base_prompt: str,
-    skill_ids: list[str],
-    skill_lookup: Callable[[str], object | None],
-) -> str:
-    """把白名单 skill 内容按顺序拼接到 base prompt 之后（spec §5.2）.
-
-    Args:
-        base_prompt: 基础 system prompt（恒在前）.
-        skill_ids: skill 白名单（skill 目录名列表，顺序固定，#522）.
-        skill_lookup: 按 skill 目录名取 Skill 鸭子对象（含 name/content）的
-            查表函数；查不到该目录名 → 跳过（防御语义，契约疑点 2）.
-
-    Returns:
-        拼接后的完整 system prompt：base + 每个命中 skill 追加
-        '\\n\\n# 技能：<name>\\n\\n<content>\\n\\n---\\n'.
-    """
-    parts = [base_prompt]
-    for skill_name in skill_ids:
-        skill = skill_lookup(skill_name)
-        if skill is None:
-            continue
-        name = getattr(skill, "name", "")
-        content = getattr(skill, "content", "")
-        parts.append(f"\n\n# 技能：{name}\n\n{content}\n\n---\n")
-    return "".join(parts)
+# #1472：skill 白名单拼接纯函数已下沉 domain（`skill_assembly.append_skills`），
+# 本模块顶部以 `_append_skills` 别名引用**同一实现**（写手轨与管线链路共用，
+# 避免两份实现；domain 层不得 import infrastructure —— AGENTS.md §4.2）。

@@ -1,14 +1,16 @@
 # F39: 多 Agent 能力（multi-agent）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.3
-**日期**: 2026-08-16（v1.3 修订 2026-10-02）
+**Spec 版本**: 1.4
+**日期**: 2026-08-16（v1.3 修订 2026-10-02；v1.4 修订 2026-10-06）
 **依据**: 多 Agent 能力分析文档（`design/multi-agent-capability-analysis-2026-08-12.md`，已合入主仓）+ Issue #258（F39 后端核心）/ #259（F40 skill 上传绑定）/ #260（F41 自定义 Agent 编辑）+ 0.9.0 路线图拍板 Q1（`design/inkflow-0-9-0-roadmap-2026-08-15.md`：三 issue 合并一份 spec）
 **所属阶段**: 0.9.0（多 Agent 能力一期），估算 10-15 人天（F39 后端 5-7 + F40 前端 2-3 + F41 前端 3-5，F40/F41 依赖 F39 可并行）
-**关联 Issues**: [#258](https://github.com/zhx-xi/InkFlow/issues/258)（F39 后端核心，W2 启动）· [#259](https://github.com/zhx-xi/InkFlow/issues/259)（F40 skill 上传绑定，W3，🔗#258）· [#260](https://github.com/zhx-xi/InkFlow/issues/260)（F41 自定义 Agent 编辑，W3，🔗#258）
+**关联 Issues**: [#258](https://github.com/zhx-xi/InkFlow/issues/258)（F39 后端核心，W2 启动）· [#259](https://github.com/zhx-xi/InkFlow/issues/259)（F40 skill 上传绑定，W3，🔗#258）· [#260](https://github.com/zhx-xi/InkFlow/issues/260)（F41 自定义 Agent 编辑，W3，🔗#258）· [#1472](https://github.com/zhx-xi/InkFlow/issues/1472)（管线链路 skill 装配，0.17.0 W2）
 **依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
 **参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
 **状态**: ✅ 已实现（F39 后端 PR #403；F40 PR #408；F41 PR #407，2026-08-16）
+
+> **Spec 变更**（v1.3 → v1.4，2026-10-06，#1472 管线链路 skill 装配）：① **补齐管线链路（`agent run --pipeline`）的 skill 装配**——此前全仓 `_append_skills` 唯一调用点在写手轨（`infrastructure/agent/agentic_writer.py`），管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids`，用户 skill 在管线链路**静默失效**；本版在 `_build_pipeline_context` 汇合后按 `stage.id == Agent.role_key` 取该 Agent `skill_ids`，用同一拼接函数把命中 skill 正文追加到 `stage.agent.system_prompt` 之后（与写手轨同语义）；② 拼接纯函数 `_append_skills` **下沉 domain**（`domain/services/skill_assembly.py` 导出 `append_skills`），infrastructure 与 domain 共用同一实现（domain 不得 import infrastructure，AGENTS.md §4.2）；③ §5.2 新增「管线链路装配」段落与装配点表（含修改履历列）、负例契约。**不含**「通用 skill 全局生效」（#1473，W3 轨）。
 
 > **Spec 变更**（v1.2 → v1.3，2026-10-02，#1331 内置 skill 版本化 + 项目级覆盖，ADR-062）：① 内置 6 方法论 skill 内容抽离为 `i18n/skills/builtin/{zh,en}/<slug>.md`（frontmatter 带 `version`，正文逐字不变，独立子树不与 F19 操作类镜像混流）；② `ensure_builtin_skills` 升为**三态**（缺失写 / 未改升级 / 改过保留），基线落 `<skills_root>/.builtin_state.json`（文件系统真源，零 DDL）；③ 新增 `builtin_skill_status` / `builtin_skill_diff`（升级可见面）与 `resolve_skill_md_path` / `is_project_override`（项目级覆盖**仅落解析面**，装配接线另开 issue）；④ API `GET /api/v1/skills/builtin/status`、`GET /api/v1/skills/builtin/{name}/diff`；CLI `inkflow skill status|diff`；⑤ §12 新增 D11/D12、§13 新增 M12。
 
@@ -288,6 +290,20 @@ def build_agentic_writer(
 - **`build_reader_tools` 增加 `include: list[str] | None = None` 参数**：None → 返回 5 只读全量（现行为不变）；`[...]` → 只返回白名单命中项（按目录序）。`save_draft` 因依赖不同 deps 独立判断是否追加。
 - **skill 拼接函数 `_append_skills(base_prompt, skill_ids, skill_lookup)`**：对每个白名单 skill 目录名，追加 `\n\n# 技能：<name>\n\n<content>\n\n---\n`（base prompt 在前、skill 在后——分析文档 §5.3「skill 追加在用户 prompt 之后」优先级）。`skill_lookup` 由装配层注入（从 `data_dir/skills/` 文件系统按目录名取 content，#522）。
 - **向后兼容**：`tool_ids=None, skill_ids=None` = 现 F27 行为（全工具 + writer_agent.yaml prompt，无 skill）。**阶段 1 不改动 F27 调用点**（`get_agentic_writer_service._build_agent` 不传白名单），白名单过滤能力由单元测试验证（§9），运行时消费接线留阶段 2/3（§1.3 边界）。
+
+**管线链路装配（#1472，2026-10-06 融入）**：
+
+`agent run --pipeline`（static 与 supervisor 两模式）的每个 stage，在 `_build_pipeline_context` 汇合后按 `stage.id`（= 该 stage 对应内置 Agent 的 `role_key`）查 Agent 实体的 `skill_ids`，用同一拼接函数把命中的 skill 正文追加到 `stage.agent.system_prompt` 之后——与写手轨同语义（base 前 skill 后，查不到跳过）。这是「工具 + skill 白名单确定性强制」不变式在**管线链路**上的落点：此前 `_append_skills` 全仓唯一调用点在写手轨，管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids` → 用户 skill 在管线链路**静默失效**（#1472 根因）。
+
+| 装配点 | 落点 | 白名单来源 | 修改履历 |
+|--------|------|-----------|----------|
+| 写手轨（agentic writer） | `infrastructure/agent/agentic_writer.py` `build_agentic_writer` | `resolve_writer_authorization()`（内置 writer Agent 的 grants/skill） | 2026-08-16 初版（F39 #258） |
+| 管线链路（pipeline stage） | `domain/services/agent_service_stream.py` `_build_pipeline_context` | `AgentRepository.list()` 按 `stage.id == role_key` 取 `skill_ids` | 2026-10-06 新增（#1472） |
+
+- **拼接函数下沉**：`_append_skills` 纯函数下沉至 `domain/services/skill_assembly.py`（导出名 `append_skills`），infrastructure 与 domain 双方引用**同一实现**（`agentic_writer.py` 以 `_append_skills = append_skills` 别名保留既有导入面，`api/.../assembly_observability.py` 与既有测试零改动）。理由：管线 stage 构造在 domain 层，而 domain 层**不得 import infrastructure**（AGENTS.md §4.2）；纯字符串拼接零依赖，下沉不引入循环。
+- **skill 内容读取**：`domain/services/skill_assembly.py` 提供 `read_skill_content(skills_root, name)` / `file_skill_lookup(skills_root)`，真源 = `<data_dir>/skills/<name>/SKILL.md`（ADR-039 #522 文件系统真源）；目录/文件缺失 → 跳过（防御语义，镜像 `_append_skills` 的查不到跳过）。
+- **负例契约**：① 未挂载到该 Agent 的 skill **不得**出现在其 stage prompt（只拼白名单命中项，防串味）；② Agent `skill_ids` 为空 → stage prompt 与装配前**逐字符一致**（零回归）。
+- **不含**：「通用 skill 全局生效」（库中未被任何 Agent 挂载的 skill 自动注入）属 **#1473**（0.17.0 W3 轨）；本轨只做「Agent 挂载白名单」在管线链路的落地。
 
 ### 5.3 内置出厂配置 seed / 启动回补（`app.py` lifespan MODIFY，#522 修订）
 
