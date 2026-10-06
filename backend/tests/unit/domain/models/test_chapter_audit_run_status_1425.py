@@ -123,7 +123,7 @@ def test_audit_trigger_accepted_dto() -> None:
 def test_audit_trigger_accepted_rejects_unknown_status() -> None:
     """status 取值受限（Pydantic 校验）."""
     with pytest.raises(ValidationError):
-        AuditTriggerAccepted(log_id=LOG_ID, status="bogus")  # type: ignore[arg-type]
+        AuditTriggerAccepted(log_id=LOG_ID, status="bogus")  # type: ignore[arg-type]  # 反例：非法枚举值
 
 
 def test_audit_run_info_dto_roundtrip() -> None:

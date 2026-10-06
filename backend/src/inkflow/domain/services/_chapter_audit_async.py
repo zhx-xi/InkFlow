@@ -5,7 +5,7 @@
 run_audit_job / get_status）与「HTTP 触发路径」自洽，可独立成 mixin，与
 `BookRunMixin`（#456）同款：**不改类契约**（`ChapterAuditService` 混入后这些
 仍是实例方法，既有调用点/测试零改动）；被混入的属性/方法由主类提供，故以
-`# type: ignore[attr-defined]` 标注（镜像 BookRunMixin 先例）。
+`type: ignore[attr-defined]`（每处带中文理由）抑制 mypy 的 attr-defined 误报。
 
 依据: specs/f34-chapter-audit/spec.md §5.1（v1.5）/§7 E8/E19-E22 · issue #1425.
 """
