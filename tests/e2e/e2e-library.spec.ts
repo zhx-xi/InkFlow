@@ -497,14 +497,13 @@ async function presetMapWithPin(
   await createProjectViaUi(window, name);
   const pid = await findProjectId(kernel, name);
 
-  // 世界观节点（category=''，无分类）→ 返回 id 作 rootLocationId（地图挂载根地点）
-  const wsRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-settings`, {
-    method: 'POST',
-    body: { name: `${name}-节点甲`, category: '' },
-  });
-  expect(wsRes.status).toBe(201);
-  const ws = (await wsRes.json()) as { id: string };
-  const rootLocationId = ws.id;
+  // #1491：项目根由后端「建项目自动建根」创建（category=''）→ 直接取根作地图挂载地点
+  // （此前靠「首个空分类节点 = 根」的隐含语义，该语义随 #1491 收紧而消失）
+  const rootRes = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-settings?parent_id=none`);
+  expect(rootRes.status).toBe(200);
+  const rootItems = ((await rootRes.json()) as { items: Array<{ id: string }> }).items;
+  expect(rootItems, '项目应自带唯一根（#1491）').toHaveLength(1);
+  const rootLocationId = rootItems[0].id;
 
   // 地图（multipart：name + bg_source + root_location_id；bg_source=shape 无图也可建）
   const mapName = `${name}-地图`;

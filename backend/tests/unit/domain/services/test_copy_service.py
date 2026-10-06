@@ -284,6 +284,44 @@ class TestTreeCopy:
         mock_repo.list_descendants.assert_awaited_once_with(state.id)
         mock_repo.list_all_active.assert_not_awaited()
 
+    async def test_subtree_into_rooted_target_attaches_under_target_root(
+        self, service, mock_repo
+    ) -> None:
+        """#1493：目标已有根（#1491 后恒有）→ 子树顶节点**改挂目标根下**，不再跳过.
+
+        旧行为（父不在复制集合 ⇒ 顶层 ⇒ 跳过）在目标恒有根后会让跨项目复制恒 0 条
+        （E2E-A5 实测「已复制 0 条」）。
+        """
+        target_root = _setting("世界观总纲", project_id=TARGET_PID)
+        country = _setting("大越国")
+        state = _setting("青州", parent_id=country.id)
+        county = _setting("清河县城", parent_id=state.id)
+        mock_repo.get = AsyncMock(side_effect=lambda sid: state if sid == state.id else None)
+        mock_repo.list_descendants = AsyncMock(return_value=[state, county])
+        mock_repo.list = AsyncMock(return_value=([target_root], 1))  # 目标已有根
+
+        result = await service.copy(SOURCE_PID, TARGET_PID, root_setting_id=state.id)
+
+        calls = mock_repo.add.await_args_list
+        assert len(calls) == 2
+        s_new, t_new = (c.args[0] for c in calls)
+        assert s_new.parent_id == target_root.id
+        assert t_new.parent_id == s_new.id
+        assert result.skipped == []
+
+    async def test_source_root_into_rooted_target_still_skipped(self, service, mock_repo) -> None:
+        """#848 意图保留：源项目**自身的根**复制到已有根目标 → 仍跳过（防目标第二根）."""
+        target_root = _setting("世界观总纲", project_id=TARGET_PID)
+        source_root = _setting("世界观总纲")
+        mock_repo.list_all_active = AsyncMock(return_value=[source_root])
+        mock_repo.list = AsyncMock(return_value=([target_root], 1))
+
+        result = await service.copy(SOURCE_PID, TARGET_PID)
+
+        assert result.created == []
+        assert result.skipped == ["世界观总纲"]
+        mock_repo.add.assert_not_awaited()
+
     async def test_default_uses_list_all_active(self, service, mock_repo) -> None:
         """缺省 root → list_all_active(source) 取整棵；list_descendants 不调用."""
         country = _setting("大越国")

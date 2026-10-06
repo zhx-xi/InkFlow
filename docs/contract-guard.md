@@ -76,6 +76,19 @@
 > `frontend`/`e2e`/`ci` 触发 → skip → 断裂静默入 main（同 #972 形态）。
 > 单元侧另有恒跑守卫 `unit-backend`（`test_chapter_audit_no_model_degrade_1280.py`）。
 
+### e2e-frontend-library job（由 `contract` filter 触发，2026-10-06 #1493 起）
+
+| 契约源 | 锁定符号 | 硬编码断言 |
+|--------|----------|-----------|
+| `backend/src/inkflow/api/routers/world_settings.py` | `POST /projects/{pid}/world-settings` 的写入语义：#641 无 `parent_id` 自动挂根、#1321 非根条目分类前置（空分类 → 422）、#834/#847 根单例、`GET ?parent_id=none` 取根 | `tests/e2e/e2e-library.spec.ts`（E2E-M1/M2/M3 经 `presetMapWithPin` 取**项目根**作 `root_location_id`）、`tests/e2e/e2e-library-f43.spec.ts`（E2E-A3/A4/A5 经 `presetWorldNodes` 建树；**A5 断言目标项目条目总数 = 1 自带根 + 2 复制**） |
+| `backend/src/inkflow/domain/services/world_service.py` | `create_setting` 校验链（根/分类/同级同名）+ `ensure_root_setting`（#1491 建项目自动建根） | 同上 |
+
+> 背景（#1493）：#1491「建项目自动建根」改掉了「首个空分类节点 = 根」的隐含语义 → 夹具再建
+> 空分类顶层节点即撞 `#1321` 分类前置（422，6 条红）。当时本 job 仅由 `frontend`/`e2e`/`ci`
+> 触发 → skip → **静默入 main**（同 #972/#1280 形态）。⇒ 改上述契约源会**强制**跑本 job。
+> 同族已修：`e2e-blackbox-contract` / `e2e-push-visibility` / `e2e-rag-fake`（三 spec 不在 CI
+> e2e 过滤面内，仅手动运行，但依赖同一语义，已同 PR 一并改用「取项目根」形态）。
+
 ## 写作链契约源联保（#1184a）
 
 写作链的 prompt 契约源（章 brief 变量 / writer system prompt / 上下文注入渲染）长期**不在**本清单，
