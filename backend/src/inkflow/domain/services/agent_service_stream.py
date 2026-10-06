@@ -176,9 +176,12 @@ class AgentServiceStreamMixin:
         # F46 #270（spec §5.1）：static 模式叠加 agent_relations 显式边并收集
         # conditional_edges；supervisor 模式不消费 agent_relations（§5.5，保持空）
         conditional_edges: list[tuple[str, str]] = []
+        agents_by_role: dict[str, Any] = {}
         if request.mode == "supervisor":
             # supervisor 模式（spec §5.1）：角色池 = 模板 stages（装配模型/温度/prompt，不静态重排；
             # _apply_agent_order 只在 static 模式调用——supervisor 动态路由取代静态拓扑）
+            # #1472：supervisor 路径同样取 Agent 真源以装配白名单 skill
+            agents_by_role = await self._load_agents_by_role()
             if request.supervisor is None:
                 raise AgentServiceError("supervisor 配置缺失")
             template_stages = list(template.stages)
@@ -191,24 +194,16 @@ class AgentServiceStreamMixin:
         else:
             # v1.5 #484（spec §5.7.4）：装配 Agent 真源（role_key → {name, system_prompt}）
             # 供 _apply_agent_order 构造模板缺失角色占位 stage；未注入/加载失败 → 降级模板装配
-            agent_source = None
-            # getattr 防御：既有测试以 __new__ 构造（绕过 __init__）时属性缺省 → None
-            agent_repo = getattr(self, "_agent_repo", None)
-            if agent_repo is None and getattr(self, "_db_session", None) is not None:
-                from inkflow.infrastructure.database.repositories.agent_repo import (
-                    SQLiteAgentRepository,
-                )
-
-                agent_repo = SQLiteAgentRepository(self._db_session)
-            if agent_repo is not None:
-                try:
-                    agent_source = {
-                        a.role_key: {"name": a.name, "system_prompt": a.system_prompt}
-                        for a in await agent_repo.list()
-                        if a.role_key
-                    }
-                except Exception:
-                    logger.warning("Agent 真源加载失败，降级模板 roles 装配", exc_info=True)
+            # #1472：同一真源同时携带 skill_ids，供下方 _attach_agent_skills 装配管线 stage
+            agents_by_role = await self._load_agents_by_role()
+            agent_source = (
+                {
+                    role: {"name": agent.name, "system_prompt": agent.system_prompt}
+                    for role, agent in agents_by_role.items()
+                }
+                if agents_by_role
+                else None
+            )
             stages = _apply_agent_order(
                 template.stages,
                 project.config.agent_order,
@@ -222,6 +217,8 @@ class AgentServiceStreamMixin:
             stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
             pipeline_impl = self._pipeline
 
+        # #1472：管线 stage prompt 装配该 stage 对应 Agent 的白名单 skill（static/supervisor 共用）
+        stages = self._attach_agent_skills(stages, agents_by_role)
         context = PipelineContext(
             project_id=str(request.project_id),
             chapter_id=str(request.chapter_id) if request.chapter_id else None,
@@ -235,6 +232,58 @@ class AgentServiceStreamMixin:
             conditional_edges,
             project.config.agent_relations,
         )
+
+    async def _load_agents_by_role(self) -> dict[str, Any]:
+        """加载 Agent 真源：role_key → Agent 领域对象（含 skill_ids）。
+
+        #484 真源供 static 占位 stage（`_apply_agent_order`）与 #1472 管线 skill
+        装配共用。未注入 `_agent_repo` 且持有 `_db_session` → `SQLiteAgentRepository`
+        兜底（镜像原 static 分支逻辑，getattr 防御 `__new__` 构造的测试实例）；
+        加载失败 → warning + 空 dict（降级模板装配，不阻断生成主链路）。
+        """
+        agent_repo = getattr(self, "_agent_repo", None)
+        if agent_repo is None and getattr(self, "_db_session", None) is not None:
+            from inkflow.infrastructure.database.repositories.agent_repo import (
+                SQLiteAgentRepository,
+            )
+
+            agent_repo = SQLiteAgentRepository(self._db_session)
+        if agent_repo is None:
+            return {}
+        try:
+            return {a.role_key: a for a in await agent_repo.list() if a.role_key}
+        except Exception:
+            logger.warning("Agent 真源加载失败，降级模板 roles 装配", exc_info=True)
+            return {}
+
+    def _attach_agent_skills(
+        self, stages: list[PipelineStage], agents_by_role: dict[str, Any]
+    ) -> list[PipelineStage]:
+        """把各 stage 对应 Agent 的 skill_ids 命中内容拼到 stage.agent.system_prompt 之后（#1472）。
+
+        映射 = `stage.id == Agent.role_key`（内置 architect/writer/auditor/reviser/
+        worldview/polisher）。只拼白名单命中项——未挂载 skill 不注入（防串味）；
+        Agent 缺失 / skill_ids 为空 / 库中无该目录 → 跳过（prompt 逐字符不变，零回归）。
+        """
+        if not stages or not agents_by_role:
+            return stages
+        skill_ids_by_role = {
+            role: list(getattr(agent, "skill_ids", None) or [])
+            for role, agent in agents_by_role.items()
+        }
+        if not any(skill_ids_by_role.values()):
+            return stages
+        from inkflow.core.config import config
+        from inkflow.domain.services.skill_assembly import append_skills, file_skill_lookup
+
+        skills_root = getattr(self, "_skills_root", None) or (config.data_dir / "skills")
+        lookup = file_skill_lookup(skills_root)
+        for stage in stages:
+            skill_ids = skill_ids_by_role.get(stage.id)
+            if not skill_ids:
+                continue
+            stage.agent.system_prompt = append_skills(stage.agent.system_prompt, skill_ids, lookup)
+        return stages
 
     @staticmethod
     def _empty_injection_detail() -> dict[str, list[str]]:
