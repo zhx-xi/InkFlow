@@ -277,11 +277,12 @@ class ManageLogParams(_MCPParams):
 
 
 class AuditParams(_MCPParams):
-    """审计工具参数：project/chapter。"""
+    """审计工具参数：project / chapter / result（#1425 异步语义）。"""
 
-    action: Literal["project", "chapter"]
+    action: Literal["project", "chapter", "result"]
     project_id: str | None = None
     chapter_id: str | None = None
+    log_id: str | None = None
     include_static: bool | None = None
 
 

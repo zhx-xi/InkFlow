@@ -106,6 +106,7 @@ from inkflow.core.database import (
     run_project_id_fk_migration,
 )
 from inkflow.core.log import setup_logging
+from inkflow.core.migrations_chapter_audit import ensure_audit_logs_async_columns
 from inkflow.core.migrations_timeline_era import ensure_timeline_era_columns
 from inkflow.core.startup_reconcile import reconcile_stale_running_plans
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
@@ -160,6 +161,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_chapters_writing_requirements_column)
         await conn.run_sync(ensure_chapters_previous_content_column)
         await conn.run_sync(ensure_audit_logs_findings_column)
+        # #1425：audit_logs 异步语义三列（content_hash / run_status / error，幂等补列）
+        await conn.run_sync(ensure_audit_logs_async_columns)
         await conn.run_sync(ensure_outline_drop_is_deleted)
         # #1323：时间线叙事序一次性回填为合成序（幂等；旧库自动修正跨章碰撞）
         await conn.run_sync(ensure_timeline_composite_positions)

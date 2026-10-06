@@ -37,10 +37,12 @@ from typing import Any
 from loguru import logger
 
 from inkflow.domain.models.audit import AuditFinding, AuditReport
+from inkflow.domain.models.chapter import Chapter
 from inkflow.domain.models.chapter_audit import (
     AuditCheckType,
     AuditLog,
     AuditLogDetail,
+    AuditRunStatus,
     AuditSeverity,
     ChapterAuditFinding,
     ChapterAuditReport,
@@ -64,6 +66,11 @@ from inkflow.domain.services._audit_prompts import (
     parse_drift_output,
     parse_extra_check_output,
 )
+from inkflow.domain.services._chapter_audit_async import (
+    ChapterAuditAsyncMixin,
+    content_hash,
+    to_uuid,
+)
 from inkflow.domain.services.audit_service import AuditService
 from inkflow.domain.services.summary_service import SummaryService
 
@@ -84,13 +91,6 @@ _SEVERITY_ORDER: dict[AuditSeverity, int] = {
 """严重级别排序序（spec §6: error < warning < info）。"""
 
 
-def _to_uuid(value: int | uuid.UUID) -> uuid.UUID:
-    """将 int 或 UUID 统一转为 uuid.UUID（#1291：仅兼容外部 int 入参，非仓库层中转）."""
-    if isinstance(value, int):
-        return uuid.UUID(int=value)
-    return value
-
-
 def _finding_sort_key(finding: ChapterAuditFinding) -> tuple[int, str, str]:
     """findings 稳定排序键（spec §6: severity 序 + check_type + ref_entity_name）.
 
@@ -107,7 +107,7 @@ def _finding_sort_key(finding: ChapterAuditFinding) -> tuple[int, str, str]:
     )
 
 
-class ChapterAuditService:
+class ChapterAuditService(ChapterAuditAsyncMixin):
     """章节审计服务（spec §5）——LLM 主体 + 确定性兜底编排.
 
     依赖全部通过构造函数注入（ADR-015/ADR-009，测试注入 Mock）:
@@ -151,19 +151,23 @@ class ChapterAuditService:
 
     # ──── 服务编排（spec §5.1 步骤 ①-⑨）──────────────────────────────
 
-    async def audit(
+    async def _run_checks(
         self,
         project_id: uuid.UUID,
         chapter_id: uuid.UUID,
         *,
         include_static: bool = True,
-    ) -> ChapterAuditReport:
-        """执行单章审计编排（spec §5.1 步骤 ①-⑧）.
+    ) -> tuple[ChapterAuditReport, Chapter]:
+        """执行单章审计检查段（spec §5.1 步骤 ①-⑧，**纯计算不落库**）.
 
         流程: 项目校验 → 章节校验 → 字数检查 → 空章节判断 → LLM 输入准备 →
-        人设漂移 → 设定漂移 → 静态一致性委托 → 组装报告 → 落轻量记录.
+        人设漂移 → 设定漂移 → 静态一致性委托 → 组装报告.
         只读幂等：同一输入两次审计除 created_at 外逐字段相等；任何仓储读取
         失败即抛出透传，不产出部分报告（F15 先例）.
+
+        由两条路径共用（#1425）：
+        - `audit()`（进程内同步路径，F44 写作链/agent 工具）：算完立即落库并返回报告；
+        - `run_audit_job()`（HTTP 异步路径的后台任务）：算完 `complete()` 到既有记录。
 
         Args:
             project_id: 所属项目 UUID.
@@ -171,7 +175,7 @@ class ChapterAuditService:
             include_static: 是否包含 F15 静态一致性委托（默认 True）.
 
         Returns:
-            ChapterAuditReport（status=pending + findings + degraded 标记）.
+            (ChapterAuditReport（status=pending + findings + degraded 标记）, 章节实体).
 
         Raises:
             ProjectNotFoundError: 项目不存在（404 语义）.
@@ -183,7 +187,7 @@ class ChapterAuditService:
             raise ProjectNotFoundError()
 
         # ② 章节校验（含跨项目，F34 语义 404）
-        chapter = await self._chapter_repo.get_chapter(_to_uuid(chapter_id))
+        chapter = await self._chapter_repo.get_chapter(to_uuid(chapter_id))
         if chapter is None:
             raise ChapterNotFoundError()
         if chapter.project_id != project_id:
@@ -246,7 +250,7 @@ class ChapterAuditService:
             f15_report = await self._audit_service.run_audit(project_id)
             findings.extend(self._static_findings(f15_report, chapter_id))
 
-        # ⑨ 组装报告（findings 稳定排序）→ 落 audit_logs 轻量记录 → 返回
+        # ⑨ 组装报告（findings 稳定排序）——落库归调用方（audit / run_audit_job）
         report = ChapterAuditReport(
             chapter_id=chapter_id,
             chapter_title=chapter.title,
@@ -257,20 +261,56 @@ class ChapterAuditService:
             created_at=datetime.now(UTC),
             confirmed_at=None,
         )
+        return report, chapter
+
+    # ──── 同步路径（进程内调用：F44 写作链 / agent 工具）────────────────
+
+    async def audit(
+        self,
+        project_id: uuid.UUID,
+        chapter_id: uuid.UUID,
+        *,
+        include_static: bool = True,
+    ) -> ChapterAuditReport:
+        """同步执行单章审计并落轻量记录（spec §5.1 步骤 ①-⑨）.
+
+        **进程内调用路径**（F44 写作链 `_audit_bridge` / 卷级 `book_pipeline` /
+        agent `reader_tools`）——行为与 #1425 前逐字段一致：算完立即落一条
+        `run_status='completed'` 的记录并返回报告。**不经幂等去重**
+        （每次调用一条，spec §7 E8 末句）；HTTP 触发路径见 mixin 的 `submit`。
+
+        Args:
+            project_id: 所属项目 UUID.
+            chapter_id: 待审计章节 UUID.
+            include_static: 是否包含 F15 静态一致性委托（默认 True）.
+
+        Returns:
+            ChapterAuditReport（status=pending + findings + degraded 标记）.
+
+        Raises:
+            ProjectNotFoundError: 项目不存在（404 语义）.
+            ChapterNotFoundError: 章节不存在或属于其他项目（404 语义）.
+        """
+        report, chapter = await self._run_checks(
+            project_id, chapter_id, include_static=include_static
+        )
         await self._audit_log_repo.add(
             AuditLog(
                 id=uuid.uuid4(),
                 project_id=project_id,
-                chapter_id=chapter_id,
+                chapter_id=to_uuid(chapter_id),
                 chapter_title=chapter.title,
                 status="pending",
+                run_status=AuditRunStatus.COMPLETED,
                 severity_summary=self._severity_summary(report.findings),
                 summary=report.summary,
-                degraded=degraded,
+                degraded=report.degraded,
                 created_at=report.created_at,
                 confirmed_at=None,
+                error="",
             ),
             findings=report.findings,
+            content_hash=content_hash(chapter.content),
         )
         return report
 
@@ -307,14 +347,14 @@ class ChapterAuditService:
             raise ProjectNotFoundError()
 
         # ② 章节校验（含跨项目，同 audit 步骤 ②）
-        chapter = await self._chapter_repo.get_chapter(_to_uuid(chapter_id))
+        chapter = await self._chapter_repo.get_chapter(to_uuid(chapter_id))
         if chapter is None:
             raise ChapterNotFoundError()
         if chapter.project_id != project_id:
             raise ChapterNotFoundError("章节不属于该项目")
 
         # ③ 最新记录须为 pending（已确认/从未审计 → 422）
-        log = await self._audit_log_repo.latest_pending(_to_uuid(chapter_id))
+        log = await self._audit_log_repo.latest_pending(to_uuid(chapter_id))
         if log is None:
             raise NoPendingAuditError()
 
@@ -353,7 +393,7 @@ class ChapterAuditService:
         project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
-        return await self._audit_log_repo.list(_to_uuid(project_id), offset=offset, limit=limit)
+        return await self._audit_log_repo.list(to_uuid(project_id), offset=offset, limit=limit)
 
     async def get_log(self, log_id: uuid.UUID) -> AuditLogDetail:
         """按审计记录 ID 取回明细（#1420 读口：客户端超时后的恢复路径）.
@@ -367,7 +407,7 @@ class ChapterAuditService:
         Raises:
             AuditLogNotFoundError: 记录不存在（404 语义）.
         """
-        detail = await self._audit_log_repo.get(_to_uuid(log_id))
+        detail = await self._audit_log_repo.get(to_uuid(log_id))
         if detail is None:
             raise AuditLogNotFoundError()
         return detail
@@ -396,7 +436,7 @@ class ChapterAuditService:
         items: list[Any] = []
         offset = 0
         while True:
-            page, _total = await repo_list(_to_uuid(project_id), offset=offset, limit=_PAGE_SIZE)
+            page, _total = await repo_list(to_uuid(project_id), offset=offset, limit=_PAGE_SIZE)
             items.extend(page)
             if len(page) < _PAGE_SIZE:
                 break
@@ -631,7 +671,7 @@ class ChapterAuditService:
         offset = 0
         while True:
             page, _total = await self._chapter_repo.list_chapters(
-                _to_uuid(project_id), offset=offset, limit=_PAGE_SIZE
+                to_uuid(project_id), offset=offset, limit=_PAGE_SIZE
             )
             items.extend(page)
             if len(page) < _PAGE_SIZE:
@@ -653,7 +693,7 @@ class ChapterAuditService:
         """
         if self._outline_repo is None:
             return None
-        page, _total = await self._outline_repo.list(_to_uuid(project_id), limit=_PAGE_SIZE)
+        page, _total = await self._outline_repo.list(to_uuid(project_id), limit=_PAGE_SIZE)
         for item in page:
             if getattr(item, "chapter_id", None) == chapter_id and item.level == "chapter":
                 return item
@@ -672,7 +712,7 @@ class ChapterAuditService:
         if self._outline_repo is None:
             return ""
         page, _total = await self._outline_repo.list(
-            _to_uuid(project_id), level="chapter", limit=_PAGE_SIZE
+            to_uuid(project_id), level="chapter", limit=_PAGE_SIZE
         )
         ordered = sorted(
             (o for o in page if getattr(o, "level", None) == "chapter"),

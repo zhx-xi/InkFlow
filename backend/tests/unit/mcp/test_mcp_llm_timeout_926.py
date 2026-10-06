@@ -14,6 +14,9 @@
   分支 → INTERNAL_ERROR，必 FAIL。
 - C-R10【R】`_hint_for("TIMEOUT")` 含「查询结果」（operation/manage 两模块各测）——现在
   走默认文案，必 FAIL。
+- C-R11【#1425 收口】审计域（`build_audit_tool`）TIMEOUT hint 指向「按 log_id 查询」
+  （不含 `list/get`——审计域无该 action），且 `action=result` 按 log_id 取结果；
+  同时 C-R5 收口：audit action=chapter 已改 202 受理（非长任务）→ POST **不再**带 300s 覆盖。
 - C-G1【G】`extract` action=retrieve 不覆盖 timeout（`is None`）——现在即 PASS。
 
 纪律：只经公开 `tool.func(**kwargs)` 触发（禁直调私有 `_route_*`）；fake client 必须为
@@ -39,6 +42,7 @@ from inkflow.mcp.tools.manage_tools import (
     build_manage_outline_tool,
 )
 from inkflow.mcp.tools.operation_tools import _hint_for as _op_hint_for
+from inkflow.mcp.tools.operation_tools import _hint_for_audit as _audit_hint_for
 from inkflow.mcp.tools.operation_tools import (
     build_audit_tool,
     build_extract_tool,
@@ -189,15 +193,17 @@ class TestPerRequestTimeout:
         assert post["timeout"] == 300.0
 
     @pytest.mark.asyncio
-    async def test_audit_chapter_timeout(self, fake_env):
-        """【R】§4-C-R5：audit action=chapter →
-        POST /projects/{pid}/chapters/{cid}/audit timeout=300.0。
+    async def test_audit_chapter_async_no_timeout_override(self, fake_env):
+        """【G】§4-C-R5（#1425 收口）：audit action=chapter 现为 **202 受理**（非长任务）
+
+        → POST **不再**带 300s per-request 覆盖（timeout is None）；
+        等待完成是调用方的轮询职责（`action=result` 按 log_id 取结果）。
         """
         tool = build_audit_tool()
         await tool.func(action="chapter", project_id="p1", chapter_id="c1", include_static=True)
         post = _last_post(fake_env.client)
         assert post["path"] == "/projects/p1/chapters/c1/audit"
-        assert post["timeout"] == 300.0
+        assert post["timeout"] is None
 
     @pytest.mark.asyncio
     async def test_extract_extract_timeout(self, fake_env):
@@ -284,3 +290,62 @@ class TestRetrieveNoOverride:
         post = _last_post(fake_env.client)
         assert post["path"] == "/projects/p1/vector/retrieve"
         assert post["timeout"] is None
+
+
+class TestAuditDomainHint1425:
+    """§4-C-R11（#1425）：审计域 TIMEOUT hint 指向按 log_id 查询（审计域无 list/get action）。"""
+
+    def test_audit_hint_points_to_log_id(self) -> None:
+        """【R】审计域 `_hint_for_audit("TIMEOUT")` 含 log_id、不含 list/get。"""
+        hint = _audit_hint_for("TIMEOUT")
+
+        assert "log_id" in hint
+        assert "list/get" not in hint
+
+    def test_generic_hint_still_has_list_get(self) -> None:
+        """【G】通用 `_hint_for("TIMEOUT")` 不变（有 list/get 的域照旧）。"""
+        assert "list/get" in _op_hint_for("TIMEOUT")
+
+    def test_audit_hint_passthrough_other_codes(self) -> None:
+        """【G】非 TIMEOUT 错误码沿用通用文案（仅 TIMEOUT 分叉）。"""
+        assert _audit_hint_for("NOT_FOUND") == _op_hint_for("NOT_FOUND")
+
+    @pytest.mark.asyncio
+    async def test_audit_timeout_envelope_hint(self, fake_env) -> None:
+        """【R】审计工具 TIMEOUT 信封 hint 指向 log_id（不含 list/get）。"""
+        from inkflow.infrastructure.http import HttpApiError
+
+        tool = build_audit_tool()
+        fake_env.client.post_error = HttpApiError(
+            status_code=0, detail="请求超时（300s）：服务端任务可能仍在进行", code="TIMEOUT"
+        )
+
+        env = _parse_envelope(
+            await tool.func(action="chapter", project_id="p1", chapter_id="c1", include_static=True)
+        )
+
+        assert env["ok"] is False
+        assert env["error"]["code"] == "TIMEOUT"
+        assert "log_id" in env["error"]["hint"]
+        assert "list/get" not in env["error"]["hint"]
+
+    @pytest.mark.asyncio
+    async def test_audit_result_action_fetches_by_log_id(self, fake_env) -> None:
+        """【R】`action=result` → GET /audit-logs/{log_id}（受理后的取结果路径）。"""
+        tool = build_audit_tool()
+
+        await tool.func(action="result", log_id="L1")
+
+        gets = [c for c in fake_env.client.calls if c["method"] == "GET"]
+        assert gets and gets[-1]["path"] == "/audit-logs/L1"
+
+    @pytest.mark.asyncio
+    async def test_audit_result_requires_log_id(self, fake_env) -> None:
+        """【R】`action=result` 缺 log_id → INVALID_ARGS（不发请求）。"""
+        tool = build_audit_tool()
+
+        env = _parse_envelope(await tool.func(action="result"))
+
+        assert env["ok"] is False
+        assert env["error"]["code"] == "INVALID_ARGS"
+        assert fake_env.client.calls == []

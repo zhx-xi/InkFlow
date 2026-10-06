@@ -8,10 +8,15 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.domain.models.chapter_audit import AuditLog, AuditLogDetail, ChapterAuditFinding
+from inkflow.domain.models.chapter_audit import (
+    AuditLog,
+    AuditLogDetail,
+    AuditRunStatus,
+    ChapterAuditFinding,
+)
 from inkflow.infrastructure.database.models.audit_log import AuditLogORM
 from inkflow.infrastructure.database.repositories._id_guard import require_uuid_pk
 
@@ -36,6 +41,8 @@ def _log_orm_to_domain(orm: AuditLogORM) -> AuditLog:
         note=orm.note,
         created_at=orm.created_at,
         confirmed_at=orm.confirmed_at,
+        run_status=cast(AuditRunStatus, orm.run_status),
+        error=orm.error,
     )
 
 
@@ -61,7 +68,11 @@ class SQLiteAuditLogRepository:
         self._session = session
 
     async def add(
-        self, log: AuditLog, *, findings: Sequence[ChapterAuditFinding] | None = None
+        self,
+        log: AuditLog,
+        *,
+        findings: Sequence[ChapterAuditFinding] | None = None,
+        content_hash: str = "",
     ) -> AuditLog:
         """插入一条审计记录并返回含 ORM 主键背书的领域实体.
 
@@ -84,6 +95,9 @@ class SQLiteAuditLogRepository:
             created_at=log.created_at,
             confirmed_at=log.confirmed_at,
             findings=[f.model_dump(mode="json") for f in (findings or [])],
+            content_hash=content_hash,
+            run_status=log.run_status.value,
+            error=log.error,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -191,3 +205,96 @@ class SQLiteAuditLogRepository:
         )
         total = (await self._session.execute(total_stmt)).scalar_one()
         return items, total
+
+    # ──── #1425 异步语义（幂等复用 / 完成 / 失败 / 轮询读口）──────────────
+
+    async def find_reusable(
+        self,
+        chapter_id: uuid.UUID,
+        content_hash: str,
+        *,
+        stale_before: datetime,
+    ) -> AuditLog | None:
+        """查找可复用的既有审计记录（#1425 幂等重跑；谓词见端口 docstring）.
+
+        复用谓词（同章 + 同 content_hash，取 created_at 最新一条）：
+        ① `run_status='running'` 且 `created_at >= stale_before`，或
+        ② `run_status='completed'` 且 `status='pending'` 且 `degraded=False`。
+        """
+        cid = require_uuid_pk(chapter_id)
+        if cid is None or not content_hash:
+            return None
+        stmt = (
+            select(AuditLogORM)
+            .where(
+                AuditLogORM.chapter_id == cid,
+                AuditLogORM.content_hash == content_hash,
+                or_(
+                    and_(
+                        AuditLogORM.run_status == "running",
+                        AuditLogORM.created_at >= stale_before,
+                    ),
+                    and_(
+                        AuditLogORM.run_status == "completed",
+                        AuditLogORM.status == "pending",
+                        AuditLogORM.degraded.is_(False),
+                    ),
+                ),
+            )
+            .order_by(AuditLogORM.created_at.desc(), AuditLogORM.id.desc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        return _log_orm_to_domain(orm) if orm is not None else None
+
+    async def complete(
+        self,
+        log_id: uuid.UUID,
+        *,
+        findings: Sequence[ChapterAuditFinding],
+        severity_summary: str,
+        summary: str,
+        degraded: bool,
+    ) -> AuditLog | None:
+        """标记审计任务完成（#1425）：findings 快照 + 摘要 + `run_status='completed'`."""
+        lid = require_uuid_pk(log_id)
+        if lid is None:
+            return None
+        stmt = select(AuditLogORM).where(AuditLogORM.id == lid)
+        orm = (await self._session.execute(stmt)).scalar_one_or_none()
+        if orm is None:
+            return None
+        orm.findings = [f.model_dump(mode="json") for f in findings]
+        orm.severity_summary = severity_summary
+        orm.summary = summary
+        orm.degraded = degraded
+        orm.run_status = AuditRunStatus.COMPLETED.value
+        orm.error = ""
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return _log_orm_to_domain(orm)
+
+    async def fail(self, log_id: uuid.UUID, *, error: str) -> AuditLog | None:
+        """标记审计任务失败（#1425）：`run_status='failed'` + error."""
+        lid = require_uuid_pk(log_id)
+        if lid is None:
+            return None
+        stmt = select(AuditLogORM).where(AuditLogORM.id == lid)
+        orm = (await self._session.execute(stmt)).scalar_one_or_none()
+        if orm is None:
+            return None
+        orm.run_status = AuditRunStatus.FAILED.value
+        orm.error = error
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return _log_orm_to_domain(orm)
+
+    async def get_status(self, log_id: uuid.UUID) -> AuditLog | None:
+        """按 ID 取轻量记录（#1425 轮询读口，不解析 findings）."""
+        lid = require_uuid_pk(log_id)
+        if lid is None:
+            return None
+        stmt = select(AuditLogORM).where(AuditLogORM.id == lid)
+        orm = (await self._session.execute(stmt)).scalar_one_or_none()
+        return _log_orm_to_domain(orm) if orm is not None else None

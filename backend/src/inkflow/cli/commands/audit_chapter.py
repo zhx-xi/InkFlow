@@ -6,7 +6,9 @@ F7 §5 全局约定：--json 统一信封 {"ok": true, "data": ...} /
 {"ok": false, "error": {"code", "message"}}；退出码 0/1/2。
 
 命令形态（spec §4）：
-- 触发审计:  inkflow audit chapter <章节> -p <项目> [--include-static]
+- 触发审计:  inkflow audit chapter <章节> -p <项目> [--include-static] [--wait|--no-wait]
+             （#1425 异步：POST 只受理 202 {log_id, status}；默认 --wait 轮询至终态后
+             取回记录明细并打印报告——人类输出与同步版一致；--no-wait 立即返回 log_id）
 - 审计+确认:  ... --confirm accept|reject [--note TEXT]
 - 查记录:    inkflow audit chapter --history -p <项目>
 - 查明细:    inkflow audit chapter --log <审计记录 ID>（#1420，可省略 -p）
@@ -14,6 +16,8 @@ F7 §5 全局约定：--json 统一信封 {"ok": true, "data": ...} /
 错误码映射（spec §7）：
 - HttpApiError 经 map_http_error：404 → NOT_FOUND、422 → VALIDATION_ERROR、
   其余 → INTERNAL_ERROR；均退出 1
+- 后台任务失败（run_status=failed）→ INTERNAL_ERROR + 退出 1（#1425）
+- 轮询超总预算 → TIMEOUT + 退出 1（#1425）
 - KernelStartupError → KERNEL_ERROR；其余异常 → DB_ERROR
 - 用法错误（--note 无 --confirm / --confirm 非法 / --confirm 与 --history
   互斥 / 无 chapter 且无 --history）→ 退出 2
@@ -24,6 +28,7 @@ F7 §5 全局约定：--json 统一信封 {"ok": true, "data": ...} /
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 
 import typer
@@ -54,6 +59,13 @@ def _chapter_callback() -> None:
 
 # 名称解析分页循环页大小（spec §4 章节名 → id；F15 `_load_all` 同款模式）.
 _PAGE_SIZE = 50
+
+# #1425 异步语义：--wait 轮询节奏与总预算（spec §4 v1.5）.
+_POLL_INTERVAL = 1.0
+"""轮询间隔秒（测试可 monkeypatch 归零）."""
+
+_POLL_TOTAL_TIMEOUT = 900.0
+"""轮询总预算秒（超时 → 退出 1 + `--log <id>` 恢复指引）."""
 
 # 严重级别打印排序序（spec §6: error < warning < info）.
 _SEVERITY_ORDER: dict[str, int] = {
@@ -192,7 +204,11 @@ def _print_human_confirm(data: dict) -> None:
 
 
 def _print_human_history(data: dict) -> None:
-    """人类可读审计记录列表（spec §4）：章名/状态/摘要/时间逐条."""
+    """人类可读审计记录列表（spec §4）：章名/确认态/执行态/摘要/时间逐条.
+
+    #1425：增补执行态 `run_status`（running/completed/failed）——「哪条对应哪次尝试」
+    的可判面（失败记录另附 error 摘要）。
+    """
     logs = data.get("logs", [])
     if not logs:
         typer.echo("（暂无审计记录）")
@@ -200,11 +216,44 @@ def _print_human_history(data: dict) -> None:
     for log in logs:
         line = (
             f"  {log.get('chapter_title', '')} [{log.get('status', '')}] "
-            f"{log.get('severity_summary', '')} {format_local(log.get('created_at'))}"
+            f"{format_local(log.get('created_at'))} "
+            f"执行: {log.get('run_status', 'completed')} "
+            f"{log.get('severity_summary', '')}"
         )
+        if log.get("error"):
+            line += f" 错误: {log['error']}"
         if log.get("confirmed_at"):
             line += f" 确认于 {format_local(log['confirmed_at'])}"
         typer.echo(line)
+
+
+def _print_human_submitted(data: dict) -> None:
+    """人类可读受理凭证（#1425 --no-wait）：log_id + 状态 + 查询指引."""
+    log_id = data.get("log_id", "")
+    typer.echo(f"🚀 已受理章节审计任务: {log_id} (status: {data.get('status', '')})")
+    typer.echo(f"   查询结果: inkflow audit chapter --log {log_id}")
+
+
+async def _poll_until_done(client: InkFlowHTTPClient, cli_ctx: CliContext, log_id: str) -> dict:
+    """轮询任务状态至终态（#1425 `--wait`）——返回终态 AuditRunInfo.
+
+    running 继续；completed/failed 返回；超总预算 → TIMEOUT 错误信封 + 退出 1
+    （附 `--log <id>` 恢复指引，spec §4 v1.5）。
+    """
+    deadline = time.monotonic() + _POLL_TOTAL_TIMEOUT
+    while True:
+        info: dict = await client.get(f"/audit-logs/{log_id}/status")
+        if info.get("run_status") != "running":
+            return info
+        if time.monotonic() >= deadline:
+            print_error(
+                cli_ctx,
+                "TIMEOUT",
+                f"审计任务超时未完成（log_id: {log_id}）——"
+                f"可用 inkflow audit chapter --log {log_id} 稍后查询结果",
+            )
+            raise typer.Exit(1)
+        await asyncio.sleep(_POLL_INTERVAL)
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +273,11 @@ def chapter_audit_cmd(
         True,
         "--include-static/--no-include-static",
         help="包含 F15 静态一致性委托（默认含）",
+    ),
+    wait: bool = typer.Option(
+        True,
+        "--wait/--no-wait",
+        help="触发审计时等待完成（默认等待；--no-wait 立即返回 log_id）",
     ),
     confirm: str | None = typer.Option(None, "--confirm", help="确认动作: accept / reject"),
     note: str = typer.Option("", "--note", "-n", help="确认备注（与 --confirm 搭配使用）"),
@@ -268,11 +322,27 @@ def chapter_audit_cmd(
                     f"/projects/{pid}/chapters/{cid}/audit/confirm",
                     json={"action": confirm, "note": note},
                 )
-            return await client.post(
+            # #1425 异步语义：POST 只受理（202 {log_id, status}）。
+            submitted = await client.post(
                 f"/projects/{pid}/chapters/{cid}/audit",
                 json={"include_static": include_static},
                 timeout=LLM_TASK_TIMEOUT,
             )
+            if not wait:
+                return submitted
+            log_id = submitted.get("log_id")
+            if not log_id:
+                # 防御：旧内核（同步语义）直接返回报告 → 原样透出
+                return submitted
+            info = await _poll_until_done(client, cli_ctx, log_id)
+            if info.get("run_status") == "failed":
+                print_error(
+                    cli_ctx,
+                    "INTERNAL_ERROR",
+                    f"审计任务失败（log_id: {log_id}）: {info.get('error', '')}",
+                )
+                raise typer.Exit(1) from None  # print_error 已退出（静态分析用）
+            return await client.get(f"/audit-logs/{log_id}")
 
     data = _run(cli_ctx, _impl)
     if cli_ctx.json_output:
@@ -283,5 +353,7 @@ def chapter_audit_cmd(
         _print_human_history(data)
     elif confirm is not None:
         _print_human_confirm(data)
+    elif not wait:
+        _print_human_submitted(data)
     else:
         _print_human_report(data)

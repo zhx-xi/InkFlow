@@ -8564,6 +8564,47 @@
         ]
       }
     },
+    "/api/v1/audit-logs/{log_id}/status": {
+      "get": {
+        "description": "按审计记录 ID 取任务运行状态（#1425 轮询读口，spec §3.1）——轻量，不含 findings.\n\n`run_status` = running / completed / failed；失败原因在 `error`。\n执行完成后取 findings 走 v1.4 读口 `GET /api/v1/audit-logs/{log_id}`（复用）。",
+        "operationId": "get_audit_log_status_api_v1_audit_logs__log_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "log_id",
+            "required": true,
+            "schema": {
+              "title": "Log Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Audit Log Status",
+        "tags": [
+          "章节审计"
+        ]
+      }
+    },
     "/api/v1/chapters/{chapter_id}": {
       "delete": {
         "operationId": "delete_chapter_api_v1_chapters__chapter_id__delete",
@@ -12497,7 +12538,7 @@
     },
     "/api/v1/projects/{project_id}/chapters/{chapter_id}/audit": {
       "post": {
-        "description": "手动触发单章审计（spec §3.1）——返回完整 ChapterAuditReport.\n\ninclude_static 透传服务层（默认 True，spec §2.4 AuditTriggerRequest），\nmodel_dump(mode=\"json\") 信封序列化（spec §3.2）。",
+        "description": "手动触发单章审计（spec §3.1 / §5.1 v1.5）——**202 异步受理**.\n\n#1425：端点只做「校验 + 受理」——`submit()` 返回 `(log, created)`；`created=True`\n时经 `spawn_background_task` 派发后台执行（fire-and-forget，F44 #456 先例），\n响应体 `{log_id, status}`（status = 任务执行态 running/completed）。\n幂等复用（`created=False`）不派发任务、不新增记录（spec §7 E22）。\ninclude_static 透传服务层（默认 True，spec §2.4 AuditTriggerRequest）。",
         "operationId": "trigger_audit_api_v1_projects__project_id__chapters__chapter_id__audit_post",
         "parameters": [
           {
@@ -12530,7 +12571,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}

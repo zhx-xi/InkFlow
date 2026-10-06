@@ -369,12 +369,14 @@ class TestAuditLog:
             "chapter_id",
             "chapter_title",
             "status",
+            "run_status",
             "severity_summary",
             "summary",
             "degraded",
             "note",
             "created_at",
             "confirmed_at",
+            "error",
         }
         assert dumped["status"] == "rejected"
         assert dumped["severity_summary"] == "1 error, 2 warnings, 0 info"
