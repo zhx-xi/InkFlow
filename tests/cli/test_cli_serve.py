@@ -552,8 +552,13 @@ class TestServeDebugMode:
         assert token1  # 非空
         assert token1 == token2  # 确定性：两次启动相同
 
-    def test_debug_auto_open_docs_uses_actual_port(self, cli_runner):
-        """--debug：_run_server 返回后注册 Timer(1.5) 打开 /docs，URL 用实际端口而非请求端口。"""
+    def test_debug_auto_open_docs_uses_actual_port(self, cli_runner, monkeypatch):
+        """--debug：_run_server 返回后注册 Timer(1.5) 打开 /docs，URL 用实际端口而非请求端口.
+
+        #1496 起 pytest 会话默认注入 INKFLOW_DEBUG_NO_BROWSER=1（tests/conftest.py），
+        本用例断言的是**逃生门未启用**时的默认自动打开 → 显式 delenv 还原该路径。
+        """
+        monkeypatch.delenv("INKFLOW_DEBUG_NO_BROWSER", raising=False)
         from inkflow.cli.commands.serve import app
 
         with (
@@ -844,3 +849,37 @@ class TestServeDebugNoBrowser:
             assert mock_timer.call_args.args[0] == 1.5
             mock_timer.call_args.args[1]()
             mock_wb.assert_called_once_with("http://127.0.0.1:8000/docs")
+
+
+class TestPytestSessionNoBrowserHatch:
+    """#1496：pytest 会话默认注入 F51 v1.1 逃生门 —— debug 态 serve 不再弹系统浏览器.
+
+    阶段 A（用户 2026-10-06 拍板）= pytest 侧统一注入**既有**逃生门
+    `INKFLOW_DEBUG_NO_BROWSER=1`（`tests/conftest.py`），不改 `serve.py` 的产品默认
+    行为（方案 B「反转默认为 opt-in」本期不做）。
+
+    本类**不自设**该 env：断言的正是不显式设它的普通用例也受会话注入保护（注入缺失
+    → 本类 RED）。产品默认语义的负向守护 = 同文件
+    `TestServeDebugNoBrowser.test_debug_no_browser_unset_keeps_timer`（delenv 后仍注册）。
+    """
+
+    def test_session_env_carries_escape_hatch(self):
+        """会话默认：进程 env 带逃生门，且为显式赋值（宿主残留值不得反超）。"""
+        assert os.environ.get("INKFLOW_DEBUG_NO_BROWSER") == "1"
+
+    def test_debug_serve_registers_no_timer_without_per_test_env(self, cli_runner):
+        """未显式设 env 的 debug 态 serve → Timer 零注册、webbrowser 零调用（零弹窗）。"""
+        assert os.environ.get("INKFLOW_DEBUG_NO_BROWSER") == "1", "会话级逃生门未注入"
+        from inkflow.cli.commands.serve import app
+
+        with (
+            patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT),
+            patch("threading.Timer") as mock_timer,
+            patch("webbrowser.open") as mock_wb,
+        ):
+            result = cli_runner.invoke(app, ["--debug"])
+        assert result.exit_code == 0
+        mock_timer.assert_not_called()
+        mock_wb.assert_not_called()
+        # 只关弹窗：其余 debug 契约不变（READY 交付行仍在）
+        assert _parse_ready(result.output)["port"] == FAKE_PORT

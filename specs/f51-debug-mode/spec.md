@@ -1,12 +1,13 @@
 # F51: 打包产物 Debug 模式（debug-mode）— 功能规格
 
-> **Spec 版本**: 1.1 | **日期**: 2026-09-08 | **依据**: 用户需求（打包产物难测试），Constitution P1-P6, ADR-008/016/020/021/030
+> **Spec 版本**: 1.2 | **日期**: 2026-09-08（1.2 修订 2026-10-06） | **依据**: 用户需求（打包产物难测试），Constitution P1-P6, ADR-008/016/020/021/030
 > **Spec 变更**: v1.1（#949）——§5.4 补 `INKFLOW_DEBUG_NO_BROWSER` 逃生门开关（debug 自动打开 /docs 可关，默认行为不变）+ §7 边界表补行 + §12 D10 决策记录。
-> **所属阶段**: 0.13.0 里程碑（Issue #713/#714/#715，估算 4-7 人天）；v1.1 逃生门增量挂 0.14.0（#949）
-> **关联 Issues**: [#713](https://github.com/zhx-xi/InkFlow/issues/713)（后端 debug 开关 + 详细日志）· [#714](https://github.com/zhx-xi/InkFlow/issues/714)（Electron GUI DevTools + dev 钩子）· [#715](https://github.com/zhx-xi/InkFlow/issues/715)（serve 可直达端点）· [#949](https://github.com/zhx-xi/InkFlow/issues/949)（v1.1 逃生门：debug 自动打开 /docs 可关）
+> **Spec 变更**: v1.2（#1496）——§9.2 新增场景 7「pytest 侧统一注入」：`tests/conftest.py` / `backend/conftest.py` 会话级注入既有逃生门（与 e2e 的 `baseEnv` 同规），修「本地跑测试累积十几个 /docs 弹窗」；**不改 `serve.py` 产品默认行为**（方案 B 未选）。
+> **所属阶段**: 0.13.0 里程碑（Issue #713/#714/#715，估算 4-7 人天）；v1.1 逃生门增量挂 0.14.0（#949）；v1.2 测试侧增量挂 0.17.0（#1496）
+> **关联 Issues**: [#713](https://github.com/zhx-xi/InkFlow/issues/713)（后端 debug 开关 + 详细日志）· [#714](https://github.com/zhx-xi/InkFlow/issues/714)（Electron GUI DevTools + dev 钩子）· [#715](https://github.com/zhx-xi/InkFlow/issues/715)（serve 可直达端点）· [#949](https://github.com/zhx-xi/InkFlow/issues/949)（v1.1 逃生门：debug 自动打开 /docs 可关）· [#1496](https://github.com/zhx-xi/InkFlow/issues/1496)（v1.2：pytest 侧统一注入逃生门）
 > **依赖**: 无硬前置（三条均为新增能力；#715 复用 #713 的 `INKFLOW_DEBUG` 语义，建议同批排期）
 > **参考 ADR**: [ADR-044](../../adr/packaging/ADR-044.md)（打包产物 Debug 模式总决策）· [ADR-008](../../adr/service/ADR-008.md)（pydantic settings 配置）· [ADR-016](../../adr/service/ADR-016.md)（loguru 日志）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 壳）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化）
-> **状态**: v1.0 已实现（0.13.0，#713/#714/#715）；v1.1 逃生门增量实现中（#949，挂 0.14.0）
+> **状态**: v1.0 已实现（0.13.0，#713/#714/#715）；v1.1 逃生门增量实现中（#949，挂 0.14.0）；v1.2 测试侧增量实现中（#1496，挂 0.17.0）
 
 ---
 
@@ -277,6 +278,7 @@ def resolve_log_dir() -> Path:
 4. **serve 可直达**：debug 起内核 → 可访问 `/docs`；已知 token + `X-InkFlow-Token` header curl 成功；uvicorn debug 日志。
 5. **非 debug 回归**：随机 token / 不自动 /docs / info 级别 / 无 DevTools 钩子。
 6. **逃生门开关（v1.1，#949）**：`INKFLOW_DEBUG_NO_BROWSER=1` + debug 态 → Timer 零注册 / webbrowser 不调用，其余 debug 行为不变；未设 → 仍注册（默认防回退）；`--open-browser`（非 debug）+ 设开关 → 照常打开（不越界）。
+7. **pytest 侧统一注入（v1.2，#1496）**：跑 pytest 时进程 env 由 conftest 会话级**显式**注入 `INKFLOW_DEBUG_NO_BROWSER=1`（`tests/conftest.py` + `backend/conftest.py` 镜像；与 e2e 的 `baseEnv` 同规）→ 未自设该 env 的普通用例也零弹窗；产品默认语义不变（`test_cli_serve.py::TestServeDebugNoBrowser.test_debug_no_browser_unset_keeps_timer` 用 `delenv` 守护「未设仍弹」）。
 
 ### 9.3 覆盖率
 

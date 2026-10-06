@@ -52,6 +52,10 @@ def isolated_db(monkeypatch, tmp_path):
 
     yield
 
+    # #1488 统一后置处理（DB 连接半边）：测试 engine 显式释放连接池（连带 aiosqlite
+    # 工作线程），不依赖 GC 时机；两处 patch 由 monkeypatch 自动还原。
+    engine.sync_engine.dispose()
+
 
 def _parse_json_output(output: str):
     """从 CliRunner 输出中提取 JSON，信封格式时返回 data 部分."""
