@@ -201,3 +201,59 @@ class TestUpdateEventEraCLI:
         payload = json.loads(result.stdout)
         assert payload["error"]["code"] == "VALIDATION_ERROR"
         assert fake_http_client.post.await_count == 0
+
+
+class TestEraScaleCLI:
+    """v1.5（#1411 §2.8 E11）：``--era-scale`` 透传（create / update）。"""
+
+    def test_create_with_era_scale_sends_key(self, cli_runner: CliRunner, fake_http_client) -> None:
+        fake_http_client.post.return_value = _event_json(era="示例历", era_value=1.0, era_scale=2.0)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--project-id",
+                str(PID),
+                "--title",
+                "事件甲",
+                "--era",
+                "示例历",
+                "--era-value",
+                "1",
+                "--era-scale",
+                "2",
+            ],
+            obj=CliContext(json_output=True),
+        )
+
+        assert result.exit_code == 0
+        assert _payload(fake_http_client)["era_scale"] == 2.0
+        assert json.loads(result.stdout)["data"]["era_scale"] == 2.0
+
+    def test_create_without_era_scale_omits_key(
+        self, cli_runner: CliRunner, fake_http_client
+    ) -> None:
+        """向后兼容守护：不带 --era-scale → body 不含该键（v1.4 行为零变化）。"""
+        fake_http_client.post.return_value = _event_json()
+
+        result = cli_runner.invoke(
+            app,
+            ["create", "--project-id", str(PID), "--title", "事件甲"],
+            obj=CliContext(json_output=True),
+        )
+
+        assert result.exit_code == 0
+        assert "era_scale" not in _payload(fake_http_client)
+
+    def test_update_with_era_scale(self, cli_runner: CliRunner, fake_http_client) -> None:
+        fake_http_client.patch.return_value = _event_json(era="示例仙历", era_scale=3.0)
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "--id", str(EID), "--era-scale", "3"],
+            obj=CliContext(json_output=True),
+        )
+
+        assert result.exit_code == 0
+        assert _payload(fake_http_client) == {"era_scale": 3.0}

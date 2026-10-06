@@ -6146,6 +6146,11 @@ export interface components {
              * @default
              */
             era: string;
+            /**
+             * Era Scale
+             * @default 1
+             */
+            era_scale: number;
             /** Era Value */
             era_value?: number | string | null;
             /** Narrative Position */
@@ -6185,6 +6190,8 @@ export interface components {
             description?: string | null;
             /** Era */
             era?: string | null;
+            /** Era Scale */
+            era_scale?: number | null;
             /** Era Value */
             era_value?: number | string | null;
             /** Narrative Position */

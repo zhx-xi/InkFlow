@@ -137,6 +137,29 @@ class TestCreateEventEraAPI:
 
         assert response.status_code == 422
 
+    @patch("inkflow.api.routers.timeline.get_timeline_service")
+    def test_create_with_era_scale_passes_kwargs(self, mock_get_svc: MagicMock) -> None:
+        """v1.5（#1411 §2.8 E11）：显式非默认 era_scale → 透传 + 顶层回读。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.create_event = AsyncMock(
+            return_value=_event("事件甲", era="示例历", era_value=1.0, era_scale=2.0)
+        )
+
+        response = client.post(
+            CREATE_URL,
+            json={"title": "事件甲", "era": "示例历", "era_value": 1.0, "era_scale": 2.0},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["era_scale"] == 2.0
+        assert svc.create_event.await_args.kwargs["era_scale"] == 2.0
+
+    def test_create_era_scale_non_positive_422(self) -> None:
+        """流速比须为正数（§2.8 E11）。"""
+        response = client.post(CREATE_URL, json={"title": "事件甲", "era_scale": 0.0})
+
+        assert response.status_code == 422
+
 
 class TestUpdateEventEraAPI:
     """PATCH /timeline/events/{id} —— 清除语义透传 + 正式列回读 + 422。"""

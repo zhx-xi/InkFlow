@@ -184,3 +184,31 @@ class TestUpdateDtoEraValidation:
     def test_era_value_non_finite_rejected(self) -> None:
         with pytest.raises(ValidationError):
             TimelineEventUpdate(era_value=math.nan)
+
+
+class TestEraScaleValidation:
+    """v1.5（#1411 §2.8 E11）：流速比须为**有限正数**；Create 默认 1.0 / Update None = 不修改。"""
+
+    def test_create_defaults_to_one(self) -> None:
+        assert TimelineEventCreate(project_id=PID, title="事件甲").era_scale == 1.0
+
+    def test_create_accepts_positive(self) -> None:
+        assert TimelineEventCreate(project_id=PID, title="事件甲", era_scale=2.5).era_scale == 2.5
+
+    @pytest.mark.parametrize("bad", [0.0, -1.0, math.nan, math.inf, -math.inf])
+    def test_create_rejects_non_positive_or_non_finite(self, bad: float) -> None:
+        with pytest.raises(ValidationError):
+            TimelineEventCreate(project_id=PID, title="事件甲", era_scale=bad)
+
+    def test_update_defaults_to_none(self) -> None:
+        update = TimelineEventUpdate()
+        assert update.era_scale is None
+        assert "era_scale" not in update.model_fields_set
+
+    def test_update_accepts_positive(self) -> None:
+        assert TimelineEventUpdate(era_scale=3.0).era_scale == 3.0
+
+    @pytest.mark.parametrize("bad", [0.0, -2.0, math.nan])
+    def test_update_rejects_non_positive_or_non_finite(self, bad: float) -> None:
+        with pytest.raises(ValidationError):
+            TimelineEventUpdate(era_scale=bad)

@@ -34,6 +34,7 @@ from inkflow.domain.models.timeline import (
     TimelineEventUpdate,
     _validate_description,
     _validate_era,
+    _validate_era_scale,
     _validate_era_value,
     _validate_short_text,
     _validate_time_value,
@@ -90,6 +91,7 @@ class TimelineEventCreateBody(BaseModel):
     timeline_flag: str = ""
     era: str = ""  # 纪元轴名（0.16.0，#1353 §2.8）
     era_value: float | str | None = None  # 纪元轴内值；"" = 不设轴内值
+    era_scale: float = 1.0  # 流速比（#1411 §2.8 E11；默认 1.0 = 与项目时基同速）
 
     @field_validator("title")
     @classmethod
@@ -147,6 +149,12 @@ class TimelineEventCreateBody(BaseModel):
         """验证纪元轴内值：None / "" 合法；字符串仅 "" 合法；数值须有限."""
         return _validate_era_value(v)
 
+    @field_validator("era_scale")
+    @classmethod
+    def validate_era_scale(cls, v: float) -> float:
+        """验证流速比：须为有限正数（#1411 §2.8 E11）."""
+        return _validate_era_scale(v)
+
 
 # ── 事件 CRUD（嵌套项目路径）──────────────────────────────────
 
@@ -165,6 +173,9 @@ async def create_timeline_event(
     if data.era or data.era_value is not None:
         era_kwargs["era"] = data.era
         era_kwargs["era_value"] = data.era_value
+    if data.era_scale != 1.0:
+        # v1.5（#1411 §2.8 E11）：仅在显式非默认时透传，保持「不带纪元 → 不传 kwargs」契约
+        era_kwargs["era_scale"] = data.era_scale
     event = await _run_service(
         svc.create_event(
             pid,
