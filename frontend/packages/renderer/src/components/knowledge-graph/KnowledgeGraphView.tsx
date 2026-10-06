@@ -2,7 +2,7 @@
  *  图谱画布（含空态引导）/ 关系列表；装配回调由 pages/library.tsx 提供）
  *  #1325：工具栏追加独立「全量节点」开关（图谱节点集范围 related/all）。 */
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { ChevronsRight, Plus, Search, X } from 'lucide-react';
 import type {
   EntityType,
   GraphEdge,
@@ -102,34 +102,46 @@ export function KnowledgeGraphView({
   }, [nodes]);
 
   const graphEmpty = nodes.length === 0;
-  const filterActive = filter.category !== 'all' || filter.entity !== null;
+  // #1465：类别默认全选 → 少勾任意一类（或选中实体）即视为筛选生效
+  const filterActive =
+    filter.categories.length < KG_CATEGORIES.length || filter.entity !== null;
   const visibleIds = useMemo(() => computeVisibleIds(nodes, edges, filter), [nodes, edges, filter]);
   const visibleNodes = useMemo(() => nodes.filter((n) => visibleIds.has(n.id)), [nodes, visibleIds]);
   const visibleEdgeList = useMemo(() => visibleEdges(edges, visibleIds), [edges, visibleIds]);
-  /** 实体列表池：受搜索词收窄（不改画布可见集） */
+  /** 实体列表池：先按**已勾选类别**过滤（#1465），再受搜索词收窄（不改画布可见集） */
   const entityPool = useMemo(() => {
     const q = query.trim();
-    return q === '' ? nodes : nodes.filter((n) => n.name.includes(q));
-  }, [nodes, query]);
+    return nodes.filter(
+      (n) => filter.categories.includes(n.type) && (q === '' || n.name.includes(q)),
+    );
+  }, [nodes, query, filter.categories]);
   const selectedEntityName = filter.entity
     ? (nodes.find((n) => n.id === filter.entity)?.name ?? null)
     : null;
   const categoryLabel =
-    filter.category === 'all' ? t('lib.knowledge.filter.all') : t(ENTITY_TYPE_KEYS[filter.category]);
+    filter.categories.length === KG_CATEGORIES.length
+      ? t('lib.knowledge.filter.all')
+      : filter.categories.map((type) => t(ENTITY_TYPE_KEYS[type])).join('/');
   const filterLabel = selectedEntityName ? `${categoryLabel} · ${selectedEntityName}` : categoryLabel;
   const shownText = t('lib.knowledge.filter.shown', { n: visibleNodes.length });
 
-  /** 类别单选：点同类取消（回「全部」）；切换类别时清空已选实体 */
-  const selectCategory = (type: EntityType) => {
-    const next: KgFilterState =
-      filter.category === type ? { category: 'all', entity: null } : { category: type, entity: null };
+  /** 类别多选（#1465）：切换某类（取消 = 隐藏该类 / 勾回 = 恢复）；
+   *  已选实体若属**被取消的类别** → 一并清空（避免「选中了看不见的实体」） */
+  const toggleCategory = (type: EntityType) => {
+    const categories = filter.categories.includes(type)
+      ? filter.categories.filter((t) => t !== type)
+      : KG_CATEGORIES.filter((t) => t === type || filter.categories.includes(t));
+    const selectedType = nodes.find((n) => n.id === filter.entity)?.type;
+    const entity =
+      selectedType !== undefined && !categories.includes(selectedType) ? null : filter.entity;
+    const next: KgFilterState = { categories, entity };
     setFilter(next);
     writeKgFilter(persistKey, next);
   };
   /** 实体单选：点同一实体取消 */
   const toggleEntity = (id: string) => {
     const next: KgFilterState = {
-      category: filter.category,
+      categories: filter.categories,
       entity: filter.entity === id ? null : id,
     };
     setFilter(next);
@@ -207,7 +219,7 @@ export function KnowledgeGraphView({
           {!graphEmpty && panelOpen && (
             <aside
               data-testid="library-kg-filter-panel"
-              className="flex w-56 shrink-0 flex-col self-stretch rounded-lg border border-line bg-surface shadow-card"
+              className="flex h-[520px] w-56 shrink-0 flex-col rounded-lg border border-line bg-surface shadow-card"
             >
               {/* 搜索（只过滤下方实体列表，不改画布） */}
               <div className="flex flex-none items-center gap-1.5 border-b border-line px-2.5 py-2">
@@ -236,8 +248,8 @@ export function KnowledgeGraphView({
                       <input
                         type="checkbox"
                         data-testid={`library-kg-filter-panel-cat-${type}`}
-                        checked={filter.category === type}
-                        onChange={() => selectCategory(type)}
+                        checked={filter.categories.includes(type)}
+                        onChange={() => toggleCategory(type)}
                         className="h-3.5 w-3.5 flex-none accent-accent"
                       />
                       <span
@@ -304,6 +316,58 @@ export function KnowledgeGraphView({
             </aside>
           )}
 
+          {/* #1465 折叠态：画布**左侧**竖状筛选条（明确展开按钮 + 六类圆点 + 清除；高与画布等高） */}
+          {!graphEmpty && !panelOpen && (
+            <aside
+              data-testid="library-kg-filterbar"
+              className={cn(
+                'flex h-[520px] w-[46px] shrink-0 flex-col items-center gap-1.5 rounded-lg border bg-surface py-2 shadow-card',
+                filterActive ? 'border-accent' : 'border-line',
+              )}
+            >
+              <button
+                type="button"
+                data-testid="library-kg-filterbar-expand"
+                aria-label={t('lib.knowledge.filter.expand')}
+                title={t('lib.knowledge.filter.expand')}
+                className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-line text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setPanel(true)}
+              >
+                <ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <span className="h-px w-5 flex-none bg-line" aria-hidden="true" />
+              <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-0.5">
+                {KG_CATEGORIES.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    data-testid={`library-kg-rail-dot-${type}`}
+                    aria-pressed={filter.categories.includes(type)}
+                    title={t(ENTITY_TYPE_KEYS[type])}
+                    className={cn(
+                      'h-3.5 w-3.5 flex-none rounded-full transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      !filter.categories.includes(type) && 'opacity-25',
+                    )}
+                    style={{ backgroundColor: typeBaseDot(type) }}
+                    onClick={() => toggleCategory(type)}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                data-testid="library-kg-filterbar-clear"
+                aria-label={t('lib.knowledge.filter.clear')}
+                title={t('lib.knowledge.filter.clear')}
+                className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-line text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={clearFilter}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <span data-testid="library-kg-filterbar-summary" className="sr-only">
+                {t('lib.knowledge.filterbar.summary', { label: filterLabel, shown: shownText })}
+              </span>
+            </aside>
+          )}
           <div className="min-w-0 flex-1">
             {!graphEmpty && (
               <KnowledgeGraphCanvas
@@ -345,41 +409,6 @@ export function KnowledgeGraphView({
               </div>
             )}
 
-            {/* 折叠态：底部折叠栏（决策②：零横向占用，画布全宽） */}
-            {!graphEmpty && !panelOpen && (
-              <div
-                data-testid="library-kg-filterbar"
-                className={cn(
-                  'mt-3 flex items-center gap-2 rounded-lg border bg-surface px-3 py-1.5 text-[12px] text-ink-2 shadow-card',
-                  filterActive ? 'border-accent' : 'border-line',
-                )}
-              >
-                <Search className="h-3.5 w-3.5 flex-none text-ink-3" aria-hidden="true" />
-                <span
-                  data-testid="library-kg-filterbar-summary"
-                  className={cn('min-w-0 truncate', filterActive && 'font-medium text-accent')}
-                >
-                  {t('lib.knowledge.filterbar.summary', { label: filterLabel, shown: shownText })}
-                </span>
-                <span className="flex-1" />
-                <button
-                  type="button"
-                  data-testid="library-kg-filterbar-clear"
-                  className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={clearFilter}
-                >
-                  {t('lib.knowledge.filter.clear')}
-                </button>
-                <button
-                  type="button"
-                  data-testid="library-kg-filterbar-expand"
-                  className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setPanel(true)}
-                >
-                  {t('lib.knowledge.filter.expand')}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       ) : (
