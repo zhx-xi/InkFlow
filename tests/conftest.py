@@ -2,9 +2,11 @@
 
 供 tests/integration/, tests/api/, tests/cli/ 使用。
 
-#1488（0.17.0）：本文件同时是**测试基础设施后置处理**的落点——会话级回收测试拉起的
-`inkflow serve` 内核进程（见文件末尾的 `reclaim_test_kernel_processes` +
-`_reclaim_kernel_processes` fixture）。
+#1488 / #1496（0.17.0）：本文件同时是**测试基础设施后置处理**的落点——
+
+- 会话级回收测试拉起的 `inkflow serve` 内核进程（#1488，见文件末尾的
+  `reclaim_test_kernel_processes` + `_reclaim_kernel_processes` fixture）；
+- 注入 F51 v1.1 逃生门 `INKFLOW_DEBUG_NO_BROWSER=1`（#1496，见下方 env 块）。
 
 两套 pytest 根（本文件 vs `backend/conftest.py`）各自加载各自的 conftest，
 互不 import——同一对约定在两处镜像（与该文件既有的 `test_engine` 镜像同规）。
@@ -26,6 +28,16 @@ from pathlib import Path
 # 注入该值（「mock config 回退」）；D1 空默认契约由 test_model_resolution.py 用
 # InkFlowConfig.model_fields（class 默认，免疫 env）单独断言。
 os.environ.setdefault("INKFLOW_LLM_DEFAULT_MODEL", "deepseek/deepseek-v4-flash")
+
+# ── #1496：pytest 侧统一注入 F51 v1.1（#949）逃生门 ──────────────────────────
+# debug 态 `serve` 默认自动用系统浏览器打开 /docs（F51 拍板 D2，面向手动调试）。
+# 本地跑 pytest 时，每个「以 debug 态拉起内核」的用例各弹一次 → 累积十几个/几十个
+# 窗口（#1496 现象；`tests/cli/test_cli_serve.py::TestServeDebugMode` 中未 patch
+# Timer 的用例即为其一）。e2e 侧已同规（`tests/e2e/e2e-debug-triad.spec.ts` 的
+# `baseEnv`）。显式赋值（非 setdefault）：入口确定，宿主 shell 残留值（如 `=0`）
+# 不得让弹窗复发。只关「debug 自动弹」这一条路径，产品默认语义不变（未设该 env
+# 时仍弹），由 `test_cli_serve.py::TestServeDebugNoBrowser` 的 delenv 用例守护。
+os.environ["INKFLOW_DEBUG_NO_BROWSER"] = "1"
 
 import pytest
 import pytest_asyncio

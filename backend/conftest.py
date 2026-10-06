@@ -11,11 +11,11 @@ backend/tests/unit/ 的 conftest 链不加载它；test_agent_trace.py 的 Execu
 # 原语义；D1 的空默认契约由 test_model_resolution.py 用 InkFlowConfig.model_fields
 # （class 默认，免疫 env）单独断言。
 
-#1488（0.17.0）：测试基础设施后置处理在本根**镜像**顶层 tests/conftest.py
+#1488 / #1496（0.17.0）：测试基础设施后置处理在本根**镜像**顶层 tests/conftest.py
 （两套 pytest 根各自加载各自的 conftest、互不 import，镜像与上条 test_engine 同规）：
-会话结束回收本会话拉起的 `inkflow serve` 内核进程。判据/实现说明见顶层
-`tests/conftest.py` 的 `reclaim_test_kernel_processes`
-（契约测试：`tests/cli/test_kernel_cleanup_1488.py`）。
+会话结束回收本会话拉起的 `inkflow serve` 内核进程 + 注入 F51 逃生门
+`INKFLOW_DEBUG_NO_BROWSER=1`。判据/实现说明见顶层 `tests/conftest.py` 的
+`reclaim_test_kernel_processes`（契约测试：`tests/cli/test_kernel_cleanup_1488.py`）。
 """
 
 from __future__ import annotations
@@ -27,6 +27,11 @@ import sys
 import time
 
 os.environ.setdefault("INKFLOW_LLM_DEFAULT_MODEL", "deepseek/deepseek-v4-flash")
+
+# ── #1496：pytest 侧统一注入 F51 v1.1（#949）逃生门（与顶层 tests/conftest.py 同）──
+# debug 态 `serve` 默认自动弹系统浏览器打开 /docs（F51 D2）→ 本地跑测试累积窗口。
+# 显式赋值（非 setdefault）：宿主 shell 残留值不得让弹窗复发；产品默认语义不变。
+os.environ["INKFLOW_DEBUG_NO_BROWSER"] = "1"
 
 import pytest
 import pytest_asyncio
