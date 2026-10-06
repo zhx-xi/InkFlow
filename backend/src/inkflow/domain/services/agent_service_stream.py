@@ -136,6 +136,7 @@ class AgentServiceStreamMixin:
             AgentServiceError,
             _apply_agent_order,
             _apply_agent_relations,
+            _build_custom_stages,
             _project_role_models,
         )
 
@@ -153,10 +154,13 @@ class AgentServiceStreamMixin:
             config.llm_reasoning_effort,
         )
 
-        # 2. 获取模板
-        template = self._get_template(request.pipeline)
-        if template is None:
-            raise AgentServiceError(f"未知管线模板: {request.pipeline}")
+        # 2. 获取模板（#1475：仅内置通道查模板表；自定义 stage/YAML 通道的 pipeline
+        #    是用户标识字符串（role 串 / 文件路径），查内置表必落空 → 不查）
+        template: Any = None
+        if request.pipeline_config is None and request.stages is None:
+            template = self._get_template(request.pipeline)
+            if template is None:
+                raise AgentServiceError(f"未知管线模板: {request.pipeline}")
 
         # 3. 验证章节（如果提供）
         if request.chapter_id is not None:
@@ -184,6 +188,9 @@ class AgentServiceStreamMixin:
             agents_by_role, mounted_skill_names = await self._load_agents_by_role()
             if request.supervisor is None:
                 raise AgentServiceError("supervisor 配置缺失")
+            # 自定义通道 + supervisor 已被 DTO 拦掉（§5.8.1 约束 2）→ 此处 template 必非 None
+            if template is None:
+                raise AgentServiceError("自定义 stage 仅支持 static 模式")
             template_stages = list(template.stages)
             stages = await self._merge_role_configs(
                 template_stages, project.config, request.role_overrides
@@ -197,26 +204,48 @@ class AgentServiceStreamMixin:
             # #1472/#1473：同一真源同时携带 skill_ids，供下方 _attach_agent_skills 装配管线 stage；
             # mounted_skill_names = 全库挂载集（通用判据）
             agents_by_role, mounted_skill_names = await self._load_agents_by_role()
-            agent_source = (
-                {
-                    role: {"name": agent.name, "system_prompt": agent.system_prompt}
-                    for role, agent in agents_by_role.items()
-                }
-                if agents_by_role
-                else None
-            )
-            stages = _apply_agent_order(
-                template.stages,
-                project.config.agent_order,
-                enabled_roles,
-                project_template.roles if project_template else None,
-                agent_source,
-            )
-            stages, conditional_edges = _apply_agent_relations(
-                stages, project.config.agent_relations, enabled_roles
-            )
-            stages = await self._merge_role_configs(stages, project.config, request.role_overrides)
-            pipeline_impl = self._pipeline
+            # #1475（spec §5.8.2/§5.8.3）：自定义通道 = 用户显式给定拓扑 →
+            # 旁路 agent_order / agent_relations（再重排会让点名的角色被静默摘除），
+            # 拓扑先过真实引擎 validate（同步拒绝，不落注定失败的执行记录），
+            # 再走既有 _merge_role_configs 装配链。
+            if request.pipeline_config is not None or request.stages is not None:
+                if request.pipeline_config is not None:
+                    template_stages = list(request.pipeline_config.stages)
+                else:
+                    try:
+                        template_stages = _build_custom_stages(request.stages or [], agents_by_role)
+                    except ValueError as exc:
+                        raise AgentServiceError(str(exc)) from exc
+                errors = self._pipeline.validate(template_stages)
+                if errors:
+                    raise AgentServiceError("自定义管线配置无效: " + "; ".join(errors))
+                stages = await self._merge_role_configs(
+                    template_stages, project.config, request.role_overrides
+                )
+                pipeline_impl = self._pipeline
+            else:
+                agent_source = (
+                    {
+                        role: {"name": agent.name, "system_prompt": agent.system_prompt}
+                        for role, agent in agents_by_role.items()
+                    }
+                    if agents_by_role
+                    else None
+                )
+                stages = _apply_agent_order(
+                    template.stages,
+                    project.config.agent_order,
+                    enabled_roles,
+                    project_template.roles if project_template else None,
+                    agent_source,
+                )
+                stages, conditional_edges = _apply_agent_relations(
+                    stages, project.config.agent_relations, enabled_roles
+                )
+                stages = await self._merge_role_configs(
+                    stages, project.config, request.role_overrides
+                )
+                pipeline_impl = self._pipeline
 
         # #1472/#1473：管线 stage prompt 装配有效技能集（显式 ∪ 通用，static/supervisor 共用）
         stages = self._attach_agent_skills(stages, agents_by_role, mounted_skill_names)

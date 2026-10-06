@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from inkflow.domain.models.context import ContextOverride
 from inkflow.domain.ports.agent_pipeline import PipelineContext as PipelineContext
@@ -72,6 +72,14 @@ class PipelineExecuteRequest(BaseModel):
     chapter_id: uuid.UUID | None = Field(default=None, description="章节 ID（可选）")
     variables: dict[str, str] = Field(default_factory=dict, description="Prompt 模板变量")
     role_overrides: dict[str, RoleOverride] | None = Field(default=None, description="角色覆盖")
+    stages: list[str] | None = Field(
+        default=None,
+        description="自定义 stage role_key 序列（#1475；与 pipeline_config 互斥，仅 static 模式）",
+    )
+    pipeline_config: PipelineConfig | None = Field(
+        default=None,
+        description="自定义管线配置（#1475；与 stages 互斥，仅 static 模式）",
+    )
     mode: Literal["static", "supervisor"] = Field(
         default="static",
         description="执行模式：static=既有静态 DAG（默认）；supervisor=动态路由编排",
@@ -83,3 +91,23 @@ class PipelineExecuteRequest(BaseModel):
         default=None,
         description="上下文注入勾选通道；None=全注入（默认），显式空列表=该源不注入",
     )
+
+    @model_validator(mode="after")
+    def validate_custom_stages(self) -> PipelineExecuteRequest:
+        """#1475 自定义 stage 通道约束（spec §5.8.1）：互斥 / 仅 static / 非空。
+
+        违反 → `ValidationError`（API 422，不经服务层）：`stages` 与 `pipeline_config`
+        互斥；二者仅 `mode="static"` 可用（supervisor 角色池来自模板 stages）；
+        `stages` 给定则须非空且元素去空白后非空串。内置请求（两字段均 None）零影响。
+        """
+        if self.stages is not None and self.pipeline_config is not None:
+            raise ValueError("stages 与 pipeline_config 互斥")
+        if self.mode == "supervisor" and (
+            self.stages is not None or self.pipeline_config is not None
+        ):
+            raise ValueError("自定义 stage 仅支持 static 模式")
+        if self.stages is not None and (
+            not self.stages or any(not segment.strip() for segment in self.stages)
+        ):
+            raise ValueError("stages 不能为空")
+        return self

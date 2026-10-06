@@ -13,11 +13,10 @@ import json
 import sys
 import time
 import uuid
-from pathlib import Path
 
 import typer
-import yaml
 
+from inkflow.cli.commands.pipeline_args import load_pipeline_config, resolve_pipeline_arg
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest, RoleOverride
@@ -244,6 +243,12 @@ def run_pipeline(
         except (ValueError, KeyError):
             typer.echo(f"⚠️ 忽略无效覆盖: {o}", err=True)
 
+    # #1475：--pipeline 三形态判别（内置 id / YAML 配置 / role_key 序列，spec §4.1）
+    try:
+        stage_list, pipeline_config = resolve_pipeline_arg(pipeline)
+    except (ValueError, TypeError) as exc:
+        print_error(cli_ctx, "VALIDATION_ERROR", str(exc))  # 内部已 raise typer.Exit(1)
+
     async def _impl() -> dict:
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
@@ -254,6 +259,8 @@ def run_pipeline(
                 chapter_id=uuid.UUID(chapter_id) if chapter_id else None,
                 variables=variables,
                 role_overrides=role_overrides if role_overrides else None,
+                stages=stage_list,
+                pipeline_config=pipeline_config,
             )
             return await client.post(
                 "/agent/pipelines/execute",
@@ -329,22 +336,6 @@ def check_status(
         typer.echo(f"错误: {result['error']}")
 
 
-def _load_pipeline_config(file: str) -> dict:
-    """读 YAML 管线文件 → dict（强制 source=yaml）；错误抛 ValueError（消息即原因）."""
-    try:
-        raw = Path(file).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise ValueError(f"配置文件不存在: {file}") from None
-    try:
-        config = yaml.safe_load(raw)
-    except yaml.YAMLError as exc:
-        raise ValueError(f"YAML 解析失败: {exc}") from None
-    if not isinstance(config, dict):
-        raise TypeError("管线配置必须是 YAML 映射")
-    config.setdefault("source", "yaml")
-    return config
-
-
 @app.command("validate")
 @instrument(caller_type="cli")
 def validate_pipeline_config(
@@ -355,7 +346,7 @@ def validate_pipeline_config(
     """校验管线配置文件（读 YAML → POST /agent/pipelines/validate）"""
     cli_ctx: CliContext = ctx.obj
     try:
-        config = _load_pipeline_config(file)
+        config = load_pipeline_config(file)
     except (ValueError, TypeError) as exc:
         print_error(cli_ctx, "VALIDATION_ERROR", str(exc))
         raise typer.Exit(1) from None

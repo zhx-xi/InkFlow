@@ -7,7 +7,7 @@ import copy
 import logging
 import uuid
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -364,6 +364,38 @@ def _apply_agent_relations(
         return stages, []
 
     return result, conditional_edges
+
+
+def _build_custom_stages(
+    role_keys: Sequence[str], agents_by_role: Mapping[str, Any]
+) -> list[PipelineStage]:
+    """#1475：role_key 序列 → **顺序单链** stage 列表（spec §5.8.2.1）。
+
+    第 i 个 stage 的 `input_from=[第 i-1 个 id]`、`output_to=[第 i+1 个 id]`；
+    首 stage 无上游、末 stage 无下游。`stage.id = role_key`；
+    `name` / `agent.system_prompt` 取 **Agent 真源**（空名回退 role_key）；
+    `model` / `temperature` 一律不设——交给既有 `_merge_role_configs` 装配链
+    （与 `_apply_agent_order` 占位构造同纪律）。
+
+    未知 role_key（真源无该 role_key）→ `ValueError`：显式通道不静默跳过，
+    用户点名的角色不可用必须报错（调用方映射为 `AgentServiceError` → API 422）。
+    """
+    stages: list[PipelineStage] = []
+    for index, role_key in enumerate(role_keys):
+        agent = agents_by_role.get(role_key)
+        if agent is None:
+            raise ValueError(f"未知 stage 角色: {role_key}")
+        name = agent.name or role_key
+        stages.append(
+            PipelineStage(
+                id=role_key,
+                name=name,
+                agent=AgentRole(id=role_key, name=name, system_prompt=agent.system_prompt),
+                input_from=[role_keys[index - 1]] if index > 0 else [],
+                output_to=[role_keys[index + 1]] if index + 1 < len(role_keys) else [],
+            )
+        )
+    return stages
 
 
 def _stage_snapshots(stage_results: Sequence[StageResult]) -> list[dict]:
