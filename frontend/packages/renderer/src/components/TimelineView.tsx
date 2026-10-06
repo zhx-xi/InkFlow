@@ -26,8 +26,9 @@
  * - **筛选**（客户端，两序共用）：按章（`tl-filter-chapter` / `tl-fp-item-<key>`；
  *   全部章节 / 各章 / 未分章）+ 按事件类型（`tl-filter-type` / `tl-tp-item-<key>`；
  *   正叙/倒叙/插叙，词表对齐后端 #1323 G6）；重置 = 「全部」
- * - #1353（0.16.0）：世界序**纪元轴族 + 轴选择器**——`extra.era` / `extra.era_value`
- *   承载纪元（零 DDL），轴族 ≥ 2 条时按选中轴分泳道显示（默认只显示主力轴）
+ * - #1353（0.16.0）/ #1410（v1.4）：世界序**纪元轴族 + 轴选择器**——纪元由**正式列**
+ *   `era` / `era_value` 承载（v1.4 起；v1.3 的 `extra.era` / `extra.era_value` 遗留快照不再读取），
+ *   轴族 ≥ 2 条时按选中轴分泳道显示（默认只显示主力轴）
  *
  * #1302：列表行内编辑（tl-edit-<id>）/ 删除（tl-delete-<id>）入口——形态照抄
  * LibraryItemList.tsx:148-167 先例（group-hover + focus-within 双触发保证键盘可达可见）；
@@ -58,7 +59,12 @@ export interface TimelineEventDTO {
   /** spec f12 §6.2:707：自由文本（""=正叙 / flashback / flashforward），非布尔。
    *  旧 DTO 误声明为 boolean（漂移）；`string | boolean` 兼容历史 mock 数据。 */
   timeline_flag?: string | boolean;
-  /** #1353：纪元轴承载（extra.era 轴名 / extra.era_value 轴内值）——零 DDL（f12 spec v1.3 §2.8） */
+  /** v1.4（#1410）：纪元**正式列**（ADR-065 / f12 spec §2.8）——轴名 / 轴内值 / 流速比。
+   *  读取来源已由 `extra.era` / `extra.era_value` 切到本三字段（遗留快照不再读取）。 */
+  era?: string | null;
+  era_value?: number | null;
+  era_scale?: number | null;
+  /** 扩展字典（其他业务键；v1.4 起不再承载纪元） */
   extra?: Record<string, unknown> | null;
 }
 

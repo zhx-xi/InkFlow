@@ -1,15 +1,18 @@
 /**
  * #1353 时间线事件对话框「纪元」字段 —— 组件级契约（LibraryCreateDialog）。
  *
- * 【spec 依据】specs/f12-timeline/spec.md §2.8 E1/E2/E4（承载键 + 成对语义）
+ * 【spec 依据】specs/f12-timeline/spec.md §2.1（三列）+ §2.8 E1/E2/E4（承载 + 成对语义）+ ADR-065
  *            + specs/f19-gui/timeline.md §2（创建/编辑对话框行）。
+ *
+ * 【v1.4 变更（#1410）】编辑模式预填来源由 `extra.era` / `extra.era_value` 切到
+ * **顶层正式列** `era` / `era_value`（与后端同 PR）。
  *
  * 【契约（GREEN 必须提供）】
  * - cat="timeline" 时新增两个字段：`library-create-era`（纪元轴名）
  *   + `library-create-era-value`（纪元内数值）；其他分类不渲染
  * - 保存 payload：`era` 去空白写入；`era_value` 数值（有限）→ number；
  *   空 → `""`（= 清除轴内值/无轴内值）；非数值字符串原样透传（后端 422 兜底）
- * - **编辑模式预填**：`editing.extra.era` / `editing.extra.era_value`
+ * - **编辑模式预填**：`editing.era` / `editing.era_value`（v1.4 起为正式列）
  * - **向后兼容**：不带纪元时 payload 的 era 为 `""`（后端 `era=""` = 不设纪元/清除，
  *   与既有行为一致 —— 既有 timeline payload 用例（title/time_display/description）不破）
  *
@@ -78,12 +81,13 @@ describe('#1353 时间线对话框纪元字段', () => {
     expect(body.era_value).toBe('');
   });
 
-  it('D4 编辑模式预填 extra.era / extra.era_value', () => {
+  it('D4 编辑模式预填正式列 era / era_value', () => {
     renderTimelineDialog({
       id: 'ev1',
       title: '事件甲',
       time_display: '示例历 317 年秋',
-      extra: { era: '示例历', era_value: 317.5 },
+      era: '示例历',
+      era_value: 317.5,
     });
 
     expect((screen.getByTestId('library-create-era') as HTMLInputElement).value).toBe('示例历');

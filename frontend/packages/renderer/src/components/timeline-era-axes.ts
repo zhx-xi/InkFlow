@@ -5,10 +5,10 @@
  * 【spec 依据】specs/f12-timeline/spec.md §2.8（承载键 E1/E2 + 默认轴 E5）
  *            + specs/f19-gui/timeline.md §1.1（世界序 = 纪元轴族 + 轴选择器）。
  *
- * 承载约定（零 DDL，落在既有 `extra` JSON 列）：
- * - `extra.era`（非空字符串，去空白）→ 该事件属于「<轴名>」轴；
+ * 承载约定（v1.4 / #1410：**正式列**，ADR-065；旧 `extra.era` / `extra.era_value` 为 v1.3 遗留快照，不再读取）：
+ * - `era`（非空字符串，去空白）→ 该事件属于「<轴名>」轴；
  *   空 / 缺失 / 非字符串 → 归 **默认轴**（`DEFAULT_ERA_KEY`，R6-4：旧的单标量时间线）
- * - `extra.era_value`（有限数值）→ 轴内值；非数值 / 缺失 → null（轴内值未知）
+ * - `era_value`（有限数值）→ 轴内值；非数值 / 缺失 → null（轴内值未知）
  */
 import type { TimelineEventDTO } from './TimelineView';
 
@@ -27,9 +27,9 @@ export interface TimelineEraAxis {
   isDefault: boolean;
 }
 
-/** 事件 → 纪元轴名（extra.era 非空字符串（trim）→ 轴名；否则 null）。 */
+/** 事件 → 纪元轴名（正式列 `era` 非空字符串（trim）→ 轴名；否则 null）。 */
 export function eraNameOf(ev: TimelineEventDTO): string | null {
-  const raw = ev.extra?.['era'];
+  const raw = ev.era;
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed === '' ? null : trimmed;
@@ -40,9 +40,9 @@ export function eraKeyOf(ev: TimelineEventDTO): string {
   return eraNameOf(ev) ?? DEFAULT_ERA_KEY;
 }
 
-/** 事件 → 轴内值（extra.era_value 有限数值 → number；否则 null）。 */
+/** 事件 → 轴内值（正式列 `era_value` 有限数值 → number；否则 null）。 */
 export function eraValueOf(ev: TimelineEventDTO): number | null {
-  const raw = ev.extra?.['era_value'];
+  const raw = ev.era_value;
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
 }
 

@@ -1282,6 +1282,18 @@
         "has_server_default": false,
         "nullable": false
       },
+      "era": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "era_scale": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "era_value": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "extra": {
         "has_server_default": false,
         "nullable": false

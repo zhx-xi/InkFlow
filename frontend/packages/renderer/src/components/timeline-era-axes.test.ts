@@ -1,21 +1,23 @@
 /**
- * #1353 时间线纪元轴族 —— 纯函数契约（timeline-era-axes.ts）。
+ * #1353/#1410 时间线纪元轴族 —— 纯函数契约（timeline-era-axes.ts）。
  *
- * 【spec 依据】specs/f12-timeline/spec.md §2.8（承载键 E1/E2 + 默认轴 E5）
- *            + specs/f19-gui/timeline.md §1.1（世界序 = 纪元轴族 + 轴选择器）。
+ * 【spec 依据】specs/f12-timeline/spec.md §2.1（三列）+ §2.8（E1/E2 承载 + E5 默认轴）
+ *            + ADR-065 + specs/f19-gui/timeline.md §1.1（世界序 = 纪元轴族 + 轴选择器）。
+ *
+ * 【v1.4 变更（#1410）】读取来源由 `extra.era` / `extra.era_value` 切到**正式列**
+ * `era` / `era_value`（DTO 顶层字段）—— 与后端同 PR，消除中间态漂移。
  *
  * 【契约（GREEN 必须提供）】
- * - `extra.era`（轴名，非空字符串，去空白）→ 该事件属于「<轴名>」轴；
+ * - `era`（轴名，非空字符串，去空白）→ 该事件属于「<轴名>」轴；
  *   空 / 缺失 / 非字符串 → 归 **默认轴**（`DEFAULT_ERA_KEY = '__none__'`，R6-4）
- * - `extra.era_value`（数值）→ 轴内值；非数值 / 缺失 → null（轴内值未知）
+ * - `era_value`（数值）→ 轴内值；非数值 / 缺失 → null（轴内值未知）
+ * - ⚠️ **`extra.era` / `extra.era_value` 不再被读取**（v1.4 遗留快照，§2.8 E9）
  * - `deriveEraAxes`：按**轴在事件流中首次出现的顺序**返回全部轴（**仅含有事件的轴**），
  *   默认轴与纪元轴并列（不丢事件），`count` = 轴内事件数，`isDefault` 标记默认轴
- * - `primaryEraKey`：事件数最多的轴（并列取先出现）—— 代「主角所在轴」的启发式
- *   （事件无角色关联字段；主角↔纪元映射归后续里程碑），无轴返回 null
+ * - `primaryEraKey`：事件数最多的轴（并列取先出现），无轴返回 null
  * - `sortByEraValue`：轴内排序——`era_value` 升序、缺失（null）排末尾、稳定（不改原数组）
  *
- * 【RED 预期】模块不存在 → 收集期 module-not-found（预期 RED 形态）；
- * GREEN 后逐条断言全绿。
+ * 【RED 预期（v1.4）】`eraNameOf` / `eraValueOf` 仍读 `extra` → R1/R2/R2b（正式列）FAIL。
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -29,38 +31,51 @@ import {
 } from './timeline-era-axes';
 import type { TimelineEventDTO } from './TimelineView';
 
-function ev(id: string, extra?: Record<string, unknown> | null): TimelineEventDTO {
+function ev(id: string, era?: unknown, eraValue?: unknown): TimelineEventDTO {
   return {
     id,
     title: `事件 ${id}`,
     narrative_position: Number(id.replace(/\D/g, '')) || 1,
     time_value: null,
-    extra,
+    era: era as string | undefined,
+    era_value: eraValue as number | null | undefined,
   };
 }
 
 const QY = '示例历';
 const XJ = '示例仙历';
 
-describe('#1353 eraKeyOf / eraNameOf / eraValueOf（承载键读取）', () => {
+describe('#1353/#1410 eraKeyOf / eraNameOf / eraValueOf（正式列读取）', () => {
   it('R1 era 非空字符串 → 轴名（去空白）；era_value 数值 → 轴内值', () => {
-    const e = ev('1', { era: '  示例历  ', era_value: 317.5 });
+    const e = ev('1', '  示例历  ', 317.5);
     expect(eraNameOf(e)).toBe('示例历');
     expect(eraKeyOf(e)).toBe(QY);
     expect(eraValueOf(e)).toBe(317.5);
   });
 
-  it('R2 无 extra / era 缺失 / era 为空串或非字符串 → 默认轴，轴内值 null', () => {
-    for (const extra of [undefined, null, {}, { era: '' }, { era: '   ' }, { era: 42 }] as const) {
-      const e = ev('2', extra);
+  it('R2 era 缺失 / 空串 / 非字符串 → 默认轴，轴内值 null', () => {
+    for (const era of [undefined, null, '', '   ', 42] as const) {
+      const e = ev('2', era);
       expect(eraNameOf(e)).toBeNull();
       expect(eraKeyOf(e)).toBe(DEFAULT_ERA_KEY);
     }
-    expect(eraValueOf(ev('3', { era: QY, era_value: '317' }))).toBeNull();
-    expect(eraValueOf(ev('4', { era: QY }))).toBeNull();
+    expect(eraValueOf(ev('3', QY, '317'))).toBeNull();
+    expect(eraValueOf(ev('4', QY))).toBeNull();
   });
 
-  it('R3 默认轴哨兵键固定（GUI testid / 0.16.0 契约锚点）', () => {
+  it('R2b v1.4：extra.era 不再被读取（正式列优先；正式列空不回退 extra）', () => {
+    // 正式列置 Y、extra 置 X → 取 Y
+    const e: TimelineEventDTO = { ...ev('5', '正式轴', 8), extra: { era: '遗留轴', era_value: 999 } };
+    expect(eraNameOf(e)).toBe('正式轴');
+    expect(eraValueOf(e)).toBe(8);
+    // 正式列为空 → 仍是默认轴（遗留快照不参与）
+    const e2: TimelineEventDTO = { ...ev('6'), extra: { era: '遗留轴', era_value: 999 } };
+    expect(eraNameOf(e2)).toBeNull();
+    expect(eraKeyOf(e2)).toBe(DEFAULT_ERA_KEY);
+    expect(eraValueOf(e2)).toBeNull();
+  });
+
+  it('R3 默认轴哨兵键固定（GUI testid / 契约锚点）', () => {
     expect(DEFAULT_ERA_KEY).toBe('__none__');
   });
 });
@@ -68,10 +83,10 @@ describe('#1353 eraKeyOf / eraNameOf / eraValueOf（承载键读取）', () => {
 describe('#1353 deriveEraAxes（轴族派生，含默认轴）', () => {
   it('R4 首次出现顺序 + 计数 + isDefault；默认轴与纪元轴并列（R6-4：不丢事件）', () => {
     const axes = deriveEraAxes([
-      ev('1', { era: QY, era_value: 3 }),
+      ev('1', QY, 3),
       ev('2'),
-      ev('3', { era: XJ, era_value: 9 }),
-      ev('4', { era: QY, era_value: 5 }),
+      ev('3', XJ, 9),
+      ev('4', QY, 5),
     ]);
 
     expect(axes.map((a) => a.key)).toEqual([QY, DEFAULT_ERA_KEY, XJ]);
@@ -97,11 +112,7 @@ describe('#1353 deriveEraAxes（轴族派生，含默认轴）', () => {
 
 describe('#1353 primaryEraKey（默认只显示主力轴）', () => {
   it('R7 事件数最多的轴（并列取先出现）；空轴族 → null', () => {
-    const axes = deriveEraAxes([
-      ev('1'),
-      ev('2', { era: QY }),
-      ev('3', { era: QY }),
-    ]);
+    const axes = deriveEraAxes([ev('1'), ev('2', QY), ev('3', QY)]);
 
     expect(primaryEraKey(axes)).toBe(QY);
     expect(primaryEraKey([])).toBeNull();
@@ -114,10 +125,10 @@ describe('#1353 primaryEraKey（默认只显示主力轴）', () => {
 
 describe('#1353 sortByEraValue（轴内排序）', () => {
   it('R9 era_value 升序、缺失排末尾、稳定且不改原数组', () => {
-    const a = ev('1', { era: QY, era_value: 30 });
-    const b = ev('2', { era: QY, era_value: 10 });
-    const c = ev('3', { era: QY });
-    const d = ev('4', { era: QY, era_value: null });
+    const a = ev('1', QY, 30);
+    const b = ev('2', QY, 10);
+    const c = ev('3', QY);
+    const d = ev('4', QY, null);
     const input = [a, b, c, d];
 
     const sorted = sortByEraValue(input);
