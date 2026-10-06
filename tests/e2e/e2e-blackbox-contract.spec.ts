@@ -183,7 +183,7 @@ test('世界树黑盒契约：childcount 层级 + desc 数据渲染 + 叶子负�
     });
     expect(catRes.status).toBe(201);
     const ids = await presetWorldNodes(kernel, pid, [
-      { name: '九州', category: '' },
+      { name: '九州', category: '地理' },
       { name: '中州', category: '地理', parent: '九州' },
       { name: '东荒', category: '地理', parent: '九州' },
     ]);

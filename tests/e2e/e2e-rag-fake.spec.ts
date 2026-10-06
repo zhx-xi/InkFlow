@@ -268,11 +268,14 @@ test('RAG reindex 成功闭环：fake embedding → 确认 → UI fresh + 内核
     });
 
     // ③ 预置世界观节点（含正文）→ reindex 走真实 embedding 调用链（SETTING ∈ 缺省 5 类型）
-    // category='' 镜像 e2e-blackbox-contract presetWorldNodes 先例（父侧修复：
-    // 非空分类须先经 world-categories 端点创建，否则 422「请先创建分类」gate）
+    // #1491：项目根由后端自动创建 → 本条带已注册分类（先建分类实体，避免 422「请先创建分类」）
+    const catRes = await apiJson(kernel, 'POST', `/api/v1/projects/${pid}/world-categories`, {
+      name: '地理',
+    });
+    expect(catRes.status).toBe(201);
     const world = await apiJson(kernel, 'POST', `/api/v1/projects/${pid}/world-settings`, {
       name: '地点A',
-      category: '',
+      category: '地理',
       content:
         '地点A地势西高东低，东临沧海，西接荒漠。宗门林立，以三山五派为尊，灵脉多藏于深山大泽之中。',
     });

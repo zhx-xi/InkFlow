@@ -371,8 +371,10 @@ test('设定库：世界观树层级 + toggle 收起/展开（E2E-A3）——par
     const pid = await findProjectId(kernel, name);
     // #1321：非根条目须带已存在的分类 → 先建分类实体
     await presetWorldCategories(kernel, pid, ['地理']);
+    // #1491：项目根由后端「建项目自动建根」创建（category=''）——夹具不再自建根节点，
+    // 顶层节点带已注册分类 → 由 #641 自动挂到项目根下
     const ids = await presetWorldNodes(kernel, pid, [
-      { name: '九州', category: '' },
+      { name: '九州', category: '地理' },
       { name: '中州', category: '地理', parent: '九州' },
       { name: '东荒', category: '地理', parent: '九州' },
       { name: '昆仑山', category: '地理', parent: '中州' },
@@ -408,13 +410,13 @@ test('设定库：世界观分类筛选 toggle（E2E-A4）——点 chip 仅显�
     const pid = await findProjectId(kernel, name);
     // #389：先建分类实体（chips 来源 = world_categories），再建条目（category 匹配分类实体）
     await presetWorldCategories(kernel, pid, ['势力', '组织', '门派']);
-    // #567 单例：一项目一根——根「世界观」+ 分类元素作其子孙（多根已废）
+    // #1491：项目根由后端自动创建 → 三类顶层节点直接挂根，不再自建空分类「世界观」包装节点
+    // （#1321：非根条目必须带已注册分类，空分类包装节点已不合法）
     await presetWorldNodes(kernel, pid, [
-      { name: '世界观', category: '' },
-      { name: '九州', category: '势力', parent: '世界观' },
+      { name: '九州', category: '势力' },
       { name: '中州', category: '势力', parent: '九州' },
-      { name: '宗门', category: '组织', parent: '世界观' },
-      { name: '昆仑派', category: '门派', parent: '世界观' },
+      { name: '宗门', category: '组织' },
+      { name: '昆仑派', category: '门派' },
     ]);
 
     await gotoNav(window, '设定库');
@@ -466,12 +468,11 @@ test('设定库：世界观行内复制到目标项目（E2E-A5）——subtree 
     // #1321：非根条目须带已存在的分类（源项目建条目 + 目标项目接收复制，两边都要）
     await presetWorldCategories(kernel, pid, ['地理']);
     await presetWorldCategories(kernel, targetPid, ['地理']);
-    // #567 单例：一项目一根——根「世界观」+ 分类元素作其子孙（多根已废）
+    // #1491：项目根由后端自动创建 → 顶层节点带已注册分类直接挂根（不再自建空分类「世界观」）
     const ids = await presetWorldNodes(kernel, pid, [
-      { name: '世界观', category: '' },
-      { name: '九州', category: '地理', parent: '世界观' },
+      { name: '九州', category: '地理' },
       { name: '中州', category: '地理', parent: '九州' },
-      { name: '宗门', category: '地理', parent: '世界观' },
+      { name: '宗门', category: '地理' },
     ]);
 
     await gotoNav(window, '设定库');
@@ -493,6 +494,7 @@ test('设定库：世界观行内复制到目标项目（E2E-A5）——subtree 
     await expect(window.getByRole('status')).toContainText(targetName, { timeout: 15_000 });
     await expect(window.getByTestId('world-copy-dialog')).toHaveCount(0);
     // 内核落库：subtree（九州+中州 2 条；宗门未选不入目标）复制到目标项目
+    // #1491：目标项目自带 1 个根（建项目自动建根）→ 总数 = 1 根 + 2 复制 = 3
     await expect
       .poll(
         async () => {
@@ -502,7 +504,7 @@ test('设定库：世界观行内复制到目标项目（E2E-A5）——subtree 
         },
         { timeout: 15_000 },
       )
-      .toBe(2);
+      .toBe(3);
   } finally {
     await app.close();
   }

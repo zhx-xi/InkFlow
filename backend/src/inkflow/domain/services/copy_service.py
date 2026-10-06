@@ -69,10 +69,10 @@ class WorldCopyService:
         self._map_repo = map_repo
         self._asset_store = asset_store
 
-    async def _has_root(self, project_id: uuid.UUID) -> bool:
-        """项目是否已有根世界观条目（parent_id IS NULL）."""
+    async def _root_id(self, project_id: uuid.UUID) -> uuid.UUID | None:
+        """项目根世界观条目 id（parent_id IS NULL）；无根返回 None."""
         roots, _ = await self._repo.list(project_id, top_level_only=True, limit=1)
-        return len(roots) > 0
+        return roots[0].id if roots else None
 
     async def copy(
         self,
@@ -128,6 +128,9 @@ class WorldCopyService:
             copy_set = await self._repo.list_all_active(source_pid)
 
         now = _utcnow()
+        # #1493：目标根一次取——None（目标无根，仅历史形态）→ 复制顶节点落顶层（既有语义）；
+        # 非 None → 子树顶节点改挂目标根下（见循环内守卫）
+        target_root_id = await self._root_id(target_pid)
         created: list[WorldSetting] = []
         skipped: list[str] = []
         warnings: list[str] = []
@@ -139,16 +142,20 @@ class WorldCopyService:
         for src in copy_set:
             # 父被跳过/不在集合 → parent_new=None（子置顶层）
             parent_new = id_map.get(src.parent_id.int) if src.parent_id is not None else None
-            # #848 复制守卫：目标根单例 + 分类前置（复用 create_setting 校验语义，降级=跳过）
-            if parent_new is None and await self._has_root(target_pid):
-                skipped.append(src.name)
-                warnings.append(f"目标项目已存在根世界观，顶层条目「{src.name}」已跳过")
-                logger.warning(
-                    "复制跳过顶层（目标已有根）: target=%s name=%s",
-                    target_project_id,
-                    src.name,
-                )
-                continue
+            # #848 复制守卫（#1493 收敛）：目标已有根时**子树顶节点改挂目标根下**——
+            # #1491 后项目恒有根，「父不在复制集合 ⇒ 顶层 ⇒ 跳过」会使跨项目复制恒 0 条
+            # （E2E-A5 实测）；仅「源项目自身的根」仍跳过（防目标第二根，#848 意图保留）
+            if parent_new is None and target_root_id is not None:
+                if src.parent_id is None:
+                    skipped.append(src.name)
+                    warnings.append(f"目标项目已存在根世界观，顶层条目「{src.name}」已跳过")
+                    logger.warning(
+                        "复制跳过顶层（目标已有根）: target=%s name=%s",
+                        target_project_id,
+                        src.name,
+                    )
+                    continue
+                parent_new = target_root_id
             if (
                 src.category
                 and await self._repo.get_category_by_name(target_pid, src.category) is None

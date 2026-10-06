@@ -143,13 +143,12 @@ async function findProjectId(kernel: KernelInfo, name: string): Promise<string> 
   return project!.id;
 }
 
-/** 外部写入：内核 API 建世界观根节点（category='' → 地理类，工作台可挂图），返回节点 id */
-async function createWorldNode(kernel: KernelInfo, pid: string, name: string): Promise<string> {
-  const node = await kernelJson<{ id: string }>(kernel, `/api/v1/projects/${pid}/world-settings`, {
-    method: 'POST',
-    body: { name, category: '' },
-  });
-  return node.id;
+/** 项目根世界观节点（#1491：建项目自动建根；category='' → 地理类，工作台可挂图） */
+async function worldRootId(kernel: KernelInfo, pid: string): Promise<string> {
+  const res = await kernelFetch(kernel, `/api/v1/projects/${pid}/world-settings?parent_id=none`);
+  const data = (await res.json()) as { items: Array<{ id: string }> };
+  expect(data.items, '项目应自带唯一根（#1491）').toHaveLength(1);
+  return data.items[0].id;
 }
 
 /**
@@ -254,7 +253,7 @@ test('推送可见性 S1：GUI 停留地图视图 → 外部 HTTP 建图 → 不
     const name = `E2E-PUSH-Map-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
-    const rootLocationId = await createWorldNode(kernel, pid, `${name}-根`);
+    const rootLocationId = await worldRootId(kernel, pid);
 
     // 进入并停留「地图视图」：此后 GUI 不再有任何交互
     await enterMapWorkbench(window);
@@ -289,7 +288,7 @@ test('推送可见性 S2：SSE 断连重连 → 兜底全量 refetch 使外部�
     const name = `E2E-PUSH-Reconnect-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
-    const rootLocationId = await createWorldNode(kernel, pid, `${name}-根`);
+    const rootLocationId = await worldRootId(kernel, pid);
 
     // 构造断连：拦截长驻订阅请求并 abort（首连失败 → 客户端进入指数退避重试循环）。
     // 本构造不碰内核，只断前端订阅流——等价「SSE 断连」对 GUI 的可观测效果。
