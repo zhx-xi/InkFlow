@@ -46,7 +46,12 @@ class LangChainLLMClient:
         openai_api_base: str | None = None,
         request_timeout: int | None = None,
     ) -> None:
-        self._default_model = default_model or config.llm_default_model
+        # #1392：显式空串 = 「无模型」（降级分支语义），**不得**回落全局配置——
+        # 回落到全局会让降级客户端真去发请求（本地有 key 时「降级必失败」假红）；
+        # None = 未指定才回落（默认语义）。
+        self._default_model = (
+            default_model if default_model is not None else config.llm_default_model
+        )
         self._temperature = temperature if temperature is not None else config.llm_temperature
         # 可选 API Key 覆盖值（连通探测按请求携带密钥，优先于环境变量注入）
         self._api_key = api_key
