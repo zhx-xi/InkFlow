@@ -1,7 +1,7 @@
 # F27: Writer Agent 闭环（writer-agent）功能规格
 > **端**: backend
 
-**Spec 版本**: 1.1
+**Spec 版本**: 1.2
 **日期**: 2026-08-10
 **依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 1 + F26 spec v1.1（specs/f26-agent-tools/spec.md §5.7）+ Spike 0 报告（docs/deepagents-evaluation-2026-08-10.md ② 空 content）+ 0.7.0 路线图拍板记录（2026-08-10）
 **所属阶段**: 0.7.0（Agent 化升级第二批），估算 8-12 人天
@@ -11,6 +11,8 @@
 **状态**: ✅ 已实现（PR #241，2026-08-10 合入；Q1-Q4 拍板 2026-08-10）
 
 > **Spec 变更**（v1.0 → v1.1，2026-10-06，#1479 缺陷修复）：草稿清理路径补齐——① 新增 `DELETE /api/v1/agent/drafts/{draft_id}`（真删语义，清理出口；此前该路径无路由 → 405）；② `POST /agent/drafts/prune-orphans` 的「孤儿」判据扩展——由「仅 `project_id` 全零 GUID」扩为「**或**所属 `projects` 行不存在 / `projects.is_deleted` 为真」（旧判据保留不删）。动机：软删项目 + 已置 rejected 的草稿既不在 `#1371` 的硬删级联面、也不在旧 prune 判据面 → 永久残留且无接口可清（issue #1479 实测）。正文修订位置：§3.1（端点总览 +3 行 + 「修改履历」列）、§15.1（端点状态流 +2 行）、§15.2（CLI 状态流 +2 行，新增 `inkflow agent draft delete`）。**不含** GUI 草稿页清理入口（另开 UI 轨）。
+
+> **Spec 变更**（v1.1 → v1.2，2026-10-06，#1476 缺陷修复）：写作轨**检索工具的项目上下文注入**补齐——`build_agentic_writer` 调 `build_reader_tools` 时漏传 `project_id`（#680 的闭包绑定入口）→ 6 个项目域检索工具全以 `None` 查库，`write next --mode agentic` 实测 4 个被调用工具中 3 个返回 `{"ok": false, "error": "项目不存在"}`（`get_prior_summary` 因摘要服务对 None 宽容而假绿），Agent 因此盲写自造人名地名（设定漂移的结构性来源）。修法：装配期以 `expected_project_id`（请求真实项目）绑定，与 chat 轨 `tools/registry.py::_build_all_tools(project_id=…)` 同源语义；**不**把 `project_id` 放回 tool schema（那会推翻 #680 并放开孤儿数据面）。正文修订位置：§5.1（新增「工具的项目上下文注入方式」）、§13（+M10 验收）。
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
 
@@ -255,6 +257,20 @@ CLI/API 请求 (--mode agentic)
 - **新增**：`build_save_draft_tool(deps) -> Tool`（§5.2）。
 - **注入**：工具工厂需要 chapter_service（确认/校验）、draft repo（草稿落库）、audit repo（审计日志）、agent_run repo（运行记录）——`AgenticWriterDeps` dataclass（鸭子类型，镜像 ReaderToolDeps 模式）。
 - **system_prompt**：writer_agent 专用（继承既有 writer 角色提示 + 工具使用指引 + 「写正文前可查角色/伏笔/前文」「完成后输出正文，不要输出 JSON」）。模板放 `infrastructure/llm/templates/`（既有 yaml 模板体系）。
+
+**工具的项目上下文注入方式（#1476 融入，2026-10-06）**：
+
+写作轨项目域检索工具**不在 tool schema 暴露 `project_id`**（#680 语义：防 LLM 编造全零 UUID 落孤儿数据），一律由**装配期闭包绑定**：
+
+| 消费点 | 注入链 | 绑定语义 |
+|--------|--------|----------|
+| `build_reader_tools(project_id=…)`（6 个项目域检索工具） | `build_agentic_writer(expected_project_id=请求项目)` → `build_reader_tools(reader_deps, project_id=expected_project_id, include=…)` | `reader_tools.py` 闭包捕获 `bound_project_id = _coerce_uuid(project_id)`；`search_characters` / `check_foreshadowing` / `list_foreshadowing` / `list_world_settings` / `get_prior_summary` / `audit_chapter` 据此查库。**装配链路漏传即全工具以 `None` 查库**（#1476 根因） |
+| `SaveDraftToolDeps.expected_project_id` | 同链路透传 | save_draft 恒用绑定值（覆盖 caller 传入值）；未注入时回退 caller 参数（MCP 兼容） |
+
+- **跨项目隔离是结构性的**：LLM 无 `project_id` 可传（schema 不含该字段）→ 不存在「指向别的项目」的输入面；`expected_project_id` 的绑定语义**不得**为「让工具能用」而删除。
+- **装配期无项目上下文（`None`）** → 保持既有防御语义：向 service 传 `None`，异常走 `{"ok": false, "error": …}` 信封（不静默落到默认项目）。
+- 🔴 **排查锚点**：物化后的工具闭包收到的 `project_id` 恒为装配期 `expected_project_id`；为 `None` 即装配链路漏传（#1476：`build_agentic_writer` 漏传 → 4 个被调用工具中 3 个 `{"ok": false, "error": "项目不存在"}` → Agent 盲写）。
+- ⚠️ **`steps[].tool_calls[*].arguments` 为 `{}` 是正常形态**，不是缺陷信号：项目域工具参数表只余可选过滤项（`search` / `status` / `limit` / `category`），LLM 传空 dict 即「无过滤」；判据应取**工具是否绑定到请求项目 + 返回信封 `ok`**，而非 `arguments` 是否非空。
 
 ### 5.2 save_draft 写工具（`infrastructure/agent/tools/save_draft_tool.py` 新增）
 
@@ -519,6 +535,7 @@ save_draft / confirm / reject 三个写动作均落 audit_logs：
 - **M7 真实模型冒烟（手工）**: 有 key 时 `write next --mode agentic` 真实运行 1 章 ≥ 2000 字、正文命中检索角色名/伏笔（升级路径验收判据②）
 - **M8 修改率基线**: agentic vs deterministic 各 N 章（Q3 拍板值），产出基线报告 `design/agent-baseline-YYYY-MM-DD.md`（修改率均值/重新生成率，F28 对照值）
 - **M9 决策轨迹可查**: `inkflow agent run show <run_id> --json` 输出完整 steps（工具调用序列 + 结果 + token），`--json` 信封字段契约测试覆盖
+- **M10 检索工具项目上下文注入全绿（#1476）**: `build_agentic_writer` 装配出的项目域检索工具闭包绑定 `bound_project_id == expected_project_id`（6 个工具逐个断言 service 收到的项目 id；`None` 时保持防御语义）；4 个被调用工具（`search_characters` / `list_world_settings` / `list_foreshadowing` / `get_prior_summary`）实测返回 `{"ok": true, …}` 而非「项目不存在」；跨项目隔离不回归（schema 无 `project_id`）。测试：`backend/tests/unit/infrastructure/agent/test_agentic_writer_project_binding_1476.py`
 
 ---
 

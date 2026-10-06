@@ -197,8 +197,12 @@ def build_agentic_writer(
             （F27 现行为）；[names] = 按白名单顺序把命中 skill content 追加
             到 system_prompt 之后（base 前 skill 后，查不到跳过）.
         profile_key: deepagents HarnessProfile key（None = 按模型名自动确保）.
-        expected_project_id: #275 期望项目上下文——save_draft 工具防御用
-            （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
+        expected_project_id: #275/#1476 期望项目上下文——每次 run 由装配层注入请求真实值：
+            ① 检索工具（#680 闭包绑定入口）：作为 `build_reader_tools(project_id=…)` 的
+            绑定值，6 个项目域检索工具据此查库（schema 不含 project_id → LLM 无法指向
+            别的项目，跨项目隔离是结构性的）；
+            ② save_draft 写工具防御用（每次 run 由装配层注入请求真实值，工具参数不符
+            → 拒绝）.
         expected_chapter_id: #275 期望章节上下文——save_draft 工具防御用
             （每次 run 由装配层注入请求真实值，工具参数不符 → 拒绝）.
         expected_source_outline_id: #996 来源大纲章节点锚点——透传给 save_draft
@@ -222,8 +226,15 @@ def build_agentic_writer(
         world_service=deps.world_service,
     )
     # #956 §4：writer 轨 tool_ids=None → include 显式兜底旧 5（reader 目录扩权不波及）
+    # #1476：检索工具的项目上下文注入——`build_reader_tools` 的 `project_id` 形参才是
+    # #680 的闭包绑定入口（工具 schema 不含 project_id，由装配期绑定）。写作轨此前漏传
+    # → `bound_project_id=None` → 6 个项目域检索工具全按 None 查库（issue #1476：
+    # search_characters / list_world_settings / list_foreshadowing 返回「项目不存在」，
+    # Agent 因此盲写）。此处以装配期 `expected_project_id`（= 请求真实项目）绑定，
+    # 与 chat 轨 `tools/registry.py::_build_all_tools(project_id=…)` 同源语义。
     tools = build_reader_tools(
         reader_deps,
+        project_id=expected_project_id,
         include=tool_ids if tool_ids is not None else _WRITER_READER_NAMES,
     )
     if tool_ids is None or "save_draft" in tool_ids:
