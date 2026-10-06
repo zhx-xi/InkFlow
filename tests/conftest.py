@@ -1,11 +1,22 @@
-"""InkFlow 集成测试共享 fixture — 异步数据库 + 项目样本。
+"""InkFlow 集成测试共享 fixture — 异步数据库 + 项目样本 + 会话级资源后置处理。
 
 供 tests/integration/, tests/api/, tests/cli/ 使用。
+
+#1488（0.17.0）：本文件同时是**测试基础设施后置处理**的落点——会话级回收测试拉起的
+`inkflow serve` 内核进程（见文件末尾的 `reclaim_test_kernel_processes` +
+`_reclaim_kernel_processes` fixture）。
+
+两套 pytest 根（本文件 vs `backend/conftest.py`）各自加载各自的 conftest，
+互不 import——同一对约定在两处镜像（与该文件既有的 `test_engine` 镜像同规）。
 """
 
 import asyncio
+import logging
 import os
+import subprocess
+import sys
 import tempfile
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -116,3 +127,144 @@ def temp_keys_dir():
     """临时密钥存储目录，测试后自动清理。"""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+# ── #1488：测试拉起的 `inkflow serve` 内核进程——会话级统一回收 ────────────────
+#
+# 缺陷：`_spawn_kernel` 是 detach 语义（`CREATE_NEW_PROCESS_GROUP` + 无窗口），内核
+# 的存活期互斥由**客户端**（pytest 进程）持有 → 客户端退出即被 OS 回收，互斥不约束
+# 内核存活。任何「测试没走到清理行 / 被中断 / 清理失败」的路径都会留下永久存活的
+# `inkflow serve`（#1488 实测：本机累积 76 个；每个都持有 `%TEMP%\inkflow-kernel.log`
+# 句柄 → 连带 #1477 的日志轮转失效）。
+#
+# 处置（用户 2026-10-06 拍板「统一后置处理」）：会话结束时按**归属**回收。归属判据
+# 两条，宁漏不误杀：
+#   ① CommandLine 含本会话 pytest 临时根（basetemp）——覆盖「spawn 方已退出、进程
+#      被孤儿化」的情形（uv shim / 中间子进程退出后亲缘链已断，无法靠 pid 关系找）；
+#   ② 亲缘链上溯到本 pytest 进程 pid——覆盖 state_file 落在 basetemp 之外的 spawn
+#      （如 `tests/cli/test_cli_project.py::test_serve_smoke` 的固定端口 serve）。
+# **不匹配**的：手工常驻内核（数据目录在 `%APPDATA%\InkFlow`，亲缘链指向用户 shell）
+# 与并行会话/其他 worktree 的内核（basetemp 与 pytest pid 都不同）——见
+# `tests/cli/test_kernel_cleanup_1488.py` 的负例守护。
+# 1 个逻辑内核 = 2 个 python.exe（uv shim + 真解释器，CommandLine 相同）——两条都
+# 命中，故不依赖 `/T` 的父子级联即可清干净（实测见同文件）。
+
+ENUM_TIMEOUT_S = 30.0
+KILL_TIMEOUT_S = 15.0
+KILL_PASSES = 2
+KILL_SETTLE_S = 0.3
+ANCESTRY_DEPTH = 16
+
+logger = logging.getLogger(__name__)
+
+
+def enumerate_processes() -> list[tuple[int, int, str]]:
+    """枚举本机全部进程 → ``[(pid, ppid, cmdline)]``（非 Windows → ``[]``）。
+
+    装配缝（测试 patch 点）：进程**枚举**与**归属判定/终止**分离，判据得以在不真实
+    拉起内核的前提下验证。CommandLine 走 CIM（`Get-CimInstance Win32_Process`），
+    与 `inkflow-dev` 的「内核归属判据只能是 CommandLine」纪律同源（别用进程名/启动
+    时间推断）。
+    """
+    if sys.platform != "win32":
+        return []
+    script = (
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+        "Get-CimInstance Win32_Process -Filter \"Name like '%python%'\" | ForEach-Object { "
+        '"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.CommandLine)" }'
+    )
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        timeout=ENUM_TIMEOUT_S,
+        check=False,
+    )
+    rows: list[tuple[int, int, str]] = []
+    for line in proc.stdout.decode("utf-8", errors="replace").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        try:
+            rows.append((int(parts[0]), int(parts[1]), parts[2]))
+        except ValueError:
+            continue
+    return rows
+
+
+def terminate_process_tree(pid: int) -> None:
+    """终止单个进程树（`taskkill /PID <pid> /T /F`）；调用方负责吞掉"已退出"类失败。"""
+    if pid <= 0:
+        return
+    subprocess.run(
+        ["taskkill", "/PID", str(pid), "/T", "/F"],
+        capture_output=True,
+        timeout=KILL_TIMEOUT_S,
+        check=False,
+    )
+
+
+def is_test_kernel(
+    cmdline: str, pid: int, parents: dict[int, int], *, pytest_pid: int, basetemp: str
+) -> bool:
+    """归属判定（纯函数）：该进程是否为本 pytest 会话拉起的测试内核。"""
+    if "inkflow" not in cmdline or "serve" not in cmdline:
+        return False
+    if basetemp and basetemp in cmdline.lower():
+        return True
+    seen: set[int] = set()
+    current = pid
+    for _ in range(ANCESTRY_DEPTH):
+        parent = parents.get(current)
+        if not parent or parent <= 0 or parent in seen:
+            return False
+        seen.add(parent)
+        if parent == pytest_pid:
+            return True
+        current = parent
+    return False
+
+
+def reclaim_test_kernel_processes(pytest_pid: int, basetemp: str) -> list[int]:
+    """回收本会话拉起的 `inkflow serve` 内核进程 → 已下发终止的 pid 列表。
+
+    最多两趟（`/T` 的进程树终止有传播延迟，杀掉 shim 后复查一次真解释器）。
+    **绝不抛错**：枚举失败（无 powershell / 超时）与终止失败（进程已退出 / 权限不足）
+    全部吞掉并记 WARNING——清理失败不得把测试 ERROR（#1488 验收）。
+    """
+    terminated: list[int] = []
+    for attempt in range(KILL_PASSES):
+        try:
+            rows = enumerate_processes()
+        except Exception as exc:  # 清理失败不得升级为测试 ERROR（#1488 验收）
+            logger.warning("#1488 内核进程枚举失败（第 %d 趟）：%s", attempt + 1, exc)
+            return terminated
+        parents = {pid: ppid for pid, ppid, _ in rows}
+        base = basetemp.lower()
+        targets = [
+            pid
+            for pid, _ppid, cmdline in rows
+            if is_test_kernel(cmdline or "", pid, parents, pytest_pid=pytest_pid, basetemp=base)
+        ]
+        if not targets:
+            break
+        for pid in targets:
+            try:
+                terminate_process_tree(pid)
+                terminated.append(pid)
+            except Exception as exc:  # 进程已退出 / 权限不足 → 记日志不抛（#1488 验收）
+                logger.warning("#1488 终止测试内核 pid=%s 失败：%s", pid, exc)
+        time.sleep(KILL_SETTLE_S)
+    return terminated
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _reclaim_kernel_processes(tmp_path_factory):
+    """#1488：会话结束回收本会话拉起的 `inkflow serve` 内核进程。
+
+    会话级而非逐用例：归属判据依赖会话临时根与会话 pid，而逐用例枚举全机进程在本仓
+    规模（~6500 单元 + 1200 集成用例）下不可接受。契约是「**跑完套件**后无残留」。
+    """
+    yield
+    terminated = reclaim_test_kernel_processes(os.getpid(), str(tmp_path_factory.getbasetemp()))
+    if terminated:
+        logger.warning("#1488 会话结束回收测试内核进程 pid=%s", terminated)
