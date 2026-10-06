@@ -331,9 +331,7 @@ async def test_find_reusable_hits_degraded_completed_pending(db_session, project
         _log(project, chapter, degraded=True), findings=[], content_hash=HASH_A
     )
 
-    found = await repo.find_reusable(
-        uuid.UUID(int=chapter.id), HASH_A, stale_before=STALE_BEFORE
-    )
+    found = await repo.find_reusable(uuid.UUID(int=chapter.id), HASH_A, stale_before=STALE_BEFORE)
 
     assert found is not None
     assert found.id == created.id
