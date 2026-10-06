@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.domain.models.draft import Draft, DraftStatus
 from inkflow.infrastructure.database.models.agent_run import DraftORM
+from inkflow.infrastructure.database.models.project import ProjectORM
 from inkflow.infrastructure.database.repositories._id_guard import (
     int_pk_for_filter,
     require_int_pk,
@@ -254,7 +255,13 @@ class SQLiteDraftRepository:
         return _orm_to_domain(orm)
 
     async def prune_orphans(self, *, dry_run: bool = False) -> int:
-        """删除/统计 project_id == 全零 UUID 的草稿（#275 孤儿数据清理）.
+        """删除/统计孤儿草稿（#275 全零 GUID + #1479 所属项目不存在/已软删）.
+
+        孤儿判据（三类，OR 关系）:
+        - ``project_id == 0``：#275 rc9 缺陷数据签名（旧判据，保留不删）
+        - 所属 ``projects`` 行不存在：LEFT JOIN 无匹配
+        - 所属 ``projects.is_deleted`` 为真：项目已软删——软删不走 FK CASCADE
+          （#1371 只管硬删），故须此判据补清理出口（#1479）
 
         Args:
             dry_run: True = 只统计不删除（查询 + count，不 commit）.
@@ -262,8 +269,18 @@ class SQLiteDraftRepository:
         Returns:
             匹配条数（dry_run=True 时草稿保留）.
         """
-        # #275 全零 UUID 孤儿 → int 0（ADR-063：列已归一为 INTEGER）
-        stmt = select(DraftORM).where(DraftORM.project_id == 0)
+        # project_id → projects.id 为 PK 关联，outerjoin 至多 1 行/草稿（无扇出）
+        stmt = (
+            select(DraftORM)
+            .outerjoin(ProjectORM, DraftORM.project_id == ProjectORM.id)
+            .where(
+                or_(
+                    DraftORM.project_id == 0,  # #275 全零 UUID 孤儿（ADR-063：列已归一为 INTEGER）
+                    ProjectORM.id.is_(None),  # 所属项目不存在
+                    ProjectORM.is_deleted.is_(True),  # 所属项目已软删（#1479）
+                )
+            )
+        )
         result = await self._session.execute(stmt)
         orphans = list(result.scalars().all())
         if dry_run:
@@ -272,3 +289,19 @@ class SQLiteDraftRepository:
             await self._session.delete(orm)
         await self._session.commit()
         return len(orphans)
+
+    async def hard_delete(self, draft_id: str) -> bool:
+        """物理删除草稿行（#1479 硬删出口；真删语义，不可恢复）.
+
+        Args:
+            draft_id: 草稿 id（uuid4 字符串）.
+
+        Returns:
+            True = 已删除一行；False = 草稿不存在（未删任何行）.
+        """
+        orm = await self._session.get(DraftORM, draft_id)
+        if orm is None:
+            return False
+        await self._session.delete(orm)
+        await self._session.commit()
+        return True

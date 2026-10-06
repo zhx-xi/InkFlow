@@ -723,13 +723,36 @@ def draft_reject(
     typer.echo("✅ 草稿已拒绝（保留记录）")
 
 
+@draft_app.command("delete")
+@instrument(caller_type="cli")
+def draft_delete(
+    draft_id: str = typer.Argument(..., help="草稿 ID"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+) -> None:
+    """硬删草稿（真删，不可恢复；#1479 清理出口）"""
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            await client.delete(f"/agent/drafts/{draft_id}")
+            # 204 无 body → 本地构造信封载荷（镜像 agent template delete 形态）
+            return {"deleted": True, "draft_id": draft_id}
+
+    data = _run(_impl)
+    if json_output:
+        _print_json_envelope(data)
+        return
+    typer.echo("✅ 草稿已删除")
+
+
 @draft_app.command("prune-orphans")
 @instrument(caller_type="cli")
 def draft_prune_orphans(
     dry_run: bool = typer.Option(False, "--dry-run", help="只统计不删除（预览）"),
     json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
 ) -> None:
-    """清理孤儿草稿（project_id=全零 UUID，#275 缺陷数据）"""
+    """清理孤儿草稿（全零 project_id / 所属项目不存在或已软删，#275 + #1479）"""
 
     async def _impl() -> dict:
         handle = await ensure_kernel()

@@ -99,7 +99,7 @@ subcommand); envelopes and exit codes are described in `json-contracts.md`.
 | `agent validate --file <yaml>` | Validate a pipeline YAML (⚠️ Phase 1 placeholder — prints a notice, no real validation, #251 P3) |
 | `agent tools list` | Enumerate available tools (local static, no kernel needed) |
 | `agent runs list --project-id [--limit]` / `runs show <run_id>` | Agent run records |
-| `agent draft list --project-id [--status]` / `confirm <draft_id> [--chapter-id]` / `reject <draft_id>` / `prune-orphans [--dry-run]` | Draft confirmation flow |
+| `agent draft list --project-id [--status]` / `confirm <draft_id> [--chapter-id]` / `reject <draft_id>` / `delete <draft_id>` / `prune-orphans [--dry-run]` | Draft confirmation flow (`delete` = hard delete, #1479) |
 | `agent template list/get/create/update/delete/duplicate/set-default/get-default/pipelines` | Full DB agent-template CRUD (create/update take `--roles-json` four-key JSON) |
 | `session create/list/get/update/pause/resume/complete/fail/logs/delete/restore` | Session lifecycle (create requires `--type --title`; `log add --id -m` subgroup appends logs) |
 | `memory list --project-id [--category]` / `remove <preference_id>` / `stats --project-id` / `summarize --project-id [--force|--remove]` / `user-list [--category]` / `user-remove <preference_id>` | Agent memory & preferences (project-level + user-level; no manual add) |

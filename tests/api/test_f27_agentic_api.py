@@ -151,6 +151,7 @@ def overrides():
             confirmed_at=None,
         )
     )
+    draft_svc.hard_delete = AsyncMock(return_value=True)  # #1479 硬删出口
 
     run_repo = MagicMock()
     run_repo.get = AsyncMock(return_value=None)
@@ -374,6 +375,33 @@ async def test_drafts_reject(overrides):
         resp = await client.post(f"/api/v1/agent/drafts/{DRAFT_ID}/reject")
     assert resp.status_code == 200
     assert resp.json()["status"] == "rejected"
+
+
+# ── #1479: 草稿硬删出口（DELETE /agent/drafts/{id}） ──────────────────
+
+
+async def test_drafts_delete_204(overrides):
+    """DELETE /agent/drafts/{id} → 204 + svc.hard_delete 收到 draft_id.
+
+    当前该路径无路由 → 405 Method Not Allowed（RED）。
+    """
+    draft_svc = overrides["draft"]
+    async with _client() as client:
+        resp = await client.delete(f"/api/v1/agent/drafts/{DRAFT_ID}")
+    assert resp.status_code == 204
+    draft_svc.hard_delete.assert_awaited_once_with(DRAFT_ID)
+
+
+async def test_drafts_delete_404(overrides):
+    """草稿不存在 → 404（DraftNotFoundError 消息透传）。"""
+    from inkflow.domain.services.draft_service import DraftNotFoundError
+
+    draft_svc = overrides["draft"]
+    draft_svc.hard_delete.side_effect = DraftNotFoundError("草稿不存在")
+    async with _client() as client:
+        resp = await client.delete(f"/api/v1/agent/drafts/{DRAFT_ID}")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "草稿不存在"
 
 
 # ── #976: confirm 增 source_outline_id / title（ConfirmRequest 扩展契约） ──

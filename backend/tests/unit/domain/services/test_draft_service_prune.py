@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from inkflow.domain.models.draft import Draft, DraftStatus
-from inkflow.domain.services.draft_service import DraftService
+from inkflow.domain.services.draft_service import DraftNotFoundError, DraftService
 
 pytestmark = pytest.mark.asyncio  # 实测 mode=Mode.AUTO；显式 mark 兼容 STRICT/AUTO
 
@@ -126,3 +126,27 @@ async def test_prune_orphans_dry_run_forwards_flag() -> None:
 
     assert count == 2
     deps["draft_repo"].prune_orphans.assert_awaited_once_with(dry_run=True)
+
+
+# ── #1479 硬删出口: DraftService.hard_delete ──
+
+
+async def test_hard_delete_delegates_to_repo() -> None:
+    """hard_delete 委托 repo 并透传草稿 id；返回 True.
+
+    RED 预期: DraftService 无 hard_delete → AttributeError FAILED。
+    """
+    svc, deps = _make_service()
+    deps["draft_repo"].hard_delete = AsyncMock(return_value=True)
+
+    assert await svc.hard_delete("draft-1") is True
+    deps["draft_repo"].hard_delete.assert_awaited_once_with("draft-1")
+
+
+async def test_hard_delete_missing_raises_not_found() -> None:
+    """repo 返回 False（草稿不存在）→ DraftNotFoundError（API 映射 404）."""
+    svc, deps = _make_service()
+    deps["draft_repo"].hard_delete = AsyncMock(return_value=False)
+
+    with pytest.raises(DraftNotFoundError, match="不存在"):
+        await svc.hard_delete("draft-1")

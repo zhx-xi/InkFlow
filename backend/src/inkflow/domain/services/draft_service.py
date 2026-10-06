@@ -437,7 +437,7 @@ class DraftService:
         return updated
 
     async def prune_orphans(self, *, dry_run: bool = False) -> int:
-        """删除孤儿草稿（project_id=全零 UUID，#275 旧数据清理）→ 删除条数.
+        """删除孤儿草稿（#275 全零 GUID + #1479 所属项目不存在/已软删）→ 删除条数.
 
         Args:
             dry_run: True = 只统计不删除（清理前预览）.
@@ -449,3 +449,23 @@ class DraftService:
             dry_run=dry_run
         )
         return count
+
+    async def hard_delete(self, draft_id: str) -> bool:
+        """硬删草稿（真删，不可恢复）——清理出口（#1479）.
+
+        与 ``reject``（保留记录，供 F28 分析）语义互斥：本方法物理删除 ``drafts`` 行。
+        不写审计——清理动作非业务事件（镜像 ``replace_content`` 的「调用方已落审计」惯例）。
+
+        Args:
+            draft_id: 草稿 id（uuid4 字符串）.
+
+        Returns:
+            True（删除成功）.
+
+        Raises:
+            DraftNotFoundError: 草稿不存在.
+        """
+        deleted: bool = await self._repo.hard_delete(draft_id)  # type: ignore[attr-defined]  # 鸭子类型：draft_repo 按契约提供 hard_delete
+        if not deleted:
+            raise DraftNotFoundError("草稿不存在")
+        return deleted

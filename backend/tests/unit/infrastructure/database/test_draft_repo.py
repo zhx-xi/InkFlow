@@ -291,6 +291,91 @@ class TestDraftRepository:
         _, total = await repo.list(project_id=ZERO_PROJECT_ID)
         assert total == 1
 
+    # ── #1479 判据扩展: 孤儿 = 全零 GUID / 所属项目不存在 / 所属项目已软删 ──
+
+    async def test_prune_orphans_deletes_soft_deleted_project_drafts(self, db_session, project):
+        """#1479: 软删项目（is_deleted=True）的草稿视为孤儿，prune 真删.
+
+        RED 预期: 当前判据仅 project_id==0 → 软删项目草稿不受影响 → count==0 FAILED。
+        """
+        repo = SQLiteDraftRepository(db_session)
+        draft = await repo.create(
+            project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="软删项目草稿"
+        )
+        project.is_deleted = True
+        await db_session.commit()
+
+        count = await repo.prune_orphans()
+
+        assert count == 1
+        assert await repo.get(draft.id) is None
+        _, total = await repo.list(project_id=PROJECT_ID)
+        assert total == 0
+
+    async def test_prune_orphans_deletes_rejected_drafts_of_soft_deleted_project(
+        self, db_session, project
+    ):
+        """#1479: 软删项目的 rejected 草稿同样被 prune（状态不豁免）.
+
+        RED 预期: 判据只认全零 GUID → count==0 FAILED。
+        """
+        repo = SQLiteDraftRepository(db_session)
+        draft = await repo.create(
+            project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="已拒绝草稿"
+        )
+        await repo.update_status(draft.id, DraftStatus.REJECTED)
+        project.is_deleted = True
+        await db_session.commit()
+
+        count = await repo.prune_orphans()
+
+        assert count == 1
+        assert await repo.get(draft.id) is None
+
+    async def test_prune_orphans_deletes_drafts_of_missing_project(self, db_session, project):
+        """#1479: 所属 projects 行不存在（project_id 指向空号）→ 孤儿.
+
+        RED 预期: 判据只认 project_id==0 → count==0 FAILED。
+        """
+        repo = SQLiteDraftRepository(db_session)
+        missing = uuid.UUID(int=9999)  # projects 表无此主键
+        await repo.create(project_id=missing, chapter_id=None, content="悬浮草稿")
+
+        count = await repo.prune_orphans()
+
+        assert count == 1
+        _, total = await repo.list(project_id=missing)
+        assert total == 0
+
+    async def test_prune_orphans_keeps_live_project_drafts(self, db_session, project, chapter):
+        """负例（守住既有语义）: 正常存在项目的草稿不被误删（含 rejected 状态）."""
+        repo = SQLiteDraftRepository(db_session)
+        live = await repo.create(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="正常草稿")
+        rejected = await repo.create(project_id=PROJECT_ID, chapter_id=None, content="已拒绝草稿")
+        await repo.update_status(rejected.id, DraftStatus.REJECTED)
+
+        count = await repo.prune_orphans()
+
+        assert count == 0
+        assert await repo.get(live.id) is not None
+        assert await repo.get(rejected.id) is not None
+
+    # ── #1479 硬删出口: hard_delete ──
+
+    async def test_hard_delete_removes_draft_row(self, db_session, project, chapter):
+        """#1479: hard_delete 物理删行（list 回读不含）；不存在 → False.
+
+        RED 预期: SQLiteDraftRepository 无 hard_delete → AttributeError FAILED。
+        """
+        repo = SQLiteDraftRepository(db_session)
+        draft = await repo.create(project_id=PROJECT_ID, chapter_id=CHAPTER_ID, content="待删草稿")
+
+        assert await repo.hard_delete(draft.id) is True
+        assert await repo.get(draft.id) is None
+        _, total = await repo.list(project_id=PROJECT_ID)
+        assert total == 0
+        assert await repo.hard_delete(draft.id) is False
+
 
 class TestDraftVolume976:
     """#976 草稿常显：drafts.volume_id 列透传契约（真 SQLite 轨）.
