@@ -103,7 +103,7 @@ button{font-family:inherit;cursor:pointer}
 /* ── #1373 主体：筛选面板（形态 B）+ 筛选 chip 组（形态 A）+ 画布 ── */
 .kg-body{display:flex;gap:12px;align-items:flex-start;margin-top:12px}
 .kg-main{flex:1;min-width:0}
-.kg-fpanel{display:none;flex:none;width:224px;max-height:520px;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.kg-fpanel{display:none;flex:none;width:224px;margin-top:12px;height:520px;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
 body[data-filter-form="b"][data-panel="open"] .kg-fpanel{display:flex}
 body[data-filter-form="b"] .kg-filters{display:none}
 .kf-head{flex:none;display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -126,20 +126,26 @@ body[data-filter-form="b"] .kg-filters{display:none}
 .kf-foot button svg{width:12px;height:12px}
 .kf-stats{flex:none;padding:6px 10px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* ── #1373 折叠态：底部折叠栏（零横向占用 → 画布恢复全宽；「不牺牲画布宽度」的落点） ── */
-.kg-filterbar{display:none;align-items:center;gap:8px;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:7px 12px;font-size:12px;color:var(--ink-2)}
-.kg-filterbar svg{width:13px;height:13px;color:var(--ink-3)}
-.kg-filterbar .fb-summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.kg-filterbar .fb-spacer{flex:1}
-.kg-filterbar button{border:1px solid var(--line);border-radius:6px;background:none;font-size:11px;color:var(--ink-2);padding:3px 10px;white-space:nowrap;flex:none}
-.kg-filterbar button:hover{border-color:var(--accent);color:var(--accent)}
-.kg-filterbar .fb-expand{display:inline-flex;align-items:center;gap:4px}
-.kg-filterbar .fb-expand svg{width:12px;height:12px}
-body[data-filter-form="b"][data-panel="closed"] .kg-filterbar{display:flex}
+/* ── #1465 项4：折叠态「左侧竖条」（替代原底部横条）──
+   rail-a（默认）= 图标 + 六类圆点竖列 + 清除；rail-b = 极窄把手（图标 + 竖排标签）。
+   高度与画布等高（520px）→ 与展开态面板同高，视觉对齐。*/
+.kg-rail{display:none;flex:none;flex-direction:column;align-items:center;gap:6px;margin-top:12px;width:46px;height:520px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);padding:8px 0;overflow:hidden}
+body[data-filter-form="b"][data-panel="closed"][data-collapse="rail-a"] .kg-rail,
+body[data-filter-form="b"][data-panel="closed"][data-collapse="rail-b"] .kg-rail{display:flex}
+body[data-collapse="rail-b"] .kg-rail{width:30px}
+body[data-collapse="rail-b"] .kg-rail .rail-dots,body[data-collapse="rail-b"] .kg-rail .rail-sep{display:none}
+body[data-collapse="rail-b"] .kg-rail .rail-label{display:block}
+.kg-rail .rail-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink-2);flex:none}
+.kg-rail .rail-btn:hover{border-color:var(--accent);color:var(--accent)}
+.kg-rail .rail-btn svg{width:14px;height:14px}
+.kg-rail .rail-sep{width:20px;height:1px;background:var(--line);flex:none}
+.kg-rail .rail-label{display:none;writing-mode:vertical-rl;font-size:11px;color:var(--ink-3);letter-spacing:.1em}
+.kg-rail .rail-dots{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-height:0;overflow-y:auto;padding:2px 0}
+.kg-rail .rail-dot{width:14px;height:14px;border-radius:50%;flex:none;cursor:pointer;border:1px solid transparent}
+.kg-rail .rail-dot.off{opacity:.25;box-shadow:inset 0 0 0 2px var(--surface-2)}
+body[data-filter-active="1"] .kg-rail{border-color:var(--accent)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 body[data-filter-form="b"][data-panel="closed"] .kg-fpanel{display:none}
-/* 筛选生效时折叠栏给出可辨提示（收起后仍能一眼看出「正在筛选」） */
-body[data-filter-active="1"] .kg-filterbar{border-color:var(--accent)}
-body[data-filter-active="1"] .kg-filterbar .fb-summary{color:var(--accent);font-weight:500}
 
 /* 筛选 chip 组（形态 A：顶部两行 —— 复用 characters.html 的 rank-chip 视觉先例） */
 .kg-filters{margin-top:12px;display:flex;flex-direction:column;gap:6px}
@@ -276,7 +282,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
 .demo-bar .sep{width:1px;height:18px;background:var(--line)}
 </style>
 </head>
-<body data-state="graph" data-color="a" data-filter-form="a" data-note="" data-filter-empty="">
+<body data-state="graph" data-color="a" data-filter-form="a" data-note="" data-filter-empty="" data-collapse="rail-a">
 
 <div class="app">
   <!-- ═══ 侧边导航 AppNav（设定库分组，知识图谱激活） ═══ -->
@@ -367,6 +373,15 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
 
       <div class="kg-body">
         <!-- ═══ #1373 筛选形态 B：左侧筛选面板（类别多选 + 实体列表 + 搜索） ═══ -->
+        <!-- ═══ #1465 项4：折叠态「左侧竖条」（替代原底部横条；rail-a/rail-b 由 data-collapse 切换）═══ -->
+        <aside class="kg-rail" data-testid="library-kg-filterbar">
+          <button type="button" class="rail-btn rail-expand" data-testid="library-kg-filterbar-expand" title="展开筛选" aria-label="展开筛选"><span data-ic="chevronsright"></span></button>
+          <span class="rail-sep"></span>
+          <span class="rail-label">筛选</span>
+          <div class="rail-dots" id="railDots"></div>
+          <button type="button" class="rail-btn" data-testid="library-kg-filterbar-clear" title="清除筛选" aria-label="清除筛选"><span data-ic="x"></span></button>
+          <span class="sr-only" id="library-kg-filterbar-summary" data-testid="library-kg-filterbar-summary"></span>
+        </aside>
         <aside class="kg-fpanel" data-testid="library-kg-filter-panel">
           <div class="kf-head">
             <span data-ic="search"></span>
@@ -511,15 +526,6 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
             <button data-testid="library-kg-empty-cta">去角色页创建</button>
           </div>
 
-          <!-- #1373 折叠态：底部折叠栏（面板收起后的常驻入口；零横向占用 → 画布保持全宽） -->
-          <div class="kg-filterbar" data-testid="library-kg-filterbar">
-            <span data-ic="search"></span>
-            <span>筛选</span>
-            <span class="fb-summary" id="library-kg-filterbar-summary" data-testid="library-kg-filterbar-summary">全部 · 显示 20 个实体</span>
-            <span class="fb-spacer"></span>
-            <button data-testid="library-kg-filterbar-clear">清除筛选</button>
-            <button class="fb-expand" data-testid="library-kg-filterbar-expand">展开筛选<span data-ic="chevronsright"></span></button>
-          </div>
         </div>
       </div>
     </div>
@@ -621,7 +627,8 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="color-a">着色方案 A · 色相分层（采用）</option>
       <option value="color-b">着色方案 B · 邻接着色（备选）</option>
       <option value="filter-b">筛选方案 B · 侧边面板展开（采用）</option>
-      <option value="filter-b-collapsed">筛选方案 B · 折叠态（画布全宽）</option>
+      <option value="collapse-rail-a">折叠态 · 左侧竖条 方案 A（图标 + 类别圆点）</option>
+      <option value="collapse-rail-b">折叠态 · 左侧竖条 方案 B（极窄把手）</option>
       <option value="filter-a">筛选方案 A · 顶部 chip 组（备选）</option>
       <option value="list">关系列表</option>
       <option value="empty">图谱空态</option>
@@ -912,7 +919,8 @@ function drawEdges(){
 }
 
 /* ═══════════ 筛选（#1373）═══════════ */
-const filterState = { category: 'all', entity: null, query: '' };
+/** #1465：类别改为多选（默认全选六类）；全选 = 显示全部，取消某类 = 隐藏该类。 */
+const filterState = { categories: ENTITY_TYPES.slice(), entity: null, query: '' };
 
 /* ── 决策③：选择即本地记忆 + 一键清除 ──
    记忆键与画布位置记忆同构（`inkflow:kg:<域>[:<project_id>]`）；原型固定 demo-project，
@@ -941,7 +949,7 @@ function writeStored(key, value){
   }
 }
 function saveFilters(){
-  writeStored(KG_FILTER_KEY, { category: filterState.category, entity: filterState.entity });
+  writeStored(KG_FILTER_KEY, { categories: filterState.categories.slice(), entity: filterState.entity });
 }
 /** 用户动作统一出口：刷新 UI + 落记忆（setState 是截图驱动，不走这里，避免污染记忆） */
 function userChange(){
@@ -949,8 +957,19 @@ function userChange(){
   renderAll();
   saveFilters();
 }
+/** 类别多选：勾选/取消（全选 = 显示全部）；取消某类 = 隐藏该类 */
+function toggleCategory(t){
+  const i = filterState.categories.indexOf(t);
+  if (i >= 0) filterState.categories = filterState.categories.filter(function(x){ return x !== t; });
+  else filterState.categories = ENTITY_TYPES.filter(function(x){ return x === t || filterState.categories.indexOf(x) >= 0; });
+  /* 已选实体若属被取消的类别 → 一并清空（避免「选中了看不见的实体」） */
+  if (filterState.entity){
+    const en = NODES.find(function(n){ return n.id === filterState.entity; });
+    if (en && filterState.categories.indexOf(en.type) < 0) filterState.entity = null;
+  }
+}
 function clearFilters(){
-  filterState.category = 'all';
+  filterState.categories = ENTITY_TYPES.slice();
   filterState.entity = null;
   filterState.query = '';
   userChange();
@@ -958,7 +977,7 @@ function clearFilters(){
 function applyPanel(){
   document.body.dataset.panel = panelOpen ? 'open' : 'closed';
   document.body.dataset.filterActive =
-    filterState.category !== 'all' || filterState.entity ? '1' : '';
+    filterState.categories.length < ENTITY_TYPES.length || filterState.entity ? '1' : '';
 }
 function setPanel(open){
   panelOpen = !!open;
@@ -969,8 +988,15 @@ function setPanel(open){
 function restoreFromMemory(){
   const f = readStored(KG_FILTER_KEY);
   if (f && typeof f === 'object'){
-    const cat = f.category;
-    filterState.category = cat === 'all' || ENTITY_TYPES.indexOf(cat) >= 0 ? cat : 'all';
+    if (Array.isArray(f.categories)){
+      const cats = f.categories.filter(function(t){ return ENTITY_TYPES.indexOf(t) >= 0; });
+      filterState.categories = cats.length ? cats : ENTITY_TYPES.slice();
+    } else if (typeof f.category === 'string' && f.category !== 'all' && ENTITY_TYPES.indexOf(f.category) >= 0){
+      /* 旧记忆（单选）= 只看该类 → 新语义下只勾该类 */
+      filterState.categories = [f.category];
+    } else {
+      filterState.categories = ENTITY_TYPES.slice();
+    }
     filterState.entity = NODES.some(function(n){ return n.id === f.entity; }) ? f.entity : null;
   }
   panelOpen = readStored(KG_PANEL_KEY) !== 'closed';
@@ -987,13 +1013,8 @@ function adjacentOf(id){
   return out;
 }
 function computeVisible(){
-  let ids = NODES.map(function(n){ return n.id; });
-  if (filterState.category !== 'all'){
-    ids = ids.filter(function(id){
-      const n = NODES.find(function(x){ return x.id === id; });
-      return n && n.type === filterState.category;
-    });
-  }
+  const cats = filterState.categories;
+  let ids = NODES.filter(function(n){ return cats.indexOf(n.type) >= 0; }).map(function(n){ return n.id; });
   if (filterState.entity){
     const adj = adjacentOf(filterState.entity);
     ids = ids.filter(function(id){ return adj.has(id); });
@@ -1020,7 +1041,8 @@ function applyFilter(){
 
 /** 面板底部与折叠栏共用同一句摘要（两处 id 同步） */
 function updateSummaries(vis){
-  const cat = filterState.category === 'all' ? '全部' : TYPE_LABEL[filterState.category];
+  const allSel = filterState.categories.length === ENTITY_TYPES.length;
+  const cat = allSel ? '全部' : filterState.categories.map(function(t){ return TYPE_LABEL[t]; }).join('/');
   const ent = filterState.entity
     ? (NODES.find(function(x){ return x.id === filterState.entity; }) || {}).name
     : null;
@@ -1039,9 +1061,11 @@ function renderCategoryChips(){
   const items = [{ value:'all', label:'全部' }].concat(ENTITY_TYPES.map(function(t){
     return { value:t, label:TYPE_LABEL[t] };
   }));
+  const allSel = filterState.categories.length === ENTITY_TYPES.length;
   items.forEach(function(it){
     const b = document.createElement('button');
-    b.className = 'fm-chip' + (filterState.category === it.value ? ' active' : '');
+    const active = it.value === 'all' ? allSel : filterState.categories.indexOf(it.value) >= 0;
+    b.className = 'fm-chip' + (active ? ' active' : '');
     b.setAttribute('data-kind', 'cat');
     b.setAttribute('data-value', it.value);
     b.setAttribute('data-testid', 'library-kg-filter-cat-' + it.value);
@@ -1052,7 +1076,11 @@ function renderCategoryChips(){
       b.appendChild(dot);
     }
     b.appendChild(document.createTextNode(it.label));
-    b.addEventListener('click', function(){ filterState.category = it.value; filterState.entity = null; userChange(); });
+    b.addEventListener('click', function(){
+      if (it.value === 'all') filterState.categories = ENTITY_TYPES.slice();
+      else toggleCategory(it.value);
+      userChange();
+    });
     host.appendChild(b);
   });
 }
@@ -1060,7 +1088,7 @@ function renderEntityChips(){
   const host = document.getElementById('chipsEntity');
   while (host.firstChild) host.removeChild(host.firstChild);
   const pool = NODES.filter(function(n){
-    return filterState.category === 'all' || n.type === filterState.category;
+    return filterState.categories.indexOf(n.type) >= 0;
   });
   const shown = pool.slice(0, LARGE_GRAPH_HINT);
   shown.forEach(function(n){
@@ -1091,11 +1119,12 @@ function renderPanel(){
   while (ents.firstChild) ents.removeChild(ents.firstChild);
   ENTITY_TYPES.forEach(function(t){
     const lab = document.createElement('label');
-    lab.className = 'kf-opt' + (filterState.category === t ? ' on' : '');
+    const on = filterState.categories.indexOf(t) >= 0;
+    lab.className = 'kf-opt' + (on ? ' on' : '');
     lab.setAttribute('data-testid', 'library-kg-filter-panel-cat-' + t);
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = filterState.category === t || filterState.category === 'all';
+    cb.checked = on;
     const dot = document.createElement('span');
     dot.className = 'dot';
     dot.style.backgroundColor = 'hsl(' + TYPE_HUE[t] + ' 62% 50%)';
@@ -1105,16 +1134,17 @@ function renderPanel(){
     lab.appendChild(cb); lab.appendChild(dot); lab.appendChild(nm);
     lab.addEventListener('click', function(ev){
       ev.preventDefault();
-      filterState.category = filterState.category === t ? 'all' : t;
-      filterState.entity = null;
+      toggleCategory(t);
       userChange();
     });
     cats.appendChild(lab);
   });
   const q = filterState.query.trim();
   const pool = NODES.filter(function(n){
-    return q === '' || n.name.indexOf(q) >= 0;
+    return filterState.categories.indexOf(n.type) >= 0 && (q === '' || n.name.indexOf(q) >= 0);
   });
+  const cnt = document.querySelector('[data-testid="library-kg-filter-panel-entity-count"]');
+  if (cnt) cnt.textContent = String(pool.length);
   pool.forEach(function(n){
     const lab = document.createElement('label');
     lab.className = 'kf-opt' + (filterState.entity === n.id ? ' on' : '');
@@ -1137,10 +1167,28 @@ function renderPanel(){
     ents.appendChild(lab);
   });
 }
+/* #1465 项4：折叠态「左侧竖条」内的类别圆点（已隐藏的类别降透明度；点击切换） */
+function renderRail(){
+  const host = document.getElementById('railDots');
+  if (!host) return;
+  while (host.firstChild) host.removeChild(host.firstChild);
+  ENTITY_TYPES.forEach(function(t){
+    const on = filterState.categories.indexOf(t) >= 0;
+    const d = document.createElement('span');
+    d.className = 'rail-dot' + (on ? '' : ' off');
+    d.style.backgroundColor = 'hsl(' + TYPE_HUE[t] + ' 62% 50%)';
+    d.setAttribute('data-type', t);
+    d.setAttribute('data-testid', 'library-kg-rail-dot-' + t);
+    d.setAttribute('title', TYPE_LABEL[t] + (on ? '（已显示）' : '（已隐藏）'));
+    d.addEventListener('click', function(){ toggleCategory(t); userChange(); });
+    host.appendChild(d);
+  });
+}
 function renderAll(){
   renderCategoryChips();
   renderEntityChips();
   renderPanel();
+  renderRail();
   /* 🔴 必须现读 body 上的 data-color：renderAll 由 setState 调用，
      若沿用模块内缓存的 colorMode 会取到「上一次」的着色方案（#1373 首跑实测） */
   applyColors(document.body.dataset.color === 'b' ? 'b' : 'a');
@@ -1148,19 +1196,21 @@ function renderAll(){
 }
 
 /* ═══════════ 状态机 ═══════════ */
+const ALL_CATS = ENTITY_TYPES.slice();
 const SHOTS = {
-  /* 决策①：着色取 A（默认）。决策②：筛选栏取 B（左侧面板）+ 折叠。决策③：默认全部。 */
-  'graph':              { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
-  'color-a':            { color:'a', form:'b', panel:'closed', note:'color-a',         category:'all',       entity:null },
-  'color-b':            { color:'b', form:'b', panel:'closed', note:'color-b',         category:'all',       entity:null },
-  'filter-b':           { color:'a', form:'b', panel:'open',   note:'filter-b',        category:'character', entity:'character:2' },
-  'filter-b-collapsed': { color:'a', form:'b', panel:'closed', note:'filter-collapse', category:'character', entity:'character:2' },
-  'filter-a':           { color:'a', form:'a', panel:'open',   note:'filter-a',        category:'character', entity:null },
-  'list':               { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
-  'empty':              { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
-  'relation-form':      { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null },
+  /* #1465：类别多选（默认全选）；折叠态 = 左侧竖条（rail-a / rail-b 两方案对照）。 */
+  'graph':              { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entity:null,           collapse:'rail-a' },
+  'color-a':            { color:'a', form:'b', panel:'closed', note:'color-a',         categories:ALL_CATS,                 entity:null,           collapse:'rail-a' },
+  'color-b':            { color:'b', form:'b', panel:'closed', note:'color-b',         categories:ALL_CATS,                 entity:null,           collapse:'rail-a' },
+  'filter-b':           { color:'a', form:'b', panel:'open',   note:'filter-b',        categories:['character','world'],    entity:'character:2',  collapse:'rail-a' },
+  'collapse-rail-a':    { color:'a', form:'b', panel:'closed', note:'filter-collapse', categories:['character','world'],    entity:'character:2',  collapse:'rail-a' },
+  'collapse-rail-b':    { color:'a', form:'b', panel:'closed', note:'filter-collapse', categories:['character','world'],    entity:'character:2',  collapse:'rail-b' },
+  'filter-a':           { color:'a', form:'a', panel:'open',   note:'filter-a',        categories:['character','world'],    entity:null,           collapse:'rail-a' },
+  'list':               { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entity:null,           collapse:'rail-a' },
+  'empty':              { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entity:null,           collapse:'rail-a' },
+  'relation-form':      { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entity:null,           collapse:'rail-a' },
   /* #1360：drawio 导入弹层（replace 模式 + 结果回报；勾选确认框供对照） */
-  'drawio-import':      { color:'a', form:'b', panel:'open',   note:'',                category:'all',       entity:null, drawioMode:'replace', drawioResult:'1' },
+  'drawio-import':      { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entity:null,           collapse:'rail-a', drawioMode:'replace', drawioResult:'1' },
 };
 const STATES = Object.keys(SHOTS);
 
@@ -1169,6 +1219,7 @@ function setState(s){
   document.body.dataset.state = s;
   document.body.dataset.color = cfg.color;
   document.body.dataset.filterForm = cfg.form;
+  document.body.dataset.collapse = cfg.collapse || 'rail-a';
   document.body.dataset.note = cfg.note;
   /* #1360：drawio 导入弹层（默认 merge + 无结果；drawio-import 态切 replace + 结果回报） */
   document.body.dataset.drawioMode = cfg.drawioMode || 'merge';
@@ -1194,10 +1245,10 @@ function setState(s){
   const listHide = isList || s === 'empty' ? 'none' : '';
   document.querySelector('.kg-filters').style.display = listHide;
   document.querySelector('.kg-fpanel').style.display = listHide;
-  document.querySelector('.kg-filterbar').style.display = listHide;
+  document.querySelector('.kg-rail').style.display = listHide;
   seg[0].classList.toggle('active', !isList);
   seg[1].classList.toggle('active', isList);
-  filterState.category = cfg.category;
+  filterState.categories = (cfg.categories || ENTITY_TYPES).slice();
   filterState.entity = cfg.entity;
   filterState.query = '';
   panelOpen = cfg.panel !== 'closed';

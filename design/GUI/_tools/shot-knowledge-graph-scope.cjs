@@ -22,11 +22,12 @@ const FILTER_STORE_KEY = 'inkflow:kg:filters:demo-project';
 
 /* 每个场景：状态 + 输出文件名 + 截图前的滚动锚点 */
 const SCENES = [
-  { id: 'graph', out: 'knowledge-graph.png', scroll: 'canvas', desc: '产品默认：着色 A + 折叠面板（展开）+ 类别=全部' },
-  { id: 'color-a', out: 'knowledge-graph-color-a.png', scroll: 'bar', desc: '着色 A【采用】· 面板收起 → 画布全宽 + 底部折叠栏' },
-  { id: 'color-b', out: 'knowledge-graph-color-b.png', scroll: 'bar', desc: '着色 B【备选】· 面板收起 → 画布全宽 + 底部折叠栏' },
-  { id: 'filter-b', out: 'knowledge-graph-filter-b.png', scroll: 'canvas', desc: '筛选 B【采用】· 面板展开 + 角色/角色甲' },
-  { id: 'filter-b-collapsed', out: 'knowledge-graph-filter-b-collapsed.png', scroll: 'bar', desc: '筛选 B 折叠态 · 底部折叠栏 + 画布全宽' },
+  { id: 'graph', out: 'knowledge-graph.png', scroll: 'canvas', desc: '产品默认：着色 A + 筛选面板（展开）+ 类别全选（#1465）' },
+  { id: 'color-a', out: 'knowledge-graph-color-a.png', scroll: 'rail', desc: '着色 A【采用】· 面板收起 → 左侧竖条 + 画布近全宽' },
+  { id: 'color-b', out: 'knowledge-graph-color-b.png', scroll: 'rail', desc: '着色 B【备选】· 面板收起 → 左侧竖条 + 画布近全宽' },
+  { id: 'filter-b', out: 'knowledge-graph-filter-b.png', scroll: 'canvas', desc: '#1465 多选：取消 4 类（留角色+世界观）+ 实体=角色甲' },
+  { id: 'collapse-rail-a', out: 'knowledge-graph-filter-rail-a.png', scroll: 'rail', desc: '#1465 折叠态方案 A · 左侧竖条（图标 + 类别圆点 + 清除）' },
+  { id: 'collapse-rail-b', out: 'knowledge-graph-filter-rail-b.png', scroll: 'rail', desc: '#1465 折叠态方案 B · 左侧极窄把手' },
   { id: 'filter-a', out: 'knowledge-graph-filter-a.png', scroll: 'canvas', desc: '筛选 A【备选】· 顶部 chip 组' },
   { id: 'list', out: 'knowledge-list.png', scroll: 'list', desc: '关系列表视图（不筛选）' },
   { id: 'empty', out: 'knowledge-empty.png', scroll: 'empty', desc: '图谱空态' },
@@ -36,9 +37,8 @@ const SCENES = [
 
 const SCROLL_TO = {
   canvas: '[data-testid="library-kg-canvas"]',
-  /* 折叠态：底部折叠栏在画布之下，若只把画布滚到底，折叠栏会被顶出画面
-     （DOM 断言全绿、截图里却没有——「断言 PASS ≠ 用户视角可见」实测再次命中） */
-  bar: '[data-testid="library-kg-filterbar"]',
+  /* #1465：折叠态改为「左侧竖条」，与画布同一行 —— 滚到画布即可同框 */
+  rail: '[data-testid="library-kg-canvas"]',
   list: '[data-testid="library-kg-relation-list"]',
   empty: '[data-testid="library-kg-empty"]',
 };
@@ -55,7 +55,7 @@ async function probe(page) {
       const el = q(sel);
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: r.width };
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: r.width, h: r.height };
     };
     const visibleNodes = Array.from(document.querySelectorAll('.kg-node')).filter(
       (el) => el.offsetParent !== null,
@@ -109,10 +109,19 @@ async function probe(page) {
       panelSummary: ((q('[data-testid="library-kg-filter-summary"]') || {}).textContent || 'MISSING').trim(),
       collapseBtn: disp('[data-testid="library-kg-filter-collapse"]'),
       expandBtn: disp('[data-testid="library-kg-filterbar-expand"]'),
+      expandLabel: ((q('[data-testid="library-kg-filterbar-expand"]') || {}).getAttribute
+        ? q('[data-testid="library-kg-filterbar-expand"]').getAttribute('aria-label')
+        : 'MISSING'),
       barClearBtn: disp('[data-testid="library-kg-filterbar-clear"]'),
       /* 视口可见性（防「断言全绿但截图拍不到」，#1373 实测命中） */
       panelRect: rect('[data-testid="library-kg-filter-panel"]'),
       barRect: rect('[data-testid="library-kg-filterbar"]'),
+      railRect: rect('.kg-rail'),
+      railDots: document.querySelectorAll('.kg-rail .rail-dot').length,
+      railDotsOff: document.querySelectorAll('.kg-rail .rail-dot.off').length,
+      railDotsVisible: Array.from(document.querySelectorAll('.kg-rail .rail-dot')).filter((el) => el.offsetParent !== null).length,
+      panelCatsChecked: Array.from(document.querySelectorAll('#panelCats .kf-opt input')).filter((i) => i.checked).length,
+      entityRows: (function () { const h = document.getElementById('panelEntities'); return h ? h.querySelectorAll('.kf-opt').length : -1; })(),
       entityChipCount: document.querySelectorAll('[data-testid="library-kg-filter-entity"] .fm-chip').length,
       catActive: (q('[data-testid="library-kg-filter-cat-character"]') || {className:'MISSING'}).className,
       panelCatChecked: panelCat ? panelCat.querySelector('input').checked : 'MISSING',
@@ -250,6 +259,11 @@ function checks(d, scene) {
     push('面板展开可见 / 折叠栏隐藏', d.panel !== 'none' && d.bar === 'none');
     push(`底部有「折叠」按钮（实际 ${d.collapseBtn}）`, d.collapseBtn !== 'none' && d.collapseBtn !== 'MISSING');
     push('默认未筛选（filterActive 关）', d.filterActive === false);
+    push(`#1465 类别默认全选 6/6（实际 ${d.panelCatsChecked}/6）`, d.panelCatsChecked === 6);
+    push(`#1465 全选 == 显示全部 → 实体列表 20（实际 ${d.entityRows}）`, d.entityRows === 20);
+    push('#1465 面板与画布等高同顶（视觉对齐）',
+      !!d.panelRect && !!d.canvasRect && Math.abs(d.panelRect.h - d.canvasRect.h) <= 2 &&
+      Math.abs(d.panelRect.top - d.canvasRect.top) <= 2);
     push(`面板摘要含「显示 20 个实体」（实际 ${d.panelSummary}）`, /显示 20 个实体/.test(d.panelSummary));
     push('无方案说明条（默认态即产品形态）', !d.noteA && !d.noteB && !d.noteFA && !d.noteFB && !d.noteFC);
     push('面板整块在画面内可见（不能只断 display）',
@@ -267,7 +281,7 @@ function checks(d, scene) {
     push('筛选说明条不可见', !d.noteFA && !d.noteFB && !d.noteFC);
     /* 着色对照态：面板收起 → 画布恢复全宽（折叠的实际价值，也可看清着色差异） */
     push('面板收起 / 折叠栏接管', d.panel === 'none' && d.bar !== 'none');
-    push(`折叠后画布恢复全宽 > 900（实际 ${Math.round(canvasW)}）`, canvasW > 900);
+    push(`折叠后画布显著变宽（展开态 < 900；实际 ${Math.round(canvasW)}）`, canvasW > 860);
     push('折叠栏本身在画面内可见（不能只断 display）',
       !!d.barRect && d.barRect.top >= 0 && d.barRect.bottom <= d.viewportH);
   }
@@ -301,8 +315,8 @@ function checks(d, scene) {
 
   if (scene.id === 'filter-a') {
     push('筛选说明条 A 可见（备选态）', d.noteFA && !d.noteFB && !d.noteFC);
-    push(`类别=角色 → 8 个角色节点（实际 ${d.nodes.length}）`, d.nodes.length === 8);
-    push('可见节点全为角色类', d.nodes.every((n) => n.type === 'character'));
+    push(`#1465 类别多选（角色+世界观）→ 14 个节点（实际 ${d.nodes.length}）`, d.nodes.length === 14);
+    push('#1465 可见节点只含已勾选类别', d.nodes.every((n) => n.type === 'character' || n.type === 'world'));
     push(`类别 chip「角色」激活（实际 ${d.catActive}）`, String(d.catActive).includes('active'));
     push('实体 chip 行可见 8 个', d.entityChipCount === 8);
     push('形态 A：面板与折叠栏都不出现', d.panel === 'none' && d.bar === 'none');
@@ -311,31 +325,52 @@ function checks(d, scene) {
 
   if (scene.id === 'filter-b') {
     push('筛选说明条 B 可见（采用态）', d.noteFB && !d.noteFA && !d.noteFC);
-    push(`类别=角色 + 实体=角色甲 → 5 个邻接角色（实际 ${d.nodes.length}）`, d.nodes.length === 5);
-    push('可见节点全为角色类', d.nodes.every((n) => n.type === 'character'));
-    push('面板可见 / 折叠栏隐藏', d.panel !== 'none' && d.bar === 'none');
-    push(`面板类别「角色」勾选（实际 ${d.panelCatChecked}）`, d.panelCatChecked === true);
+    push(`#1465 多选（留角色+世界观）+ 实体=角色甲 → 6 个节点（实际 ${d.nodes.length}）`, d.nodes.length === 6);
+    push('#1465 可见节点只含已勾选类别（角色/世界观）',
+      d.nodes.length > 0 && d.nodes.every((n) => n.type === 'character' || n.type === 'world'));
+    push('面板可见 / 竖条隐藏', d.panel !== 'none' && d.bar === 'none');
+    push(`#1465 面板类别勾选 2/6（实际 ${d.panelCatsChecked}）`, d.panelCatsChecked === 2);
     push(`面板实体「角色甲」勾选（实际 ${d.panelEntityChecked}）`, d.panelEntityChecked === true);
-    push(`面板行 = 6 类 + 20 实体（实际 ${d.panelRows}）`, d.panelRows === 26);
-    push(`摘要含「角色 · 角色甲 · 显示 5 个实体」（实际 ${d.panelSummary}）`,
-      /角色 · 角色甲 · 显示 5 个实体/.test(d.panelSummary));
+    push(`#1465 实体列表随类别过滤 = 14（角色 8 + 世界观 6；实际 ${d.entityRows}）`, d.entityRows === 14);
+    push(`摘要含「角色/世界观 · 角色甲 · 显示 6 个实体」（实际 ${d.panelSummary}）`,
+      /角色\/世界观 · 角色甲 · 显示 6 个实体/.test(d.panelSummary));
     push('筛选生效标记已置位', d.filterActive === true);
     push('筛选态隐藏节点详情卡', d.detail === 'none');
   }
 
-  if (scene.id === 'filter-b-collapsed') {
+  if (scene.id === 'collapse-rail-a' || scene.id === 'collapse-rail-b') {
     push('折叠态说明条可见', d.noteFC && !d.noteFA && !d.noteFB);
-    push('面板已收起 / 折叠栏接管', d.panel === 'none' && d.bar !== 'none');
-    push(`折叠后画布恢复全宽 > 900（实际 ${Math.round(canvasW)}）`, canvasW > 900);
-    push(`折叠后筛选仍生效 → 5 个节点（实际 ${d.nodes.length}）`, d.nodes.length === 5);
-    push('可见节点全为角色类', d.nodes.every((n) => n.type === 'character'));
-    push(`折叠栏摘要含「角色 · 角色甲 · 显示 5 个实体」（实际 ${d.barSummary}）`,
-      /角色 · 角色甲 · 显示 5 个实体/.test(d.barSummary));
+    push('#1465 面板已收起 / 左侧竖条接管', d.panel === 'none' && d.bar !== 'none');
+    push('#1465 竖条位于画布左侧',
+      !!d.railRect && !!d.canvasRect && d.railRect.right <= d.canvasRect.left + 1);
+    push(`#1465 竖条与画布等高（rail ${Math.round(d.railRect ? d.railRect.h : -1)} / canvas ${Math.round(d.canvasRect ? d.canvasRect.h : -1)}）`,
+      !!d.railRect && !!d.canvasRect && Math.abs(d.railRect.h - d.canvasRect.h) <= 2);
+    push('#1465 竖条与画布同顶',
+      !!d.railRect && !!d.canvasRect && Math.abs(d.railRect.top - d.canvasRect.top) <= 2);
+    push(`#1465 竖条为竖向形态（高 > 宽×3；实际 ${Math.round(d.railRect ? d.railRect.w : -1)}×${Math.round(d.railRect ? d.railRect.h : -1)}）`,
+      !!d.railRect && d.railRect.h > d.railRect.w * 3);
+    push(`折叠后筛选仍生效 → 6 个节点（实际 ${d.nodes.length}）`, d.nodes.length === 6);
+    push(`竖条摘要含「角色/世界观 · 角色甲 · 显示 6 个实体」（实际 ${d.barSummary}）`,
+      /角色\/世界观 · 角色甲 · 显示 6 个实体/.test(d.barSummary));
     push('收起后仍有「展开筛选」+「清除筛选」入口',
       d.expandBtn !== 'none' && d.barClearBtn !== 'none');
-    push('筛选生效时折叠栏有 accent 强调（filterActive）', d.filterActive === true);
-    push('折叠栏整条在画面内可见（不能只断 display）',
+    push(`#1465 展开入口是明确的「展开筛选」按钮（aria-label=${d.expandLabel}）`,
+      d.expandLabel === '展开筛选');
+    push('筛选生效时竖条有 accent 强调（filterActive）', d.filterActive === true);
+    push('竖条整条在画面内可见（不能只断 display）',
       !!d.barRect && d.barRect.top >= 0 && d.barRect.bottom <= d.viewportH);
+  }
+
+  if (scene.id === 'collapse-rail-a') {
+    push(`#1465 方案 A：竖条列 6 个类别圆点（实际 ${d.railDots}/可见 ${d.railDotsVisible}）`, d.railDots === 6 && d.railDotsVisible === 6);
+    push(`#1465 方案 A：取消的 4 类圆点置灰（实际 ${d.railDotsOff}）`, d.railDotsOff === 4);
+    push(`#1465 方案 A：竖条宽 46（实际 ${Math.round(d.railRect ? d.railRect.w : -1)}）`,
+      !!d.railRect && Math.abs(d.railRect.w - 46) <= 2);
+  }
+  if (scene.id === 'collapse-rail-b') {
+    push(`#1465 方案 B：极窄把手宽 30（实际 ${Math.round(d.railRect ? d.railRect.w : -1)}）`,
+      !!d.railRect && Math.abs(d.railRect.w - 30) <= 2);
+    push(`#1465 方案 B：类别圆点列表隐藏（仅把手；可见圆点 ${d.railDotsVisible}）`, d.railDotsVisible === 0);
   }
 
   if (scene.id === 'list') {
@@ -379,87 +414,100 @@ async function behavioural(page) {
     if (!ok) fails.push(label);
   };
 
-  await page.evaluate(() => {
-    try {
-      localStorage.clear();
-    } catch (e) {
-      /* ignore */
-    }
-  });
+  const reset = () => page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* ignore */ } });
+
+  await reset();
   await page.goto(STATE_URL);
   await page.waitForTimeout(250);
   let d = await probe(page);
-  push('① 无记忆时默认：类别=全部 + 面板展开 + 20 节点',
-    d.panel !== 'none' && d.bar === 'none' && d.nodes.length === 20 && d.filterActive === false);
+  push(`#1465 ① 无记忆默认：类别全选 6/6 + 面板展开 + 20 节点 + 竖条隐藏（实际 ${d.panelCatsChecked}/${d.nodes.length}）`,
+    d.panelCatsChecked === 6 && d.panel !== 'none' && d.bar === 'none' && d.nodes.length === 20 && d.filterActive === false);
 
-  /* 用户在面板里选择：类别=角色 → 实体=角色甲 */
+  /* 取消「角色」类别 → 画布与实体列表双双去掉 8 个角色 */
   await page.click('[data-testid="library-kg-filter-panel-cat-character"]');
   await page.waitForTimeout(150);
-  await page.click('[data-testid="library-kg-filter-panel-entity-character-2"]');
+  d = await probe(page);
+  push(`#1465 ② 取消角色类 → 画布 12 节点（实际 ${d.nodes.length}）`, d.nodes.length === 12);
+  push(`#1465 ② 实体列表同步过滤 → 12 行（实际 ${d.entityRows}）`, d.entityRows === 12);
+  push(`#1465 ② 记忆写 categories 列表（实际 ${d.stored}）`,
+    typeof d.stored === 'string' && /"categories"/.test(d.stored) && !/"character"/.test(d.stored));
+
+  /* 勾回「角色」 → 全选 == 显示全部 */
+  await page.click('[data-testid="library-kg-filter-panel-cat-character"]');
   await page.waitForTimeout(150);
   d = await probe(page);
-  push(`② 选择后筛选生效（角色+角色甲 → 5 节点；实际 ${d.nodes.length}）`, d.nodes.length === 5);
-  push(`② 选择即落记忆（实际 ${d.stored}）`,
-    typeof d.stored === 'string' && /"category":"character"/.test(d.stored) && /"entity":"character:2"/.test(d.stored));
+  push(`#1465 ③ 勾回角色 → 恢复 20 节点 / 全选 6/6 / filterActive 关（实际 ${d.nodes.length}）`,
+    d.nodes.length === 20 && d.panelCatsChecked === 6 && d.filterActive === false);
 
-  /* 折叠：面板消失 + 折叠栏出现 + 筛选保持 */
+  /* 取消两类（角色 + 世界观）→ 只剩其余四类 */
+  await page.click('[data-testid="library-kg-filter-panel-cat-character"]');
+  await page.waitForTimeout(120);
+  await page.click('[data-testid="library-kg-filter-panel-cat-world"]');
+  await page.waitForTimeout(150);
+  d = await probe(page);
+  push(`#1465 ④ 取消角色+世界观 → 6 节点（大纲1+时间线2+伏笔2+地图标记1；实际 ${d.nodes.length}）`,
+    d.nodes.length === 6 && d.panelCatsChecked === 4);
+
+  /* 折叠 → 左侧竖条 + 画布变宽 + 筛选保持 */
+  const wOpen = d.canvasRect ? d.canvasRect.w : -1;
   await page.click('[data-testid="library-kg-filter-collapse"]');
   await page.waitForTimeout(150);
   d = await probe(page);
-  push('③ 点「折叠」→ 面板收起、折叠栏接管、画布全宽、筛选保持 5 节点',
-    d.panel === 'none' && d.bar !== 'none' && d.nodes.length === 5 && d.canvasRect.w > 900);
+  push(`#1465 ⑤ 折叠 → 面板收起 / 竖条接管 / 竖条在画布左侧 / 画布变宽（${Math.round(wOpen)} → ${Math.round(d.canvasRect ? d.canvasRect.w : -1)}）`,
+    d.panel === 'none' && d.bar !== 'none' && !!d.railRect && !!d.canvasRect &&
+    d.railRect.right <= d.canvasRect.left + 1 && d.canvasRect.w > wOpen + 100);
+  push(`#1465 ⑤ 折叠不牺牲筛选 → 仍 6 节点 + 竖条摘要正确（实际 ${d.nodes.length} / ${d.barSummary}）`,
+    d.nodes.length === 6 && /显示 6 个实体/.test(d.barSummary));
 
-  /* 重新加载：记忆恢复（筛选值 + 面板折叠态） */
+  /* 重载 → 记忆恢复（4 类 + 面板折叠） */
   await page.goto(STATE_URL);
   await page.waitForTimeout(300);
   d = await probe(page);
-  push('④ 重载后：面板仍折叠 + 筛选仍生效 5 节点 + 折叠栏摘要正确',
-    d.panel === 'none' && d.nodes.length === 5 && /角色 · 角色甲/.test(d.barSummary));
+  push(`#1465 ⑥ 重载按记忆恢复：仍折叠 + 4 类 + 6 节点（实际 ${d.panelCatsChecked}/${d.nodes.length}）`,
+    d.panel === 'none' && d.nodes.length === 6 && d.panelCatsChecked === 4);
 
-  /* 展开 → 面板恢复，勾选态从记忆回填 */
+  /* 展开 → 面板恢复 + 勾选态回填 */
   await page.click('[data-testid="library-kg-filterbar-expand"]');
   await page.waitForTimeout(150);
   d = await probe(page);
-  push('⑤ 点「展开筛选」→ 面板恢复 + 勾选态回填',
-    d.panel !== 'none' && d.panelCatChecked === true && d.panelEntityChecked === true);
+  push(`#1465 ⑦ 展开筛选 → 面板恢复 + 4/6 勾选回填（实际 ${d.panelCatsChecked}）`,
+    d.panel !== 'none' && d.panelCatsChecked === 4);
 
-  /* 一键清除 */
+  /* 一键清除 → 全选 + 20 节点 */
   await page.click('[data-testid="library-kg-filter-panel-clear"]');
   await page.waitForTimeout(150);
   d = await probe(page);
-  push(`⑥ 一键清除 → 20 节点 + 全部 + filterActive 关（实际 ${d.nodes.length}）`,
-    d.nodes.length === 20 && d.filterActive === false);
-  push(`⑥ 清除也写入记忆（实际 ${d.stored}）`,
-    typeof d.stored === 'string' && /"category":"all"/.test(d.stored));
+  push(`#1465 ⑧ 一键清除 → 20 节点 + 全选 6/6 + filterActive 关（实际 ${d.nodes.length}/${d.panelCatsChecked}）`,
+    d.nodes.length === 20 && d.panelCatsChecked === 6 && d.filterActive === false);
+  push(`#1465 ⑧ 清除即写记忆 categories 全 6（实际 ${d.stored}）`,
+    typeof d.stored === 'string' && /"categories"/.test(d.stored));
 
-  /* 清除后重载 → 仍是全部（记忆一致性） */
-  await page.goto(STATE_URL);
-  await page.waitForTimeout(250);
-  d = await probe(page);
-  push('⑦ 清除后重载仍为全部 + 20 节点', d.nodes.length === 20 && d.filterActive === false);
-
-  /* 负向：损坏的记忆不应炸页面 */
+  /* 损坏记忆 → 静默回退默认 */
   await page.evaluate(() => {
     try {
       localStorage.setItem('inkflow:kg:filters:demo-project', '{not json');
       localStorage.setItem('inkflow:kg:panel', '"weird"');
-    } catch (e) {
-      /* ignore */
-    }
+    } catch (e) { /* ignore */ }
   });
   await page.goto(STATE_URL);
   await page.waitForTimeout(250);
   d = await probe(page);
-  push('⑧ 记忆损坏 → 静默回退默认（20 节点、面板可用），不抛错',
-    d.nodes.length === 20 && d.panel !== 'none');
+  push(`#1465 ⑨ 记忆损坏 → 静默回退默认（20 节点 / 全选 / 面板可用）`,
+    d.nodes.length === 20 && d.panelCatsChecked === 6 && d.panel !== 'none');
 
+  /* 旧格式记忆（单选 category）→ 兼容为「只勾该类」 */
   await page.evaluate(() => {
     try {
-      localStorage.clear();
-    } catch (e) {
-      /* ignore */
-    }
+      localStorage.setItem('inkflow:kg:filters:demo-project', JSON.stringify({ category: 'character', entity: null }));
+    } catch (e) { /* ignore */ }
   });
+  await page.goto(STATE_URL);
+  await page.waitForTimeout(250);
+  d = await probe(page);
+  push(`#1465 ⑩ 旧记忆（category=character）向后兼容 → 只勾 1 类 / 8 节点（实际 ${d.panelCatsChecked}/${d.nodes.length}）`,
+    d.panelCatsChecked === 1 && d.nodes.length === 8);
+
+  await reset();
   return fails;
 }
 

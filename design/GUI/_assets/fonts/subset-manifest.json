@@ -1,5 +1,5 @@
 {
-  "charset_sha256": "5168b870eedf20c21f14cfd63eafbd080f78b0b904d25a2e6d941026034fb357",
+  "charset_sha256": "a9ea5b41bdad5ee17af1e40e4bae82029766276d070e48419a0c0349ab86f752",
   "charset_size": 1153,
   "fonts": {
     "serif": {
@@ -8,14 +8,14 @@
       "source": "Noto Serif SC (static) v2.003-H1 — Google Fonts CDN legacy kit",
       "files": {
         "inkflow-serif-400.woff2": {
-          "bytes": 192044,
-          "sha256": "256a3ca99a3ba69f402d921de73073584f6dfdd2f5e6b3e5a036f06343200499",
+          "bytes": 191884,
+          "sha256": "e9ac36cdec788dec0701ad8ca2d655438f1d0369702ee30ea188497dbae6c874",
           "glyphs": 1184,
           "covered": 1144
         },
         "inkflow-serif-600.woff2": {
-          "bytes": 194752,
-          "sha256": "cde55eea6ec06f49d3f150b58cbb6729c94d65045d5ae2dc9930c3ce75129bbd",
+          "bytes": 194856,
+          "sha256": "9e8c5ad9bc6c09c44965a77683ed9cad6562b5f65773432d566d41c11aa712c2",
           "glyphs": 1184,
           "covered": 1144
         }
@@ -38,14 +38,14 @@
       "source": "Noto Sans SC (static) — Google Fonts CDN legacy kit",
       "files": {
         "inkflow-sans-400.woff2": {
-          "bytes": 150096,
-          "sha256": "6a381dd8146bc35fc25a1d82ba07ef73d3250bfcea129c6a27ca4643afdff0fd",
+          "bytes": 150188,
+          "sha256": "86e19335fa5a063febcdb2154111c73ca5449f25ff57ee5bcd8f2d79f9607c5a",
           "glyphs": 1184,
           "covered": 1144
         },
         "inkflow-sans-600.woff2": {
-          "bytes": 152536,
-          "sha256": "fea1c4a96a57e96a0131eaaf3e028201c3b3b34b9daebdba6331b126d7522237",
+          "bytes": 152584,
+          "sha256": "bd0eddc1955b50822ddde9417a8d768ed6ebb324705362eb1b6e74b06df3673b",
           "glyphs": 1184,
           "covered": 1144
         }
