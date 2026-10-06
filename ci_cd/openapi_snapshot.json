@@ -1765,7 +1765,7 @@
         "type": "object"
       },
       "ContextRequest": {
-        "description": "上下文组装请求 — API 输入 / F3 调用参数.\n\nAttributes:\n    project_id: 项目 ID.\n    chapter_id: 目标章节 ID（正在写作的章节）.\n    model: 目标模型名（provider/model_name 格式）.\n    writing_requirements: 必填，写作要求 / 任务指令.\n    max_tokens: 覆盖预算；None = 模型窗口 × max_ratio.\n    override: 显式勾选通道（v1.1 #593）；None = 全部注入（默认行为）.",
+        "description": "上下文组装请求 — API 输入 / F3 调用参数.\n\nAttributes:\n    project_id: 项目 ID.\n    chapter_id: 目标章节 ID（正在写作的章节）.\n    model: 目标模型名（provider/model_name 格式）.\n    writing_requirements: 必填，写作要求 / 任务指令.\n    max_tokens: 覆盖预算；None = 模型窗口 × max_ratio.\n    override: 显式勾选通道（v1.1 #593）；None = 全部注入（默认行为）.\n    show_system_prompt: 装配可观测面（v1.5 #1480）——True 时响应额外返回写手轨\n        system prompt（默认关闭，避免体积与泄漏）.\n    show_skills: 装配可观测面（v1.5 #1480）——True 时返回有效技能集清单.\n    show_tools: 装配可观测面（v1.5 #1480）——True 时返回装配层 tool id 清单.",
         "properties": {
           "chapter_id": {
             "anyOf": [
@@ -1808,6 +1808,21 @@
             "format": "uuid",
             "title": "Project Id",
             "type": "string"
+          },
+          "show_skills": {
+            "default": false,
+            "title": "Show Skills",
+            "type": "boolean"
+          },
+          "show_system_prompt": {
+            "default": false,
+            "title": "Show System Prompt",
+            "type": "boolean"
+          },
+          "show_tools": {
+            "default": false,
+            "title": "Show Tools",
+            "type": "boolean"
           },
           "writing_requirements": {
             "minLength": 1,
@@ -9887,7 +9902,7 @@
     },
     "/api/v1/context/assemble": {
       "post": {
-        "description": "组装上下文（调试端点）.\n\n与 F3 调用 build_context 的路径一致，用于独立验证组装结果.",
+        "description": "组装上下文（调试端点）.\n\n与 F3 调用 build_context 的路径一致，用于独立验证组装结果.\n\nv1.5（#1480）：任一观测字段为 True → 在既有响应上**额外**挂装配可观测面\n（`system_prompt` / `skills` / `tools`），默认关闭时响应与 v1.4 逐字节一致。",
         "operationId": "assemble_context_api_v1_context_assemble_post",
         "requestBody": {
           "content": {

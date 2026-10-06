@@ -1,9 +1,9 @@
 # F6: 上下文管理 (context_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-09-17 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
+> **Spec 版本**: 1.5 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
 > **所属阶段**: Phase 1 — 核心引擎（v1.1 数据源补齐）
-> **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6), [#593](https://github.com/zhx-xi/InkFlow/issues/593)
+> **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6), [#593](https://github.com/zhx-xi/InkFlow/issues/593), [#1480](https://github.com/zhx-xi/InkFlow/issues/1480)（装配可观测面）
 > **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service), F9 (character_service ✅), F10 (world_service ✅), F11 (outline_service ✅), F13 (foreshadowing_service ✅)
 > **参考 ADR**: [ADR-010](../../adr/llm/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../adr/llm/ADR-013.md) (Phase 2 RAG), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构)
 > **状态**: ✅ 已实现（PR #27）
@@ -42,6 +42,20 @@
 > 轻读（`domain/services/summary_index.py`，不为显示字段新增 ORM 列/Protocol 方法）。
 > 契约测试 `tests/unit/infrastructure/context/test_summary_source_1253.py`；
 > #1236 哨兵测试按设计翻转为「已注册」正向断言。
+
+> **Spec 变更（v1.5，2026-10-06，issue #1480）— 装配可观测面（system prompt / skill 清单 / tool 清单）**：
+> `POST /api/v1/context/assemble`（§5）与 `inkflow context assemble`（§6）新增**默认关闭**的
+> 观测参数：请求体 `show_system_prompt` / `show_skills` / `show_tools`（CLI `--show-system-prompt` /
+> `--show-skills` / `--show-tools`）。显式开启时响应**额外**返回三项（默认不返回，避免体积与泄漏）：
+> ① `system_prompt` —— **写手轨（agentic writer）目标装配产物**：`writer_agent.yaml` 渲染结果
+> （`project_id`/`chapter_id`/`context` 由本次组装结果注入）经 `_append_skills` 拼接有效技能集正文；
+> ② `skills` —— 本次**有效技能集**清单，每项 `{name, bytes, source}`，`source ∈ {explicit, general}`
+> （`explicit` = 写手授权白名单显式挂载；`general` = 库中**未被任何 Agent 挂载**的通用 skill，判据同
+> `inkflow skill list` 的「引用 N 个 Agent」）；③ `tools` —— 装配层传入写手 agent 的 tool id 清单
+> （`expand_grants` 展开产物全序，与 `inkflow agent tools list` 目录同口径）。
+> **语义边界（重要）**：本观测面描述「按当前授权 + skill 库解析出的**目标装配**」，是 #1472/#1473
+> 的验收工具；它**不读取**生产 deps 的接线状态（`AgenticWriterDeps.skill_lookup` 现状未注入、
+> 管线链路无 skill 装配代码 —— 记于 #1472，本轨只观测不改行为）。
 
 ---
 
@@ -137,6 +151,9 @@ class ContextRequest:
     writing_requirements: str     # 必填：写作要求（protected 层核心输入）
     max_tokens: int | None = None # 覆盖预算；None = 模型窗口 × max_ratio
     override: ContextOverride | None = None  # v1.1（#593）：勾选的角色/伏笔才注入
+    show_system_prompt: bool = False  # v1.5（#1480）：装配可观测面，默认关闭
+    show_skills: bool = False         # v1.5（#1480）：默认关闭
+    show_tools: bool = False          # v1.5（#1480）：默认关闭
 
 @dataclass
 class ContextOverride:
@@ -285,11 +302,11 @@ def allocate(
 
 ### 5.1 端点总览
 
-| 方法 | 路径 | 用途 | 请求体 | 响应 |
-|------|------|------|--------|------|
-| POST | `/api/v1/context/assemble` | 组装上下文（调试） | `ContextRequest` | 200 + ContextAssemblyResult JSON |
-| GET | `/api/v1/context/chapters/{chapter_id}/summary` | 查看摘要缓存 | — | 200 + `{summary, model, updated_at}` / 404 |
-| POST | `/api/v1/context/chapters/{chapter_id}/summary/refresh` | 强制重新生成摘要 | — | 200 + `{summary, model, updated_at}` |
+| 方法 | 路径 | 用途 | 请求体 | 响应 | 修改履历 |
+|------|------|------|--------|------|---------|
+| POST | `/api/v1/context/assemble` | 组装上下文（调试）；可选附带装配可观测面（v1.5 #1480） | `ContextRequest`（v1.5 新增 3 个可选 bool：`show_system_prompt` / `show_skills` / `show_tools`，默认 `false`） | 200 + ContextAssemblyResult JSON；**显式开启时额外含** `system_prompt`（str）/ `skills`（`[{name, bytes, source}]`，`source ∈ {explicit, general}`）/ `tools`（tool id 列表）——默认不返回 | 2026-10-06：新增 3 个默认关闭的观测字段（#1480，缺可观测面） |
+| GET | `/api/v1/context/chapters/{chapter_id}/summary` | 查看摘要缓存 | — | 200 + `{summary, model, updated_at}` / 404 | — |
+| POST | `/api/v1/context/chapters/{chapter_id}/summary/refresh` | 强制重新生成摘要 | — | 200 + `{summary, model, updated_at}` | — |
 
 ### 5.2 请求/响应示例
 
@@ -323,6 +340,44 @@ Content-Type: application/json
 }
 ```
 
+**装配可观测面（v1.5 #1480，可选、默认关闭）**:
+
+```http
+POST /api/v1/context/assemble
+Content-Type: application/json
+
+{
+  "project_id": "3f2e1d4a-...",
+  "chapter_id": "9b1c2d3e-...",
+  "model": "deepseek/deepseek-chat",
+  "writing_requirements": "续写第 5 章，约 3000 字",
+  "show_system_prompt": true,
+  "show_skills": true,
+  "show_tools": true
+}
+```
+→ 200（在上述响应体之上**追加**三键；三个字段缺省或 `false` 时**不含**其中任何一者）
+```json
+{
+  "system_prompt": "你是一位专业的小说章节写作助手……\n\n## 写作要求\n……\n\n# 技能：writing-methodology\n\n……",
+  "skills": [
+    {"name": "writing-methodology", "bytes": 4460, "source": "explicit"},
+    {"name": "my-general-skill", "bytes": 812, "source": "general"}
+  ],
+  "tools": ["list_outlines", "get_outline", "list_plot_points", "search_characters", "save_draft"]
+}
+```
+
+- `system_prompt`：**写手轨（agentic writer）目标装配产物** = `writer_agent.yaml` 渲染结果
+  （`context` = 本次组装结果的 `render_system_prompt`，`project_id`/`chapter_id` 取自请求）
+  经 `_append_skills` 拼接有效技能集正文（拼接形态 `\n\n# 技能：<name>\n\n<content>\n\n---\n`）。
+- `skills`：**有效技能集** = 写手授权白名单命中项（`source="explicit"`）∪ 库中**未被任何 Agent 挂载**
+  的通用 skill（`source="general"`）；`bytes` = 该 SKILL.md 的 UTF-8 字节数；库中查不到的目录名跳过。
+- `tools`：装配层传入写手 agent 的 tool id **全序**（`expand_grants(写手 grants)`）；
+  与 `inkflow agent tools list` 的工具目录同口径（名称可在目录内比对）。
+- **语义边界**：本面描述「按当前授权 + skill 库解析出的**目标装配**」，供 #1472/#1473/#1476 验收；
+  它不读取生产 deps 的接线状态（现状 `skill_lookup` 未注入、管线链路零 skill 装配 → 记于 #1472）。
+
 ### 5.3 错误响应
 
 ```json
@@ -338,11 +393,16 @@ Content-Type: application/json
 
 ## 6. CLI 命令签名
 
-Phase 1 **不提供独立 `context` 命令组**（F7 命令树限定为 serve/project/chapter/write/llm/config）。
-
 上下文调试入口：
-- `inkflow write next|continue --show-context` — 在写命令中打印本次组装的 ContextAssemblyResult（人类可读或 `--json` 信封）
-- 调试 API（§5）— 独立验证
+
+| 命令 | 说明 | 修改履历 |
+|------|------|---------|
+| `inkflow context assemble -p <uuid> -c <uuid> -m <model> -w <text> [--max-tokens <int>] [--show-system-prompt] [--show-skills] [--show-tools] [--json]` | 组装上下文（调试验证端点，薄层经 HTTP 调 §5 `POST /context/assemble`）；v1.5 新增 3 个**默认关闭**的观测 flag，人类模式在摘要行后打印 `system_prompt` / skill 名清单 / tool id 清单 | 2026-10-06：新增 `--show-system-prompt` / `--show-skills` / `--show-tools`（#1480） |
+| `inkflow write next / continue --show-context` | 在写命令中打印本次组装的 ContextAssemblyResult（人类可读或 `--json` 信封） | — |
+
+> ⚠️ **漂移修正（2026-10-06 #1480）**：原文「Phase 1 **不提供独立 `context` 命令组**（F7 命令树限定为
+> serve/project/chapter/write/llm/config）」已失真——`inkflow context` 命令组（`cli/commands/context_cmd.py`，
+> `assemble` 子命令）早已随 #251 落地，本节按**已合入实现**记载。调试 API（§5）仍为独立验证面。
 
 ---
 
@@ -470,7 +530,7 @@ backend/tests/
 | 大纲管理（结构化大纲/多级大纲） | 已实现（F11）：`OutlineSource` 读 `outlines` 表（overall→volume→chapter 三级） |
 | 摘要质量评估/多级摘要 | Phase 2+ |
 | 上下文可视化调试 UI | Phase 2 Web UI |
-| 独立 `context` CLI 命令组 | Phase 1 通过 `write --show-context` + API 调试 |
+| 独立 `context` CLI 命令组 | 已实现（#251）：`inkflow context assemble` 为调试入口；`write --show-context` + API 调试仍并存 |
 
 ---
 
@@ -536,11 +596,11 @@ F6 被依赖:
 
 ### 14.1 API 端点状态流
 
-| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
-|------|------|------|------|------|------|
-| POST /api/v1/context/assemble | 项目 + 章节存在 | build_context：收集 → 预算 → 分层组装 | 200 + ContextAssemblyResult JSON（blocks/budget_tokens/total_tokens/dropped） | 404「项目不存在/章节不存在」；400「上下文预算超限: protected 层需要 X tokens, 预算 Y tokens」 | 调试端点（正常写作路径由 F3 直接调用）；protected 层超限硬失败 |
-| GET /api/v1/context/chapters/{chapter_id}/summary | 章节存在；摘要存在 | 查摘要缓存 | 200 + {summary, model, updated_at} | 404（章节不存在 / 无摘要） | — |
-| POST /api/v1/context/chapters/{chapter_id}/summary/refresh | 章节存在 | 强制重新生成摘要并 upsert | 200 + {summary, model, updated_at} | 404（章节不存在） | 缓存失效规则见 §3.5 |
+| 端点 | 前置 | 动作 | 成功 | 失败 | 边界 | 修改履历 |
+|------|------|------|------|------|------|---------|
+| POST /api/v1/context/assemble | 项目 + 章节存在 | build_context：收集 → 预算 → 分层组装；任一观测字段为 `true` → 追加装配可观测面 | 200 + ContextAssemblyResult JSON（blocks/budget_tokens/total_tokens/dropped）；观测字段开启时**额外**含 `system_prompt` / `skills` / `tools` | 404「项目不存在/章节不存在」；400「上下文预算超限: protected 层需要 X tokens, 预算 Y tokens」 | 调试端点（正常写作路径由 F3 直接调用）；protected 层超限硬失败；**观测字段默认关闭**，缺省响应与 v1.4 逐字节一致 | 2026-10-06：新增 3 个默认关闭的观测字段（#1480） |
+| GET /api/v1/context/chapters/{chapter_id}/summary | 章节存在；摘要存在 | 查摘要缓存 | 200 + {summary, model, updated_at} | 404（章节不存在 / 无摘要） | — | — |
+| POST /api/v1/context/chapters/{chapter_id}/summary/refresh | 章节存在 | 强制重新生成摘要并 upsert | 200 + {summary, model, updated_at} | 404（章节不存在） | 缓存失效规则见 §3.5 | — |
 
 ### 14.2 领域服务状态流（build_context 分层）
 
@@ -553,9 +613,10 @@ F6 被依赖:
 
 ### 14.3 CLI 调试入口状态流
 
-| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
-|------|------|------|------|------|------|
-| inkflow write next/continue --show-context | 项目/章节存在 | 写作时打印本次组装的 ContextAssemblyResult | 每层块标题/token/压缩标记 + 预算 + 丢弃项；--json 输出 context 字段 | 404/400 → 退出码 1 | Phase 1 无独立 context 命令组（F7 命令树限定 serve/project/chapter/write/llm/config） |
+| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 | 修改履历 |
+|------|------|------|------|------|------|---------|
+| inkflow context assemble | 项目/章节存在 | 薄层经 HTTP 调 §5 assemble；观测 flag 开启 → 人类模式追加打印 system_prompt / skill 名 / tool id | 摘要行 + 观测段（`--json` 则原样透传三键） | 404/400 → 退出码 1 | 观测 flag 默认关闭；人类模式仅在显式开启时打印 | 2026-10-06：新增 3 个观测 flag（#1480） |
+| inkflow write next / continue --show-context | 项目/章节存在 | 写作时打印本次组装的 ContextAssemblyResult | 每层块标题/token/压缩标记 + 预算 + 丢弃项；--json 输出 context 字段 | 404/400 → 退出码 1 | 调试面不参与写作决策 | — |
 
 ### 14.4 验收锚点
 

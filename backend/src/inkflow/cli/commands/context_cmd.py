@@ -47,6 +47,13 @@ def assemble(
     model: str = typer.Option(..., "--model", "-m"),
     writing_requirements: str = typer.Option(..., "--writing-requirements", "-w"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    show_system_prompt: bool = typer.Option(
+        False, "--show-system-prompt", help="打印写手轨 system prompt（默认关闭）"
+    ),
+    show_skills: bool = typer.Option(False, "--show-skills", help="打印有效技能集清单（默认关闭）"),
+    show_tools: bool = typer.Option(
+        False, "--show-tools", help="打印装配层 tool id 清单（默认关闭）"
+    ),
 ):
     """组装上下文（调试验证端点）"""
     cli_ctx: CliContext = ctx.obj
@@ -60,6 +67,13 @@ def assemble(
         }
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
+        # 观测开关默认关闭：不开启时**不进请求体**（守住「缺省响应不变」）
+        if show_system_prompt:
+            body["show_system_prompt"] = True
+        if show_skills:
+            body["show_skills"] = True
+        if show_tools:
+            body["show_tools"] = True
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
@@ -74,3 +88,38 @@ def assemble(
             f"{data['total_tokens']}/{data['budget_tokens']} tokens | "
             f"blocks={len(data['blocks'])} | dropped={len(data['dropped'])}"
         )
+        _print_observability(
+            data,
+            show_system_prompt=show_system_prompt,
+            show_skills=show_skills,
+            show_tools=show_tools,
+        )
+
+
+def _print_observability(
+    data: dict,
+    *,
+    show_system_prompt: bool,
+    show_skills: bool,
+    show_tools: bool,
+) -> None:
+    """打印装配观测段（#1480 目标装配预览）——按**显式开启的 flag** 逐段输出.
+
+    只依据本地 flag 而非响应键：缺省响应本就不含三键，但显式传 false 与第三方响应
+    夹带时都不应误导用户（观测面永远由本地开关驱动）。
+    """
+    if not (show_system_prompt or show_skills or show_tools):
+        return
+    typer.echo("🔍 装配可观测（目标装配预览，#1480）")
+    if show_system_prompt:
+        prompt = data.get("system_prompt") or ""
+        typer.echo(f"  system_prompt（{len(prompt)} 字符）：")
+        typer.echo(prompt)
+    if show_skills:
+        skills = data.get("skills") or []
+        typer.echo(f"  技能（{len(skills)}）：")
+        for item in skills:
+            typer.echo(f"    - {item['name']}  source={item['source']}  bytes={item['bytes']}")
+    if show_tools:
+        tools = data.get("tools") or []
+        typer.echo(f"  工具（{len(tools)}）：{', '.join(tools)}")

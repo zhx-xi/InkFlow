@@ -197,6 +197,10 @@ class ContextRequest(BaseModel):
         writing_requirements: 必填，写作要求 / 任务指令.
         max_tokens: 覆盖预算；None = 模型窗口 × max_ratio.
         override: 显式勾选通道（v1.1 #593）；None = 全部注入（默认行为）.
+        show_system_prompt: 装配可观测面（v1.5 #1480）——True 时响应额外返回写手轨
+            system prompt（默认关闭，避免体积与泄漏）.
+        show_skills: 装配可观测面（v1.5 #1480）——True 时返回有效技能集清单.
+        show_tools: 装配可观测面（v1.5 #1480）——True 时返回装配层 tool id 清单.
     """
 
     project_id: uuid.UUID
@@ -205,6 +209,9 @@ class ContextRequest(BaseModel):
     writing_requirements: str = Field(..., min_length=1)
     max_tokens: int | None = None
     override: ContextOverride | None = None
+    show_system_prompt: bool = False
+    show_skills: bool = False
+    show_tools: bool = False
 
 
 class ContextAssemblyResult(BaseModel):
