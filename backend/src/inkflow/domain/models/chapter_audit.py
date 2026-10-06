@@ -53,6 +53,23 @@ class AuditSeverity(StrEnum):
     ERROR = "error"  # 错误（如：明确与设定矛盾）
 
 
+class AuditRunStatus(StrEnum):
+    """审计任务运行状态（#1425 异步语义，spec §2.3）— 与确认态 `status` 正交.
+
+    执行态（谁在跑/跑完没）与确认态（用户接受/拒绝）是两个独立维度：
+    一条记录可以「执行完成 + 待确认」，也可以「执行失败 + 待确认」。
+
+    Attributes:
+        RUNNING: 已受理，后台执行中（findings 尚未落库）.
+        COMPLETED: 执行完成（findings/severity_summary 已落库；默认值 = 同步路径与历史行）.
+        FAILED: 执行失败（`AuditLog.error` 落失败原因；客户端轮询/--wait 据此收口）.
+    """
+
+    RUNNING = "running"  # 已受理，后台执行中
+    COMPLETED = "completed"  # 执行完成（默认）
+    FAILED = "failed"  # 执行失败
+
+
 class ChapterAuditFinding(BaseModel):
     """单条章节审计发现（spec §2.2）.
 
@@ -127,12 +144,15 @@ class AuditLog(BaseModel):
     chapter_id: uuid.UUID | None = None  # 可空：F27 save_draft 未绑定章节时审计可空
     chapter_title: str  # 快照（章节改名后仍可读）
     status: Literal["pending", "accepted", "rejected"]
-    severity_summary: str  # 摘要：如 "1 error, 2 warnings, 0 info"（计数落库）
+    run_status: AuditRunStatus = AuditRunStatus.COMPLETED
+    # #1425 执行态（running/completed/failed）；默认 completed = 同步路径/历史行
+    severity_summary: str  # 摘要：如 "1 error, 2 warnings, 0 info"（计数落库；running 时为空串）
     summary: str = ""  # LLM 一句话总结（可空）
     degraded: bool = False  # LLM 降级标记（可追溯审计质量）
     note: str = ""  # 拒绝原因/备注（用户确认时填写，可空）
-    created_at: datetime  # 审计时间（UTC）
+    created_at: datetime  # 审计时间（UTC；异步语义下 = 受理时间）
     confirmed_at: datetime | None = None  # 确认时间（pending 为 None）
+    error: str = ""  # #1425 执行失败原因（failed 时非空，其余为空串）
 
 
 class AuditLogDetail(AuditLog):
@@ -172,3 +192,46 @@ class AuditConfirmRequest(BaseModel):
 
     action: Literal["accept", "reject"]
     note: str = ""  # 拒绝原因/备注（可选，写入 audit_logs.note）
+
+
+class AuditTriggerAccepted(BaseModel):
+    """审计触发受理响应（#1425 异步语义，spec §2.4）— POST /audit 的 202 body.
+
+    只承载「受理凭证」：`log_id` 是后续轮询/取结果的键，`status` 是任务执行态
+    （新任务 `running`；幂等复用已完成记录时 `completed`）。
+
+    Attributes:
+        log_id: 审计记录 ID（轮询 `/audit-logs/{log_id}/status` 与取回 findings 的键）.
+        status: 任务执行态（AuditRunStatus）.
+    """
+
+    model_config = {"from_attributes": True}
+
+    log_id: uuid.UUID
+    status: AuditRunStatus
+
+
+class AuditRunInfo(BaseModel):
+    """审计任务运行状态（#1425 轮询读口，spec §2.4）— 不含 findings 的轻量形态.
+
+    Attributes:
+        log_id: 审计记录 ID.
+        run_status: 任务执行态（running/completed/failed）.
+        status: 确认态（pending/accepted/rejected）.
+        degraded: LLM 降级标记（执行完成后才有意义）.
+        error: 失败原因（failed 时非空）.
+        chapter_id: 所属章节 UUID（可空）.
+        chapter_title: 章节标题快照.
+        created_at: 受理时间（UTC）.
+    """
+
+    model_config = {"from_attributes": True}
+
+    log_id: uuid.UUID
+    run_status: AuditRunStatus
+    status: Literal["pending", "accepted", "rejected"]
+    degraded: bool = False
+    error: str = ""
+    chapter_id: uuid.UUID | None = None
+    chapter_title: str = ""
+    created_at: datetime

@@ -907,6 +907,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit-logs/{log_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Audit Log Status
+         * @description 按审计记录 ID 取任务运行状态（#1425 轮询读口，spec §3.1）——轻量，不含 findings.
+         *
+         *     `run_status` = running / completed / failed；失败原因在 `error`。
+         *     执行完成后取 findings 走 v1.4 读口 `GET /api/v1/audit-logs/{log_id}`（复用）。
+         */
+        get: operations["get_audit_log_status_api_v1_audit_logs__log_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chapters/{chapter_id}": {
         parameters: {
             query?: never;
@@ -2133,10 +2156,13 @@ export interface paths {
         put?: never;
         /**
          * Trigger Audit
-         * @description 手动触发单章审计（spec §3.1）——返回完整 ChapterAuditReport.
+         * @description 手动触发单章审计（spec §3.1 / §5.1 v1.5）——**202 异步受理**.
          *
-         *     include_static 透传服务层（默认 True，spec §2.4 AuditTriggerRequest），
-         *     model_dump(mode="json") 信封序列化（spec §3.2）。
+         *     #1425：端点只做「校验 + 受理」——`submit()` 返回 `(log, created)`；`created=True`
+         *     时经 `spawn_background_task` 派发后台执行（fire-and-forget，F44 #456 先例），
+         *     响应体 `{log_id, status}`（status = 任务执行态 running/completed）。
+         *     幂等复用（`created=False`）不派发任务、不新增记录（spec §7 E22）。
+         *     include_static 透传服务层（默认 True，spec §2.4 AuditTriggerRequest）。
          */
         post: operations["trigger_audit_api_v1_projects__project_id__chapters__chapter_id__audit_post"];
         delete?: never;
@@ -8254,6 +8280,37 @@ export interface operations {
             };
         };
     };
+    get_audit_log_status_api_v1_audit_logs__log_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_chapter_api_v1_chapters__chapter_id__get: {
         parameters: {
             query?: never;
@@ -11003,7 +11060,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

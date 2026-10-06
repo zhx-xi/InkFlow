@@ -42,8 +42,8 @@ session_tools.py 并列于 mcp/tools/）：
                             project_id, chapter_id, outline, existing_content, content,
                             feedback, instruction, target_words, context, style_hint,
                             draft_id, status, source_outline_id, title
-  AuditParams:              action=project/chapter
-                            project_id, chapter_id, include_static
+  AuditParams:              action=project/chapter/result（#1425 按 log_id 取结果）
+                            project_id, chapter_id, log_id, include_static
   ExtractParams:            action=extract/reindex/retrieve
                             project_id, content, query, entity_types, top_k, min_score
   ExportParams:             action=export
@@ -279,8 +279,8 @@ _CONTRACT: dict[str, tuple[list[str], list[str]]] = {
         ],
     ),
     "AuditParams": (
-        ["project", "chapter"],
-        ["project_id", "chapter_id", "include_static"],
+        ["project", "chapter", "result"],
+        ["project_id", "chapter_id", "log_id", "include_static"],
     ),
     "ExtractParams": (
         ["extract", "reindex", "retrieve"],

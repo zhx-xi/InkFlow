@@ -68,6 +68,7 @@ from inkflow.api.app import app
 from inkflow.domain.models.chapter_audit import (
     AuditCheckType,
     AuditLog,
+    AuditRunStatus,
     AuditSeverity,
     ChapterAuditFinding,
     ChapterAuditReport,
@@ -160,110 +161,129 @@ def _mock_svc(mock_get_svc: MagicMock) -> MagicMock:
 
 
 class TestTriggerAudit:
-    """POST /projects/{pid}/chapters/{cid}/audit — 手动触发审计（spec §3.1）。"""
+    """POST /projects/{pid}/chapters/{cid}/audit — 手动触发审计（spec §3.1 v1.5）。
 
+    #1425 契约演进：POST 由「阻塞 200 + ChapterAuditReport」改为「202 + {log_id, status}」，
+    检查在后台执行（`submit` + `spawn_background_task`）。深度覆盖（幂等复用不派发 /
+    后台执行体 / `/status` 轮询读口）见 tests/api/test_chapter_audit_async_1425.py；
+    本类保留该端点的基础契约与错误面。
+    """
+
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_200_report_fields(self, mock_get_svc: MagicMock) -> None:
-        """触发成功 → 200 + ChapterAuditReport 全字段（confirmed_at=null，spec §3.2）。"""
+    def test_trigger_audit_202_accepted(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
+        """受理成功 → 202 + {log_id, status=running} + 后台任务派发（spec §3.2 v1.5）。"""
         svc = _mock_svc(mock_get_svc)
-        report = _report()
-        svc.audit = AsyncMock(return_value=report)
+        svc.submit = AsyncMock(return_value=(_log(run_status=AuditRunStatus.RUNNING), True))
 
         response = client.post(f"/api/v1/projects/{PID}/chapters/{CID}/audit", json={})
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["chapter_id"] == str(CID)
-        assert data["chapter_title"] == "第 3 章 龙的苏醒"
-        assert data["status"] == "pending"
-        assert data["summary"] == "本章整体符合设定，一处角色行为值得斟酌"
-        assert data["degraded"] is False
-        assert data["confirmed_at"] is None
-        assert _parse_iso(data["created_at"]) == TS
-        # findings 结构（check_type/severity/message/suggestion/ref_entity_id/
-        # ref_entity_name/context，spec §2.2）
-        assert len(data["findings"]) == 2
-        f0 = data["findings"][0]
-        assert f0["check_type"] == "character_drift"
-        assert f0["severity"] == "error"
-        assert f0["message"].startswith("本章「李青焰」怒斥同伴")
-        assert f0["suggestion"] == "可改为隐忍不发，或先铺垫情绪积累"
-        assert f0["ref_entity_id"] == str(CHAR_ID)
-        assert f0["ref_entity_name"] == "李青焰"
-        assert f0["context"].startswith("“够了！”")
-        f1 = data["findings"][1]
-        assert f1["check_type"] == "word_count"
-        assert f1["severity"] == "info"
-        assert f1["ref_entity_id"] is None
-        assert f1["ref_entity_name"] == ""
-        assert f1["context"] == ""
-        svc.audit.assert_awaited_once_with(PID, CID, include_static=True)
+        assert response.status_code == 202
+        assert response.json() == {"log_id": str(LOG_ID), "status": "running"}
+        svc.submit.assert_awaited_once_with(PID, CID, include_static=True)
+        mock_spawn.assert_called_once()
 
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_include_static_false_passthrough(self, mock_get_svc: MagicMock) -> None:
-        """include_static=False 请求体透传（spec §2.4 AuditTriggerRequest）。"""
+    def test_trigger_audit_include_static_false_passthrough(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
+        """include_static=False 请求体透传 submit（spec §2.4 AuditTriggerRequest）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.audit = AsyncMock(return_value=_report())
+        svc.submit = AsyncMock(return_value=(_log(run_status=AuditRunStatus.RUNNING), True))
 
         response = client.post(
             f"/api/v1/projects/{PID}/chapters/{CID}/audit",
             json={"include_static": False},
         )
 
-        assert response.status_code == 200
-        svc.audit.assert_awaited_once_with(PID, CID, include_static=False)
+        assert response.status_code == 202
+        svc.submit.assert_awaited_once_with(PID, CID, include_static=False)
 
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_project_not_found_404(self, mock_get_svc: MagicMock) -> None:
-        """项目不存在 → 404「项目不存在」（spec §3.3，复用 F9 ProjectNotFoundError）。"""
+    def test_trigger_audit_reuse_202_completed(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
+        """幂等复用（created=False）→ 202 status=completed + 不派发后台任务（E22）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.audit = AsyncMock(side_effect=ProjectNotFoundError())
+        svc.submit = AsyncMock(return_value=(_log(run_status=AuditRunStatus.COMPLETED), False))
+
+        response = client.post(f"/api/v1/projects/{PID}/chapters/{CID}/audit", json={})
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "completed"
+        mock_spawn.assert_not_called()
+
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
+    @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
+    def test_trigger_audit_project_not_found_404(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
+        """项目不存在 → 404「项目不存在」（受理前失败，spec §3.3）。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.submit = AsyncMock(side_effect=ProjectNotFoundError())
 
         response = client.post(f"/api/v1/projects/{PID}/chapters/{CID}/audit", json={})
 
         assert response.status_code == 404
         assert response.json()["detail"] == "项目不存在"
+        mock_spawn.assert_not_called()
 
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_chapter_not_found_404(self, mock_get_svc: MagicMock) -> None:
+    def test_trigger_audit_chapter_not_found_404(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
         """章节不存在 → 404「章节不存在」（spec §3.3，复用 F14 ChapterNotFoundError）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.audit = AsyncMock(side_effect=ChapterNotFoundError())
+        svc.submit = AsyncMock(side_effect=ChapterNotFoundError())
 
         response = client.post(f"/api/v1/projects/{PID}/chapters/{CID}/audit", json={})
 
         assert response.status_code == 404
         assert response.json()["detail"] == "章节不存在"
 
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_invalid_project_uuid_404(self, mock_get_svc: MagicMock) -> None:
-        """无效 project_id → 404「项目不存在」（不进服务，spec §3.3 无效 UUID 语义）。"""
+    def test_trigger_audit_invalid_project_uuid_404(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
+        """无效 project_id → 404「项目不存在」（解析层拦下，不进服务）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.audit = AsyncMock(return_value=_report())
+        svc.submit = AsyncMock(return_value=(_log(), True))
 
         response = client.post(f"/api/v1/projects/not-a-uuid/chapters/{CID}/audit", json={})
 
         assert response.status_code == 404
         assert response.json()["detail"] == "项目不存在"
-        svc.audit.assert_not_awaited()
+        svc.submit.assert_not_awaited()
 
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_invalid_chapter_uuid_404(self, mock_get_svc: MagicMock) -> None:
+    def test_trigger_audit_invalid_chapter_uuid_404(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
         """无效 chapter_id → 404「章节不存在」（路径两段独立解析）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.audit = AsyncMock(return_value=_report())
+        svc.submit = AsyncMock(return_value=(_log(), True))
 
         response = client.post(f"/api/v1/projects/{PID}/chapters/not-a-uuid/audit", json={})
 
         assert response.status_code == 404
         assert response.json()["detail"] == "章节不存在"
-        svc.audit.assert_not_awaited()
+        svc.submit.assert_not_awaited()
 
+    @patch("inkflow.api.routers.chapter_audit.spawn_background_task")
     @patch("inkflow.api.routers.chapter_audit.get_chapter_audit_service")
-    def test_trigger_audit_internal_error_500(self, mock_get_svc: MagicMock) -> None:
-        """其余异常 → 500「内部错误: ...」（spec §3.3）。"""
+    def test_trigger_audit_internal_error_500(
+        self, mock_get_svc: MagicMock, mock_spawn: MagicMock
+    ) -> None:
+        """受理阶段意外异常 → 500「内部错误: ...」（spec §3.3）。"""
         svc = _mock_svc(mock_get_svc)
-        svc.audit = AsyncMock(side_effect=RuntimeError("内核炸了"))
+        svc.submit = AsyncMock(side_effect=RuntimeError("内核炸了"))
 
         response = client.post(f"/api/v1/projects/{PID}/chapters/{CID}/audit", json={})
 

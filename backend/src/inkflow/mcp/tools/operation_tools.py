@@ -83,6 +83,25 @@ def _hint_for(code: str) -> str:
     return hints.get(code, "请检查参数与后端状态后重试")
 
 
+_AUDIT_TIMEOUT_HINT = (
+    "服务端任务可能仍在进行，请用 audit action=result（按 log_id）查询结果再决定是否重试"
+)
+"""审计域专属 TIMEOUT hint（#1425）。
+
+审计工具**没有 list/get action**（域内只有 project/chapter/result），
+原通用文案「请先用对应 list/get 工具查询结果」指向不存在的能力；
+恢复路径 = 受理时拿到的 `log_id` → `audit action=result`（或 CLI
+`audit chapter --history` → `--log <id>`）。
+"""
+
+
+def _hint_for_audit(code: str) -> str:
+    """审计域 hint（#1425）——仅 TIMEOUT 与通用文案分叉，其余沿用 `_hint_for`。"""
+    if code == "TIMEOUT":
+        return _AUDIT_TIMEOUT_HINT
+    return _hint_for(code)
+
+
 def _compact(mapping: dict[str, object]) -> dict[str, object]:
     """剔除值为 None 的键（httpx 会把 None 编码为空串 → 422，spec 固定陷阱）。"""
     return {key: value for key, value in mapping.items() if value is not None}
@@ -211,14 +230,17 @@ async def _route_write(client: _HTTPClient, params: WriteParams, timeout: float 
     )
 
 
-async def _route_audit(client: _HTTPClient, params: AuditParams, timeout: float | None) -> object:
-    """audit action 路由：项目级四维审计 / 单章一致性审计。"""
+async def _route_audit(client: _HTTPClient, params: AuditParams) -> object:
+    """audit action 路由：项目级四维审计 / 单章审计受理 / 按 log_id 取结果（#1425）。"""
     if params.action == "project":
         return await client.get(f"/projects/{params.project_id}/audit")
+    if params.action == "result":
+        return await client.get(f"/audit-logs/{params.log_id}")
+    # #1425：chapter 只受理（202 {log_id, status}）——「等待完成」是调用方的轮询职责，
+    # 该调用不再是长任务，故**不再带 300s per-request 覆盖**（#926 C-R5 相应收口）。
     return await client.post(
         f"/projects/{params.project_id}/chapters/{params.chapter_id}/audit",
         json=_compact({"include_static": params.include_static}),
-        timeout=timeout,
     )
 
 
@@ -348,7 +370,7 @@ def build_write_tool() -> MCPTool:
 
 
 def build_audit_tool() -> MCPTool:
-    """审计：项目级四维审计 / 单章一致性审计。"""
+    """审计：项目级四维审计 / 单章审计受理（202 log_id）/ 按 log_id 取结果（#1425）。"""
 
     @instrument(caller_type="mcp")
     async def _impl(**kwargs: object) -> str:
@@ -360,9 +382,14 @@ def build_audit_tool() -> MCPTool:
                 str(exc),
                 "请检查 action 枚举与必填字段（可经 tool_search 查询合法值），修正后重试",
             )
+        if params.action == "result" and params.log_id is None:
+            return _error(
+                "INVALID_ARGS",
+                "action=result 需要 log_id",
+                "请提供受理审计时返回的 log_id 后重试",
+            )
         try:
             from inkflow.infrastructure.http import (
-                LLM_TASK_TIMEOUT,
                 HttpApiError,
                 InkFlowHTTPClient,
                 map_http_error,
@@ -371,11 +398,11 @@ def build_audit_tool() -> MCPTool:
 
             handle = await ensure_kernel()
             async with InkFlowHTTPClient(handle) as client:
-                data = await _route_audit(client, params, LLM_TASK_TIMEOUT)
+                data = await _route_audit(client, params)
             return _ok(_serialize_data(data))
         except HttpApiError as exc:
             code, message = map_http_error(exc.status_code, exc.detail, exc.code)
-            return _error(code, message, _hint_for(code))
+            return _error(code, message, _hint_for_audit(code))
         except KernelStartupError as exc:
             return _error("KERNEL_ERROR", f"内核启动失败: {exc}", "请重新拉起内核再试")
         except Exception as exc:
@@ -388,7 +415,10 @@ def build_audit_tool() -> MCPTool:
     return MCPTool(
         spec=ToolSpec(
             name="audit",
-            description="审计：项目级四维审计 / 单章一致性审计",
+            description=(
+                "审计：项目级四维审计 / 单章审计受理（异步，返回 log_id 与状态，"
+                "用 action=result 按 log_id 取结果）/ 按 log_id 取审计结果"
+            ),
             input_schema=AuditParams.model_json_schema(),
         ),
         func=_impl,

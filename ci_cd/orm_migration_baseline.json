@@ -286,12 +286,20 @@
         "has_server_default": false,
         "nullable": true
       },
+      "content_hash": {
+        "has_server_default": true,
+        "nullable": false
+      },
       "created_at": {
         "has_server_default": false,
         "nullable": false
       },
       "degraded": {
         "has_server_default": false,
+        "nullable": false
+      },
+      "error": {
+        "has_server_default": true,
         "nullable": false
       },
       "findings": {
@@ -308,6 +316,10 @@
       },
       "project_id": {
         "has_server_default": false,
+        "nullable": false
+      },
+      "run_status": {
+        "has_server_default": true,
         "nullable": false
       },
       "severity_summary": {

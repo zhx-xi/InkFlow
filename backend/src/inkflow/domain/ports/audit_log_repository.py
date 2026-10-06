@@ -29,16 +29,93 @@ class AuditLogRepositoryProtocol(Protocol):
     """
 
     async def add(
-        self, log: AuditLog, *, findings: Sequence[ChapterAuditFinding] | None = None
+        self,
+        log: AuditLog,
+        *,
+        findings: Sequence[ChapterAuditFinding] | None = None,
+        content_hash: str = "",
     ) -> AuditLog:
-        """插入一条审计记录（含 findings 快照），返回含 ORM 主键背书的 AuditLog.
+        """插入一条审计记录（含 findings 快照 + 内容指纹），返回含 ORM 主键背书的 AuditLog.
 
         Args:
             log: 领域审计记录（id 由仓储按 ORM 自增主键生成）.
             findings: 审计发现快照（#1420）；None/空 → 落空列表.
+            content_hash: 章节正文 sha256 指纹（#1425 幂等去重键）；缺省空串（永不命中）.
 
         Returns:
             已落库的 AuditLog（id = uuid.UUID(int=orm_id)）.
+        """
+        ...
+
+    async def find_reusable(
+        self,
+        chapter_id: uuid.UUID,
+        content_hash: str,
+        *,
+        stale_before: datetime,
+    ) -> AuditLog | None:
+        """查找可复用的既有审计记录（#1425 幂等重跑，spec §7 E8）.
+
+        复用谓词（同章 + 同 `content_hash`，取 created_at 最新一条）：
+        ① `run_status='running'` 且 `created_at >= stale_before`（窗口内并发去重），或
+        ② `run_status='completed'` 且 `status='pending'`（已审待确认；**含 degraded**——
+           降级记录不复用会让「无可用模型 / LLM 抖动」环境下每次重试都新增重复记录）。
+
+        窗口外 running（疑似内核崩溃遗留）不复用——不阻塞重审（E21）。
+
+        Args:
+            chapter_id: 章节主键（领域 UUID，见 #1291）.
+            content_hash: 章节正文 sha256 指纹；空串 → 永不命中.
+            stale_before: running 记录的有效下界（更早视为遗留）.
+
+        Returns:
+            可复用的 AuditLog（复用面只读确认态字段）；无 → None.
+        """
+        ...
+
+    async def complete(
+        self,
+        log_id: uuid.UUID,
+        *,
+        findings: Sequence[ChapterAuditFinding],
+        severity_summary: str,
+        summary: str,
+        degraded: bool,
+    ) -> AuditLog | None:
+        """标记审计任务完成（#1425）：落 findings 快照 + 摘要，`run_status='completed'`.
+
+        Args:
+            log_id: 审计记录主键（领域 UUID）.
+            findings: 审计发现快照（与报告同源）.
+            severity_summary: 严重级别摘要（计数落库）.
+            summary: LLM 一句话总结（可空）.
+            degraded: LLM 降级标记.
+
+        Returns:
+            更新后的 AuditLog；log_id 不存在 → None.
+        """
+        ...
+
+    async def fail(self, log_id: uuid.UUID, *, error: str) -> AuditLog | None:
+        """标记审计任务失败（#1425）：`run_status='failed'` + `error` 落库.
+
+        Args:
+            log_id: 审计记录主键（领域 UUID）.
+            error: 失败原因（人类可读，供客户端轮询/`--wait` 展示）.
+
+        Returns:
+            更新后的 AuditLog；log_id 不存在 → None.
+        """
+        ...
+
+    async def get_status(self, log_id: uuid.UUID) -> AuditLog | None:
+        """按 ID 取轻量记录（#1425 轮询读口）——不含 findings 解析.
+
+        Args:
+            log_id: 审计记录主键（领域 UUID）.
+
+        Returns:
+            轻量 AuditLog（含 run_status/error）；不存在 → None.
         """
         ...
 

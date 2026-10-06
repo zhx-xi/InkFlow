@@ -36,12 +36,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inkflow.api.deps import get_chapter_audit_service, get_db, get_project_service
 from inkflow.domain.models.chapter_audit import (
     AuditConfirmRequest,
+    AuditRunInfo,
     AuditTriggerRequest,
 )
 from inkflow.domain.ports.chapter_audit_errors import AuditLogNotFoundError, NoPendingAuditError
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 from inkflow.domain.services.chapter_audit_service import ChapterAuditService
+from inkflow.infrastructure.background.tasks import spawn_background_task
 from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["章节审计"])
@@ -131,7 +133,7 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         raise HTTPException(status_code=500, detail=f"内部错误: {e}") from e
 
 
-@router.post("/projects/{project_id}/chapters/{chapter_id}/audit")
+@router.post("/projects/{project_id}/chapters/{chapter_id}/audit", status_code=202)
 @instrument(caller_type="api")
 async def trigger_audit(
     request: AuditTriggerRequest,
@@ -139,16 +141,24 @@ async def trigger_audit(
     chapter_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """手动触发单章审计（spec §3.1）——返回完整 ChapterAuditReport.
+    """手动触发单章审计（spec §3.1 / §5.1 v1.5）——**202 异步受理**.
 
-    include_static 透传服务层（默认 True，spec §2.4 AuditTriggerRequest），
-    model_dump(mode="json") 信封序列化（spec §3.2）。
+    #1425：端点只做「校验 + 受理」——`submit()` 返回 `(log, created)`；`created=True`
+    时经 `spawn_background_task` 派发后台执行（fire-and-forget，F44 #456 先例），
+    响应体 `{log_id, status}`（status = 任务执行态 running/completed）。
+    幂等复用（`created=False`）不派发任务、不新增记录（spec §7 E22）。
+    include_static 透传服务层（默认 True，spec §2.4 AuditTriggerRequest）。
     """
     pid = _parse_id(project_id)
     cid = _parse_chapter_id(chapter_id)
     svc = await _get_svc(db, pid)
-    report = await _run_service(svc.audit(pid, cid, include_static=request.include_static))
-    return report.model_dump(mode="json")
+    log, created = await _run_service(svc.submit(pid, cid, include_static=request.include_static))
+    if created:
+        spawn_background_task(
+            svc.run_audit_job(pid, cid, log.id, include_static=request.include_static),
+            key=str(log.id),
+        )
+    return {"log_id": str(log.id), "status": log.run_status.value}
 
 
 @router.post("/projects/{project_id}/chapters/{chapter_id}/audit/confirm")
@@ -207,3 +217,29 @@ async def get_audit_log(
     svc = get_chapter_audit_service(db)
     detail = await _run_service(svc.get_log(lid))
     return detail.model_dump(mode="json")
+
+
+@router.get("/audit-logs/{log_id}/status")
+@instrument(caller_type="api")
+async def get_audit_log_status(
+    log_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """按审计记录 ID 取任务运行状态（#1425 轮询读口，spec §3.1）——轻量，不含 findings.
+
+    `run_status` = running / completed / failed；失败原因在 `error`。
+    执行完成后取 findings 走 v1.4 读口 `GET /api/v1/audit-logs/{log_id}`（复用）。
+    """
+    lid = _parse_log_id(log_id)
+    svc = get_chapter_audit_service(db)
+    log = await _run_service(svc.get_status(lid))
+    return AuditRunInfo(
+        log_id=log.id,
+        run_status=log.run_status,
+        status=log.status,
+        degraded=log.degraded,
+        error=log.error,
+        chapter_id=log.chapter_id,
+        chapter_title=log.chapter_title,
+        created_at=log.created_at,
+    ).model_dump(mode="json")

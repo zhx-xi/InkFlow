@@ -196,12 +196,97 @@ def _chapter_item(**overrides: object) -> dict:
     return kwargs
 
 
+LOG_ID = "00000000-0000-4000-8000-0000000000a1"
+
+
+def _accepted() -> dict:
+    """POST /audit 的 202 受理响应（spec §3.2 v1.5）。"""
+    return {"log_id": LOG_ID, "status": "running"}
+
+
+def _status(run_status: str = "completed", error: str = "") -> dict:
+    """GET /audit-logs/{id}/status 的 200 响应（spec §3.2 v1.5）。"""
+    return {
+        "log_id": LOG_ID,
+        "run_status": run_status,
+        "status": "pending",
+        "degraded": False,
+        "error": error,
+        "chapter_id": str(CID),
+        "chapter_title": "第 3 章 龙的苏醒",
+        "created_at": TS,
+    }
+
+
+def _detail(**overrides: object) -> dict:
+    """GET /audit-logs/{id} 的 AuditLogDetail 响应（v1.4 读口 + v1.5 执行态）。"""
+    kwargs: dict[str, object] = {
+        "id": LOG_ID,
+        "project_id": str(PID),
+        "chapter_id": str(CID),
+        "chapter_title": "第 3 章 龙的苏醒",
+        "status": "pending",
+        "run_status": "completed",
+        "severity_summary": "1 error, 1 warnings, 0 info",
+        "summary": "",
+        "degraded": False,
+        "note": "",
+        "created_at": TS,
+        "confirmed_at": None,
+        "error": "",
+        "findings": [
+            _finding(),
+            _finding(
+                check_type="word_count",
+                severity="info",
+                message="本章 2,845 字，低于目标 3,000 字",
+                suggestion="",
+                ref_entity_id=None,
+                ref_entity_name="",
+                context="",
+            ),
+        ],
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
 class TestAuditTrigger:
-    """inkflow audit chapter <chapter> -p <project> — 触发审计（spec §4 用法 1）。"""
+    """inkflow audit chapter <chapter> -p <project> — 触发审计（spec §4 v1.5：202 + --wait）。
+
+    #1425 契约演进：POST 只受理（202 `{log_id, status}`）→ 默认 `--wait` 轮询
+    `GET /audit-logs/{log_id}/status` 至终态 → `GET /audit-logs/{log_id}` 取回记录明细，
+    再以**与同步版一致的人类输出**打印 findings（UX 不退化）。
+    `--no-wait` / 失败收口见 tests/cli/test_cli_audit_async_1425.py。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        """轮询间隔归零（测试不真等）。"""
+        monkeypatch.setattr("inkflow.cli.commands.audit_chapter._POLL_INTERVAL", 0)
+
+    def _wire(self, fake, *, projects=None, chapters=None, detail=None, status=None) -> None:
+        """安装路径路由：名称解析（可选）+ 受理 + 轮询 + 明细取回。"""
+        fake.post.return_value = _accepted()
+        detail_payload = detail if detail is not None else _detail()
+        status_payload = status if status is not None else _status()
+
+        async def _get(path, **kwargs):  # 测试替身
+            if path == "/projects":
+                return {"items": projects or [], "total": len(projects or [])}
+            if path.endswith("/chapters"):
+                return {"items": chapters or [], "total": len(chapters or [])}
+            if path.endswith("/status"):
+                return status_payload
+            if path.startswith("/audit-logs/"):
+                return detail_payload
+            raise AssertionError(f"意外路径: {path}")
+
+        fake.get.side_effect = _get
 
     def test_trigger_uuid_direct_human(self, cli_runner, fake_http_client):
-        """项目/章节 UUID 直传 → POST audit；人类输出 findings（error 在前）。"""
-        fake_http_client.post.return_value = _report()
+        """项目/章节 UUID 直传 → POST 受理 → 轮询 → 取明细；人类输出 findings（error 在前）。"""
+        self._wire(fake_http_client)
 
         result = cli_runner.invoke(
             app,
@@ -210,12 +295,14 @@ class TestAuditTrigger:
         )
 
         assert result.exit_code == 0
-        # UUID 直传：不查项目/章节列表
-        fake_http_client.get.assert_not_awaited()
         call = fake_http_client.post.await_args
         assert call.args[0] == f"/projects/{PID}/chapters/{CID}/audit"
         assert call.kwargs["json"] == {"include_static": True}
-        # 人类输出：error finding 在前，info 在后（spec §6 排序键）
+        # 轮询到终态 → 取明细（UUID 直传 → 无名称解析请求）
+        assert [c.args[0] for c in fake_http_client.get.await_args_list] == [
+            f"/audit-logs/{LOG_ID}/status",
+            f"/audit-logs/{LOG_ID}",
+        ]
         err_msg = "本章「李青焰」怒斥同伴"
         info_msg = "本章 2,845 字，低于目标 3,000 字"
         assert err_msg in result.output
@@ -224,9 +311,8 @@ class TestAuditTrigger:
         assert "降级" not in result.output
 
     def test_trigger_project_name_resolution(self, cli_runner, fake_http_client):
-        """项目名 → GET /projects 匹配 name → 用解析出的 id 调 audit。"""
-        fake_http_client.get.return_value = {"items": [_project_item()], "total": 1}
-        fake_http_client.post.return_value = _report()
+        """项目名 → GET /projects 匹配 name → 用解析出的 id 调 audit（后续照常轮询）。"""
+        self._wire(fake_http_client, projects=[_project_item()])
 
         result = cli_runner.invoke(
             app,
@@ -235,15 +321,13 @@ class TestAuditTrigger:
         )
 
         assert result.exit_code == 0
-        assert fake_http_client.get.await_args.args[0] == "/projects"
+        assert fake_http_client.get.await_args_list[0].args[0] == "/projects"
         call = fake_http_client.post.await_args
         assert call.args[0] == f"/projects/{PID}/chapters/{CID}/audit"
-        assert call.kwargs["json"] == {"include_static": True}
 
     def test_trigger_chapter_title_resolution(self, cli_runner, fake_http_client):
         """章节名 → GET /projects/{pid}/chapters 匹配 title → 用解析出的 id 调 audit。"""
-        fake_http_client.get.return_value = {"items": [_chapter_item()], "total": 1}
-        fake_http_client.post.return_value = _report()
+        self._wire(fake_http_client, chapters=[_chapter_item()])
 
         result = cli_runner.invoke(
             app,
@@ -252,13 +336,13 @@ class TestAuditTrigger:
         )
 
         assert result.exit_code == 0
-        assert fake_http_client.get.await_args.args[0] == f"/projects/{PID}/chapters"
+        assert fake_http_client.get.await_args_list[0].args[0] == f"/projects/{PID}/chapters"
         call = fake_http_client.post.await_args
         assert call.args[0] == f"/projects/{PID}/chapters/{CID}/audit"
 
     def test_trigger_project_not_found_exit_1(self, cli_runner, fake_http_client):
         """项目名无匹配 → NOT_FOUND 错误信封 + 退出 1（spec §4 失败语义）。"""
-        fake_http_client.get.return_value = {"items": [], "total": 0}
+        self._wire(fake_http_client, projects=[])
 
         result = cli_runner.invoke(
             app,
@@ -275,7 +359,7 @@ class TestAuditTrigger:
 
     def test_trigger_chapter_not_found_exit_1(self, cli_runner, fake_http_client):
         """章节名无匹配 → NOT_FOUND 错误信封 + 退出 1。"""
-        fake_http_client.get.return_value = {"items": [], "total": 0}
+        self._wire(fake_http_client, chapters=[])
 
         result = cli_runner.invoke(
             app,
@@ -292,7 +376,7 @@ class TestAuditTrigger:
 
     def test_trigger_degraded_hint(self, cli_runner, fake_http_client):
         """LLM 降级报告 → 人类输出含降级提示（spec §5.3，降级不阻塞退出 0）。"""
-        fake_http_client.post.return_value = _report(degraded=True)
+        self._wire(fake_http_client, detail=_detail(degraded=True))
 
         result = cli_runner.invoke(
             app,
@@ -304,8 +388,8 @@ class TestAuditTrigger:
         assert "降级" in result.output
 
     def test_trigger_json_envelope(self, cli_runner, fake_http_client):
-        """--json → {"ok": true, "data": ChapterAuditReport}（F7 信封）。"""
-        fake_http_client.post.return_value = _report()
+        """--json + --wait → {"ok": true, "data": AuditLogDetail}（v1.5 契约演进）。"""
+        self._wire(fake_http_client)
 
         result = cli_runner.invoke(
             app,
@@ -316,8 +400,8 @@ class TestAuditTrigger:
         assert result.exit_code == 0
         data = json.loads(result.stdout)
         assert data["ok"] is True
-        assert data["data"]["chapter_id"] == str(CID)
-        assert data["data"]["status"] == "pending"
+        assert data["data"]["id"] == LOG_ID
+        assert data["data"]["run_status"] == "completed"
         assert data["data"]["findings"][0]["check_type"] == "character_drift"
         assert data["data"]["degraded"] is False
 

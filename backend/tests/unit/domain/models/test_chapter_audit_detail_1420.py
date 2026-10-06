@@ -43,6 +43,9 @@ _QLC_LIGHT_FIELDS = {
     "confirmed_at",
 }
 
+_ASYNC_FIELDS_1425 = {"run_status", "error"}
+"""#1425 增补字段（执行态 + 失败原因）——加法式演进，v1.4 字段集不得因此被替换。"""
+
 
 def _log_kwargs() -> dict:
     return {
@@ -71,8 +74,13 @@ def _finding() -> ChapterAuditFinding:
 
 
 def test_audit_log_field_set_unchanged() -> None:
-    """反例守护：Q1=C 轻量记录的字段集逐字不变（无 findings 明细）."""
-    assert set(AuditLog.model_fields) == _QLC_LIGHT_FIELDS
+    """反例守护：v1.4（#1420）字段集**只增不减**（D11 向后兼容）.
+
+    #1425 增补 `run_status` / `error`（执行态 + 失败原因）——加法式演进，
+    v1.4 的 11 个字段一个都不能少（含「不得混入 findings 明细」）。
+    """
+    assert set(AuditLog.model_fields) >= _QLC_LIGHT_FIELDS
+    assert set(AuditLog.model_fields) == _QLC_LIGHT_FIELDS | _ASYNC_FIELDS_1425
 
 
 def test_audit_log_dump_has_no_findings_key() -> None:
@@ -82,7 +90,7 @@ def test_audit_log_dump_has_no_findings_key() -> None:
 
 def test_audit_log_detail_extends_light_record_with_findings() -> None:
     """AuditLogDetail = 轻量记录字段集 + findings（读口专用形态）."""
-    assert set(AuditLogDetail.model_fields) == _QLC_LIGHT_FIELDS | {"findings"}
+    assert set(AuditLogDetail.model_fields) == set(AuditLog.model_fields) | {"findings"}
     assert issubclass(AuditLogDetail, AuditLog)
 
 

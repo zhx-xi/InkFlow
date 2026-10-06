@@ -106,5 +106,37 @@ class AuditLogORM(EntityUuidMixin, Base):
     GET /api/v1/audit-logs/{log_id}。空值/旧行经 LenientJSON 回退 []。
     """
 
+    content_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    """章节正文 sha256 指纹（#1425 异步语义）—— 幂等重跑去重键。
+
+    空串 = 旧行/未记录（永不参与去重命中）。不出现在 API 响应（内部列）。
+    `server_default` 使其成为「软列」（#1006 漂移门禁口径：旧库 raw INSERT 不炸）。
+    """
+
+    run_status: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="completed",
+        server_default="completed",
+    )
+    """任务执行态（#1425）：running / completed / failed。
+
+    与 `status`（确认态 pending/accepted/rejected）正交。`server_default='completed'`
+    使 v1.5 前的历史行（同步执行必然完成）读回语义正确。
+    """
+
+    error: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    """任务失败原因（#1425）：run_status='failed' 时非空，其余为空串。"""
+
     def __repr__(self) -> str:
         return f"<AuditLogORM id={self.id} chapter_id={self.chapter_id} status={self.status!r}>"
