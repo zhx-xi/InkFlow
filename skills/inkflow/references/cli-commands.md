@@ -94,7 +94,7 @@ InkFlow CLI 全量命令面速查（顶层 26 组 + 2 个压平命令 `serve`/`s
 | `agent validate --file <yaml>` | 管线 YAML 校验（⚠️ Phase 1 占位，打印提示不实际校验，#251 P3） |
 | `agent tools list` | 枚举可用工具（本地静态，无需内核） |
 | `agent runs list --project-id [--limit]` / `runs show <run_id>` | Agent 运行记录 |
-| `agent draft list --project-id [--status]` / `confirm <draft_id> [--chapter-id]` / `reject <draft_id>` / `prune-orphans [--dry-run]` | 草稿确认流 |
+| `agent draft list --project-id [--status]` / `confirm <draft_id> [--chapter-id]` / `reject <draft_id>` / `delete <draft_id>` / `prune-orphans [--dry-run]` | 草稿确认流（`delete` = 硬删真删，#1479） |
 | `agent template list/get/create/update/delete/duplicate/set-default/get-default/pipelines` | DB Agent 模板全量 CRUD（create/update 用 `--roles-json` 四键 JSON） |
 | `session create/list/get/update/pause/resume/complete/fail/logs/delete/restore` | 会话生命周期（create 必填 `--type --title`；`log add --id -m` 子组追加日志） |
 | `memory list --project-id [--category]` / `remove <preference_id>` / `stats --project-id` / `summarize --project-id [--force|--remove]` / `user-list [--category]` / `user-remove <preference_id>` | Agent 记忆与偏好（项目级 + 用户级；无手工 add） |

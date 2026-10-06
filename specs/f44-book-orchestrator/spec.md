@@ -610,7 +610,7 @@ START → bootstrap → prepare_continuity（B：写前定承接表，一次 LLM
 
 | 方案 | 旧稿落点 | 未选原因（可推翻，若要推翻请新开 issue） |
 |---|---|---|
-| A1 | `drafts` 表（`Draft.chapter_id`=该章，`status=draft`） | 🔴 **代码级语义冲突**：`draft_service.confirm()` 取 `target = draft.chapter_id or chapter_id`（`domain/services/draft_service.py:219`）⇒ 确认「备份草稿」会把**旧文写回该章、静默回退新正文**；若为规避把 `chapter_id` 留空，又落进 `POST /agent/drafts/prune-orphans` 的清理面 ⇒ 备份不可信 |
+| A1 | `drafts` 表（`Draft.chapter_id`=该章，`status=draft`） | 🔴 **代码级语义冲突**：`draft_service.confirm()` 取 `target = draft.chapter_id or chapter_id`（`domain/services/draft_service.py:219`）⇒ 确认「备份草稿」会把**旧文写回该章、静默回退新正文**；若为规避把 `chapter_id` 留空，备份草稿就成了**无章节锚点的裸草稿**（口径见 `POST /agent/drafts/prune-orphans`——#1479 起该判据按**所属项目**判孤儿，项目健在的备份草稿不在清理面；但「无锚点裸草稿」本身即 A1 不可靠的根因）⇒ 备份不可信 |
 | A3 | 不落旧稿，覆盖前显式提示 + 二次确认 | 一次误点旧稿永久消失（不可恢复）；A2 的「上一稿快照」是通用能力，后续任何覆盖/重写入口都可复用 |
 
 > 另已排除：`DataChangeEvent`（审计/SSE 变更流）**不含正文载荷**，不能当备份源。

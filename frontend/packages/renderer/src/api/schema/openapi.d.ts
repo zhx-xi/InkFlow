@@ -371,7 +371,7 @@ export interface paths {
         put?: never;
         /**
          * Prune Orphan Drafts
-         * @description 删除孤儿草稿（project_id=全零，#275 数据清理）→ {"deleted": N}.
+         * @description 删除孤儿草稿（全零 project_id / 所属项目不存在或已软删，#275 + #1479）→ {"deleted": N}.
          */
         post: operations["prune_orphan_drafts_api_v1_agent_drafts_prune_orphans_post"];
         delete?: never;
@@ -390,7 +390,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Draft
+         * @description 硬删草稿（真删，不可恢复；#1479 清理出口）→ 204 / 404（草稿不存在）.
+         *
+         *     与 ``POST /drafts/{id}/reject``（保留记录）语义互斥。
+         */
+        delete: operations["delete_draft_api_v1_agent_drafts__draft_id__delete"];
         options?: never;
         head?: never;
         /**
@@ -7139,6 +7145,35 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_draft_api_v1_agent_drafts__draft_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

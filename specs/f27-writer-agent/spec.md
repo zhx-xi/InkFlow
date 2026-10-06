@@ -1,7 +1,7 @@
 # F27: Writer Agent 闭环（writer-agent）功能规格
 > **端**: backend
 
-**Spec 版本**: 1.0（初稿待评审）
+**Spec 版本**: 1.1
 **日期**: 2026-08-10
 **依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 1 + F26 spec v1.1（specs/f26-agent-tools/spec.md §5.7）+ Spike 0 报告（docs/deepagents-evaluation-2026-08-10.md ② 空 content）+ 0.7.0 路线图拍板记录（2026-08-10）
 **所属阶段**: 0.7.0（Agent 化升级第二批），估算 8-12 人天
@@ -9,6 +9,8 @@
 **依赖**: ✅ F26 agent-tools（deepagents 集成 + 5 只读工具，PR #236）· ✅ F5 LLM Provider · ✅ F4 Agent 管线 · ✅ #87 LangGraph 重构 · ✅ F34 单章审计 · ✅ F3 writing_service · ⏳ F28 agent-memory（F27 是事件源，反向依赖）
 **参考 ADR**: adr/agent/ADR-034.md（护栏触发语义）、adr/agent/ADR-035.md（编排引擎=deepagents 0.7.5）、adr/agent/ADR-036.md（写工具形态）、adr/agent/ADR-033.md（预算护栏数值——本 spec 定稿）、ADR-015（LangChain 隔离）、ADR-027（覆盖率门禁）
 **状态**: ✅ 已实现（PR #241，2026-08-10 合入；Q1-Q4 拍板 2026-08-10）
+
+> **Spec 变更**（v1.0 → v1.1，2026-10-06，#1479 缺陷修复）：草稿清理路径补齐——① 新增 `DELETE /api/v1/agent/drafts/{draft_id}`（真删语义，清理出口；此前该路径无路由 → 405）；② `POST /agent/drafts/prune-orphans` 的「孤儿」判据扩展——由「仅 `project_id` 全零 GUID」扩为「**或**所属 `projects` 行不存在 / `projects.is_deleted` 为真」（旧判据保留不删）。动机：软删项目 + 已置 rejected 的草稿既不在 `#1371` 的硬删级联面、也不在旧 prune 判据面 → 永久残留且无接口可清（issue #1479 实测）。正文修订位置：§3.1（端点总览 +3 行 + 「修改履历」列）、§15.1（端点状态流 +2 行）、§15.2（CLI 状态流 +2 行，新增 `inkflow agent draft delete`）。**不含** GUI 草稿页清理入口（另开 UI 轨）。
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
 
@@ -138,13 +140,16 @@ class Draft(BaseModel):
 
 ### 3.1 端点总览
 
-| 方法 | 路径 | 说明 | 状态 |
-|------|------|------|------|
-| POST | `/api/v1/writing/agentic/generate` | agentic 生成章节（显式开启，不改变既有 /generate 语义） | 新增 |
-| GET | `/api/v1/agent/runs/{run_id}` | 查询单次 run 决策轨迹（steps/工具调用/token） | 新增 |
-| GET | `/api/v1/agent/runs?project_id=&limit=` | 项目 run 列表（分页，倒序） | 新增 |
-| POST | `/api/v1/agent/drafts/{draft_id}/confirm` | 确认草稿 → 写入正式章节 | 新增 |
-| GET | `/api/v1/agent/drafts?project_id=&status=` | 草稿列表（用户确认入口） | 新增 |
+| 方法 | 路径 | 说明 | 状态 | 修改履历 |
+|------|------|------|------|----------|
+| POST | `/api/v1/writing/agentic/generate` | agentic 生成章节（显式开启，不改变既有 /generate 语义） | 新增 | — |
+| GET | `/api/v1/agent/runs/{run_id}` | 查询单次 run 决策轨迹（steps/工具调用/token） | 新增 | — |
+| GET | `/api/v1/agent/runs?project_id=&limit=` | 项目 run 列表（分页，倒序） | 新增 | — |
+| POST | `/api/v1/agent/drafts/{draft_id}/confirm` | 确认草稿 → 写入正式章节 | 新增 | — |
+| GET | `/api/v1/agent/drafts?project_id=&status=` | 草稿列表（用户确认入口） | 新增 | — |
+| PATCH | `/api/v1/agent/drafts/{draft_id}` | 编辑草稿正文（F28 §3 接线，实现早于本表登记） | 新增 | — |
+| DELETE | `/api/v1/agent/drafts/{draft_id}` | 硬删草稿（真删语义，清理出口） | 新增 | — |
+| POST | `/api/v1/agent/drafts/prune-orphans` | 清理孤儿草稿（全零 GUID / 所属项目不存在或已软删） | 新增 | 2026-10-06：判据由「仅 `project_id` 全零 GUID」扩展为「**或**所属项目不存在 / `projects.is_deleted` 为真」（#1479），旧判据保留不删 |
 
 > 约束：既有 `/api/v1/writing/generate` 等端点**零改动**（deterministic 默认路径不动）；agentic 用独立前缀 `/writing/agentic/` 隔离语义，避免误用既有端点（升级路径 adr/agent/ADR-031.md：双模式并存）。
 
@@ -923,6 +928,8 @@ async def book_supervisor_node(state: BookAgenticState, config: AgenticBookConfi
 | GET /api/v1/agent/runs?project_id=&limit= | — | 项目 run 列表（分页倒序） | 200 + items | — | — |
 | POST /api/v1/agent/drafts/{draft_id}/confirm | 草稿存在且状态 draft | 经 chapter_service.update_chapter 写入正式章节 + draft 置 CONFIRMED | 200 + {draft_id, status: confirmed, chapter_id} | 404（草稿不存在/确认时章节已被删）；409（重复确认，草稿已 confirmed） | 草稿未绑定章节时 body 可传 chapter_id |
 | GET /api/v1/agent/drafts?project_id=&status= | — | 草稿列表（用户确认入口） | 200 + items | — | status 过滤可选 |
+| DELETE /api/v1/agent/drafts/{draft_id} | 草稿存在 | 物理删除 `drafts` 行（真删，不可恢复） | 204（无 body） | 404（草稿不存在） | 与 reject（保留记录）语义互斥——本端点专供清理出口（#1479） |
+| POST /api/v1/agent/drafts/prune-orphans | — | 全表扫孤儿草稿并删除 | 200 + `{deleted: N}` | — | 孤儿 = `project_id` 全零 / 所属项目不存在 / `projects.is_deleted` 为真；`dry_run=true` 只统计不删；软删项目的**全部**草稿（含 confirmed/rejected）均视为孤儿 |
 | POST /api/v1/agent/books/runs（mode=agentic，附录） | 计划存在 + 至少一道护栏 | prepare_run 预校验 → 后台 _run_book → write_book_agentic → BookAgenticPipeline.execute | 202 + run_id/status=running | 404（运行不存在）；409（内容已写安全阀）；422（上限全无限制/非 waiting_hitl confirm） | mode 默认 static 零改动；config（AgenticBookConfig）仅 agentic 生效；GET/confirm/intervene 复用 F44 |
 
 ### 15.2 CLI 命令状态流
@@ -933,6 +940,8 @@ async def book_supervisor_node(state: BookAgenticState, config: AgenticBookConfi
 | inkflow agent draft list --project-id [--status] | — | 草稿列表 | 退出码 0 + 信封 | 退出码 1 | — |
 | inkflow agent draft confirm &lt;draft_id&gt; [--chapter-id] | 草稿存在 draft 态 | 确认 → 写正式章节 | 「章节已更新 (status=final, 字数 N)」 | 404/409 → 退出码 1 | — |
 | inkflow agent draft reject &lt;draft_id&gt; | 草稿存在 | 拒绝（保留记录） | 「草稿已拒绝（保留记录）」 | 404 → 退出码 1 | — |
+| inkflow agent draft delete &lt;draft_id&gt; | 草稿存在 | 硬删草稿（真删） | 「✅ 草稿已删除」 | 404 → 退出码 1 | 无 `--force`：非删除类命令组，真删不可恢复（#1479） |
+| inkflow agent draft prune-orphans [--dry-run] | — | 清理孤儿草稿 | 「✅ 已删除 N 条孤儿草稿」 | 退出码 1 | `--dry-run` 只统计（文案带 dry-run 提示）；`--json` 信封 `{deleted: N}` |
 | inkflow agent run list --project-id [--limit 20] / show &lt;run_id&gt; | — | 决策轨迹查询 | 退出码 0（show 输出 steps 每步 message + tool_calls + result） | 404 → 退出码 1 | — |
 | inkflow book run/status/confirm/intervene --mode agentic（附录） | 计划存在 | 复用 F44 命令，agentic 模式 | 退出码 0 | 404/409/422 → 退出码 1 | density 三层；confirm/intervene 复用 F44 语义 |
 

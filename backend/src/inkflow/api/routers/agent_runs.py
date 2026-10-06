@@ -176,6 +176,22 @@ async def prune_orphan_drafts(
     body: PruneOrphansRequest | None = None,
     svc: DraftService = Depends(get_draft_service),
 ) -> dict:
-    """删除孤儿草稿（project_id=全零，#275 数据清理）→ {"deleted": N}."""
+    """删除孤儿草稿（全零 project_id / 所属项目不存在或已软删，#275 + #1479）→ {"deleted": N}."""
     count = await svc.prune_orphans(dry_run=body.dry_run if body else False)
     return {"deleted": count}
+
+
+@router.delete("/drafts/{draft_id}", status_code=204)
+@instrument(caller_type="api")
+async def delete_draft(
+    draft_id: str,
+    svc: DraftService = Depends(get_draft_service),
+) -> None:
+    """硬删草稿（真删，不可恢复；#1479 清理出口）→ 204 / 404（草稿不存在）.
+
+    与 ``POST /drafts/{id}/reject``（保留记录）语义互斥。
+    """
+    try:
+        await svc.hard_delete(draft_id)
+    except DraftNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

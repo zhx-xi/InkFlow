@@ -138,6 +138,13 @@ class TestAgentDraftHelp:
         assert "--chapter-id" in self._strip_ansi(result.stdout)
         assert "--json" in self._strip_ansi(result.stdout)
 
+    @pytest.mark.agent
+    def test_draft_help_has_delete(self):
+        """#1479: agent draft --help 含 delete 子命令（当前无 → RED）。"""
+        result = runner.invoke(app, ["agent", "draft", "--help"])
+        assert result.exit_code == 0
+        assert "delete" in self._strip_ansi(result.stdout)
+
 
 class TestAgentDraftExecution:
     """agent draft list/confirm/reject 真实执行路径（HTTP mock 轨）。"""
@@ -287,6 +294,39 @@ class TestAgentDraftExecution:
         result = _draft_result("prune-orphans")
         assert result.exit_code == 1
         assert "❌ 内核错误" in result.stderr
+
+    # ── #1479: 硬删草稿命令（draft delete） ──
+
+    @pytest.mark.agent
+    def test_draft_delete_success(self, fake_http_client):
+        """#1479: draft delete → DELETE /agent/drafts/{id} + 人类成功文案.
+
+        RED 预期: 子命令不存在 → typer exit 2 → exit_code 断言 FAILED，
+        fake_http_client.delete 未被调用 → await_args 为 None → AttributeError FAILED。
+        """
+        result = _draft_result("delete", DRAFT_ID)
+        assert result.exit_code == 0
+        call = fake_http_client.delete.await_args
+        assert call.args[0] == f"/agent/drafts/{DRAFT_ID}"
+        assert "✅ 草稿已删除" in result.stdout
+
+    @pytest.mark.agent
+    def test_draft_delete_json(self, fake_http_client):
+        """#1479: draft delete --json → 信封 {"ok": true, "data": {"deleted", "draft_id"}}。"""
+        result = _draft_result("delete", DRAFT_ID, "--json")
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {
+            "ok": True,
+            "data": {"deleted": True, "draft_id": DRAFT_ID},
+        }
+
+    @pytest.mark.agent
+    def test_draft_delete_404(self, fake_http_client):
+        """#1479: draft delete 404（草稿不存在）→ stderr ❌ + 退出码 1。"""
+        fake_http_client.delete.side_effect = _http_err(404, "草稿不存在")
+        result = _draft_result("delete", DRAFT_ID)
+        assert result.exit_code == 1
+        assert "❌ 草稿不存在" in result.stderr
 
     # ── #627 覆盖率补齐：mock 返回 None → data None → 静默 return / reject --json 信封 ──
 

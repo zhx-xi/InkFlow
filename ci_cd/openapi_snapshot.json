@@ -7002,7 +7002,7 @@
     },
     "/api/v1/agent/drafts/prune-orphans": {
       "post": {
-        "description": "删除孤儿草稿（project_id=全零，#275 数据清理）→ {\"deleted\": N}.",
+        "description": "删除孤儿草稿（全零 project_id / 所属项目不存在或已软删，#275 + #1479）→ {\"deleted\": N}.",
         "operationId": "prune_orphan_drafts_api_v1_agent_drafts_prune_orphans_post",
         "requestBody": {
           "content": {
@@ -7052,6 +7052,40 @@
       }
     },
     "/api/v1/agent/drafts/{draft_id}": {
+      "delete": {
+        "description": "硬删草稿（真删，不可恢复；#1479 清理出口）→ 204 / 404（草稿不存在）.\n\n与 ``POST /drafts/{id}/reject``（保留记录）语义互斥。",
+        "operationId": "delete_draft_api_v1_agent_drafts__draft_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Draft",
+        "tags": [
+          "AgentRuns"
+        ]
+      },
       "patch": {
         "description": "编辑草稿正文（确认前手动修改；F28 diff 事件捕获入口）.",
         "operationId": "update_draft_api_v1_agent_drafts__draft_id__patch",
