@@ -26,7 +26,7 @@ import { TimelineView } from '../components/TimelineView';
 import { WorldCatActionButtons } from '../components/WorldCatActionButtons';
 import { WorldCategoryDialog } from '../components/WorldCategoryDialog';
 import { WorldCategoryToolbar } from '../components/WorldCategoryToolbar';
-import { buildWorldTree, filterWorldTree, WorldNodeView } from '../components/WorldNodeView';
+import { buildWorldRootHint, buildWorldTree, filterWorldTree, isWorldRoot, WorldNodeView, type WorldRootHint } from '../components/WorldNodeView';
 import { Skeleton } from '../components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useI18n } from '../i18n/useI18n';
@@ -514,6 +514,22 @@ export function LibraryPage() {
     setCreateOpen(true);
   };
 
+  // #1494 首开（D1b/D2b/D3c）：#1481 后恒有 1 个默认根 → 根无子条目时自动选中高亮 + 根下引导行
+  // 默认根判据（isWorldRoot）比「有无顶层条目」更严：建根的对话框门控用后者（与后端
+  // WorldRootConflictError 同一判据 = 存在 parent_id IS NULL 的行）
+  const worldHasRootNode = listItems.some((i) => i.parent_id === null || i.parent_id === undefined);
+  const worldRootItem = activeCat === 'world' ? listItems.find(isWorldRoot) ?? null : null;
+  const worldFirstOpenId = worldRootItem && !listItems.some((i) => i.parent_id === worldRootItem.id)
+    ? worldRootItem.id
+    : undefined;
+  const worldRootHint: WorldRootHint | undefined =
+    worldFirstOpenId === undefined
+      ? undefined
+      : buildWorldRootHint(t, worldCatEntities.length === 0, worldFirstOpenId, {
+          onAddCategory: () => setWorldCatDialogOpen(true),
+          onAddEntry: (parentId) => handleOutlineAdd({ level: 'overall', parentId }),
+        });
+
   return (
     <div data-testid="library-page" className="mx-auto max-w-[1080px] px-12 py-10">
       <h1 className="font-serif text-[26px] font-semibold">{t('lib.title')}</h1>
@@ -715,6 +731,8 @@ export function LibraryPage() {
                         node={node}
                         depth={0}
                         collapsed={collapsedIds}
+                        highlight={worldFirstOpenId === node.item.id}
+                        rootHint={worldFirstOpenId === node.item.id ? worldRootHint : undefined}
                         onToggle={toggleCollapsed}
                         onEdit={openEdit}
                         onDelete={openDelete}
@@ -785,7 +803,7 @@ export function LibraryPage() {
         <LibraryCreateDialog
           open={createOpen}
           cat={createCat}
-          isRoot={createCat === 'world' ? (activeWorldCat === null && !editing) : undefined}
+          isRoot={createCat === 'world' ? (!worldHasRootNode && !editing) : undefined}
           editing={editing}
           tagSuggestions={tagSuggestions}
           initialCategory={activeCat === 'world' ? (activeWorldCat ?? undefined) : undefined}

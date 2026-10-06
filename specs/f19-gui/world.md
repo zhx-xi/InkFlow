@@ -5,7 +5,7 @@
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/world/world.html + world-<state>.png（main / cat-selected / cat-registered / btn-b / plan-b / plan-c / legacy / map / copy-dialog）
+- 原型引用：design/GUI/world/world.html + world-<state>.png（first-open / main / cat-selected / cat-registered / btn-b / plan-b / plan-c / legacy / map / copy-dialog）
 > 低保真排版示意简图（区块+标签，非精确像素）
 
 ```text
@@ -59,14 +59,20 @@
   - 地图工作台（map-workbench，space-y-3）：四级面包屑（map-bc-lib 设定库 / map-bc-world 世界观 / map-bc-maplist 地图视图 / map-bc-current「🗺 地图名」）+ 创建根图（map-create-root，MapPlus 图标）+ pin 计数（{n} 个标记）+ **左栏 260px 可拖宽**（#1322：`map-tree-column` 宽度受控，初始 260px；右缘 `map-tree-resize-handle` 手柄 `cursor-col-resize`，拖动 clamp **240~640px**——地图行含徽标+分类+4 按钮，写作页 160~360 不够；内存态不持久化，同 #702/#720；拖动**不替代** `overflow-x-auto`，#728 契约并存。**顶部 world-cat-add-always 恒显新建分类入口** #1321——地图分支不渲染分类工具栏，此前完全无处建分类）+ 下方目录树（MapDirectoryTree）+ 右栏画布（MapCanvas：底图 tab 简图/图片/AI[「即将推出」禁用] + 形状工具 ＋方框/＋椭圆/＋文字 + 点击画布任意位置添加标记）+ pin 列表（类型筛选 chips 地点/角色/事件/其他 + 行：类型徽标/名称/关联名/悬停编辑删除）
   - **地图树显示门控（#1322）**：`map-tree-main` 主树**只容纳已挂图的世界观条目**（`root_location_id` 命中 `mapByLocation`）及其**有图后代链上的祖先**（祖先仅为承载路径，不显示为独立条目行）；其余无图条目移入下方 **`map-tree-unmapped` 未挂图条目折叠区**（`map-tree-unmapped-toggle` 切换，**默认收起**，`aria-expanded` 反映态；**折叠而非隐藏**——展开后仍保留 `map-create-child-<条目id>` 建首张图入口）。无图条目一个都没有时折叠区不渲染。该过滤仅在地图工作台面生效（`buildWorldTree` 传 `isMapped`）；**列表页 `WorldNodeView` 树另按 #1334 ①C 做分类 kind 过滤（见 N15；#834 一项目一根 + 后端 #641 自动挂根语义不变）**
   - **world 创建带父（#1322）**：`LibraryCreateDialog` cat=world 的 body 含 `parent_id`（取 `initialParentId ?? null`）——地图视图内新建条目显式挂指定父，不依赖后端自动挂根兜底；未传时 `parent_id: null` → 后端 #641 兜底行为不变
-  - 空态（library-tab-empty）：「还没有世界观，去创建」+ CTA + 额外 WorldCatActionButtons（新建分类 + 地图视图）
+  - 空态（library-tab-empty）：「还没有世界观，去创建」+ CTA + 额外 WorldCatActionButtons（新建分类 + 地图视图）；**#1494**：`#1481` 把「一项目一根」收紧为**恒有且仅有一个根**（建项目自动建根）后，该空态在**正常路径已不可达**（列表恒有 1 个根条目）——定义保留，仅当「根被删且无子条目」时仍可达
+  - **#1494 首开语义（D1b / D2b / D3c，2026-10-06 拍板）**：新项目世界观页首开 = **1 个默认根**（不是空态）——根行 `world-node-root` **自动选中并高亮**（`data-root="1"` + `data-selected="1"` + `bg-accent-weak`）且**处于展开态**（根无子条目 → 无折叠；「展开」的可见形态 = 根下空子区渲染**引导行** `world-first-open-hint`）。引导行 CTA `world-first-open-cta` 按**已注册分类数**分流：
+    - **零分类**（真实首开）→ 文案 `lib.world.firstOpen.hintNoCategory`「还没有条目 — 先新建一个分类，再在{name}下添加条目」+ CTA「新建分类」→ 开 `WorldCategoryDialog`
+    - **已有分类** → 文案 `lib.world.firstOpen.hint`「还没有条目 — 在{name}下添加条目」+ CTA「新建条目」→ 开 `LibraryCreateDialog`（`parent_id` = 根 id、`isRoot` 非真 → 「类别」必填 #1321）
+    - **零分类不直开条目对话框**：后端非根条目的分类须为**已注册分类**（`world_service.create_setting` → `WorldCategoryMissingError`），直开会把用户送到 4xx
+    - 根高亮与引导行**仅在根无子条目时**渲染；根有子条目后两者撤掉
+  - **#1494 默认根本地化标题（D3c）**：根行标题按**结构判据 `isRoot`**（`parent_id` 为空 **且** `category` 为空）渲染本地化文案 `lib.world.rootTitle`（zh「世界观总纲」/ en「World Overview」），**不做 name 匹配**——重命名根后本地化仍生效（已知代价：根行不显示用户改定的名字）。测试锚点 `world-node-title-<id>`。后端默认根名常量 `DEFAULT_WORLD_ROOT_NAME`（`世界观总纲`）**不变**，本轨**零后端改动**
 - 布局说明：列表视图 = 分类工具栏 → 树卡片；地图工作台 = 面包屑 → 左右两栏（左树 260px 可拖至 240~640px #1322 / 右画布弹性）；全部弹层挂页面根部
 
 ## 2. 动作样式（按钮 × 状态表）
 
 | 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
 |------|--------|--------|--------|------|------|------|
-| 分类 chip（world-cat-filter） | 未选中描边 | 选中 → 整树按 category 过滤（保留匹配节点 + 子树） | — | 过滤树渲染 | — | 再点取消（null = 全部）；筛选无匹配 → 轻空态（common.empty）；一项目一根（#567） |
+| 分类 chip（world-cat-filter） | 未选中描边 | 选中 → 整树按 category 过滤（保留匹配节点 + 子树） | — | 过滤树渲染 | — | 再点取消（null = 全部）；筛选无匹配 → 轻空态（common.empty）；一项目一根（#567；#1481 收紧为**恒有且仅有一个根**；#1494 首开 = 默认根自动选中高亮 + 根下引导行） |
 | 分类删除（×，**#1375 ④ 已实现**） | chip **框内** ×（未 hover 隐藏、hover 显示） | handleWorldCatDelete（hook 内删除 + 刷新） | 请求中 | 分类 chips 刷新 + 清空筛选 | err toast | 删除分类不删条目（仅移除归类） |
 | 新建分类（**#1375 ①A 已实现**，world-cat-add） | 描边按钮（恒显） | 恒打开 WorldCategoryDialog（不随选中分类改变语义） | — | 保存 → 分类 chips 刷新（父级关框 + reloadKey） | err toast | 类型二选一默认 geo；名称空不可保存；列表工具栏与地图工作台左栏头部各一（#1321 语义保留、文案简化） |
 | 新建条目（**#1375 ①A 已实现**，world-cat-add-entry） | 描边按钮；未选中分类 → disabled + title「请先选择分类」 | 选中分类 → LibraryCreateDialog（initialCategory 预填 = 建子条目） | saving 禁用 | 保存 → 关框 + 树刷新 | err toast | 非根条目必须有分类 → 未选中分类不可用；**拍板：world 分支移除「去创建」（library-create-btn），由本钮承担** |
@@ -105,3 +111,4 @@
   - 判定源：**条目的分类的 kind**（spec `specs/f10-world-settings/spec.md` §16.4 / §16.8）；原型 `data-kind="abstract"` 行 = 该类条目
   - 生命周期例外：**未注册类别经「一键注册」转正式分类后**（默认 kind=abstract）即按 abstract 处理 → 主树隐藏、筛选视图可见（与 ②A 自愈链联动）
   - 低保真边界：abstract 父条目的 geo 子条目在实现中由 `buildWorldTree` 按「父不在结果集 → 顶层」上提（同 #721 建树规则）；原型行缩进为静态示例值，不表达该动态深度
+- N16（#1494）：世界观页**首开**——新项目（恒有 1 个默认根、无子条目）显示 `library-list` 树卡片且**不为空态**（`library-tab-empty` 不在场）；根行 `world-node-root` 带 `data-root="1"` + `data-selected="1"`（accent 淡底高亮）；根下渲染引导行 `world-first-open-hint`。**零分类**：CTA `world-first-open-cta` = 「新建分类」（文案含「先新建一个分类」）→ 开分类对话框；**已有分类**：CTA = 「新建条目」→ 打开 `LibraryCreateDialog`（`parent_id` = 根 id、`isRoot` 非真 → 「类别」输入在场 + 空值时 `library-create-category-required` 红字 + 保存禁用，**不直送 4xx**）。根**有子条目**时高亮与引导行均不渲染。根标题 = `lib.world.rootTitle` 本地化文案（**结构判据 `isRoot`**：根改名后仍本地化，不直显 name）。空态定义保留：**根被删且无子条目**时 `library-tab-empty` 仍可达
