@@ -141,3 +141,65 @@ async def test_wired_getters_delegate_to_real_services(monkeypatch) -> None:
 
     await session.close()
     await engine.dispose()
+
+
+async def test_agent_factory_binds_reader_tools_to_request_project(monkeypatch) -> None:
+    """#1476：CLI/API 同源装配（`get_agentic_writer_service`）→ 检索工具必须绑定请求项目.
+
+    缺陷形态：`build_agentic_writer` 调 `build_reader_tools` 漏传 `project_id` →
+    6 个项目域检索工具全以 `None` 查库 → `write next --mode agentic` 3/4 工具返回
+    「项目不存在」→ Agent 盲写。本用例走**真实 API 装配入口**锁死该契约（mock 掉
+    LLM 边界的 `build_deep_agent`，断言工具闭包实际传给 service 的 project_id）。
+    """
+    from unittest.mock import MagicMock, patch
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import inkflow.api.deps as deps_module
+    from inkflow.api.deps_agentic_writer import get_agentic_writer_service
+    from inkflow.core.database import Base
+    from inkflow.domain.models.agent_run import AgenticWriteRequest
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    request_project_id = uuid.UUID("b3f1c0de-0001-4000-8000-000000000001")
+    received: list[object] = []
+
+    class _RecordingCharacterService:
+        """记录检索工具实际传入的 project_id。"""
+
+        async def list_characters(self, project_id: object = None, **_kw: object) -> list[object]:
+            received.append(project_id)
+            return []
+
+    monkeypatch.setattr(
+        deps_module, "get_character_service", lambda db: _RecordingCharacterService()
+    )
+    session = factory()
+    try:
+        with (
+            patch(
+                "inkflow.api._llm_resolver.resolve_llm_credentials",
+                return_value=("deepseek/deepseek-chat", "test-key", "https://example.test/v1"),
+            ),
+            patch("inkflow.infrastructure.agent.agentic_writer.build_deep_agent") as m_da,
+        ):
+            m_da.return_value = MagicMock()
+            svc = get_agentic_writer_service(db=session)
+            svc._agent_factory(  # 私有装配缝：本文件既有先例（见 _project_config_getter 断言）
+                AgenticWriteRequest(project_id=request_project_id, outline="第一章大纲"), None
+            )
+            tools = m_da.call_args.kwargs["tools"]
+
+        search = next(tool for tool in tools if tool.spec.name == "search_characters")
+        await search.func()
+
+        assert received == [request_project_id], (
+            f"检索工具闭包绑定值应为请求项目，实得 {received!r}（None = #1476 缺陷复现）"
+        )
+    finally:
+        await session.close()
+        await engine.dispose()

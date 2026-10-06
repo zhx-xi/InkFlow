@@ -12,10 +12,12 @@ expected_project_id 先例），LLM 无需自报项目 ID（防编造全零 UUID
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -128,8 +130,25 @@ def _coerce_uuid(value: object) -> uuid.UUID:
     return uuid.UUID(str(value))
 
 
+def _json_safe(value: object) -> object:
+    """JSON 安全标量递归转换：UUID/date/datetime → 字符串，容器递归，其余原样."""
+    if isinstance(value, (uuid.UUID, datetime, date)):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    return value
+
+
 def _serialize_data(value: object) -> object:
-    """递归序列化：列表逐元素、pydantic 模型 model_dump(mode="json")、其余原样."""
+    """递归序列化：列表逐元素、pydantic 模型 model_dump(mode="json")、dataclass asdict、其余原样.
+
+    #1476：dataclass（如 `ChapterSummary`，无 `model_dump`）此前原样返回 →
+    `json.dumps` 抛 TypeError。症状是 `get_prior_summary` 在**有数据时**返回
+    `{"ok": false, "error": "Object of type ChapterSummary is not JSON serializable"}`，
+    而空列表下「假绿」（issue #1476 表格里的 `{"ok": true, "data": []}` 即此形态）。
+    """
     if isinstance(value, list):
         return [_serialize_data(item) for item in value]
     dumper = getattr(value, "model_dump", None)
@@ -137,6 +156,8 @@ def _serialize_data(value: object) -> object:
         dumped = dumper(mode="json")
         if isinstance(dumped, dict):
             return dumped
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(dataclasses.asdict(value))
     return value
 
 
