@@ -151,6 +151,9 @@ def create_event_cmd(
     era_value: str | None = typer.Option(
         None, "--era-value", help='纪元轴内值（数值；"" = 清除轴内值）'
     ),
+    era_scale: float | None = typer.Option(
+        None, "--era-scale", help="流速比（#1411 §2.8 E11；默认 1.0 = 与项目时基同速，须为正数）"
+    ),
 ) -> None:
     """创建时间线事件"""
     cli_ctx: CliContext = ctx.obj
@@ -172,6 +175,8 @@ def create_event_cmd(
             payload["era"] = era
         if era_value is not None:
             payload["era_value"] = _parse_era_value(cli_ctx, era_value)
+        if era_scale is not None:
+            payload["era_scale"] = era_scale
         async with client:
             return await client.post(
                 f"/projects/{pid}/timeline/events",
@@ -394,6 +399,9 @@ def update_event_cmd(
     era_value: str | None = typer.Option(
         None, "--era-value", help='纪元轴内值（数值；"" = 清除轴内值）'
     ),
+    era_scale: float | None = typer.Option(
+        None, "--era-scale", help="流速比（#1411 §2.8 E11；须为正数，缺省 = 不修改）"
+    ),
 ) -> None:
     """更新时间线事件（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
@@ -424,6 +432,8 @@ def update_event_cmd(
         update_fields["era"] = era
     if era_value is not None:
         update_fields["era_value"] = _parse_era_value(cli_ctx, era_value)
+    if era_scale is not None:
+        update_fields["era_scale"] = era_scale
     update = TimelineEventUpdate(**update_fields)
 
     async def _impl() -> dict:

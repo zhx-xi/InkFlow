@@ -5272,6 +5272,11 @@
             "title": "Era",
             "type": "string"
           },
+          "era_scale": {
+            "default": 1.0,
+            "title": "Era Scale",
+            "type": "number"
+          },
           "era_value": {
             "anyOf": [
               {
@@ -5358,6 +5363,17 @@
               }
             ],
             "title": "Era"
+          },
+          "era_scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Era Scale"
           },
           "era_value": {
             "anyOf": [

@@ -170,6 +170,23 @@ def _validate_era_value(v: float | str | None) -> float | str | None:
     return v
 
 
+def _validate_era_scale(v: float) -> float:
+    """验证流速比：须为**有限正数**（§2.8 E11；``1.0`` = 与项目时基同速）.
+
+    Args:
+        v: 原始流速比.
+
+    Returns:
+        校验通过的流速比.
+
+    Raises:
+        ValueError: 非有限数值，或 ≤ 0（流速比非正无意义）.
+    """
+    if not math.isfinite(v) or v <= 0:
+        raise ValueError("流速比必须是正数")
+    return v
+
+
 def resolve_era_fields(
     current_era: str,
     current_era_value: float | None,
@@ -288,6 +305,7 @@ class TimelineEventCreate(BaseModel):
     source_chapter_id: uuid.UUID | None = None  # None = 手工事件（不参与提取合并匹配）
     era: str = ""  # 纪元轴名（0.16.0，#1353 §2.8）
     era_value: float | str | None = None  # 纪元轴内值；"" = 不设轴内值
+    era_scale: float = 1.0  # 流速比（#1411 §2.8 E11；默认 1.0 = 与项目时基同速）
 
     @field_validator("title")
     @classmethod
@@ -345,6 +363,12 @@ class TimelineEventCreate(BaseModel):
         """验证纪元轴内值：None / "" 合法；字符串仅 "" 合法；数值须有限."""
         return _validate_era_value(v)
 
+    @field_validator("era_scale")
+    @classmethod
+    def validate_era_scale(cls, v: float) -> float:
+        """验证流速比：须为有限正数（#1411 §2.8 E11）."""
+        return _validate_era_scale(v)
+
 
 class TimelineEventUpdate(BaseModel):
     """更新时间线事件请求 DTO — 所有字段可选（exclude_unset 语义，同 F1）.
@@ -366,6 +390,7 @@ class TimelineEventUpdate(BaseModel):
     source_chapter_id: uuid.UUID | None = None  # None 不修改（同其他可空字段语义）
     era: str | None = None  # None = 不修改；"" = 清除纪元
     era_value: float | str | None = None  # None = 不修改；"" = 清除轴内值
+    era_scale: float | None = None  # None = 不修改；正数为新流速比（#1411 §2.8 E11）
 
     @field_validator("title")
     @classmethod
@@ -426,6 +451,12 @@ class TimelineEventUpdate(BaseModel):
     def validate_era_value(cls, v: float | str | None) -> float | str | None:
         """验证纪元轴内值：None（不修改）直接返回；否则复用共享校验."""
         return _validate_era_value(v) if v is not None else None
+
+    @field_validator("era_scale")
+    @classmethod
+    def validate_era_scale(cls, v: float | None) -> float | None:
+        """验证流速比：None（不修改）直接返回；否则复用共享校验（#1411 §2.8 E11）."""
+        return _validate_era_scale(v) if v is not None else None
 
 
 class TimelineEventRef(BaseModel):

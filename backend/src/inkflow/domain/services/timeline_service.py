@@ -59,6 +59,7 @@ from inkflow.domain.services._timeline_timebase import (
     normalized_days,
     to_days,
 )
+from inkflow.domain.services.era_conversion import to_global
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,29 @@ def _to_ref(event: TimelineEvent) -> TimelineEventRef:
         narrative_position=event.narrative_position,
         timeline_flag=event.timeline_flag,
     )
+
+
+def _global_scalar_keys(events: list[TimelineEvent]) -> dict[uuid.UUID, float | None]:
+    """按 `era` **分桶**求**全局标量**比较键（spec §2.8 E11 / §5.3，v1.5 #1411）.
+
+    - **默认轴**（`era == ""`）：§2.7 S2/S4 归一日尺度（`normalized_days`，**v1.4 口径不变**）；
+    - **纪元轴**（`era != ""`）：`to_global(era, era_value, era_scale)` 换算后的**全局标量**
+      （`era_value` 为 None → 键为 None，该事件按未知时间处置）。
+
+    **跨桶**（`era` 不同）比较即在此口径上进行——两侧都已是全局量纲（ADR-065 §2.1）。
+    换算只做**判定层只读投影**，不回写 `time_value`（spec §12 判定层/数据层分离）。
+
+    Args:
+        events: 事件序列（叙事序或任意序，键与顺序无关）.
+
+    Returns:
+        事件 id → 全局标量（None = 时间未知）。
+    """
+    days = normalized_days(events)
+    return {
+        e.id: (to_global(e.era, e.era_value, e.era_scale) if e.era else days.get(e.id))
+        for e in events
+    }
 
 
 def _classify_pair(
@@ -186,7 +210,7 @@ def _sort_event_timeline(events: list[TimelineEvent]) -> list[TimelineEvent]:
     Returns:
         排序后的新列表（不修改入参）.
     """
-    keys = normalized_days(events)
+    keys = _global_scalar_keys(events)
     return sorted(
         events,
         key=lambda e: (keys.get(e.id) is None, keys.get(e.id), e.narrative_position),
@@ -245,6 +269,7 @@ class TimelineService:
         timeline_flag: str = "",
         era: str = "",
         era_value: float | str | None = None,
+        era_scale: float = 1.0,
     ) -> TimelineEvent:
         """创建时间线事件（spec §2.1: narrative_position 缺省 = 叙事末尾追加）.
 
@@ -260,6 +285,7 @@ class TimelineService:
             timeline_flag: 时间线标记（""/flashback/flashforward）.
             era: 纪元轴名（"" = 不设纪元，#1353 §2.8 E1）.
             era_value: 纪元轴内值（None = 不设轴内值，#1353 §2.8 E2）.
+            era_scale: 流速比（#1411 §2.8 E11；默认 1.0 = 与项目时基同速）.
 
         Returns:
             持久化后的完整 TimelineEvent.
@@ -286,6 +312,7 @@ class TimelineService:
             timeline_flag=timeline_flag,
             era=resolved_era,
             era_value=resolved_era_value,
+            era_scale=era_scale,
             created_at=now,
             updated_at=now,
         )
@@ -432,11 +459,12 @@ class TimelineService:
         """单事件检查（F43 P4 spec §2.9/§3.7）——报告该事件参与的相邻对逆序冲突.
 
         ① repo.get 取事件，不存在 → 返回 None（router 转 404）；
-        ② 事件 time_value None → checked=false、consistent=true、冲突为空
-           （不参与检查，非冲突）；
+        ② 事件**全局标量**为 None（默认轴 `time_value=None` / 纪元轴 `era_value=None`）
+           → checked=false、consistent=true、冲突为空（不参与检查，非冲突）；
         ③ repo.list_all(project_id) 取全部事件（已按 narrative_position ASC
-           稳定排序），按 §2.7 S2/S4 对**全量**事件算一次归一日尺度键
-           `keys = normalized_days(events)`（`时/时辰` 需序列上下文），定位
+           稳定排序），按 §2.8 E11 / §5.3 对**全量**事件算一次**全局标量**键
+           `keys = _global_scalar_keys(events)`（默认轴归一日尺度；纪元轴
+           `to_global` 换算；`时/时辰` 需序列上下文），定位
            该事件在叙事序中的位置 i；
         ④ 检查相邻对 (events[i-1], events[i]) 与 (events[i], events[i+1])，
            复用 _classify_pair（比较归一值，与 check_consistency 同口径）；
@@ -452,7 +480,10 @@ class TimelineService:
         event: TimelineEvent | None = await self._repo.get(event_id)
         if event is None:
             return None
-        if event.time_value is None:
+        events = await self._repo.list_all(event.project_id)
+        keys = _global_scalar_keys(events)
+        if keys.get(event.id) is None:
+            # 全局标量未知（默认轴 time_value=None / 纪元轴 era_value=None）→ 不参与检查
             return EventCheckReport(
                 event_id=event.id,
                 checked=False,
@@ -460,8 +491,6 @@ class TimelineService:
                 conflicts=[],
                 flashbacks=[],
             )
-        events = await self._repo.list_all(event.project_id)
-        keys = normalized_days(events)
         # 事件在叙事序中的位置 i（list_all 已按 narrative_position ASC 稳定排序）
         i = next((idx for idx, e in enumerate(events) if e.id == event.id), None)
         conflicts: list[TimelineConflict] = []
@@ -500,8 +529,9 @@ class TimelineService:
     ) -> ConsistencyReport | None:
         """一致性检查（spec §5.3，确定性算法，无 LLM）— 相邻对扫描.
 
-        先按 §2.7 S2/S4 把 `time_value` 从 `time_unit` 归一到「日」
-        （`keys = normalized_days(events)`，`时/时辰` 用叙事序上的日锚点），
+        先按 §2.8 E11 / §5.3 **按 `era` 分桶**求全局标量键
+        （`keys = _global_scalar_keys(events)`：默认轴按 §2.7 S2/S4 归一到「日」，
+        纪元轴用 `to_global` 换算；`时/时辰` 用叙事序上的日锚点），
         再对叙事顺序（list_all 已按 narrative_position ASC, created_at ASC
         稳定排序）上归一值均非 None 的相邻事件对 (A, B) 逐一比较：
         `keys[A] > keys[B]` 为逆序对，按 §5.4 分类：
@@ -526,7 +556,7 @@ class TimelineService:
         """
         await self._ensure_project(project_id)
         events = await self._repo.list_all(project_id)
-        keys = normalized_days(events)
+        keys = _global_scalar_keys(events)
         # 参与比较集合: 叙事顺序上归一值非 None 的事件（#1409 §2.7 S2/S4；
         # time_value None → 归一值 None → 计入 skipped，语义与 v1.1 一致）
         seq = [e for e in events if keys.get(e.id) is not None]

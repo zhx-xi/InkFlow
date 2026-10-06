@@ -6,8 +6,8 @@
   落库实体（repo.add/repo.update 入参）同样承载
 - 成对语义（§2.8 E4）在服务层被完整执行：未传=不变 / ``""``=清空 / 非空=写入
 - ``extra`` **不再承载纪元**（§2.8 E9：v1.3 遗留快照）
-- **反例守护（E5/E6）**：未设纪元事件的 create / 一致性检查结论与 v1.3
-  **逐字段一致** —— 纪元不进一致性检查
+- **反例守护（E5）**：**默认轴**（`era=""`）事件的 create / 一致性检查结论与 v1.3/v1.4
+  **逐字段一致**（v1.5 #1411 起纪元**经换算参与**检查——见 `test_timeline_era_1411.py`）
 
 【RED 预期（v1.4）】服务层仍写 ``extra`` → ``created.era`` 断言 FAIL；零 SyntaxError。
 """
@@ -195,41 +195,56 @@ class TestUpdateEventEra:
         assert (updated.era, updated.era_value) == ("示例历", 317.5)
 
 
-class TestEraDoesNotAffectCheck:
-    """反例守护（E6）：纪元不进一致性检查 —— 同一批事件加不加纪元，报告等价。"""
+class TestEraParticipatesInCheck:
+    """v1.5（#1411 / ADR-065 §2.1）：纪元**经换算参与**检查 —— T1 的「纪元不进检查」
+    硬验收**作用域收束回 T1**；默认轴（`era=""`）行为与 v1.4 逐字段一致。"""
 
-    async def test_check_report_equivalent_with_and_without_era(
+    async def test_same_axis_compared_by_converted_global_scalar(
         self, service: TimelineService, mock_repo: MagicMock
     ) -> None:
+        """同轴（同 era）按 `era_value` 排序正确：1 → 2 为正序，不报冲突。"""
+        events = [
+            _event("事件甲", era="示例历", era_value=1.0, narrative_position=1),
+            _event("事件乙", era="示例历", era_value=2.0, narrative_position=2),
+            _event("事件丙", era="示例历", era_value=None, narrative_position=3),
+        ]
+        mock_repo.list_all = AsyncMock(return_value=events)
+
+        report = await service.check_consistency(PID)
+
+        assert report is not None
+        assert report.checked == 2  # 轴内值未知的丙 → skipped
+        assert report.skipped == 1
+        assert report.consistent is True
+
+    async def test_same_axis_true_reverse_reported(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        events = [
+            _event("事件甲", era="示例历", era_value=2.0, narrative_position=1),
+            _event("事件乙", era="示例历", era_value=1.0, narrative_position=2),
+        ]
+        mock_repo.list_all = AsyncMock(return_value=events)
+
+        report = await service.check_consistency(PID)
+
+        assert report is not None
+        assert report.consistent is False
+        assert [c.conflict_type for c in report.conflicts] == ["order_conflict"]
+
+    async def test_default_axis_unchanged(
+        self, service: TimelineService, mock_repo: MagicMock
+    ) -> None:
+        """反例守护：默认轴（`era=""`）结论与 v1.4 逐字段一致（纪元不经换算不参与）。"""
         plain = [
             _event("事件甲", time_value=10.0, narrative_position=1),
             _event("事件乙", time_value=5.0, narrative_position=2),
             _event("事件丙", time_value=None, narrative_position=3),
         ]
-        with_era = [
-            e.model_copy(update={"era": "示例历", "era_value": float(i)})
-            if e.time_value is not None
-            else e
-            for i, e in enumerate(plain, start=1)
-        ]
-
         mock_repo.list_all = AsyncMock(return_value=plain)
-        without = await service.check_consistency(PID)
-        mock_repo.list_all = AsyncMock(return_value=with_era)
-        withx = await service.check_consistency(PID)
 
-        assert without is not None
-        assert withx is not None
-        assert (withx.checked, withx.skipped, withx.consistent) == (
-            without.checked,
-            without.skipped,
-            without.consistent,
-        )
-        assert [c.conflict_type for c in withx.conflicts] == [
-            c.conflict_type for c in without.conflicts
-        ]
-        assert [(c.prev.id, c.next.id) for c in withx.conflicts] == [
-            (c.prev.id, c.next.id) for c in without.conflicts
-        ]
-        # 事件时间线视图顺序（归一日尺度排序）不因纪元改变
-        assert [e.id for e in withx.event_timeline] == [e.id for e in without.event_timeline]
+        report = await service.check_consistency(PID)
+
+        assert report is not None
+        assert (report.checked, report.skipped, report.consistent) == (2, 1, False)
+        assert len(report.conflicts) == 1
