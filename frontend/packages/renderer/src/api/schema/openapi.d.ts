@@ -1349,6 +1349,9 @@ export interface paths {
          * @description 组装上下文（调试端点）.
          *
          *     与 F3 调用 build_context 的路径一致，用于独立验证组装结果.
+         *
+         *     v1.5（#1480）：任一观测字段为 True → 在既有响应上**额外**挂装配可观测面
+         *     （`system_prompt` / `skills` / `tools`），默认关闭时响应与 v1.4 逐字节一致。
          */
         post: operations["assemble_context_api_v1_context_assemble_post"];
         delete?: never;
@@ -4488,6 +4491,10 @@ export interface components {
          *         writing_requirements: 必填，写作要求 / 任务指令.
          *         max_tokens: 覆盖预算；None = 模型窗口 × max_ratio.
          *         override: 显式勾选通道（v1.1 #593）；None = 全部注入（默认行为）.
+         *         show_system_prompt: 装配可观测面（v1.5 #1480）——True 时响应额外返回写手轨
+         *             system prompt（默认关闭，避免体积与泄漏）.
+         *         show_skills: 装配可观测面（v1.5 #1480）——True 时返回有效技能集清单.
+         *         show_tools: 装配可观测面（v1.5 #1480）——True 时返回装配层 tool id 清单.
          */
         ContextRequest: {
             /** Chapter Id */
@@ -4502,6 +4509,21 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /**
+             * Show Skills
+             * @default false
+             */
+            show_skills: boolean;
+            /**
+             * Show System Prompt
+             * @default false
+             */
+            show_system_prompt: boolean;
+            /**
+             * Show Tools
+             * @default false
+             */
+            show_tools: boolean;
             /** Writing Requirements */
             writing_requirements: string;
         };

@@ -53,15 +53,38 @@ async def assemble_context(
     """组装上下文（调试端点）.
 
     与 F3 调用 build_context 的路径一致，用于独立验证组装结果.
+
+    v1.5（#1480）：任一观测字段为 True → 在既有响应上**额外**挂装配可观测面
+    （`system_prompt` / `skills` / `tools`），默认关闭时响应与 v1.4 逐字节一致。
     """
     svc = get_context_service(db)
     try:
         result = await svc.build_context(request)
-        return result.model_dump()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ContextBudgetExceededError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    payload = result.model_dump()
+    if request.show_system_prompt or request.show_skills or request.show_tools:
+        # 装配面依赖 deepagents/langchain（模块级导入会拖慢内核启动）→ 按需惰性导入
+        from inkflow.infrastructure.agent.assembly_observability import (
+            build_assembly_observability,
+        )
+
+        payload.update(
+            await build_assembly_observability(
+                db=db,
+                skills_root=app_config.data_dir / "skills",
+                context_text=svc.render_system_prompt(result),
+                project_id=request.project_id,
+                chapter_id=request.chapter_id,
+                show_system_prompt=request.show_system_prompt,
+                show_skills=request.show_skills,
+                show_tools=request.show_tools,
+            )
+        )
+    return payload
 
 
 # ── Agent 预选 ────────────────────────────────────────────────────
