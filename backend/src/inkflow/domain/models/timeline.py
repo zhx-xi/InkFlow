@@ -122,9 +122,9 @@ def _validate_text(v: str) -> str:
 
 
 ERA_KEY = "era"
-"""纪元轴名在 extra 中的键（f12 spec v1.3 §2.8 E1，跨层契约，勿改名）。"""
+"""纪元轴名在 ``extra`` 中的**遗留键**（v1.3 承载；v1.4 起仅供**迁移回填**读取，勿改名）。"""
 ERA_VALUE_KEY = "era_value"
-"""纪元轴内值在 extra 中的键（§2.8 E2）。"""
+"""纪元轴内值在 ``extra`` 中的**遗留键**（v1.3；v1.4 起仅供迁移回填读取）。"""
 ERA_MAX_LEN = 50
 """纪元轴名最大长度（§2.8 E1）。"""
 
@@ -170,41 +170,42 @@ def _validate_era_value(v: float | str | None) -> float | str | None:
     return v
 
 
-def apply_era(
-    extra: dict[str, Any], era: str | None, era_value: float | str | None
-) -> dict[str, Any]:
-    """按 §2.8 E4 成对语义把 era / era_value 应用到 extra。
+def resolve_era_fields(
+    current_era: str,
+    current_era_value: float | None,
+    era: str | None,
+    era_value: float | str | None,
+) -> tuple[str, float | None]:
+    """按 §2.8 E4 成对语义解算纪元正式列 ``(era, era_value)`` 的新值。
 
-    ① era is None        → 返回 extra 的副本（不变；era_value 忽略）
-    ② era == ""          → 删除 ERA_KEY 与 ERA_VALUE_KEY 两键（回到默认轴）
-    ③ era 非空           → 写 ERA_KEY（去空白）；
-                            era_value 为数值 → 写 ERA_VALUE_KEY
-                            era_value == ""  → 删除 ERA_VALUE_KEY
-                            era_value 为 None → 保留原值
-    **不原地修改入参**（返回新 dict）。
+    ① era is None        → 原值不变（此时 era_value 被忽略）
+    ② era == ""          → 清空：``("", None)``（回到默认轴）
+    ③ era 非空           → ``era.strip()`` 为轴名；
+                            era_value 为数值 → 该值
+                            era_value == ""  → 清空轴内值（None）
+                            era_value 为 None → 保留原轴内值
+    **无副作用**（入参为不可变标量，返回新元组）。
 
     Args:
-        extra: 既有扩展属性字典（不被修改）.
-        era: 纪元轴名（None = 不修改；"" = 清除；非空 = 写入）.
-        era_value: 轴内值（数值 = 写入；"" = 清除；None = 保留原值）.
+        current_era: 当前纪元轴名（正式列值）.
+        current_era_value: 当前轴内值（正式列值）.
+        era: 请求的纪元轴名（None = 不修改；"" = 清空；非空 = 写入）.
+        era_value: 请求的轴内值（数值 = 写入；"" = 清空；None = 保留原值）.
 
     Returns:
-        应用成对语义后的新 extra 字典.
+        解算后的 ``(era, era_value)`` 元组.
     """
-    result = dict(extra)
     if era is None:
-        return result
+        return current_era, current_era_value
     if era == "":
-        result.pop(ERA_KEY, None)
-        result.pop(ERA_VALUE_KEY, None)
-        return result
-    result[ERA_KEY] = era.strip()
+        return "", None
     if isinstance(era_value, str):
-        if era_value == "":
-            result.pop(ERA_VALUE_KEY, None)
+        new_value: float | None = None
     elif era_value is not None:
-        result[ERA_VALUE_KEY] = era_value
-    return result
+        new_value = era_value
+    else:
+        new_value = current_era_value
+    return era.strip(), new_value
 
 
 class TimelineEvent(BaseModel):
@@ -228,6 +229,12 @@ class TimelineEvent(BaseModel):
         narrative_position: 叙事位置（单一线性序号，小者在前 = 先被叙述）.
         timeline_flag: 时间线标记（"" = 正叙、flashback = 倒叙、
             flashforward = 插叙/预叙；自由文本，未在建议词表的值等同未标记）.
+        era: 纪元轴名（"" = 默认轴 = 旧的单标量时间线）；v1.4 起为**正式列**
+            （ADR-065 / §2.8），取代 v1.3 的 ``extra.era`` 遗留快照.
+        era_value: 纪元轴内值（仅 era 非空时有意义；用于轴内排序与标签，
+            **不参与**全局排序与一致性检查）.
+        era_scale: 流速比（该纪元相对项目时基的时间流速，默认 1.0）；
+            v1.4 只落列，读写面与换算归 T2（#1411）.
         source_chapter_id: F14 提取来源章节（Q3 联动锚点）— 仅作来源追溯，
             不参与业务规则校验；None = 手工事件（不参与提取合并匹配）.
         extra: 扩展属性字典（参与角色、地点、标签等 Phase 2+ 字段预留）.
@@ -246,6 +253,9 @@ class TimelineEvent(BaseModel):
     time_display: str = ""  # 原始时间表达（如「示例历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""  # ""/flashback/flashforward（建议值，自由文本）
+    era: str = ""  # 纪元轴名（"" = 默认轴；v1.4 正式列，ADR-065 / §2.8）
+    era_value: float | None = None  # 纪元轴内值（None = 未知；仅 era 非空时有意义）
+    era_scale: float = 1.0  # 流速比（默认 1.0；换算归 T2 #1411）
     source_chapter_id: uuid.UUID | None = None  # F14 提取来源章节（Q3 联动）; None = 手工事件
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime

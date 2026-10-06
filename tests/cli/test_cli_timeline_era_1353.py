@@ -1,14 +1,14 @@
-"""#1353 时间线纪元承载 — CLI 契约（f12 spec v1.3 §4.1 create/update + §14.2）。
+"""#1353/#1410 时间线纪元 — CLI 契约（f12 spec v1.4 §4.1 create/update + §14.2，ADR-065）。
 
 【契约（钉住两件事）】
 1. ``timeline create --era <轴名> --era-value <数值>`` → POST body 带
-   ``era`` / ``era_value``（落 extra，零 DDL）
+   ``era`` / ``era_value``（v1.4 落**正式列**）；响应 ``data`` 含顶层
+   ``era`` / ``era_value`` / ``era_scale``
 2. **向后兼容**：不传 ``--era`` → body **不含** era / era_value 键
    （既有 exact-payload 用例零改动，spec v1.2 行为零变化）
    ``timeline update --era ""`` → body 含 ``era: ""``（清除纪元，§2.8 E4）
 
-【RED 预期】CLI 尚无 --era / --era-value 选项 → click 报
-``no such option``（exit_code 2）/ payload 断言 FAIL；零 SyntaxError。
+【RED 预期（v1.4）】响应仍走 ``extra`` → 顶层 ``era`` 断言 FAIL；零 SyntaxError。
 """
 
 from __future__ import annotations
@@ -68,6 +68,9 @@ def _event_json(**overrides: object) -> dict:
         "time_display": "",
         "narrative_position": 3,
         "timeline_flag": "",
+        "era": "",
+        "era_value": None,
+        "era_scale": 1.0,
         "extra": {},
     }
     payload.update(overrides)
@@ -83,9 +86,7 @@ def _payload(client: AsyncMock) -> dict:
 
 class TestCreateEventEraCLI:
     def test_create_with_era_sends_both_keys(self, cli_runner: CliRunner, fake_http_client) -> None:
-        fake_http_client.post.return_value = _event_json(
-            extra={"era": "示例历", "era_value": 317.5}
-        )
+        fake_http_client.post.return_value = _event_json(era="示例历", era_value=317.5)
 
         result = cli_runner.invoke(
             app,
@@ -107,10 +108,10 @@ class TestCreateEventEraCLI:
         payload = _payload(fake_http_client)
         assert payload["era"] == "示例历"
         assert payload["era_value"] == 317.5
-        assert json.loads(result.stdout)["data"]["extra"] == {
-            "era": "示例历",
-            "era_value": 317.5,
-        }
+        data = json.loads(result.stdout)["data"]
+        assert data["era"] == "示例历"
+        assert data["era_value"] == 317.5
+        assert data["era_scale"] == 1.0
 
     def test_create_without_era_omits_keys(self, cli_runner: CliRunner, fake_http_client) -> None:
         """向后兼容守护：不带 --era → body 无 era/era_value 键（v1.2 行为零变化）。"""
@@ -132,7 +133,7 @@ class TestUpdateEventEraCLI:
     def test_update_clear_era_sends_empty_string(
         self, cli_runner: CliRunner, fake_http_client
     ) -> None:
-        fake_http_client.patch.return_value = _event_json(extra={})
+        fake_http_client.patch.return_value = _event_json()
 
         result = cli_runner.invoke(
             app,
@@ -144,9 +145,7 @@ class TestUpdateEventEraCLI:
         assert _payload(fake_http_client) == {"era": ""}
 
     def test_update_with_era_and_value(self, cli_runner: CliRunner, fake_http_client) -> None:
-        fake_http_client.patch.return_value = _event_json(
-            extra={"era": "示例仙历", "era_value": 1024.0}
-        )
+        fake_http_client.patch.return_value = _event_json(era="示例仙历", era_value=1024.0)
 
         result = cli_runner.invoke(
             app,

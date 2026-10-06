@@ -68,6 +68,9 @@ def _orm_to_domain(orm: TimelineEventORM) -> TimelineEvent:
         time_display=orm.time_display,
         narrative_position=orm.narrative_position,
         timeline_flag=orm.timeline_flag,
+        era=orm.era,
+        era_value=orm.era_value,
+        era_scale=orm.era_scale,
         source_chapter_id=_int_to_uuid(orm.source_chapter_id),
         extra=orm.extra or {},
         created_at=orm.created_at,
@@ -86,6 +89,9 @@ def _domain_to_orm(domain: TimelineEvent) -> TimelineEventORM:
         time_display=domain.time_display,
         narrative_position=domain.narrative_position,
         timeline_flag=domain.timeline_flag,
+        era=domain.era,
+        era_value=domain.era_value,
+        era_scale=domain.era_scale,
         source_chapter_id=(
             _uuid_to_int(domain.source_chapter_id) if domain.source_chapter_id is not None else None
         ),

@@ -30,6 +30,9 @@ export interface LibraryItemDTO {
   location?: string; // foreshadow
   // ── F43 P1 新增 ──
   parent_id?: string | number | null; // world：F35 父节点（null=顶层）
+  // ── v1.4（#1410）时间线纪元**正式列**（ADR-065 / f12 spec §2.8）──
+  era?: string | null; // timeline：纪元轴名
+  era_value?: number | null; // timeline：纪元轴内值（后端 FLOAT）
   extra?: Record<string, unknown>; // characters：role_rank / groups 承载（spec §2.1）
 }
 
@@ -98,7 +101,7 @@ export function LibraryCreateDialog({
   const [category, setCategory] = useState('');
   const [content, setContent] = useState('');
   const [timeDisplay, setTimeDisplay] = useState('');
-  // #1353：时间线纪元轴（extra.era / extra.era_value；字符串态便于受控输入）
+  // #1353 / #1410：时间线纪元轴（正式列 era / era_value；字符串态便于受控输入）
   const [era, setEra] = useState('');
   const [eraValue, setEraValue] = useState('');
   const [priority, setPriority] = useState(50);
@@ -129,13 +132,11 @@ export function LibraryCreateDialog({
     setCategory(editing?.category ?? initialCategory ?? '');
     setContent(editing?.content ?? '');
     setTimeDisplay(editing?.time_display ?? '');
-    // #1353：编辑模式预填 extra.era / extra.era_value（非字符串/数值兜底空串）
-    const eraRaw = editing?.extra?.era;
+    // v1.4（#1410）：编辑模式预填纪元**正式列** era / era_value（非字符串/数值兜底空串）
+    const eraRaw = editing?.era;
     setEra(typeof eraRaw === 'string' ? eraRaw : '');
-    const eraValueRaw = editing?.extra?.era_value;
-    setEraValue(
-      typeof eraValueRaw === 'number' || typeof eraValueRaw === 'string' ? String(eraValueRaw) : '',
-    );
+    const eraValueRaw = editing?.era_value;
+    setEraValue(typeof eraValueRaw === 'number' ? String(eraValueRaw) : '');
     setPriority(editing?.priority ?? 50);
     setLocation(editing?.location ?? '');
     setLevel(initialLevel ?? 'overall');

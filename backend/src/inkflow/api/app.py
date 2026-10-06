@@ -106,6 +106,7 @@ from inkflow.core.database import (
     run_project_id_fk_migration,
 )
 from inkflow.core.log import setup_logging
+from inkflow.core.migrations_timeline_era import ensure_timeline_era_columns
 from inkflow.core.startup_reconcile import reconcile_stale_running_plans
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.services.agent_entity_service import seed_builtin_agents
@@ -162,6 +163,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_outline_drop_is_deleted)
         # #1323：时间线叙事序一次性回填为合成序（幂等；旧库自动修正跨章碰撞）
         await conn.run_sync(ensure_timeline_composite_positions)
+        # #1410：多纪元正式化 —— 三列 era/era_value/era_scale + extra 旧承载一次性回填（幂等）
+        await conn.run_sync(ensure_timeline_era_columns)
         await conn.run_sync(ensure_timeline_drop_is_deleted)
         await conn.run_sync(ensure_foreshadowing_drop_is_deleted)
         await conn.run_sync(ensure_foreshadowings_first_chapter_id_column)

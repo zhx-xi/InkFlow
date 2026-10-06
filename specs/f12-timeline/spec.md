@@ -11,7 +11,9 @@
 >
 > **Spec 变更（v1.3，2026-10-02，#1353）**: **多纪元最小承载**（0.16.0，方案 A）——① §2.2 论证表中原「纪元 + 序号复合键 ❌ 否决」**改写为「0.16.0 `extra` 承载 / 0.17.0 正式化」**（重新论证见 §2.8）；② 新增 §2.8「多纪元最小承载」：承载键约定（`extra.era` 轴名 / `extra.era_value` 轴内值）、写入成对语义、**边界声明**（单时基不变 / 纪元只作轴标签 / 不跨纪元比较）；③ 请求面新增 `era` / `era_value`（§3.2 请求体 + §4.1 CLI `--era` / `--era-value`，含清除语义）；④ **一致性检查算法与 `seq` 不变**（不按 `era` 分桶、不跨纪元换算 → 归 #1411）。**硬边界**：零 DDL（不新增列、不新增 `ensure_*`、不改既有数据），且 §2.7 的 S1-S10 逐条不变。
 >
-> **Spec 版本**: 1.3 | **日期**: 2026-10-02 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
+> **Spec 变更（v1.4，2026-10-06，#1410）**: **多纪元正式化**（0.17.0，ADR-065）——落地 v1.3 §2.2 论证表所指「0.17.0 正式化」第二期：① §2.1 数据模型新增三列 `era`（轴名）/ `era_value`（轴内值）/ `era_scale`（流速比，默认 1.0）；② §2.8 承载键由 `extra.era` / `extra.era_value` **改为正式列**（旧键降为 **v1.3 遗留快照**：迁移一次性投影进正式列后**不再读写**，且**不删除**以保可逆）；③ 请求面 `era` / `era_value` 成对语义（§2.8 E4）**完全不变**，仅落点由 `extra` 改为正式列；④ **零 DDL 硬边界到期解除**——新增幂等迁移 `ensure_timeline_era_columns`（三列 ADD COLUMN + 一次性回填）；⑤ 前端读取来源**同 PR** 切正式列（消除中间态漂移）。**硬边界不变**：`time_value` 仍是**跨轴全局标量**（§2.7 S1-S10 逐条不变）；**不换算 / 不按 `era` 分桶 / 不跨纪元比较**（换算规则归 T2 #1411）。
+>
+> **Spec 版本**: 1.4 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第四个模块，估算 3-4 人天）
 > **关联 Issues**: [#42](https://github.com/zhx-xi/InkFlow/issues/42)
 > **依赖**: F1 ✅（前置）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F12 无 LLM，见 §1/§5）
@@ -67,7 +69,10 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 | time_display | str | NOT NULL, DEFAULT "", ≤ 100 字符 | 原始时间表达（如「示例历 317 年秋」），time_value 的人工可读镜像；不参与排序 |
 | narrative_position | int | NOT NULL, DEFAULT 0, ≥ 0, 已索引 | **叙事位置**（单一线性序号，小者在前 = 先被叙述）；创建缺省 = 项目内 max+1（叙事末尾追加）；允许重复（排序按 `(narrative_position ASC, created_at ASC)` 稳定输出） |
 | timeline_flag | str | NOT NULL, DEFAULT "", ≤ 20 字符, 去空白 | 时间线标记（建议值：`""` = 正叙、`flashback` = 倒叙、`flashforward` = 插叙/预叙；自由文本，未在建议词表中的值等同未标记，见 §6.2） |
-| extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（参与角色、地点、标签等 Phase 2+ 字段预留）；**0.16.0 起承载多纪元轴**：`extra.era` = 纪元/轴名、`extra.era_value` = 轴内值（§2.8）——**仍是这个既有 JSON 列，零 DDL** |
+| extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（参与角色、地点、标签等 Phase 2+ 字段预留）；**v1.4 起不再承载纪元**——`extra.era` / `extra.era_value` 降为 **v1.3 遗留快照**（迁移一次性投影进正式列后不再读写，§2.8） |
+| era | str | NOT NULL, DEFAULT "" | **纪元轴名**（≤ 50 字符，去空白；`""` = **默认轴** = 旧的单标量时间线，R6-4）——多纪元正式列（v1.4，ADR-065 §2.8） |
+| era_value | float? | NULLABLE | **纪元轴内值**（有限数值；仅在 `era` 非空时有意义）——用于**轴内排序与轴内标签**，**不进**全局排序、**不进**一致性检查 |
+| era_scale | float | NOT NULL, DEFAULT 1.0 | **流速比**（该纪元相对项目时基的时间流速；1.0 = 同速）——读写面与换算归 T2（#1411），本版只落列 + 默认值 |
 | ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False, 已索引~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
@@ -77,6 +82,7 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 - `time_value` 与 `narrative_position` **独立可编辑**：改世界内时间不影响叙事顺序，反之亦然——双线相对独立正是需要一致性检查的原因（§5）
 - `time_value = None`（时间未知）是合法状态：事件仍属于叙事时间线，但在事件时间线排末尾、不参与一致性检查（计入 `skipped`，不报冲突）
 - 删除的事件（v1.1 真删）**物理不存在**，不进入双线视图与一致性检查
+- **多纪元三列（v1.4）**：`era` 为空 = **默认轴**；`era_value` 仅在 `era` 非空时有意义；三列**不参与**全局排序与一致性检查（§2.8 E3/E6）；`extra.era` / `extra.era_value` 为 v1.3 **遗留快照**（不再读写，§2.8 E9）
 
 ### 2.2 双时间线设计决策（时间表示法）
 
@@ -86,7 +92,7 @@ F12  检查:    事件档案(双时间维度) ──确定性算法──▶ 双
 |----------|------|------|------|
 | **数值键 + 标签 + 原始表达（选定）** | time_value 提供全序（可排序/可比较/可做一致性检查）；time_display 保留作者原始表达；time_unit 提供单位语义 | 数值键由作者/提取器维护，需约定单位 | ✅ MVP——一致性检查必须以「可比较的数值」为前提，三字段同时保留机器可算性与作者可读性。**v1.3 补充**：多纪元的**轴标签**由 `extra` 承载（§2.8），本行三字段的**单一排序键**语义不变 |
 | 纯自由文本时间（仅 time_display） | 零约束，作者最自由 | **不可排序、不可比较**——事件时间线无法排序、一致性检查没有依据 | ❌ 否决（无法支撑本模块核心验收标准） |
-| **纪元轴：`extra` 承载（0.16.0 选定）/ 正式列（0.17.0 方向）** | 0.16.0：`extra.era`（轴名）+ `extra.era_value`（轴内值）承载纪元，`time_value` 仍是**跨轴全局标量**（单一排序键与既有检查能力不变）→ 零 DDL、可逆；0.17.0：正式列 `era`/`era_value`/`era_scale` + 可配置流速比与历法换算 | 0.16.0 **弱约束**（JSON 列无类型/无索引）、**不换算**（跨纪元比较与分桶归 #1411）；0.17.0 需 `ensure_*` 迁移三件套 + 检查算法重写 | ⚠️ **原「❌ 否决」改写为「分两期」（v1.3 / #1353）**：否决理由（跨纪元换算复杂、双字段参与排序逻辑复杂）**仍然成立** → 0.16.0 **不引入复合键、不做正式列**；但「多纪元共存 + 可选择性显示」是**已验真的需求**（#1323 P2 / #1353），用既有扩展列即可低成本闭环 → **0.16.0 承载显示**（§2.8）、**0.17.0 正式化**（#1410 T1 / #1411 T2 / #1412 T3） |
+| **纪元轴：正式列 `era` / `era_value` / `era_scale`（0.17.0 选定，v1.4 / ADR-065）** | `time_value` 仍是**跨轴全局标量**（单一排序键与既有检查能力不变）；`era`（轴名）+ `era_value`（轴内值）承载纪元轴族，`era_scale`（流速比）承载 T2 换算输入 | 需 `ensure_*` 迁移三件套（v1.4 已交付）；跨纪元换算/分桶仍归 #1411 | ✅ **原「❌ 否决」经两次改写**：v1.3（#1353）改为「0.16.0 `extra` 承载 / 0.17.0 正式化」，本行（v1.4 / #1410）落地**第二期**。否决理由（跨纪元换算复杂、双字段参与排序逻辑复杂）**仍然成立**——故**不引入复合键**（全局排序仍靠单一 `time_value`）、**不做换算/分桶**（归 #1411）；正式化收益 = DDL 级类型/长度约束 + T2 的 `era_scale` 落点（重新论证见 §2.8） |
 | 公历 datetime | 现成类型 | 小说世界时间通常非公历（纪元/历法/季节制），强转 datetime 是错误抽象 | ❌ 否决 |
 
 **叙事时间**用单一整数序号（`narrative_position`）表达：
@@ -173,6 +179,9 @@ class TimelineEvent(BaseModel):
     time_display: str = ""               # 原始时间表达（如「示例历 317 年秋」）
     narrative_position: int = 0
     timeline_flag: str = ""              # ""/flashback/flashforward（建议值，自由文本）
+    era: str = ""                        # 纪元轴名（""=默认轴；v1.4 正式列，§2.8）
+    era_value: float | None = None       # 纪元轴内值（None=未知；仅 era 非空时有意义）
+    era_scale: float = 1.0               # 流速比（默认 1.0；换算归 T2 #1411）
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -188,6 +197,8 @@ class TimelineEventCreate(BaseModel):
     time_display: str = ""
     narrative_position: int | None = None   # None = 追加到叙事末尾（max+1）
     timeline_flag: str = ""
+    era: str = ""                           # 纪元轴名（v1.4；成对语义 §2.8 E4）
+    era_value: float | str | None = None    # 轴内值（数值=写入；""=不设/清除；None=不设）
 
     @field_validator("title")
     @classmethod
@@ -355,38 +366,40 @@ class TimelineView(BaseModel):
 
 **与后续里程碑的关系**：`#1353`（0.16.0 多纪元最小落地）在本节「单时基 + 单位归一」之上叠加**纪元轴族**（`extra.era` / `extra.era_value`），**不推翻** S1-S5；`#1410/#1411`（0.17.0 完整历法引擎）把 S2/S4 的固定换算表替换为**可配置纪元流速比 + 历法换算**，届时 S2/S4 由「常量表」升级为「历法函数」，S7 的段续接语义保留。**三个里程碑共用本节词汇**（时基 / 单位 / 日锚点 / 段续接），不得各造一套。
 
-### 2.8 多纪元最小承载（#1353，0.16.0；#1410/#1411 正式化的前置）
+### 2.8 多纪元承载（#1353 起；v1.4 / #1410 正式化为三列，ADR-065 决策记录）
 
-**背景（需求侧）**：作者的世界里同时存在多套纪年（例：某王朝年号、某修真界的界历、上界的历法），而世界序只能按「±N 日」这类**相对标量**显示，无法**按纪元分轴显示与选择**。用户 2026-10-01 拍板：最终做**完整历法换算引擎**（正式列 + 流速换算 + 跨轴一致性判定），整体量大 → **拆两个里程碑**；**0.16.0（本版本）只做「多轴共存 + 可选择性显示」**。
+**背景（需求侧）**：作者的世界里同时存在多套纪年（例：某王朝年号、某修真界的界历、上界的历法），而世界序只能按「±N 日」这类**相对标量**显示，无法**按纪元分轴显示与选择**。用户 2026-10-01 拍板：最终做**完整历法换算引擎**（正式列 + 流速换算 + 跨轴一致性判定），整体量大 → **拆两个里程碑**：**0.16.0（#1353）只做「多轴共存 + 可选择性显示」**（`extra` 承载，零 DDL）；**0.17.0（#1410 = 本版 v1.4）做正式化（三列 + 幂等迁移 + 存量回填）**，**跨纪元换算（T2）归 #1411**。
 
-**承载约定（规范文本）**：
+**承载约定（v1.4 规范文本；承载位 = 正式列）**：
 
 | # | 规则 |
 |---|------|
-| E1 | **轴名**：`extra.era`（str，≤ 50 字符，去空白；**空/缺失 = 该事件不属于任何纪元轴**） |
-| E2 | **轴内值**：`extra.era_value`（float，有限；**仅在该事件 `extra.era` 非空时有意义**）——用于**轴内排序与轴内标签**（如某纪元轴内 `317.5`） |
+| E1 | **轴名**：`era` 列（str，≤ 50 字符，去空白；**`""` = 该事件不属于任何纪元轴**，归**默认轴**）。**v1.4 起为正式列**（v1.3 的 `extra.era` 为遗留快照，见 E9） |
+| E2 | **轴内值**：`era_value` 列（float，有限，NULLABLE；**仅在该事件 `era` 非空时有意义**）——用于**轴内排序与轴内标签**（如某纪元轴内 `317.5`） |
 | E3 | **全局标量不变**：`time_value` / `time_unit` 语义**完全不变**（§2.7 S1-S5）——它仍是**跨轴全局标量**，排序与一致性检查只消费它；纪元**不参与**比较（E6） |
-| E4 | **写入成对**：请求面 `era` / `era_value` 是**成对**语义（§3.2 / §4.1）——① `era` 未传（None）⇒ `extra` **不变**（此时 `era_value` 被**忽略**）；② `era = ""` ⇒ **删除** `extra.era` 与 `extra.era_value`（回到默认轴）；③ `era` 非空 ⇒ 写 `extra.era`，且 `era_value` 为数值 ⇒ 写 `extra.era_value`、`era_value = ""` ⇒ 删除 `extra.era_value`、`era_value` 未传 ⇒ **保留原值** |
-| E5 | **默认轴（R6-4 拍板）**：`extra.era` 空/缺失的事件属于**默认轴**（= 旧的「单标量时间线」）——它与纪元轴**并列**存在于轴族中，**事件不因此丢失或改判**；只有一条轴时（项目无任何纪元数据）**不出现轴选择器**，渲染与本 spec v1.2 **完全一致**（反例守护） |
-| E6 | **不换算、不跨纪元比较（R6-5 的 0.16.0 立场）**：本里程碑**不做**跨纪元换算/比较/分桶——`check_consistency` 的相邻对扫描**维持原样**（只在 `time_value` 归一日尺度上比较，**不按 `era` 分桶**）；「跨纪元是否比较」的语义裁定与正式列一并落在 0.17.0（#1411） |
-| E7 | **零 DDL**：不新增列、不新增 `ensure_*` 迁移、不改既有数据。`extra` 是 v1.0 起就存在的扩展列（§2.1）→ 本里程碑**可逆**（删键即回到 v1.2 行为） |
-| E8 | **提取侧（F14）暂不带纪元**：本里程碑不改提取 prompt 与 `ExtractedTimelineEvent`（纪元由此后的正式化里程碑统一接入）；因此 0.16.0 的纪元数据来源是**手工/客户端写入**（API / CLI / GUI 对话框） |
+| E4 | **写入成对**：请求面 `era` / `era_value` 是**成对**语义（§3.2 / §4.1）——① `era` 未传（None）⇒ **不修改**（此时 `era_value` 被**忽略**）；② `era = ""` ⇒ **清空** `era` 与 `era_value`（回到默认轴）；③ `era` 非空 ⇒ 写 `era`，且 `era_value` 为数值 ⇒ 写 `era_value`、`era_value = ""` ⇒ 清空 `era_value`、`era_value` 未传 ⇒ **保留原值**。**落点 = 正式列**（v1.3 的 `extra.era` / `extra.era_value` 不再写入） |
+| E5 | **默认轴（R6-4 拍板）**：`era` 为空的事件属于**默认轴**（= 旧的「单标量时间线」）——它与纪元轴**并列**存在于轴族中，**事件不因此丢失或改判**；只有一条轴时（项目无任何纪元数据）**不出现轴选择器**，渲染与 v1.2 **完全一致**（反例守护） |
+| E6 | **不换算、不跨纪元比较（R6-5 的立场）**：本里程碑**不做**跨纪元换算/比较/分桶——`check_consistency` 的相邻对扫描**维持原样**（只在 `time_value` 归一日尺度上比较，**不按 `era` 分桶**）；跨纪元换算与「跨纪元是否比较」的语义裁定归 **T2（#1411）** |
+| E7 | **正式列 + 幂等迁移（v1.4 到期解除 v1.3 的「零 DDL」）**：三列 `era` / `era_value` / `era_scale` 落 `timeline_events`（§2.1）；迁移 `ensure_timeline_era_columns` 幂等（空表 / 缺列 / 有列三形态）；**存量回填**把 `extra.era` / `extra.era_value` **一次性投影**进正式列 |
+| E8 | **`era_scale`（流速比）**：float，`NOT NULL DEFAULT 1.0`。本版**只落列 + 默认值**；请求面与 CLI **不接受** `era_scale`——读写面与换算归 **T2（#1411）** |
+| E9 | **旧承载处置（遗留快照，不删除）**：`extra.era` / `extra.era_value` 为 **v1.3 遗留快照**——迁移后**不再读写**、**不删除**（保可逆：回退 0.16.0 时纪元信息仍在；且不违反「迁移不得删改既有数据」）。两者与正式列分歧时**以正式列为准** |
+| E10 | **提取侧（F14）暂不带纪元**：本里程碑不改提取 prompt 与 `ExtractedTimelineEvent`；纪元数据来源仍是**手工/客户端写入**（API / CLI / GUI 对话框） |
 
 **重新论证（原否决理由 vs 现在接受的部分）**：
 
-| 原否决理由（§2.2） | 0.16.0 的处置 |
-|---|---|
-| 「跨纪元比较需要额外换算规则」 | **理由成立 → 因此不做换算**（E6）：0.16.0 的验收标准里**没有**跨纪元比较项，故不构成实现阻力 |
-| 「两个字段参与排序逻辑复杂」 | **理由成立 → 因此不引入双排序字段**：全局排序键仍是单一 `time_value`（E3）；`extra.era_value` 只用于**轴内**排序与标签，不参与全局排序，也不进入一致性检查 |
-| （隐含）「数值键 + time_display 已覆盖同等表达能力」 | **被需求推翻**：`time_display` 是**被动展示字符串**，无法据以**按轴筛选/分轴显示**；#1353 明确要求「选择同时显示哪几条轴」→ 需要**结构化轴键**（`extra.era`），而非自由文本 |
+| 原否决理由（§2.2） | 0.16.0 的处置 | 0.17.0（v1.4）的处置 |
+|---|---|---|
+| 「跨纪元比较需要额外换算规则」 | **理由成立 → 因此不做换算**（E6）：0.16.0 的验收标准里**没有**跨纪元比较项，故不构成实现阻力 | **仍然不做**：换算归 T2（#1411）；本版不设跨纪元验收项 |
+| 「两个字段参与排序逻辑复杂」 | **理由成立 → 因此不引入双排序字段**：全局排序键仍是单一 `time_value`（E3）；`extra.era_value` 只用于**轴内**排序与标签，不参与全局排序，也不进入一致性检查 | **仍然成立 → 不引入复合键**：`era_value` 只用于**轴内**排序与标签，不进全局排序、不进一致性检查 |
+| （隐含）「数值键 + time_display 已覆盖同等表达能力」 | **被需求推翻**：`time_display` 是**被动展示字符串**，无法据以**按轴筛选/分轴显示**；#1353 明确要求「选择同时显示哪几条轴」→ 需要**结构化轴键**（`extra.era`），而非自由文本 | 同左；且正式列提供 **DDL 级类型/长度约束** 与 T2 换算所需的 `era_scale` 落点 |
 
-**边界声明（本里程碑不得越过的三条线）**：
+**边界声明（不得越过的三条线）**：
 
 1. **单时基不变**：`time_value` 仍是项目唯一时基上的累计量（§2.7 S1/S3）；纪元**不改变**它的物理尺度，也不引入第二套时基
-2. **纪元只作轴标签**：`extra.era` / `extra.era_value` 仅用于**轴族派生、轴选择、轴内排序/标签**（GUI 层投影）；**不进入**一致性检查、全局排序、审计判定
-3. **不跨纪元比较**：跨轴自洽性判定**本里程碑不做** → 归 #1411。**硬验收**：同一项目加不加纪元，`check` 结论**逐字段一致**（§9 反例守护用例）
+2. **纪元只作轴标签**：`era` / `era_value` 仅用于**轴族派生、轴选择、轴内排序/标签**（GUI 层投影）；**不进入**一致性检查、全局排序、审计判定
+3. **不跨纪元比较**：跨轴自洽性判定**本版不做** → 归 #1411。**硬验收**：同一项目加不加纪元，`check` 结论**逐字段一致**（§9 反例守护用例）
 
-**与 0.17.0 的移交面**：`extra.era` / `extra.era_value` → 正式列 `era` / `era_value`（+ `era_scale` 流速比）的**一次性投影迁移**归 **#1410**；`check_consistency` 的按轴分桶比较归 **#1411**；轴族枚举若需服务端化（供 CLI/MCP 复用）亦归 #1410。**三段共用本节词汇**（轴名 / 轴内值 / 默认轴 / 全局标量），不得各造一套。
+**与 T2（#1411）的移交面**：`extra.era` / `extra.era_value` → 正式列的**一次性投影迁移**已由 **#1410（本版）** 完成；跨纪元**换算**（`time_value_global = f(era, era_value, era_scale)`）、`check_consistency` 的按轴分桶比较、以及 `era_scale` 的**读写面**（请求体 / CLI 参数）归 **#1411**；轴族枚举若需服务端化（供 CLI/MCP 复用）亦归 #1411。**跨里程碑共用本节词汇**（轴名 / 轴内值 / 默认轴 / 全局标量 / 流速比），不得各造一套。
 
 
 ---
@@ -435,12 +448,14 @@ Content-Type: application/json
   "description": "外门考核夜，林尘丹田中的古鼎第一次亮起。",
   "time_value": 317.5, "time_unit": "年", "time_display": "示例历 317 年秋",
   "narrative_position": 3, "timeline_flag": "",
-  "extra": {"era": "示例历", "era_value": 317.5},
+  "era": "示例历", "era_value": 317.5, "era_scale": 1.0,
+  "extra": {},
   "created_at": "2026-08-01T10:00:00Z", "updated_at": "2026-08-01T10:00:00Z"
 }
 ```
 
 > **v1.3（#1353）**：请求体的 `era` / `era_value` 写入 `extra.era` / `extra.era_value`（成对语义见 §2.8 E4）；不带纪元时两字段可省略，`extra` 保持 `{}`（既有行为**零变化**）。
+> **v1.4（#1410）**：`era` / `era_value` 改落**正式列**——响应顶层新增 `era` / `era_value` / `era_scale`；`extra` **不再承载纪元**（不带纪元时为 `{}`）。**请求体形态与成对语义不变**（仅落点改正式列）。
 
 **事件详情**（响应结构同创建响应，完整 TimelineEvent JSON）:
 ```http
@@ -615,7 +630,7 @@ inkflow timeline update --id <uuid> \
     [--time-display <str>] [--narrative-position <int>] [--timeline-flag <str|"">] \
     [--era <str|"">] [--era-value <float|"">] [--json]
     # --time-value "" 表示清除世界内时间（置为未知）；--timeline-flag "" 表示清除标记（置为正叙）
-    # --era "" 清除纪元（删除 extra.era / extra.era_value 两键，回到默认轴）
+    # --era "" 清除纪元（清空正式列 era / era_value，回到默认轴）
     # 未传 --era 时 --era-value 被忽略（成对语义，§2.8 E4）
 
 inkflow timeline delete --id <uuid> [--force] [--json]     # v1.1 真删（--permanent 已移除）
@@ -1099,7 +1114,8 @@ F12 被依赖:
 | **time_value 语义 = 单位化累计时基**（#1409） | `time_value` × `time_unit` = 相对项目时基的累计时长；比较/排序**一律归一到「日」**（§2.7 S1-S5） | 原「time_unit 仅语义、不参与排序」使「多单位共用一个数值键」无人负责 → 真数据实测 7 条审计假阳性（3 条纯跨单位误判）。**备选：让 `time_value` 自带单位（如字符串「3月」）** → 破坏可排序数值键、需全链路类型改造（否决）；**备选：强制写入侧单一时基（拒绝非「日」单位）** → 破坏既有手工数据与 #1353 多纪元方向（否决）。选「归一到日 + 归一表」，代价是 365/30 取近似值（历法引擎 #1410 修正） |
 | **判定层归一 vs 数据层重锚分离**（#1409） | 比较/排序用**只读归一投影**；数据修复用**显式 `timeline normalize`**（dry-run 默认） | 归一修不了「同单位跨段重置」（无基准信息）；而自动重锚是**单调投影**（按构造消除全部逆序）→ 静默执行会把审计永久刷绿、吸收真实错误（违反「degraded ≠ 通过」）。故分层：判定层只做无副作用投影；数据层必须**用户显式裁决** |
 | **重锚用「回落=新段 + 段内续接」而非「抬平到前一条」**（#1409） | 段起点接上一段末尾，段内保留相对天数 | 抬平（`g = prev`）会把整卷压成平线、级联抹平相对信息（#1409 实测：两者都能到 0 冲突，但抬平的信息损失不可接受）；回落分段与「段内计数器」的真实成因一致（LLM 逐章提取，段落边界即计数器重置点） |
-| **多纪元 = `extra` 承载 + 轴选择器**（v1.3 #1353） | 0.16.0：`extra.era` / `extra.era_value`（零 DDL）+ 前端轴族/轴选择器（GUI 层投影）；0.17.0：正式列 + 流速换算（#1410 / #1411） | 需求真问题是「多轴共存 + 可选择性显示」，不是「纪年内换算」；`extra` 是 v1.0 起既有扩展列 → 零迁移、可逆、既有数据零改动（R6-4）。**备选：0.16.0 就加正式列** → 需 `ensure_*` 三件套 + 旧库升级面，且流速比未定时列语义也定不下来（否决，归 #1410）；**备选：维持否决多纪元** → 需求已验真（#1323 P2 / #1353），且原否决只反对「复合键 + 双排序字段」，不反对「轴标签」 |
+| **多纪元 = `extra` 承载 + 轴选择器**（v1.3 #1353） | 0.16.0：`extra.era` / `extra.era_value`（零 DDL）+ 前端轴族/轴选择器（GUI 层投影） | 需求真问题是「多轴共存 + 可选择性显示」，不是「纪年内换算」；`extra` 是 v1.0 起既有扩展列 → 零迁移、可逆、既有数据零改动（R6-4）。**备选：0.16.0 就加正式列** → 需 `ensure_*` 三件套 + 旧库升级面，且流速比未定时列语义也定不下来（否决，归 #1410）；**备选：维持否决多纪元** → 需求已验真（#1323 P2 / #1353），且原否决只反对「复合键 + 双排序字段」，不反对「轴标签」 |
+| **多纪元 = 正式列 `era` / `era_value` / `era_scale`**（v1.4 #1410 / ADR-065） | 正式列取代 `extra` 承载；`time_value` 仍是**跨轴全局标量**；迁移幂等（ADD COLUMN + 一次性回填，`extra` 旧键留作快照）；`era_scale` 落列但读写面/换算归 T2 | 0.16.0 的 `extra` 承载是**弱约束**（JSON 无类型/长度/索引），且 T2 换算无 `era_scale` 落点 → 正式化必要（推迟不消除）。**备选：维持 `extra`** → 无法写 schema 级漂移门禁、T2 无落点（否决）；**备选：`era`+`era_value` 复合业务键** → 全局排序仍靠 `time_value`，多一套键且约束了本该可重复的「同刻多事件」（否决，原否决理由仍成立）；**备选：独立 `timeline_eras` 轴表** → 轴本期只是事件属性标签，无独立生命周期（过度设计，否决并记入 T2） |
 | **归一/重锚不做自动启动迁移**（#1409） | 不随 `create_all` / lifespan 自动执行（对比 #1323 叙事序回填） | #1323 是**位置语义**修正（不改业务数值）；本项是**数值**改写（实测改动 85% 带值事件）且会消除冲突信号 → 必须显式触发（§5.7）。**备选：扩展 `core/migrations_*` 自动回填** → 静默改写用户数据 + 审计失真（否决） |
 
 ---
@@ -1118,6 +1134,7 @@ F12 被依赖:
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F12 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
 | M9 | **（v1.2 #1409）单位归一 + 项目级重锚** | `pytest backend/tests/unit/domain/services/test_timeline_check.py tests/unit/domain/services/test_timeline_timebase.py -v` 全绿；`pytest tests/cli/test_cli_timeline_ops.py -v` 全绿；`inkflow timeline normalize --project-id <真实项目>` dry-run 报告 `conflicts_before → conflicts_after` |
 | M10 | **（v1.3 #1353）多纪元最小承载（零 DDL）** | `pytest backend/tests/unit/domain/models/test_timeline_models.py tests/unit/domain/services/test_timeline_era.py -v` 全绿；`pytest tests/cli/test_cli_timeline_ops.py -v` 全绿；**零 DDL**：diff 无新增列 / 无新增 `ensure_*`（`git diff --stat` 仅服务/路由/CLI/前端/文档面）；**反例守护**：未设纪元事件行为与 v1.2 逐字段一致；手工：`inkflow timeline create --era <轴名> --era-value <值> --json` → `extra` 回读一致，`timeline update --era ""` → 两键消失 |
+| M11 | **（v1.4 #1410）多纪元正式化（三列 + 幂等迁移 + 回填）** | `pytest backend/tests/unit/core/test_timeline_era_migration_1410.py tests/unit/domain/models/test_timeline_era_1353.py tests/unit/domain/services/test_timeline_era_1353.py -v` 全绿；迁移**三形态**（空表 / 有表缺列 / 有表有列）+ 幂等 + 回填不覆盖已有正式列值；前端 `pnpm vitest run timeline-era-axes TimelineView.era-axes-1353 LibraryCreateDialog.era-1353` 全绿；`ci_cd/openapi_snapshot.json` 与 `openapi.d.ts` 已同步 |
 
 ---
 
@@ -1144,7 +1161,7 @@ F12 被依赖:
 | GET /projects/{project_id}/timeline | 项目存在 | 双线投影（活动事件全量，无分页） | 200 + TimelineView（event_timeline + narrative_order） | 404「项目不存在」 | event_timeline 按 (time_value ASC NULLS LAST, narrative_position ASC)；narrative_order 按 (narrative_position ASC, created_at ASC)；无活动事件 → total=0 + 空数组 |
 | GET /projects/{project_id}/timeline/check | 项目存在 | 相邻对扫描（确定性算法，无 LLM） | 200 + ConsistencyReport（checked/skipped/consistent/conflicts/flashbacks + 双线视图） | 404「项目不存在」 | include_flashbacks 查询参数（默认含）；0/1 事件 → consistent=true；全未知时间 → checked=0 skipped=n；逆序对 next 标记 flashback / prev 标记 flashforward → 不算冲突；未知标记（如 "flshback"）→ order_conflict；同刻事件不冲突 |
 | GET /timeline/events/{event_id} | 事件存在 | 查询 | 200 + TimelineEvent | 404「事件不存在」 | 无效 UUID → 404 |
-| PATCH /timeline/events/{event_id} | 事件存在 | 部分更新（时间/标记清除语义） | 200 + TimelineEvent | 404「事件不存在」；422（time_value 清除只接受空字符串） | time_value="" → 置 None（时间未知）；timeline_flag="" → 置 ""（正叙）；time_value 传 "abc" → 422；`era=""` → 删除 `extra.era`/`extra.era_value`；未传 `era` 时 `era_value` 忽略 |
+| PATCH /timeline/events/{event_id} | 事件存在 | 部分更新（时间/标记清除语义） | 200 + TimelineEvent | 404「事件不存在」；422（time_value 清除只接受空字符串） | time_value="" → 置 None（时间未知）；timeline_flag="" → 置 ""（正叙）；time_value 传 "abc" → 422；`era=""` → **清空**正式列 `era`/`era_value`（v1.4）；未传 `era` 时 `era_value` 忽略 |
 | DELETE /timeline/events/{event_id} | 事件存在 | **真删**（不进入双线视图与一致性检查） | 204 | 404「事件不存在」 | **v1.1**：无软删路径、无 `force` 参数；重复删除 → 404 |
 | ~~POST /timeline/events/{event_id}/restore~~ | — | **（v1.1 移除）** 端点已不存在 | — | 请求该路径 → 404 | — |
 
@@ -1152,12 +1169,12 @@ F12 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加；--era/--era-value 可选） | 「✅ 事件创建成功: [林尘觉醒金手指]（示例历 317 年秋，叙事第 3 位）」/ --json（含 `extra.era`） | 404 NOT_FOUND；422 VALIDATION_ERROR（`era` 超长 / `era_value` 非有限） | — |
+| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加；--era/--era-value 可选） | 「✅ 事件创建成功: [林尘觉醒金手指]（示例历 317 年秋，叙事第 3 位）」/ --json（含正式列 `era`/`era_value`/`era_scale`） | 404 NOT_FOUND；422 VALIDATION_ERROR（`era` 超长 / `era_value` 非有限） | — |
 | timeline list | 项目存在 | 列表（--sort 5 种） | 列表 / JSON | 404 | — |
 | timeline view | 项目存在 | 双线总览 | 「📋 双线总览: 共 5 个事件 — ...」 | 404 | — |
 | timeline check | 项目存在 | 一致性检查（--include-flashbacks 默认开） | 「🔍 一致性检查: ✅ 一致（检查 4 个事件，跳过 1 个时间未知）」/「⚠️ 发现 2 个冲突」/「💡 1 个已声明倒叙/插叙」 | 404 | 发现冲突退出码仍 0 |
 | timeline get | 事件存在 | 查询 | JSON | 404「事件不存在」 | — |
-| timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除；--era "" 清除纪元） | JSON（含 `extra`） | 404；422 | 未传 --era 时 --era-value 忽略（§2.8 E4） |
+| timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除；--era "" 清除纪元） | JSON（含正式列 `era`/`era_value`/`era_scale`） | 404；422 | 未传 --era 时 --era-value 忽略（§2.8 E4） |
 | timeline delete | 事件存在 | 二次确认（--force 跳过）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除 |
 | timeline normalize | 项目存在 | `GET /projects/{id}/timeline` 取全量事件 → 计算归一/重锚计划（dry-run 默认）→ `--apply` 时逐事件 `PATCH /timeline/events/{id}` | 「🧭 时间线归一: 识别 N 个叙事段，将改写 M/K 条事件（冲突 7 → 0）；dry-run 未写入，加 --apply 执行」/ `--json` 完整计划 | 404 NOT_FOUND（项目不存在）；VALIDATION_ERROR（无效 UUID）；DB_ERROR | 无带值事件 → `segments=0, changed=0`；已归一 → `changed=0`（幂等）；已声明倒叙/时间未知不改 |
 | ~~timeline restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
@@ -1174,7 +1191,8 @@ F12 被依赖:
 - A6：include_flashbacks=false → flashbacks 返回空列表；conflicts/consistent 不变
 - A7（#1409）：`8 日` → `3 月` 相邻**不报**冲突；`3 月` → `8 日` **报** order_conflict；`时/时辰` 归一到「日锚点 + 时/24」（非 `/24`）；`time_unit` 为空时结论与 v1.1 一致
 - A8（#1409）：`timeline normalize` 默认 dry-run **不改库**；`--apply` 后 `audit/check` 的 order_conflict 收敛（真实项目实测 7 → 0）；重复运行 `changed=0`
-- A9（#1353）：`timeline create --era <轴名> --era-value <值> --json` → 响应 `extra` = `{"era": <轴名>, "era_value": <值>}`；`timeline update --era ""` → `extra` 两键消失；不带纪元的同一项目 `check` 结论与 v1.2 **逐字段一致**（纪元不进检查）
+- A9（#1353，v1.4 升级承载位）：`timeline create --era <轴名> --era-value <值> --json` → 响应**顶层** `era` = <轴名>、`era_value` = <值>、`era_scale` = 1.0；`timeline update --era ""` → `era` = `""`、`era_value` = null（清空）；不带纪元的同一项目 `check` 结论与 v1.2 **逐字段一致**（纪元不进检查）
+- A10（#1410）：空库启动 → `PRAGMA table_info(timeline_events)` 含 `era` / `era_value` / `era_scale`；旧库（无列）启动 → `ensure_timeline_era_columns` 补列且**行数零丢失**、`extra.era` / `extra.era_value` 一次性回填进正式列（`era_scale` = 1.0）；连续两次启动**幂等**（不报错、不重复写、不覆盖已有正式列值）
 
 ### 14.4 Spec 漂移标注（追加时核对实现 routers/timeline.py）
 

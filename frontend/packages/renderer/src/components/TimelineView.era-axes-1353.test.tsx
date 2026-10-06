@@ -1,8 +1,11 @@
 /**
  * #1353 世界序「纪元轴族 + 轴选择器」—— 组件级契约（TimelineView）。
  *
- * 【spec 依据】specs/f12-timeline/spec.md §2.8（承载键 + 默认轴 E5）
+ * 【spec 依据】specs/f12-timeline/spec.md §2.1（三列）+ §2.8（E1/E2 承载 + 默认轴 E5）+ ADR-065
  *            + specs/f19-gui/timeline.md §1.1（世界序 = 纪元轴族）/ §2 轴选择器行 / §3 N11-N13。
+ *
+ * 【v1.4 变更（#1410）】事件 DTO 的纪元字段由 `extra.era` / `extra.era_value` 迁到
+ * **顶层正式列** `era` / `era_value`（与后端同 PR，消除中间态漂移）。
  *
  * 【契约（GREEN 必须提供）】
  * - 轴选择器**只属世界序**，且**仅当轴族 ≥ 2 条**时出现（`tl-axis-picker`）
@@ -38,19 +41,19 @@ const DEFAULT_KEY = '__none__';
 /** 事件（世界序顺序按数组序传入）：示例历×2 / 默认轴×1 / 示例仙历×1 */
 const e1: TimelineEventDTO = {
   id: 'e1', title: '事件甲', time_value: 3, time_unit: '年', time_display: '示例历 3 年',
-  narrative_position: 1, source_chapter_id: 'c11', extra: { era: QY, era_value: 3 },
+  narrative_position: 1, source_chapter_id: 'c11', era: QY, era_value: 3,
 };
 const e4: TimelineEventDTO = {
   id: 'e4', title: '事件丁（无纪元）', time_value: 1, time_unit: '年', time_display: '示例历 1 年',
-  narrative_position: 2, source_chapter_id: null, extra: {},
+  narrative_position: 2, source_chapter_id: null,
 };
 const e3: TimelineEventDTO = {
   id: 'e3', title: '事件丙', time_value: 1024, time_unit: '年', time_display: '',
-  narrative_position: 3, source_chapter_id: null, extra: { era: XJ, era_value: 1024 },
+  narrative_position: 3, source_chapter_id: null, era: XJ, era_value: 1024,
 };
 const e2: TimelineEventDTO = {
   id: 'e2', title: '事件乙', time_value: 9, time_unit: '年', time_display: '示例历 9 年',
-  narrative_position: 4, source_chapter_id: 'c12', extra: { era: QY, era_value: 9 },
+  narrative_position: 4, source_chapter_id: 'c12', era: QY, era_value: 9,
 };
 
 const ERA_EVENTS = [e1, e4, e3, e2];

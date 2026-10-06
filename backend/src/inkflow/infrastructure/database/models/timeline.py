@@ -129,6 +129,26 @@ class TimelineEventORM(EntityUuidMixin, Base):
     )
     """时间线标记 (≤ 20 字符，去空白；""=正叙 / flashback=倒叙 / flashforward=插叙)."""
 
+    era: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="",
+    )
+    """纪元轴名 (≤ 50 字符去空白；"" = 默认轴). v1.4（#1410）多纪元正式列，ADR-065 §2.8."""
+
+    era_value: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    """纪元轴内值（有限数值；仅 era 非空时有意义，用于轴内排序/标签）. v1.4 正式列."""
+
+    era_scale: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=1.0,
+    )
+    """流速比（该纪元相对项目时基的时间流速；默认 1.0）. v1.4 正式列；换算归 T2 #1411."""
+
     source_chapter_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("chapters.id", ondelete="SET NULL"),

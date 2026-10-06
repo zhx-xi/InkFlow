@@ -1,13 +1,14 @@
-"""#1353 时间线纪元承载 — API 契约（f12 spec v1.3 §3.2 请求体 + §3.4 422 + §7）。
+"""#1353/#1410 时间线纪元 — API 契约（f12 spec v1.4 §3.2 请求体 + §3.4 422 + §7，ADR-065）。
 
 【契约（钉住三件事）】
 1. POST 请求体带 ``era`` / ``era_value`` → 透传为 ``create_event`` 的 kwargs；
-   响应 JSON 的 ``extra`` 原样回读承载键（读写一致）
+   响应 JSON **顶层**回读 ``era`` / ``era_value`` / ``era_scale``（v1.4 正式列），
+   ``extra`` 保持 ``{}``
 2. **向后兼容**：请求体不带纪元 → **不传** era/era_value kwargs
-   （`extra` 仍是 `{}`，既有 exact-kwargs 用例零改动 —— 与 spec v1.2 行为一致）
+   （``extra`` 仍是 ``{}``，既有 exact-kwargs 用例零改动 —— 与 spec v1.2 行为一致）
 3. 校验：``era`` > 50 字符 / ``era_value`` 非数值字符串 → 422
 
-【RED 预期】请求体尚不接受 era 字段（Pydantic 默认忽略未知字段）→ kwargs 断言 FAIL；
+【RED 预期（v1.4）】响应仍走 ``extra`` → 顶层 ``era`` / ``era_scale`` 断言 FAIL；
 零 SyntaxError / TypeError。
 """
 
@@ -25,7 +26,7 @@ from inkflow.domain.models.timeline import TimelineEvent
 client = TestClient(app)
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
-TS = datetime(2026, 10, 2, 10, 0, 0)
+TS = datetime(2026, 10, 6, 10, 0, 0)
 CREATE_URL = f"/api/v1/projects/{PID}/timeline/events"
 
 
@@ -41,6 +42,9 @@ def _event(title: str, **overrides: object) -> TimelineEvent:
         "time_display": "",
         "narrative_position": 3,
         "timeline_flag": "",
+        "era": "",
+        "era_value": None,
+        "era_scale": 1.0,
         "extra": {},
         "created_at": TS,
         "updated_at": TS,
@@ -56,13 +60,15 @@ def _mock_svc(mock_get_svc: MagicMock) -> MagicMock:
 
 
 class TestCreateEventEraAPI:
-    """POST /projects/{pid}/timeline/events —— era 透传 + extra 回读 + 422。"""
+    """POST /projects/{pid}/timeline/events —— era 透传 + 正式列回读 + 422。"""
 
     @patch("inkflow.api.routers.timeline.get_timeline_service")
-    def test_create_with_era_passes_kwargs_and_returns_extra(self, mock_get_svc: MagicMock) -> None:
+    def test_create_with_era_passes_kwargs_and_returns_columns(
+        self, mock_get_svc: MagicMock
+    ) -> None:
         svc = _mock_svc(mock_get_svc)
         svc.create_event = AsyncMock(
-            return_value=_event("事件甲", extra={"era": "示例历", "era_value": 317.5})
+            return_value=_event("事件甲", era="示例历", era_value=317.5, era_scale=1.0)
         )
 
         response = client.post(
@@ -76,8 +82,12 @@ class TestCreateEventEraAPI:
         )
 
         assert response.status_code == 201
-        # 读回一致：响应 extra 即承载键（GUI/CLI 的轴族派生数据面）
-        assert response.json()["extra"] == {"era": "示例历", "era_value": 317.5}
+        body = response.json()
+        # 读回一致：响应顶层三字段即正式列（GUI/CLI 的轴族派生数据面）
+        assert body["era"] == "示例历"
+        assert body["era_value"] == 317.5
+        assert body["era_scale"] == 1.0
+        assert body["extra"] == {}
         svc.create_event.assert_awaited_once_with(
             PID,
             "事件甲",
@@ -100,7 +110,10 @@ class TestCreateEventEraAPI:
         response = client.post(CREATE_URL, json={"title": "事件甲"})
 
         assert response.status_code == 201
-        assert response.json()["extra"] == {}
+        body = response.json()
+        assert body["era"] == ""
+        assert body["era_scale"] == 1.0
+        assert body["extra"] == {}
         svc.create_event.assert_awaited_once_with(
             PID,
             "事件甲",
@@ -126,13 +139,13 @@ class TestCreateEventEraAPI:
 
 
 class TestUpdateEventEraAPI:
-    """PATCH /timeline/events/{id} —— 清除语义透传 + 响应 extra 回读 + 422。"""
+    """PATCH /timeline/events/{id} —— 清除语义透传 + 正式列回读 + 422。"""
 
     @patch("inkflow.api.routers.timeline.get_timeline_service")
     def test_patch_era_empty_clears_through_dto(self, mock_get_svc: MagicMock) -> None:
         svc = _mock_svc(mock_get_svc)
         event_id = uuid.uuid4()
-        svc.update_event = AsyncMock(return_value=_event("事件甲", extra={}))
+        svc.update_event = AsyncMock(return_value=_event("事件甲"))
 
         response = client.patch(f"/api/v1/timeline/events/{event_id}", json={"era": ""})
 
@@ -140,14 +153,16 @@ class TestUpdateEventEraAPI:
         passed = svc.update_event.await_args.args[1]
         assert passed.era == ""
         assert passed.era_value is None
-        assert response.json()["extra"] == {}
+        body = response.json()
+        assert body["era"] == ""
+        assert body["extra"] == {}
 
     @patch("inkflow.api.routers.timeline.get_timeline_service")
-    def test_patch_era_returns_extra_roundtrip(self, mock_get_svc: MagicMock) -> None:
+    def test_patch_era_returns_column_roundtrip(self, mock_get_svc: MagicMock) -> None:
         svc = _mock_svc(mock_get_svc)
         event_id = uuid.uuid4()
         svc.update_event = AsyncMock(
-            return_value=_event("事件甲", extra={"era": "示例仙历", "era_value": 1024.0})
+            return_value=_event("事件甲", era="示例仙历", era_value=1024.0)
         )
 
         response = client.patch(
@@ -156,7 +171,9 @@ class TestUpdateEventEraAPI:
         )
 
         assert response.status_code == 200
-        assert response.json()["extra"] == {"era": "示例仙历", "era_value": 1024.0}
+        body = response.json()
+        assert body["era"] == "示例仙历"
+        assert body["era_value"] == 1024.0
 
     def test_patch_era_value_non_numeric_422(self) -> None:
         response = client.patch(

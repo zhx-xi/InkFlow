@@ -42,7 +42,7 @@ from inkflow.domain.models.timeline import (
     TimelineEventRef,
     TimelineEventUpdate,
     TimelineView,
-    apply_era,
+    resolve_era_fields,
 )
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_errors import (
@@ -272,6 +272,8 @@ class TimelineService:
         if narrative_position is None:
             narrative_position = await self._repo.next_position(project_id)
         now = _utcnow()
+        # #1410 / §2.8 E4：纪元落**正式列**（v1.4；extra 不再承载纪元）
+        resolved_era, resolved_era_value = resolve_era_fields("", None, era, era_value)
         event = TimelineEvent(
             id=uuid.uuid4(),
             project_id=project_id,
@@ -282,7 +284,8 @@ class TimelineService:
             time_display=time_display,
             narrative_position=narrative_position,
             timeline_flag=timeline_flag,
-            extra=apply_era({}, era, era_value),
+            era=resolved_era,
+            era_value=resolved_era_value,
             created_at=now,
             updated_at=now,
         )
@@ -363,11 +366,13 @@ class TimelineService:
         if "time_value" in updates and updates["time_value"] == "":
             updates["time_value"] = None  # "" = 清除世界内时间（置为未知）
         merged = existing.model_copy(update=updates)
-        # §2.8 E4 成对语义：era 未传（None）⇒ extra 整体不变（era_value 一并忽略）；
-        # era="" ⇒ 删两键；era 非空 ⇒ 写轴名 + 按 era_value 写/删/保留轴内值。
+        # §2.8 E4 成对语义：写**正式列**（v1.4；extra 旧键不再承载纪元）
         era = update.era if "era" in update.model_fields_set else None
         era_value = update.era_value if "era_value" in update.model_fields_set else None
-        merged = merged.model_copy(update={"extra": apply_era(existing.extra, era, era_value)})
+        resolved_era, resolved_era_value = resolve_era_fields(
+            existing.era, existing.era_value, era, era_value
+        )
+        merged = merged.model_copy(update={"era": resolved_era, "era_value": resolved_era_value})
         logger.info("更新时间线事件: event_id=%s", event_id)
         updated: TimelineEvent | None = await self._repo.update(merged)
         if updated is not None:
