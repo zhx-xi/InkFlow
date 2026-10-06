@@ -88,7 +88,10 @@ def skill_list(
     for skill in items:
         refs = skill.get("agent_ids") or []
         source = skill.get("source") or "-"
-        typer.echo(f"[{skill['id']}] {skill['name']}  source={source}  引用 {len(refs)} 个 Agent")
+        scope = "[专属]" if refs else "[通用]"
+        typer.echo(
+            f"[{skill['id']}] {skill['name']}  source={source}  引用 {len(refs)} 个 Agent  {scope}"
+        )
 
 
 @app.command("status")

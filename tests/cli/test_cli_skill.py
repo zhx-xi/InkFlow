@@ -196,6 +196,26 @@ class TestSkillList:
         assert "builtin" in stdout
         assert "user_upload" in stdout
 
+    def test_list_human_marks_general_and_exclusive(self, fake_http_client):
+        """#1473：通用 skill（引用 0 个 Agent）标 `[通用]`；被引用的标 `[专属]`。"""
+        fake_http_client.get.return_value = {
+            "items": [
+                _make_skill(),  # agent_ids 非空 → 专属
+                _make_skill(
+                    id="general-style-guide",
+                    name="general-style-guide",
+                    source="user_upload",
+                    agent_ids=[],
+                ),
+            ],
+            "total": 2,
+        }
+        result = _invoke(["skill", "list"])
+        assert result.exit_code == 0
+        stdout = _strip_ansi(result.stdout)
+        assert "[专属]" in stdout, f"被引用的 skill 应标 [专属]：{stdout!r}"
+        assert "[通用]" in stdout, f"未被任何 Agent 挂载的 skill 应标 [通用]：{stdout!r}"
+
     def test_list_empty_json(self, fake_http_client):
         """空列表 --json：信封 total 0 + items []。"""
         fake_http_client.get.return_value = {"items": [], "total": 0}

@@ -142,7 +142,14 @@ async def test_four_stages_each_carry_own_agent_skill(monkeypatch, tmp_path) -> 
 
 @pytest.mark.asyncio
 async def test_unmounted_skill_not_in_other_agent_prompt(monkeypatch, tmp_path) -> None:
-    """负例①：只挂给 writer 的 skill 不得出现在 architect 的 prompt（防串味）。"""
+    """负例①：只挂给 writer 的 skill 不得出现在 architect 的 prompt（防串味）。
+
+    ⚠️ #1473 语义演进（2026-10-06）：本用例原断言「architect 的 skill 不进 writer」
+    依赖 #1472 的「只拼该 Agent 白名单」语义——演进后**未被任何 Agent 挂载**的 skill
+    作为「通用」注入所有 Agent（architect-methodology 未被挂载 → 现进 writer），该
+    断言已不成立，故移除。保留「被 writer 显式挂载者不外泄到 architect」这一**仍成立**
+    的防串味契约（通用注入不得使专属 skill 外泄）。
+    """
     root = tmp_path / "skills"
     for role, name in _SKILL_DIR.items():
         _write_skill(root, name, f"# {name}\n\n{_CHAR[role]}\n")
@@ -157,19 +164,25 @@ async def test_unmounted_skill_not_in_other_agent_prompt(monkeypatch, tmp_path) 
 
     assert _CHAR["writer"] in by_id["writer"].agent.system_prompt
     assert _CHAR["writer"] not in by_id["architect"].agent.system_prompt
-    assert _CHAR["architect"] not in by_id["writer"].agent.system_prompt
 
 
 @pytest.mark.asyncio
 async def test_empty_skill_ids_prompt_byte_identical(monkeypatch, tmp_path) -> None:
-    """负例②：Agent skill_ids 为空 → stage prompt 与模板装配前逐字符一致（零回归）。"""
+    """负例②：Agent 无任何有效 skill → stage prompt 与模板装配前逐字符一致（零回归）。
+
+    ⚠️ #1473 语义演进（2026-10-06）：库内 skill 若**未被任何 Agent 挂载**会成为
+    「通用」注入所有 Agent，故「Agent skill_ids 为空」不再等价于「零注入」。本用例
+    改为「库内全部 skill 均已被**其他** Agent 显式挂载」——此时无通用项，未挂载的
+    architect 仍零注入，逐字符一致（原意图保留）。
+    """
     root = tmp_path / "skills"
     for role, name in _SKILL_DIR.items():
         _write_skill(root, name, f"# {name}\n\n{_CHAR[role]}\n")
     _patch_skills_root(monkeypatch, tmp_path)
 
+    # 4 个 skill 全部挂到 reviser → mounted_names 覆盖全集 → 无通用项
     agent_repo = MagicMock()
-    agent_repo.list = AsyncMock(return_value=[_make_agent(role, []) for role in _SKILL_DIR])
+    agent_repo.list = AsyncMock(return_value=[_make_agent("reviser", list(_SKILL_DIR.values()))])
     svc = _build_svc(agent_repo)
 
     stages, *_ = await svc._build_pipeline_context(_request())
@@ -177,7 +190,8 @@ async def test_empty_skill_ids_prompt_byte_identical(monkeypatch, tmp_path) -> N
     # 基线：装配前模板 prompt（同一次运行的模板真源）
     template = svc._get_template("builtin:write_auto")
     base_prompt = {s.id: s.agent.system_prompt for s in template.stages}
-    for stage in stages:
-        assert stage.agent.system_prompt == base_prompt[stage.id]
-        for char in _CHAR.values():
-            assert char not in stage.agent.system_prompt
+    by_id = _stages_by_id(stages)
+    architect = by_id["architect"]
+    assert architect.agent.system_prompt == base_prompt["architect"]
+    for char in _CHAR.values():
+        assert char not in architect.agent.system_prompt
