@@ -132,10 +132,10 @@ def test_probe_health_real_connection_refused():
 
 
 def test_log_kernel_event_writes_file(tmp_path, monkeypatch):
-    """真实日志：%TEMP%/inkflow-kernel.log 追加写含消息与时间戳。"""
+    """真实日志：%TEMP%/inkflow-kernel-events.log 追加写含消息与时间戳（spec §6.2 职责分离）。"""
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
     _log_kernel_event("test-event-123")
-    log_file = tmp_path / "inkflow-kernel.log"
+    log_file = tmp_path / "inkflow-kernel-events.log"
     assert log_file.exists()
     content = log_file.read_text(encoding="utf-8")
     assert "test-event-123" in content

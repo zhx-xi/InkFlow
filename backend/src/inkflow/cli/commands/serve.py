@@ -42,12 +42,17 @@ def _run_server(host: str, port: int, reload: bool, debug: bool = False) -> int:
         sock.close()
 
     log_level = "debug" if debug else "info"
+    # #1477 1.4：uvicorn 的 access/error 走 Loguru 桥 → 落进自管理内核日志（可轮转）；
+    # 否则它们走 stderr → 被 _spawn_kernel 重定向进引导日志（绕过轮转）。
+    from inkflow.infrastructure.kernel.kernel_logging import uvicorn_log_config
+
     config = uvicorn.Config(
         "inkflow.api.app:app",
         host=host,
         port=actual_port,
         reload=reload,
         log_level=log_level,
+        log_config=uvicorn_log_config(level=log_level),
     )
     server = uvicorn.Server(config)
 
@@ -121,6 +126,22 @@ def serve(
     if open_browser:
         url = f"http://{host}:{port}/docs"
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    # #1477 1.4：内核日志自管理（分片 + 库轮转）。
+    # 🔴 这里只**标记**日志路径，真正的 sink 装配交给 `core.log.setup_logging`
+    # （lifespan 内调用）——它开头就 `logger.remove()`，提前装 sink 会被清掉
+    # （实测：分片文件只记到 uvicorn 前两行，其余全落回 stderr → 引导日志）。
+    # 内核分支不再加 stderr sink：stderr 已被 Popen 重定向到引导日志，
+    # 全量日志再灌进去正是 #1477 的膨胀根因（实测 246MB 且无归档）。
+    from inkflow.infrastructure.kernel.bootstrap import (
+        _default_state_file,
+        kernel_runtime_log_path,
+    )
+    from inkflow.infrastructure.kernel.instance_kind import resolve_instance_kind
+
+    os.environ["INKFLOW_KERNEL_LOG_FILE"] = str(
+        kernel_runtime_log_path(resolve_instance_kind(), port_file or _default_state_file())
+    )
 
     typer.echo(f"🚀 InkFlow 服务启动于 http://{host}:{port}")
 

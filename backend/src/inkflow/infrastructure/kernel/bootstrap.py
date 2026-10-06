@@ -161,19 +161,23 @@ def _acquire_lifetime_mutex(kind: str, state_file: Path) -> object | None:
     return handle
 
 
-def _spawn_kernel(cmd: list[str], log_file: Path) -> subprocess.Popen:
-    """拉起内核进程（detach 语义，spec §5.5）：stdout/stderr 追加写日志文件。
+def _spawn_kernel(cmd: list[str], boot_log: Path) -> subprocess.Popen:
+    """拉起内核进程（detach 语义，spec §5.5）：stdout/stderr 追加写**引导日志**。
 
-    打开日志句柄前先做启动期归档（spec §6.3）：内核全量输出才会落进空的新文件。
+    ⚠️ 1.4（#1477）：目标从「内核运行日志」改为**引导日志**——内核运行日志由内核自己持有
+    句柄、由日志库轮转（`kernel_logging.install_kernel_file_sink`）；若 Popen 仍重定向到同一
+    文件，就会有两个持有者 ⇒ 库的 rename 轮转必然失败（实测 `WinError 32`）。
 
-    内核子进程的 stdout/stderr **必须**以 UTF-8 写出（#1388）：同一份日志文件里
-    ``_log_kernel_event`` 的事件行是显式 UTF-8，若内核走 Windows ANSI 代码页
-    （简中 = CP936/GBK）则同文件混编，严格 UTF-8 读在首个非 ASCII 字节抛
-    ``UnicodeDecodeError``（实测 918MB 文件在 211,593 字节处崩）→ 排障面反成故障点。
+    打开句柄前先做启动期归档（spec §6.3）：spawn 早期输出才会落进空的新文件。
+
+    内核子进程的 stdout/stderr **必须**以 UTF-8 写出（#1388）：引导日志与
+    ``_log_kernel_event`` 的事件行若混编（内核走 Windows ANSI 代码页 = 简中 CP936/GBK），
+    严格 UTF-8 读会在首个非 ASCII 字节抛 ``UnicodeDecodeError``（实测 918MB 文件在
+    211,593 字节处崩）→ 排障面反成故障点。
     故显式传 ``env``（增量注入 ``PYTHONIOENCODING=utf-8``，其余继承 ``os.environ``）。
     """
-    _rotate_kernel_log(log_file)
-    log_handle = open(log_file, "a", encoding="utf-8")  # noqa: SIM115  # 句柄需跨 Popen 生命周期保持打开（子进程继承写入）
+    _rotate_kernel_log(boot_log)
+    log_handle = open(boot_log, "a", encoding="utf-8")  # noqa: SIM115  # 句柄需跨 Popen 生命周期保持打开（子进程继承写入）
     creationflags = 0
     if sys.platform == "win32":
         creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -282,18 +286,52 @@ def _read_lenient(path: Path) -> state.KernelState | None:
     )
 
 
-# ── 内核日志归档（#1380）─────────────────────────────────────────────
+# ── 内核日志（#1380 启动期归档；#1477 1.4：三文件 + 运行日志分片）─────────
 
-_KERNEL_LOG_NAME = "inkflow-kernel.log"
-# 单文件上限 50MB（#1380 实测：918MB / 421 万行 / 8826 次启动累积）
-_KERNEL_LOG_MAX_BYTES = 50 * 1024 * 1024
-# 归档保留份数：.1（次新）… .2（最旧）
-_KERNEL_LOG_BACKUPS = 2
+#: 单文件上限 10MB（#1477 拍板默认值；#1380 原为 50MB）
+_KERNEL_LOG_MAX_BYTES = 10 * 1024 * 1024
+#: 归档保留份数（#1477 拍板 10 份；#1380 原为 2 份）
+_KERNEL_LOG_BACKUPS = 10
+#: 客户端事件日志文件名（与内核运行日志分离，spec §6.2）
+_KERNEL_EVENT_LOG_NAME = "inkflow-kernel-events.log"
+#: 内核日志文件名前缀（分片形态：inkflow-kernel-<kind>-<hash8>）
+_KERNEL_LOG_PREFIX = "inkflow-kernel"
 
 
-def kernel_log_path() -> Path:
-    """内核日志路径（%TEMP%/inkflow-kernel.log）；调用时解析 %TEMP%（非 import 快照）。"""
-    return Path(tempfile.gettempdir()) / _KERNEL_LOG_NAME
+def _log_fragment(kind: str, state_file: Path) -> str:
+    """日志分片后缀 `<kind>-<hash8>`（data_dir 摘要**一律参与**）。
+
+    与 `_lifetime_mutex_name` 的 rc/prod 分支不同（那里 data_dir 不参与）：互斥可以不区分
+    数据目录，但**日志分片必须区分**——否则跨数据目录并存的内核（#1487）会争抢同一文件，
+    使日志库的 rename 轮转必然失败（#1477 实测矩阵）。
+    """
+    data_dir = str(state_file.parent.resolve()).lower()
+    return f"{kind}-{hashlib.sha256(data_dir.encode('utf-8')).hexdigest()[:8]}"
+
+
+def kernel_event_log_path() -> Path:
+    """客户端事件日志（%TEMP%/inkflow-kernel-events.log）；调用时解析 %TEMP%。"""
+    return Path(tempfile.gettempdir()) / _KERNEL_EVENT_LOG_NAME
+
+
+def kernel_runtime_log_path(kind: str, state_file: Path) -> Path:
+    """内核运行日志路径 —— 由**内核自己持有句柄**、由日志库轮转（spec §6.2/§6.3）。"""
+    name = f"{_KERNEL_LOG_PREFIX}-{_log_fragment(kind, state_file)}.log"
+    return Path(tempfile.gettempdir()) / name
+
+
+def kernel_boot_log_path(kind: str, state_file: Path) -> Path:
+    """引导日志路径 —— spawn 到内核接管 stdout 之间的原始输出（冷启动死因）。"""
+    name = f"{_KERNEL_LOG_PREFIX}-{_log_fragment(kind, state_file)}.boot.log"
+    return Path(tempfile.gettempdir()) / name
+
+
+def _log_hint(kind: str, state_file: Path) -> str:
+    """错误消息里的日志指引（1.4：路径已分片，不再写死单一文件名）。"""
+    return (
+        f"日志见 {kernel_boot_log_path(kind, state_file)}"
+        f"（引导）与 {kernel_runtime_log_path(kind, state_file)}（内核运行）"
+    )
 
 
 def _backup_path(log_file: Path, index: int) -> Path:
@@ -361,8 +399,13 @@ def _rotate_kernel_log(
 
 
 def _log_kernel_event(msg: str) -> None:
-    """追加写 %TEMP%/inkflow-kernel.log（带时间戳，spec §6.2，写前归档 §6.3）。"""
-    log_file = kernel_log_path()
+    """追加写**客户端事件日志**（带时间戳，spec §6.2；写前归档 §6.3）。
+
+    1.4（#1477）：目标从内核运行日志改为**独立事件日志**——客户端不长期持有句柄，
+    `_rotate_kernel_log` 的「认领 + 归档链」对它依然有效（内核运行日志已改为
+    内核自持句柄 + 库轮转）。
+    """
+    log_file = kernel_event_log_path()
     _rotate_kernel_log(log_file)
     try:
         with open(log_file, "a", encoding="utf-8") as f:
@@ -445,7 +488,7 @@ async def ensure_kernel(
     """确保内核运行并返回访问句柄（spec §5.1 状态机）。
 
     复用 → KernelHandle(reused=True)；互斥拉起 → KernelHandle(reused=False)。
-    失败 → KernelStartupError（消息含 %TEMP%\\inkflow-kernel.log 指引）。
+    失败 → KernelStartupError（消息含**分片后**的日志路径指引，见 `_log_hint`）。
     instance_kind=None → resolve_instance_kind() 自判（spec §2.4.1）；非 dev
     须先取得同 kind 存活期互斥（spec §5.6），被占则抛 KernelStartupError。
     """
@@ -561,7 +604,7 @@ async def ensure_kernel(
             )
         if mutex_handle is None:
             raise KernelStartupError(
-                f"等待其他进程拉起内核超时（{timeout:.1f}s）；日志见 %TEMP%\\inkflow-kernel.log"
+                f"等待其他进程拉起内核超时（{timeout:.1f}s）；{_log_hint(kind, state_file)}"
             )
         # 前持有者已退出且未产出状态：接管互斥，继续走第 6 步自行拉起
         _log_kernel_event("前持有者已退出，接管互斥自行拉起内核")
@@ -572,8 +615,8 @@ async def ensure_kernel(
         while True:
             attempts += 1
             cmd = spawn_cmd if spawn_cmd is not None else _default_spawn_cmd(state_file)
-            log_file = kernel_log_path()
-            proc = _spawn_kernel(cmd, log_file)
+            boot_log = kernel_boot_log_path(kind, state_file)
+            proc = _spawn_kernel(cmd, boot_log)
             _log_kernel_event(f"拉起内核（第 {attempts} 次）pid={proc.pid} cmd={' '.join(cmd)}")
             st = _poll_state_file(state_file, timeout)
             if st is not None:
@@ -611,13 +654,12 @@ async def ensure_kernel(
             if proc.poll() is not None:
                 if attempts >= 3:
                     raise KernelStartupError(
-                        f"内核启动后立即退出（已尝试 {attempts} 次）；日志见 %TEMP%\\"
-                        "inkflow-kernel.log"
+                        f"内核启动后立即退出（已尝试 {attempts} 次）；{_log_hint(kind, state_file)}"
                     )
                 _log_kernel_event(f"内核秒退（第 {attempts} 次），清理重试")
                 continue
             raise KernelStartupError(
-                f"内核启动超时（{timeout:.1f}s）；日志见 %TEMP%\\inkflow-kernel.log"
+                f"内核启动超时（{timeout:.1f}s）；{_log_hint(kind, state_file)}"
             )
     finally:
         _release_mutex(mutex_handle)

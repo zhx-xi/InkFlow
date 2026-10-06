@@ -333,12 +333,20 @@ class TestRunServerSeam:
             assert serve_mod._server_thread is mock_thread_cls.return_value
 
         assert actual == 8000
-        mock_config_cls.assert_called_once_with(
-            "inkflow.api.app:app",
-            host="127.0.0.1",
-            port=8000,
-            reload=False,
-            log_level="info",
+        mock_config_cls.assert_called_once()
+        cfg_args, cfg_kwargs = mock_config_cls.call_args
+        assert cfg_args == ("inkflow.api.app:app",)
+        assert cfg_kwargs["host"] == "127.0.0.1"
+        assert cfg_kwargs["port"] == 8000
+        assert cfg_kwargs["reload"] is False
+        assert cfg_kwargs["log_level"] == "info"
+        # #1477 1.4：uvicorn 的 default（error）/ access handler 必须换成 Loguru 桥——
+        # 否则它们走 stderr → 被 _spawn_kernel 重定向进引导日志、绕过内核日志轮转。
+        assert cfg_kwargs["log_config"]["handlers"]["access"]["class"] == (
+            "inkflow.infrastructure.kernel.kernel_logging.LoguruHandler"
+        )
+        assert cfg_kwargs["log_config"]["handlers"]["default"]["class"] == (
+            "inkflow.infrastructure.kernel.kernel_logging.LoguruHandler"
         )
         mock_server_cls.assert_called_once_with(mock_config_cls.return_value)
         # 后台线程：target=server.run、name、daemon=False（保活线程，非守护）

@@ -303,7 +303,7 @@ inkflow write next --project-id ... --outline ...
 | 500 + `X-InkFlow-Error-Code: LLM_ERROR` | `LLM_ERROR` | detail 文本透传 | write 流式/非流式 LLM 失败（writing.py 响应头） |
 | 500（无响应头） | `INTERNAL_ERROR`（**新增**） | detail 文本透传 | 其余内部错误（DB/未知异常） |
 | 连接失败/超时 | `KERNEL_ERROR`（**新增**） | 明确文案 + 日志指引 | 内核不可达（§5.1 单次重试后仍失败） |
-| ensure_kernel 失败 | `KERNEL_ERROR`（**新增**） | KernelStartupError 文案 + `%TEMP%\inkflow-kernel.log` 指引 | 冷启动超时/秒退/spawn 失败 |
+| ensure_kernel 失败 | `KERNEL_ERROR`（**新增**） | KernelStartupError 文案 + 分片日志指引（F30 §6.2） | 冷启动超时/秒退/spawn 失败 |
 
 **LLM 长任务 per-request timeout + TIMEOUT 错误码（#926）**：LLM 长任务端点（outline
 generate / extract / summarize / analyze / writing 流式等 21 处 CLI 调用点 + 7 处 MCP
@@ -392,7 +392,7 @@ async def _run() -> None:
 
 - 命令层：无新增日志（CLI 一次性进程，错误走 print_error）
 - `InkFlowHTTPClient`：可选 `logger.debug`（请求方法/路径/状态码），默认不输出（避免污染 --json 输出）
-- 内核侧日志照旧（`%TEMP%\inkflow-kernel.log`，F30 §6.2）
+- 内核侧日志见 F30 §6.2（1.4 起为分片文件 + 自管理轮转）。
 
 ### 6.4 零 cli 依赖约束（S8）
 
@@ -656,7 +656,7 @@ F38 被依赖:
 | HTTP 500 无头 | DB/未知内部错误 | map_http_error | — | INTERNAL_ERROR（新增码） | 兜底「内部错误（无详情）」；DB_ERROR/CONTEXT_BUDGET_EXCEEDED 恒 HTTP 后由 INTERNAL_ERROR 兜底 |
 | 连接拒绝（内核刚退出） | 请求时内核退出 | 单次重试：重新 ensure_kernel → 重发请求 | 重试成功 | KERNEL_ERROR | 单次防抖；建议「内核可能已退出，重试将自动拉起」 |
 | 请求超时（30s 默认） | — | httpx.TimeoutException → HttpApiError | — | INTERNAL_ERROR | message 含「请求超时」 |
-| ensure_kernel 失败 | 冷启动超时/秒退/spawn 失败 | KernelStartupError | — | KERNEL_ERROR | 文案 + %TEMP%\inkflow-kernel.log 指引 |
+| ensure_kernel 失败 | 冷启动超时/秒退/spawn 失败 | KernelStartupError | — | KERNEL_ERROR | 文案 + 分片日志指引（F30 §6.2） |
 | 内核未运行（首次调用） | 无 kernel.json | ensure_kernel 互斥拉起 | 正常调用（首次 ~4.7s；复用 ~19ms；热调用 ≤100ms 基准） | — | 双 CLI 同时冷调用 → F30 互斥 183 → 轮询复用 |
 
 ### 14.3 验收锚点（写入 §13 验收标准）
