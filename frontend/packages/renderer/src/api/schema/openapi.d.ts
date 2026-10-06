@@ -5212,6 +5212,8 @@ export interface components {
              * @default builtin:write_chapter
              */
             pipeline: string;
+            /** @description 自定义管线配置（#1475；与 stages 互斥，仅 static 模式） */
+            pipeline_config?: components["schemas"]["PipelineConfig"] | null;
             /**
              * Project Id
              * Format: uuid
@@ -5225,6 +5227,11 @@ export interface components {
             role_overrides?: {
                 [key: string]: components["schemas"]["RoleOverride"];
             } | null;
+            /**
+             * Stages
+             * @description 自定义 stage role_key 序列（#1475；与 pipeline_config 互斥，仅 static 模式）
+             */
+            stages?: string[] | null;
             /** @description supervisor 模式配置（mode=supervisor 时生效） */
             supervisor?: components["schemas"]["SupervisorExecuteConfig"] | null;
             /**
