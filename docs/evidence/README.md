@@ -12,6 +12,7 @@
 | `contract-929-llm-failfast.md` | `.hermes/plans/contract-929.md` | `adr/llm/ADR-049.md`、`test_book_run_929.py`、`test_llm_resolver_929.py` 等 |
 | `contract-975-976-980-writing-pane.md` | `.hermes/plans/contract-975-976-980-writing-pane.md` | `test_book_service.py`、`test_book_pipeline.py` |
 | `red-contract-writer-factory-authorization.py` | `.hermes/pending-w2/tests/api/…` | `tests/api/test_writer_factory_authorization.py` |
+| `m6-1494-world-first-open.png` | `.tmp/m6-first-open.png`（本轮生成） | PR #1499（#1494 世界观页首开 · M6 真实内核实证截图：新建项目 → 首开 = 1 个默认根 + 根下引导行） |
 
 ## ⚠️ 已知悬空引用（原件已丢失）
 

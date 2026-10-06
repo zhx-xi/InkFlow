@@ -28,6 +28,7 @@ import { logEn, logZh } from './log';
 import { logsUxEn, logsUxZh } from './logs-ux';
 // #1360：drawio 导入/导出文案域（DrawioIoControls.tsx 的 t('lib.knowledge.drawio.*')）
 import { knowledgeDrawioEn, knowledgeDrawioZh } from './knowledge-drawio';
+import { worldFirstOpenEn, worldFirstOpenZh } from './world-first-open';
 // #1300：分页公共组件文案域（Pagination.tsx 的 t('pagination.page.*')）
 import { paginationEn, paginationZh } from './pagination';
 import { writingReqEn, writingReqZh } from './writing-req';
@@ -69,6 +70,8 @@ const comboZh: Dict = {
   ...timelineEraZh,
   // #1360：drawio 导入/导出域
   ...knowledgeDrawioZh,
+  // #1494：世界观页首开语义域（rootTitle + 引导行文案）
+  ...worldFirstOpenZh,
 } as Dict;
 const comboEn: Dict = {
   ...en,
@@ -94,6 +97,8 @@ const comboEn: Dict = {
   ...timelineEraEn,
   // #1360：drawio 导入/导出域
   ...knowledgeDrawioEn,
+  // #1494：世界观页首开语义域（rootTitle + 引导行文案）
+  ...worldFirstOpenEn,
 } as Dict;
 
 describe('F2 i18n 契约：key 对称', () => {

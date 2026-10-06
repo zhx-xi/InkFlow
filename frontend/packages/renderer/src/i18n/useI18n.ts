@@ -17,12 +17,13 @@ import { writingReqEn, writingReqZh } from './writing-req';
 import { foreshadowFilterEn, foreshadowFilterZh } from './foreshadow-filter';
 import { timelineEraEn, timelineEraZh } from './timeline-era';
 import { knowledgeDrawioEn, knowledgeDrawioZh } from './knowledge-drawio';
+import { worldFirstOpenEn, worldFirstOpenZh } from './world-first-open';
 import { zh } from './zh';
 
 type Dict = Record<string, string>;
 const dicts: Record<'zh' | 'en', Dict> = {
-  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh, ...writingReqZh, ...paginationZh, ...foreshadowFilterZh, ...timelineEraZh, ...knowledgeDrawioZh } as Dict,
-  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn, ...writingReqEn, ...paginationEn, ...foreshadowFilterEn, ...timelineEraEn, ...knowledgeDrawioEn },
+  zh: { ...zh, ...roleEnhanceZh, ...extractZh, ...worldCatKindZh, ...chatUxZh, ...chatDeleteUxZh, ...sessionsUxZh, ...writingUxZh, ...agentScopeUxZh, ...sessionUxZh, ...logZh, ...bookZh, ...logsUxZh, ...writingReqZh, ...paginationZh, ...foreshadowFilterZh, ...timelineEraZh, ...knowledgeDrawioZh, ...worldFirstOpenZh } as Dict,
+  en: { ...en, ...roleEnhanceEn, ...extractEn, ...worldCatKindEn, ...chatUxEn, ...chatDeleteUxEn, ...sessionsUxEn, ...writingUxEn, ...agentScopeUxEn, ...sessionUxEn, ...logEn, ...bookEn, ...logsUxEn, ...writingReqEn, ...paginationEn, ...foreshadowFilterEn, ...timelineEraEn, ...knowledgeDrawioEn, ...worldFirstOpenEn },
 };
 
 /** 简单占位替换: t('write.stream.done', { words: 342, model: 'x', valid: '通过' }) */

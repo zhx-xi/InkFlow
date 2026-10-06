@@ -137,6 +137,59 @@ const SCENES = [
     },
   },
   {
+    id: 'first-open',
+    out: 'world-first-open.png',
+    desc: '#1494 首开态：新项目恒有 1 个默认根（无子条目）→ 根自动选中高亮 + 本地化标题 + 根下引导行',
+    cfg: { state: 'first-open', btns: 'A', catplan: 'A' },
+    check: async (page) => {
+      const d = await page.evaluate(() => {
+        const cs = (el) => (el ? getComputedStyle(el) : null);
+        const q = (s) => document.querySelector(s);
+        const vis = (el) => !!(el && el.offsetParent !== null);
+        const root = q('[data-testid="world-node-root"]');
+        const title = q('[data-testid="world-node-root-title"]');
+        const hint = q('[data-testid="world-first-open-hint"]');
+        const cta = q('[data-testid="world-first-open-cta"]');
+        const card = q('.lib-card[data-testid="library-list"]');
+        const rows = card ? Array.from(card.children).filter((el) => el.classList.contains('tree-row')) : [];
+        const chips = q('.chips-new');
+        return {
+          rootVisible: vis(root),
+          rootSelected: root ? root.dataset.selected : 'MISSING',
+          rootShadow: root ? cs(root).boxShadow : 'MISSING',
+          rootBg: root ? cs(root).backgroundColor : 'MISSING',
+          titleText: title ? title.innerText.trim() : 'MISSING',
+          titleWeight: title ? cs(title).fontWeight : 'MISSING',
+          hintVisible: vis(hint),
+          hintText: hint ? hint.innerText.replace(/\s+/g, ' ').trim() : 'MISSING',
+          ctaText: cta ? cta.innerText.replace(/\s+/g, '') : 'MISSING',
+          // 首开态：既有 demo 树行全部隐藏（仅默认根可见）
+          otherRowsVisible: rows.filter((el) => el.offsetParent !== null).length,
+          // 全新项目尚无分类 → 分类 chips 为空
+          chipsDisplay: chips ? cs(chips).display : 'MISSING',
+          emptyStatePresent: !!q('[data-testid="library-tab-empty"]'),
+        };
+      });
+      const fails = [];
+      const p = (label, ok) => {
+        if (!ok) fails.push(label);
+      };
+      p('#1494 首开非空态：默认根可见', d.rootVisible === true);
+      p('#1494 首开根自动选中（data-selected=1）', d.rootSelected === '1');
+      p('#1494 首开根高亮（accent 淡底）', d.rootBg !== 'rgba(0, 0, 0, 0)' && d.rootBg !== 'MISSING');
+      p('#1494 首开根高亮（左侧 accent inset 条）', typeof d.rootShadow === 'string' && d.rootShadow.includes('inset'));
+      p('#1494 根标题为本地化文案（不直显后端常量）', d.titleText === '世界观总纲');
+      p('#1494 根标题加重（选中态）', d.titleWeight === '600');
+      p('#1494 根下引导行在（展开形态）', d.hintVisible === true);
+      p('#1494 引导行文案指向「在总纲下新建条目」', d.hintText.includes('总纲') && d.hintText.includes('新建'));
+      p('#1494 引导行 CTA = 新建分类（零分类首开）', d.ctaText.includes('新建分类'));
+      p('#1494 首开仅默认根可见（既有 demo 树行隐藏）', d.otherRowsVisible === 0);
+      p('#1494 首开无分类 → 分类 chips 为空', d.chipsDisplay === 'none');
+      p('#1494 首开不是空态（library-tab-empty 不在场）', d.emptyStatePresent === false);
+      return { fails, d };
+    },
+  },
+  {
     id: 'cat-selected',
     out: 'world-cat-selected.png',
     desc: '①A 选中分类「势力」→ 新建条目启用；hover chip → × 在框内显示',

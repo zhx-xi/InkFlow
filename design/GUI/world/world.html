@@ -191,6 +191,23 @@ body[data-abstract-view="势力"] .lib-card[data-testid="library-list"] .tree-ro
 body[data-abstract-view="势力"] .lib-card[data-testid="library-list"] .tree-row[data-cat="势力"],
 body[data-abstract-view="势力"] .lib-card[data-testid="library-list"] .tree-row[data-path="1"]{display:flex}
 
+/* ── #1494 首开态（新项目：后端 #1481 建项目自动建根 → 恒有且仅有一个根、无子条目）──
+   · 仅 body[data-state="first-open"] 渲染；其他状态 .fo-block 零占位（display:none）
+   · 该态下既有树行隐藏：限定 .lib-card[data-testid="library-list"] 的**直接子级**，
+     不波及地图工作台内同为该 testid 的 .lib-card（#39 同 testid 复用前科） */
+.fo-block{display:none}
+body[data-state="first-open"] .fo-block{display:block}
+/* 首开 = 全新项目：尚无分类 → 分类 chips 为空（静态 demo 数据不适用于该态） */
+body[data-state="first-open"] .chips-new{display:none}
+body[data-state="first-open"] .lib-card[data-testid="library-list"] > .tree-row{display:none}
+/* 默认根：首开自动选中高亮（accent 淡底 + 左侧 inset 条 + accent 名称） */
+.tree-row.fo-root,.tree-row.fo-root:hover{background:var(--accent-weak);box-shadow:inset 3px 0 0 var(--accent)}
+.tree-row.fo-root .tname{color:var(--accent);font-weight:600}
+.chev-space{width:20px;height:20px;flex:none}
+/* 引导行（根下空子区 = 「展开」的可见形态） */
+.fo-hint{display:flex;align-items:center;gap:10px;padding:8px 12px 11px 32px;font-size:12px;color:var(--ink-2)}
+.fo-hint-cta{background:var(--surface)}
+
 /* ── 地图工作台（F43 P2：面包屑 + 左目录树 + 右画布/pin 列表） ── */
 .map-bc{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--ink-2);margin-bottom:12px;flex-wrap:wrap}
 .map-bc button{border:none;background:none;font-size:13px;color:var(--ink-2);padding:0}
@@ -445,6 +462,25 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
              · 选中 abstract 分类（示例「势力」）→ 分类筛选视图：仅留匹配节点 + 祖先路径（data-path="1"）
              低保真示意：行缩进为静态示例值，真实缩进由 buildWorldTree 的父链决定。 -->
         <div class="lib-card" data-testid="library-list">
+          <!-- ═══ #1494 首开态：默认根（后端 #1481：建项目自动建根 → 每项目恒有且仅有一个根）═══
+               首开语义（D1(b)/D2(b)）：根自动选中并高亮（data-selected）+ 根下空子区渲染引导行
+               （引导行 = 「展开」的可见形态）；根标题按**结构判据 isRoot**（parent_id 空且
+               category 空）渲染本地化文案（D3：不做 name 匹配 → 改名后本地化仍生效）。
+               旧空态 library-tab-empty 保留定义，仅当「根被删且无子条目」时可达。
+               仅 body[data-state="first-open"] 渲染（其他状态 .fo-block 为 display:none 零占位）。 -->
+          <div class="fo-block">
+            <div class="tree-row fo-root" data-root="1" data-selected="1" data-testid="world-node-root">
+              <span class="chev-space" aria-hidden="true"></span>
+              <span class="tcol"><span class="tname" data-testid="world-node-root-title">世界观总纲</span></span>
+              <span class="row-actions"><button><span data-ic="pencil"></span></button><button class="del"><span data-ic="trash"></span></button><button><span data-ic="copy"></span></button></span>
+            </div>
+            <!-- 引导行：零分类形态（真实首开）——CTA 先建分类；已有分类时 CTA = 新建条目（挂根 + 类别必填）
+                 文案：lib.world.firstOpen.hintNoCategory / lib.world.firstOpen.hint（{name} = 本地化根标题） -->
+            <div class="fo-hint" data-testid="world-first-open-hint">
+              <span>还没有条目 — 先新建一个分类，再在总纲下添加条目</span>
+              <button class="btn-sm fo-hint-cta" data-testid="world-first-open-cta"><span data-ic="plus"></span>新建分类</button>
+            </div>
+          </div>
           <div class="tree-row" data-testid="world-tree-toggle-1" data-cat="地理" data-path="1">
             <button class="chev open"><span data-ic="chevron-right"></span></button>
             <span class="tcol"><span class="tname">地点甲</span><span class="tdesc">门派甲所在主峰，云海之巅，剑鸣可闻百里。</span></span>
@@ -671,6 +707,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="main">列表 · 分类 chips + 树</option>
       <option value="map">地图工作台</option>
       <option value="copy-dialog">复制对话框</option>
+      <option value="first-open">首开 · 默认根（#1494）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -746,7 +783,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>{
 });
 
 /* ── 状态机 ── */
-const STATES = ['main','map','copy-dialog'];
+const STATES = ['main','map','copy-dialog','first-open'];
 function setState(s){
   document.body.dataset.state = s;
   document.getElementById('stateSel').value = s;

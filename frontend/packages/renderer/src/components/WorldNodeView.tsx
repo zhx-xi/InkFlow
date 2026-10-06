@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- buildWorldTree 与 WorldNodeView 同文件（#88 护栏机械搬移，建树工具函数与视图强耦合） */
 /** 世界观树节点视图（F43 P1 §5.3；2026-08-19 自 pages/library.tsx 机械搬移——900 行护栏 #88） */
-import { ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { LibraryItemDTO } from './LibraryCreateDialog';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
@@ -8,6 +8,40 @@ import { cn } from '../lib/cn';
 export interface WorldTreeNode {
   item: LibraryItemDTO;
   children: WorldTreeNode[];
+}
+
+/** #1494（D3c）：结构判据 `isRoot`——`parent_id` 为空**且** `category` 为空即「默认根」。
+ * 用结构而非 name 匹配，故根被改名后本地化标题仍生效（后端常量 `DEFAULT_WORLD_ROOT_NAME` 不动）。 */
+export function isWorldRoot(item: LibraryItemDTO): boolean {
+  const parent = item.parent_id;
+  return (parent === null || parent === undefined) && (item.category ?? '').trim() === '';
+}
+
+/** #1494：首开引导行（根无子条目时渲染在根行下 = 「展开」的可见形态） */
+export interface WorldRootHint {
+  text: string;
+  cta: string;
+  onClick: () => void;
+}
+
+/** #1494（D1b）：首开引导行文案 + CTA——**零分类先建分类**（后端非根条目分类须为已注册分类
+ *  `world_service.create_setting` → `WorldCategoryMissingError`，直开条目框必 4xx），
+ *  已有分类则挂根建子条目（`isRoot` 非真 → 类别必填 #1321）。 */
+export function buildWorldRootHint(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  noCategory: boolean,
+  parentId: string | number,
+  handlers: { onAddCategory: () => void; onAddEntry: (parentId: string | number) => void },
+): WorldRootHint {
+  const name = t('lib.world.rootTitle');
+  return {
+    text: t(
+      noCategory ? 'lib.world.firstOpen.hintNoCategory' : 'lib.world.firstOpen.hint',
+      { name },
+    ),
+    cta: t(noCategory ? 'lib.worldCat.add' : 'lib.worldCat.addEntry'),
+    onClick: () => (noCategory ? handlers.onAddCategory() : handlers.onAddEntry(parentId)),
+  };
 }
 
 /** F43 P1（§5.3）：items → 树——顶层 = parent_id null/缺失；按序保序；孤儿降级顶层（E18） */
@@ -57,6 +91,8 @@ export function WorldNodeView({
   onEdit,
   onDelete,
   onCopy,
+  highlight = false,
+  rootHint,
 }: {
   node: WorldTreeNode;
   depth: number;
@@ -65,16 +101,27 @@ export function WorldNodeView({
   onEdit: (item: LibraryItemDTO) => void;
   onDelete: (item: LibraryItemDTO) => void;
   onCopy: (item: LibraryItemDTO) => void;
+  /** #1494：首开根自动选中高亮（accent 淡底 + accent 名称） */
+  highlight?: boolean;
+  /** #1494：首开引导行（仅默认根且无子条目时由页面传入） */
+  rootHint?: WorldRootHint;
 }) {
   const { t } = useI18n();
   const { item, children } = node;
   const hasChildren = children.length > 0;
   const isCollapsed = collapsed.has(item.id);
+  const isRootNode = isWorldRoot(item);
   return (
     <div className="tree-node">
       <div
-        className="tree-row group flex items-center gap-2 px-3 py-2 text-[13px] text-ink transition-colors duration-150 hover:bg-surface-2/60"
+        className={cn(
+          'tree-row group flex items-center gap-2 px-3 py-2 text-[13px] text-ink transition-colors duration-150 hover:bg-surface-2/60',
+          highlight && 'bg-accent-weak',
+        )}
         style={{ paddingLeft: depth * 18 + 12 }}
+        data-testid={isRootNode ? 'world-node-root' : undefined}
+        data-root={isRootNode ? '1' : undefined}
+        data-selected={highlight ? '1' : undefined}
       >
         {hasChildren ? (
           <button
@@ -93,7 +140,13 @@ export function WorldNodeView({
           <span className="h-5 w-5 shrink-0" aria-hidden="true" />
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="block truncate font-medium">{item.name ?? ''}</span>
+          {/* #1494（D3c）：默认根标题按结构判据 isRoot 本地化——不匹配 name（改名后仍本地化） */}
+          <span
+            data-testid={`world-node-title-${item.id}`}
+            className={cn('block truncate font-medium', highlight && 'text-accent')}
+          >
+            {isRootNode ? t('lib.world.rootTitle') : item.name ?? ''}
+          </span>
           {item.content && item.content.trim() !== '' && (
             <span
               data-testid={`world-node-desc-${item.id}`}
@@ -147,6 +200,24 @@ export function WorldNodeView({
           </button>
         </div>
       </div>
+      {/* #1494：首开引导行——根下空子区（= 「展开」的可见形态），仅默认根且无子条目时由页面传入 */}
+      {rootHint && (
+        <div
+          data-testid="world-first-open-hint"
+          className="flex flex-wrap items-center gap-2.5 py-2 pl-[30px] pr-3 text-[12px] text-ink-2"
+        >
+          <span>{rootHint.text}</span>
+          <button
+            type="button"
+            data-testid="world-first-open-cta"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1 text-[12px] text-ink-2 transition duration-180 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            onClick={rootHint.onClick}
+          >
+            <Plus className="h-3 w-3" aria-hidden="true" />
+            {rootHint.cta}
+          </button>
+        </div>
+      )}
       {!isCollapsed &&
         children.map((child) => (
           <WorldNodeView

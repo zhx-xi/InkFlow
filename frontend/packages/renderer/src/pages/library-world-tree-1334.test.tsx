@@ -68,10 +68,14 @@ function renderWorld() {
   );
 }
 
-/** 等主树就绪（根条目渲染）后返回 library-list 容器 */
+/** 等主树就绪后返回 library-list 容器。
+ *  #1494（D3c）后默认根标题 = 本地化文案（不直显 name），故就绪信号由「根条目名」改为
+ *  结构锚点：根行 `world-node-root` + geo 子条目「地点甲」均在。#1334 契约主体不变。 */
 async function readyTree() {
   await waitFor(() => {
-    expect(screen.getByTestId('library-list')).toHaveTextContent('世界观根');
+    const list = screen.getByTestId('library-list');
+    expect(within(list).getByTestId('world-node-root')).toBeInTheDocument();
+    expect(within(list).getByText('地点甲')).toBeInTheDocument();
   });
   return screen.getByTestId('library-list');
 }
