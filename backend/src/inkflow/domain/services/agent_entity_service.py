@@ -108,11 +108,14 @@ BUILTIN_AGENT_SPECS: list[_BuiltinAgentSpec] = [
             GrantEntry(domain=ToolDomain.FORESHADOWING, ops=[ToolOp.READ]),
             GrantEntry(domain=ToolDomain.WRITING, ops=[ToolOp.READ, ToolOp.WRITE]),
             # #1180（2026-09-16 显式扩权）：写手须读世界观设定，否则设定漂移
-            # 结构性不可避免（世界观在写作轨双重锁死，P1-3）。主路径
-            # （agentic_writer.resolve_writer_authorization）由此拿到 world 只读工具。
+            # 结构性不可避免（世界观在写作轨双重锁死，P1-3）。
+            # ⚠️ #1507：写作轨（agentic_writer）已**不再**经本 grants 取工具面
+            # （改用私有白名单 `_WRITER_TRACK_TOOL_NAMES`，含 world 只读 2）；本授权面
+            # 仅服务 **chat 轨**写手角色（deps_chat_agent 经 resolve_grants 消费）。
             GrantEntry(domain=ToolDomain.WORLD, ops=[ToolOp.READ]),
             # #1327（2026-09-21）：按既定大纲写正文须能读大纲（卷纲/章纲/情节点），
             # 否则「大纲已确认」的写作前提在工具层不成立。只 READ。
+            # （#1507：本格只对 chat 轨写手角色生效，写作轨清单不含 outline 工具。）
             GrantEntry(domain=ToolDomain.OUTLINE, ops=[ToolOp.READ]),
         ],
         "skill_name": "writing-methodology",
