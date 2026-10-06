@@ -17,6 +17,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+# #1481 默认根世界观条目名 —— 建项目自动建根（ProjectService.root_initializer）与
+# 存量补根迁移（ensure_world_root_for_projects）共用，避免两处字面量漂移。
+DEFAULT_WORLD_ROOT_NAME = "世界观总纲"
+"""默认根条目名（`parent_id IS NULL`、`category=""`，specs/f35-world-tree §5.7）."""
+
 
 def _validate_name(v: str) -> str:
     """共享的条目名校验：去空白后非空且不超过 50 字符.

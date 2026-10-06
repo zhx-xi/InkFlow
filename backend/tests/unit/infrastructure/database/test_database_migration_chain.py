@@ -179,7 +179,15 @@ def _create_v011(db: Path) -> dict[str, int]:
             )
         )
     engine.dispose()
-    return {"characters": 3, "relations": 1, "members": 2, "world": 2, "messages": 3}
+    # #1481：world = 迁移后行数（存量 2 行 + 无根项目 2 补根 1 行）；roots = 每项目恰一根
+    return {
+        "characters": 3,
+        "relations": 1,
+        "members": 2,
+        "world": 3,
+        "messages": 3,
+        "roots": 2,
+    }
 
 
 def _create_v11(db: Path) -> dict[str, int]:
@@ -212,7 +220,14 @@ def _create_v11(db: Path) -> dict[str, int]:
             )
         )
     engine.dispose()
-    return {"characters": 2, "relations": 0, "members": 1, "world": 0, "messages": 0}
+    return {
+        "characters": 2,
+        "relations": 0,
+        "members": 1,
+        "world": 0,
+        "messages": 0,
+        "roots": 0,
+    }
 
 
 def _create_v12(db: Path) -> dict[str, int]:
@@ -283,7 +298,15 @@ def _create_v12(db: Path) -> dict[str, int]:
         )
         conn.execute(text("INSERT INTO world_categories (project_id, name) VALUES (1, 'geo')"))
     engine.dispose()
-    return {"characters": 2, "relations": 1, "members": 1, "world": 0, "messages": 0}
+    # #1481：唯一项目（id=1）无根 → 补默认根 1 行（world 0 → 1，roots 1）
+    return {
+        "characters": 2,
+        "relations": 1,
+        "members": 1,
+        "world": 1,
+        "messages": 0,
+        "roots": 1,
+    }
 
 
 BUILDERS = {"v0.11": _create_v011, "v1.1": _create_v11, "v1.2": _create_v12}
@@ -413,6 +436,7 @@ async def test_d1_full_lifespan_migration_chain(tmp_path: Path, version: str) ->
                 == (expect["members"])
             )
             # 软删行清除（is_deleted 列已删，行数即活行数）+ 存量保全
+            # + #1481 无根项目补根（expect["world"] 为迁移后总行数）
             assert (
                 await conn.run_sync(_scalar, "SELECT COUNT(*) FROM world_settings")
                 == (expect["world"])
@@ -435,13 +459,14 @@ async def test_d1_full_lifespan_migration_chain(tmp_path: Path, version: str) ->
             assert await conn.run_sync(_scalar, "SELECT COUNT(*) FROM provider_configs") == 4
             assert await conn.run_sync(_scalar, "SELECT COUNT(*) FROM agents") == 6
 
-            # v0.11 专属：#849 根单例索引升级不得崩（修复前 IntegrityError——
-            # RED 锚点 2）；存量多根降级 = 每项目至多一个根，其余挂首根（#834 模型）
+            # #1481：全链后「每项目恒有且仅有一个根」——无根项目已补默认根
+            roots = await conn.run_sync(
+                _scalar, "SELECT COUNT(*) FROM world_settings WHERE parent_id IS NULL"
+            )
+            assert roots == expect["roots"]
             if version == "v0.11":
-                roots = await conn.run_sync(
-                    _scalar, "SELECT COUNT(*) FROM world_settings WHERE parent_id IS NULL"
-                )
-                assert roots == 1
+                # v0.11 专属：#849 根单例索引升级不得崩（修复前 IntegrityError——
+                # RED 锚点 2）；存量多根降级 = 每项目至多一个根，其余挂首根（#834 模型）
                 demoted = await conn.run_sync(
                     _scalar,
                     "SELECT COUNT(*) FROM world_settings "
