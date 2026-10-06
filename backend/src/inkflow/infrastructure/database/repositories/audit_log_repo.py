@@ -219,7 +219,10 @@ class SQLiteAuditLogRepository:
 
         复用谓词（同章 + 同 content_hash，取 created_at 最新一条）：
         ① `run_status='running'` 且 `created_at >= stale_before`，或
-        ② `run_status='completed'` 且 `status='pending'` 且 `degraded=False`。
+        ② `run_status='completed'` 且 `status='pending'`（**含 degraded**——
+           降级同样是「已完成的一次结果」，不复用会让无模型/LLM 抖动环境下每次
+           重试都新增重复记录，正是 #1425 要根治的形态；要刷新降级结果 → 先确认
+           该记录或改动正文，均自然产生新记录）。
         """
         cid = require_uuid_pk(chapter_id)
         if cid is None or not content_hash:
@@ -237,7 +240,6 @@ class SQLiteAuditLogRepository:
                     and_(
                         AuditLogORM.run_status == "completed",
                         AuditLogORM.status == "pending",
-                        AuditLogORM.degraded.is_(False),
                     ),
                 ),
             )

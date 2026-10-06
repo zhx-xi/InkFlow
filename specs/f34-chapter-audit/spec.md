@@ -413,7 +413,7 @@ inkflow audit chapter [<chapter>] --project <name|id> [--include-static] [--wait
    ① 校验项目 + 章节存在（同 audit ① ②；404 语义，受理前）
    ② 计算 content_hash = sha256(chapter.content)
    ③ find_reusable(chapter, hash, stale_before=now-REUSE_WINDOW)
-      - 命中「运行中（窗口内）」或「已完成 + pending + 未降级」→ 复用，不新增记录
+      - 命中「运行中（窗口内）」或「已完成 + pending（含 degraded）」→ 复用，不新增记录
       - 未命中 → 落一条 run_status='running'（status='pending'，findings=[]）记录
    ④ 返回 (AuditLog, created: bool)
  ── HTTP 层 ──
@@ -521,7 +521,7 @@ chapter_audit_drift.yaml:
 | E5 | LLM 超时/失败 | 200 + degraded 标记 + audit_logs.degraded=true（§5.3） |
 | E6 | LLM 返回非法 JSON | 重试 1 次 → 仍失败降级 |
 | E7 | 章节超长 | 上下文截断（§5.4），报告注明「已截断」 |
-| E8 | 重复触发审计 | **v1.5（#1425）修订**：同章**同内容**重复触发 → **复用**既有记录（不新增）——复用谓词 = 「`run_status='running'` 且在复用窗口（`_REUSE_STALE_SECONDS`）内」**或**「`run_status='completed'` 且 `status='pending'` 且 `degraded=false`」；内容变更（章节正文改动）/ 上一轮已确认（accepted/rejected）/ 上一轮 `failed` / 上一轮 `degraded` → **新记录**（历史保留，`--history` 以 `run_status` + `created_at` 区分尝试）。同步路径 `audit()`（F44 写作链等进程内调用）**保持每次一条**（不经去重） |
+| E8 | 重复触发审计 | **v1.5（#1425）修订**：同章**同内容**重复触发 → **复用**既有记录（不新增）——复用谓词 = 「`run_status='running'` 且在复用窗口（`_REUSE_STALE_SECONDS`）内」**或**「`run_status='completed'` 且 `status='pending'`」（**含 `degraded=true`**：降级同样是「已完成的一次结果」，不复用会让「无可用模型 / LLM 抖动」环境下每次重试都新增一条无法区分的记录——正是本 issue 要根治的形态，见 §9.2-15 实测）；内容变更（章节正文改动）/ 上一轮已确认（accepted/rejected）/ 上一轮 `failed` → **新记录**（历史保留，`--history` 以 `run_status` + `created_at` 区分尝试）。同步路径 `audit()`（F44 写作链等进程内调用）**保持每次一条**（不经去重） |
 | E9 | confirm 时该章无 pending 记录 | 422（§3.3）——已确认过/从未审计过 |
 | E10 | 章节状态未到 REVIEW 就手动审计 | 允许（作者可随时自检，不强制状态门槛） |
 | E11 | 修改后重审 | 改章节 → 重新触发 audit（新记录）；旧记录 rejected/历史保留 |
@@ -679,6 +679,7 @@ class ChapterAuditService:
 12. **v1.5 幂等重跑（#1425）**：同章同内容二次触发 → 202 返回**同一 log_id**、`status=completed`、**不新增记录**；章节内容改动后再触发 → 新 log_id + 新记录
 13. **v1.5 失败可见（#1425）**：后台任务异常 → 记录 `run_status='failed'` + `error` 非空；`/status` 与 `--history` 均可见；CLI `--wait` 以退出 1 收口
 14. **v1.5 审计域 hint（#1425）**：审计工具 TIMEOUT 信封 hint 指向「按 log_id 查询」（`audit` action=`result`），不含 `list/get`；其他域 hint 不变
+15. **v1.5 降级记录也复用（#1425 实测修正）**：LLM 不可用（无可用模型）→ 记录 `run_status='completed'` + `degraded=true` + 确定性 findings；同章同内容**再次触发 → 复用同一 `log_id`（202 status=completed），不新增记录**——#1425 的 M7 实证探针在真实内核上抓到首版实现（复用谓词带 `degraded=false`）会导致「每次重试 +1 条记录」，与本 issue 目标相反，故谓词收敛为「completed + pending」；刷新降级结果的路径 = 确认（accept/reject）或改正文
 
 ### 9.3 覆盖率
 

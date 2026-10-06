@@ -58,7 +58,8 @@ class AuditLogRepositoryProtocol(Protocol):
 
         复用谓词（同章 + 同 `content_hash`，取 created_at 最新一条）：
         ① `run_status='running'` 且 `created_at >= stale_before`（窗口内并发去重），或
-        ② `run_status='completed'` 且 `status='pending'` 且 `degraded=False`（已审待确认）。
+        ② `run_status='completed'` 且 `status='pending'`（已审待确认；**含 degraded**——
+           降级记录不复用会让「无可用模型 / LLM 抖动」环境下每次重试都新增重复记录）。
 
         窗口外 running（疑似内核崩溃遗留）不复用——不阻塞重审（E21）。
 

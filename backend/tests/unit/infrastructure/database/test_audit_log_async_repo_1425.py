@@ -301,14 +301,13 @@ async def test_find_reusable_hits_completed_pending_not_degraded(
     [
         ({"status": "accepted"}, "已确认（审计周期闭合）"),
         ({"status": "rejected"}, "已拒绝（审计周期闭合）"),
-        ({"degraded": True}, "降级（允许重试拿非降级结果）"),
         ({"run_status": AuditRunStatus.FAILED}, "failed（允许重试）"),
     ],
 )
 async def test_find_reusable_misses_terminal_states(
     db_session, project, chapter, overrides: dict[str, Any], case: str
 ) -> None:
-    """反例族：终态/已确认/降级/failed → 不复用."""
+    """反例族：已确认 / failed → 不复用."""
     repo = SQLiteAuditLogRepository(db_session)
     log = _log(project, chapter)
     for key, value in overrides.items():
@@ -319,6 +318,25 @@ async def test_find_reusable_misses_terminal_states(
         await repo.find_reusable(uuid.UUID(int=chapter.id), HASH_A, stale_before=STALE_BEFORE)
         is None
     ), case
+
+
+async def test_find_reusable_hits_degraded_completed_pending(db_session, project, chapter) -> None:
+    """降级记录**同样复用**（#1425 实测修正：无模型/LLM 抖动环境下不复用会每次新增重复记录）.
+
+    过期形态 = 「每次触发都多一条无法区分的记录」，正是 #1425 要根治的；要刷新降级
+    结果 → 先确认该记录（accepted/rejected）或改动正文，均自然产生新记录。
+    """
+    repo = SQLiteAuditLogRepository(db_session)
+    created = await repo.add(
+        _log(project, chapter, degraded=True), findings=[], content_hash=HASH_A
+    )
+
+    found = await repo.find_reusable(
+        uuid.UUID(int=chapter.id), HASH_A, stale_before=STALE_BEFORE
+    )
+
+    assert found is not None
+    assert found.id == created.id
 
 
 async def test_find_reusable_misses_hash_mismatch(db_session, project, chapter) -> None:
