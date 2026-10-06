@@ -459,3 +459,30 @@ class TestLangChainLLMClientErrorMapping:
         assert kwargs["request_timeout"] >= 300, (
             f"request_timeout={kwargs.get('request_timeout')} 对慢模型太紧（#344 根因）"
         )
+
+
+class TestDefaultModelBinding1392:
+    """#1392：`default_model` 的 None / "" 语义 —— 显式空串不得回落全局配置。
+
+    缺陷态（修复前 `default_model or config.llm_default_model`）：显式 `""` 被丢掉 →
+    降级客户端拿到全局模型（`backend/conftest.py` 顶部注入 `deepseek/deepseek-v4-flash`）
+    → 本机有真实 key 时降级客户端**真发请求并成功** → `test_chapter_audit_no_model_degrade_1280`
+    的 `DID NOT RAISE` 顺序敏感假红（CI 无 key 故不受影响）。
+    """
+
+    def test_explicit_empty_default_model_not_replaced_by_global(self) -> None:
+        """`""` 保持为空；`None` 才回落全局默认。"""
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        assert LangChainLLMClient(default_model="")._default_model == ""
+        assert LangChainLLMClient()._default_model == config.llm_default_model
+
+    async def test_empty_model_chat_raises_before_provider_lookup(self) -> None:
+        """空模型 client 的 `chat()` 必抛 `LLMRequestError`（不查注册表、不发请求）。"""
+        from inkflow.domain.ports.llm_errors import LLMRequestError
+        from inkflow.infrastructure.llm.langchain_client import LangChainLLMClient
+
+        with pytest.raises(LLMRequestError):
+            await LangChainLLMClient(default_model="").chat(
+                [ChatMessage(role="user", content="hi")]
+            )
