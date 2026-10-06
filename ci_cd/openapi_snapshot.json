@@ -3306,6 +3306,17 @@
             "title": "Pipeline",
             "type": "string"
           },
+          "pipeline_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipelineConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "自定义管线配置（#1475；与 stages 互斥，仅 static 模式）"
+          },
           "project_id": {
             "description": "项目 ID",
             "format": "uuid",
@@ -3326,6 +3337,21 @@
             ],
             "description": "角色覆盖",
             "title": "Role Overrides"
+          },
+          "stages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "自定义 stage role_key 序列（#1475；与 pipeline_config 互斥，仅 static 模式）",
+            "title": "Stages"
           },
           "supervisor": {
             "anyOf": [
