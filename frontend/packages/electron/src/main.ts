@@ -723,6 +723,7 @@ function createTray(): void {
       icon = nativeImage.createFromPath(process.execPath);
     }
     const instance = new Tray(icon);
+    instance.setToolTip('InkFlow'); // #1489：托盘悬停提示应用名（此前未设置 → Windows 悬停气泡空白）
     instance.on('click', showWindow); // Windows 惯例：点击托盘图标打开主窗口
     tray = instance;
     rebuildTrayMenu();

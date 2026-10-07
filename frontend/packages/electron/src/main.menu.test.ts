@@ -58,7 +58,7 @@ const electronMock = vi.hoisted(() => {
     dialog: { showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })) },
     // #167 F31：main.ts 顶层 import Tray/nativeImage/requestSingleInstanceLock——
     // mock 必须提供导出，否则 vitest 报 "No Tray export"（本文件不触发启动回调，仅满足 import）
-    Tray: vi.fn(() => ({ setContextMenu: vi.fn(), on: vi.fn(), destroy: vi.fn() })),
+    Tray: vi.fn(() => ({ setContextMenu: vi.fn(), setToolTip: vi.fn(), on: vi.fn(), destroy: vi.fn() })),
     nativeImage: { createFromPath: vi.fn(() => ({ isEmpty: () => false })) },
     ipcMain: { on: vi.fn(), handle: vi.fn() },
   };

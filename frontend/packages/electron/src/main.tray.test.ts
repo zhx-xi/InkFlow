@@ -12,7 +12,8 @@
  *   - §5.5 单实例：requestSingleInstanceLock 失败 → app.quit()（不 spawn 不建窗）；
  *     second-instance → isMinimized?restore + show/focus，窗口销毁 → createMainWindow 重建
  *   - §5.6 托盘实现：nativeImage.createFromPath 图标、菜单「打开主窗口 / 内核状态 / 分隔 /
- *     退出」、点击图标 → 打开主窗口、退出 → shutdown + destroy
+ *     退出」、点击图标 → 打开主窗口、退出 → shutdown + destroy、悬停 tooltip = 应用名
+ *     （`instance.setToolTip('InkFlow')`，#1489 1.2 新增）
  *   - §8 文件结构（main.tray.test.ts CREATE）、§9 测试策略（关闭拦截状态机 / 单实例分支 /
  *     IPC handler / Tray 创建）
  *
@@ -143,6 +144,7 @@ const electronMock = vi.hoisted(() => {
 
   const trayInstance = {
     setContextMenu: vi.fn(),
+    setToolTip: vi.fn(),
     on: vi.fn(),
     destroy: vi.fn(),
   };
@@ -215,6 +217,7 @@ const fakeChild = electronMock.__fakeChild as unknown as {
 };
 const trayInstance = electronMock.__trayInstance as unknown as {
   setContextMenu: Mock;
+  setToolTip: Mock;
   on: Mock;
   destroy: Mock;
 };
@@ -278,7 +281,7 @@ beforeEach(() => {
   win.isMinimized.mockReturnValue(false);
   appMock.exit.mockClear();
   appMock.quit.mockClear();
-  // ⚠️ 不清 trayInstance.setContextMenu / trayInstance.on / Tray / createFromPath：
+  // ⚠️ 不清 trayInstance.setContextMenu / trayInstance.setToolTip / trayInstance.on / Tray / createFromPath：
   // 启动期创建断言依赖 import 时的注册记录（freshInstance 会累积计数，按「至少一次」断言）
   trayInstance.destroy.mockClear();
   fakeChild.kill.mockClear();
@@ -395,6 +398,12 @@ describe('Tray 创建与菜单（spec §5.6）', () => {
     expect(typeof iconPath).toBe('string');
     expect(String(iconPath)).toContain('inkflow-icon-256.png');
     expect(trayInstance.setContextMenu).toHaveBeenCalled();
+  });
+
+  it('托盘悬停 tooltip = 应用名（spec §5.6「悬停 tooltip」行；#1489）', () => {
+    // 契约：createTray() 内 `new Tray(icon)` 之后必须调 setToolTip('InkFlow')——
+    // 未调用 → Windows 悬停气泡空白（#1489 根因）；文案对齐 electron-builder.yml productName。
+    expect(trayInstance.setToolTip).toHaveBeenCalledWith('InkFlow');
   });
 
   it('托盘菜单模板：「打开主窗口」/「内核状态」/ 分隔 /「退出」（含 click 回调）', () => {
