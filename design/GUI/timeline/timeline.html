@@ -132,7 +132,7 @@ body[data-state="narrative-filter"] .tl-filter-panel{display:block}
 
 /* 纪元轴选择器（#1353：仅世界序 + 轴族 ≥ 2 条时可见） */
 .tl-axis-picker{display:none;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
-body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"] .tl-axis-picker{display:inline-flex}
+body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"] .tl-axis-picker,body[data-state="world-eras-b"] .tl-axis-picker{display:inline-flex}
 #axisChips{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
 .axis-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11.5px;color:var(--ink-3);background:var(--surface)}
 .axis-chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-weak)}
@@ -185,6 +185,17 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 .tl-lane-name{font-size:12.5px;font-weight:500;color:var(--ink)}
 .tl-lane-meta{font-size:11px;color:var(--ink-3)}
 
+/* 时间刻度节点（#1467：组内按时间分层——同刻度事件归属同一时间节点，形成树状层级） */
+.tl-timenode{position:relative}
+.tl-timenode + .tl-timenode{margin-top:12px}
+.tl-timenode-head{position:relative;display:flex;align-items:center;gap:8px;padding:2px 0}
+.tl-timenode-head .tn-dot{position:absolute;left:-23px;top:50%;width:8px;height:8px;border-radius:999px;background:var(--surface);border:1.5px solid var(--accent);transform:translateY(-50%)}
+.tl-timenode-label{font-size:12px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.tl-timenode-count{font-size:11px;color:var(--ink-3)}
+.tl-timenode-events{position:relative;margin-top:4px;padding-left:22px}
+.tl-timenode-events::before{content:"";position:absolute;left:8px;top:2px;bottom:8px;width:2px;border-radius:1px;background:var(--line)}
+.tl-timenode-events .tl-node::before{left:-17px;background:var(--surface)}
+
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
 body[data-state="empty"] .tl-toolbar,body[data-state="empty"] [data-testid="tl-axis"]{display:none}
@@ -207,7 +218,7 @@ body[data-shot="1"] .demo-bar,body[data-shot="1"] .review-note{display:none}
 body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
 </style>
 </head>
-<body data-state="narrative">
+<!-- #1467 era-grouping prototype -->
 
 <div class="app">
   <!-- ═══ 侧边导航 AppNav（设定库分组，时间线激活） ═══ -->
@@ -339,6 +350,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="world">世界序 · A 拆半（时间轴）</option>
       <option value="world-eras">世界序 · 纪元轴（默认：仅主力轴）</option>
       <option value="world-eras-multi">世界序 · 纪元轴（多轴同时显示）</option>
+      <option value="world-eras-b">世界序 · 纪元轴（对照 B：行内时间）</option>
       <option value="empty">空态</option>
     </select>
   </label>
@@ -420,10 +432,10 @@ const DEMO = {
   events: [
     { id:'1', ch:'c11', axis:'qingyuan', time:17,   timeText:'示例历 17 年',  title:'师父闭关前夜，问角色甲「事件乙」' },
     { id:'2', ch:'c12', axis:'qingyuan', time:217,  timeText:'示例历 217 年', title:'角色甲下山，角色乙追随' },
-    { id:'3', ch:'c12', axis:'qingyuan', time:297,  timeText:'示例历 297 年', title:'夜访地点乙，发现二十年前异动痕迹' },
+    { id:'3', ch:'c12', axis:'qingyuan', time:217,  timeText:'示例历 217 年', title:'夜访地点乙，发现二十年前异动痕迹' },
     { id:'4', ch:'c13', axis:'qingyuan', time:314,  timeText:'示例历 314 年', title:'事件甲，断剑于地点己' },
     { id:'5', ch:null,  axis:'none',     time:null, timeText:'未知',          title:'角色戊失踪（手工录入，未归章、未设纪元）' },
-    { id:'6', ch:null,  axis:'xianjie',  time:1024, timeText:'',              title:'示例仙界法旨降下（另一纪元轴事件）' },
+    { id:'6', ch:null,  axis:'xianjie',  time:1024, timeText:'',              unit:'年', title:'示例仙界法旨降下（另一纪元轴事件）' },
   ],
 };
 const chTitle = (key) => {
@@ -441,6 +453,32 @@ const eventLabel = (ev) => {
   if (ev.axis) return ev.time === null || ev.time === undefined ? eraName(ev.axis) : `${eraName(ev.axis)} ${ev.time}`;
   return '未知';
 };
+/* #1467：世界序组内时间刻度（time_display 优先 -> 轴内值 + 单位 -> 未知）。
+   轴名只在组头出现一次，行内不再重复轴名（对照 eventLabel 的「轴名 + 轴内值」回退）。 */
+const timeScaleOf = (ev) => {
+  if (ev.timeText) return ev.timeText;
+  if (ev.time !== null && ev.time !== undefined) return `${ev.time}${ev.unit || ''}`;
+  return '未知';
+};
+/* #1467：轴内按纪元值升序（缺失排末尾） */
+function byEraValue(a, b){
+  if (a.time === null && b.time === null) return 0;
+  if (a.time === null) return 1;
+  if (b.time === null) return -1;
+  return a.time - b.time;
+}
+/* #1467：组内按时间刻度分层（同刻度合并为一个时间节点，保持轴内顺序）。 */
+function groupByTime(evs){
+  const order = [];
+  const buckets = new Map();
+  for (const ev of evs) {
+    const key = timeScaleOf(ev);
+    if (!buckets.has(key)) { buckets.set(key, []); order.push(key); }
+    buckets.get(key).push(ev);
+  }
+  return order.map((key) => ({ key, evs: buckets.get(key) }));
+}
+
 const ALL_EVENTS = DEMO.events.map((ev) =>
   Object.assign({}, ev, { chTitle: chTitle(ev.ch), label: eventLabel(ev) }),
 );
@@ -454,14 +492,14 @@ const PRIMARY_AXIS = AXIS_KEYS.slice().sort((a, b) => {
 })[0];
 const KIND_LABEL = { none: '（默认轴）' };
 
-const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','empty'];
+const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','empty'];
 const LEGENDS = {
   'narrative':        '轴=章 · 事件按章推进排列；行内小字=世界内时间',
   'narrative-filter': '轴=章 · 已筛选：第十二章（筛选对两序共用）',
   'world':            '轴=世界内时间（升序，未知末尾）· 不再按章分组；行尾=来源章（单轴：项目无纪元数据时零变化）',
   'world-eras':       '轴=纪元 · 默认只显示主力轴 · 勾选控制显示哪几条轴（至少保留一条）',
   'world-eras-multi': '轴=纪元 · 每轴独立时间刻度（轴内按纪元值升序）· 默认轴「未分纪元」= R6-4 的旧单标量时间线',
-  'empty':            '',
+  'world-eras-b':     '轴=纪元 · 组头显示轴名一次 · 组内事件行行内显示时间刻度（不合并同刻度）',
 };
 const NOTES = {
   'narrative':
@@ -474,6 +512,8 @@ const NOTES = {
     '<b>世界序 · 纪元轴（#1353 / 0.16.0 落地）</b>：事件以 <code>extra.era</code>（轴名）+ <code>extra.era_value</code>（轴内值）承载纪元，<b>零 DDL</b>（既有 JSON 列，无新列/无迁移）。<b>默认只显示主力轴</b>（事件数最多的轴 —— 「主角所在轴」的启发式，主角↔纪元映射归后续里程碑）；切换 chips 即按选中轴分组渲染。<code>time_value</code> 仍是<b>跨轴全局标量</b>，一致性检查<b>不按纪元分桶</b>（跨纪元比较归 #1411）。',
   'world-eras-multi':
     '<b>世界序 · 纪元轴 · 多轴同时显示</b>：每轴一条泳道、各自时间刻度（轴内按 <code>era_value</code> 升序、缺失排末尾）；<b>默认轴「未分纪元」</b>= R6-4 保留的旧「单标量时间线」（无纪元事件不丢、不改判）。标签规则：<code>time_display</code> 原样优先 → 无则「轴名 + 轴内值」。至少保留一条轴（取消最后一条无效）。',
+  'world-eras-b':
+    '<b>世界序 · 纪元轴 · 对照方案 B</b>：组头仍是「轴名 + 计数」（只出现一次），但<b>不做时间节点分层</b>——每条事件行自己显示时间刻度（<code>time_display</code> 优先 → 轴内值 + 单位），同刻度不合并。<b>比方案 A 紧凑</b>（事件多、年份分散时更省行），但「同一年多事件」看不出归属。<b>方案 A（树状）为推荐形态</b>：把同刻度事件收进同一时间节点下，缩进一级。',
   'empty':
     '<b>空态</b>：无变化（「还没有时间线，去创建」+ CTA）。',
 };
@@ -484,9 +524,10 @@ function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace
 function nodeHTML(ev, opts){
   const o = opts || {};
   const timeCls = o.timeMode === 'tick' ? 'tl-main' : 'tl-main tl-main--dim';
+  const timeSpan = o.showTime === false ? '' : `<span class="${timeCls}" data-testid="tl-axis-main-${ev.id}">${esc(ev.label)}</span>`;
   const src = o.showSrc ? `<span class="tl-src" data-testid="tl-src-${ev.id}">${esc(ev.chTitle)}</span>` : '';
   return `<div class="tl-node" data-testid="tl-axis-node-${ev.id}">
-    <span class="${timeCls}" data-testid="tl-axis-main-${ev.id}">${esc(ev.label)}</span>
+    ${timeSpan}
     <span class="tname">${esc(ev.title)}</span>${src}
     <button class="check-one" data-testid="tl-check-one-${ev.id}">单事件检查</button>
     <span class="tl-actions">
@@ -544,26 +585,46 @@ function renderPicker(onKeys){
     .join('');
 }
 
-/* 选中轴的泳道（只渲染选中轴；每事件恰好渲染一次） */
+/* 选中轴的泳道（#1467：组头 = 轴名 + 计数、每事件恰好渲染一次；组内按时间刻度分层缩进） */
 function renderWorldEras(onKeys){
   const lanes = AXIS_KEYS.filter((key) => onKeys.includes(key)).map((key) => {
-    const evs = ALL_EVENTS.filter((ev) => ev.axis === key).sort((x, y) => {
-      if (x.time === null && y.time === null) return 0;
-      if (x.time === null) return 1;
-      if (y.time === null) return -1;
-      return x.time - y.time;
-    });
+    const evs = ALL_EVENTS.filter((ev) => ev.axis === key).slice().sort(byEraValue);
+    const nodes = groupByTime(evs).map((g, i) => `<div class="tl-timenode" data-testid="tl-timenode-${key}-${i}">
+        <div class="tl-timenode-head">
+          <span class="tn-dot"></span>
+          <span class="tl-timenode-label" data-testid="tl-tick-${key}-${i}">${esc(g.key)}</span>${g.evs.length > 1 ? `<span class="tl-timenode-count">${g.evs.length} 个事件</span>` : ''}
+        </div>
+        <div class="tl-timenode-events">${g.evs.map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true, showTime:false })).join('')}</div>
+      </div>`).join('');
+    return `<section class="tl-lane" data-testid="tl-lane-${key}">
+      <header class="tl-lane-head">
+        <span class="lane-dot"></span>
+        <span class="tl-lane-name" data-testid="tl-lanehead-${key}">${esc(key === 'none' ? '未分纪元' : eraName(key))}${KIND_LABEL[key] || ''}</span>
+        <span class="tl-lane-meta">${evs.length} 个事件</span>
+      </header>
+      <div class="tl-axis tl-axis--time">${nodes}</div>
+    </section>`;
+  }).join('');
+  return `<div class="tl-lanes">${lanes}</div>`;
+}
+
+/* 对照方案 B：组头 = 轴名 + 计数；组内事件行行内显示时间刻度（不合并同刻度、不嵌套） */
+function renderWorldErasB(onKeys){
+  const lanes = AXIS_KEYS.filter((key) => onKeys.includes(key)).map((key) => {
+    const evs = ALL_EVENTS.filter((ev) => ev.axis === key).slice().sort(byEraValue);
+    const rows = evs.map((ev) => nodeHTML(Object.assign({}, ev, { label: timeScaleOf(ev) }), { timeMode:'tick', showSrc:true })).join('');
     return `<section class="tl-lane" data-testid="tl-lane-${key}">
       <header class="tl-lane-head">
         <span class="lane-dot"></span>
         <span class="tl-lane-name">${esc(key === 'none' ? '未分纪元' : eraName(key))}${KIND_LABEL[key] || ''}</span>
         <span class="tl-lane-meta">${evs.length} 个事件</span>
       </header>
-      <div class="tl-axis tl-axis--time">${evs.map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true })).join('')}</div>
+      <div class="tl-axis tl-axis--time">${rows}</div>
     </section>`;
   }).join('');
   return `<div class="tl-lanes">${lanes}</div>`;
 }
+
 
 /* 筛选面板（按章）：narrative-filter 态演示「已选第十二章」 */
 function renderFilterPanel(state){
@@ -589,6 +650,7 @@ function renderBody(state){
   }
   if (state === 'world') return renderWorldA();
   if (state === 'world-eras') return renderWorldEras(['qingyuan']);
+  if (state === 'world-eras-b') return renderWorldErasB(['qingyuan']);
   if (state === 'world-eras-multi') return renderWorldEras(AXIS_KEYS);
   return '';
 }
@@ -614,7 +676,7 @@ function setState(s){
   document.body.dataset.state = s;
   const sel = document.getElementById('stateSel');
   if (sel) sel.value = s;
-  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi';
+  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi' || s === 'world-eras-b';
   document.getElementById('segNarrative').classList.toggle('active', !isWorld);
   document.getElementById('segWorld').classList.toggle('active', isWorld);
   document.getElementById('tlLegend').textContent = LEGENDS[s] || '';

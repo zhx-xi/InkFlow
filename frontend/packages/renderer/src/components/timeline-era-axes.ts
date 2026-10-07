@@ -91,3 +91,48 @@ export function sortByEraValue(events: TimelineEventDTO[]): TimelineEventDTO[] {
     })
     .map((entry) => entry.ev);
 }
+
+/**
+ * #1467 世界序组内**时间刻度**文案（specs/f19-gui/timeline.md §1.1 / §3 N14）。
+ *
+ * 回退链：`time_display`（trim 非空）原样 → 「`era_value` + `time_unit`」→ 「`time_value` + `time_unit`」→ null。
+ * - **轴名不进刻度文案**：轴名只出现在组头（泳道头），行内不再重复（废除 #1353 的「轴名 + 轴内值」回退）。
+ * - null = 无任何时间信息 → 调用方用 i18n `lib.tlTimeUnknown` 兜底（保证同组「未知」事件合并到一个节点）。
+ * - **不做跨轴换算**：`era_scale`（流速比）不参与本函数（换算归 #1411）。
+ */
+export function timeScaleText(ev: TimelineEventDTO): string | null {
+  const display = typeof ev.time_display === 'string' ? ev.time_display.trim() : '';
+  if (display !== '') return display;
+  const unit = typeof ev.time_unit === 'string' ? ev.time_unit : '';
+  const raw = eraValueOf(ev);
+  const value = raw !== null ? raw : typeof ev.time_value === 'number' && Number.isFinite(ev.time_value) ? ev.time_value : null;
+  return value === null ? null : `${value}${unit}`;
+}
+
+/** 一个时间节点（刻度文案或 null = 未知；同刻度事件合集）。 */
+export interface TimelineTimeNode {
+  /** 刻度文案；null = 时间未知（组件用 `lib.tlTimeUnknown` 兜底） */
+  key: string | null;
+  /** 该刻度下的事件（保持传入顺序） */
+  events: TimelineEventDTO[];
+}
+
+/**
+ * #1467 组内按**时间刻度**分层：同刻度事件合并为一个时间节点（`key` 首次出现顺序），
+ * **不改原数组**、不重排（调用方先 `sortByEraValue`）。刻度缺失的事件合并到同一个 `key === null` 节点。
+ */
+export function groupByTime(events: TimelineEventDTO[]): TimelineTimeNode[] {
+  const order: (string | null)[] = [];
+  const buckets = new Map<string | null, TimelineEventDTO[]>();
+  for (const ev of events) {
+    const key = timeScaleText(ev);
+    const bucket = buckets.get(key);
+    if (bucket === undefined) {
+      buckets.set(key, [ev]);
+      order.push(key);
+    } else {
+      bucket.push(ev);
+    }
+  }
+  return order.map((key) => ({ key, events: buckets.get(key)! }));
+}

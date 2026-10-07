@@ -5,10 +5,11 @@
 > **Spec 变更**：2026-09-21 #1323 —— ① 补轴线/章分组定义（#1301 的轴此前**无规格依据**，属推断实现；现正式入规格）；② 废除「第N章 = narrative_position」显示（语义错用，见 §1 锚点）；③ 事件按 `source_chapter_id` 章分组。
 > **Spec 变更**：2026-10-02 #1353（**实现已落地**）—— **世界序「纪元轴族 + 轴选择器」**（0.16.0 最小落地，f12 spec v1.3 §2.8）：事件以**正式列** `era`（轴名）+ `era_value`（轴内值）承载纪元（v1.4 / #1410 正式化，ADR-065）→ 世界序新增**轴选择器**（多选 chips，`tl-axis-picker` / `tl-axis-chip-<key>`）与**按选中轴分组的泳道渲染**（`tl-lane-<key>`）；**默认只勾选主力轴**（事件数最多者 —— 「主角所在轴」的启发式，主角↔纪元映射归后续里程碑）；**默认轴「未分纪元」**（R6-4：旧的单标量时间线保留为一条轴，事件不丢）；**轴族只有一条时不渲染选择器**（无纪元数据项目行为零变化）。创建/编辑对话框新增「纪元 / 纪元内数值」字段（写入 `extra`，向后兼容）。原型状态集：narrative / narrative-filter / world / world-eras / world-eras-multi / empty。
 > **Spec 变更**：2026-09-22 #1374（**实现已落地**）—— **双序轴向语义分流**：叙事序轴 = **章**（章刻度 + 章下事件，刻度含「N 个事件」计数）；世界序轴 = **世界内时间**（单轴、无章分组、行尾 = 来源章胶囊）。世界序「纪元分轴」留 0.16.0（#1353，事件无 era 字段）。筛选已实现（按章 / 按事件类型，单选点选；按世界 / 按角色 = 0.16.0）。原型：design/GUI/timeline/timeline.html（状态 narrative / narrative-filter / world / world-multiaxis / empty）。
+> **Spec 变更**：2026-10-07 #1467（**实现已落地**）—— **世界序纪元轴「组头 + 时间刻度树状分层」**：轴名只在**组头**出现一次（泳道头 `tl-lane-<key>`），组内事件行**不再重复轴名**；组内按**时间刻度**分层（容器 `tl-timenode-<key>-<i>` + 刻度 `tl-timenode-label-<key>-<i>`，**同刻度事件收进同一时间节点**、事件行缩进一级，时间节点含同刻度事件数）；时间刻度回退链 = `time_display` → 「`era_value` + 单位」→ 「`time_value` + 单位」→ 「未知」（`lib.tlTimeUnknown`）。**边界**：不做跨轴换算（归 #1411）；**无纪元数据的单轴世界序行为零变化**（v1.2 形态）；**纪元数据存在但轴族仅 1 条**时也走泳道（否则轴名无处显示）。原型状态集新增 `world-eras-b`（对照方案：组头 + 行内时间刻度、不合并）。
 
 ## 1. 画面样式
 
-- 原型引用：design/GUI/timeline/timeline.html + timeline-<state>.png（#1353 起状态集：empty / narrative / narrative-filter / world / world-eras / world-eras-multi）
+- 原型引用：design/GUI/timeline/timeline.html + timeline-<state>.png（#1353 起状态集：empty / narrative / narrative-filter / world / world-eras / world-eras-multi；#1467 起新增 world-eras-b 对照态）
 > 低保真排版示意简图（区块+标签，非精确像素）
 
 ```text
@@ -40,15 +41,20 @@
 │ │ ● 未知      角色戊失踪…     [未分章]                     ││
 │ │ 无章分组；时间升序、未知排末尾；行尾 = 来源章胶囊         ││
 │ └──────────────────────────────────────────────────────────┘│
-│ ┌─ 世界序：轴 = 纪元轴族（#1353，多纪元数据） ─────────────┐│
-│ │ ◆ 示例界 · 示例历  4 个事件      ← 泳道头（轴名 + 计数）   ││
-│ │ ┃   ● 示例历 17 年 师父闭关前夜…          [检查] [✎][🗑] ││
-│ │ ┃   ● 示例历 217 年 角色甲下山…           [检查] [✎][🗑] ││
-│ │ ◆ 未分纪元（默认轴）1 个事件    ← R6-4 旧单标量时间线      ││
-│ │ ┃   ● 未知 角色戊失踪…                    [检查] [✎][🗑] ││
-│ │ ◆ 示例仙界 · 示例仙历  1 个事件（标签回落：轴名 + 轴内值）        ││
-│ │ ┃   ● 示例仙界 · 示例仙历 1024 示例仙界法旨降下…      [检查] [✎][🗑] ││
-│ │ 轴内按纪元值升序；每事件恰好渲染一次；默认只勾选主力轴     ││
+│ ┌─ 世界序：轴 = 纪元轴族（#1467 组头 + 时间刻度树状分层） ──┐│
+│ │ ◆ 示例界 · 示例历  4 个事件   ← 组头（轴名 + 计数，只一次）││
+│ │    ○ 示例历 17 年            ← 时间刻度节点（含同刻度计数）││
+│ │    ┃  ● 师父闭关前夜…        ← 事件行缩进一级 [检查][✎][🗑]││
+│ │    ○ 示例历 217 年  2 个事件                             ││
+│ │    ┃  ● 角色甲下山…          [第十二章] [检查] [✎][🗑]    ││
+│ │    ┃  ● 夜访地点乙…          [第十二章] [检查] [✎][🗑]    ││
+│ │    ○ 示例历 314 年                                       ││
+│ │    ┃  ● 事件甲…              [第十三章] [检查] [✎][🗑]    ││
+│ │ ◆ 未分纪元（默认轴）1 个事件  ← R6-4 旧单标量时间线       ││
+│ │    ○ 未知 → ● 角色戊失踪…    [未分章] [检查] [✎][🗑]      ││
+│ │ ◆ 示例仙界 · 示例仙历  1 个事件                          ││
+│ │    ○ 1024年 → ● 示例仙界法旨降下…  ← 回退：轴内值 + 单位   ││
+│ │ 组头一次 + 组内按时间刻度分层；每事件恰好渲染一次         ││
 │ └──────────────────────────────────────────────────────────┘│
 │ 空态：library-tab-empty「还没有时间线，去创建」+ CTA         │
 └──────────────────────────────────────────────────────────────┘
@@ -62,22 +68,22 @@
 |----|--------|--------|------|------------|------------|
 | **叙事序** | **章**（章节标题原样；「第 N 章」序号由 #999 标题归一化保证，前端零拼接） | 章序（章节列表顺序）→ 章内 `narrative_position`（#1323 合成序） | 按章分组（容器 `tl-chgroup-<chapterId>`，刻度 `tl-chtick-<chapterId>` 含「N 个事件」计数） | 事件标题；世界内时间为行内小字（ink-3 降级，`tl-axis-main-<id>`） | —（章信息即刻度） |
 | **世界序**（单轴形态：项目无纪元数据时） | **世界内时间**（`time_display` → `time_value+time_unit` → 「未知」） | `time_value` **归一日尺度**升序（未知排末尾；#1409 / f12 spec §2.7：单位归一 + 时/时辰 日锚点） | **无分组**（单一时间轴，无 `tl-chgroup`） | 时间刻度（tabular-nums，`tl-axis-main-<id>`） | 来源章胶囊（`tl-src-<id>`） |
-| **世界序 · 纪元轴族**（#1353；v1.4 #1410 正式列） | **纪元**（轴 = 正式列 `era`；无纪元事件归**默认轴**「未分纪元」，R6-4） | 轴族顺序 = 事件流**首次出现**；**轴内** `era_value` 升序（缺失排末尾）；全局排序键仍是 `time_value`（跨轴**不比较**，f12 §2.8 E6） | 按**选中轴**分泳道 `tl-lane-<key>`（每轴独立时间刻度；未勾选的轴不渲染） | 轴内时间刻度（`time_display` 原样 → 「**轴名 + 轴内值**」→ 「未知」，`tl-axis-main-<id>`） | 来源章胶囊（`tl-src-<id>`） |
+| **世界序 · 纪元轴族**（#1353；v1.4 #1410 正式列；#1467 组头 + 树状分层） | **纪元**（轴 = 正式列 `era`；无纪元事件归**默认轴**「未分纪元」，R6-4） | 轴族顺序 = 事件流**首次出现**；**轴内** `era_value` 升序（缺失排末尾）；全局排序键仍是 `time_value`（跨轴**不比较**，f12 §2.8 E6） | 按**选中轴**分泳道 `tl-lane-<key>`，**组头 = 轴名 + 「N 个事件」计数（只出现一次）**；组内按**时间刻度**分层 `tl-timenode-<key>-<i>`（同刻度事件收进同一时间节点；未勾选的轴不渲染） | **时间刻度节点**（`tl-timenode-label-<key>-<i>`）= `time_display` 原样 → 「`era_value` + 单位」→ 「`time_value` + 单位」→ 「未知」（`lib.tlTimeUnknown`）；**事件行不再显示轴名 / 时间刻度** | 来源章胶囊（`tl-src-<id>`） |
 | **轴选择器**（#1353） | — | — | 多选 chips（`tl-axis-chip-<key>`，key = 轴名 / 默认轴哨兵 `__none__`；`aria-pressed` = 勾选态） | 仅**世界序**且**轴族 ≥ 2 条**时可见；默认只勾选**主力轴**（事件数最多，并列取先出现） | 至少保留一条轴（取消最后一条无效） |
 
 - **未分章**（`source_chapter_id` 空）：叙事序 = 轴末尾灰刻度（`tl-chtick-__none__`，文案 `lib.tlGroupNone`「未分章」）；世界序 = 行尾胶囊「未分章」
 - **未知章节**（`source_chapter_id` 有值但映射缺失）：叙事序刻度退化为 `lib.tlChapterUnknown`「未知章节」占位；世界序胶囊同文案
-- ✅ **纪元分轴（多纪元）已落地**（0.16.0 / #1353）：事件以**正式列** `era`（轴名）+ `era_value`（轴内值）承载纪元（v1.4（#1410）正式化：三列 + 幂等迁移 + 回填，ADR-065；v1.3 的 `extra.era` / `extra.era_value` 降为遗留快照）→ 世界序按轴族渲染 + 轴选择器。**边界**：`time_value` 仍是跨轴全局标量，一致性检查**不按纪元分桶**（跨纪元比较归 #1411；正式列 `era`/`era_value`/`era_scale` 归 #1410）。原型：`timeline-world-eras.png`（默认：仅主力轴）/ `timeline-world-eras-multi.png`（多轴同时显示）
+- ✅ **纪元分轴（多纪元）已落地**（0.16.0 / #1353；#1467 升级为组头 + 树状分层）：事件以**正式列** `era`（轴名）+ `era_value`（轴内值）承载纪元（v1.4（#1410）正式化：三列 + 幂等迁移 + 回填，ADR-065；v1.3 的 `extra.era` / `extra.era_value` 降为遗留快照）→ 世界序按轴族渲染 + 轴选择器 + **组内时间刻度分层**。**边界**：`time_value` 仍是跨轴全局标量，一致性检查**不按纪元分桶**（跨纪元比较归 #1411；正式列 `era`/`era_value`/`era_scale` 归 #1410）；**#1467 不做跨轴换算**（`era_scale` 不参与任何渲染计算）。原型：`timeline-world-eras.png`（默认：仅主力轴）/ `timeline-world-eras-multi.png`（多轴同时显示）/ `timeline-world-eras-b.png`（对照：行内时间、不合并）
 - **筛选维度**（#1374 已实现）：按章（✅ `source_chapter_id` + 章节列表；按钮 `tl-filter-chapter`，面板 `tl-filter-panel` / 选项 `tl-fp-item-<key>`：`all` / 各章节 id / `__none__`）、按事件类型（✅ `timeline_flag`：正叙/倒叙/插叙；按钮 `tl-filter-type`，面板 `tl-filter-type-panel` / 选项 `tl-tp-item-<key>`）；面板含标题行（`lib.tlFilterChapterTitle`「按章筛选」/ `lib.tlFilterTypeTitle`「按事件类型筛选」）+ 勾选框选项；单选点选（选后即过滤 + 面板收起）、客户端筛选（**两序共用**，切序不丢）、重置 = 「全部」；✅ 按世界/纪元 = 世界序**轴选择器**（#1353 已落地，见 §1.1 表末两行 —— 控制**显示哪几条纪元轴**，与「筛选」按钮语义不同，不做按轴过滤）、⛔ 按角色关联（无正式字段，`extra` 预留）
 - **图例**（`lib.tlLegend.narrative` / `lib.tlLegend.world` / `lib.tlLegend.worldEras`，随序与选择器切换）：叙事序「轴=章 · 事件按章推进排列；行内小字=世界内时间」/ 世界序「轴=世界内时间（升序，未知末尾）· 不再按章分组；行尾=来源章」/ 世界序·纪元（#1353）「轴=纪元 · 每轴独立时间刻度 · 勾选控制显示哪几条轴」
-- 🔴 **时间表达 = 纪年式**（用户 2026-09-22 拍板）：时间展示优先 `time_display` 原样（如「示例历 317 年」「始皇三年」）；**不使用相对时间文案**（「xx 年前」「xx 年后」）。`time_value + time_unit` 回退仅为存量占位；**#1353 起回退链插入「轴名 + 轴内值」**（无 `time_display` 的纪元事件，如「示例仙界 · 示例仙历 1024」）—— 提取器补 `time_display` / 纪元字段仍归后续里程碑（f12 §2.8 E8）
+- 🔴 **时间表达 = 纪年式**（用户 2026-09-22 拍板）：时间展示优先 `time_display` 原样（如「示例历 317 年」「始皇三年」）；**不使用相对时间文案**（「xx 年前」「xx 年后」）。`time_value + time_unit` 回退仅为存量占位；**#1353 起世界序组内时间刻度回退链为 `time_display` → 「`era_value` + 单位」→ 「`time_value` + 单位」→ 「未知」**（#1467 起轴名不再进入行内，轴名只出现在组头）—— 提取器补 `time_display` / 纪元字段仍归后续里程碑（f12 §2.8 E8）
 
 - 参考锚点（真实实现，F43 P4 + #1323）：
   - 端点：GET /api/v1/projects/{pid}/timeline（返回双数组 {event_timeline, narrative_order}，每事件含 source_chapter_id）；创建 POST /api/v1/projects/{pid}/timeline/events（注意不是列表端点）；PATCH /api/v1/timeline/events/{id}；DELETE /api/v1/timeline/events/{id}；整体检查 POST /api/v1/projects/{pid}/timeline/check；单事件检查 POST /api/v1/timeline/events/{id}/check
   - 工具栏（timeline-toolbar，flex-wrap）：双序 chips 组（圆角描边容器内：tl-view-narrative「叙事序」默认激活 accent 填充 / tl-view-world「世界序」闲置 ink-2）+ 筛选两枚（tl-filter-chapter「章：<label>」/ tl-filter-type「类型：<label>」）+ 轴选择器（#1353：`tl-axis-picker`，文案「纪元轴：」+ chips `tl-axis-chip-<key>`，key = 轴名 / 默认轴哨兵 `__none__`，`aria-pressed` = 勾选态；**仅世界序 + 轴族 ≥ 2 条**时可见）+ 一致性检查（tl-check-all，描边按钮）+ 图例（tl-legend，12px ink-3，文案随序切换：`lib.tlLegend.narrative` / `lib.tlLegend.world` / `lib.tlLegend.worldEras`）
-  - **轴主体**（tl-axis，竖向；叙事序 = 章刻度容器 / 世界序 = 单一时间轴）：每事件恰好渲染一次（轴即列表）。叙事序：容器 `tl-chgroup-<chapterId>`（未分章 = `tl-chgroup-__none__`）+ 刻度 `tl-chtick-<chapterId>`（◆ 刻度标记 + 真实章节标题 + 「N 个事件」计数，来自 `lib.tlChCount`）+ 刻度下事件行；世界序：**无 `tl-chgroup`**，事件行平铺在单一轴容器内；**世界序·纪元**（#1353）：容器 `.tl-lanes`（`tl-axis` 本体），每条选中轴一个泳道 `tl-lane-<key>`（泳道头 = 轴名 + 「N 个事件」），泳道内事件按 `era_value` 升序
+  - **轴主体**（tl-axis，竖向；叙事序 = 章刻度容器 / 世界序 = 单一时间轴）：每事件恰好渲染一次（轴即列表）。叙事序：容器 `tl-chgroup-<chapterId>`（未分章 = `tl-chgroup-__none__`）+ 刻度 `tl-chtick-<chapterId>`（◆ 刻度标记 + 真实章节标题 + 「N 个事件」计数，来自 `lib.tlChCount`）+ 刻度下事件行；世界序：**无 `tl-chgroup`**，事件行平铺在单一轴容器内；**世界序·纪元**（#1353 / #1467）：容器 `.tl-lanes`（`tl-axis` 本体），每条选中轴一个泳道 `tl-lane-<key>`（**组头** = 轴名 + 「N 个事件」，**只出现一次**），泳道内按 `era_value` 升序后再按**时间刻度分层**：每个时间节点 `tl-timenode-<key>-<i>`（刻度 `tl-timenode-label-<key>-<i>` + 同刻度事件数）下缩进其事件行（`.tl-timenode-events`，缩进一级 + 引导线）
   - **章节映射数据面**：`GET /projects/{pid}/chapters`（**翻全量** —— 后端 limit 默认 50/页，215 章项目须 offset 步进拉全，否则刻度大面积「未知章节」）；timeline 与 outline tab 均拉取（见 hooks/useOutlineLibrary.ts）
-  - 事件行（tl-axis-node-<id>）= 主轴（tl-axis-main-<id>，**世界内时间**：time_display → time_value+time_unit → lib.tlTimeUnknown「未知」；叙事序降级 ink-3 小字）+ 标题（flex-1 truncate）+ 单事件检查（tl-check-one-<id>）+ 行内编辑/删除（tl-edit-<id> / tl-delete-<id>，#1302）；**世界序行尾 = 来源章胶囊**（tl-src-<id>，章标题 / 「未分章」/「未知章节」）
+  - 事件行（tl-axis-node-<id>）= 主轴（tl-axis-main-<id>，**世界内时间**：time_display → time_value+time_unit → lib.tlTimeUnknown「未知」；叙事序降级 ink-3 小字）+ 标题（flex-1 truncate）+ 单事件检查（tl-check-one-<id>）+ 行内编辑/删除（tl-edit-<id> / tl-delete-<id>，#1302）；**世界序行尾 = 来源章胶囊**（tl-src-<id>，章标题 / 「未分章」/「未知章节」）。⚠️ **#1467**：世界序·纪元泳道内的**事件行不再渲染 `tl-axis-main-<id>`**（时间刻度上移到时间节点行）；世界序单轴形态（项目无纪元数据）逐字段不变，仍渲染 `tl-axis-main-<id>`
   - 🔴 **`narrative_position` 不用于显示章号**（#1323 G2）：它是**单一线性序号**（domain/models/timeline.py；specs/f12-timeline/spec.md §5 明确「不携带第几章第几段的章节语义」），仅用于**排序**与后端一致性检查。旧实现用 `lib.tlChapter`（「第{n}章」）拼章号属语义错用（DB 实测 215 条仅 34 个不同位置值 → 同一「第7章」重复 10 次）；该 key 已移除
   - 双序切换 = 本地切换显示数组（零额外请求）；narrative_order 为空 → 回退 event_timeline（旧数据兜底）
   - 创建/编辑对话框（library-create-dialog，cat=timeline）：标题（必填，字段名 title）+ 时间显示（time_display）+ **纪元（`era`，testid `library-create-era`）+ 纪元内数值（`era_value`，testid `library-create-era-value`）**（#1353；写入正式列 `era` / `era_value`，v1.4 / #1410 正式化）+ 描述
@@ -97,6 +103,7 @@
 | 行内编辑（tl-edit-<id>）/ 删除（tl-delete-<id>） | 悬停/focus-within 显示 | 编辑 → LibraryCreateDialog 编辑模式；删除 → 页面级 ConfirmDialog | saving 禁用 | 关框 + 刷新 | err toast | #1302 交付；PATCH/DELETE /timeline/events/{id} |
 | 对话框保存（library-create-save） | 标题非空 enabled | handleSave（timeline 分支创建端点 = /timeline/events；payload 含 `era`（去空白）+ `era_value`（数值；空串 = 无轴内值/清除），#1353） | saving 禁用 | 关框 + 刷新 | err toast（`era` 超长 / `era_value` 非有限 → 422） | ESC/取消关闭；遮罩点击不关闭 |
 | 轴选择器（tl-axis-picker / tl-axis-chip-<key>，#1353） | **仅世界序且轴族 ≥ 2 条**时可见；默认只勾选**主力轴**（事件数最多，并列取先出现）；chip 文案 = 轴名（默认轴 = 「未分纪元」） | 点选 chip → 切换勾选态 → 泳道即时重渲染（客户端，零额外请求） | — | 列表重渲染为选中轴的泳道（`tl-lane-<key>`），轴内按 `era_value` 升序 | — | **至少保留一条轴**：取消最后一条 → 无效；轴族 == 1 条（无纪元数据）→ 选择器不渲染，世界序为 v1.2 单轴形态（零变化） |
+| 时间节点（tl-timenode-<key>-<i> / tl-timenode-label-<key>-<i>，#1467） | 纯文本展示（时间刻度 + 同刻度事件数；刻度 = `time_display` → 「`era_value` + 单位」→ 「`time_value` + 单位」→ 「未知」） | — | — | — | — | 无交互；**同刻度事件收进同一节点**（含计数）；刻度缺失时回退占位不崩溃；**组内事件行缩进一级**（树状层级） |
 | 图例（tl-legend） | 纯文本展示（文案随序切换，#1374） | — | — | — | — | 无交互 |
 | 章刻度（tl-chtick-<chapterId>） | 纯文本展示（◆ 刻度标记 + 真实章节标题 + 「N 个事件」计数） | — | — | — | — | 无交互；映射缺失 → 「未知章节」；未归章 → 「未分章」（`tl-chtick-__none__`，灰刻度、轴末尾） |
 
@@ -114,4 +121,6 @@
 - N10：**世界序 = 时间轴**（#1374；#1409 口径修正）—— 事件按 `time_value` **归一日尺度**升序（未知排末尾）、无章分组；行尾 = 来源章胶囊（`tl-src-<id>`）
 - N11：**轴选择器**（#1353）—— 世界序且**轴族 ≥ 2 条**时渲染 `tl-axis-picker`；chip = `tl-axis-chip-<key>`（key = 轴名 / 默认轴 `__none__`），`aria-pressed` 反映勾选；**默认只勾选主力轴**（事件数最多者）；**叙事序不渲染**选择器（轴选择器只属世界序）
 - N12：**按选中轴分组渲染**（#1353）—— 每条选中轴一个 `tl-lane-<key>`（泳道头 = 轴名 + 「N 个事件」），轴内按 `era_value` 升序（缺失排末尾）；未勾选的轴不渲染；**每个事件恰好渲染一次**（跨轴无重复）
-- N13：**默认轴（R6-4）+ 零变化**（#1353）—— 无纪元事件归默认轴「未分纪元」（可与纪元轴同时勾选；事件不丢、不改判）；**轴族只有 1 条时选择器不渲染**，世界序行为与 v1.2 逐字段一致（反例守护）；标签回落链 = `time_display` 原样 → 「轴名 + 轴内值」→ 「未知」
+- N12：**按选中轴分组渲染 + 组内时间刻度树状分层**（#1353；#1467 升级）—— 每条选中轴一个 `tl-lane-<key>`，**组头 = 轴名 + 「N 个事件」，轴名在该泳道内只出现一次**；组内按 `era_value` 升序（缺失排末尾）后按**时间刻度**分层：**同刻度事件归入同一时间节点** `tl-timenode-<key>-<i>`（刻度 `tl-timenode-label-<key>-<i>`），事件行缩进一级、**不再显示轴名 / 时间刻度**；未勾选的轴不渲染；**每个事件恰好渲染一次**（跨轴无重复）
+- N13：**默认轴（R6-4）+ 零变化**（#1353）—— 无纪元事件归默认轴「未分纪元」（可与纪元轴同时勾选；事件不丢、不改判）；**无纪元数据的项目（轴族只有 1 条默认轴）**则世界序不渲染选择器与泳道，行为与 v1.2 逐字段一致（反例守护）；**纪元数据存在但轴族仅 1 条**（所有事件同纪元）视为「有纪元数据」→ 渲染 1 条泳道（组头显示轴名），**不渲染选择器**
+- N14：**组内时间刻度回退 + 不跨轴换算**（#1467）—— 时间节点刻度回退链 = `time_display` 原样 → 「`era_value` + `time_unit`」→ 「`time_value` + `time_unit`」→ 「未知」（`lib.tlTimeUnknown`）；轴名**不进入**刻度文案；**负例**：`era_scale`（流速比）不参与任何渲染计算 —— 同 `era_value`、不同 `era_scale` 的事件必须落**同一**时间节点

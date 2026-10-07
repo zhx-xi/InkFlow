@@ -38,7 +38,7 @@ import { useMemo, useState } from 'react';
 import { Check, ChevronDown, Filter, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
-import { deriveEraAxes, eraKeyOf, primaryEraKey, sortByEraValue } from './timeline-era-axes';
+import { deriveEraAxes, eraKeyOf, groupByTime, primaryEraKey, sortByEraValue } from './timeline-era-axes';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
@@ -256,6 +256,9 @@ export function TimelineView({
   // #1353：纪元轴族（世界序泳道 + 轴选择器数据面；叙事序不消费）
   const axes = useMemo(() => deriveEraAxes(eventTimeline), [eventTimeline]);
   const showAxisPicker = view === 'world' && axes.length >= 2;
+  // #1467：有纪元数据（轴族含 ≥1 条真实纪元轴）→ 世界序按泳道渲染（轴名要有地方显示 = 组头）；
+  // 无纪元数据（轴族只有默认轴）→ 维持 v1.2 单轴形态逐字段不变（反例守护，见 §3 N13）。
+  const showEraLanes = view === 'world' && axes.some((axis) => !axis.isDefault);
   const activeAxisKeys = useMemo(
     () => (selectedAxes ?? (primaryEraKey(axes) ? [primaryEraKey(axes) as string] : [])),
     [selectedAxes, axes],
@@ -361,29 +364,39 @@ export function TimelineView({
     </button>
   );
 
-  /** #1374：事件行（两序共用；差异 = 时间是否降级 + 是否渲染来源章胶囊） */
-  const renderEventNode = (ev: TimelineEventDTO, opts: { showSrc: boolean }) => {
+  /** #1374：事件行（两序共用；差异 = 时间是否降级 + 是否渲染来源章胶囊）
+   *  #1467：世界序·纪元泳道内事件行**不渲染时间刻度**（`showTime: false`，刻度上移到时间节点行）、
+   *  且圆点改空心（`hollow: true`，刻度由时间节点承载）→ 形成「组头 → 时间节点 → 事件」树状层级。 */
+  const renderEventNode = (
+    ev: TimelineEventDTO,
+    opts: { showSrc: boolean; showTime?: boolean; hollow?: boolean },
+  ) => {
     const labels = axisLabels(ev, view, t);
+    const showTime = opts.showTime !== false;
+    const filledDot = view === 'world' && opts.hollow !== true;
     return (
       <li
         key={String(ev.id)}
         data-testid={`tl-axis-node-${ev.id}`}
         className="group relative flex items-center gap-3 pl-5 text-[12px]"
       >
-        {/* 节点圆点（贴轴线上）：叙事序 = 空心（刻度在章上） / 世界序 = 实心（时间即刻度） */}
+        {/* 节点圆点（贴轴线上）：叙事序 = 空心（刻度在章上） / 世界序 = 实心（时间即刻度）；
+            #1467 世界序·纪元 = 空心（刻度在时间节点行上） */}
         <span
           aria-hidden="true"
           className={cn(
             'absolute left-0 top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full',
-            view === 'world' ? 'bg-accent' : 'border border-accent bg-surface',
+            filledDot ? 'bg-accent' : 'border border-accent bg-surface',
           )}
         />
-        <span
-          data-testid={`tl-axis-main-${ev.id}`}
-          className={cn('shrink-0 font-medium tabular-nums', labels.dim ? 'text-ink-3' : 'text-ink')}
-        >
-          {labels.main}
-        </span>
+        {showTime ? (
+          <span
+            data-testid={`tl-axis-main-${ev.id}`}
+            className={cn('shrink-0 font-medium tabular-nums', labels.dim ? 'text-ink-3' : 'text-ink')}
+          >
+            {labels.main}
+          </span>
+        ) : null}
         <span className="min-w-0 flex-1 truncate text-ink-2">{ev.title ?? ''}</span>
         {labels.sub ? (
           <span
@@ -635,8 +648,10 @@ export function TimelineView({
                   </ol>
                 </div>
               ))
-            ) : showAxisPicker ? (
-              // #1353：世界序多纪元 → 每条**选中**轴一条泳道（轴内按 era_value 升序、缺失末尾）
+            ) : showEraLanes ? (
+              // #1353 / #1467：世界序多纪元 → 每条**选中**轴一条泳道：
+              // 组头 = 轴名 + 计数（**只出现一次**）；组内按 era_value 升序后按**时间刻度**分层
+              // （同刻度事件收进同一时间节点 `tl-timenode-<key>-<i>`、事件行缩进一级）
               <>
                 {axes
                   .filter((axis) => activeAxisKeys.includes(axis.key))
@@ -644,6 +659,7 @@ export function TimelineView({
                     const laneEvents = sortByEraValue(
                       filtered.filter((ev) => eraKeyOf(ev) === axis.key),
                     );
+                    const timeNodes = groupByTime(laneEvents);
                     return (
                       <section
                         key={axis.key}
@@ -651,7 +667,10 @@ export function TimelineView({
                         className="relative rounded-lg border border-line bg-surface px-4 py-3 shadow-card"
                       >
                         <span aria-hidden="true" className="absolute bottom-5 left-[7px] top-5 w-px bg-line" />
-                        <div className="relative mb-2 pl-5 text-[12px] font-medium text-ink">
+                        <div
+                          data-testid={`tl-lanehead-${axis.key}`}
+                          className="relative mb-2 pl-5 text-[12px] font-medium text-ink"
+                        >
                           <span
                             aria-hidden="true"
                             className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[2px] bg-accent"
@@ -661,9 +680,34 @@ export function TimelineView({
                             {t('lib.tlChCount', { n: laneEvents.length })}
                           </span>
                         </div>
-                        <ul className="space-y-2">
-                          {laneEvents.map((ev) => renderEventNode(ev, { showSrc: true }))}
-                        </ul>
+                        {timeNodes.map((node, index) => (
+                          <div key={`${axis.key}-${index}`} data-testid={`tl-timenode-${axis.key}-${index}`}>
+                            <div className="relative flex items-center gap-2 py-0.5 pl-5 text-[12px]">
+                              <span
+                                aria-hidden="true"
+                                className="absolute left-0 top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full border border-accent bg-surface"
+                              />
+                              <span
+                                data-testid={`tl-tick-${axis.key}-${index}`}
+                                className="font-medium tabular-nums text-ink"
+                              >
+                                {node.key ?? t('lib.tlTimeUnknown')}
+                              </span>
+                              {node.events.length > 1 ? (
+                                <span className="text-[11px] text-ink-3">
+                                  {t('lib.tlChCount', { n: node.events.length })}
+                                </span>
+                              ) : null}
+                            </div>
+                            <ol className="relative mt-1 space-y-2 pl-4">
+                              {/* 组内引导线（缩进一级的树状层） */}
+                              <span aria-hidden="true" className="absolute bottom-2 left-[19px] top-1 w-px bg-line" />
+                              {node.events.map((ev) =>
+                                renderEventNode(ev, { showSrc: true, showTime: false, hollow: true }),
+                              )}
+                            </ol>
+                          </div>
+                        ))}
                       </section>
                     );
                   })}
