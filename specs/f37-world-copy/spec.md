@@ -1,13 +1,15 @@
 # F37: 世界观跨书复制（world-copy）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-10 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6
+> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6、#1482（分类过滤 + 缺失分类自动创建）
+>
+> **Spec 变更**（1.2 → 1.3，2026-10-07，#1482 增强）：新增**按分类过滤复制**（CLI `--category` / DTO `category`；§2 规则 9、§3.2、§4、§5.1 ③b）与**缺失分类自动创建**开关（CLI `--auto-create-categories` / DTO `auto_create_categories`；**默认关·opt-in**；§2 规则 10、§5.1 ④b、§12 决策 10）；`WorldCopyResult` 新增 `categories_created` 报告键（§2、§12 决策 11）；边界、文件结构、测试策略、状态流与验收锚点同步（§7/§8/§9/§14）。既有复制语义（self_only / 子树起点 / 同名跳过 / 幂等）不变。
 >
 > **Spec 变更**（1.1 → 1.2，2026-08-10 实现期修订）：§8 文件结构对照真实源码树修正——`map_asset_store.py` 的 `copy` 方法**已由 F36 合入实现**（#174）改为「无变更」；`map_repository.py`/`map_repo.py` 的 `list_by_root_locations` 改为「F36 已实现基础签名，F37 加 `include_global` 参数」；CLI 测试因 900 行护栏拆分新文件 `tests/cli/test_cli_world_copy.py`（需登记 ci.yml）；API 端点路径修正为 `/projects/{target_project_id}/world-settings/copy`（spec §3.1 一致）；`deps.py` 为新增 `get_copy_service(db)`；补列 test_world_repo.py/test_map_repo.py MODIFY。
 >
 > **所属阶段**: 0.6.0 世界观三连 Step 3（复用层，估算 2-3 人天）
 >
-> **关联 Issues**: [#175](https://github.com/zhx-xi/InkFlow/issues/175)（本模块）· #173（地点树，**前置依赖**）· #174（地图视图，**地图复制前置依赖**）· #211（删除语义统一，关联登记）
+> **关联 Issues**: [#175](https://github.com/zhx-xi/InkFlow/issues/175)（本模块）· #173（地点树，**前置依赖**）· #174（地图视图，**地图复制前置依赖**）· #211（删除语义统一，关联登记）· [#1482](https://github.com/zhx-xi/InkFlow/issues/1482)（0.17.0：分类过滤 + 缺失分类自动创建）
 >
 > **依赖**: ✅ F10（world_settings 表）· ✅ F35（#173 地点树：list_descendants 子树查询）· ✅ F36（#174 地图：maps/map_pins 表 + MapAssetStoreProtocol + list_by_root_locations）· ✅ F1（项目 FK）
 >
@@ -32,6 +34,7 @@ F37 增量:      POST /projects/{target}/world-settings/copy（递归子树复�
                + 地图资产文件复制 + pin 重挂（依赖 F36）
                + 全局图复制（Q3=B）+ pin 转纯注释（评审修订）
                + 名称冲突跳过 + 结果报告
+               + 分类过滤 `--category` + 缺失分类自动创建（#1482）
                零 schema 变更（复用既有表结构）
 ```
 
@@ -44,7 +47,7 @@ F37 增量:      POST /projects/{target}/world-settings/copy（递归子树复�
 | 新实体表 | ❌ 无（复用 world_settings/maps/map_pins） |
 | 新 API 端点 | ✅ 1 个（POST copy） |
 | 新 CLI 命令 | ✅ 1 个（`world copy`） |
-| 核心机制 | ✅ 递归子树复制（list_descendants）+ id 映射重挂 + 地图资产复制 + 全局图复制 + 同名跳过 |
+| 核心机制 | ✅ 递归子树复制（list_descendants）+ id 映射重挂 + 地图资产复制 + 全局图复制 + 同名跳过 + 分类过滤 + 缺失分类自动创建（#1482） |
 | 跨模块 MODIFY | ✅ F36 资产层加 `copy` 方法（MapAssetStoreProtocol 扩展，F36 v1.1 §5.1 已含） |
 | 错误面 | CopySourceNotFoundError（404）/ CopyNameConflictError 不入错（跳过+warning） |
 
@@ -66,11 +69,18 @@ F37 增量:      POST /projects/{target}/world-settings/copy（递归子树复�
 class WorldCopyRequest(BaseModel):
     """跨书复制请求 DTO.
 
-    source_project_id: 源项目（世界观设定从哪来）.
-    root_setting_id:   复制起点（指定子树）；None = 复制源项目全部活动世界观条目.
+    source_project_id:     源项目（世界观设定从哪来）.
+    root_setting_id:       复制起点（指定子树）；None = 复制源项目全部活动世界观条目.
+    self_only:             仅复制 root_setting_id 本体（F43 P1）.
+    category（#1482）:     按分类过滤——仅复制 src.category == category 的源条目；None = 不过滤.
+    auto_create_categories（#1482）: 目标项目缺失源条目分类时自动创建（默认 False）；
+                           True = 自动创建（opt-in，kind 继承源分类）.
     """
     source_project_id: uuid.UUID
     root_setting_id: uuid.UUID | None = None
+    self_only: bool = False  # P1 新增：True = 仅复制 root_setting_id 本体（不含子级）
+    category: str | None = None  # #1482：按分类过滤（None = 不过滤）
+    auto_create_categories: bool = False  # #1482：缺失分类自动创建（opt-in）
 
 
 class WorldCopyResult(BaseModel):
@@ -81,12 +91,14 @@ class WorldCopyResult(BaseModel):
     maps_created: 复制的地图（新 id + 新 image_path）.
     pins_created: 复制的 pin 数.
     warnings:     复制过程中的警告（冲突/文件复制失败/全局图 pin 转纯注释）.
+    categories_created（#1482）: 因缺失而在目标项目自动创建的分类名（opt-in 时可能非空）.
     """
     created: list[WorldSetting]
     skipped: list[str]
     maps_created: list[WorldMap]
     pins_created: int
     warnings: list[str]
+    categories_created: list[str]
 ```
 
 **复制语义规则**：
@@ -99,6 +111,9 @@ class WorldCopyResult(BaseModel):
 6. **地图复制**（依赖 F36）：源项目**与被复制地点关联**的地图（`root_location_id ∈ 复制地点 id 集合`）**+ 全局图（Q3=B）**→ 复制到目标项目；`root_location_id` 重映射（关联图）/ 保持 NULL（全局图）；图片文件复制；pins 复制（map_id + location_id 重映射；location 不在复制集合 → **转纯注释**，评审修订）
 7. **全局图（root_location_id IS NULL，Q3=B）**：**复制**——与具体地点无关的世界观资产（总览图等）随世界观走；复制后 `root_location_id` 保持 NULL（目标项目全局图）
 8. **事务性**：整个复制在**单事务**内（SQLite 事务包裹全部写）——中途失败回滚，不产生半复制状态
+9. **分类过滤（#1482）**：`category` 非空 → 复制集合收窄为 `src.category == category` 的条目（在 ③ 集合确定之后、名称冲突预筛之前）；其他分类条目**零复制**；过滤后集合内「父不在集合」者按既有惯例挂目标根/置顶层（同子树复制的顶节点处理）；过滤后集合为空 → 200 空报告 + warning「源项目分类「X」下无条目」（非错误）。`category` 与 `root_setting_id` 可同用（交集语义：先取子树、再按分类过滤）
+10. **缺失分类处理（#1482）**：源条目带 `category` 且目标项目 `get_category_by_name` 未命中时——`auto_create_categories=False`（**默认**）→ **跳过该条 + warning**（#848 复制守卫既有语义，§12 决策 10）；`auto_create_categories=True`（**opt-in**）→ 在目标项目 `create_category(target_pid, category, kind)` 自动创建后**继续复制**该条；`kind` 取源项目同名分类实体的 `kind`（源无该分类实体——条目 category 为字符串快照、不强制外键——回落 `"geo"`）；同名分类每轮只解析/创建一次（按分类名缓存）
+11. **同名覆盖策略不变（#1482 显式声明）**：本增量不改变任何覆盖/幂等策略——目标同名条目仍**跳过 + warning**（决策 4）；重复复制同一源仍得到同一结果（第二次全部 skipped）
 
 ---
 
@@ -133,6 +148,25 @@ Content-Type: application/json
  "warnings": ["全局图「世界观总览图」的 2 个 pin 关联地点不在复制集合，已转为纯注释"]}
 ```
 
+**#1482 增量示例**（分类过滤 + 缺失分类自动创建）:
+
+```http
+POST /api/v1/projects/2/world-settings/copy
+Content-Type: application/json
+
+{"source_project_id": "1", "category": "灵能体系", "auto_create_categories": true}
+```
+
+```json
+200
+{"created": [{"id": "60", "project_id": "2", "name": "灵能九阶", "category": "灵能体系", ...}],
+ "skipped": [],
+ "maps_created": [],
+ "pins_created": 0,
+ "categories_created": ["灵能体系"],
+ "warnings": []}
+```
+
 ### 3.3 异常映射表
 
 | 异常 | 状态码 | detail |
@@ -151,12 +185,16 @@ Content-Type: application/json
 ```bash
 inkflow world copy <source_project_id> <target_project_id>
                   [--root <UUID>]              # 复制起点（缺省 = 整棵）
+                  [--category <名称>]          # #1482：仅复制指定分类下的条目（缺省 = 不过滤）
+                  [--auto-create-categories]   # #1482：目标缺失源分类时自动创建（缺省关 = 跳过 + warning）
 ```
 
-- F7 信封：`{"ok": true, "data": {"created": [...], "skipped": [...], "maps_created": [...], "warnings": [...]}}`
+- F7 信封：`{"ok": true, "data": {"created": [...], "skipped": [...], "maps_created": [...], "warnings": [...], "categories_created": [...]}}`
 - 退出码：源/目标项目不存在 → 1 + `NOT_FOUND`；复制成功 → 0
 - 目标项目已存在同名条目 → 跳过 + warning（**不失败**——复制是「尽量复制」，部分冲突可接受）
 - 产品语言：「复制到新项目」（帮助文本）
+- **body 契约（#1482）**：`--category` 缺省 → body 不含 `category` 键；`--auto-create-categories` 缺省（False）→ body 不含 `auto_create_categories` 键；传该 flag → body 显式 `{"auto_create_categories": true}`（镜像既有 `--root` 缺省省略键的契约）
+- 人类输出（#1482）：自动创建分类非空时补一行 `✅ 自动创建分类: A, B`
 
 ---
 
@@ -170,9 +208,18 @@ copy(source_pid, target_pid, root_id=None):
   ② root_id 提供 → 校验在源项目活动条目内（CopyRootNotFoundError）
   ③ 取复制集合: root_id ? list_descendants(root_id) : repo.list_all_active(source_pid)
      （F35 list_descendants 复用——层序，父先于子）
+  ③b 分类过滤（#1482）: category 非空 → copy_set 收窄为 src.category == category
+     （收窄发生在冲突预筛与 map 查询之前；空集合 → 200 空报告 + warning）
   ④ 名称冲突预筛: 对每个源条目 get_by_parent_and_name(target_pid, parent_mapped, name)
      → 命中即入 skipped，不入复制集合（不参与 id 映射——其子条目 parent 指向被跳过
      条目时 → 顶层 + warning）
+  ④b 分类解析（#1482，层序循环内、按分类名缓存 resolved_cats）:
+     src.category 非空且 get_category_by_name(target_pid, category) 未命中 →
+       · auto_create_categories=False（默认）→ skipped + warning「目标项目未创建分类…已跳过」
+         → continue（#848 守卫既有语义）
+       · auto_create_categories=True（opt-in）→ kind = 源项目同名分类的 kind（无则 "geo"）
+         → repo.create_category(target_pid, category, kind) → 记入 categories_created
+         → 继续复制该条
   ⑤ 落库: 逐个 add（新 UUID，parent_id 经 old→new 映射）
      → 复制集合按层序（父先），映射表 old_id → new_id 顺序建立
   ⑥ 地图复制（F36 v1.1）:
@@ -236,6 +283,9 @@ async def copy(self, relative_path: str, *, map_id: uuid.UUID) -> str:
 | 10 | **全局图（root NULL，Q3=B）** | **复制**：root_location_id 保持 NULL（目标项目全局图）；名称冲突（目标已有同名图）→ 该图跳过 + warning；pin 按规则 8 处理 |
 | 11 | 复制结果目标项目同名条目列表为空但部分复制成功 | 200 正常（部分成功语义，warnings 说明） |
 | 12 | F36 未合入（map_repo=None） | 条目复制照常，地图复制静默跳过（依赖声明：实现排期保证 F36 先合入，此分支仅防御） |
+| 13 | **分类过滤（#1482）：category 非空** | 仅复制该分类条目（余分类零复制）；父不在收窄集合者挂目标根/置顶层（同子树惯例）；收窄后为空 → 200 空报告 + warning（非错误） |
+| 14 | **缺失分类 + auto_create_categories=True（#1482 opt-in）** | 目标项目自动创建该分类（kind 继承源分类，源无实体则 geo）后完成复制；`warnings` 不再出现「未创建分类…已跳过」 |
+| 15 | **缺失分类 + auto_create_categories=False（#1482 默认）** | 跳过该条 + warning「目标项目未创建分类…已跳过」（#848 守卫既有语义，守门） |
 
 ---
 
@@ -243,20 +293,21 @@ async def copy(self, relative_path: str, *, map_id: uuid.UUID) -> str:
 
 | 文件 | 变更 | 内容 |
 |------|------|------|
-| `backend/src/inkflow/domain/models/copy.py` | **CREATE** | WorldCopyRequest / WorldCopyResult |
-| `backend/src/inkflow/domain/services/copy_service.py` | **CREATE** | WorldCopyService（§5.1 编排） |
+| `backend/src/inkflow/domain/models/copy.py` | **MODIFY**（#175 CREATE） | WorldCopyRequest / WorldCopyResult；#1482 扩 `category` / `auto_create_categories` / `categories_created` |
+| `backend/src/inkflow/domain/services/copy_service.py` | **MODIFY**（#175 CREATE） | WorldCopyService（§5.1 编排）；#1482 加 ③b 分类过滤 + ④b 分类解析/自动创建 |
 | `backend/src/inkflow/domain/ports/world_errors.py` | **MODIFY** | 新增 CopySourceNotFoundError / CopyRootNotFoundError |
 | `backend/src/inkflow/domain/ports/world_repository.py` | **MODIFY** | 新增 `list_all_active(project_id) -> list[WorldSetting]`（全量活动条目，copy 缺省起点用；F35 v1.1 已加 get_by_parent_and_name 冲突预筛复用） |
 | `backend/src/inkflow/infrastructure/database/repositories/world_repo.py` | **MODIFY** | 实现 `list_all_active`（活动条目全量，created_at ASC 稳定排序） |
 | `backend/src/inkflow/infrastructure/assets/map_asset_store.py` | **无变更** | `copy` 方法**已由 F36 合入实现**（#174，spec v1.1 §8 扩展点已兑现）——F37 仅复用 |
 | `backend/src/inkflow/domain/ports/map_repository.py` | **MODIFY** | `list_by_root_locations` 签名扩展 `include_global: bool = True`（F36 已实现基础签名（project_id, location_ids）；F37 加全局图参数 Q3=B） |
 | `backend/src/inkflow/infrastructure/database/repositories/map_repo.py` | **MODIFY** | 实现 `include_global`（WHERE `root_location_id IN (:ids) OR (include_global AND root_location_id IS NULL)`；空列表 + False → 空） |
-| `backend/src/inkflow/api/routers/world_settings.py` | **MODIFY** | 新增 POST `/projects/{target_project_id}/world-settings/copy` 端点（**注册在 `{setting_id}` 之前**，F10 extract 先例）；`_get_copy_svc` 装配 copy service；`_run_service` 加 CopySource/CopyRoot 两个 404 分支 |
-| `backend/src/inkflow/cli/commands/world.py` | **MODIFY** | 新增 `copy` 子命令（位置参数 `<source> <target>` + `--root`；CLI 恒 HTTP——POST copy 端点，F38 后形态） |
+| `backend/src/inkflow/api/routers/world_settings.py` | **MODIFY** | 新增 POST `/projects/{target_project_id}/world-settings/copy` 端点（**注册在 `{setting_id}` 之前**，F10 extract 先例）；`_get_copy_svc` 装配 copy service；`_run_service` 加 CopySource/CopyRoot 两个 404 分支；#1482 透传 `category` / `auto_create_categories` |
+| `backend/src/inkflow/cli/commands/world.py` | **MODIFY** | 新增 `copy` 子命令（位置参数 `<source> <target>` + `--root`；CLI 恒 HTTP——POST copy 端点，F38 后形态）；#1482 加 `--category` + `--auto-create-categories/--no-…` |
 | `backend/src/inkflow/api/deps.py` | **MODIFY** | 新增 `get_copy_service(db)` 装配 WorldCopyService（repository/project_repo/map_repo/asset_store 全量接线） |
 | `backend/tests/unit/domain/services/test_copy_service.py` | **CREATE** | 复制编排（层序/映射/冲突/回滚/地图复制/全局图/pin 转纯注释） |
-| `backend/tests/unit/api/routers/test_copy_api.py` | **CREATE** | API 契约（copy 端点/错误映射/路由顺序） |
-| `tests/cli/test_cli_world_copy.py` | **CREATE** | `world copy` 命令用例（信封/退出码/跳过；F37 拆分——test_cli_world.py 追加后超 900 行护栏，F35/F36 先例） |
+| `backend/tests/unit/domain/services/test_copy_service_categories_1482.py` | **CREATE**（#1482） | 分类过滤 + 缺失分类自动创建/跳过（service 层；因 test_copy_service.py 已 737 行、贴 900 护栏而独立成文件） |
+| `backend/tests/unit/api/routers/test_copy_api.py` | **MODIFY**（#175 CREATE） | API 契约（copy 端点/错误映射/路由顺序）；#1482 加 category/auto_create_categories 透传用例 + 断言签名更新 |
+| `tests/cli/test_cli_world_copy.py` | **MODIFY**（#175 CREATE） | `world copy` 命令用例（信封/退出码/跳过；F37 拆分——test_cli_world.py 追加后超 900 行护栏，F35/F36 先例）；#1482 加 `--category` / `--auto-create-categories` body 契约用例 |
 | `backend/tests/unit/infrastructure/database/test_world_repo.py` | **MODIFY** | 追加 `list_all_active` 契约（3 用例：软删过滤/created_at ASC 排序/空项目） |
 | `backend/tests/unit/infrastructure/database/test_map_repo.py` | **MODIFY** | 升级 `test_list_by_root_locations`（显式 include_global=False 保持原语义）+ 追加 include_global 契约（4 用例） |
 
@@ -289,6 +340,8 @@ CLI:            world copy（信封/退出码/NOT_FOUND）                      
 9. **空源**：源项目无世界观 → 200 空报告
 10. **路由顺序**：POST /world-settings/copy 命中 copy 端点而非 404/路径歧义（F10 extract 先例）
 11. **F36 未合入防御**：map_repo=None → 条目复制照常
+12. **分类过滤（#1482）**：源 3 条分属两类 → `category="A"` → 仅 A 类条目 created、B 类零复制、`add` 调用数 = A 类条数
+13. **缺失分类自动创建（#1482）**：目标缺「灵能体系」+ `auto_create_categories=True` → `create_category` 被调用（kind 继承源分类）→ 条目复制成功、`categories_created` 含该名、warnings 不含「未创建分类…已跳过」；同名分类多条只创建一次；缺省（False）→ 跳过 + warning（默认，负例守门）
 
 ### 覆盖率
 
@@ -306,7 +359,7 @@ CLI:            world copy（信封/退出码/NOT_FOUND）                      
 | 模板管理（命名模板/模板列表/模板市场） | 「设为模板」当前 = 复制到新项目（产品语言）；独立模板库后续 | 未来 |
 | 导出为外部文件（JSON/zip 档案） | 跨书复用最小闭环 = 项目内复制；外部导出后续 | 未来 |
 | 引用式复制（目标引用源条目） | 与值复制语义相反，属引用共享路径 | 未排期 |
-| GUI 复制按钮 | Q1 拍板：CLI 先行，GUI 后补 | 后续 GUI 任务 |
+| GUI 复制对话框（library 页，F43 P1 已实现「整棵/子树」两模式）的**分类过滤 / 自动建分类 UI** | #1482 仅提供 CLI + API 面；GUI 暴露后续（GUI 改动还须同步 design/GUI + specs/f19-gui 三件套） | 后续 GUI 任务 |
 | 源项目删除语义（真删 #211 联动） | 复制只读源；删除语义统一属 #211 | #211（0.8.0） |
 
 ---
@@ -341,6 +394,8 @@ F37 被依赖:
 | 7 | 地图复制失败跳过 | asset_store.copy 异常 → warning | 条目是主交付，地图是附属资产 | 整体失败（丢条目复制） |
 | 8 | **复制全局图（Q3=B 拍板）** | root NULL 地图一并复制，root 保持 NULL | 全局图是世界观资产（总览图随世界观走）；用户拍板 | 跳过全局图（原 spec 建议——被用户翻转） |
 | 9 | **pin 不在复制集合 → 转纯注释（评审 R3/S3 修订）** | location=NULL，label/坐标保留 + warning | 复用 F36「硬删地点 → pin SET NULL」先例；图资产完整、用户可手动重新关联 | 跳过 pin（图信息丢失）；整体失败（不可用） |
+| 10 | **缺失分类默认「跳过 + warning」，自动创建为 opt-in（#1482，默认关）** | `auto_create_categories` 默认 `False`（保持既有语义）；传 `--auto-create-categories` / `auto_create_categories: true` → 目标缺源分类时按源 kind 自动建分类后完成复制 | ① **既有契约**：`backend/tests/unit/domain/ports/test_world_copy_guard.py`（#848 RED 守卫）把「带 category 条目 → 目标无该分类 → 跳过 + warning」钉为**默认**路径，翻转默认即改写别处 bug-fix 的守卫断言（违反「测试是契约」铁律）；② 向后兼容 / 最小惊讶：CLI 与 GUI（library 页复制对话框不发该字段）既有行为零变化；③ 可逆：确认要全局自动创建后翻一行即可；④ 语义自洽：自动创建分支同样满足 #848 不变量（分类先建、条目后落，绝不落未登记分类）| 默认开（`True`：更少手工步骤、直击 issue「含分类自动创建」的诉求）——本轨**否决**（若用户后续确认要全量自动创建，§14.3 A8 双向锚点保证翻转是单点改动） |
+| 11 | **`categories_created` 进结果报告（#1482）** | `WorldCopyResult` 增 `categories_created: list[str]` | 自动创建是对目标项目分类词表的**持久副作用**；报告出来才可审计（M6 实证也用得到），避免「静默建分类」 | 只记 warning/日志（用户拿不到结构化证据） |
 
 ---
 
@@ -356,6 +411,7 @@ F37 被依赖:
 | M6 | CLI world copy | `pytest ../tests/cli/test_cli_world.py -v` 全绿 |
 | M7 | 手工验证 | 源项目建 3 层树 + 1 关联图 + 1 全局图（含跨集合 pin）→ `world copy` 到新项目 → 目标树结构/图/pin 完整、全局图 root NULL、跨集合 pin 转纯注释 → 再复制同名项目 → 跳过 + warning |
 | M8 | 全量回归 + 覆盖率 + lint/type | `pytest` 全绿；ADR-027 门槛（98.5/95.0）；`uv run ruff check src/ tests/unit/ ../tests/` + mypy 通过 |
+| M9 | #1482 分类过滤 + 缺失分类自动创建/跳过 | `pytest backend/tests/unit/domain/services/test_copy_service_categories_1482.py -v` + `pytest ../tests/cli/test_cli_world_copy.py -v` 全绿；真实跨项目复制贴 `WorldCopyResult`（含 `categories_created` / `skipped` / `warnings`） |
 
 > Issue #175 验收标准映射：递归子树复制 = M1；地图资产复制 + pin 重挂 = M3；全局图复制 = M3/M7；产品入口 = M5/M6/M7；引用共享后置 = §10 登记。
 
@@ -379,13 +435,13 @@ F37 被依赖:
 
 | 端点 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| POST /api/v1/projects/{target_project_id}/world-settings/copy | 源/目标项目存在·root 在源项目 | 递归复制子树（层序）→ 条目/地图/pin 合并落库（单事务） | 200 + WorldCopyResult（created/skipped/maps_created/pins_created/warnings） | 404 CopySourceNotFoundError（源项目不存在）；404 ProjectNotFoundError（目标项目不存在）；404 CopyRootNotFoundError（复制起点条目不存在/不在源项目） | 注册于 /world-settings/{setting_id} 之前（防路径歧义）；目标同名 → 跳过 + warning 不失败；父被跳过 → 子置顶层 + warning；地图源文件缺失 → 该图跳过 + warning；pin 关联地点不在复制集合 → 转纯注释（location=NULL）；源为空 → 200 空报告；DB 失败 → 单事务回滚 |
+| POST /api/v1/projects/{target_project_id}/world-settings/copy | 源/目标项目存在·root 在源项目 | 递归复制子树（层序）→ 条目/地图/pin 合并落库（单事务） | 200 + WorldCopyResult（created/skipped/maps_created/pins_created/warnings/categories_created） | 404 CopySourceNotFoundError（源项目不存在）；404 ProjectNotFoundError（目标项目不存在）；404 CopyRootNotFoundError（复制起点条目不存在/不在源项目） | 注册于 /world-settings/{setting_id} 之前（防路径歧义）；目标同名 → 跳过 + warning 不失败；父被跳过 → 子置顶层 + warning；地图源文件缺失 → 该图跳过 + warning；pin 关联地点不在复制集合 → 转纯注释（location=NULL）；源为空 → 200 空报告；DB 失败 → 单事务回滚；#1482：`category` 过滤后空集合 → 200 空报告 + warning；目标缺分类 → 默认跳过 + warning（传 `auto_create_categories=true` → 自动建分类后复制） |
 
 ### 14.2 CLI 命令状态流
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| world copy <source_project_id> <target_project_id> | 源/目标项目存在 | 同端点语义（CLI 恒 HTTP，POST copy 端点） | 0 + {ok:true, data:{created,skipped,maps_created,warnings}} | 源/目标项目不存在 → 1 + NOT_FOUND | --root <UUID> 复制起点（缺省 = 整棵）；目标同名 → 跳过 + warning（不失败） |
+| world copy <source_project_id> <target_project_id> | 源/目标项目存在 | 同端点语义（CLI 恒 HTTP，POST copy 端点） | 0 + {ok:true, data:{created,skipped,maps_created,warnings,categories_created}} | 源/目标项目不存在 → 1 + NOT_FOUND | --root <UUID> 复制起点（缺省 = 整棵）；--category <名称> 仅复制该分类条目（#1482）；--auto-create-categories 缺失分类自动创建（缺省关·opt-in，#1482）；目标同名 → 跳过 + warning（不失败） |
 
 ### 14.3 验收锚点
 
@@ -395,3 +451,5 @@ F37 被依赖:
 - A4：pin 关联地点不在复制集合 → 转纯注释（location=NULL，label/坐标保留）+ warning
 - A5：复制中途 DB 失败 → 单事务回滚（零半复制）
 - A6：源项目无世界观条目 → 200 空报告（created=[], warnings=[]，非错误）
+- A7：`category="X"` → 仅 X 类条目被复制；其他分类零复制；X 类无条目 → 空报告 + warning（非错误）
+- A8：目标缺源条目分类 + `auto_create_categories=True`（opt-in）→ 目标自动建同名同 kind 分类 + 复制完成 + `categories_created` 非空；缺省（`False`）→ 跳过 + warning（#848 守卫既有语义守门）

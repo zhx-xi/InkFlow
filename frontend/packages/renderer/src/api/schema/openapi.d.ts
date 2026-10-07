@@ -6331,8 +6331,18 @@ export interface components {
          *     source_project_id: 源项目（世界观设定从哪来）.
          *     root_setting_id:   复制起点（指定子树）；None = 复制源项目全部活动世界观条目.
          *     self_only:         仅复制 root_setting_id 本体（不含子级）；需与 root_setting_id 同用.
+         *     category（#1482）: 仅复制 src.category == category 的源条目；None = 不过滤.
+         *     auto_create_categories（#1482）: 目标项目缺失源条目分类时自动创建（默认 False）；
+         *                        True = 自动创建（opt-in，kind 继承源分类）.
          */
         WorldCopyRequest: {
+            /**
+             * Auto Create Categories
+             * @default false
+             */
+            auto_create_categories: boolean;
+            /** Category */
+            category?: string | null;
             /** Root Setting Id */
             root_setting_id?: string | null;
             /**

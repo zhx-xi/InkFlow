@@ -138,6 +138,7 @@ def _result(**kw):
         maps_created=[_map(TARGET_PID)],
         pins_created=7,
         warnings=[],
+        categories_created=[],
     )
     base.update(kw)
     return WorldCopyResult(**base)
@@ -165,13 +166,27 @@ class TestWorldCopyAPI:
         )
         assert response.status_code == 200
         data = response.json()
-        for key in ("created", "skipped", "maps_created", "pins_created", "warnings"):
+        for key in (
+            "created",
+            "skipped",
+            "maps_created",
+            "pins_created",
+            "warnings",
+            "categories_created",
+        ):
             assert key in data
         assert data["created"][0]["name"] == "大越国"
         assert data["maps_created"][0]["name"] == "清河县城图"
         assert isinstance(data["pins_created"], int)
         assert isinstance(data["warnings"], list)
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, None, self_only=False)
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            None,
+            self_only=False,
+            category=None,
+            auto_create_categories=False,
+        )
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_without_root_key(self, mock_get_svc: MagicMock) -> None:
@@ -184,7 +199,14 @@ class TestWorldCopyAPI:
             json={"source_project_id": str(SOURCE_PID)},
         )
         assert response.status_code == 200
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, None, self_only=False)
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            None,
+            self_only=False,
+            category=None,
+            auto_create_categories=False,
+        )
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_with_root(self, mock_get_svc: MagicMock) -> None:
@@ -197,7 +219,14 @@ class TestWorldCopyAPI:
             json={"source_project_id": str(SOURCE_PID), "root_setting_id": str(ROOT_ID)},
         )
         assert response.status_code == 200
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID, self_only=False)
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            ROOT_ID,
+            self_only=False,
+            category=None,
+            auto_create_categories=False,
+        )
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_target_not_found_404(self, mock_get_svc: MagicMock) -> None:
@@ -299,7 +328,14 @@ class TestWorldCopySelfOnly:
             },
         )
         assert response.status_code == 200
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID, self_only=True)
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            ROOT_ID,
+            self_only=True,
+            category=None,
+            auto_create_categories=False,
+        )
 
     @patch("inkflow.api.routers.world_settings.get_copy_service")
     def test_copy_self_only_without_root_422(self, mock_get_svc: MagicMock) -> None:
@@ -326,4 +362,79 @@ class TestWorldCopySelfOnly:
             json={"source_project_id": str(SOURCE_PID), "root_setting_id": str(ROOT_ID)},
         )
         assert response.status_code == 200
-        svc.copy.assert_awaited_once_with(SOURCE_PID, TARGET_PID, ROOT_ID, self_only=False)
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            ROOT_ID,
+            self_only=False,
+            category=None,
+            auto_create_categories=False,
+        )
+
+
+class TestWorldCopyCategoryAndAutoCreate:
+    """#1482 分类过滤 + 缺失分类自动创建（spec §2/§4）— 请求字段透传契约.
+
+    【RED 预期】WorldCopyRequest 尚无 category / auto_create_categories 字段 →
+    默认用例断言收到 (…, category=None, auto_create_categories=False) 缺参 FAILED；
+    显式用例还被 router 未透传二次证伪。
+    """
+
+    @patch("inkflow.api.routers.world_settings.get_copy_service")
+    def test_copy_passes_category_and_enabled_auto_create(self, mock_get_svc: MagicMock) -> None:
+        """body 带 category + auto_create_categories=true（opt-in）→ svc.copy 收到两 kwarg."""
+        svc = _mock_svc(mock_get_svc)
+        svc.copy = AsyncMock(return_value=_result(categories_created=["灵能体系"]))
+
+        response = client.post(
+            f"/api/v1/projects/{TARGET_PID}/world-settings/copy",
+            json={
+                "source_project_id": str(SOURCE_PID),
+                "category": "灵能体系",
+                "auto_create_categories": True,
+            },
+        )
+        assert response.status_code == 200
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            None,
+            self_only=False,
+            category="灵能体系",
+            auto_create_categories=True,
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_copy_service")
+    def test_copy_defaults_category_none_and_auto_create_false(
+        self, mock_get_svc: MagicMock
+    ) -> None:
+        """body 不带新字段 → category=None、auto_create_categories=False（默认关）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.copy = AsyncMock(return_value=_result())
+
+        response = client.post(
+            f"/api/v1/projects/{TARGET_PID}/world-settings/copy",
+            json={"source_project_id": str(SOURCE_PID)},
+        )
+        assert response.status_code == 200
+        svc.copy.assert_awaited_once_with(
+            SOURCE_PID,
+            TARGET_PID,
+            None,
+            self_only=False,
+            category=None,
+            auto_create_categories=False,
+        )
+
+    @patch("inkflow.api.routers.world_settings.get_copy_service")
+    def test_copy_response_includes_categories_created(self, mock_get_svc: MagicMock) -> None:
+        """响应透传 categories_created（自动建分类的结构化报告键）."""
+        svc = _mock_svc(mock_get_svc)
+        svc.copy = AsyncMock(return_value=_result(categories_created=["灵能体系"]))
+
+        response = client.post(
+            f"/api/v1/projects/{TARGET_PID}/world-settings/copy",
+            json={"source_project_id": str(SOURCE_PID)},
+        )
+        assert response.status_code == 200
+        assert response.json()["categories_created"] == ["灵能体系"]
