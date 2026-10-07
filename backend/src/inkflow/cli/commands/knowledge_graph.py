@@ -25,6 +25,7 @@ import uuid
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -201,9 +202,15 @@ def add_relation_cmd(
     target_id: str = typer.Option(..., "--target-id", help="终点实体 ID (UUID)"),
     relation_type: str = typer.Option(..., "--relation-type", help="关系类型"),
     description: str | None = typer.Option(None, "--description", help="关系说明"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取关系说明（与 --description 互斥）"
+    ),
 ) -> None:
     """创建图谱关系（六元组 + 可选描述）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
@@ -214,8 +221,8 @@ def add_relation_cmd(
             "target_id": target_id,
             "relation_type": relation_type,
         }
-        if description is not None:
-            body["description"] = description
+        if description_text is not None:
+            body["description"] = description_text
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
@@ -275,9 +282,15 @@ def update_relation_cmd(
     target_id: str | None = typer.Option(None, "--target-id", help="新终点实体 ID (UUID)"),
     relation_type: str | None = typer.Option(None, "--relation-type", help="新关系类型"),
     description: str | None = typer.Option(None, "--description", help="新关系说明"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新关系说明（与 --description 互斥）"
+    ),
 ) -> None:
     """更新图谱关系（仅更新传入字段）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     rid = _parse_uuid(cli_ctx, relation_id, "关系不存在")
 
     async def _impl() -> dict:
@@ -292,8 +305,8 @@ def update_relation_cmd(
             body["target_id"] = target_id
         if relation_type is not None:
             body["relation_type"] = relation_type
-        if description is not None:
-            body["description"] = description
+        if description_text is not None:
+            body["description"] = description_text
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:

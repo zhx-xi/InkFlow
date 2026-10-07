@@ -1,7 +1,7 @@
 # F42: Agent 链配置驱动编排（agent-chain-config）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.6（#1475 自定义管线 stage / YAML，2026-10-07）
+**Spec 版本**: 1.7（#1520 澄清 agent template CLI 归属，2026-10-07；承 1.6 #1475 自定义管线 stage / YAML）
 **日期**: 2026-08-12
 **依据**: 0.8.0 路线图拍板记录 5-9（design/inkflow-0-8-0-roadmap-2026-08-12.md）+ Issue #268（Agent 链模型选择）+ Issue #269（Agent 执行顺序编辑）+ #225 三态语义（已合入）+ F26/F27 已合入实现源码核查 + 2026-08-12 用户拍板（Q1-Q3 + 执行节点 10 槽 + 评审修正 B1/B2/自定义 Agent 0.8.0）+ #484（Agent 链动态化 + 模板联动，D5，2026-08-19 拍板）+ #473 角色单一来源（PR #492 已合入）
 **所属阶段**: 0.8.0（轨道 B Agent 编排：F42 spec → #268 → #269 → #161 F29），估算 8-14 人天（#268 前端 2-3 + #269 前后端 3-6 + GUI 写作管线化与自定义 Agent 数据面 3-5，拆 issue）；#484 链动态化为 0.10.1 增量（估算 5-8 人天，S2 实现轨）
@@ -196,7 +196,7 @@ class ProjectConfig(BaseModel):
 
 ## 4. CLI 命令签名
 
-**本模块不新增 CLI 命令**（v1.5 #484 同；v1.6 #1475 亦不新增——扩展既有 `agent run --pipeline` 的取值形态，见下 §4.1）。agent_order 的 CLI 读写依赖 **#251 CLI project update 修复**（0.8.0 W2 P1）——#251 落地后 `inkflow project update --id N --config-json '{"agent_order": [["agent_architect"], ...]}'`（或等效形态，以 #251 spec 为准）经既有 PATCH 合并语义天然支持 agent_order（嵌套结构经 JSON 透传，无特殊处理）。
+**本模块不新增 CLI 命令**（v1.5 #484 同；v1.6 #1475 亦不新增——扩展既有 `agent run --pipeline` 的取值形态，见下 §4.1）。**#1520 归属澄清**：`inkflow agent template <action>` 命令组（含 `create`/`update` 及其 `--content-file`）的 CLI 契约归属 **F4**（agent_service，「agent template 管理」，FEATURES.md F4 行；#251 交付）——本模块不列其签名，`--content-file` 支持见 `specs/f4-pipeline-engine/spec.md` §4/§13.2。agent_order 的 CLI 读写依赖 **#251 CLI project update 修复**（0.8.0 W2 P1）——#251 落地后 `inkflow project update --id N --config-json '{"agent_order": [["agent_architect"], ...]}'`（或等效形态，以 #251 spec 为准）经既有 PATCH 合并语义天然支持 agent_order（嵌套结构经 JSON 透传，无特殊处理）。
 
 - 本模块对 CLI 的约束：① ProjectConfig 字段扩展**不得破坏** #251 的 config 合并语义（agent_order 是普通可选字段，exclude_unset 兼容）；② `inkflow project get --id N --json` 的 config 输出自动包含 agent_order（F7 全局 JSON 信封约定，无需改动）。
 - **验收联动**：M6（CLI 读写）依赖 #251 合入；若 #251 未在 #269 前合入，CLI 验收降级为 API 层验证（curl PATCH/GET agent_order），并在 PR 说明标注（已确认：CLI 归属 #251，不占拍板配额）。
@@ -217,6 +217,8 @@ class ProjectConfig(BaseModel):
 - **`agent template pipelines` 不变**：自定义管线**不注册**到 `_BUILDERS`/`BUILTIN_TEMPLATES`（惰性映射按内置 4 条重建，#936 A 项）——该命令输出仍恒等于 `list_templates()`（负向回归断言）。
 
 > **修改履历**（v1.6 #1475，2026-10-07）：§4 新增本小节（`--pipeline` 三形态判别表 + CLI 薄层边界）；既有约束未改。
+>
+> **修改履历**（v1.7 #1520，2026-10-07）：§4 开头加注「`agent template` 命令组 CLI 契约归属 F4」的归属澄清（含 `--content-file`）；本模块 CLI 面**零新增/零变更**。
 
 ---
 

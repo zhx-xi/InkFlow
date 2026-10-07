@@ -27,6 +27,7 @@ import typer
 from pydantic import ValidationError
 
 from inkflow.cli._time import format_local
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.timeline import TimelineEvent, TimelineEventUpdate
@@ -130,6 +131,9 @@ def create_event_cmd(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     title: str = typer.Option(..., "--title", "-t", help="事件标题（1-100 字符）"),
     description: str = typer.Option("", "--description", "-d", help="事件描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取事件描述（与 --description 互斥）"
+    ),
     time_value: float | None = typer.Option(
         None, "--time-value", help="世界内时间数值键（缺席 = 时间未知）"
     ),
@@ -157,6 +161,9 @@ def create_event_cmd(
 ) -> None:
     """创建时间线事件"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
@@ -164,7 +171,7 @@ def create_event_cmd(
         client = InkFlowHTTPClient(handle)
         payload: dict[str, Any] = {
             "title": title,
-            "description": description,
+            "description": description_text if description_text is not None else "",
             "time_value": time_value,
             "time_unit": time_unit,
             "time_display": time_display,
@@ -380,6 +387,9 @@ def update_event_cmd(
     event_id: str = typer.Option(..., "--id", "-i", help="事件 ID (UUID)"),
     title: str | None = typer.Option(None, "--title", "-t", help="新事件标题"),
     description: str | None = typer.Option(None, "--description", "-d", help="新事件描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新事件描述（与 --description 互斥）"
+    ),
     time_value: str | None = typer.Option(
         None,
         "--time-value",
@@ -405,13 +415,16 @@ def update_event_cmd(
 ) -> None:
     """更新时间线事件（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     eid = _parse_uuid(cli_ctx, event_id, "事件不存在")
 
     update_fields: dict[str, Any] = {}
     if title is not None:
         update_fields["title"] = title
-    if description is not None:
-        update_fields["description"] = description
+    if description_text is not None:
+        update_fields["description"] = description_text
     if time_value is not None:
         if time_value == "":
             update_fields["time_value"] = ""  # "" = 清除世界内时间（spec §7）

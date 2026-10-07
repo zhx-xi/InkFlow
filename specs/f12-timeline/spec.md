@@ -15,7 +15,9 @@
 >
 > **Spec 变更（v1.5，2026-10-06，#1411）**：**跨纪元流速换算引擎 + 一致性检查按轴分桶**（0.17.0，ADR-065 §2.1 承接）——**T2 落地**：① 新建 `domain/services/era_conversion.py`（`to_global(era, era_value, scale) = era_value / scale`，唯一实现点）；② `era_scale` 进**读写面**（请求体 / CLI `--era-scale`）；③ §5.3 检查算法由「单一归一日尺度」升级为「**先按 `era` 分桶、桶内按归一日尺度、跨桶按换算后全局标量**比较」；④ §2.8 **E6 立场收束**：T1 的「不跨纪元比较」硬验收（§14.3 A9）**作用域回到 T1**，T2 起跨纪元**经换算**比较（**R6-5 裁定 = 不降级**）。**不变**：`time_value` 仍是全局标量（§2.7 S1-S10 逐条不变）；默认轴（`era=""`）行为逐字段不变。
 >
-> **Spec 版本**: 1.5 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.6 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-04, Constitution P1-P6, ADR-019
+>
+> **Spec 变更（v1.6，2026-10-07，#1520）**: `timeline create` / `timeline update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**事件描述**，叙事型长文本）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4.1 签名与 §14 状态流同步；`time_value`/`era` 等既有语义逐条不变。
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第四个模块，估算 3-4 人天）
 > **关联 Issues**: [#42](https://github.com/zhx-xi/InkFlow/issues/42)
 > **依赖**: F1 ✅（前置）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F12 无 LLM，见 §1/§5）
@@ -609,7 +611,7 @@ GET /api/v1/projects/3f2e1d4a-.../timeline/check
 
 ```bash
 inkflow timeline create --project-id <uuid> --title <str> \
-    [--description <str>] [--time-value <float>] [--time-unit <str>] \
+    [--description <str>] [--content-file <path>] [--time-value <float>] [--time-unit <str>] \
     [--time-display <str>] [--narrative-position <int>] [--timeline-flag <str>] \
     [--era <str>] [--era-value <float|"">] [--json]
     # --time-value 缺省 = 时间未知（None）；--narrative-position 缺省 = 叙事末尾追加
@@ -629,7 +631,7 @@ inkflow timeline check --project-id <uuid> \
 inkflow timeline get --id <uuid> [--json]
 
 inkflow timeline update --id <uuid> \
-    [--title <str>] [--description <str>] [--time-value <float|"">] [--time-unit <str>] \
+    [--title <str>] [--description <str>] [--content-file <path>] [--time-value <float|"">] [--time-unit <str>] \
     [--time-display <str>] [--narrative-position <int>] [--timeline-flag <str|"">] \
     [--era <str|"">] [--era-value <float|"">] [--json]
     # --time-value "" 表示清除世界内时间（置为未知）；--timeline-flag "" 表示清除标记（置为正叙）
@@ -1180,12 +1182,12 @@ F12 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加；--era/--era-value/--era-scale 可选） | 「✅ 事件创建成功: [林尘觉醒金手指]（示例历 317 年秋，叙事第 3 位）」/ --json（含正式列 `era`/`era_value`/`era_scale`） | 404 NOT_FOUND；422 VALIDATION_ERROR（`era` 超长 / `era_value` 非有限 / `era_scale` 非正数） | — |
+| timeline create | 项目存在 | 创建（--time-value 缺省=未知；--narrative-position 缺省=末尾追加；--era/--era-value/--era-scale 可选） | 「✅ 事件创建成功: [林尘觉醒金手指]（示例历 317 年秋，叙事第 3 位）」/ --json（含正式列 `era`/`era_value`/`era_scale`） | 404 NOT_FOUND；422 VALIDATION_ERROR（`era` 超长 / `era_value` 非有限 / `era_scale` 非正数） | --content-file <path> 从 UTF-8 文件读正文=事件描述（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | timeline list | 项目存在 | 列表（--sort 5 种） | 列表 / JSON | 404 | — |
 | timeline view | 项目存在 | 双线总览 | 「📋 双线总览: 共 5 个事件 — ...」 | 404 | — |
 | timeline check | 项目存在 | 一致性检查（--include-flashbacks 默认开） | 「🔍 一致性检查: ✅ 一致（检查 4 个事件，跳过 1 个时间未知）」/「⚠️ 发现 2 个冲突」/「💡 1 个已声明倒叙/插叙」 | 404 | 发现冲突退出码仍 0 |
 | timeline get | 事件存在 | 查询 | JSON | 404「事件不存在」 | — |
-| timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除；--era "" 清除纪元；--era-scale 改流速比） | JSON（含正式列 `era`/`era_value`/`era_scale`） | 404；422 | 未传 --era 时 --era-value 忽略（§2.8 E4）；未传 --era-scale = 不修改 |
+| timeline update | 事件存在 | 更新（--time-value ""/--timeline-flag "" 清除；--era "" 清除纪元；--era-scale 改流速比） | JSON（含正式列 `era`/`era_value`/`era_scale`） | 404；422 | 未传 --era 时 --era-value 忽略（§2.8 E4）；未传 --era-scale = 不修改；--content-file <path> 从 UTF-8 文件读正文=事件描述（与 --description 互斥 → 退出码 2） |
 | timeline delete | 事件存在 | 二次确认（--force 跳过）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除 |
 | timeline normalize | 项目存在 | `GET /projects/{id}/timeline` 取全量事件 → 计算归一/重锚计划（dry-run 默认）→ `--apply` 时逐事件 `PATCH /timeline/events/{id}` | 「🧭 时间线归一: 识别 N 个叙事段，将改写 M/K 条事件（冲突 7 → 0）；dry-run 未写入，加 --apply 执行」/ `--json` 完整计划 | 404 NOT_FOUND（项目不存在）；VALIDATION_ERROR（无效 UUID）；DB_ERROR | 无带值事件 → `segments=0, changed=0`；已归一 → `changed=0`（幂等）；已声明倒叙/时间未知不改 |
 | ~~timeline restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |

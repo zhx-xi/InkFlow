@@ -411,6 +411,9 @@ def create_point_cmd(
     name: str = typer.Option(..., "--name", "-n", help="情节点名"),
     type: str = typer.Option("", "--type", "-t", help="情节点类型（空串 = 未分类）"),
     description: str = typer.Option("", "--description", "-d", help="情节点要点描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取要点描述（与 --description 互斥）"
+    ),
     position: int | None = typer.Option(
         None, "--position", help="大纲内排序（缺省 = 追加到大纲末尾）"
     ),
@@ -418,6 +421,9 @@ def create_point_cmd(
 ) -> None:
     """创建情节点"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
     aid = _parse_uuid(cli_ctx, arc_id, "弧线不存在") if arc_id is not None else None
 
@@ -430,7 +436,7 @@ def create_point_cmd(
                 json={
                     "name": name,
                     "type": type,
-                    "description": description,
+                    "description": description_text if description_text is not None else "",
                     "position": position,
                     "arc_id": str(aid) if aid is not None else None,
                 },
@@ -452,6 +458,9 @@ def update_point_cmd(
     name: str | None = typer.Option(None, "--name", "-n", help="新情节点名"),
     type: str | None = typer.Option(None, "--type", "-t", help="新情节点类型"),
     description: str | None = typer.Option(None, "--description", "-d", help="新要点描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新要点描述（与 --description 互斥）"
+    ),
     position: int | None = typer.Option(None, "--position", help="新排序位置"),
     arc_id: str | None = typer.Option(
         None, "--arc-id", help='新弧线 ID (UUID)；传空字符串 "" 表示清除弧线归属'
@@ -459,6 +468,9 @@ def update_point_cmd(
 ) -> None:
     """更新情节点（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, point_id, "情节点不存在")
 
     async def _impl() -> dict:
@@ -467,8 +479,8 @@ def update_point_cmd(
             update_fields["name"] = name
         if type is not None:
             update_fields["type"] = type
-        if description is not None:
-            update_fields["description"] = description
+        if description_text is not None:
+            update_fields["description"] = description_text
         if position is not None:
             update_fields["position"] = position
         if arc_id is not None:
@@ -579,9 +591,15 @@ def create_arc_cmd(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     name: str = typer.Option(..., "--name", "-n", help="弧线名"),
     description: str = typer.Option("", "--description", "-d", help="弧线说明"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取弧线说明（与 --description 互斥）"
+    ),
 ) -> None:
     """创建故事弧线"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
@@ -590,7 +608,10 @@ def create_arc_cmd(
         async with client:
             return await client.post(
                 f"/projects/{pid}/story-arcs",
-                json={"name": name, "description": description},
+                json={
+                    "name": name,
+                    "description": description_text if description_text is not None else "",
+                },
             )
 
     arc = _run(cli_ctx, _impl)
@@ -607,17 +628,23 @@ def update_arc_cmd(
     arc_id: str = typer.Option(..., "--id", "-i", help="弧线 ID (UUID)"),
     name: str | None = typer.Option(None, "--name", "-n", help="新弧线名"),
     description: str | None = typer.Option(None, "--description", "-d", help="新弧线说明"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新弧线说明（与 --description 互斥）"
+    ),
 ) -> None:
     """更新故事弧线（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     aid = _parse_uuid(cli_ctx, arc_id, "弧线不存在")
 
     async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
-        if description is not None:
-            update_fields["description"] = description
+        if description_text is not None:
+            update_fields["description"] = description_text
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:

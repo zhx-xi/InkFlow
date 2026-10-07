@@ -27,6 +27,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import HttpApiError, InkFlowHTTPClient, map_http_error
@@ -105,14 +106,23 @@ def create_map_cmd(
         None, "--parent-map", help="父地图 ID (UUID)；缺省 = 根图"
     ),
     description: str = typer.Option("", "--description", help="地图描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取地图描述（与 --description 互斥）"
+    ),
 ) -> None:
     """创建地图（上传本地图片建图，spec §4）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
         filename, content = _read_image(cli_ctx, image)
-        data: dict[str, Any] = {"name": name, "description": description}
+        data: dict[str, Any] = {
+            "name": name,
+            "description": description_text if description_text is not None else "",
+        }
         if root_location is not None:
             data["root_location_id"] = root_location
         if parent_map is not None:
@@ -221,6 +231,9 @@ def update_map_cmd(
     map_id: str = typer.Argument(..., help="地图 ID (UUID)"),
     name: str | None = typer.Option(None, "--name", "-n", help="新地图名"),
     description: str | None = typer.Option(None, "--description", help="新描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新描述（与 --description 互斥）"
+    ),
     root_location: str | None = typer.Option(
         None, "--root-location", help="新父地点 ID (UUID)；none = 改全局图"
     ),
@@ -231,6 +244,9 @@ def update_map_cmd(
 ) -> None:
     """更新地图（仅更新传入字段；--parent-map = 改挂父图，--clear-parent = 显式 null 改回根图）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     sid = _parse_uuid(cli_ctx, map_id, "地图不存在")
     if parent_map is not None and clear_parent:
         print_error(
@@ -243,8 +259,8 @@ def update_map_cmd(
         body: dict[str, Any] = {}
         if name is not None:
             body["name"] = name
-        if description is not None:
-            body["description"] = description
+        if description_text is not None:
+            body["description"] = description_text
         if root_location is not None:
             body["root_location_id"] = None if root_location == "none" else root_location
         if parent_map is not None:

@@ -32,6 +32,7 @@ import typer
 from pydantic import BaseModel, ValidationError
 
 from inkflow.cli._time import format_local
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.session import (
@@ -176,6 +177,11 @@ def create_session_cmd(
     ),
     title: str = typer.Option(..., "--title", "-t", help="会话标题（1-100 字符）"),
     description: str = typer.Option("", "--description", "-d", help="会话描述"),
+    content_file: str | None = typer.Option(
+        None,
+        "--content-file",
+        help="从 UTF-8 文件读取会话描述（与 --description 互斥；语义 ≠ --context-file）",
+    ),
     context_json: str | None = typer.Option(
         None, "--context-json", help="上下文快照 JSON（与 --context-file 互斥）"
     ),
@@ -186,13 +192,16 @@ def create_session_cmd(
     """创建会话（创建即 active；project_id 可空）"""
     cli_ctx: CliContext = ctx.obj
     _require_enum(session_type, ("writing", "task"), "--type")
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     context = _resolve_context(context_json, context_file)
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在") if project_id is not None else None
     data = SessionCreate(
         session_type=SessionType(session_type),
         project_id=pid,
         title=title,
-        description=description,
+        description=description_text if description_text is not None else "",
         context=context,
     )
 
@@ -328,17 +337,23 @@ def update_session_cmd(
     session_id: str = typer.Option(..., "--id", "-i", help="会话 ID (UUID)"),
     title: str | None = typer.Option(None, "--title", "-t", help="新会话标题"),
     description: str | None = typer.Option(None, "--description", "-d", help="新会话描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新会话描述（与 --description 互斥）"
+    ),
     context_json: str | None = typer.Option(None, "--context-json", help="新上下文快照 JSON"),
 ) -> None:
     """更新会话（仅更新传入的字段；status 不可直接修改）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     sid = _parse_uuid(cli_ctx, session_id, "会话不存在")
 
     update_fields: dict[str, Any] = {}
     if title is not None:
         update_fields["title"] = title
-    if description is not None:
-        update_fields["description"] = description
+    if description_text is not None:
+        update_fields["description"] = description_text
     if context_json is not None:
         update_fields["context"] = _parse_json_value(context_json, "--context-json")
     data = SessionUpdate(**update_fields)
