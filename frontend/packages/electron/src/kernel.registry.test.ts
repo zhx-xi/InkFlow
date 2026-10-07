@@ -94,12 +94,22 @@ describe('readInstanceRegistry（spec f31 §2.4）', () => {
     expect(readInstanceRegistry(dir).map((i) => i.pid)).toEqual([ALIVE_PID]);
   });
 
-  it('kind 非法（prod）被跳过', () => {
-    write('prod-9.json', entry({ kind: 'prod', pid: ALIVE_PID + 0 }));
+  it('kind 非法（bogus）被跳过', () => {
+    write('bogus-9.json', entry({ kind: 'bogus', pid: ALIVE_PID + 0 }));
     write('dev-1.json', entry());
     const got = readInstanceRegistry(dir);
     expect(got).toHaveLength(1);
     expect(got[0].kind).toBe('dev');
+  });
+
+  // #1487 / ADR-066 ③：后端 VALID_KINDS = (dev, rc, prod)（ADR-059 1.3 已把 release
+  // 重命名为 prod）——本文件此前只认 release，导致**后端写的 prod 条目被静默丢弃**
+  // （托盘看不见 / 换 data_dir 判据瞎）。现 prod 与 release 都接受。
+  it('kind=prod 被接受（修正跨语言契约错位，#1487）', () => {
+    write('prod-9.json', entry({ kind: 'prod', pid: ALIVE_PID + 0, port: 60009 }));
+    const got = readInstanceRegistry(dir);
+    expect(got).toHaveLength(1);
+    expect(got[0].kind).toBe('prod');
   });
 
   it('pid 非数字的条目被跳过', () => {

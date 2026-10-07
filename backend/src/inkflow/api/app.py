@@ -11,6 +11,7 @@ import inkflow
 from inkflow.api.deps import get_provider_config_service
 from inkflow.api.middleware.correlation import CorrelationIdMiddleware
 from inkflow.api.middleware.docs_gate import DocsGateMiddleware
+from inkflow.api.middleware.idle_activity import IdleActivityMiddleware
 from inkflow.api.middleware.source import EventSourceMiddleware
 from inkflow.api.middleware.token_auth import TokenAuthMiddleware
 from inkflow.api.routers import (
@@ -308,6 +309,10 @@ app.add_middleware(CorrelationIdMiddleware)
 #       最外层：请求最早进入即写 source ContextVar，写路径发布变更事件时判定发起方；
 #       非法/缺失头不设 → 保持默认 unknown，spec §15.2.4） ----
 app.add_middleware(EventSourceMiddleware)
+
+# ---- 空闲活动（#1487 / ADR-066 ②，纯 ASGI；注册在 EventSource 之后 = 最外层：
+#       请求最早进入即刷新空闲倒计时——含被 token 拒绝的 401 与 /health） ----
+app.add_middleware(IdleActivityMiddleware)
 
 
 # ---- 全局异常处理：RAG 向量库不可用（#341，覆盖端点构造期与前置刷新冒泡）----
