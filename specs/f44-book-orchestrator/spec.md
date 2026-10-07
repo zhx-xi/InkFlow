@@ -1,7 +1,7 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.12（#1462/#1463 planner 完成路径缺陷修复：项目级模型解析链路修正（repo 入参领域 UUID）+ 完成路径幂等（总纲/主角同名复用）+ 领域业务冲突 → 422 可读 detail，2026-10-04；1.11 #1430 方案 A：`book run --force` 显式覆盖正文 + A2 旧稿备份落点 `chapters.previous_content` + 恢复读口 + 请求面双条件，2026-10-02；1.10 #1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
+**Spec 版本**: 1.13（#1439 supervisor 产出任务清单落库 + 供决策：`writing_plans` 新增 `tasklist` JSON 列，book-level supervisor 每条**被接受的决策**追加一条 task 条目（章级锚点 + op 级步骤），持久化后供下次决策读回并提供 `get_summary.tasklist` 附加键做「计划 vs 实际」对照（`steps` 契约不变），2026-10-07；1.12（#1462/#1463 planner 完成路径缺陷修复：项目级模型解析链路修正（repo 入参领域 UUID）+ 完成路径幂等（总纲/主角同名复用）+ 领域业务冲突 → 422 可读 detail，2026-10-04；1.11 #1430 方案 A：`book run --force` 显式覆盖正文 + A2 旧稿备份落点 `chapters.previous_content` + 恢复读口 + 请求面双条件，2026-10-02；1.10 #1187 卷级轨承接：写前定钩子（B）+ 写后 F34 卷级审计（C），2026-09-18；1.9 #1267 审计阻断终态 `blocked` + `needs_review` 章态，2026-09-18；1.8 #1097 自动建卷 + 章节归卷（confirm D4 增 `volume_ensurer`），2026-09-11；v1.7 #927 planner 产物质量：兜底题中性化 + 标题短化 + 主角 role_rank + limits 访谈提取，2026-09-05；#995 主角名短名化；v1.6 #929 写作凭据项目感知 + per-delegate 解析；v1.5 #902 卷轨/agentic 轨 token 用量采集；v1.4 #903 GUI 状态档位色 + progress_reason 渲染；v1.3 #897 完成态判据收紧 + 失败原因可见；v1.2 #475 访谈 LLM 动态提问）
 **日期**: 2026-08-17
 **依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
 **所属阶段**: 0.10.0（长任务编排器，F44 四阶段），估算 24-39 人天（#335 阶段 1：5-8 / #336 阶段 2：4-6 / #337 阶段 3：7-11 / #338 阶段 4：8-10 + GUI 已含，part-time 8-10 周；v1.1 较 v1.0 的 16-26 人天增加 Q1=C GUI +8-12 与 Q2=C 项目级上限 +0.5-1）；v1.2 #475 访谈 LLM 动态提问为 0.10.1 增量（估算 5-8 人天，拆 2 PR：后端提问引擎 + 前端对话式 UI，S3 实现轨）
@@ -14,6 +14,15 @@
 > - **#1462（项目级模型永不生效）**：`PlannerService._generate_questions` 用 `session.project_id.int` 调 `project_repo.get`——ADR-060 D9 / #1291 之后仓储入口只认 `uuid.UUID`（`require_uuid_pk` 对裸 int 抛 `TypeError`），该异常被 `except Exception: project_model = None` 静默吞成「未配模型」→ `resolve_model` 的「项目」一级恒空 → 访谈降级模板题库 + `confirming` 永不置位 + `confirm` 恒 422。修订：入参改传领域 UUID；`except TypeError` 记 ERROR 后**原样抛出**（契约违规不得静默降级），其余可预期失败仍回退全局默认（#977 语义保持）。同族漏网（`memory_service` 2 处 · `agent_service_context` 1 处）一并收口。
 > - **#1463（完成路径无幂等）**：`_complete` 对两个养成实体各做一次**确定性命名**的 create（总纲名 = `one_liner[:30]` 派生；主角名 = `confirmed_items` 派生、无信息时回退字面量「主角」）→ 同项目第二次完成必撞同名唯一约束 → `OutlineNameConflictError` / `CharacterNameConflictError` 未在 API 层映射 → 500「内部错误（无详情）」→ 用户永久无法完成访谈。修订：建前**按名查重复用**既有实体（并发窗口：创建撞名后二次查名复用；无从复用则原样抛出，不静默吞）；两个领域异常家族（`OutlineServiceError` / `CharacterServiceError`）在 `POST /planner/{session_id}/respond` 映射 **422 + 消息即 detail**（与 `extractions.py` / `characters.py` 既有惯例一致）。
 > - **正文修订位置**：§3.5（异常映射表 +2 行）+ §5.1（完成路径幂等 + 模型解析链）+ §7（场景 18/19）+ §8.2（MODIFY +3 行）+ §9.1（测试文件 +2 行）+ §12（D14）+ §13.7（M18-M19）+ §14.4（A12/A13）+ 本节版本行。
+
+> **Spec 变更**（v1.12 → v1.13，2026-10-07，#1439 拍板 2026-10-06「与 supervisor 合并」）：
+> - **背景**：#1439 原设想「bootstrap 阶段让 LLM 预产出任务清单」与 book-level supervisor（`BookAgenticPipeline`）的逐步决策**职责重叠** → 会形成**两套「下一步」来源**（需额外冲突仲裁）。2026-10-06 拍板：**取消第二套来源**，清单**就是 supervisor 的产出**。
+> - **三点实现结论（本轨定，见 §12 D15）**：① **落点** = `writing_plans` 新增 `tasklist` JSON 列（**不新造独立表、不进记忆域**）；② **粒度** = 混合（章级锚点 + op 级步骤，对齐 #1333 段 2 Q2=C）；③ **输出协议** = **复用既有结构化 JSON 决策协议**（`{action, op, outline_id}`），**不引入工具调用**。
+> - **产消链路**：supervisor 每条**被接受**的决策 → 追加一条 task 条目（`{op, outline_id, title}`；`op ∈ _OPERATION_POOL`）；决策 4 次重试耗尽 → 追加一条降级标记条目（`op="__degraded__"`）后走既有 fallback/abort（**不崩、可继续**）；运行收尾（含 HITL 中断前）把 checkpoint state 的 `tasklist` 写回 `plan.tasklist`；`execute` 启动时从 `plan.tasklist` **播种**（供下次决策读回）。
+> - **非约束**：`_guarded_route` 与决策消息的既有语义**零改动**——清单不强制按序（supervisor 仍可跳过 / 改序）；清单仅作**决策输入（提示上下文）+ 记录面**。
+> - **权威源**：`progress` 仍是「实际执行态」唯一权威源；`tasklist` 是「supervisor 计划 / 决策记录」，**单向**（tasklist 永不写 progress，progress 只由操作节点写）→ 每个字段单一 writer，构造上零双写漂移。
+> - **GUI 复用**：`get_summary.steps` 契约**逐字不变**；新增**附加键** `tasklist`（向后兼容、`steps` 不受影响）供「计划 vs 实际」对照——沿用 #1333 段 2 的 `steps` 契约族（同 op 词表 + 同 outline_id 锚点），**不另造任务实体/表/模型类**。
+> - **正文修订位置**：§2.1（WritingPlan 加 `tasklist`）+ §5.9（新增链路节）+ §8.1/§8.2 + §9.1/§9.2 + §12（D15）+ §13.8（M20-M22）+ §14.4（A14）+ 本节版本行。
 
 > **Spec 变更**（v1.9 → v1.10，2026-09-18，#1187 用户拍板「B+C 综合」）：卷级轨同卷章节**并行扇出互不知情**（无承接、无因果、无「上一章结尾的悬念」），卷边界 HITL 时作者才第一次看到 30-40 章各自成文的成品。修订 = **保留并行（不取消，那是方案 A，用户未选）**，在并行下补承接保障，两阶段：
 > - **B 阶段（写前定「承接点 + 章末钩子」）**：新增 `prepare_continuity` 节点，位于 `volume_fan_out` **之前**——**一次 LLM 调用生成整卷承接表**（输入 = 卷纲 + 各章章纲 + 前一章章纲，**不依赖任何正文**，因扇出前无正文），产出落 `VolumeState["continuity"]`（`{str(outline_id): {"carry": str, "hook": str}}`），经 `Send` payload 带进各章分支并注入章 brief（**复用既有 `_build_chapter_brief` / `resolve_brief_setting` 通道，不新造注入路径**）。LLM 失败/解析失败 → 降级空承接表（不阻断写作）。
@@ -92,6 +101,11 @@ class WritingPlan(BaseModel):
         progress: 节点进度快照 {outline_id: PlanNodeStatus}（执行时更新，
             与 outline 表共存；以本字段为权威进度）.
         execution_refs: 章执行引用 {outline_id: execution_id}（章→agent_executions 记录）.
+        tasklist: supervisor 产出的任务清单（v1.13 #1439）——有序条目列表
+            [{op, outline_id, title}]（op ∈ write_chapter/audit_chapter/revise_chapter/
+            mark_done/finish_book；决策重试耗尽时追加 {op: "__degraded__", reason}）。
+            「计划 / 决策记录」面，**非约束**：不驱动 progress（progress 恒为
+            「实际执行态」权威源，单向，零双写漂移）.
         thread_id: LangGraph checkpoint thread_id（阶段 4 落库，§2.3）.
         created_at / updated_at: 时间戳.
     """
@@ -105,6 +119,7 @@ class WritingPlan(BaseModel):
     limits: dict[str, int] = Field(default_factory=dict)
     progress: dict[str, str] = Field(default_factory=dict)      # outline_id -> status
     execution_refs: dict[str, str] = Field(default_factory=dict)  # outline_id -> execution_id
+    tasklist: list[dict] = Field(default_factory=list)          # supervisor 任务清单（v1.13 #1439）
     thread_id: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -648,6 +663,23 @@ START → bootstrap → prepare_continuity（B：写前定承接表，一次 LLM
 
 **测试锚**：迁移四形态 `backend/tests/unit/infrastructure/database/test_chapters_previous_content_migration_1430.py`；快照 + 恢复 `backend/tests/unit/domain/services/test_chapter_previous_content_1430.py`；双条件 + 后台透传 `backend/tests/unit/domain/services/test_book_run_force_1430.py` + `tests/api/test_book_force_overwrite_1430.py`；恢复读口 `tests/api/test_chapter_restore_previous_1430.py`；CLI `tests/cli/test_cli_book_force_1430.py`。
 
+### 5.9 v1.13 增量：supervisor 任务清单（落库 + 供决策）（#1439）
+
+> 来源：#1439（0.17.0 W5）。**范围由 2026-10-06 拍板重定义**：不造「LLM 预产出清单」这一第二套来源，清单 = **book-level supervisor 的产出**。三点实现结论见 §12 D15。
+
+**本质：产出 vs 记录，不是两套决策源。** supervisor（`BookAgenticPipeline._supervisor_node`）本就逐步决策 `{action, op, outline_id}`；本增量把这些**被接受的决策**累积成一份**结构化清单**并持久化——**清单不覆盖也不约束** supervisor 的决策。
+
+- **产出**：每条被接受的决策 → `tasklist` 追加一条 `{op, outline_id, title}`（`title` = 目标章名，取不到 → `outline_id`；`op="finish_book"` 条目 `outline_id=""`）。
+- **降级留痕（schema 校验失败）**：决策 4 次重试耗尽（`_decide_next_action` 返回 `("", "", "")`）→ 追加 `{op: "__degraded__", reason: "decision_invalid"}`，随后走**既有** `fallback_on_error` 分支（默认 → deterministic fallback；`False` → abort）——**不崩、记降级、可继续**。
+- **持久化**：运行收尾（`execute` / `resume` 的返回路径，**含抛 `BookAgenticHITLInterrupt` 之前**）把 checkpoint state 的 `tasklist` 写回 `plan.tasklist`（就在共享 `plan` 引用上写，由 `BookService.write_book_agentic` 的 `update_writing_plan` 落库；沿用 `_finalize_audit_block` 先例）。
+- **读回**：`execute` 启动时以 `plan.tasklist` **播种**初始 state → 下一次运行 / resume 的决策消息里带上「上次清单」段（**提示上下文**）→ 「清单可被后续决策读回」。
+- **非约束**：`_guarded_route` 与 `_build_decision_messages` 的**既有约束语义零改动**——清单只是上下文，supervisor 仍可跳过 / 改序（负例见 §9.2 场景 14）。
+- **权威源单向**：`progress` 只由操作节点写（write/audit/revise/mark_done）；`tasklist` 只由 supervisor 决策写 → 每字段单一 writer，**构造上零双写漂移**（§12 D15）。
+- **GUI 读口**：`get_summary` 新增附加键 `tasklist`（复用 tasklist 条目；**`steps` 逐字不变**）→ 「计划（tasklist）vs 实际（`steps[].status`）」。
+- **代码落点**：纯函数工具箱下沉到新模块 `infrastructure/agent/book_agentic_tasklist.py`（`book_agentic_pipeline.py` 已达 891 行、`book_service.py` 888 行，**贴 900 行护栏**；镜像 `book_agentic_helpers.py` #1186 体积治理先例）。
+
+**测试锚**：`backend/tests/unit/infrastructure/agent/test_book_agentic_tasklist_1439.py`（产出/持久化/回读/降级/非约束）+ `backend/tests/unit/domain/services/test_book_tasklist_summary_1439.py`（`get_summary.tasklist` + `steps` 契约不变）+ `backend/tests/unit/infrastructure/database/test_writing_plan_tasklist_migration_1439.py`（迁移三形态）。
+
 ## 6. 组织规则
 
 编排域专属约定（各阶段实现共享，避免每阶段重复设计）：
@@ -720,7 +752,12 @@ backend/tests/unit/domain/services/test_planner_service.py              # 访谈
 tests/integration/test_book_repository.py               # 仓储集成
 tests/api/test_books_api.py                             # API 契约（新增文件须登记 ci.yml integration 链）
 tests/cli/test_book_cmd.py                              # CLI 契约（登记 ci.yml integration-cli-backend）
-tests/e2e/test_book_long_run.py                         # 长任务端到端（e2e-ai-backend 开关模式，§9）
+tests/e2e/test_book_long_run.py                          # 长任务端到端（e2e-ai-backend 开关模式，§9）
+backend/src/inkflow/infrastructure/agent/book_agentic_tasklist.py  # v1.13 #1439 supervisor 任务清单纯函数工具箱（追加/降级条目/摘要视图；镜像 book_agentic_helpers）
+backend/src/inkflow/core/migrations_writing_plan.py      # v1.13 #1439 ensure_writing_plan_tasklist_column（幂等补列；database.py 已贴 900 行护栏）
+backend/tests/unit/infrastructure/agent/test_book_agentic_tasklist_1439.py       # v1.13 清单产出/持久化/回读/降级/非约束
+backend/tests/unit/domain/services/test_book_tasklist_summary_1439.py            # v1.13 get_summary.tasklist + steps 契约不变
+backend/tests/unit/infrastructure/database/test_writing_plan_tasklist_migration_1439.py  # v1.13 迁移三形态
 ```
 
 ### 8.2 修改（MODIFY）
@@ -741,6 +778,13 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | `domain/services/planner_service.py` | ① `_generate_questions` 项目查询入参改传领域 UUID（ADR-060 D9）+ 契约违规（`TypeError`）冒泡（不再静默吞成「未配模型」）；② `_complete` 总纲/主角建前按名查重复用（新增可选注入 `character_repo`）（v1.12 #1462/#1463，§5.1） | v1.12 |
 | `domain/services/memory_service.py` · `domain/services/agent_service_context.py` | #1462 同族漏网收口：`project_repo.get` 入参由裸 int 改传领域 UUID（`agent_service_context` 的漏网点在 #1319 三源 `list()` 收口时被漏掉，其 `except Exception` 整体失败隔离把 `TypeError` 吞成「设定注入失败」） | v1.12 |
 | `api/routers/books.py`（`respond_planner` + `get_planner_service`） | `respond_planner` 映射 `OutlineServiceError` / `CharacterServiceError` → 422 + 消息即 detail；`get_planner_service` 装配 `character_repo`（v1.12 #1463，§3.5） | v1.12 |
+| `domain/models/writing_plan.py` | `WritingPlan` 加 `tasklist: list[dict]` 字段（v1.13 #1439，§2.1/§5.9） | v1.13 |
+| `infrastructure/database/models/writing_plan.py` | `WritingPlanORM` 加 `tasklist` 列（`LenientJSON(fallback=[])`，NOT NULL；v1.13 #1439） | v1.13 |
+| `infrastructure/repositories/book_repository.py` | `_writing_plan_orm_to_domain` / `_domain_to_writing_plan_orm` 透传 `tasklist`（v1.13 #1439） | v1.13 |
+| `infrastructure/agent/book_agentic_pipeline.py` | `BookAgenticState` 加 `tasklist` 通道（`operator.add` reducer）；`_supervisor_node` 追加条目 / 降级条目；`execute` 播种 + 收尾回写 `plan.tasklist`（v1.13 #1439，§5.9） | v1.13 |
+| `domain/services/book_service.py`（`get_summary`） | 返回值加附加键 `tasklist`（`steps` 逐字不变；v1.13 #1439，§5.9） | v1.13 |
+| `api/app.py` | lifespan 迁移链接线 `ensure_writing_plan_tasklist_column`（v1.13 #1439） | v1.13 |
+| `ci_cd/orm_migration_baseline.json` | `--regen` 重导（`writing_plans.tasklist` 新列；v1.13 #1439） | v1.13 |
 
 > Q2=C 注（v1.1）：多维上限默认载体 = **ProjectConfig.extra 项目级扩展字典**（F1 既有字段，四层已透传）——**零 MODIFY**，无需 F32 settings 扩展键（§11 F32 行已改「不 MODIFY」；读取优先级见 §2.4）。
 
@@ -755,6 +799,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | API | `tests/api/test_books_api.py` | 端点契约：planner 启谈/回复/confirm/auto（LLM mock）、runs 启动/状态、confirm、intervene、summary、异常映射（404/409/422） | integration-agent-backend 链登记 |
 | 单元（v1.12 #1462/#1463） | `backend/tests/unit/domain/services/test_planner_service_1462_1463.py` / `test_repo_id_contract_1462.py` / `backend/tests/unit/api/routers/test_books_planner_conflict_1463.py` | 项目级模型解析（契约违规冒泡 + 可预期降级两向 + 真无模型降级）、完成路径幂等（总纲/主角 × 两条调用路径 × 并发窗口 × 无从复用响亮失败）、同族 `.int` 漏网静态回归锁、领域冲突 → 422 | `pytest tests/unit/` |
 | API（v1.12 #1462） | `tests/api/test_books_planner_project_model_1462.py` | 仅配项目级模型（全局为空）下 book plan 全链路（真实 SQLite repo + 假 LLM）：LLM 动态提问 → `confirming=true` → confirm 200；同项目同 one_liner 第二次访谈同样成功 | integration-agent-backend 链登记 |
+| 单元（v1.13 #1439） | `backend/tests/unit/infrastructure/agent/test_book_agentic_tasklist_1439.py` / `backend/tests/unit/domain/services/test_book_tasklist_summary_1439.py` / `backend/tests/unit/infrastructure/database/test_writing_plan_tasklist_migration_1439.py` | supervisor 清单产出 + 持久化回读（下一次运行播种）+ 降级条目 + 非约束（清单不覆盖决策）+ `get_summary.tasklist` 且 `steps` 逐字不变 + 迁移三形态 | `pytest tests/unit/` |
 | CLI | `tests/cli/test_book_cmd.py` | `inkflow book` 命令组（CliRunner + 临时 SQLite，isolated_db 双 patch 模式） | integration-cli-backend 链登记 |
 | E2E | `tests/e2e/test_book_long_run.py` | 长任务端到端：真实 LLM 走 **e2e-ai-backend 开关模式**（CI 默认 skip，本地 `INKFLOW_E2E_LLM_*` env 真实 API；LLM 依赖测试不放默认 CI 链，F39 实证） | `pytest tests/e2e/` + env |
 | 前端组件（Vitest） | `frontend/packages/renderer/src/components/__tests__/book*.test.tsx` | 访谈对话流（v1.2 对话式：确定项汇总卡片/冲突警示/confirm）、子 agent 展开行、章级进度 UI、HITL 确认对话框、干预控件、三层密度切换、回归摘要面板（mock API，F43 前端测试模式） | `pnpm test`（→ `pnpm --filter renderer test` → `vitest run`，frontend CI job） |
@@ -772,6 +817,10 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 9. **GUI 主路径闭环**（阶段 1，Vitest + E2E，Q1=C v1.1）：访谈对话 → 委托 → 子 agent 展开行可见 → 草稿回收（「插入正文」）；E2E 走 e2e-ai-backend 开关模式
 10. **GUI 干预/密度**（阶段 4，Vitest，Q1=C v1.1）：干预控件触发 intervene API + diff 高亮；三层密度切换 → `density` 参数正确传递；HITL 对话框仅 waiting_hitl 显示
 11. **GUI 对话式访谈**（阶段 1，Vitest，v1.2 #475）：消息流渲染 assistant 问题/用户回答；模板 chip 点击填入；confirming=true 渲染确定项汇总卡片（确认 → respond {confirm:true}；修改 → 重新回问）；kind=conflict 消息警示样式；auto 按钮保留
+12. **supervisor 清单产出 + 持久化 + 回读**（v1.13 #1439）：跑一次 agentic 轨 → `plan.tasklist` 非空且条目形如 `{op, outline_id, title}`（每条被接受决策一条）；持久化后新 `execute`（同 plan 二次运行）的决策消息含「上次清单」段（读回）；`get_checkpoint_state()["tasklist"]` 与 `plan.tasklist` 同源
+13. **降级留痕**（v1.13 #1439）：LLM 决策恒非法（4 次重试耗尽）→ 追加 `{op: "__degraded__", reason: "decision_invalid"}` 条目 + 运行走既有 fallback/abort（**不崩、可继续**）
+14. **非约束**（v1.13 #1439，负例）：清单预置「按序」条目而 LLM 决策改序 / 跳过 → 实际路由**按 LLM 决策**执行（清单不覆盖决策，`_guarded_route` 语义零改动）
+15. **`get_summary` 复用 + `steps` 不变**（v1.13 #1439）：summary 含附加键 `tasklist`；`steps` 键集 / 条目形态与 #1333 段 2 契约**逐字一致**（零回归）
 
 ### 9.3 覆盖率与门禁
 
@@ -837,6 +886,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | D12 | 干预粒度 | 卷级锚点 + 章级被动动作（skip/retry/标记）——Q3=A 拍板确认（v1.1，正文 v1.0 已一致，仅标 ✅） | 设计 §2.3-2 interrupt 只放卷边界；章级干预不引入新 checkpoint | 章级精细 checkpoint（违反设计约束 + 大成本） |
 | D13 | 访谈提问引擎（v1.2 #475 D1 拍板） | **LLM 动态提问**：单次 LLM 调用返回问题 + 确定项提取 + 冲突标记（结构化 JSON）——通用必答 + 针对性并存；服务端强约束必答项校验；LLM 失败降级到确定性常量（ROUND1/ROUND2） | #475 用户拍板 D1（问题必须感知用户输入：按 one_liner + 项目设定动态生成；提取已确定项只问未确定项；冲突回问；末尾总体确认；确定项落会话供 #486/记忆/审计）；确定性状态机不感知输入（用户否决——v1.1 现状） | 纯确定性状态机（不感知输入，用户否决）；纯 LLM 无服务端校验（必答项可能漏问，违背「大纲/主角必须对话确认」） |
 | D14 | 完成路径实体幂等（v1.12 #1463） | 建前按项目内名称**查重复用**既有实体（总纲 / 主角）；并发窗口撞名 → 二次查名复用；无从复用 → 原样抛领域异常 → API 映射 **422** + 消息即 detail | 与 §5.2 章级幂等写、`make_volume_ensurer`「同项目同名卷复用」同惯例；客户端超时/进程被杀后**同一项目第二次完成不得永久失败**；复用既有行保住 `root_outline_id` / `character_ids` 结构锚点。另 #1462：`project_repo.get` 入参必须是领域 UUID（ADR-060 D9），契约违规（`TypeError`）不得被 `except Exception` 静默降级 | 改生成名重试（§6 R1 旧措辞——用户可见名漂移 + 新建孤儿结构）；静默跳过创建（丢主角且无提示）；修 `require_uuid_pk` 放开裸 int（违反 ADR-060 D9）；通用「唯一索引冲突框架」（§10 范围外） |
+| D15 | supervisor 任务清单落点与产消链路（v1.13 #1439） | **落点 = `writing_plans` 新增 `tasklist` JSON 列**（不新造表、不进记忆域）；**粒度 = 混合**（章级锚点 + op 级步骤）；**输出协议 = 复用既有结构化 JSON 决策协议**（不引入工具调用）；supervisor 每条被接受决策追加一条条目，决策重试耗尽追加降级条目，收尾回写 `plan.tasklist`、下次 `execute` 播种读回；`get_summary.steps` 契约不变 + 附加键 `tasklist` | **权威源判据**：`progress`（实际执行态）唯一权威源不变；`tasklist` 只由 supervisor 决策写、**单向不写 progress** → 每字段单一 writer，零双写漂移。**弃独立表**：run 级 1:1 附属、`progress`/`limits`/`execution_refs` 既有 JSON 列先例、无按 run_id 之外查询需求（Rule of Three 未达），独立表徒增 join/FK/迁移。**弃记忆域**：`memory_service` 是跨项目长期知识 + **语义检索**，本需求要「精确取回本 run 上次清单」，语义召回不保证命中，且第二存储引入跨存储一致性对账 —— 直接违反「谁是权威源」判据。**弃工具调用协议**：supervisor 已有 JSON 决策 + 4 次重试 + fallback，清单**由被接受决策派生** → 零新增解析面、零新增 schema 失败分支（降级路径 = 既有 fallback/abort + 一条降级留痕条目） | 独立任务表（过度设计 + 双写风险）；记忆域（语义检索 ≠ 精确 key 回读）；工具调用 todo 协议（新解析面 + 与既有 JSON 决策双协议并存）；`get_summary.steps` 改形状（破坏 #1333 段 2 契约） |
 
 ## 13. 验收标准
 
@@ -900,6 +950,14 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | M18 | 仅配项目级模型（全局默认为空）→ 访谈走 LLM 动态提问（不落模板题库）；`resolve_model` 的「项目」一级非空；**契约违规（裸 int）不被吞**（显式失败）；真未配任何模型仍降级模板题库；非契约类失败（DB 抖动）仍回退全局默认 | `pytest backend/tests/unit/domain/services/test_planner_service_1462_1463.py`；`pytest tests/api/test_books_planner_project_model_1462.py`（真实 repo + 假 LLM，全链路 start → respond → confirm） |
 | M19 | 完成路径幂等：同项目第二次 confirm / 第二次访谈**复用**既有总纲与主角（各只 create 一次，`root_outline_id` / `character_ids` 指向既有行）；并发窗口二次查名复用；无从复用 → 422 + 可读 detail（非 500 无详情）；同族 `.int` 漏网（`memory_service` ×2 / `agent_service_context` ×1）收口且静态回归锁生效 | `pytest backend/tests/unit/domain/services/test_planner_service_1462_1463.py backend/tests/unit/domain/services/test_repo_id_contract_1462.py backend/tests/unit/api/routers/test_books_planner_conflict_1463.py` |
 
+### 13.8 v1.13 #1439（supervisor 任务清单落库 + 供决策）：M20-M22
+
+| M | 验收 | 验证命令/方式 |
+|---|------|--------------|
+| M20 | supervisor 产出结构化清单并**持久化**（`plan.tasklist` 非空、条目形如 `{op, outline_id, title}`，每条被接受决策一条；收尾含 HITL 中断前回写） | `pytest backend/tests/unit/infrastructure/agent/test_book_agentic_tasklist_1439.py` |
+| M21 | 清单**可被后续决策读回**（同 plan 二次 `execute` 的决策消息含「上次清单」段；`get_checkpoint_state()["tasklist"]` 与 `plan.tasklist` 同源）；**不产生两套「下一步」**（清单**不覆盖** supervisor 的 `{action, op, outline_id}` 决策——负例：把清单当约束强制按序 → 必须不成立） | 同上（读回 + 非约束用例） |
+| M22 | **GUI 复用**：`get_summary.steps` 契约不变 + 附加键 `tasklist`（「计划 vs 实际」可对照）；**schema 校验失败有降级**（LLM 输出非法 → 不崩 + 记降级条目 + 可继续）；**既有轨零回归**（静态轨 / 卷级轨不受影响各一条断言）；迁移三形态 + 幂等（旧库补列 / 新库 no-op / 表不存在 no-op / 连续两次等价） | `pytest backend/tests/unit/domain/services/test_book_tasklist_summary_1439.py backend/tests/unit/infrastructure/database/test_writing_plan_tasklist_migration_1439.py`；`uv run python ci_cd/check_orm_migration_drift.py --regen` 后 `git diff --exit-code ci_cd/orm_migration_baseline.json` |
+
 ## 待澄清问题（阻塞级，已拍板固化 v1.1 + v1.2 Q4）
 
 ### Q1（阻塞级）前端交付面：F44 是否含 GUI 交互面板？
@@ -958,7 +1016,7 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 | GET /api/v1/agent/books/runs/{run_id} | 运行存在 | 状态（进度树 + 计数器 + 当前 interrupt + 章级只报告） | 200 | 404 | density 三层（performance/dashboard/silent，默认全开） |
 | POST /api/v1/agent/books/runs/{run_id}/confirm | 运行 waiting_hitl（卷边界 interrupt） | Command(resume) 恢复 | 200 + status + next_checkpoint | 422（非 waiting_hitl「卷确认仅在 interrupt 暂停点可用」） | body {approved, decision?}；F29 confirm 同构 |
 | POST /api/v1/agent/books/runs/{run_id}/intervene | 运行存在 | pause/resume/redirect/edit（卷级锚点 + 章级被动动作） | 200 + diff 字段（redirect/edit 时，difflib 字面 diff 零 LLM） | 422（非法动作/目标 outline 不存在）；422（已完成章 progress=done 拒绝干预） | pause 卷边界 checkpoint 已存；并行分支进行中的章允许完成（不做章内断点） |
-| GET /api/v1/agent/books/runs/{run_id}/summary | 运行存在 | 回归摘要（到哪了/接下来/已耗）+ 结构化运行日志 | 200 | 404 | steps JSON 快照（镜像 F27 AgentStep）可回放导出 |
+| GET /api/v1/agent/books/runs/{run_id}/summary | 运行存在 | 回归摘要（到哪了/接下来/已耗）+ 结构化运行日志 | 200 | 404 | steps JSON 快照（镜像 F27 AgentStep）可回放导出；v1.13 #1439：**附加键 `tasklist`**（supervisor 计划面）与 `steps`（实际面）并列，`steps` 契约不变 |
 
 ### 14.2 CLI 命令状态流
 
@@ -1002,3 +1060,4 @@ tests/e2e/test_book_long_run.py                         # 长任务端到端（e
 - A11：访谈 LLM 动态提问（M13）+ 前端对话式 UI（M14）
 - A12：仅配项目级模型 → 访谈走 LLM 动态提问 + confirm 200（M18）
 - A13：同项目重复完成 → 复用既有总纲/主角，不 500（M19）
+- A14：supervisor 产出任务清单 → 持久化（`plan.tasklist`）→ 下次决策读回；清单**不覆盖**决策（非约束负例）；`get_summary.steps` 不变 + 附加键 `tasklist`；决策非法 → 降级留痕不崩（M20-M22）

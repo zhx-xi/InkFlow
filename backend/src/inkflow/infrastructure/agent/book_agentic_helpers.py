@@ -14,11 +14,22 @@ import json
 import uuid
 from typing import TYPE_CHECKING, Any, cast
 
+from inkflow.domain.models.agent_book import AgenticBookConfig
 from inkflow.domain.models.writing_plan import WritingPlan
 from inkflow.infrastructure.llm.content_text import content_text
 
 if TYPE_CHECKING:  # 注解经 `from __future__ import annotations` 延迟求值，运行期无需真类型
     from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticState
+
+
+_OPERATION_POOL = [
+    "write_chapter",
+    "audit_chapter",
+    "revise_chapter",
+    "mark_done",
+    "finish_book",
+]
+_CHAPTER_OPS = ("write_chapter", "audit_chapter", "revise_chapter")
 
 
 def _try_json(content: str) -> dict | None:
@@ -178,3 +189,33 @@ def _first_unaudited_written(state: BookAgenticState) -> str | None:
         if progress[oid] == "in_progress" and oid not in audit_results:
             return oid
     return None
+
+
+def _guarded_route(
+    state: BookAgenticState, config: AgenticBookConfig, op: str, oid: str
+) -> tuple[str, str] | None:
+    """护栏（LLM 决策后强制，F29 §5.4）：返回 (op, oid)；None → fallback.
+
+    判定顺序：steps 超限 / 振荡（op==last_op 且 consecutive>=max_consecutive）/
+    非法 op 或非法 outline_id → fallback；章节循环超限 → 强制 mark_done；
+    audit_required 且写后未审即 mark_done / 写其它章 → 强制 audit_chapter。
+    """
+    if state.get("steps", 0) >= config.max_steps:
+        return None
+    if op == state.get("last_op", "") and state.get("consecutive", 0) >= config.max_consecutive:
+        return None
+    if op not in _OPERATION_POOL:
+        return None
+    if op in ("write_chapter", "audit_chapter", "revise_chapter", "mark_done") and (
+        _find_chapter(state["chapters"], oid) is None
+    ):
+        return None
+    if op in _CHAPTER_OPS and state.get("chapter_ops", {}).get(oid, 0) >= config.max_chapter_cycles:
+        op = "mark_done"
+    if config.audit_required:
+        unaudited = _first_unaudited_written(state)
+        if op == "mark_done" and unaudited is not None:
+            return ("audit_chapter", unaudited)
+        if op == "write_chapter" and unaudited is not None and unaudited != oid:
+            return ("audit_chapter", unaudited)
+    return (op, oid)
