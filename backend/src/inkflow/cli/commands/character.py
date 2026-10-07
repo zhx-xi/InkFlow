@@ -29,6 +29,7 @@ import typer
 from pydantic import ValidationError
 
 from inkflow.cli._time import format_local
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -104,9 +105,15 @@ def create_character(
     background: str = typer.Option("", "--background", help="背景设定"),
     goals: str = typer.Option("", "--goals", help="目标/动机"),
     group_id: str | None = typer.Option(None, "--group-id", help="所属角色分组 ID (UUID)"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取角色背景设定（与 --background 互斥）"
+    ),
 ) -> None:
     """创建角色"""
     cli_ctx: CliContext = ctx.obj
+    background_text = resolve_content(
+        background, content_file, cli_ctx=cli_ctx, inline_flag="--background"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在") if group_id is not None else None
 
@@ -119,7 +126,7 @@ def create_character(
                 json={
                     "name": name,
                     "personality": personality,
-                    "background": background,
+                    "background": background_text if background_text is not None else "",
                     "goals": goals,
                     "group_ids": [str(gid)] if gid is not None else [],
                     "extra": {"role_rank": role_rank},
@@ -247,9 +254,15 @@ def update_character(
     extra_json: str | None = typer.Option(
         None, "--extra-json", help="extra 整体替换 JSON 对象字符串（校验留给服务端 DTO）"
     ),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新背景设定（与 --background 互斥）"
+    ),
 ) -> None:
     """更新角色（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
+    background_text = resolve_content(
+        background, content_file, cli_ctx=cli_ctx, inline_flag="--background"
+    )
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
     extra_dict: dict[str, Any] | None = None
     if role_rank is not None and extra_json is not None:
@@ -275,8 +288,8 @@ def update_character(
             update_fields["name"] = name
         if personality is not None:
             update_fields["personality"] = personality
-        if background is not None:
-            update_fields["background"] = background
+        if background_text is not None:
+            update_fields["background"] = background_text
         if goals is not None:
             update_fields["goals"] = goals
         if group_id is not None:

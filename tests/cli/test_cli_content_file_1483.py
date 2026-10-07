@@ -263,6 +263,25 @@ def test_content_file_long_body_persists(cli_runner, tmp_path, case):
     assert payload[case.field].count("\n") == LONG_BODY.count("\n")
 
 
+@pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
+def test_content_file_crlf_normalized_like_inline_channels(cli_runner, tmp_path, case):
+    """CRLF 文件 → 通用换行读取归一为 LF（与既有文件通道一致，F7 §4.0）。"""
+    path = tmp_path / "body-crlf.txt"
+    crlf_body = "\r\n".join(("甲", "乙", "丙"))
+    path.write_bytes(crlf_body.encode("utf-8"))  # 字节级写入，避免文本模式改写行尾
+    with _mock_kernel(case.module) as client:
+        getattr(client, case.method).return_value = case.stub
+        result = cli_runner.invoke(
+            case.app,
+            [*case.base, "--content-file", str(path)],
+            obj=CliContext(json_output=True),
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = _body_of(client, case.method)
+    assert payload[case.field] == "甲\n乙\n丙"
+
+
 # ---------------------------------------------------------------------------
 # N2 — 互斥：内联正文参数 与 --content-file 同传 → 退出码 2 + 明确文案 + 不写入
 # ---------------------------------------------------------------------------
