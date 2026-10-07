@@ -50,6 +50,7 @@ def _writing_plan_orm_to_domain(orm: WritingPlanORM) -> WritingPlan:
         limits=orm.limits or {},
         progress=orm.progress or {},
         execution_refs=orm.execution_refs or {},
+        tasklist=orm.tasklist or [],
         thread_id=orm.thread_id,
         hitl_payload=orm.hitl_payload,
         progress_reason=orm.progress_reason,
@@ -92,6 +93,7 @@ def _domain_to_writing_plan_orm(plan: WritingPlan) -> WritingPlanORM:
         limits=plan.limits,
         progress=plan.progress,
         execution_refs=plan.execution_refs,
+        tasklist=plan.tasklist,
         thread_id=plan.thread_id,
         hitl_payload=plan.hitl_payload,
         progress_reason=plan.progress_reason,
@@ -161,6 +163,7 @@ class SQLiteBookRepository:
         orm.limits = plan.limits
         orm.progress = plan.progress
         orm.execution_refs = plan.execution_refs
+        orm.tasklist = plan.tasklist
         orm.thread_id = plan.thread_id
         orm.hitl_payload = plan.hitl_payload
         orm.progress_reason = plan.progress_reason

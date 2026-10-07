@@ -712,6 +712,7 @@ class BookService(BookOutlineMixin, BookRunMixin):
             "progress_reason": reason,
             "counters": self._build_counters(plan),
             "steps": steps,
+            "tasklist": list(getattr(plan, "tasklist", None) or []),
             "next": next_dict,
         }
 

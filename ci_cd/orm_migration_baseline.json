@@ -1494,6 +1494,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "tasklist": {
+        "has_server_default": false,
+        "nullable": false
+      },
       "thread_id": {
         "has_server_default": false,
         "nullable": true

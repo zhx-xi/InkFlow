@@ -545,3 +545,56 @@ async def test_list_writing_plans_run_state_roundtrip(repo):
     assert got.progress == {"o-c1": "done", "o-c2": "done"}
     assert got.limits["tokens_used"] == 1234
     assert got.updated_at == plan.updated_at
+
+
+# ── #1439 tasklist 落库（supervisor 任务清单） ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_writing_plan_tasklist_roundtrip(repo):
+    """#1439：``tasklist`` JSON 列落库 → 回读逐字一致（含 finish_book 空锚点条目）。"""
+    tasklist = [
+        {"op": "write_chapter", "outline_id": "o-c1", "title": "第一章"},
+        {"op": "mark_done", "outline_id": "o-c1", "title": "第一章"},
+        {"op": "finish_book", "outline_id": "", "title": ""},
+    ]
+    plan = WritingPlan(
+        id=uuid.uuid4(),
+        project_id=uuid.UUID(int=31),
+        title="清单往返",
+        status="running",
+        tasklist=list(tasklist),
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.add_writing_plan(plan)
+
+    got = await repo.get_writing_plan(plan.id)
+
+    assert got is not None
+    assert got.tasklist == tasklist
+
+
+@pytest.mark.asyncio
+async def test_writing_plan_tasklist_default_empty_then_update(repo):
+    """#1439：未跑 supervisor → ``tasklist`` 默认 []；update 覆盖写回透明。"""
+    plan = WritingPlan(
+        id=uuid.uuid4(),
+        project_id=uuid.UUID(int=32),
+        title="空清单",
+        status="ready",
+        created_at=_utcnow(),
+        updated_at=_utcnow(),
+    )
+    await repo.add_writing_plan(plan)
+
+    got = await repo.get_writing_plan(plan.id)
+    assert got is not None
+    assert got.tasklist == []
+
+    got.tasklist = [{"op": "write_chapter", "outline_id": "o-x", "title": "X"}]
+    await repo.update_writing_plan(got)
+
+    again = await repo.get_writing_plan(plan.id)
+    assert again is not None
+    assert again.tasklist == [{"op": "write_chapter", "outline_id": "o-x", "title": "X"}]

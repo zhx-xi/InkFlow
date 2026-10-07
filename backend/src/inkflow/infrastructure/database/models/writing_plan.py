@@ -94,6 +94,13 @@ class WritingPlanORM(Base):
     )
     """章执行引用 {outline_id: execution_id}（JSON 列）."""
 
+    tasklist: Mapped[list] = mapped_column(
+        LenientJSON(fallback=[]),
+        nullable=False,
+        default=list,
+    )
+    """supervisor 产出的任务清单（JSON 列，#1439：计划 / 决策记录面，不驱动 progress）."""
+
     thread_id: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,

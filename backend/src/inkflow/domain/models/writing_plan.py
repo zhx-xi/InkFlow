@@ -56,6 +56,7 @@ class WritingPlan(BaseModel):
         limits: 多维上限计数器（搂2.4；int 计数 + tokens_warning 布尔告警）.
         progress: 节点进度快照 {outline_id: PlanNodeStatus}（权威进度）.
         execution_refs: 章执行引用 {outline_id: execution_id}.
+        tasklist: supervisor 产出的任务清单（计划 / 决策记录面，不驱动 progress）.
         thread_id: LangGraph checkpoint thread_id（阶段 4 落库）.
         hitl_payload: 卷级 HITL 暂停 payload（waiting_hitl 时非空，§3/§13.3 M8）.
         progress_reason: 章级失败原因摘要（#897：failed/degraded 时非空，其余为 None）.
@@ -76,6 +77,7 @@ class WritingPlan(BaseModel):
     limits: dict[str, int | bool] = Field(default_factory=dict)
     progress: dict[str, str] = Field(default_factory=dict)  # outline_id -> status
     execution_refs: dict[str, str] = Field(default_factory=dict)  # outline_id -> execution_id
+    tasklist: list[dict] = Field(default_factory=list)
     thread_id: str | None = None
     hitl_payload: dict[str, Any] | None = None  # 卷级 HITL 暂停 payload（waiting_hitl 时非空）
     progress_reason: str | None = None  # 章级失败原因摘要（#897，failed/degraded 时非空）

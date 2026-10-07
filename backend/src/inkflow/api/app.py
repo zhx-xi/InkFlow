@@ -108,6 +108,7 @@ from inkflow.core.database import (
 from inkflow.core.log import setup_logging
 from inkflow.core.migrations_chapter_audit import ensure_audit_logs_async_columns
 from inkflow.core.migrations_timeline_era import ensure_timeline_era_columns
+from inkflow.core.migrations_writing_plan import ensure_writing_plan_tasklist_column
 from inkflow.core.startup_reconcile import reconcile_stale_running_plans
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.services.agent_entity_service import seed_builtin_agents
@@ -176,6 +177,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_conversation_title_column)
         await conn.run_sync(ensure_conversations_delete_permission_column)
         await conn.run_sync(ensure_writing_plan_progress_reason_column)
+        await conn.run_sync(ensure_writing_plan_tasklist_column)
         # #1134/ADR-060 批 2：26 张 int PK 表补 uuid 身份列 + 回填 + 唯一索引
         await conn.run_sync(ensure_entity_uuid_columns)
     # #831：角色分组 N:M 迁移需重建 characters 表移除旧 group_id 列。旧列被 FK

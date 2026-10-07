@@ -53,6 +53,7 @@ from inkflow.domain.services.usage_accounting import (
     guard_empty_chapter_content,
     result_usage,
 )
+from inkflow.infrastructure.agent import book_agentic_tasklist as tasklist_helpers
 from inkflow.infrastructure.agent._audit_bridge import (
     audit_event,
     blocking_update,
@@ -69,7 +70,7 @@ from inkflow.infrastructure.agent.book_agentic_helpers import (
     _counter_update,
     _extract_final_content,
     _find_chapter,
-    _first_unaudited_written,
+    _guarded_route,
     _parse_audit,
     _parse_decision,
     _plan_to_dict,
@@ -95,6 +96,7 @@ class BookAgenticState(TypedDict):
     # #1267：审计阻断记录 {outline_id: 原因}——非空即「因审计阻断」，停止后续章节
     audit_blocked: Annotated[dict[str, str], operator.or_]
     route_history: Annotated[list[str], lambda a, b: a + b]
+    tasklist: Annotated[list[dict], operator.add]
     usage: Annotated[list[dict], operator.add]
     steps: int
     consecutive: int
@@ -119,49 +121,11 @@ class BookAgenticHITLInterrupt(Exception):  # noqa: N818  # 测试契约要求�
         self.payload = payload
 
 
-_OPERATION_POOL = [
-    "write_chapter",
-    "audit_chapter",
-    "revise_chapter",
-    "mark_done",
-    "finish_book",
-]
-_CHAPTER_OPS = ("write_chapter", "audit_chapter", "revise_chapter")
 _MAX_DECISION_ATTEMPTS = 4  # 初始 1 次 + 最多 3 次重试（空 content / 解析失败 / LLM 异常）
 _DEFAULT_SUPERVISOR_PROMPT = (
     "你是小说创作管线的 book-level 编排 supervisor，负责书级动态路由决策。"
     "请根据书任务上下文、各章状态、书进度、路由历史与护栏约束，选择下一个操作或结束。"
 )
-
-
-def _guarded_route(
-    state: BookAgenticState, config: AgenticBookConfig, op: str, oid: str
-) -> tuple[str, str] | None:
-    """护栏（LLM 决策后强制，F29 §5.4）：返回 (op, oid)；None → fallback.
-
-    判定顺序：steps 超限 / 振荡（op==last_op 且 consecutive>=max_consecutive）/
-    非法 op 或非法 outline_id → fallback；章节循环超限 → 强制 mark_done；
-    audit_required 且写后未审即 mark_done / 写其它章 → 强制 audit_chapter。
-    """
-    if state.get("steps", 0) >= config.max_steps:
-        return None
-    if op == state.get("last_op", "") and state.get("consecutive", 0) >= config.max_consecutive:
-        return None
-    if op not in _OPERATION_POOL:
-        return None
-    if op in ("write_chapter", "audit_chapter", "revise_chapter", "mark_done") and (
-        _find_chapter(state["chapters"], oid) is None
-    ):
-        return None
-    if op in _CHAPTER_OPS and state.get("chapter_ops", {}).get(oid, 0) >= config.max_chapter_cycles:
-        op = "mark_done"
-    if config.audit_required:
-        unaudited = _first_unaudited_written(state)
-        if op == "mark_done" and unaudited is not None:
-            return ("audit_chapter", unaudited)
-        if op == "write_chapter" and unaudited is not None and unaudited != oid:
-            return ("audit_chapter", unaudited)
-    return (op, oid)
 
 
 def _build_decision_messages(
@@ -196,6 +160,7 @@ def _build_decision_messages(
         f"路由历史：{history}\n"
         f"护栏约束：max_steps={config.max_steps}，max_consecutive={config.max_consecutive}，"
         f"max_chapter_cycles={config.max_chapter_cycles}。"
+        f"{tasklist_helpers.decision_prompt_section(state.get('tasklist', []))}"
     )
     user = (
         '请输出 JSON 决策，格式：{"action": "goto", "op": "<write_chapter|audit_chapter|'
@@ -264,16 +229,31 @@ async def _supervisor_node(state: BookAgenticState, pipeline: BookAgenticPipelin
         # 决策重试耗尽 / 异常：fallback_on_error=false → 直接中止；默认 → 确定性兜底
         if not config.fallback_on_error:
             return Command(
-                update={"finished": True, "status": "aborted", "usage": decision_events},
+                update={
+                    "finished": True,
+                    "status": "aborted",
+                    "usage": decision_events,
+                    "tasklist": [tasklist_helpers.degraded_entry("decision_invalid")],
+                },
                 goto=END,
             )
         return Command(
-            update={"route_history": ["__fallback__"], "usage": decision_events}, goto="fallback"
+            update={
+                "route_history": ["__fallback__"],
+                "usage": decision_events,
+                "tasklist": [tasklist_helpers.degraded_entry("decision_invalid")],
+            },
+            goto="fallback",
         )
     if action == "finish":
         goto = "hitl" if "finish" in config.hitl_points else "finish_book"
         return Command(
-            update={"route_history": ["finish_book"], "usage": decision_events}, goto=goto
+            update={
+                "route_history": ["finish_book"],
+                "usage": decision_events,
+                "tasklist": [tasklist_helpers.make_task_entry("finish_book", "", "")],
+            },
+            goto=goto,
         )
     if action == "fallback":
         return Command(
@@ -296,6 +276,11 @@ async def _supervisor_node(state: BookAgenticState, pipeline: BookAgenticPipelin
             "route_history": [op],
             "target_outline_id": oid,
             "usage": decision_events,
+            "tasklist": [
+                tasklist_helpers.make_task_entry(
+                    op, oid, tasklist_helpers.task_title(state["chapters"], oid)
+                )
+            ],
         },
         goto=op,
     )
@@ -632,6 +617,7 @@ class BookAgenticPipeline:
                 "consecutive": 0,
                 "last_op": "",
                 "finished": False,
+                "tasklist": tasklist_helpers.seed_tasklist(plan),
             },
         )
 
@@ -642,6 +628,7 @@ class BookAgenticPipeline:
                 state, config={"configurable": {"thread_id": self._thread_id}}
             )
             final_dict = cast(dict[str, Any], final)
+            tasklist_helpers.persist_tasklist(plan, final_dict.get("tasklist"))
             interrupts = final_dict.get("__interrupt__")
             if interrupts:
                 raise BookAgenticHITLInterrupt(interrupts[0].value)
@@ -712,6 +699,7 @@ class BookAgenticPipeline:
                 config={"configurable": {"thread_id": self._thread_id}},
             )
             final_dict = cast(dict[str, Any], final)
+            tasklist_helpers.persist_tasklist(self._plan, final_dict.get("tasklist"))
             interrupts = final_dict.get("__interrupt__")
             if interrupts:
                 raise BookAgenticHITLInterrupt(interrupts[0].value)
