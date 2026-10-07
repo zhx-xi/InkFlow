@@ -1,7 +1,7 @@
 # F7: CLI 命令行接口 (cli_interface) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
+> **Spec 版本**: 1.2 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
 > **所属阶段**: Phase 1 — 核心引擎
 > **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（`agent status --json` 走统一信封）
 > **依赖**: F1-F6 全部（对外统一入口）
@@ -90,6 +90,32 @@ def main(
 
 ## 4. 各命令组详细签名
 
+### 4.0 正文双通道通用约定（`--content-file` · v1.2）
+
+**背景**（#1483）：内联正文传参受命令行长度限制（Windows ~32KB），且中文经 PowerShell 管道易 ANSI 误码 → 长正文（长设定 / 长章节正文 / 总纲）只能绕过 CLI 直连 HTTP。
+
+**约定**（适用于 `world` / `chapter` / `outline` / `character` 各 create/update 命令）：
+
+| 项 | 规则 | 修改履历 |
+|----|------|----------|
+| 参数名 | `--content-file <path>` —— 从文件读取该命令的**正文字段**（见下表「目标字段」） | 新增 |
+| 编码 | **显式 UTF-8**（`Path.read_text(encoding="utf-8")`），与宿主 locale / PowerShell 代码页无关 | 新增 |
+| 互斥 | 与同命令内联正文参数**不可同传** → 退出码 **2** + stderr 文案 `<flag> 与 --content-file 不能同时使用`；**不静默取其一、不发生写入** | 新增 |
+| 文件缺失/不可读 | `VALIDATION_ERROR` + 退出码 **1**（人类模式 stderr 文案；`--json` 错误信封），**不泄漏栈回溯** | 新增 |
+| 落库语义 | 文件内容**原样**透传（逐字符，含换行 / 中文），不做 strip、不做编码转换 | 新增 |
+| 公共实现 | 单处 helper `cli/content_input.py::resolve_content`（读文件 + 互斥校验），各命令复用，**禁止逐命令重复实现** | 新增 |
+
+**各命令正文字段映射**（本轮范围 = #1483 点名的四个模块的实体级 create/update）：
+
+| 命令 | 目标字段 | 互斥对象 | 归属 spec | 修改履历 |
+|------|----------|----------|-----------|----------|
+| `world create` / `world update` | `content` | `--content` | F10 §4.1 | 新增 |
+| `chapter create` / `chapter update` | `content` | `--content` | F2 §4 | 新增 |
+| `outline create` / `outline update` | `description` | `--description` | F11 §4.1 | 新增 |
+| `character create` / `character update` | `background` | `--background` | F9 §4.1 | 新增 |
+
+> **范围边界（#1483）**：同模块子实体（`outline point` / `outline arc` / `character group`）与其他模块（`foreshadowing` / `timeline` / `session` / `map` / `knowledge relation` / `agent template`）的 create/update 正文通道**不在本轮**，另开 follow-up 跟踪；其中 `session` 已有 `--context-file`、`agent template` 已有 `--file` / `--roles-json`，避免同义参数混淆（详见 §10）。
+
 ### 4.1 serve
 
 ```bash
@@ -120,15 +146,15 @@ inkflow project delete --id <uuid> [--force] [--permanent] [--json]
 ### 4.3 chapter（委托 F2）
 
 ```bash
-inkflow chapter create --project-id <uuid> --title <str> [--volume-id <uuid>] [--content <str>] [--json]
+inkflow chapter create --project-id <uuid> --title <str> [--volume-id <uuid>] [--content <str>] [--content-file <path>] [--json]
 inkflow chapter list   --project-id <uuid> [--volume-id <uuid>] [--status <draft|writing|review|final>] [--json]
 inkflow chapter get    --id <uuid> [--json]
-inkflow chapter update --id <uuid> [--title <str>] [--content <str>] [--status <str>] [--volume-id <uuid>] [--json]
+inkflow chapter update --id <uuid> [--title <str>] [--content <str>] [--content-file <path>] [--status <str>] [--volume-id <uuid>] [--json]
 inkflow chapter delete --id <uuid> [--force] [--json]
 inkflow chapter move   --id <uuid> [--to-volume <uuid>] [--json]
 ```
 
-参数语义与 F2 spec §4 一致。
+参数语义与 F2 spec §4 一致。`chapter create` / `chapter update` 另支持 `--content-file <path>`（UTF-8 文件读章节正文；与 `--content` 互斥，语义见 §4.0）。
 
 ### 4.4 write（委托 F3，内部调用 F6）
 
@@ -338,6 +364,7 @@ backend/tests/
 | 项 | 原因 |
 |----|------|
 | character / world / outline / audit / export 命令组 | 对应模块 F8-F17 为 Phase 2；命令树按 PRD F7 限定 Phase 1 六组 |
+| `--content-file` 的子实体与其他模块覆盖 | 本轮（#1483）仅覆盖四模块**实体级** create/update；`outline point` / `outline arc` / `character group`、`foreshadowing` / `timeline` / `session` / `map` / `knowledge relation` / `agent template` 另开 follow-up（其中 `session` 已有 `--context-file`、`agent template` 已有 `--file`，避免同义参数混淆） |
 | 交互式 TUI / 富终端界面 | Phase 2 Web UI |
 | 命令历史 / 会话恢复 | Phase 2+ |
 | 自定义补全逻辑（动态值补全） | 依赖模块 Phase 2 落地后按需增强 |
@@ -404,6 +431,7 @@ F7 被依赖:
 | --version / -V | — | 打印版本号（pyproject.toml）并退出 | 版本号 | — | — |
 | --help | 每级命令 | Typer 原生帮助 | 帮助文本（含选项/参数说明） | — | no_args_is_help |
 | --install-completion / --show-completion [bash/zsh/fish/powershell] | — | 安装/显示补全脚本 | 写入 rc 文件 / 脚本内容 | — | 四种 Shell 覆盖 |
+| --content-file <path> | create/update 命令（world/chapter/outline/character，§4.0） | 读取 UTF-8 文件为命令正文字段 | 文件内容原样落入目标字段（逐字符、不 strip、不转码） | 同传内联正文参数 → 退出码 2 + stderr「<flag> 与 --content-file 不能同时使用」（不发生写入）；文件缺失/不可读 → VALIDATION_ERROR + 退出码 1（不泄漏栈回溯） | 显式 UTF-8（与 PowerShell 代码页无关）；长正文（>32KB）可用；与内联参数互斥 |
 | 无参数 | — | — | — | 显示 help，退出码 2 | no_args_is_help=True |
 
 ### 14.2 命令组状态流
@@ -445,5 +473,6 @@ F7 被依赖:
 
 | 版本 | 日期 | 变更 | 关联 |
 |------|------|------|------|
+| 1.2 | 2026-10-07 | §4 新增 **4.0 正文双通道通用约定（`--content-file`）**——统一语义（显式 UTF-8 读文件 / 与内联正文参数互斥 → 退出码 2 / 文件缺失 → VALIDATION_ERROR 退出码 1 / 原样落库）+ 四模块正文字段映射表 + 公共 helper 约定；§4.3 chapter 签名补 `[--content-file <path>]`；§14.1 全局选项状态流补 `--content-file` 行；§10 登记范围边界（子实体与其他模块另开 follow-up） | [#1483](https://github.com/zhx-xi/InkFlow/issues/1483) |
 | 1.1 | 2026-10-06 | §5 补 `agent status --json` 信封条目（`data` = 执行记录；根级 `--json` 与命令级 `--json` 等价；404 → 错误信封）；`agent run --watch` 的 CLI 语义归 F4 §4.2 | [#1478](https://github.com/zhx-xi/InkFlow/issues/1478) |
 | 1.0 | 2026-07-31 | 首版（PR #28） | [#7](https://github.com/zhx-xi/InkFlow/issues/7) |

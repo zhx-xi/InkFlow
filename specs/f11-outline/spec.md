@@ -6,9 +6,11 @@
 
 > **Spec 变更（v1.1，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① Outline/PlotPoint/StoryArc 移除 `is_deleted` 字段（§2.1/§2.2/§2.3）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），三个 restore 端点与 `outline restore` 命令移除（§3/§4/§14）；④ 大纲真删 → 情节点级联物理删除（§6/§7）；⑤ 弧线真删 → 成员 arc_id 置 NULL。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
 >
-> **Spec 版本**: 1.1 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
+> **Spec 变更（v1.2，2026-10-07，#1483）**: `outline create` / `outline update` 新增 `--content-file <path>`（从 UTF-8 文件读取大纲正文=**总体描述**，解决内联 `--description` 受命令行长度限制（Windows ~32KB）且中文经 PowerShell 管道易 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.1 签名与 §14.2 状态流同步；子实体（`point` / `arc`）与其他模块另开 follow-up（F7 §4.0 范围边界）。
+>
+> **Spec 版本**: 1.2 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第三个模块，估算 3-4 人天）
-> **关联 Issues**: [#41](https://github.com/zhx-xi/InkFlow/issues/41)
+> **关联 Issues**: [#41](https://github.com/zhx-xi/InkFlow/issues/41) · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.2 `--content-file`）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）；F2（边界声明，非硬依赖，见 §11）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #58）
@@ -633,7 +635,7 @@ POST /api/v1/outlines/generate
 
 ```bash
 inkflow outline create --project-id <uuid> --name <str> \
-    [--description <str>] [--sort-order <int>] [--json]
+    [--description <str>] [--content-file <path>] [--sort-order <int>] [--json]
 
 inkflow outline list --project-id <uuid> \
     [--search <str>] \
@@ -642,7 +644,7 @@ inkflow outline list --project-id <uuid> \
 inkflow outline get --id <uuid> [--json]          # 含情节点聚合
 
 inkflow outline update --id <uuid> \
-    [--name <str>] [--description <str>] [--sort-order <int>] [--json]
+    [--name <str>] [--description <str>] [--content-file <path>] [--sort-order <int>] [--json]
 
 inkflow outline delete --id <uuid> [--force] [--json]     # v1.1 真删（--permanent 已移除）
 # v1.1 移除: inkflow outline restore --id <uuid> [--json]
@@ -1246,10 +1248,10 @@ F11 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| outline create | 项目存在 | 创建 | 「✅ 大纲创建成功: [第一卷大纲]」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR | — |
+| outline create | 项目存在 | 创建 | 「✅ 大纲创建成功: [第一卷大纲]」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR | --content-file <path> 从 UTF-8 文件读正文=总体描述（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | outline list | 项目存在 | 列表（--search/--sort） | 列表 / JSON | 404 | — |
 | outline get | 大纲存在 | 查询（含情节点聚合） | JSON | 404「大纲不存在」 | — |
-| outline update | 大纲存在 | 更新 | JSON | 404；422 | — |
+| outline update | 大纲存在 | 更新 | JSON | 404；422 | --content-file <path> 从 UTF-8 文件读正文=总体描述（与 --description 互斥 → 退出码 2） |
 | outline delete | 大纲存在 | 二次确认（--force 跳过）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除（真删无软/硬之分） |
 | ~~outline restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 | outline point list | 大纲存在 | 列表 | 列表 / JSON | 404 | — |

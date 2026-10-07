@@ -1,9 +1,9 @@
 # F2: 章节管理 (chapter_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1（#1097 自动建卷 + 章节归卷：卷名复用幂等 + 无卷父保持未分类，2026-09-11；v1.0 2026-07-31）
+> **Spec 版本**: 1.2（#1483 `--content-file` 正文双通道，2026-10-07；v1.1 #1097 自动建卷 + 章节归卷：卷名复用幂等 + 无卷父保持未分类，2026-09-11；v1.0 2026-07-31）
 > **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#2](https://github.com/zhx-xi/InkFlow/issues/2)
+> **关联 Issues**: [#2](https://github.com/zhx-xi/InkFlow/issues/2) · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（`--content-file`）
 > **依赖**: F1 (project_service) 已完成 ✅
 > **状态**: ✅ 已实现（PR #9）
 
@@ -142,13 +142,15 @@ inkflow volume list    --project-id <uuid> [--json]
 inkflow volume delete  --id <uuid> [--force]
 
 # Chapter
-inkflow chapter create  --project-id <uuid> --title <str> [--volume-id <uuid>] [--content <str>] [--json]
+inkflow chapter create  --project-id <uuid> --title <str> [--volume-id <uuid>] [--content <str>] [--content-file <path>] [--json]
 inkflow chapter list    --project-id <uuid> [--volume-id <uuid>] [--status <str>] [--json]
 inkflow chapter get     --id <uuid> [--json]
-inkflow chapter update  --id <uuid> [--title <str>] [--content <str>] [--status <str>] [--writing-requirements <str>] [--json]
+inkflow chapter update  --id <uuid> [--title <str>] [--content <str>] [--content-file <path>] [--status <str>] [--writing-requirements <str>] [--json]
 inkflow chapter move    --id <uuid> [--to-volume <uuid>] [--json]
 inkflow chapter delete  --id <uuid> [--force]
 ```
+
+> **v1.2 变更（#1483）**：`chapter create` / `chapter update` 新增 `--content-file <path>`（从 UTF-8 文件读取章节正文，解决内联传参的 ~32KB 长度限制与中文经 shell 的 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--content` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1；文件内容**原样**落库（不 strip、不转码）。不传 `--content-file` 时行为不变（沿用 `--content` 内联）。
 
 ---
 
@@ -384,5 +386,6 @@ F2 被依赖:
 
 | 版本 | 日期 | 变更 | 关联 |
 |------|------|------|------|
+| 1.2 | 2026-10-07 | §4 chapter create/update 新增 `--content-file <path>`（UTF-8 文件读正文；与 `--content` 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1；原样落库），语义见 F7 §4.0 | [#1483](https://github.com/zhx-xi/InkFlow/issues/1483) |
 | 1.1 | 2026-09-11 | 卷业务规则增「自动建卷归卷」：confirm 自动建章沿大纲卷父按名 ensure 卷（幂等复用）；无卷父保持 NULL；§2.2/§12.4 同步（A7-A9） | [#1097](https://github.com/zhx-xi/InkFlow/issues/1097) |
 | 1.0 | 2026-07-31 | 首版（PR #9） | [#2](https://github.com/zhx-xi/InkFlow/issues/2) |
