@@ -126,6 +126,20 @@ class ReindexBody(BaseModel):
     entity_types: list[EntityType] | None = None
 
 
+class RollbackBody(BaseModel):
+    """批次回滚请求体."""
+
+    batch_id: str
+
+    @field_validator("batch_id")
+    @classmethod
+    def validate_batch_id(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("batch_id 不能为空")
+        return stripped
+
+
 class RetrieveBody(BaseModel):
     """语义检索请求体（spec §3.3）— top_k/min_score 边界校验（§9 API 测试）。"""
 
@@ -256,6 +270,25 @@ async def list_extraction_runs(
         "offset": offset,
         "limit": limit,
     }
+
+
+@router.post("/projects/{project_id}/extractions/rollback")
+@instrument(caller_type="api")
+async def rollback_extraction_batch(
+    project_id: str,
+    data: RollbackBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """按批次整批回滚提取新建的条目（spec §3.1/§5.8.5）——幂等。
+
+    body ``{batch_id}``（空白 → 422 Pydantic 校验）；删除本批**新建**的
+    world_settings + characters 行并返回 ``RollbackResult``；被更新的条目
+    未存快照 → 结果 warnings 明示不可回滚；项目不存在 → 404。
+    """
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    result = await _run_service(svc.rollback_batch(pid, data.batch_id))
+    return result.model_dump(mode="json")
 
 
 @router.post("/projects/{project_id}/vector/reindex")

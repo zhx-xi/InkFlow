@@ -476,6 +476,10 @@
         "has_server_default": false,
         "nullable": false
       },
+      "batch_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "brief": {
         "has_server_default": false,
         "nullable": false
@@ -1408,6 +1412,10 @@
       }
     },
     "world_settings": {
+      "batch_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
       "category": {
         "has_server_default": false,
         "nullable": false

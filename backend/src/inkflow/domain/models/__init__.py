@@ -63,7 +63,9 @@ from inkflow.domain.models.extraction import (
     ExtractionRun,
     ExtractionStatus,
     ExtractionType,
+    Granularity,
     ReindexResult,
+    RollbackResult,
 )
 from inkflow.domain.models.foreshadowing import (
     ExtractedForeshadowing,
@@ -211,6 +213,7 @@ __all__ = [
     "GeneratedArc",
     "GeneratedOutline",
     "GeneratedPlotPoint",
+    "Granularity",
     "GraphEdge",
     "GraphNode",
     "KnowledgeGraphView",
@@ -236,6 +239,7 @@ __all__ = [
     "RelationSource",
     "RevisionRequest",
     "RoleOverride",
+    "RollbackResult",
     "Session",
     "SessionComplete",
     "SessionCreate",

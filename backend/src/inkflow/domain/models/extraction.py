@@ -47,6 +47,13 @@ class ExtractionType(StrEnum):
     KNOWLEDGE_RELATION = "knowledge_relation"
 
 
+class Granularity(StrEnum):
+    """提取粒度（仅 character / setting 生效）."""
+
+    FINE = "fine"
+    COARSE = "coarse"
+
+
 class ExtractionStatus(StrEnum):
     """统一结果状态 — MVP 产出 SUCCESS / SKIPPED；ERROR 预留（§5.3）.
 
@@ -79,6 +86,8 @@ class ExtractionRequest(BaseModel):
         model: LLM 类型: 覆盖项目默认模型（provider/model_name）.
         index: 提取成功后自动索引本次产物（RAG，§5.6）.
         force: 忽略增量 skip，强制重跑（§5.2）.
+        granularity: 提取粒度（仅 character / setting 生效，§5.8.3）.
+        dry_run: 仅预览不落库（仅 character / setting 生效，§5.8.4）.
     """
 
     project_id: uuid.UUID
@@ -93,6 +102,8 @@ class ExtractionRequest(BaseModel):
     model: str | None = None  # LLM 类型: 覆盖项目默认模型（provider/model_name）
     index: bool = False  # 提取成功后自动索引本次产物（RAG，§5.6）
     force: bool = False  # 忽略增量 skip，强制重跑（§5.2）
+    granularity: Granularity = Granularity.FINE  # #1485：提取粒度（仅 character/setting）
+    dry_run: bool = False  # #1485：预览不落库（仅 character/setting）
 
     @field_validator("text")
     @classmethod
@@ -155,6 +166,9 @@ class ExtractionResult(BaseModel):
         model: 实际使用的 LLM 模型（LLM 类型；timeline 关闭时为 None）.
         indexed: 是否执行了向量索引（request.index 且类型支持；
             timeline 关闭时恒 False）.
+        batch_id: 本次 run 的批次标识（#1485，§5.8.5）——非 dry_run 时
+            形如 ``ext-<16 位 hex>``，作为新建条目的 batch_id 落库；
+            dry_run（预览）恒 None.
         detail: 各类型原始结果 model_dump（§5.3），含实体列表与冲突明细.
     """
 
@@ -168,6 +182,7 @@ class ExtractionResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)  # 各管线 warning 汇总
     model: str | None = None  # 实际使用的 LLM 模型（LLM 类型；timeline 关闭时为 None）
     indexed: bool = False  # 本次是否执行了向量索引（request.index 且类型支持）
+    batch_id: str | None = None  # #1485：本次 run 批次标识（dry_run 恒 None）
     detail: dict[str, Any] = Field(default_factory=dict)  # 各类型原始结果 model_dump（§5.3）
 
 
@@ -230,3 +245,11 @@ class ReindexResult(BaseModel):
     indexed: int  # 索引的实体总数（含 upsert 覆盖）
     warnings: list[str] = Field(default_factory=list)  # warning 汇总
     collections_recreated: bool = False  # 维度不匹配重建标志（#276）
+
+
+class RollbackResult(BaseModel):
+    """批次回滚结果."""
+
+    batch_id: str
+    deleted: int = 0
+    warnings: list[str] = []

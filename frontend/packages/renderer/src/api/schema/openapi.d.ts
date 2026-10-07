@@ -2269,6 +2269,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/extractions/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rollback Extraction Batch
+         * @description 按批次整批回滚提取新建的条目（spec §3.1/§5.8.5）——幂等。
+         *
+         *     body ``{batch_id}``（空白 → 422 Pydantic 校验）；删除本批**新建**的
+         *     world_settings + characters 行并返回 ``RollbackResult``；被更新的条目
+         *     未存快照 → 结果 warnings 明示不可回滚；项目不存在 → 404。
+         */
+        post: operations["rollback_extraction_batch_api_v1_projects__project_id__extractions_rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extractions/runs": {
         parameters: {
             query?: never;
@@ -4659,6 +4683,8 @@ export interface components {
          *         model: LLM 类型: 覆盖项目默认模型（provider/model_name）.
          *         index: 提取成功后自动索引本次产物（RAG，§5.6）.
          *         force: 忽略增量 skip，强制重跑（§5.2）.
+         *         granularity: 提取粒度（仅 character / setting 生效，§5.8.3）.
+         *         dry_run: 仅预览不落库（仅 character / setting 生效，§5.8.4）.
          */
         ExtractionRequest: {
             /** Auto Extract */
@@ -4666,10 +4692,17 @@ export interface components {
             /** Chapter Ids */
             chapter_ids?: string[] | null;
             /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /**
              * Force
              * @default false
              */
             force: boolean;
+            /** @default fine */
+            granularity: components["schemas"]["Granularity"];
             /**
              * Include Flashbacks
              * @default true
@@ -4773,6 +4806,12 @@ export interface components {
             /** Ops */
             ops?: components["schemas"]["ToolOp"][];
         };
+        /**
+         * Granularity
+         * @description 提取粒度（仅 character / setting 生效）.
+         * @enum {string}
+         */
+        Granularity: "fine" | "coarse";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5786,6 +5825,14 @@ export interface components {
             prompt?: string | null;
             /** Temperature */
             temperature?: number | null;
+        };
+        /**
+         * RollbackBody
+         * @description 批次回滚请求体.
+         */
+        RollbackBody: {
+            /** Batch Id */
+            batch_id: string;
         };
         /**
          * SearchEntityType
@@ -11278,6 +11325,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollback_extraction_batch_api_v1_projects__project_id__extractions_rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

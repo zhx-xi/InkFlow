@@ -114,6 +114,8 @@ class ExtractionRequest(BaseModel):
     model: str | None = None                 # LLM 类型: 覆盖项目默认模型（provider/model_name）
     index: bool = False                      # 提取成功后自动索引本次产物（RAG，§5.6）
     force: bool = False                      # 忽略增量 skip，强制重跑（§5.2）
+    granularity: Granularity = Granularity.FINE  # character/setting: 提取粒度（§5.8.3；其他类型非 FINE → 422）
+    dry_run: bool = False                    # character/setting: 预览不落库（§5.8.4；其他类型 true → 422）
 
     @field_validator("text")
     @classmethod
@@ -148,6 +150,13 @@ class ExtractionRequest(BaseModel):
         return v
 
 
+class Granularity(StrEnum):
+    """提取粒度（§5.8.3；仅 character / setting 生效，其他类型非 FINE → 422）."""
+
+    FINE = "fine"      # 默认：LLM 输出几条落几条
+    COARSE = "coarse"  # 粗粒度：模板注入粗粒度指令 + 每源条目上限（§5.8.3）
+
+
 class ExtractionStatus(StrEnum):
     """统一结果状态 — MVP 产出 SUCCESS / SKIPPED；ERROR 预留（§5.3）."""
 
@@ -169,6 +178,7 @@ class ExtractionResult(BaseModel):
     warnings: list[str] = []
     model: str | None = None            # 实际使用的 LLM 模型（LLM 类型；timeline 关闭时为 None）
     indexed: bool = False               # 本次是否执行了向量索引（request.index 且类型支持）
+    batch_id: str | None = None         # 本次 run 落库批次标识（§5.8.5；dry_run / 无写入时 None）
     detail: dict[str, Any] = Field(default_factory=dict)  # 各类型原始结果 model_dump（§5.3）
 
 
@@ -178,6 +188,14 @@ class ReindexResult(BaseModel):
     project_id: uuid.UUID
     entity_types: list[EntityType]      # 实际处理的实体类型
     indexed: int                        # 索引的实体总数（含 upsert 覆盖）
+    warnings: list[str] = []
+
+
+class RollbackResult(BaseModel):
+    """批次回滚结果（§5.8.5）."""
+
+    batch_id: str
+    deleted: int = 0                    # 实际删除的条目数（幂等：重复回滚 → 0）
     warnings: list[str] = []
 ```
 
@@ -405,7 +423,7 @@ class ReindexResult(BaseModel):
 
 端点风格沿用既有约定：**统一提取入口扁平**（`POST /api/v1/extract`——type 是资源维度而非项目维度，镜像 F9 `/characters/extract` 扁平先例）；**runs 查询与向量动作嵌套项目路径**（项目级资源）。错误响应格式沿用 F1/F2/F9-F13（`{"detail": "..."}` 404/422；LLM/管线失败 500）。
 
-### 3.1 端点总览（6 个，实现核对补全 2026-08-29）
+### 3.1 端点总览（7 个，实现核对补全 2026-08-29；#1485 增 rollback）
 
 | 方法 | 路径 | 用途 | 请求体 | 响应 |
 |------|------|------|--------|------|
@@ -415,6 +433,7 @@ class ReindexResult(BaseModel):
 | POST | `/api/v1/projects/{project_id}/vector/retrieve` | 语义检索（RAG） | `{query, entity_types?, top_k?, min_score?}` | 200 + `{items: [RetrievedEntity]}` |
 | GET | `/api/v1/projects/{project_id}/vector/status` | 向量库状态（stale 原因，含 chunking_changed） | — | 200 + `{stale, reason?}`（#276） |
 | PUT | `/api/v1/vector/embedding-model` | 切换激活 embedding 模型 | `{provider, model_id}`（必填校验） | 200（#525；404「Provider 不存在」/「模型不存在」，422 缺失） |
+| POST | `/api/v1/projects/{project_id}/extractions/rollback` | 按批次整批回滚本次提取**新建**的条目（§5.8.5，幂等） | `{batch_id}` | 200 + RollbackResult |
 
 > `/api/v1/extract` 为**静态路径段**，无与既有路由的歧义（F10 §3.1 的 extract 路径歧义处理不适用——本端点无 `{resource_id}` 兄弟段）。
 > 切片配置（mode/chunk_size/overlap）经 F32 `GET/PATCH /settings` 读写（§5.6.3，F32 已有端点），本 spec **不新增 API 端点**；`vector/status`（#276）的 stale reason 已含 `chunking_changed`（§5.6.5）。
@@ -653,7 +672,9 @@ inkflow extract run --project-id <uuid> \
     [--text <str> | --text-file <path> | --chapters <uuid,uuid,...>] \
     [--prompt <str>] [--num-chapters <int>] [--no-save] \
     [--auto-extract | --no-auto-extract] \
-    [--model <str>] [--index] [--force] [--json]
+    [--model <str>] [--index] [--force]
+    [--granularity <fine|coarse>] [--dry-run] [--json]
+    # --granularity / --dry-run 仅 character / setting 生效（§5.8.3/§5.8.4）
     # --text/--text-file/--chapters 三选一（互斥，同 F9 character extract 先例；
     #   timeline 设置项开启时同样使用，见 §6.4）
     # --no-save 仅 outline 生效（透传 F11 save=false，仅预览不落库）
@@ -666,6 +687,9 @@ inkflow extract run --project-id <uuid> \
 
 inkflow extract status --project-id <uuid> [--type <character|setting|outline|timeline|foreshadowing|style|knowledge_relation>] [--json]
     # 列出该项目各 (type, 源) 的最近一次 run 状态（§2.3）
+
+inkflow extract rollback --project-id <uuid> --batch-id <str> [--json]
+    # 按批次整批回滚：删除该项目下该 batch_id 的新建条目（幂等；§5.8.5）
 ```
 
 ### 4.2 vector 组（RAG 索引与检索）
@@ -1211,6 +1235,63 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 
 ---
 
+### 5.8 提取写入策略（类别归属 / 近义合并 / 粒度 / dry-run / 批次回滚 —— #1485）
+
+> **背景**：#1485 实测 `extract run --type character|setting` 大幅冲稀设定库（角色 24→76、
+> 世界观 105→401），且类别归属被压平（提取条目落在项目分类体系之外，GUI 分类视图里被压平）。
+> 本节定义五条收敛策略，**仅对 character / setting 生效**（其他类型传 `granularity != fine`
+> 或 `dry_run=true` → 422，§6.4）。
+
+#### 5.8.1 类别归属（setting）
+
+- 提取前读取项目已有分类清单（`WorldRepositoryProtocol.list_world_categories`）；
+  分类清单不可用（仓储为 Mock / 未实现该方法 / 非列表返回）→ **跳过归类归一**（保持既有语义）。
+- 渲染模板时把清单以 `{categories}` 变量注入（空清单 →「（无）」），引导 LLM 从既有分类中选择。
+- **落库前归一**：LLM 输出 `category`（strip 后）命中已有分类集合 → 原样落库；否则 → 落空串
+  （未分类）+ warning「类别「X」不在项目分类中，已归为未分类」。
+- 项目**无任何分类**时不做归一（原样落库）——避免在无受控词表的项目上把类别一律清空。
+
+#### 5.8.2 合并而非新建（character / setting）
+
+条目匹配按三档顺序（`_normalize_name` = 去首尾及**全部内部空白**）：
+
+| 档 | 判据 | 行为 |
+|----|------|------|
+| ① 同名 | 归一化后相等 | 走既有「非空字段覆盖」更新（幂等：无变化不写、不计 updated） |
+| ② 近义 | 归一化后**互为子串**，且较短者长度 ≥ 2 且 ≥ 较长者长度的 50% | 合并到已有条目：保留已有 `name` / `category` / `parent_id` / `extra`，`content` 以 `\n\n` 追加（已包含该段则幂等跳过）+ warning「条目「B」与已有「A」近义，已合并」 |
+| ③ 无匹配 | 其余 | 新建 |
+
+> 反向守护：归一化后无包含关系的条目**必须**新建，不得误合并。
+
+#### 5.8.3 粒度控制
+
+`granularity` ∈ {`fine`（默认）, `coarse`}：
+
+- `fine`：现状（LLM 输出几条落几条）。
+- `coarse`：① 模板注入粗粒度指令（`{granularity_hint}` 变量）；
+  ② **确定性上限** —— 每源解析后、合并前按 LLM 输出顺序取前 `_COARSE_MAX_ITEMS`（5）条，
+  超出部分丢弃 + warning「coarse 粒度：丢弃 N 条超出上限的条目」。
+
+同一 LLM 输出下 `coarse` 落库条目数**严格少于** `fine`（可测断言，见 §9）。
+
+#### 5.8.4 预览（dry-run）
+
+`dry_run=true`：执行 LLM + 解析 + 合并决策，但**不写实体、不写 run 表**；返回
+`created` / `updated` 计数与 `detail`（含将落库的条目清单），`batch_id=None`。
+**忽略增量 skip**（恒执行，保证预览有效）——预览会真实调用 LLM（成本提示见 §10）。
+
+#### 5.8.5 批次标识与整批回滚
+
+- 非 dry_run 落库时生成 `batch_id = f"ext-{uuid4().hex[:16]}"`，**同一 request 的全部源共享**，
+  作为**新建**条目上的 `batch_id` 列落库（`world_settings.batch_id` / `characters.batch_id`，
+  可空 TEXT，§8）。被**更新**的条目不改写其原 `batch_id`（保护更早批次的可回滚性）。
+- 回滚：`POST /api/v1/projects/{project_id}/extractions/rollback` body `{"batch_id": "..."}`
+  → 单事务删除该项目下该 `batch_id` 的条目（`DELETE WHERE project_id=? AND batch_id=?`），
+  返回 `RollbackResult{batch_id, deleted, warnings}`。
+- **幂等**：重复回滚 → `deleted=0`，不报错。
+- **不恢复被更新条目的历史值**（未存快照）→ 返回 warning 提示「本次 run 的更新条目不回滚」。
+- 回滚替代「按 `created_at` 小时窗口猜时间」的历史做法（#1485 现象节的处置记录）。
+
 ## 6. 提取类型注册表与增量状态语义
 
 （对应 F9 §6「关系图谱与分组管理规则」的位置；F14 无图谱，本节承载类型注册、输入约束与 run 状态语义）
@@ -1274,9 +1355,10 @@ _HANDLERS: dict[ExtractionType, ...] = {
 
 ### 6.4 各类型输入约束（统一接口的类型相关校验）
 
-| 类型 | text/chapter_ids | prompt/num_chapters/save | include_flashbacks | auto_extract | index |
-|------|------------------|--------------------------|--------------------|--------------|-------|
-| character / setting / foreshadowing | **必须提供其一**（互斥） | 无效（422） | 无效（422） | 无效（422） | ✅ 生效 |
+| 类型 | text/chapter_ids | prompt/num_chapters/save | include_flashbacks | auto_extract | index | granularity | dry_run |
+|------|------------------|--------------------------|--------------------|--------------|-------|-------------|---------|
+| character / setting | **必须提供其一**（互斥） | 无效（422） | 无效（422） | 无效（422） | ✅ 生效 | ✅ 生效（§5.8.3） | ✅ 生效（§5.8.4） |
+| foreshadowing | **必须提供其一**（互斥） | 无效（422） | 无效（422） | 无效（422） | ✅ 生效 | 无效（422） | 无效（422） |
 | outline | 无效（422） | prompt 可选 / num_chapters 1-100 / save 默认 true | 无效（422） | 无效（422） | 忽略 + warning |
 | timeline | 开启：**必须提供其一**（互斥，同 character）；关闭：无效（422） | 无效（422） | ✅ 透传 F12（关闭语义） | ✅ 仅 timeline 生效（bool \| None；None=跟随项目配置） | ✅ 生效（开启）/ 忽略 + warning（关闭） |
 | style | **必须提供其一**（互斥，同 character/setting/foreshadowing——F16 落地后语义） | 无效（422） | 无效（422） | 无效（422） | 忽略 + warning「style 类型不支持自动索引」 |
@@ -1341,6 +1423,12 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | 切片：LLM analyzer 失败 / 未配置对话模型 / 超时 | 降级段落切片 + logger.warning，reindex 不中断（§5.6.7） |
 | 检索：旧向量数据缺新元数据键（chapter_x 等） | `_map_retrieved` `.get()` fallback 不崩（§5.6.4） |
 | 切片配置变更 | stale（chunking_changed）→ 提示重新向量化；重建前检索继续用旧向量（200 非空，§5.6.5） |
+| 非 character/setting 类型传 granularity != fine / dry_run=true（#1485） | 422: "granularity/dry_run 仅支持 character/setting 类型" |
+| character/setting `dry_run=true`（#1485） | 200 + ExtractionResult（created/updated = 「将写入」计数，`batch_id=null`；**DB 零写入**——实体与 run 表均不落） |
+| setting 提取：LLM 类别不在项目已有分类中（#1485） | 落空串（未分类）+ warning「类别「X」不在项目分类中，已归为未分类」；项目无分类时不做归一 |
+| 提取条目与已有条目近义（#1485） | 合并到已有条目（content 追加 + warning），**不新建**；条目总数不因重复提取线性增长 |
+| 回滚不存在 / 已回滚的 batch_id（#1485） | 200 + RollbackResult(deleted=0)（幂等，不报错） |
+| 回滚 batch 含此前批次条目（#1485） | 不受影响——batch_id 精确匹配；被更新的条目不携带本批 batch_id |
 
 ---
 
@@ -1743,6 +1831,7 @@ F14 被依赖:
 | GET /projects/{project_id}/extractions/runs | 项目存在 | 增量状态列表（type 过滤 + 分页，run_at DESC） | 200 + {items,total,offset,limit}（ExtractionRun：content_hash/status/created_count/updated_count/error/model/indexed） | 404「项目不存在」 | limit ge=1 le=100；status=success/skipped/error（error 行仅防御保留——失败源实际不写 run，无 run 行=缺口） |
 | POST /projects/{project_id}/vector/reindex | 项目存在 | 全量重建索引（F9-F13 档案 + F2 章节 → 向量库，幂等 upsert） | 200 + ReindexResult（entity_types/indexed/warnings） | 404「项目不存在」；500「RAG 向量库不可用: ...」（未装配/BGE 下载失败/chroma 错误） | entity_types 缺省=全部 5 种；空项目 → indexed=0；切片配置经 app_settings（reindex 不加覆盖参数）；切片 LLM analyzer 失败 → 降级段落切片不中断 |
 | POST /projects/{project_id}/vector/retrieve | 项目存在 | 语义检索（query/entity_types/top_k/min_score） | 200 + {items: [RetrievedEntity]}（relevance_score 降序） | 404「项目不存在」；422（top_k 越界/min_score 越界/query 空或超 500）；500「RAG 向量库不可用: ...」 | 无结果/min_score 过滤全空 → 200 空 items；旧向量缺新元数据键 → .get() fallback 不崩；切片配置变更 → stale（chunking_changed）提示重新向量化 |
+| POST /projects/{project_id}/extractions/rollback | 项目存在 | 按 batch_id 单事务删除本次新建条目（§5.8.5） | 200 + RollbackResult{batch_id, deleted, warnings} | 404「项目不存在」；422 batch_id 空白 | 幂等（重复回滚 deleted=0 不报错）；更新条目不改写 batch_id 故不受影响 |
 
 ### 14.2 CLI 命令状态流
 
@@ -1752,6 +1841,7 @@ F14 被依赖:
 | extract status | 项目存在 | 列出各 (type, 源) 最近一次 run 状态（--type 过滤） | 「📋 提取状态（project ...）: [character] <source_key> — ✅ success (..., 新增 2 更新 1, 已索引)」/「⏭ skipped」/「❌ error」 | 404 | 缺 run 行 = 失败缺口（error 行仅历史兼容/防御保留） |
 | vector reindex | 项目存在 | 全量重建索引（--type 可重复指定，缺省全部 5 种） | 「✅ 索引完成: character/setting/... 共 87 条」/ --json | 404；500 RAG_ERROR | 幂等（全量 upsert） |
 | vector retrieve | 项目存在 | 语义检索（--top-k 默认 10；--min-score 默认 0.0） | 「🔍 检索结果 (query: ..., top 5): 1. [foreshadowing] 林晚的身世 — 0.82」；--json 信封 | 404；422 VALIDATION_ERROR；500 RAG_ERROR | 缺 --query → 退出码 2 |
+| extract rollback（#1485） | 项目存在 | 按 --batch-id 整批回滚新建条目 | 「↩️ 已回滚批次 ext-xxxx：删除 N 条」/ --json RollbackResult | 404 NOT_FOUND；422 VALIDATION_ERROR（batch_id 空白） | 幂等（重复回滚 deleted=0）；缺 --batch-id → 退出码 2 |
 
 > 错误码：NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / EXTRACTION_ERROR / RAG_ERROR / DB_ERROR（F14 是首个同时携带 LLM/管线/RAG 三类错误的模块）。
 
@@ -1779,6 +1869,14 @@ F14 被依赖:
 - A6：index=true 但 RAG 未装配 → 500「RAG 向量库不可用: ...」；非 RAG 功能不受影响（index=false 正常）
 - A7：timeline 设置项关闭 + 携带 chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」
 - A8：手动模式重复提交同一文本 → 200 status=skipped（source_key=manual 同 hash）
+- A9（#1485）：setting 提取在已有分类「修炼体系」的项目上 → 产出的条目类别命中已有分类；
+  LLM 给出项目分类之外的类别 → 落空串 + warning（不再原样落库）
+- A10（#1485）：同一次 request 的全部新建条目共享同一 `batch_id`；
+  `extract rollback --batch-id <该值>` → 删除全部新建条目且不影响此前数据；重复回滚 → deleted=0
+- A11（#1485）：同一 mock LLM 输出下 `--granularity coarse` 落库条目数严格少于 `fine`
+- A12（#1485）：`--dry-run` → 返回 created/updated 计数且 DB 零写入（实体计数 + run 表回读均不变）
+- A13（#1485）：已有条目「A」+ LLM 输出近义条目「A 的近似名」 → 走合并更新（created=0/updated=1），
+  条目总数不增；无关条目仍新建（反向守护）
 
 ### 14.5 Spec 漂移标注（追加时核对实现 backend/src/inkflow/）
 
@@ -1786,3 +1884,12 @@ F14 被依赖:
 - **端点面漂移（已补全 2026-08-29）**：原 spec §3.1 声明 4 端点；实现 extractions.py 另有 `GET /vector/status`（#276）+ `PUT /vector/embedding-model`（#525）——**已补入 §3.1（共 6 端点）**。
 - **LLM 错误文案漂移（轻微）**：spec §3.4 示例 `LLM 调用失败: ...`；实现固定「LLM 调用失败，请稍后重试」（同 F9-F11）——以实现为准，spec 示例待后续同步（cosmetic）。
 - **增量核心语义无漂移**：hash skip / force / 逐源 run upsert（success）/ 全 skip 首源 upsert skipped / 失败即异常（失败源无 run 行）/ 断点续跑，与 spec §5.2/§6.2 完全一致（已逐行核对 extraction_service.py `_resolve_sources`/`_run_sources`）。
+
+---
+
+## 15. 修改履历
+
+| 日期 | 变更 | 依据 |
+|------|------|------|
+| 2026-10-07 | 新增 §5.8「提取写入策略」五条（类别归属归一 / 近义合并 / 粒度控制 / dry-run 预览 / batch_id 整批回滚）；`ExtractionRequest` 增 `granularity`·`dry_run`，`ExtractionResult` 增 `batch_id`，新增 `Granularity`·`RollbackResult`；§3.1 端点 6 → 7（新增 rollback）；§4.1 增 `--granularity`/`--dry-run` 与 `extract rollback` 命令；§6.4 输入约束表增 `granularity`/`dry_run` 两列 | #1485（0.17.0 W5b） |
+| 2026-10-07 | 边界：新列 `world_settings.batch_id` / `characters.batch_id`（可空 TEXT）+ 幂等迁移三件套 | #1485（0.17.0 W5b） |

@@ -19,7 +19,8 @@ system_prompt: |
   - scene：场景角色（仅出现在特定场景，无独立支线）
   - walkon：一次性角色（仅被提及或露一次面，如路人、店小二）
   characters 中不要包含重复的角色名。
+  {granularity_hint}
 human_prompt: |
   章节文本：
   {text}
-variables: [text]
+variables: [text, granularity_hint]

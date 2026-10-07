@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from inkflow.core.config import config
+from inkflow.domain.models.extraction import Granularity
 from inkflow.domain.models.project import Project
 from inkflow.domain.models.world import (
     DEFAULT_WORLD_ROOT_NAME,
@@ -671,11 +672,21 @@ class WorldService:
 
     # ── AI 提取入口（spec §5.1 步骤 ①）────────────────────────────
 
-    async def extract(self, request: WorldExtractRequest) -> WorldExtractionResult:
+    async def extract(
+        self,
+        request: WorldExtractRequest,
+        *,
+        granularity: Granularity = Granularity.FINE,
+        dry_run: bool = False,
+        batch_id: str | None = None,
+    ) -> WorldExtractionResult:
         """AI 提取世界观条目 — 校验项目存在后委托 WorldExtractor.
 
         Args:
             request: 提取请求（project_id / text / 可选 model 覆盖）.
+            granularity: 提取粒度（#1485 §5.8.3；透传 WorldExtractor）.
+            dry_run: 仅预览不落库（#1485 §5.8.4；透传 WorldExtractor）.
+            batch_id: 本批新建条目的批次标识（#1485 §5.8.5；透传 WorldExtractor）.
 
         Returns:
             合并落库后的提取报告.
@@ -699,4 +710,15 @@ class WorldService:
         return await self._extractor.extract(
             request,
             default_model=resolve_model(None, project.config.model, self._llm_default_model) or "",
+            granularity=granularity,
+            dry_run=dry_run,
+            batch_id=batch_id,
         )
+
+    async def rollback_batch(self, project_id: uuid.UUID, batch_id: str) -> int:
+        """按批次回滚本服务对应表的条目；返回删除行数。
+
+        #1485 §5.8.5: 仅删本批**新建**条目（batch_id 锚点），物理删除 + 幂等
+        （无匹配 → 0）；被更新的条目未存快照，不回滚历史值。
+        """
+        return await self._repo.delete_by_batch(project_id, batch_id)

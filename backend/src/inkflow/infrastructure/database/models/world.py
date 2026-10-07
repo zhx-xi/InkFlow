@@ -111,6 +111,9 @@ class WorldSettingORM(EntityUuidMixin, Base):
     )
     """扩展字典（来源章节、标签、别名等 Phase 2+ 字段预留）."""
 
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """提取批次标识（#1485 §5.8.5；NULL = 非提取产物 / 历史存量行）."""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

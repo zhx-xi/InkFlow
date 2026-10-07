@@ -2015,7 +2015,7 @@
         "type": "object"
       },
       "ExtractionRequest": {
-        "description": "统一提取请求（§2.2）— 类型相关参数约束见 §6.4 输入约束表.\n\nAttributes:\n    project_id: 所属项目 UUID.\n    type: 提取类型（7 种，决定参数语义与分发目标）.\n    text: 手动文本（与 chapter_ids 互斥，≤ 50000 字符；仅\n        character/setting/foreshadowing 及 timeline 开启时使用）.\n    chapter_ids: 章节模式（从 F2 读取内容，增量追踪，≤ 100 章）.\n    prompt: outline: 生成约束（透传 F11）.\n    num_chapters: outline: 规划章节数 1-100（透传 F11）.\n    save: outline: 落库开关（透传 F11；False=仅预览）.\n    include_flashbacks: timeline: 透传 F12 check_consistency（关闭语义）.\n    auto_extract: timeline: TIMELINE 设置项覆盖（覆盖项目配置\n        timeline_auto_extract，§2.6；None=跟随项目配置）.\n    model: LLM 类型: 覆盖项目默认模型（provider/model_name）.\n    index: 提取成功后自动索引本次产物（RAG，§5.6）.\n    force: 忽略增量 skip，强制重跑（§5.2）.",
+        "description": "统一提取请求（§2.2）— 类型相关参数约束见 §6.4 输入约束表.\n\nAttributes:\n    project_id: 所属项目 UUID.\n    type: 提取类型（7 种，决定参数语义与分发目标）.\n    text: 手动文本（与 chapter_ids 互斥，≤ 50000 字符；仅\n        character/setting/foreshadowing 及 timeline 开启时使用）.\n    chapter_ids: 章节模式（从 F2 读取内容，增量追踪，≤ 100 章）.\n    prompt: outline: 生成约束（透传 F11）.\n    num_chapters: outline: 规划章节数 1-100（透传 F11）.\n    save: outline: 落库开关（透传 F11；False=仅预览）.\n    include_flashbacks: timeline: 透传 F12 check_consistency（关闭语义）.\n    auto_extract: timeline: TIMELINE 设置项覆盖（覆盖项目配置\n        timeline_auto_extract，§2.6；None=跟随项目配置）.\n    model: LLM 类型: 覆盖项目默认模型（provider/model_name）.\n    index: 提取成功后自动索引本次产物（RAG，§5.6）.\n    force: 忽略增量 skip，强制重跑（§5.2）.\n    granularity: 提取粒度（仅 character / setting 生效，§5.8.3）.\n    dry_run: 仅预览不落库（仅 character / setting 生效，§5.8.4）.",
         "properties": {
           "auto_extract": {
             "anyOf": [
@@ -2043,10 +2043,19 @@
             ],
             "title": "Chapter Ids"
           },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
           "force": {
             "default": false,
             "title": "Force",
             "type": "boolean"
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/Granularity",
+            "default": "fine"
           },
           "include_flashbacks": {
             "default": true,
@@ -2263,6 +2272,15 @@
         ],
         "title": "GrantEntry",
         "type": "object"
+      },
+      "Granularity": {
+        "description": "提取粒度（仅 character / setting 生效）.",
+        "enum": [
+          "fine",
+          "coarse"
+        ],
+        "title": "Granularity",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -4536,6 +4554,20 @@
           }
         },
         "title": "RoleTemplate",
+        "type": "object"
+      },
+      "RollbackBody": {
+        "description": "批次回滚请求体.",
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id"
+        ],
+        "title": "RollbackBody",
         "type": "object"
       },
       "SearchEntityType": {
@@ -13002,6 +13034,57 @@
         "summary": "Export Project",
         "tags": [
           "导出"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extractions/rollback": {
+      "post": {
+        "description": "按批次整批回滚提取新建的条目（spec §3.1/§5.8.5）——幂等。\n\nbody ``{batch_id}``（空白 → 422 Pydantic 校验）；删除本批**新建**的\nworld_settings + characters 行并返回 ``RollbackResult``；被更新的条目\n未存快照 → 结果 warnings 明示不可回滚；项目不存在 → 404。",
+        "operationId": "rollback_extraction_batch_api_v1_projects__project_id__extractions_rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Extraction Batch",
+        "tags": [
+          "提取"
         ]
       }
     },

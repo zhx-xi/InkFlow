@@ -31,6 +31,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from inkflow.domain.models.extraction import Granularity
 from inkflow.domain.models.world import (
     ExtractedWorldSetting,
     WorldExtractionResult,
@@ -53,10 +54,31 @@ _MAX_PARSE_RETRIES = 2
 _TEMPERATURE = 0.2
 """结构化输出固定低温（spec §5.5，不对外暴露）。"""
 
+_COARSE_MAX_ITEMS = 5
+"""coarse 粒度每源条目上限（#1485 §5.8.3 ②，确定性上限）。"""
+
+_COARSE_HINT = "只提取最重要的 5 条粗粒度条目，把相关的小点合并到同一条；不要拆分细节。"
+"""coarse 粒度注入模板的指令（#1485 §5.8.3 ①，模板变量 granularity_hint）。"""
+
 
 def _utcnow() -> datetime:
     """返回当前 UTC 时间（时区感知）。"""
     return datetime.now(UTC)
+
+
+def _normalize_name(name: str) -> str:
+    """条目名归一化：去掉全部空白字符（含全角空格 \\u3000）后 strip（#1485 §5.8.2）。"""
+    return "".join(name.split())
+
+
+def _is_synonym(normalized: str, other: str) -> bool:
+    """近义判据（#1485 §5.8.2 档②）：归一化名互为子串，且较短者 ≥2 字且 ≥ 较长者一半长."""
+    if not normalized or not other:
+        return False
+    if normalized not in other and other not in normalized:
+        return False
+    shorter, longer = sorted((len(normalized), len(other)))
+    return shorter >= 2 and shorter * 2 >= longer
 
 
 def _extract_json_fragment(text: str) -> str | None:
@@ -159,6 +181,9 @@ class WorldExtractor:
         request: WorldExtractRequest,
         *,
         default_model: str,
+        granularity: Granularity = Granularity.FINE,
+        dry_run: bool = False,
+        batch_id: str | None = None,
     ) -> WorldExtractionResult:
         """执行世界观提取管线（§5.1 步骤 ②-⑦）。
 
@@ -166,6 +191,10 @@ class WorldExtractor:
             request: 提取请求（project_id / text / 可选 model 覆盖）.
             default_model: 项目默认模型（project.config.model，
                 由调用方 WorldService 校验项目存在后传入）.
+            granularity: 提取粒度（#1485 §5.8.3；coarse = 注入粗粒度指令 +
+                每源上限 ``_COARSE_MAX_ITEMS``）.
+            dry_run: 仅预览（#1485 §5.8.4；不落库、不写 run 表，条目 batch_id 恒 None）.
+            batch_id: 本批新建条目的批次标识（#1485 §5.8.5；更新条目保留原值）.
 
         Returns:
             合并落库后的提取报告.
@@ -176,9 +205,26 @@ class WorldExtractor:
         """
         model = request.model or default_model
 
-        # ② 渲染模板（变量: text）
+        # #1485 §5.8.1: 渲染前读取项目已有分类清单。仓储替身未配置该方法时返回
+        # 非列表（既有单测 Mock）→ 退化为「无分类」，而不是抛错。
+        cats = await self._repo.list_world_categories(request.project_id)
+        category_names = [c.name for c, _ in cats] if isinstance(cats, (list, tuple)) else []
+        # #1485 §5.8.2: 合并前扫描已有条目（同一 Mock 守卫口径）。仓储支持全量扫描
+        # 时，三档匹配全在该列表内完成（含新建）；不支持（替身）才回退 get_by_name。
+        rows = await self._repo.list_all_active(request.project_id)
+        scanned = isinstance(rows, (list, tuple))
+        existing = list(rows) if scanned else []
+
+        # ② 渲染模板（变量: text / categories / granularity_hint）
+        hint = "" if granularity is Granularity.FINE else _COARSE_HINT
         template = self._prompts.load(_TEMPLATE_NAME)
-        rendered = self._prompts.render(template, {"text": request.text})
+        # 变量值类型异构（text/hint 为 str，categories 为清单）→ dict[str, Any]
+        variables: dict[str, Any] = {
+            "text": request.text,
+            "categories": category_names,
+            "granularity_hint": hint,
+        }
+        rendered = self._prompts.render(template, variables)
         messages = [ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages]
 
         # ③④⑤ 调用 LLM + 解析 + 修复式重试（≤ 2 次）
@@ -212,6 +258,12 @@ class WorldExtractor:
             world_settings=outcome.world_settings,
             item_warnings=outcome.warnings,
             model=model,
+            category_names=category_names,
+            existing=existing,
+            scanned=scanned,
+            granularity=granularity,
+            dry_run=dry_run,
+            batch_id=batch_id,
         )
 
     # ── 解析 ────────────────────────────────────────────────────
@@ -251,14 +303,29 @@ class WorldExtractor:
         world_settings: list[ExtractedWorldSetting],
         item_warnings: list[str],
         model: str,
+        category_names: list[str],
+        existing: list[WorldSetting],
+        scanned: bool,
+        granularity: Granularity,
+        dry_run: bool,
+        batch_id: str | None,
     ) -> WorldExtractionResult:
-        """合并落库: 条目按 (project_id, name) 匹配活动条目，同名=同一世界观条目。"""
+        """合并落库: 条目按 (project_id, name) 匹配活动条目，同名=同一世界观条目。
+
+        #1485 写入策略（§5.8.1-§5.8.5）: 落库前类别归一（仅项目有分类时）→
+        coarse 上限 → 同名更新 / 近义合并 / 新建三档；dry_run 只算不写。
+        """
         warnings = list(item_warnings)
         # #1291：project_id 为领域 UUID，直传仓储
         pid = request.project_id
 
         if not world_settings:
             warnings.append("未从文本中提取到任何世界观条目")
+        # #1485 §5.8.3 ②: coarse 确定性上限（按 LLM 输出顺序取前 N 条）
+        if granularity is Granularity.COARSE and len(world_settings) > _COARSE_MAX_ITEMS:
+            dropped = len(world_settings) - _COARSE_MAX_ITEMS
+            world_settings = world_settings[:_COARSE_MAX_ITEMS]
+            warnings.append(f"coarse 粒度：丢弃 {dropped} 条超出上限的条目")
 
         created: list[WorldSetting] = []
         updated: list[WorldSetting] = []
@@ -268,32 +335,64 @@ class WorldExtractor:
         current_root: WorldSetting | None = roots[0] if roots else None
 
         for es in world_settings:
-            existing = await self._repo.get_by_name(pid, es.name)
-            if existing is None:
-                now = _utcnow()
-                new_setting = await self._repo.add(
-                    WorldSetting(
-                        id=uuid.uuid4(),
-                        project_id=request.project_id,
-                        name=es.name,
-                        parent_id=current_root.id if current_root is not None else None,
-                        category=es.category or "",
-                        content=es.content or "",
-                        created_at=now,
-                        updated_at=now,
-                    )
+            # #1485 §5.8.1: 类别归一（项目无分类 → 不做归一，原样落库）
+            category = es.category or ""
+            if category_names and category.strip() not in category_names:
+                raw = category.strip()
+                if raw:
+                    warnings.append(f"类别「{raw}」不在项目分类中，已归为未分类")
+                category = ""
+
+            normalized = _normalize_name(es.name)
+            matched = _first_match(existing, normalized)
+            # #1485 §5.8.2 档②: 近义（归一化后互为子串且长度占比过半）→ 合并进已有条目
+            synonym = None if matched is not None else _first_synonym(existing, normalized)
+            if synonym is not None:
+                warnings.append(f"条目「{es.name}」与已有「{synonym.name}」近义，已合并")
+                synonym_merged = _merge_synonym(existing=synonym, es=es)
+                # #1485 §5.8.2: 合并结果原位写回扫描池 —— 同批后续条目基于已合并
+                # 内容继续累积（否则第二次合并仍以合并前旧对象为基底，丢前一段追加）
+                _replace_pool_entry(existing, synonym, synonym_merged)
+                updated.append(
+                    synonym_merged if dry_run else await self._repo.update(synonym_merged)
                 )
-                created.append(new_setting)
+                continue
+
+            current = matched
+            # 仓储不支持全量扫描（替身）→ 回退既有按名查询路径；否则列表即全量真相
+            if current is None and not scanned:
+                current = await self._repo.get_by_name(pid, es.name)
+            if current is None:
+                now = _utcnow()
+                new_setting = WorldSetting(
+                    id=uuid.uuid4(),
+                    project_id=request.project_id,
+                    name=es.name,
+                    parent_id=current_root.id if current_root is not None else None,
+                    category=category,
+                    content=es.content or "",
+                    # #1485 §5.8.5: 预览（dry_run）构造的条目不带批次
+                    batch_id=None if dry_run else batch_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                if dry_run:
+                    created.append(new_setting)
+                else:
+                    new_setting = await self._repo.add(new_setting)
+                    created.append(new_setting)
+                # 同批重复条目名幂等（列表可用时：新建条目即入匹配池）
+                existing.append(new_setting)
                 # 无既有根时首条建为根，同批后续条目挂到该条上（不得各自建根）
                 if current_root is None:
                     current_root = new_setting
                 continue
 
-            merged = _merge_world_fields(existing, es)
+            merged = _merge_world_fields(current, es, category=category)
             if merged is None:
                 # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
                 continue
-            updated.append(await self._repo.update(merged))
+            updated.append(merged if dry_run else await self._repo.update(merged))
 
         for w in warnings:
             logger.warning("世界观提取警告: %s", w)
@@ -306,11 +405,60 @@ class WorldExtractor:
         )
 
 
-def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> WorldSetting | None:
+def _first_match(existing: list[WorldSetting], normalized: str) -> WorldSetting | None:
+    """档① 同名匹配（#1485 §5.8.2）：归一化名**相等**的已有条目（无 → None）。"""
+    if not normalized:
+        return None
+    for setting in existing:
+        if _normalize_name(setting.name) == normalized:
+            return setting
+    return None
+
+
+def _first_synonym(existing: list[WorldSetting], normalized: str) -> WorldSetting | None:
+    """档② 近义匹配（#1485 §5.8.2）：归一化后互为子串且短者占比 ≥ 50%."""
+    for setting in existing:
+        if _is_synonym(normalized, _normalize_name(setting.name)):
+            return setting
+    return None
+
+
+def _replace_pool_entry(pool: list[WorldSetting], old: WorldSetting, new: WorldSetting) -> None:
+    """原位替换扫描池中的条目（#1485 §5.8.2 近义合并累积）.
+
+    保持位置不变，使同批后续条目仍按归一化名匹配到已合并对象。
+    """
+    for index, item in enumerate(pool):
+        if item is old:
+            pool[index] = new
+            return
+
+
+def _merge_synonym(*, existing: WorldSetting, es: ExtractedWorldSetting) -> WorldSetting:
+    """近义合并（#1485 §5.8.2 档②）: 保留已有身份与归属，content 追加新内容.
+
+    已有 content 已包含该段 → 幂等跳过追加（其余字段仍按已有条目保留）。
+    """
+    addition = es.content or ""
+    content = existing.content
+    if addition and addition not in existing.content:
+        content = f"{existing.content}\n\n{addition}" if existing.content else addition
+    return existing.model_copy(update={"content": content, "updated_at": _utcnow()})
+
+
+def _merge_world_fields(
+    existing: WorldSetting,
+    es: ExtractedWorldSetting,
+    *,
+    category: str | None = None,
+) -> WorldSetting | None:
     """非空字段覆盖合并（category/content 独立判断）.
 
     无任何变化时返回 None（幂等跳过，不更新 updated_at）；否则
-    保留 existing 的 id / parent_id / extra / 时间戳等无关字段。
+    保留 existing 的 id / parent_id / extra / batch_id / 时间戳等无关字段。
+
+    #1485 §5.8.5: batch_id 必须原样保留 —— 被更新的条目不改写其原批次，
+    否则更早批次的可回滚性被破坏。
 
     #1372: parent_id 必须原样保留 —— 漏传时数据类默认 None，会把该条
     写成同项目第二个根，撞 ``uq_world_settings_root_per_project``
@@ -319,11 +467,12 @@ def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> Wo
     Args:
         existing: 库中同名条目.
         es: LLM 提取出的条目.
+        category: 归一后的类别（#1485 §5.8.1；None = 用 LLM 原值）.
 
     Returns:
         合并后的完整条目；无变化返回 None.
     """
-    new_category = es.category or existing.category
+    new_category = (es.category if category is None else category) or existing.category
     new_content = es.content or existing.content
     if new_category == existing.category and new_content == existing.content:
         return None
@@ -335,6 +484,7 @@ def _merge_world_fields(existing: WorldSetting, es: ExtractedWorldSetting) -> Wo
         category=new_category,
         content=new_content,
         extra=existing.extra,
+        batch_id=existing.batch_id,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )

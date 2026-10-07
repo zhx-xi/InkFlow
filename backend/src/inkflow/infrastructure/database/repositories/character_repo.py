@@ -117,6 +117,7 @@ def _char_orm_to_domain(orm: CharacterORM, group_ids: list[uuid.UUID] | None = N
         brief=orm.brief,
         group_ids=group_ids or [],
         extra=orm.extra or {},
+        batch_id=orm.batch_id,
         created_at=orm.created_at,
         updated_at=orm.updated_at,
     )
@@ -132,6 +133,7 @@ def _char_domain_to_orm(domain: Character) -> CharacterORM:
         goals=domain.goals,
         brief=domain.brief,
         extra=domain.extra,
+        batch_id=domain.batch_id,
     )
 
 
@@ -411,6 +413,23 @@ class SQLiteCharacterRepository:
         await self._session.delete(orm)
         await self._session.commit()
         return True
+
+    async def delete_by_batch(self, project_id: uuid.UUID, batch_id: str) -> int:
+        """按批次物理删除项目内角色（#1485 §5.8.5 整批回滚）.
+
+        单事务 ``DELETE WHERE project_id=? AND batch_id=?``；无匹配 → 0（幂等），
+        batch_id 为 NULL 的存量行不受影响。
+        """
+        pid = require_uuid_pk(project_id)
+        if pid is None:
+            return 0
+        stmt = sa_delete(CharacterORM).where(
+            CharacterORM.project_id == pid,
+            CharacterORM.batch_id == batch_id,
+        )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
 
     # ── CharacterGroupMember（N:M #701）────────────────────────
 
