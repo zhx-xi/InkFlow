@@ -26,8 +26,10 @@ import {
   eraKeyOf,
   eraNameOf,
   eraValueOf,
+  groupByTime,
   primaryEraKey,
   sortByEraValue,
+  timeScaleText,
 } from './timeline-era-axes';
 import type { TimelineEventDTO } from './TimelineView';
 
@@ -135,5 +137,70 @@ describe('#1353 sortByEraValue（轴内排序）', () => {
 
     expect(sorted.map((e) => e.id)).toEqual(['2', '1', '3', '4']);
     expect(input.map((e) => e.id)).toEqual(['1', '2', '3', '4']);
+  });
+});
+
+/**
+ * #1467 组内时间刻度（specs/f19-gui/timeline.md §1.1 世界序·纪元轴族 + §3 N12/N14）。
+ *
+ * 【契约（GREEN 必须提供）】
+ * - `timeScaleText`：`time_display`（trim 非空）原样 → 「`era_value` + `time_unit`」→ 「`time_value` + `time_unit`」→ null
+ * - **轴名绝不进入刻度文案**（#1353 的「轴名 + 轴内值」回退已废除 —— 轴名只出现在组头）
+ * - `groupByTime`：同刻度合并为一个时间节点，保持传入顺序，不改原数组
+ * - **负例（#1467 硬边界）**：`era_scale`（流速比）不参与任何渲染计算 —— 同 `era_value`、不同 `era_scale`
+ *   的事件必须落**同一**时间节点（不做跨轴换算，换算归 #1411）
+ *
+ * 【RED 预期】`timeScaleText` / `groupByTime` 未导出 → import undefined → G1-G4 全 FAIL。
+ */
+describe('#1467 组内时间刻度（timeScaleText / groupByTime）', () => {
+  const tick = (
+    id: string,
+    era: string,
+    eraValue: number | null,
+    over: Partial<TimelineEventDTO> = {},
+  ): TimelineEventDTO => ({ ...ev(id, era, eraValue), ...over });
+
+  it('G1 刻度回退链：time_display 原样 → 「轴内值 + 单位」→ 「时间值 + 单位」→ null', () => {
+    expect(timeScaleText(tick('1', QY, 17, { time_display: '示例历 17 年', time_unit: '年', time_value: 17 })))
+      .toBe('示例历 17 年');
+    expect(timeScaleText(tick('2', QY, 1024, { time_display: '', time_unit: '年', time_value: 1024 })))
+      .toBe('1024年');
+    expect(timeScaleText(tick('3', QY, 88, { time_display: '   ', time_unit: '年', time_value: 7 })))
+      .toBe('88年');
+    expect(timeScaleText(tick('4', QY, null, { time_display: null, time_unit: '年', time_value: 7 })))
+      .toBe('7年');
+    expect(timeScaleText(tick('5', QY, null, { time_display: null, time_unit: null, time_value: null })))
+      .toBeNull();
+  });
+
+  it('G2 轴名绝不进入刻度文案（反向断言：#1467 前是「轴名 + 轴内值」）', () => {
+    const e = tick('6', '示例界 · 示例历', 1024, { time_display: '', time_unit: '年' });
+
+    expect(timeScaleText(e)).toBe('1024年');
+    expect(String(timeScaleText(e))).not.toContain('示例界');
+  });
+
+  it('G3 同刻度合并 + 保持顺序；同 era_value、不同 era_scale 不分叉（负例：不做流速换算）', () => {
+    const g1 = tick('1', QY, 17, { time_display: '示例历 17 年' });
+    const g2 = tick('2', QY, 217, { time_display: '示例历 217 年', era_scale: 1 });
+    const g3 = tick('3', QY, 217, { time_display: '示例历 217 年', era_scale: 12 });
+    const g4 = tick('4', QY, 217, { time_display: '示例历 217 年', era_scale: 0.5 });
+
+    const groups = groupByTime([g1, g2, g3, g4]);
+
+    expect(groups.map((x) => x.key)).toEqual(['示例历 17 年', '示例历 217 年']);
+    expect(groups[1].events.map((x) => x.id)).toEqual(['2', '3', '4']);
+  });
+
+  it('G4 空输入 → 空分组；刻度缺失的事件归入同一 null 组（组件用 lib.tlTimeUnknown 兜底）', () => {
+    expect(groupByTime([])).toEqual([]);
+
+    const u1 = tick('1', QY, null, { time_display: null, time_unit: null, time_value: null });
+    const u2 = tick('2', QY, null, { time_display: '', time_unit: null, time_value: null });
+    const groups = groupByTime([u1, u2]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBeNull();
+    expect(groups[0].events.map((x) => x.id)).toEqual(['1', '2']);
   });
 });
