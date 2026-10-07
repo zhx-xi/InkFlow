@@ -29,6 +29,7 @@ import typer
 from pydantic import ValidationError
 
 from inkflow.cli._time import format_local
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -98,6 +99,9 @@ def create_outline_cmd(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     name: str = typer.Option(..., "--name", "-n", help="大纲名"),
     description: str = typer.Option("", "--description", "-d", help="大纲总体描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取大纲总体描述（与 --description 互斥）"
+    ),
     sort_order: int = typer.Option(0, "--sort-order", help="排序权重（小者在前）"),
     level: str = typer.Option("overall", "--level", help="大纲层级 (overall/volume/chapter)"),
     parent_id: str | None = typer.Option(
@@ -106,6 +110,9 @@ def create_outline_cmd(
 ) -> None:
     """创建大纲（#835 强制树形：level=chapter 须挂 volume，否则 422）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
     parent_uuid = _parse_uuid(cli_ctx, parent_id, "父大纲不存在") if parent_id else None
 
@@ -115,7 +122,7 @@ def create_outline_cmd(
         async with client:
             body: dict = {
                 "name": name,
-                "description": description,
+                "description": description_text if description_text is not None else "",
                 "sort_order": sort_order,
                 "level": level,
             }
@@ -228,18 +235,24 @@ def update_outline_cmd(
     outline_id: str = typer.Option(..., "--id", "-i", help="大纲 ID (UUID)"),
     name: str | None = typer.Option(None, "--name", "-n", help="新大纲名"),
     description: str | None = typer.Option(None, "--description", "-d", help="新大纲描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新大纲描述（与 --description 互斥）"
+    ),
     sort_order: int | None = typer.Option(None, "--sort-order", help="新排序权重"),
 ) -> None:
     """更新大纲（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     oid = _parse_uuid(cli_ctx, outline_id, "大纲不存在")
 
     async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
-        if description is not None:
-            update_fields["description"] = description
+        if description_text is not None:
+            update_fields["description"] = description_text
         if sort_order is not None:
             update_fields["sort_order"] = sort_order
         handle = await ensure_kernel()

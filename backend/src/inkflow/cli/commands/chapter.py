@@ -7,6 +7,7 @@ import uuid
 
 import typer
 
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.chapter import ChapterStatus
@@ -151,9 +152,13 @@ def create_ch(
     title: str = typer.Option(..., "--title", "-t"),
     volume_id: str | None = typer.Option(None, "--volume-id", "-v"),
     content: str = typer.Option("", "--content", "-c"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取章节正文（与 --content 互斥；长正文推荐）"
+    ),
 ):
     """创建章节"""
     cli_ctx: CliContext = ctx.obj
+    content_text = resolve_content(content, content_file, cli_ctx=cli_ctx, inline_flag="--content")
 
     async def _impl() -> dict:
         handle = await ensure_kernel()
@@ -164,7 +169,7 @@ def create_ch(
                 json={
                     "title": title,
                     "volume_id": str(uuid.UUID(volume_id)) if volume_id else None,
-                    "content": content,
+                    "content": content_text if content_text is not None else "",
                 },
             )
 
@@ -232,17 +237,21 @@ def update(
     chapter_id: str = typer.Option(..., "--id", "-i"),
     title: str | None = typer.Option(None, "--title", "-t"),
     content: str | None = typer.Option(None, "--content", "-c"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取章节正文（与 --content 互斥）"
+    ),
     status: str | None = typer.Option(None, "--status", "-s"),
 ):
     """更新章节"""
     cli_ctx: CliContext = ctx.obj
+    content_text = resolve_content(content, content_file, cli_ctx=cli_ctx, inline_flag="--content")
 
     async def _impl() -> dict:
         update_fields: dict[str, object] = {}
         if title is not None:
             update_fields["title"] = title
-        if content is not None:
-            update_fields["content"] = content
+        if content_text is not None:
+            update_fields["content"] = content_text
         if status is not None:
             update_fields["status"] = ChapterStatus(status).value
         handle = await ensure_kernel()

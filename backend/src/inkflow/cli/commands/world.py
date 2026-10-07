@@ -28,6 +28,7 @@ import typer
 from pydantic import ValidationError
 
 from inkflow.cli._time import format_local
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.infrastructure.http import (
@@ -99,14 +100,22 @@ def create_setting_cmd(
         help="类别（非根条目必填且须已创建；建根时留空）",
     ),
     content: str = typer.Option("", "--content", help="条目内容"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取条目内容（与 --content 互斥；长正文推荐）"
+    ),
     parent: str | None = typer.Option(None, "--parent", help="父地点 ID (UUID)；缺省 = 顶层"),
 ) -> None:
     """创建世界观条目（F35: --parent 指定父地点，缺省顶层）"""
     cli_ctx: CliContext = ctx.obj
+    content_text = resolve_content(content, content_file, cli_ctx=cli_ctx, inline_flag="--content")
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
-        body: dict[str, Any] = {"name": name, "category": category, "content": content}
+        body: dict[str, Any] = {
+            "name": name,
+            "category": category,
+            "content": content_text if content_text is not None else "",
+        }
         if parent is not None:
             body["parent_id"] = parent  # 契约定死: 无 --parent 时 body 不含 parent_id 键
         handle = await ensure_kernel()
@@ -423,10 +432,14 @@ def update_setting_cmd(
         None, "--category", "-c", help='新类别；传空字符串 "" 表示清除类别（置为未分类）'
     ),
     content: str | None = typer.Option(None, "--content", help="新条目内容"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新条目内容（与 --content 互斥）"
+    ),
     parent: str | None = typer.Option(None, "--parent", help="新父地点 ID (UUID)"),
 ) -> None:
     """更新世界观条目（仅更新传入的字段；--parent 传新父 ID）"""
     cli_ctx: CliContext = ctx.obj
+    content_text = resolve_content(content, content_file, cli_ctx=cli_ctx, inline_flag="--content")
     sid = _parse_uuid(cli_ctx, setting_id, "世界观条目不存在")
 
     async def _impl() -> dict:
@@ -435,8 +448,8 @@ def update_setting_cmd(
             update_fields["name"] = name
         if category is not None:
             update_fields["category"] = category
-        if content is not None:
-            update_fields["content"] = content
+        if content_text is not None:
+            update_fields["content"] = content_text
         if parent is not None:
             update_fields["parent_id"] = parent
         handle = await ensure_kernel()

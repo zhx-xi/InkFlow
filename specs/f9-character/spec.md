@@ -4,10 +4,11 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.4 | **日期**: 2026-09-19 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.5 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
+> **Spec 变更**: v1.5 — #1483 `character create` / `character update` 新增 `--content-file <path>`（从 UTF-8 文件读取角色正文=**背景设定**，解决内联传参长度限制与中文经 shell 的 ANSI 误码；与 `--background` 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1；原样落库）。语义见 F7 §4.0 通用约定。§4.1 签名与 §14.2 状态流同步。
 > **Spec 变更**: v1.4 — #1299 提取链补齐 `role_rank`（prompt 模板 + ExtractedCharacter + 落库 extra 三层；缺失回退 `minor` 并记 warning），对齐 #833 五档角色等级契约；#1303 工具 `create_character` 签名去默认值（schema 与实现一致必填）。§2.6 / §5.1 / §5.2 同步。
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
-> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）, [#1299](https://github.com/zhx-xi/InkFlow/issues/1299)（提取链 role_rank）, [#1303](https://github.com/zhx-xi/InkFlow/issues/1303)（工具 role_rank 必填）
+> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）, [#1299](https://github.com/zhx-xi/InkFlow/issues/1299)（提取链 role_rank）, [#1303](https://github.com/zhx-xi/InkFlow/issues/1303)（工具 role_rank 必填）, [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.5 `--content-file`）
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #56）
@@ -443,7 +444,7 @@ DELETE /api/v1/character-groups/5a1b2c3d-... → 204
 ```bash
 inkflow character create --project-id <uuid> --name <str> \
     [--personality <str>] [--background <str>] [--goals <str>] \
-    [--group-id <uuid>] [--json]
+    [--group-id <uuid>] [--content-file <path>] [--json]
 
 inkflow character list --project-id <uuid> \
     [--search <str>] [--group-id <uuid>] \
@@ -453,7 +454,7 @@ inkflow character get --id <uuid> [--json]
 
 inkflow character update --id <uuid> \
     [--name <str>] [--personality <str>] [--background <str>] [--goals <str>] \
-    [--group-id <uuid|"">] [--json]        # --group-id "" 表示清除分组
+    [--group-id <uuid|"">] [--content-file <path>] [--json]        # --group-id "" 表示清除分组
 
 inkflow character delete --id <uuid> [--force] [--json]     # v1.1 真删；--force 跳过确认（--permanent 已移除）
 # v1.1 移除: inkflow character restore --id <uuid> [--json]
@@ -948,10 +949,10 @@ F9 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| character create | 项目存在 | 建角色 | ✅ 角色创建成功: [林尘] (主角团)；--json 信封 | 校验失败 → VALIDATION_ERROR 退出码 1 | — |
+| character create | 项目存在 | 建角色 | ✅ 角色创建成功: [林尘] (主角团)；--json 信封 | 校验失败 → VALIDATION_ERROR 退出码 1 | --content-file <path> 从 UTF-8 文件读正文=背景设定（与 --background 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | character list | 项目存在 | 列表 | 列表 / --json | — | --search/--group-id/--sort/--sort-desc |
 | character get | 角色存在 | 查询 | JSON | NOT_FOUND「角色不存在」退出码 1 | — |
-| character update | 角色存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --group-id "" 清除分组 |
+| character update | 角色存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --group-id "" 清除分组；--content-file <path> 从 UTF-8 文件读正文=背景设定（与 --background 互斥 → 退出码 2） |
 | character delete | 角色存在 | 二次确认（--force 跳过）→ **真删** | ✅ 角色已删除: [林尘] | --json 无 --force → VALIDATION_ERROR 退出码 1；404 NOT_FOUND | **v1.1**：`--permanent` 移除（真删无软/硬之分）；`--force` = 跳过确认 |
 | ~~character restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 | character relations | 角色存在 | 双向关系列表 | JSON | 404 NOT_FOUND | — |

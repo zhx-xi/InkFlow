@@ -4,14 +4,15 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.6 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
+> **Spec 版本**: 1.7 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
 > **所属阶段**: 0.9.0 里程碑（世界观分类 CRUD，issue #389，估算 2-4 人天）
-> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）、[#1334](https://github.com/zhx-xi/InkFlow/issues/1334)（v1.4 分类 kind 挂根设计定义 · 已拍板 ①C）
+> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）、[#1334](https://github.com/zhx-xi/InkFlow/issues/1334)（v1.4 分类 kind 挂根设计定义 · 已拍板 ①C）、[#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.7 `--content-file`）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
 > **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 > **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
 
 > **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
+> **Spec 变更（v1.6 → v1.7，2026-10-07，#1483）**: `world create` / `world update` 新增 `--content-file <path>`（从 UTF-8 文件读取条目正文，解决内联 `--content` 受命令行长度限制（Windows ~32KB）且中文经 PowerShell 管道易 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--content` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.1 签名与 §15.2 状态流同步；不传 `--content-file` 时行为不变。
 > **Spec 变更（v1.5 → v1.6，2026-10-07，#1485）**: AI 提取写入策略收敛——**契约源在 F14 §5.8**，本节登记 F10 侧语义升级：① setting 类别归属改为「对项目已有分类做匹配」（LLM 给出项目分类之外的类别 → 落空串 + warning，不再原样落库）；② 条目匹配锚点从「精确同名」扩展为「同名 → 近义（归一化后互为子串且较短者 ≥ 较长者一半长）→ 新建」，近义条目合并进已有条目（`content` 追加）而非新建；③ 新增 `granularity`（fine/coarse 每源条目上限）/ `dry_run`（零写入预览）参数与 `batch_id` 批次标识（整批回滚见 F14 §5.8.5）；④ `WorldSetting` 新增 `batch_id` 字段 + `world_settings.batch_id` 列（可空 VARCHAR(64)，幂等迁移 `ensure_world_settings_batch_id_column`）。验收断言见 `backend/tests/unit/domain/ports/test_extract_dilution_1485.py`。
 > **Spec 变更（v1.4 → v1.5，2026-10-06，#1481）**: 新增 §8.4「建项目自动建根 + 存量兜底（跨模块 MODIFY 清单）」——登记**默认根条目形态**（`name="世界观总纲"` / `parent_id=NULL` / `category=""` / `content=""`，常量 `DEFAULT_WORLD_ROOT_NAME`）+ 跨模块改动落点（`world_service.ensure_root_setting` / `project_service.create_project` 的 `root_initializer` 钩子 / `deps.py` 接线 / `core/database.py` 的 `ensure_world_root_for_projects` 幂等迁移 / `app.py` lifespan）。**根必存在不变量**（建项目即建根 + 存量补根）由本模块与 F35 共同定义——数据模型与端点契约（§2/§3）**无变化**，仅新增默认条目与启动期迁移。**前置核验**：issue 报的 `'NoneType' object is not subscriptable` 系用户脚本自身，服务端现状已是 422 校验提示（无 500 路径）。
 > **Spec 变更（v1.3 → v1.4，2026-10-02，#1334 设计单）**: 新增 §16「分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C）」——登记事实基线（#641 自动挂根 / #699 分类 kind / #721 地图树 kind 分流 / #834 一项目一根 / #1321 非根必填分类）+ ①abstract 条目父级三选项 (a)/(b)/(c) + ②geo 保持现状 + ③kind 判定权与无分类边界 + 迁移影响评估 + 原型 kind 表达自相矛盾收敛规则。**同步对齐 spec 漂移**：§2.6/§2.5 补 `WorldCategory.kind`（#699 已实现、此前未记）、§12 补登记 #699 决策。**本变更为设计定义，无实现**（① 已拍板 ①C，实施另起轨）。
@@ -377,7 +378,7 @@ POST /api/v1/world-settings/extract
 
 ```bash
 inkflow world create --project-id <uuid> --name <str> \
-    [--category <str>] [--content <str>] [--json]
+    [--category <str>] [--content <str>] [--content-file <path>] [--json]
 
 inkflow world list --project-id <uuid> \
     [--search <str>] [--category <str>] [--parent-id <uuid|none>] \
@@ -388,7 +389,7 @@ inkflow world categories --project-id <uuid> [--json]   # 类别汇总
 inkflow world get --id <uuid> [--json]
 
 inkflow world update --id <uuid> \
-    [--name <str>] [--category <str|"">] [--content <str>] [--json]
+    [--name <str>] [--category <str|"">] [--content <str>] [--content-file <path>] [--json]
 
 inkflow world delete --id <uuid> [--force] [--cascade] [--reparent-to <uuid>] [--json]
 # v1.1: 移除 [--permanent]（无软删/硬删之分，默认真删）；[--force] 仅作二次确认跳过
@@ -997,11 +998,11 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| world create | 项目存在 | 建条目 | ✅ 世界观条目创建成功: [灵气复苏] (设定)；--json 信封 | 422 VALIDATION_ERROR | — |
+| world create | 项目存在 | 建条目 | ✅ 世界观条目创建成功: [灵气复苏] (设定)；--json 信封 | 422 VALIDATION_ERROR | --content-file <path> 从 UTF-8 文件读正文（与 --content 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | world list | 项目存在 | 列表 | 列表 / --json | — | --search/--category/--parent-id/--sort |
 | world categories | 项目存在 | 类别汇总 | JSON | — | — |
 | world get | 条目存在 | 查询 | JSON | NOT_FOUND「世界观条目不存在」退出码 1 | — |
-| world update | 条目存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --category "" 清除类别 |
+| world update | 条目存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --category "" 清除类别；--content-file <path> 从 UTF-8 文件读正文（与 --content 互斥 → 退出码 2） |
 | world delete | 条目存在 | 二次确认（--force 跳过）→ 真删 | ✅ 条目已删除: [灵气复苏]；--json data null | 404 NOT_FOUND；422 VALIDATION_ERROR（有子未指定）；--json 无 --force → VALIDATION_ERROR | --cascade 真删子树 / --reparent-to 改挂；无 --permanent（默认真删） |
 | world extract | 项目存在 | LLM 提取 → 合并落库 | ✅ 提取完成: 新增 3 个条目, 更新 1 个条目, 跳过 2 条, 警告 2 条；--json 报告 | 404 项目不存在；422 空文本；500 LLM_ERROR | --text/--text-file 互斥（同时 → 退出码 2） |
 
