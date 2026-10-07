@@ -363,6 +363,14 @@ def copy_world_cmd(
     source_project_id: str = typer.Argument(..., help="源项目 ID (UUID)"),
     target_project_id: str = typer.Argument(..., help="目标项目 ID (UUID)"),
     root: str | None = typer.Option(None, "--root", help="复制起点条目 ID (UUID)；缺省 = 整棵"),
+    category: str | None = typer.Option(
+        None, "--category", "-c", help="仅复制指定分类下的条目（#1482）；缺省 = 不过滤"
+    ),
+    auto_create_categories: bool = typer.Option(
+        False,
+        "--auto-create-categories",
+        help="目标项目缺失源条目分类时自动创建（#1482；缺省关 = 跳过 + warning）",
+    ),
 ) -> None:
     """复制源项目世界观到目标项目（跨书复用；同名冲突跳过 + warning）"""
     cli_ctx: CliContext = ctx.obj
@@ -373,6 +381,10 @@ def copy_world_cmd(
         body: dict[str, Any] = {"source_project_id": str(src)}
         if root is not None:
             body["root_setting_id"] = root  # 契约定死: 无 --root 时 body 不含 root_setting_id 键
+        if category is not None:
+            body["category"] = category  # 契约定死: 无 --category 时 body 不含 category 键
+        if auto_create_categories:
+            body["auto_create_categories"] = True  # 契约定死: 缺省（False）不发该键
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:
@@ -386,6 +398,9 @@ def copy_world_cmd(
     maps_n = len(result.get("maps_created", []))
     pins_n = result.get("pins_created", 0)
     typer.echo(f"✅ 复制完成: {created_n} 条世界观条目, {maps_n} 张地图, {pins_n} 个 pin")
+    categories_created = result.get("categories_created", [])
+    if categories_created:
+        typer.echo(f"✅ 自动创建分类: {', '.join(categories_created)}")
     skipped = result.get("skipped", [])
     if skipped:
         typer.echo(f"⚠️ 跳过同名条目: {', '.join(skipped)}")

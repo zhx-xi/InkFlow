@@ -117,6 +117,7 @@
 | #173 | F35 世界观地点层级：parent_id 树 + 祖先链 + 级联删/reparent（真删语义，提取建树后置 0.7.0） | PR #215 | ✅ |
 | #174 | F36 世界观地图视图：maps/map_pins 新表 + 图片资产 + drill-down/面包屑 + 真删删文件 | PR #220 | ✅ |
 | #175 | F37 世界观跨书复制：递归子树 + 全局图（Q3=B）+ pin 降级纯注释 + CLI/API 双入口 | PR #223 | ✅ |
+| #1482 | F37 增强：按分类过滤复制（`--category`）+ 缺失分类自动创建（`--auto-create-categories`，默认关 = opt-in） | 本 PR | ✅ |
 | #208 | F34 章节审计：audit_logs 轻量记录 + 字数/人设/设定漂移 LLM 检查 + CLI/GUI 双确认闭环 | PR #219 | ✅ |
 | #196 | 设定库分类实体手动创建（空态 CTA 打开创建对话框，不再跳写作页） | PR #207 | ✅ |
 | #198 | default_words 全局值重启加载（初始值回退读 fetchSettings） | PR #205 | ✅ |

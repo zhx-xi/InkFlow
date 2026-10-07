@@ -3,6 +3,8 @@
 职责（spec §5.1/§5.2/§5.3）:
 - 复制集合确定：root_setting_id 提供 → list_descendants（含自身层序）；
   缺省 → list_all_active（created_at ASC 稳定排序）
+- 分类处理（#1482）：category 非空 → 复制集合收窄为该分类条目；目标缺源分类时
+  跳过 + warning（默认）/ 自动创建（auto_create_categories=True，kind 继承源分类）
 - 名称冲突预筛（目标项目同父同名 → 跳过 + warning，不覆盖目标既有数据）
 - 层序落库：父先子后，old→new id 映射顺序建立（子 parent_id 依赖父已落库）
 - 地图复制（F36 依赖，map_repo 与 asset_store 均非 None 才执行）：
@@ -74,12 +76,23 @@ class WorldCopyService:
         roots, _ = await self._repo.list(project_id, top_level_only=True, limit=1)
         return roots[0].id if roots else None
 
+    async def _source_category_kind(self, source_pid: uuid.UUID, name: str) -> str:
+        """源项目同名分类的 kind（geo/abstract）；源无该分类实体 → 回落 "geo".
+
+        #1482：条目 `category` 是字符串快照（不强制外键，F10 词表语义），源项目可能
+        存在「有条目、无分类实体」的情形 → 无 kind 可继承时回落默认 geo。
+        """
+        src_cat = await self._repo.get_category_by_name(source_pid, name)
+        return src_cat.kind if src_cat is not None else "geo"
+
     async def copy(
         self,
         source_project_id: uuid.UUID,
         target_project_id: uuid.UUID,
         root_setting_id: uuid.UUID | None = None,
         self_only: bool = False,
+        category: str | None = None,
+        auto_create_categories: bool = False,
     ) -> WorldCopyResult:
         """复制源项目世界观到目标项目（spec §5.1 算法 ①-⑧）.
 
@@ -88,10 +101,14 @@ class WorldCopyService:
             target_project_id: 目标项目主键（领域 UUID，见 #1291）.
             root_setting_id: 复制起点条目（指定子树）；None = 复制源项目全部活动条目.
             self_only: True = 仅复制 root_setting_id 本体（不含子级）；缺省 False 保持子树语义.
+            category: #1482 仅复制 src.category == category 的源条目；None = 不过滤.
+            auto_create_categories: #1482 目标缺源条目分类时自动创建（默认 False，opt-in）；
+                True = 目标缺该分类时自动创建后复制.
 
         Returns:
             WorldCopyResult: created=新条目列表, skipped=冲突源条目名,
-            maps_created=新图列表, pins_created=复制 pin 数, warnings=警告列表.
+            maps_created=新图列表, pins_created=复制 pin 数, warnings=警告列表,
+            categories_created=#1482 自动创建的分类名.
 
         Raises:
             ProjectNotFoundError: 目标项目不存在（404）.
@@ -126,6 +143,10 @@ class WorldCopyService:
                 copy_set = await self._repo.list_descendants(root_setting_id)
         else:
             copy_set = await self._repo.list_all_active(source_pid)
+        # #1482 ③b 分类过滤：仅保留指定分类条目（余分类零复制；父不在收窄集合者
+        # 按既有惯例挂目标根/置顶层——同子树复制的顶节点处理）
+        if category is not None:
+            copy_set = [s for s in copy_set if s.category == category]
 
         now = _utcnow()
         # #1493：目标根一次取——None（目标无根，仅历史形态）→ 复制顶节点落顶层（既有语义）；
@@ -134,6 +155,11 @@ class WorldCopyService:
         created: list[WorldSetting] = []
         skipped: list[str] = []
         warnings: list[str] = []
+        # #1482：自动创建分类报告 + 分类可用性缓存（同名分类每轮只解析/创建一次）
+        categories_created: list[str] = []
+        resolved_cats: dict[str, bool] = {}
+        if category is not None and not copy_set:
+            warnings.append(f"源项目分类「{category}」下无条目，未复制任何内容")
         # old→new id 映射（层序建立；父先于子，子 parent_id 依赖父已落库）
         id_map: dict[int, uuid.UUID] = {}
         # 复制集合源 id → 名称（父被跳过时置顶 warning 取父名用）
@@ -156,19 +182,37 @@ class WorldCopyService:
                     )
                     continue
                 parent_new = target_root_id
-            if (
-                src.category
-                and await self._repo.get_category_by_name(target_pid, src.category) is None
-            ):
-                skipped.append(src.name)
-                warnings.append(f"目标项目未创建分类「{src.category}」，条目「{src.name}」已跳过")
-                logger.warning(
-                    "复制跳过未建分类条目: target=%s name=%s category=%s",
-                    target_project_id,
-                    src.name,
-                    src.category,
-                )
-                continue
+            # #1482 ④b 分类解析：目标缺该分类 → 跳过 + warning（默认）或自动创建（opt-in）
+            if src.category:
+                available = resolved_cats.get(src.category)
+                if available is None:
+                    available = (
+                        await self._repo.get_category_by_name(target_pid, src.category) is not None
+                    )
+                    if not available and auto_create_categories:
+                        kind = await self._source_category_kind(source_pid, src.category)
+                        await self._repo.create_category(target_pid, src.category, kind)
+                        categories_created.append(src.category)
+                        available = True
+                        logger.info(
+                            "复制自动创建分类: target=%s category=%s kind=%s",
+                            target_project_id,
+                            src.category,
+                            kind,
+                        )
+                    resolved_cats[src.category] = available
+                if not available:
+                    skipped.append(src.name)
+                    warnings.append(
+                        f"目标项目未创建分类「{src.category}」，条目「{src.name}」已跳过"
+                    )
+                    logger.warning(
+                        "复制跳过未建分类条目: target=%s name=%s category=%s",
+                        target_project_id,
+                        src.name,
+                        src.category,
+                    )
+                    continue
             # ④ 同级同名冲突预筛（target, 映射后父 id, name；父先落库再预筛子）
             conflict = await self._repo.get_by_parent_and_name(target_pid, parent_new, src.name)
             if conflict is not None:
@@ -267,13 +311,15 @@ class WorldCopyService:
                     )
 
         logger.info(
-            "世界观跨书复制完成: source=%s target=%s created=%d skipped=%d maps=%d pins=%d",
+            "世界观跨书复制完成: source=%s target=%s created=%d skipped=%d maps=%d "
+            "pins=%d categories=%d",
             source_project_id,
             target_project_id,
             len(created),
             len(skipped),
             len(maps_created),
             pins_created,
+            len(categories_created),
         )
         # ⑧ 返回复制结果报告
         return WorldCopyResult(
@@ -282,4 +328,5 @@ class WorldCopyService:
             maps_created=maps_created,
             pins_created=pins_created,
             warnings=warnings,
+            categories_created=categories_created,
         )

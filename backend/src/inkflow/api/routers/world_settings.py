@@ -199,6 +199,8 @@ async def copy_world_settings(
             tpid,
             request.root_setting_id,
             self_only=request.self_only,
+            category=request.category,
+            auto_create_categories=request.auto_create_categories,
         )
     )
     return result.model_dump(mode="json")

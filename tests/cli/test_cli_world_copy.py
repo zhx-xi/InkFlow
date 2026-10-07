@@ -112,6 +112,7 @@ def _make_copy_report(**overrides) -> dict:
         maps_created=[{"id": str(uuid.uuid4()), "name": "清河县城图"}],
         pins_created=3,
         warnings=[],
+        categories_created=[],
     )
     defaults.update(overrides)
     return defaults
@@ -232,3 +233,62 @@ class TestWorldCopy:
         assert result.exit_code == 0
         assert "⚠️" in result.output
         assert warning in result.output
+
+
+class TestWorldCopyCategoryFlags:
+    """#1482 `--category` / `--auto-create-categories` body 契约（spec §4）.
+
+    【RED 预期】copy 子命令尚无 --category / --auto-create-categories →
+    Typer exit 2（No such option）→ 断言 exit_code == 0 干净 FAILED。
+    body 契约: 缺省不发新键；--category 透传；--auto-create-categories 发 True。
+    """
+
+    def test_copy_body_omits_new_keys_by_default(self, cli_runner, fake_http_client):
+        """无新参数 → body 不含 category / auto_create_categories 键（缺省省略契约）."""
+        fake_http_client.post.return_value = _make_copy_report()
+        result = cli_runner.invoke(
+            app,
+            ["copy", str(SRC_PID), str(TGT_PID)],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["source_project_id"] == str(SRC_PID)
+        assert "category" not in body
+        assert "auto_create_categories" not in body
+
+    def test_copy_body_with_category(self, cli_runner, fake_http_client):
+        """--category <名称> → body 含 category（仅复制该分类条目）."""
+        fake_http_client.post.return_value = _make_copy_report()
+        result = cli_runner.invoke(
+            app,
+            ["copy", str(SRC_PID), str(TGT_PID), "--category", "灵能体系"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["category"] == "灵能体系"
+
+    def test_copy_body_auto_create_sends_true(self, cli_runner, fake_http_client):
+        """--auto-create-categories → body 显式 {"auto_create_categories": True}."""
+        fake_http_client.post.return_value = _make_copy_report()
+        result = cli_runner.invoke(
+            app,
+            ["copy", str(SRC_PID), str(TGT_PID), "--auto-create-categories"],
+            obj=CliContext(json_output=True),
+        )
+        assert result.exit_code == 0
+        body = fake_http_client.post.await_args.kwargs["json"]
+        assert body["auto_create_categories"] is True
+
+    def test_copy_human_categories_created_branch(self, cli_runner, fake_http_client):
+        """人类模式 + categories_created 非空 → 「自动创建分类」行."""
+        fake_http_client.post.return_value = _make_copy_report(categories_created=["灵能体系"])
+        result = cli_runner.invoke(
+            app,
+            ["copy", str(SRC_PID), str(TGT_PID)],
+            obj=CliContext(json_output=False),
+        )
+        assert result.exit_code == 0
+        assert "自动创建分类" in result.output
+        assert "灵能体系" in result.output
