@@ -79,8 +79,8 @@ def test_serve_touches_activity_at_ready_before_watchdog(tmp_path):
         patch("inkflow.cli.commands.serve._acquire_kernel_lifetime_mutex", return_value=object()),
         patch("inkflow.cli.commands.serve._run_server", return_value=12345),
         patch("inkflow.cli.commands.serve._write_kernel_registry"),
-        patch("inkflow.cli.commands.serve.resolve_idle_timeout", return_value=5.0),
-        patch("inkflow.cli.commands.serve.activity_tracker") as tracker,
+        patch("inkflow.infrastructure.kernel.idle_reclaim.resolve_idle_timeout", return_value=5.0),
+        patch("inkflow.infrastructure.kernel.idle_reclaim.activity_tracker") as tracker,
         patch(
             "inkflow.cli.commands.serve._start_idle_watchdog", side_effect=_start_watchdog
         ) as watchdog,
@@ -101,7 +101,7 @@ def test_serve_without_idle_timeout_starts_no_watchdog(tmp_path):
         patch("inkflow.cli.commands.serve._acquire_kernel_lifetime_mutex", return_value=object()),
         patch("inkflow.cli.commands.serve._run_server", return_value=12345),
         patch("inkflow.cli.commands.serve._write_kernel_registry"),
-        patch("inkflow.cli.commands.serve.resolve_idle_timeout", return_value=None),
+        patch("inkflow.infrastructure.kernel.idle_reclaim.resolve_idle_timeout", return_value=None),
         patch("inkflow.cli.commands.serve._start_idle_watchdog") as watchdog,
     ):
         result = runner.invoke(
