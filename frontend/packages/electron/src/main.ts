@@ -18,24 +18,21 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
+import { isDebugMode } from './debug-mode';
+import { createKernelConflictController } from './kernel-conflict';
 import {
   MAX_CONSECUTIVE_FAILURES,
   argvHasTrayOnly,
   isKernelConflictExit,
-  isProcessAlive,
   kernelSpawnEnv,
   killProcessTree,
   nextBackoffDelayMs,
   parseReadyLine,
-  readInstanceRegistry,
-  registryDirForKind,
   resolveSpawnCommand,
   resolveTrayOnly,
-  selectConflictingInstance,
   tryReuseKernel,
   writeKernelStateFile,
   type KernelInfo,
@@ -108,10 +105,6 @@ let tray: Tray | null = null;
 let kernelStatePath: string | null = null;
 /** tray-only 启动形态（spec f31 §5.1 1.3 新增 #1487）：不建主窗口、只创建托盘 */
 let trayOnlyMode = false;
-/** 内核冲突（退出码 3）后的自愈次数（防「先停旧、起新」死循环；spec f31 §7 边界 17） */
-let conflictRecoveries = 0;
-/** 冲突自愈上限（超出 → 走既有「启动失败」对话框） */
-const MAX_CONFLICT_RECOVERIES = 2;
 /** 内核 stderr 落盘句柄（#1382）：每次 spawn 换代；data_dir 不可用时为 null（退化为仅 console.error） */
 let kernelErrLog: KernelErrLog | null = null;
 /** __trayInfo.windowVisible 数据源：hide/show 事件驱动维护（spec f31 §9） */
@@ -119,75 +112,6 @@ let trayInfoWindowVisible = true;
 /** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
 const registeredDevToolsAccelerators = new Set<string>();
 const mainLogger = createMainLogger('electron.main');
-
-/** 解析 instance.env 文本 → KEY=VALUE 映射（解析规则与 backend load_instance_env
- * 对齐：空行 / # 注释 / 无 = 行跳过；KEY/VALUE strip；空值键跳过）。 */
-function parseInstanceEnv(content: string): Record<string, string> {
-  const vars: Record<string, string> = {};
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) {
-      continue;
-    }
-    const eq = line.indexOf('=');
-    if (eq < 0) {
-      continue;
-    }
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim();
-    if (key && value) {
-      vars[key] = value;
-    }
-  }
-  return vars;
-}
-
-/**
- * F51 debug-mode 统一开关：INKFLOW_DEBUG 贯穿三层（D6/D7 三层对称）。
- * 优先级（D1）：env > instance.env > config.json。
- * - env 显式设置（非空串）：'1'/'true'/'on'（trim+lowercase）→ true；'0' 等 → false 且
- *   不再读文件（显式关 > instance.env=1，D8 壳侧镜像，S3f-T1 G3）；空串=未设置（f51 §7）。
- * - instance.env 含 INKFLOW_DEBUG=1 → true；config.json "debug": true → true
- *   （data_dir = instance.env INKFLOW_DATA_DIR 优先、缺省 %APPDATA%/InkFlow）。
- * app.getPath 不可用（测试 mock）→ try/catch 返回 env 显式判定结果。
- */
-function isDebugMode(): boolean {
-  const envDebug = process.env.INKFLOW_DEBUG;
-  if (envDebug !== undefined && envDebug !== '') {
-    // env 显式设置：'1'/'true'/'on'（不区分大小写）→ true；'0'/'false'/'off'/其他 → false，
-    // 且【不再读 instance.env / config.json】（显式关 > instance.env=1，D8）
-    return ['1', 'true', 'on'].includes(envDebug.trim().toLowerCase());
-  }
-  try {
-    const appData = app.getPath('appData');
-    const instanceEnvPath = path.join(appData, 'InkFlow', 'instance.env');
-    const envVars = existsSync(instanceEnvPath)
-      ? parseInstanceEnv(readFileSync(instanceEnvPath, 'utf8'))
-      : {};
-    if (envVars.INKFLOW_DEBUG === '1') {
-      return true;
-    }
-    const dataDir = envVars.INKFLOW_DATA_DIR || path.join(appData, 'InkFlow');
-    const configPath = path.join(dataDir, 'config.json');
-    if (existsSync(configPath)) {
-      const fileConfig = JSON.parse(readFileSync(configPath, 'utf8')) as {
-        debug?: unknown;
-      };
-      if (fileConfig.debug === true) {
-        return true;
-      }
-    }
-  } catch {
-    // getPath 不可用（测试 mock）/ 文件解析失败 → 回退 env 显式判定（等价顶部分支；重读 env 规避 TS 控制流把 envDebug 收窄为 never 的编译错误）
-    const catchEnvDebug = process.env.INKFLOW_DEBUG;
-    return (
-      catchEnvDebug !== undefined &&
-      catchEnvDebug !== '' &&
-      ['1', 'true', 'on'].includes(catchEnvDebug.trim().toLowerCase())
-    );
-  }
-  return false;
-}
 
 /** dev 测试钩子（spec §3.6）：app.isPackaged === false 时暴露 __kernelInfo 供 Playwright 断言 */
 function updateKernelInfoHook(): void {
@@ -428,7 +352,7 @@ function spawnKernel(): void {
     const effectivePid = child.pid ?? parsed.pid;
     const readyInfo: KernelInfo = { ...parsed, pid: effectivePid };
     kernelInfo = readyInfo;
-    conflictRecoveries = 0; // 成功就绪 → 冲突自愈计数清零（spec f31 §7 边界 17）
+    kernelConflict.resetRecoveries(); // 成功就绪 → 冲突自愈计数清零（spec f31 §7 边界 17）
     if (startupWatchdog) {
       clearTimeout(startupWatchdog);
       startupWatchdog = null;
@@ -476,7 +400,7 @@ function spawnKernel(): void {
     if (isKernelConflictExit(code)) {
       // 内核自持互斥被占（ADR-066 ①）：**不**进入退避重拉链路，走 1B 自愈
       // （同 data_dir → 复用 / 不同 data_dir → 先停旧、起新；spec f31 §7 边界 17）
-      onKernelConflict(child);
+      kernelConflict.onKernelConflict(child);
       return;
     }
     if (!stopping) {
@@ -558,116 +482,55 @@ async function shutdown(): Promise<void> {
   app.exit(0);
 }
 
-/**
- * 内核冲突（退出码 3，ADR-066 ①）：清理现场后走自愈（spec f31 §7 边界 17）。
- *
- * 与 `onKernelFailure` 的区别：这是**预期内的准入拒绝**（机器级限 1 生效），
- * 不是启动故障——不进退避计数、不弹「启动失败」；按 1B 语义自愈。
- */
-function onKernelConflict(child: ChildProcess): void {
-  if (kernelProcess !== child) {
-    return;
-  }
-  mainLogger.warn('kernel_conflict', 'log.event.kernel_conflict', { pid: child.pid });
-  clearMonitorTimers();
-  kernelProcess = null;
-  kernelInfo = null;
-  pendingReadyPayload = null;
-  rebuildTrayMenu();
-  if (stopping) {
-    return;
-  }
-  restartTimer = setTimeout(() => {
-    void recoverFromConflict();
-  }, 200);
-}
-
-/** 冲突自愈：同 data_dir 复用 → 不同 data_dir「先停旧、起新」；超限 → 启动失败对话框 */
-async function recoverFromConflict(): Promise<void> {
-  if (stopping) {
-    return;
-  }
-  conflictRecoveries += 1;
-  if (conflictRecoveries > MAX_CONFLICT_RECOVERIES) {
-    consecutiveFailures = MAX_CONSECUTIVE_FAILURES;
-    await showStartupErrorDialog();
-    return;
-  }
-  if (kernelStatePath) {
-    const reused = await tryReuseKernel(kernelStatePath);
+/** #1487 / ADR-066 ①④：内核冲突自愈控制器（逻辑见 kernel-conflict.ts，此处仅注入宿主面） */
+const kernelConflict = createKernelConflictController({
+  isCurrentKernel: (child) => kernelProcess === child,
+  getStateFilePath: () => kernelStatePath,
+  getKind: () => (app.isPackaged ? 'prod' : 'dev'),
+  getAppDataPath: () => {
+    try {
+      return app.getPath('appData');
+    } catch {
+      return null;
+    }
+  },
+  clearKernelRefs: () => {
+    kernelProcess = null;
+    kernelInfo = null;
+    pendingReadyPayload = null;
+  },
+  clearTimers: clearMonitorTimers,
+  rebuildTray: rebuildTrayMenu,
+  scheduleRestart: (fn, ms) => {
+    restartTimer = setTimeout(fn, ms);
+  },
+  isStopping: () => stopping,
+  tryReuseAndAttach: async () => {
+    const reused = kernelStatePath ? await tryReuseKernel(kernelStatePath) : null;
     if (reused) {
       kernelInfo = reused;
       updateKernelInfoHook();
       sendReadyToRenderer();
       startHealthCheck();
       rebuildTrayMenu();
-      return;
     }
-  }
-  await stopConflictingKernel();
-  spawnKernel();
-}
-
-/** 注册表目录（ADR-066 ③ 按 kind 分域）；app.getPath 不可用（测试 mock）→ null */
-function registryDirForCurrentKind(): string | null {
-  try {
-    const kind = app.isPackaged ? 'prod' : 'dev';
-    return registryDirForKind(kind, kernelStatePath, app.getPath('appData'));
-  } catch {
-    return null;
-  }
-}
-
-/** taskkill 单个进程并等其真的退出（互斥释放需要进程结束，spec f31 §5.3） */
-async function killKernelByPid(pid: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = (): void => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-    try {
-      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
-        windowsHide: true,
-        stdio: 'ignore',
-      });
-      killer.once('error', finish);
-      killer.once('exit', finish);
-    } catch {
-      finish();
-    }
-    setTimeout(finish, KILL_GRACE_MS);
-  });
-  const deadline = Date.now() + KILL_GRACE_MS;
-  while (isProcessAlive(pid) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 100));
-  }
-}
-
-/**
- * 1B（spec f31 §5.3 1.3 新增）：机器级既有实例跑在**不同 data_dir** → 先停旧、起新。
- * 返回是否真的停掉了旧内核（供日志/测试断言）。
- */
-async function stopConflictingKernel(): Promise<boolean> {
-  const dir = registryDirForCurrentKind();
-  if (!dir || !kernelStatePath) {
-    return false;
-  }
-  const kind = app.isPackaged ? 'prod' : 'dev';
-  const dataDir = path.dirname(kernelStatePath);
-  const conflict = selectConflictingInstance(readInstanceRegistry(dir), kind, dataDir);
-  if (!conflict) {
-    return false;
-  }
-  mainLogger.warn('kernel_conflict_stop_old', 'log.event.kernel_conflict_stop_old', {
-    pid: conflict.pid,
-    data_dir: conflict.data_dir,
-  });
-  await killKernelByPid(conflict.pid);
-  return true;
-}
+    return reused;
+  },
+  spawnKernel,
+  onGiveUp: async () => {
+    consecutiveFailures = MAX_CONSECUTIVE_FAILURES;
+    await showStartupErrorDialog();
+  },
+  logConflict: (pid) => {
+    mainLogger.warn('kernel_conflict', 'log.event.kernel_conflict', { pid });
+  },
+  logStopOld: (instance) => {
+    mainLogger.warn('kernel_conflict_stop_old', 'log.event.kernel_conflict_stop_old', {
+      pid: instance.pid,
+      data_dir: instance.data_dir,
+    });
+  },
+});
 
 /**
  * 内核连接（spec f31 §5.1/§5.3）：先 tryReuseKernel（kernel.json + pid 存活 + /health 200），
@@ -684,7 +547,7 @@ async function connectKernel(): Promise<void> {
       return;
     }
   }
-  await stopConflictingKernel();
+  await kernelConflict.stopConflictingKernel();
   spawnKernel();
 }
 

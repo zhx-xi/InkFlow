@@ -573,3 +573,63 @@ export function selectConflictingInstance(
   }
   return null;
 }
+
+/**
+ * 机器级注册表目录（#1487 / ADR-066 ③）：`appDataPath` 不可用（测试 mock）→ null。
+ * kind 分域与 backend `registry.registry_dir_for` 同构。
+ */
+export function resolveMachineRegistryDir(
+  isPackaged: boolean,
+  stateFilePath: string | null,
+  appDataPath: string | null
+): string | null {
+  if (appDataPath === null) {
+    return null;
+  }
+  return registryDirForKind(isPackaged ? 'prod' : 'dev', stateFilePath, appDataPath);
+}
+
+export interface KillKernelDeps {
+  /** taskkill 兜底宽限（毫秒） */
+  graceMs: number;
+  /** 装配缝（测试注入）：spawn / 存活判定 / 等待 */
+  spawnFn?: typeof spawn;
+  isAlive?: (pid: number) => boolean;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * `taskkill /T /F` 单个进程并**等其真的退出**（#1487 / spec f31 §5.3）。
+ *
+ * 等退出是必须的：存活期互斥由内核自持，**旧内核进程结束**才释放互斥——不等就
+ * spawn 新内核必然撞互斥（退出码 3）。
+ */
+export async function killKernelByPid(pid: number, deps: KillKernelDeps): Promise<void> {
+  const spawnFn = deps.spawnFn ?? spawn;
+  const isAlive = deps.isAlive ?? isProcessAlive;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    };
+    try {
+      const killer = spawnFn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.once('error', finish);
+      killer.once('exit', finish);
+    } catch {
+      finish();
+    }
+    setTimeout(finish, deps.graceMs);
+  });
+  const deadline = Date.now() + deps.graceMs;
+  while (isAlive(pid) && Date.now() < deadline) {
+    await sleep(100);
+  }
+}

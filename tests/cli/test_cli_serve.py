@@ -106,13 +106,8 @@ def cli_runner():
 
 @pytest.fixture(autouse=True)
 def _isolate_kernel_data_dir(monkeypatch, tmp_path):
-    """#1487 / ADR-066 ①：`serve` 现由**内核进程自持**存活期互斥（dev 按 data_dir 分域）。
-
-    本文件大量用例以 `_run_server` mock 在**同一 pytest 进程内**反复 invoke `serve`
-    且不传 `--port-file` → 默认 data_dir 相同 ⇒ 第二个用例起撞同一互斥被拒
-    （退出码 3，`INKFLOW_KERNEL_CONFLICT`）。每用例隔离 data_dir（互斥名随之不同），
-    既有断言零改动；这也正是「同 data_dir 单内核」在测试面的正确姿势。
-    """
+    """#1487：`serve` 现自持互斥（dev 按 data_dir 分域）→ 每用例隔离 data_dir，
+    否则同进程内第二次 invoke 撞同一互斥被拒（退出码 3）；既有断言不变。"""
     monkeypatch.setenv("INKFLOW_DATA_DIR", str(tmp_path / "kernel-data"))
 
 
@@ -204,12 +199,7 @@ class TestServeDelivery:
         assert os.environ["INKFLOW_SERVER_TOKEN"] == token  # env 注入的是使用中的 token
 
     def test_serve_default_token_is_random_per_start(self, cli_runner, tmp_path):
-        """缺省 token 每次启动随机：两次调用生成不同 token（spec §2.2「每次启动随机」）.
-
-        #1487 / ADR-066 ①：`serve` 现由内核自持互斥（dev 按 data_dir 分域）→ 同一用例内
-        两次「独立启动」必须各自 data_dir（此处经 `--port-file` 隔离），否则第二次被
-        互斥拒绝（退出码 3）——这是「同 data_dir 单内核」的**正确**语义，断言不变。
-        """
+        """缺省 token 每次启动随机；#1487：两次独立启动各用独立 data_dir（--port-file 隔离）。"""
         from inkflow.cli.commands.serve import app
 
         with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
@@ -556,11 +546,7 @@ class TestServeDebugMode:
         assert os.environ["INKFLOW_SERVER_TOKEN"] == "fnord"
 
     def test_debug_default_token_fixed_across_starts(self, cli_runner, monkeypatch, tmp_path):
-        """--debug 缺省 token：固定默认串（确定性），两次启动 token 相同（非随机）。
-
-        #1487：两次「独立启动」各用独立 data_dir（经 `--port-file` 隔离），避免
-        第二次撞内核自持互斥（同 data_dir 单内核）。断言不变。
-        """
+        """--debug 缺省 token 固定（确定性）；#1487：两次独立启动各用独立 data_dir。"""
         monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
         from inkflow.cli.commands.serve import app
 
