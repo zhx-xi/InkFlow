@@ -122,11 +122,12 @@ def tray_gui_sink() -> Iterator[None]:
     for name, loaded in list(sys.modules.items()):
         if not name.startswith("inkflow.cli.commands"):
             continue
-        original = getattr(loaded, "ensure_kernel", None)
+        mod: Any = loaded  # mypy：模块属性赋值需 Any（同 log_bridge 手法）
+        original = getattr(mod, "ensure_kernel", None)
         if original is None or not callable(original):
             continue
-        loaded.ensure_kernel = _wrap_ensure_kernel(original)
-        patched.append((loaded, original))
+        mod.ensure_kernel = _wrap_ensure_kernel(original)
+        patched.append((mod, original))
     try:
         yield
     finally:
