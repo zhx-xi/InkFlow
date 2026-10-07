@@ -1,7 +1,7 @@
 # F31: GUI 托盘常驻 + 关闭行为设置（gui_tray）— 功能规格
 > **端**: frontend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-07（1.2 修订 2026-10-07；1.1 修订 2026-09-14） | **依据**: ADR-030（本地内核服务化 ③）、ADR-059（实例类型化并发约束 ④）、ADR-021（内核进程化交付契约）、F30 spec（内核冷启动基建）、Constitution P1-P6
+> **Spec 版本**: 1.3 | **日期**: 2026-08-07（1.3 修订 2026-10-07；1.2 修订 2026-10-07；1.1 修订 2026-09-14） | **依据**: ADR-030（本地内核服务化 ③）、ADR-059（实例类型化并发约束 ④）、ADR-021（内核进程化交付契约）、**ADR-066（内核自持存活期互斥 + 可重置空闲回收 + 机器级实例可见性）**、F30 spec（内核冷启动基建）、Constitution P1-P6
 >
 > **Spec 变更**（1.0 → 1.1，#1153 / ADR-059）:
 > - §2.4 **新增**：实例注册表消费契约（托盘全量可见的数据源）
@@ -12,15 +12,22 @@
 > **Spec 变更**（1.1 → 1.2，#1489 / 2026-10-07）:
 > - §5.6 **新增**：「悬停 tooltip」行（`instance.setToolTip('InkFlow')`）+ 本表加「修改履历」列；既有行内容未改
 >
-> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 2 个模块，估算 2-3 人天）；1.1 修订挂 0.14.0
+> **Spec 变更**（1.2 → 1.3，#1487 / ADR-066 / 2026-10-07）:
+> - §5.6 **新增**「tray-only 启动」行 + 「data_dir 变更」行（修改履历列同步）
+> - §5.1 / §5.2 **新增** tray-only 形态：不建主窗口、只创建托盘；点击托盘 → 唤醒/创建主窗口（复用既有 `showWindow()`）
+> - §5.3 **新增**：机器级既有实例（**不同 data_dir**）→ **先停旧、起新**（用户拍板 1B / ADR-066 ④）
+> - §5.4 **新增**：GUI spawn 时注入 `INKFLOW_KERNEL_IDLE_TIMEOUT`（默认 1800s；GUI 的 2s `/health` 轮询使常驻期内核不被回收）
+> - §1.2 / §7 / §9 / §10 / §13 **同步**：边界、错误表、测试面、不在范围内、验收 M12/M13
 >
-> **关联 Issues**: #167（本模块）；#166（F30 内核冷启动，✅ 已合入 PR #171）；#168（CLI 产物，独立）；#169（CLI 恒 HTTP，独立）；#152（设置持久化，口径归口）；**#1153（1.1 修订来源）**；#1156（E2E 隔离根因，另单跟踪，不在本模块范围）
+> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 2 个模块，估算 2-3 人天）；1.1 修订挂 0.14.0；**1.3 修订挂 0.17.0**
+>
+> **关联 Issues**: #167（本模块）；#166（F30 内核冷启动，✅ 已合入 PR #171）；#168（CLI 产物，独立）；#169（CLI 恒 HTTP，独立）；#152（设置持久化，口径归口）；**#1153（1.1 修订来源）**；#1156（E2E 隔离根因，另单跟踪，不在本模块范围）；**#1487（1.3 修订来源：tray-only + 换 data_dir 重启 + 内核自持互斥）**
 >
 > **依赖**: ✅ F30（kernel.json 契约 + ensure_kernel 语义，PR #171 41013fb）· ✅ F19 #78（Electron 壳：spawn/健康检查/崩溃拉起/回收）· ✅ F19 #106（自绘窗口按钮 IPC：window:close 通道）· ⏳ #152（设置持久化——**归口依赖，本模块用临时内存态，合入后切换**）
 >
-> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（③ GUI 托盘常驻：关闭→托盘、托盘退出=真退出、单实例、复用内核）· [ADR-059](../../adr/kernel/ADR-059.md)（④ 托盘全量可见 + ⑤ dev 内核命令绝对路径）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（③ GUI 托盘常驻：关闭→托盘、托盘退出=真退出、单实例、复用内核）· [ADR-059](../../adr/kernel/ADR-059.md)（④ 托盘全量可见 + ⑤ dev 内核命令绝对路径）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-066](../../adr/kernel/ADR-066.md)（**1.3 修订来源**：内核自持存活期互斥 + 可重置空闲回收 + 机器级实例可见性 → tray-only + 换 data_dir 重启）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
-> **状态**: ✅ 已实现（PR #172，#167 2026-08-08）；1.1 修订实施中（#1153）
+> **状态**: ✅ 已实现（PR #172，#167 2026-08-08）；1.1 修订实施中（#1153）；1.2 修订实施中（#1489）；**1.3 修订实施中（#1487）**
 
 ---
 
@@ -49,7 +56,9 @@ F31 为 InkFlow 桌面 GUI（Electron 壳）增加**托盘常驻能力**（ADR-0
 - **不做持久化**：#152 未合入前关闭行为设置 = **主进程会话级内存态**（重启回默认「最小化到托盘」）；#152 合入后切换为 #152 的持久化机制（评论区拍板 2026-08-07：归口合并，同一设置库）
 - **不做 CLI 恒 HTTP**（归 #169）——本模块只让 GUI 消费 kernel.json，不改造 CLI 调用路径
 - **不做 CLI 独立打包**（归 #168）
-- **不做内核空闲回收/自动退出**（ADR-030 D2=A：常驻到显式退出；托盘「退出」是唯一显式控制面）
+- **不做内核空闲回收/自动退出**（1.3 修订）**——改为：不实现回收逻辑，但 spawn 时注入 `INKFLOW_KERNEL_IDLE_TIMEOUT` 默认 1800s**（ADR-030 ③ D2=A 被 ADR-066 推翻）。GUI 常驻期内核因 2s `/health` 轮询持续刷新倒计时而**不会被回收**；托盘「退出」仍是显式控制面；GUI 崩溃/强杀时内核在阈值内自愈退出（见 §5.4）
+- **（1.3 新增）tray-only 不做「无窗口」以外的差异化 UI**：tray-only 仅是「跳过主窗口创建」的启动形态，菜单/关闭行为/设置 IPC 与常规启动**完全同源**（同一份 `createTray()` / `rebuildTrayMenu()`）
+- **（1.3 新增）不做跨 data_dir 并存**（用户拍板 1B）：GUI 检测到机器级既有内核跑在不同 data_dir → **先停旧、起新**（§5.3），顺序不可颠倒
 - **不做开机自启 / 多显示器 / 系统级通知中心**（YAGNI，不在本 issue 验收范围）
 
 ---
@@ -174,12 +183,18 @@ settings: Object.freeze({
 ```
 GUI 启动
    │
+   ├─ 启动形态判定（1.3 新增 #1487）：`--tray-only` / env `INKFLOW_TRAY_ONLY=1`
+   │    ├─ 否 → 常规：建主窗口 + 加载 renderer
+   │    └─ 是 → **tray-only**：**不** createMainWindow()（不 loadFile），只 createTray()；
+   │             点击托盘 / 托盘「打开主窗口」→ showWindow()（窗口不存在则建）
+   │
    ├─ 单实例锁（app.requestSingleInstanceLock）
    │    ├─ 获取失败 → 已有实例 → app.quit()（不 spawn、不开窗）
    │    └─ 获取成功 → 正常启动
    │
    ├─ 内核连接（启动时序：先复用判定，后回落 spawn）
    │    ├─ 读 kernel.json → pid 存活 + /health 200 → 复用（不 spawn，reused 语义）
+   │    ├─ **机器级既有实例（1.3 新增）：kind 相同但 data_dir 不同 → 先停旧、起新**（§5.3）
    │    └─ 无/stale → spawnKernel()（#78 既有逻辑）→ INKFLOW_READY → **写 kernel.json**（新增）
    │
    ├─ 窗口关闭（自绘按钮 / Alt+F4 / 任务栏关闭 → win.on('close') 拦截）
@@ -187,7 +202,7 @@ GUI 启动
    │    └─ closeBehavior = 'quit'      → 不拦截 → window-all-closed → shutdown()
    │
    └─ 托盘菜单
-        ├─ 打开主窗口 → show() + focus()（窗口被销毁则重建）
+        ├─ 打开主窗口 → show() + focus()（窗口被销毁/从未创建则重建）
         ├─ 内核状态 → 端口 + PID + 版本 + 健康（只读展示，随健康检查刷新）
         └─ 退出 → stopKernel() + app.quit()（复用 #78 shutdown() 逻辑，完整回收含超时兜底）
 ```
@@ -202,6 +217,7 @@ GUI 启动
 | `quit` | 窗口 close 事件 | 不拦截 → 窗口销毁 → `window-all-closed` → `shutdown()`（#78 既有路径） |
 | 任意 | `app.before-quit` | 幂等守卫（quitInProgress）维持 #78 现状 |
 | 任意 | 窗口被外部销毁（win.destroy() 等，不触发 close） | `window-all-closed` 触发：**仅 `quit` 模式或 quitInProgress 时 shutdown**；`tray` 模式下不退出（托盘仍在，可经「打开」重建窗口） |
+| 任意 | **tray-only 启动（1.3 新增 #1487）** | 不执行 `createMainWindow()`（`mainWindow === null`）；托盘「打开主窗口」/ 点击托盘图标 → `showWindow()` 建窗；因始终无窗口，`window-all-closed` 不触发（进程靠托盘存活） |
 
 > **关键差异（#78 改造点）**：#78 的 `window-all-closed → 无条件 shutdown()` 在托盘模式下**必须改为条件退出**——否则窗口意外销毁会杀掉常驻内核，违背托盘语义。这是本模块对 #78 生命周期的**行为变更**，需同步更新 f19 §3 相关表述（或在本 spec §12 决策表留痕，实现 PR 不触碰 f19 spec 已合入章节——**以本 spec 为准，f19 §3 修订随 docs 收尾**）。
 
@@ -230,6 +246,22 @@ Node 侧判定（kernel.ts 新增纯函数，vitest 可测）：
 
 **stale 处理**：判定 stale → 重命名 `kernel.json.stale-<ts>`（保留现场，F30 §5.1 分支 4 语义）→ 回落 spawnKernel()。
 
+**机器级既有实例（1.3 新增 #1487 / ADR-066 ④，用户拍板 1B）——「先停旧、起新」**：
+
+`spawnKernel()` 之前增加一步（复用判定失败后）：
+
+```
+1. 读机器级注册表（%APPDATA%\InkFlow\running\，F30 §2.4.2；kind = 本进程判定值）
+2. 存在**存活**且 kind 相同、且 data_dir ≠ 本次 data_dir 的条目？
+   是 → taskkill /PID <pid> /T /F → 轮询等其退出（pid 不再存活，上限 ~3s）
+        → 再 spawnKernel()（顺序不可颠倒：否则新内核被机器级互斥拒绝，退出码 3）
+   否 → 直接 spawnKernel()
+3. spawn 后若内核以退出码 3 退出（竞态：另有实例抢先）→ 复检注册表：
+   同 data_dir → 经其 port/token 复用连接；不同 data_dir → 再走一次步骤 2
+```
+
+**顺序理由**：互斥是**机器级**的（ADR-066 ①）——旧内核未退出前，新内核必然拿不到互斥（退出码 3）。故必须先停旧、后起新。
+
 ### 5.4 GUI spawn 内核后写 kernel.json（双向闭环，本模块新增）
 
 **为什么必须**：ADR-030 ①「GUI 与 CLI 同内核」。若 GUI 拉起的常驻内核不写 kernel.json，则：
@@ -244,6 +276,11 @@ Node 侧判定（kernel.ts 新增纯函数，vitest 可测）：
 ```
 
 写入时机：`spawnKernel()` 内 INKFLOW_READY 解析成功 → `kernelInfo` 赋值后立即写（与 `startHealthCheck()` 并行）。**失败降级**：写入失败（%APPDATA% 不可写等）→ console.error 记录，不阻塞 GUI（GUI 仍可自用内核；仅影响其他客户端发现——F30 §7 边界 #11 同语义）。
+
+> **1.3 新增（#1487 / ADR-066 ②）——空闲回收 env 注入**：GUI spawn 内核时在 `env` 中显式写入
+> `INKFLOW_KERNEL_IDLE_TIMEOUT=1800`（与 F30 `ensure_kernel` 同源默认值；可用 GUI 进程 env 覆盖）。
+> GUI 的 2s `/health` 轮询本身刷新倒计时 ⇒ **托盘常驻期内核不会被回收**；GUI 崩溃/强杀后内核在
+> 阈值内自愈退出（这正是 #1477 现场 76 个孤儿的解药）。托盘「退出」走既有 `stopKernel()` 显式回收。
 
 > **路径一致性**：F30 的 state_file = `config.data_dir / "kernel.json"`（%APPDATA%\InkFlow\kernel.json，Windows）。GUI 侧路径 = `path.join(app.getPath('appData'), 'InkFlow', 'kernel.json')`（app.getPath('appData') = %APPDATA%，与 config.data_dir 对齐）。dev 模式下同样写 %APPDATA%（F30 dev 默认 data_dir 即 %APPDATA%\InkFlow，行为一致）。
 
@@ -274,10 +311,13 @@ app.whenReady 内：
 | 菜单项 | 「打开主窗口」（default）· **内核实例区（见下方 §5.6.1）** · 分隔 · 「退出」 | — |
 | 内核状态刷新 | 复用既有 2s 健康检查：健康状态变化时 `tray.setContextMenu(重建菜单)`（防抖：仅状态翻转时重建，避免每 2s 重建） | — |
 | 点击托盘图标 | Windows 惯例：单击/双击 → 打开主窗口（`tray.on('click', showWindow)`） | — |
+| **tray-only 启动** | `--tray-only`（argv）/ env `INKFLOW_TRAY_ONLY=1` → **跳过 `createMainWindow()`**（不 loadFile renderer），只 `createTray()`；点击托盘 / 菜单「打开主窗口」→ `showWindow()` 建窗。托盘菜单/关闭行为与常规启动同源 | **2026-10-07 #1487（1.3 新增）** |
+| **data_dir 变更（换目录需重启内核）** | 复用判定失败后读**机器级注册表**：kind 相同且 `data_dir` 不同 → **先** `taskkill /PID <pid> /T /F` 停旧内核（等其退出）→ **再** `spawnKernel()`（§5.3） | **2026-10-07 #1487（1.3 新增）** |
 | **悬停 tooltip** | **`instance.setToolTip('InkFlow')`** —— 鼠标悬停托盘图标显示应用名（文案对齐 `electron-builder.yml` 的 `productName: InkFlow`；此前未设置 → Windows 悬停气泡空白） | **2026-10-07 #1489（1.2 新增）** |
 | 退出流程 | 「退出」→ `shutdown()`（stopKernel 完整回收 + app.exit(0)）；先 `tray.destroy()` 防托盘残留 | — |
 | 内核状态展示 | **单实例**（既有形态，零回归）：`内核状态: 运行中 (port 端口 · pid PID)` / `内核状态: 未运行`；**多实例**：实例列表（§5.6.1） | — |
 
+> **修改履历**（v1.3 #1487，2026-10-07）：本表新增「tray-only 启动」与「data_dir 变更」两行；既有行内容未改（列内 `—` = 本版未改动）。
 > **修改履历**（v1.2 #1489，2026-10-07）：本表新增「悬停 tooltip」行 + 新增「修改履历」列；既有行内容未改（列内 `—` = 本版未改动）。
 
 #### 5.6.1 全量内核实例可见（1.1 新增，#1153/ADR-059 ④）
@@ -356,6 +396,9 @@ app.whenReady 内：
 | 12 | closeBehavior='quit' 时窗口关闭 | 完整退出（shutdown + 内核回收）——用户显式选择 |
 | 13 | 健康检查失败（内核崩溃）于托盘模式 | #78 既有崩溃拉起逻辑不变（自动重拉，退避 1s→30s，6 次弹错误框）；托盘菜单状态同步刷新 |
 | 14 | E2E 中窗口关闭 | Playwright `app.close()` 触发 before-quit → 回收（#78 既有）——托盘测试用 `window.evaluate(() => window.close())` 或触发自绘按钮走 close 拦截路径 |
+| 15 | **（1.3）tray-only 启动下点击托盘** | `showWindow()`：`mainWindow === null` → `createMainWindow()` 建窗并显示（用户感知 = 窗口弹出，需求 3「点击托盘能唤醒 GUI」） |
+| 16 | **（1.3）GUI 启动时机器级已有内核但 data_dir 不同** | 先 `taskkill` 旧内核（等其退出，上限 ~3s）→ 再 spawn 新内核；**不并存**（用户拍板 1B）。旧内核 pid 不可杀（权限/已退出）→ 仍继续 spawn（内核侧互斥兜底，失败则退出码 3 → 复检注册表） |
+| 17 | **（1.3）spawn 出的内核以退出码 3 退出**（机器级互斥被占：竞态） | **不**进入「连续失败 6 次弹错误框」链路——立即复检注册表：同 data_dir → 经 port/token 复用连接；不同 data_dir → 再走「先停旧起新」一次；仍不成 → 提示「需重启实例」 |
 
 ---
 
@@ -400,6 +443,7 @@ tests/e2e/
 | 单元（vitest jsdom，renderer 包） | settings.tsx「关闭窗口时」Select 渲染默认 'tray'；切换 → `setCloseBehavior` 调用断言；无 API 时可选链安全 |
 | 集成（Playwright `_electron`，tests/e2e/e2e-tray.spec.ts） | ① 关闭→窗口隐藏+内核存活：点自绘关闭按钮（或 `window.close()`）→ `app.evaluate(win.isVisible() === false)` + `__kernelInfo.pid` 存活 + /health 200 + 托盘已创建（`__trayInfo` 钩子）；② 托盘「打开」→ 窗口恢复可见；③ 托盘「退出」→ 内核 pid 不再存活 + 应用退出；④ 设置切换「直接退出」→ 关闭 = 完整退出（内核回收）；⑤ 单实例：二次启动 → 不双开不双内核（`__kernelInfo.pid` 唯一 + 窗口唯一）；⑥ 复用：先 `ensure_kernel()`（Python 侧拉起，写 kernel.json）→ GUI 启动 → `__kernelInfo.pid` === 预拉起 pid（不 spawn） |
 | 手动冒烟（Windows） | 关闭 → 系统托盘出现 InkFlow 图标；托盘右键菜单三件齐全；「退出」后 `Get-Process inkflow*` 为空；重启 GUI 复用同一内核（pid 不变） |
+| 单元（vitest node，electron 包；1.3 新增 #1487） | ① **tray-only 形态判定**：`--tray-only` / `INKFLOW_TRAY_ONLY=1` → `resolveTrayOnly` 为真；`whenReady` 分支不调 `createMainWindow()`（mock electron 断言）；② **机器级注册表停机重启**：`readMachineRegistry` 命中 `data_dir` 不同条目 → `taskkill` 先于 `spawn`（调用顺序断言）；同 `data_dir` → 不走停机路径；③ **退出码 3 分流**：`spawnKernel` 子进程 `exit(3)` → 不进 `onKernelFailure` 退避链路，走注册表复检 |
 
 **测试钩子扩展**（dev 模式，`app.isPackaged === false`）：
 ```typescript
@@ -417,7 +461,8 @@ Playwright `app.evaluate` 断言托盘状态；托盘菜单项点击经 `app.eva
 | 项 | 归属/原因 |
 |----|-----------|
 | 关闭行为设置持久化（重启保留） | #152 设置持久化（归口拍板：同一设置库；本模块仅临时内存态） |
-| 内核空闲超时自动退出 | ADR-030 D2=A 否决（常驻到显式退出） |
+| 内核空闲超时自动退出 | **1.3 修订（#1487 / ADR-066）**：改写为——GUI 侧**不实现**回收逻辑，但 spawn 时注入 `INKFLOW_KERNEL_IDLE_TIMEOUT=1800`（常驻期内核因 2s `/health` 轮询不被回收；GUI 崩溃时内核自愈退出）。ADR-030 ③ D2=A 已被 ADR-066 推翻 |
+| **跨 data_dir 并存 prod 内核** | **1.3 修订（#1487，用户拍板 1B）**：**明确不做**——GUI 走「先停旧、起新」（§5.3） |
 | CLI 恒 HTTP 路由改造 | #169（F30 消费方，独立 issue） |
 | CLI 独立打包发布 | #168 |
 | MCP 薄客户端 | #49 / F20（1.0.0，ADR-023 v2） |
@@ -472,6 +517,8 @@ Playwright `app.evaluate` 断言托盘状态；托盘菜单项点击经 `app.eva
 | M9 | **（1.1 新增）托盘全量实例可见（#1153）** | 单元 + 手动 | `readInstanceRegistry` 0/1/N 实例三态 + 僵尸清理 + 非法条目跳过（单元）；多实例时菜单渲染「内核实例 (N)」列表（手动，截图） |
 | M10 | **（1.1 新增）dev 内核命令绝对路径（worktree 可启动）** | 单元 + E2E | `resolveKernelCommand` 传 `devKernelPath` → command 为该绝对路径（单元）；worktree 内启动 dev GUI 不再 ENOENT（E2E `__kernelInfo` 能注入） |
 | M11 | **（1.1 新增）单实例托盘形态零回归** | 单元 | 存活实例 ≤1 时菜单 label 与既有 `formatKernelMenuLabel` 输出完全一致（既有 18 用例全绿） |
+| M12 | **（1.3 新增 #1487）tray-only 启动不建主窗口 + 点击托盘唤醒** | 单元 + 实证 | 单元：`--tray-only` / `INKFLOW_TRAY_ONLY=1` → 不调用 `createMainWindow()`、调用 `createTray()`、`__trayInfo.trayOnly===true`；`__trayActions.show()` 在 `mainWindow === null` 时建窗。实证（PR body M6）：`InkFlow.exe --tray-only` → 无窗口 + 托盘存在 → 点击托盘 → 窗口出现 |
+| M13 | **（1.3 新增 #1487）换 data_dir 先停旧、起新（不并存）** | 单元 + 实证 | 单元：机器级注册表存在 `data_dir` 不同的存活条目 → 断言第一次 `spawn` 是 `taskkill`（**先停旧**），内核 spawn 在其后；实证（PR body M6）：同机 prod 内核换 data_dir 启动 → 旧 pid 消失 + 新内核 pid 不同且 `/health` 200 |
 
 > 覆盖门禁：前端 vitest thresholds（electron 包新代码计入后上调基线）；全仓 CI 全绿（lint-frontend / unit-frontend / integration-frontend / e2e-frontend-shell+全部页面 job）后才 merge。
 

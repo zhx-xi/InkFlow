@@ -114,9 +114,10 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | 编号 | 标题 | 状态 | 日期 |
 |------|------|------|------|
 | [ADR-021](kernel/ADR-021.md) | 本地内核进程化 — 独立进程 + REST + SSE | ✅ 已接受 | 2026-08-02 |
-| [ADR-030](kernel/ADR-030.md) | 本地内核服务化 — 冷启动协议 + 生命周期 | ✅ 已接受（② 被 ADR-059 修订） | 2026-08-07 |
-| [ADR-059](kernel/ADR-059.md) | 实例类型化内核并发约束 — 存活期互斥 + 全量注册表 + 托盘可见 | ✅ 已接受 | 2026-09-14 |
+| [ADR-030](kernel/ADR-030.md) | 本地内核服务化 — 冷启动协议 + 生命周期 | ✅ 已接受（② 被 ADR-059 修订；③ D2=A 被 ADR-066 推翻） | 2026-08-07 |
+| [ADR-059](kernel/ADR-059.md) | 实例类型化内核并发约束 — 存活期互斥 + 全量注册表 + 托盘可见 | ✅ 已接受（② 互斥持有者 / ③ 注册表写入方 被 ADR-066 修订） | 2026-09-14 |
 | [ADR-064](kernel/ADR-064.md) | 内核日志分片与自管理运行期轮转 — 内核自持句柄 + 现成库轮转（取代 f30 §6.3 的启动期兜底） | ✅ 已接受 | 2026-10-06 |
+| [ADR-066](kernel/ADR-066.md) | 内核自持存活期互斥 + 可重置空闲回收 + 机器级实例可见性（互斥持有者 客户端→内核；推翻 ADR-030 D2=A） | ✅ 已接受 | 2026-10-07 |
 
 ### API（api）
 
@@ -184,7 +185,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **RAG**: LangChain Chroma + BGE 本地 Embedding（ADR-013 [llm/](llm/ADR-013.md)）
 - **Prompt**: ChatPromptTemplate + YAML（ADR-014 [llm/](llm/ADR-014.md)）
 - **日志**: loguru 结构化（ADR-016 [service/](service/ADR-016.md)）
-- **内核**: 独立进程 + REST + SSE（ADR-021），冷启动协议 + 常驻 + 多客户端（ADR-030 [kernel/](kernel/ADR-030.md)；其 ② 互斥语义被 ADR-059 修订）；**实例类型化并发约束**——rc/正式存活期互斥（同机各限 1 个）、dev 允许多开、`%APPDATA%\InkFlow\running\` 全量注册表 + 托盘可见全部存活实例（ADR-059 [kernel/](kernel/ADR-059.md)）
+- **内核**: 独立进程 + REST + SSE（ADR-021），冷启动协议 + 常驻 + 多客户端（ADR-030 [kernel/](kernel/ADR-030.md)；其 ② 互斥语义被 ADR-059 修订、③ D2=A 被 ADR-066 推翻）；**实例类型化并发约束**——rc/正式存活期互斥（同机各限 1 个，**由内核进程自持**）、dev 同 data_dir 单内核、`%APPDATA%\InkFlow\running\` 全量注册表（**内核自写**，rc/prod 落机器级目录）+ 托盘可见全部存活实例（ADR-059 [kernel/](kernel/ADR-059.md)，②③ 被 ADR-066 修订）；**空闲回收**——内核侧可重置倒计时（每次 HTTP 请求刷新，默认 30 min，客户端拉起时注入）→ 无客户端时自愈退出（ADR-066 [kernel/](kernel/ADR-066.md)）
 - **API**: FastAPI 装配 + REST/SSE + 本地 token 鉴权 + 错误契约（ADR-045 [api/](api/ADR-045.md)）
 - **CLI**: Typer + 恒经 HTTP + F7 契约 + 独立产物（ADR-046 [cli/](cli/ADR-046.md)）
 - **MCP**: 官方 SDK + stdio + 薄客户端经 HTTP（ADR-023 [mcp/](mcp/ADR-023.md)）
