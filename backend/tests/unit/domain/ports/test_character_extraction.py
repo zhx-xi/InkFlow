@@ -398,7 +398,10 @@ class TestCharacterExtractor:
         )
         mock_prompt_manager.load.assert_called_once_with("character_extract")
         template = mock_prompt_manager.load.return_value
-        mock_prompt_manager.render.assert_called_once_with(template, {"text": "第一章文本"})
+        # #1485：渲染变量恒含粒度指令
+        mock_prompt_manager.render.assert_called_once_with(
+            template, {"text": "第一章文本", "granularity_hint": ""}
+        )
         kwargs = mock_llm.chat.await_args.kwargs
         assert kwargs["model"] == DEFAULT_MODEL
         assert kwargs["temperature"] == 0.2

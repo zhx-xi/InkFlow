@@ -124,6 +124,7 @@ class Character(BaseModel):
         brief: 一句话简介（F6 上下文轻量化注入用，未填时降级 personality）.
         group_ids: 所属角色分组 UUID 列表（可为空；N:M，v1.1 #701）.
         extra: 扩展属性字典.
+        batch_id: 创建该角色的提取批次标识（#1485，§5.8.5；None = 非提取产物）.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -139,6 +140,7 @@ class Character(BaseModel):
     brief: str = ""  # v1.1（#593）：一句话简介，F6 上下文轻量化注入
     group_ids: list[uuid.UUID] = []
     extra: dict[str, Any] = Field(default_factory=dict)
+    batch_id: str | None = None  # #1485：提取批次标识（可回滚锚点）
     created_at: datetime
     updated_at: datetime
 

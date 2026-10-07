@@ -22,7 +22,8 @@ system_prompt: |
   - scene: scene character (appears only in a specific scene, no independent side plot)
   - walkon: walk-on role (merely mentioned or appears once, e.g. a passer-by, a waiter)
   characters must not contain duplicate names.
+  {granularity_hint}
 human_prompt: |
   Chapter text:
   {text}
-variables: [text]
+variables: [text, granularity_hint]

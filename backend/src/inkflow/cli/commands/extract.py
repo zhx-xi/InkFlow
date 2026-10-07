@@ -34,6 +34,7 @@ from inkflow.domain.models.extraction import (
     ExtractionRequest,
     ExtractionStatus,
     ExtractionType,
+    Granularity,
 )
 from inkflow.infrastructure.http import (
     LLM_TASK_TIMEOUT,
@@ -97,6 +98,8 @@ def _summarize(result: dict) -> str:
     )
     if result.get("warnings"):
         summary += f"，警告 {len(result['warnings'])} 条"
+    if result.get("batch_id"):
+        summary += f"，批次 {result['batch_id']}"
     return f"✅ 提取完成: {summary}"
 
 
@@ -154,6 +157,10 @@ def extract_run_cmd(
     ),
     index: bool = typer.Option(False, "--index", help="提取成功后自动索引本次产物（RAG）"),
     force: bool = typer.Option(False, "--force", help="忽略增量 skip 强制重跑"),
+    granularity: Granularity = typer.Option(
+        Granularity.FINE, "--granularity", help="提取粒度（fine|coarse；仅 character/setting）"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="预览不落库（仅 character/setting）"),
 ) -> None:
     """执行统一提取（7 种类型；--text/--text-file/--chapters 三选一）"""
     cli_ctx: CliContext = ctx.obj
@@ -191,6 +198,8 @@ def extract_run_cmd(
             model=model,
             index=index,
             force=force,
+            granularity=granularity,
+            dry_run=dry_run,
         )
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
@@ -245,3 +254,35 @@ def extract_status_cmd(
     typer.echo(f"📋 提取状态（project {pid}）:")
     for run in runs:
         typer.echo(f"  {_status_line(run)}")
+
+
+# ---------------------------------------------------------------------------
+# rollback  — inkflow extract rollback --project-id <uuid> --batch-id <id>
+# ---------------------------------------------------------------------------
+
+
+@app.command("rollback")
+@instrument(caller_type="cli")
+def extract_rollback_cmd(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
+    batch_id: str = typer.Option(..., "--batch-id", help="批次标识（extract run 返回的 batch_id）"),
+) -> None:
+    """按批次整批回滚提取新建的条目（spec §4.1/§5.8.5，幂等）"""
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            return await client.post(
+                f"/projects/{pid}/extractions/rollback",
+                json={"batch_id": batch_id},
+            )
+
+    data = _run(cli_ctx, _impl)
+    if cli_ctx.json_output:
+        print_result(cli_ctx, data)
+        return
+    typer.echo(f"↩️ 已回滚批次 {batch_id}：删除 {data.get('deleted', 0)} 条")

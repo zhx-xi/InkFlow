@@ -129,6 +129,10 @@ class CharacterRepositoryProtocol(Protocol):
         """
         ...
 
+    async def delete_by_batch(self, project_id: uuid.UUID, batch_id: str) -> int:
+        """按批次物理删除项目内条目；返回删除行数（无匹配 → 0，幂等）."""
+        ...
+
     # ── CharacterGroup ──
 
     async def add_group(self, group: CharacterGroup) -> CharacterGroup:

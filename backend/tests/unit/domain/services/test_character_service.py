@@ -29,6 +29,7 @@ from inkflow.domain.models.character import (
     CharacterRelation,
     CharacterUpdate,
 )
+from inkflow.domain.models.extraction import Granularity
 from inkflow.domain.models.project import Project, ProjectConfig
 from inkflow.domain.ports.character_errors import (
     CharacterNameConflictError,
@@ -602,7 +603,7 @@ class TestExtract:
 
         assert outcome == result
         mock_project_repo.get.assert_awaited_once_with(PID)
-        mock_extractor.extract.assert_awaited_once_with(request, default_model=DEFAULT_MODEL)
+        _assert_forwarded(mock_extractor, request, DEFAULT_MODEL)
 
     async def test_extract_project_missing_raises(
         self, service, mock_project_repo, mock_extractor
@@ -646,7 +647,7 @@ class TestExtract:
         outcome = await svc.extract(request)
 
         assert outcome == result
-        mock_extractor.extract.assert_awaited_once_with(request, default_model=fallback)
+        _assert_forwarded(mock_extractor, request, fallback)
 
 
 # ── Phase 3 覆盖率补齐（#104）──────────────────────────────────
@@ -890,3 +891,10 @@ class TestP5DeleteCharacterTriggersMapCleanup:
 
         assert result is False
         map_cleanup.assert_not_awaited()
+
+
+def _assert_forwarded(mock: MagicMock, request: object, model: str) -> None:
+    """#1485：提取器被调用且转发 granularity / dry_run / batch_id。"""
+    kw = mock.extract.await_args.kwargs
+    assert mock.extract.await_count == 1 and kw["default_model"] == model
+    assert (kw["granularity"], kw["dry_run"], kw["batch_id"]) == (Granularity.FINE, False, None)

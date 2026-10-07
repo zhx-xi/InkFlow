@@ -62,6 +62,8 @@ from inkflow.domain.models.extraction import (
     ExtractionRun,
     ExtractionStatus,
     ExtractionType,
+    Granularity,
+    RollbackResult,
 )
 from inkflow.domain.models.foreshadowing import (
     ForeshadowingExtractionResult,
@@ -331,12 +333,17 @@ class ExtractionService(_ExtractionRAGMixin):
         self._validate_input(request, project)
         sources = await self._resolve_sources(request, project)
 
+        # #1485 §5.8.5: 批次标识 —— 一次 request 只生成一次，全部源共享
+        # （dry_run 预览不落库 → 无批次）
+        batch_id = None if request.dry_run else f"ext-{uuid.uuid4().hex[:16]}"
+
         # ④⑤ 逐源执行 + 每源成功后立即 upsert run（断点续跑基础，§6.2）
-        result, executed = await self._run_sources(request, sources, project)
+        result, executed = await self._run_sources(request, sources, project, batch_id)
 
         # ⑥ index=true → 索引本次产物（§5.6；outline/timeline 关闭时与 STYLE
         # 恒 False——忽略 + warning，§8.2 表 #7）
-        if request.index:
+        # #1485 §5.8.4: dry_run 零写入 —— 预览条目未落库，不索引
+        if request.index and not request.dry_run:
             if self._indexing_enabled(request, project):
                 if result.status is ExtractionStatus.SUCCESS and executed:
                     if self._vector_store is None:
@@ -372,6 +379,12 @@ class ExtractionService(_ExtractionRAGMixin):
 
     def _validate_input(self, request: ExtractionRequest, project: Project) -> None:
         """类型相关输入约束（spec §6.4）— 类型不匹配字段一律 422 显式报错."""
+        # #1485 §5.8/§6.4: granularity / dry_run 仅 character/setting 生效；其余类型
+        # 带非默认值 → 422。置于各分支之前：既有分支均 early return，末尾追加会被跳过。
+        if request.type not in (ExtractionType.CHARACTER, ExtractionType.SETTING) and (
+            request.granularity is not Granularity.FINE or request.dry_run
+        ):
+            raise ExtractionValidationError("granularity/dry_run 仅支持 character/setting 类型")
         has_source = request.text is not None or request.chapter_ids is not None
         if request.type is ExtractionType.OUTLINE:
             if has_source:
@@ -470,8 +483,12 @@ class ExtractionService(_ExtractionRAGMixin):
         request: ExtractionRequest,
         sources: list[_Source],
         project: Project,
+        batch_id: str | None = None,
     ) -> tuple[ExtractionResult, list[tuple[_Source, Any]]]:
         """逐源执行管线；失败立即抛异常（已成功源 run 已落库，重跑自动 skip）.
+
+        #1485: dry_run 预览忽略增量 skip（恒执行，保证预览有效）且零写 run 表；
+        batch_id 透传给 character/setting 管线（§5.8.4/§5.8.5）。
 
         Returns:
             (汇总 ExtractionResult, 已执行源与原始结果列表（索引编排用）).
@@ -484,10 +501,11 @@ class ExtractionService(_ExtractionRAGMixin):
         run_indexed = request.index and self._indexing_enabled(request, project)
 
         for src in sources:
-            if src.skip:
+            # #1485 §5.8.4: dry-run 下每个源都视为未 skip
+            if src.skip and not request.dry_run:
                 skipped += 1
                 continue
-            normalized = await self._dispatch(request, src, project)
+            normalized = await self._dispatch(request, src, project, batch_id)
             processed += 1
             created += normalized.created
             updated += normalized.updated
@@ -496,22 +514,24 @@ class ExtractionService(_ExtractionRAGMixin):
             if processed == 1:  # detail 保留首个执行源的原始结果（§5.3）
                 detail = normalized.detail
             executed.append((src, normalized.raw))
-            await self._run_repo.upsert(
-                ExtractionRun(
-                    id=0,  # DB 自增主键占位（同仓储测试约定）
-                    project_id=request.project_id,
-                    type=request.type,
-                    source_key=src.key,
-                    content_hash=src.hash,
-                    status=ExtractionStatus.SUCCESS,
-                    created_count=normalized.created,
-                    updated_count=normalized.updated,
-                    warnings_json=json.dumps(warnings, ensure_ascii=False),
-                    model=normalized.model,
-                    indexed=run_indexed,
-                    run_at=_utcnow(),
+            # #1485 §5.8.4: dry-run 预览不写 run 表
+            if not request.dry_run:
+                await self._run_repo.upsert(
+                    ExtractionRun(
+                        id=0,  # DB 自增主键占位（同仓储测试约定）
+                        project_id=request.project_id,
+                        type=request.type,
+                        source_key=src.key,
+                        content_hash=src.hash,
+                        status=ExtractionStatus.SUCCESS,
+                        created_count=normalized.created,
+                        updated_count=normalized.updated,
+                        warnings_json=json.dumps(warnings, ensure_ascii=False),
+                        model=normalized.model,
+                        indexed=run_indexed,
+                        run_at=_utcnow(),
+                    )
                 )
-            )
             logger.info(
                 "提取完成: project=%s type=%s source=%s created=%d updated=%d",
                 request.project_id,
@@ -522,19 +542,21 @@ class ExtractionService(_ExtractionRAGMixin):
             )
 
         if processed == 0:
-            # 全源 skip: 对首个源 upsert 一行 skipped（记录确认事实，§6.2）
+            # 全源 skip: 对首个源 upsert 一行 skipped（记录确认事实，§6.2；
+            # #1485: dry_run 预览零写入 → 不落该行）
             first = sources[0]
-            await self._run_repo.upsert(
-                ExtractionRun(
-                    id=0,
-                    project_id=request.project_id,
-                    type=request.type,
-                    source_key=first.key,
-                    content_hash=first.hash,
-                    status=ExtractionStatus.SKIPPED,
-                    run_at=_utcnow(),
+            if not request.dry_run:
+                await self._run_repo.upsert(
+                    ExtractionRun(
+                        id=0,
+                        project_id=request.project_id,
+                        type=request.type,
+                        source_key=first.key,
+                        content_hash=first.hash,
+                        status=ExtractionStatus.SKIPPED,
+                        run_at=_utcnow(),
+                    )
                 )
-            )
             return (
                 ExtractionResult(
                     type=request.type,
@@ -542,6 +564,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     skipped_reason=f"内容未变更（源: {first.label}）",
                     processed_sources=0,
                     skipped_sources=skipped,
+                    batch_id=batch_id,
                 ),
                 [],
             )
@@ -556,15 +579,24 @@ class ExtractionService(_ExtractionRAGMixin):
                 updated=updated,
                 warnings=warnings,
                 model=model,
+                batch_id=batch_id,
                 detail=detail,
             ),
             executed,
         )
 
     async def _dispatch(
-        self, request: ExtractionRequest, source: _Source, project: Project
+        self,
+        request: ExtractionRequest,
+        source: _Source,
+        project: Project,
+        batch_id: str | None = None,
     ) -> _Normalized:
-        """按类型分发到对应管线并归一化结果（spec §5.1 步骤 ④/§5.3）."""
+        """按类型分发到对应管线并归一化结果（spec §5.1 步骤 ④/§5.3）.
+
+        #1485: granularity / dry_run / batch_id 仅转发给 character / setting
+        两个 handler（其余类型保持原样，§5.8）。
+        """
         result: Any
         if request.type is ExtractionType.CHARACTER:
             result = await self._character_service.extract(
@@ -572,7 +604,10 @@ class ExtractionService(_ExtractionRAGMixin):
                     project_id=request.project_id,
                     text=source.text or "",
                     model=request.model,
-                )
+                ),
+                granularity=request.granularity,
+                dry_run=request.dry_run,
+                batch_id=batch_id,
             )
         elif request.type is ExtractionType.SETTING:
             result = await self._world_service.extract(
@@ -580,7 +615,10 @@ class ExtractionService(_ExtractionRAGMixin):
                     project_id=request.project_id,
                     text=source.text or "",
                     model=request.model,
-                )
+                ),
+                granularity=request.granularity,
+                dry_run=request.dry_run,
+                batch_id=batch_id,
             )
         elif request.type is ExtractionType.OUTLINE:
             result = await self._outline_service.generate(
@@ -590,7 +628,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     num_chapters=request.num_chapters,
                     save=request.save,
                     model=request.model,
-                )
+                ),
             )
         elif request.type is ExtractionType.TIMELINE:
             result = await self._timeline_handler(request, source, project)
@@ -773,6 +811,24 @@ class ExtractionService(_ExtractionRAGMixin):
         return entities
 
     # ── 增量状态查询 ────────────────────────────────────────────
+
+    async def rollback_batch(self, project_id: uuid.UUID, batch_id: str) -> RollbackResult:
+        """按 batch_id 整批回滚（§5.8.5）：删除本批新建条目并汇总计数。
+
+        项目不存在 → ProjectNotFoundError（404）；聚合 world_settings + characters
+        两表删除行数；被**更新**的条目未存快照 → 以 warning 明示不回滚；幂等
+        （重复回滚 deleted=0，不报错）。
+        """
+        if await self._project_repo.get(project_id) is None:
+            raise ProjectNotFoundError()
+        deleted = 0
+        if self._world_repo is not None:
+            deleted += await self._world_repo.delete_by_batch(project_id, batch_id)
+        if self._character_repo is not None:
+            deleted += await self._character_repo.delete_by_batch(project_id, batch_id)
+        warnings = ["本次 run 的更新条目不可回滚（仅新建条目可回滚）"]
+        logger.info("提取批次回滚: project=%s batch=%s deleted=%d", project_id, batch_id, deleted)
+        return RollbackResult(batch_id=batch_id, deleted=deleted, warnings=warnings)
 
     async def list_runs(
         self,

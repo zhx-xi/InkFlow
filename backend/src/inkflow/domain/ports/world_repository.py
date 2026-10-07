@@ -158,6 +158,10 @@ class WorldRepositoryProtocol(Protocol):
         + DELETE 自身；返回自身是否被删（不存在 → False，spec §5.5 reparent）。"""
         ...
 
+    async def delete_by_batch(self, project_id: uuid.UUID, batch_id: str) -> int:
+        """按批次物理删除项目内条目；返回删除行数（无匹配 → 0，幂等）."""
+        ...
+
     # ── WorldCategory（v1.2，issue #389）──────────────────────────
     # 分类方法使用领域层 UUID 全程传递（category_id/project_id 均为 UUID），
     # 由实现层负责 int↔UUID 转换（与 WorldSetting 的 int 仓储约定不同——

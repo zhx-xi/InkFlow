@@ -12,7 +12,9 @@ system_prompt: |
   }
   category 从以下建议值中选择最合适的：设定、规则、约束、组织、地理、种族、文化、科技、
   魔法体系；无法判断时留空。world_settings 中不要包含重复的条目名。
+  优先从下列已有分类中选择 category，无法归入任何其一则留空：{categories}
+  {granularity_hint}
 human_prompt: |
   章节文本：
   {text}
-variables: [text]
+variables: [text, categories, granularity_hint]

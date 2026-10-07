@@ -121,6 +121,7 @@ class WorldSetting(BaseModel):
             魔法体系；自由文本，受控词表归 F14）；空串 = 未分类.
         content: 条目内容/详细设定.
         extra: 扩展属性字典（来源章节、标签、别名等 Phase 2+ 字段预留）.
+        batch_id: 创建该条目的提取批次标识（#1485，§5.8.5；None = 非提取产物）.
         created_at: 创建时间.
         updated_at: 最后更新时间.
     """
@@ -134,6 +135,7 @@ class WorldSetting(BaseModel):
     category: str = ""
     content: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
+    batch_id: str | None = None  # #1485：提取批次标识（可回滚锚点）
     created_at: datetime
     updated_at: datetime
 

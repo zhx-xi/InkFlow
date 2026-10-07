@@ -107,6 +107,10 @@ from inkflow.core.database import (
 )
 from inkflow.core.log import setup_logging
 from inkflow.core.migrations_chapter_audit import ensure_audit_logs_async_columns
+from inkflow.core.migrations_extraction_batch import (
+    ensure_characters_batch_id_column,
+    ensure_world_settings_batch_id_column,
+)
 from inkflow.core.migrations_timeline_era import ensure_timeline_era_columns
 from inkflow.core.migrations_writing_plan import ensure_writing_plan_tasklist_column
 from inkflow.core.startup_reconcile import reconcile_stale_running_plans
@@ -144,6 +148,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_preference_superseded_column)
         await conn.run_sync(ensure_user_preference_superseded_column)
         await conn.run_sync(ensure_world_parent_id_column)
+        # #1485：world_settings 补 batch_id 列（提取批次回滚锚点，幂等）
+        await conn.run_sync(ensure_world_settings_batch_id_column)
         await conn.run_sync(ensure_world_categories_kind_column)
         await conn.run_sync(ensure_world_categories)
         await conn.run_sync(ensure_map_columns)
@@ -159,6 +165,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_character_drop_is_deleted)
         await conn.run_sync(ensure_character_relations_merged_into_knowledge)
         await conn.run_sync(ensure_characters_brief_column)
+        # #1485：characters 补 batch_id 列（提取批次回滚锚点，幂等）
+        await conn.run_sync(ensure_characters_batch_id_column)
         await conn.run_sync(ensure_chapters_writing_requirements_column)
         await conn.run_sync(ensure_chapters_previous_content_column)
         await conn.run_sync(ensure_audit_logs_findings_column)

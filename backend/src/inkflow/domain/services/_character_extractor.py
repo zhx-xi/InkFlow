@@ -38,6 +38,7 @@ from inkflow.domain.models.character import (
     ExtractedRelation,
     RoleRank,
 )
+from inkflow.domain.models.extraction import Granularity
 from inkflow.domain.ports.character_errors import CharacterExtractionError
 from inkflow.domain.ports.character_repository import CharacterRepositoryProtocol
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
@@ -54,10 +55,31 @@ _MAX_PARSE_RETRIES = 2
 _TEMPERATURE = 0.2
 """结构化输出固定低温（spec §5.5，不对外暴露）。"""
 
+_COARSE_MAX_ITEMS = 5
+"""coarse 粒度每源条目上限（#1485 §5.8.3 ②，确定性上限）。"""
+
+_COARSE_HINT = "只提取最重要的 5 条粗粒度条目，把相关的小点合并到同一条；不要拆分细节。"
+"""coarse 粒度注入模板的指令（#1485 §5.8.3 ①，模板变量 granularity_hint）。"""
+
 
 def _utcnow() -> datetime:
     """返回当前 UTC 时间（时区感知）。"""
     return datetime.now(UTC)
+
+
+def _normalize_name(name: str) -> str:
+    """角色名归一化：去掉全部空白字符（含全角空格 \\u3000）后 strip（#1485 §5.8.2）。"""
+    return "".join(name.split())
+
+
+def _is_synonym(normalized: str, other: str) -> bool:
+    """近义判据（#1485 §5.8.2 档②）：归一化名互为子串，且较短者 ≥2 字且 ≥ 较长者一半长."""
+    if not normalized or not other:
+        return False
+    if normalized not in other and other not in normalized:
+        return False
+    shorter, longer = sorted((len(normalized), len(other)))
+    return shorter >= 2 and shorter * 2 >= longer
 
 
 def _extract_json_fragment(text: str) -> str | None:
@@ -184,6 +206,9 @@ class CharacterExtractor:
         request: CharacterExtractRequest,
         *,
         default_model: str,
+        granularity: Granularity = Granularity.FINE,
+        dry_run: bool = False,
+        batch_id: str | None = None,
     ) -> CharacterExtractionResult:
         """执行角色提取管线（§5.1 步骤 ②-⑦）。
 
@@ -191,6 +216,10 @@ class CharacterExtractor:
             request: 提取请求（project_id / text / 可选 model 覆盖）.
             default_model: 项目默认模型（project.config.model，
                 由调用方 CharacterService 校验项目存在后传入）.
+            granularity: 提取粒度（#1485 §5.8.3；coarse = 注入粗粒度指令 +
+                每源上限 ``_COARSE_MAX_ITEMS``）.
+            dry_run: 仅预览（#1485 §5.8.4；不落库、不写 run 表，条目 batch_id 恒 None）.
+            batch_id: 本批新建条目的批次标识（#1485 §5.8.5；更新条目保留原值）.
 
         Returns:
             合并落库后的提取报告.
@@ -201,9 +230,16 @@ class CharacterExtractor:
         """
         model = request.model or default_model
 
-        # ② 渲染模板（变量: text）
+        # #1485 §5.8.2: 合并前扫描已有角色（仓储替身未配置该方法时返回非列表
+        # → 退化为「无既有角色」并回退 get_by_name，而不是抛错）。
+        rows = await self._repo.list_all(request.project_id)
+        scanned = isinstance(rows, (list, tuple))
+        existing = list(rows) if scanned else []
+
+        # ② 渲染模板（变量: text / granularity_hint）
+        hint = "" if granularity is Granularity.FINE else _COARSE_HINT
         template = self._prompts.load(_TEMPLATE_NAME)
-        rendered = self._prompts.render(template, {"text": request.text})
+        rendered = self._prompts.render(template, {"text": request.text, "granularity_hint": hint})
         messages = [ChatMessage(role=m["role"], content=m["content"]) for m in rendered.messages]
 
         # ③④⑤ 调用 LLM + 解析 + 修复式重试（≤ 2 次）
@@ -238,6 +274,11 @@ class CharacterExtractor:
             relations=outcome.relations,
             item_warnings=outcome.warnings,
             model=model,
+            existing=existing,
+            scanned=scanned,
+            granularity=granularity,
+            dry_run=dry_run,
+            batch_id=batch_id,
         )
 
     # ── 解析 ────────────────────────────────────────────────────
@@ -288,8 +329,17 @@ class CharacterExtractor:
         relations: list[ExtractedRelation],
         item_warnings: list[str],
         model: str,
+        existing: list[Character],
+        scanned: bool,
+        granularity: Granularity,
+        dry_run: bool,
+        batch_id: str | None,
     ) -> CharacterExtractionResult:
-        """合并落库: 角色按 (project_id, name) 匹配，关系名称解析后按键 upsert。"""
+        """合并落库: 角色按 (project_id, name) 匹配，关系名称解析后按键 upsert。
+
+        #1485 写入策略（§5.8.2-§5.8.5）: coarse 上限 → 同名更新 / 近义合并 /
+        新建三档；dry_run 只算不写（也不落关系）。
+        """
         warnings = list(item_warnings)
         # #1291：project_id 为领域 UUID，直传仓储（不再 int 中转）
         pid = request.project_id
@@ -297,49 +347,81 @@ class CharacterExtractor:
 
         if not characters:
             warnings.append("未从文本中提取到任何角色")
+        # #1485 §5.8.3 ②: coarse 确定性上限（按 LLM 输出顺序取前 N 条）
+        if granularity is Granularity.COARSE and len(characters) > _COARSE_MAX_ITEMS:
+            dropped = len(characters) - _COARSE_MAX_ITEMS
+            characters = characters[:_COARSE_MAX_ITEMS]
+            warnings.append(f"coarse 粒度：丢弃 {dropped} 条超出上限的条目")
 
         created: list[Character] = []
         updated: list[Character] = []
         for ec in characters:
-            existing = await self._repo.get_by_name(pid, ec.name)
-            if existing is None:
+            normalized = _normalize_name(ec.name)
+            matched = _first_match(existing, normalized)
+            # #1485 §5.8.2 档②: 近义（归一化后互为子串且长度占比过半）→ 合并进已有角色
+            synonym = None if matched is not None else _first_synonym(existing, normalized)
+            if synonym is not None:
+                warnings.append(f"角色「{ec.name}」与已有「{synonym.name}」近义，已合并")
+                synonym_merged = _merge_synonym(existing=synonym, ec=ec)
+                # #1485 §5.8.2: 合并结果原位写回扫描池 —— 同批后续条目基于已合并
+                # 内容继续累积（否则第二次合并仍以合并前旧对象为基底，丢前一段追加）
+                _replace_pool_entry(existing, synonym, synonym_merged)
+                updated.append(
+                    synonym_merged if dry_run else await self._repo.update(synonym_merged)
+                )
+                name_to_char[ec.name] = synonym_merged
+                continue
+
+            current = matched
+            # 仓储不支持全量扫描（替身）→ 回退既有按名查询路径；否则列表即全量真相
+            if current is None and not scanned:
+                current = await self._repo.get_by_name(pid, ec.name)
+            if current is None:
                 now = _utcnow()
                 # #1299: 新建角色必须带角色等级（GUI 等级徽标 + #679 选项卡过滤依赖）
                 if ec.role_rank is None:
                     warnings.append(f"角色「{ec.name}」缺少角色等级，已回退为 minor")
-                new_char = await self._repo.add(
-                    Character(
-                        id=uuid.uuid4(),
-                        project_id=request.project_id,
-                        name=ec.name,
-                        personality=ec.personality or "",
-                        background=ec.background or "",
-                        goals=ec.goals or "",
-                        extra={"role_rank": ec.role_rank or RoleRank.MINOR.value},
-                        created_at=now,
-                        updated_at=now,
-                    )
+                new_char = Character(
+                    id=uuid.uuid4(),
+                    project_id=request.project_id,
+                    name=ec.name,
+                    personality=ec.personality or "",
+                    background=ec.background or "",
+                    goals=ec.goals or "",
+                    extra={"role_rank": ec.role_rank or RoleRank.MINOR.value},
+                    # #1485 §5.8.5: 预览（dry_run）构造的条目不带批次
+                    batch_id=None if dry_run else batch_id,
+                    created_at=now,
+                    updated_at=now,
                 )
+                if not dry_run:
+                    new_char = await self._repo.add(new_char)
                 created.append(new_char)
+                # 同批重复角色名幂等（列表可用时：新建角色即入匹配池）
+                existing.append(new_char)
                 name_to_char[ec.name] = new_char
                 continue
 
-            merged = _merge_character_fields(existing, ec)
+            merged = _merge_character_fields(current, ec)
             if merged is None:
                 # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
-                name_to_char[ec.name] = existing
+                name_to_char[ec.name] = current
                 continue
-            persisted = await self._repo.update(merged)
+            persisted = merged if dry_run else await self._repo.update(merged)
             updated.append(persisted)
             name_to_char[ec.name] = persisted
 
-        relations_created, relations_updated = await self._merge_relations(
-            request=request,
-            pid=pid,
-            relations=relations,
-            name_to_char=name_to_char,
-            warnings=warnings,
-        )
+        relations_created: list[CharacterRelation] = []
+        relations_updated: list[CharacterRelation] = []
+        # #1485 §5.8.4: dry-run 零写入 —— 关系落库同样跳过（预览实体未持久化）
+        if not dry_run:
+            relations_created, relations_updated = await self._merge_relations(
+                request=request,
+                pid=pid,
+                relations=relations,
+                name_to_char=name_to_char,
+                warnings=warnings,
+            )
 
         for w in warnings:
             logger.warning("角色提取警告: %s", w)
@@ -428,11 +510,63 @@ class CharacterExtractor:
         return await self._repo.get_by_name(pid, name)
 
 
+def _first_match(existing: list[Character], normalized: str) -> Character | None:
+    """档① 同名匹配（#1485 §5.8.2）：归一化名**相等**的已有角色（无 → None）。"""
+    if not normalized:
+        return None
+    for character in existing:
+        if _normalize_name(character.name) == normalized:
+            return character
+    return None
+
+
+def _first_synonym(existing: list[Character], normalized: str) -> Character | None:
+    """档② 近义匹配（#1485 §5.8.2）：归一化后互为子串且短者占比 ≥ 50%."""
+    for character in existing:
+        if _is_synonym(normalized, _normalize_name(character.name)):
+            return character
+    return None
+
+
+def _append_field(current: str, addition: str | None) -> str:
+    """字段追加（#1485 §5.8.2 档②）: 新值非空且未被已有值包含 → ``\\n\\n`` 追加."""
+    text = addition or ""
+    if not text or text in current:
+        return current
+    return f"{current}\n\n{text}" if current else text
+
+
+def _replace_pool_entry(pool: list[Character], old: Character, new: Character) -> None:
+    """原位替换扫描池中的条目（#1485 §5.8.2 近义合并累积）.
+
+    保持位置不变，使同批后续条目仍按归一化名匹配到已合并对象。
+    """
+    for index, item in enumerate(pool):
+        if item is old:
+            pool[index] = new
+            return
+
+
+def _merge_synonym(*, existing: Character, ec: ExtractedCharacter) -> Character:
+    """近义合并（#1485 §5.8.2 档②）: 保留已有身份 / 分组 / extra / batch_id，逐字段追加."""
+    return existing.model_copy(
+        update={
+            "personality": _append_field(existing.personality, ec.personality),
+            "background": _append_field(existing.background, ec.background),
+            "goals": _append_field(existing.goals, ec.goals),
+            "updated_at": _utcnow(),
+        }
+    )
+
+
 def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Character | None:
     """非空字段覆盖合并（personality/background/goals 独立判断）.
 
     无任何变化时返回 None（幂等跳过，不更新 updated_at）；否则
-    保留 existing 的 id / group_ids / extra / 时间戳等无关字段。
+    保留 existing 的 id / group_ids / extra / batch_id / 时间戳等无关字段。
+
+    #1485 §5.8.5: batch_id 必须原样保留 —— 被更新的角色不改写其原批次，
+    否则更早批次的可回滚性被破坏。
 
     Args:
         existing: 库中同名角色.
@@ -459,6 +593,7 @@ def _merge_character_fields(existing: Character, ec: ExtractedCharacter) -> Char
         goals=new_goals,
         group_ids=existing.group_ids,
         extra=existing.extra,
+        batch_id=existing.batch_id,
         created_at=existing.created_at,
         updated_at=_utcnow(),
     )
