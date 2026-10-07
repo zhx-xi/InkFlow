@@ -4,7 +4,9 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-07 | **依据**: PRD v2.1 §6.2 P1-13 会话管理（持久化/多会话/恢复），Constitution P1-P6
+> **Spec 版本**: 1.4 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-13 会话管理（持久化/多会话/恢复），Constitution P1-P6
+>
+> **Spec 变更**（1.3 → 1.4，2026-10-07，#1520）：`session create` / `session update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**description**；与既有 `--context-file`（JSON 上下文快照）**语义不同、两者并存**，不合并、不改名）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）；域内 5000 字符上限仍生效（与传输通道无关）。§4 签名与 §14 状态流同步。
 >
 > **Spec 变更**（1.0 → 1.3）: ① 1.1 删除语义按用户拍板修订为**两级删除**（首次 DELETE = 归档可解除；已归档再 DELETE = 真实删除；force 直删）——§2.5/§3.1/§3.2/§4/§7/§9/§12/§13 同步；② 1.2 待澄清 Q1/Q2/Q3 全部拍板（2026-08-07）：Q1 project_id 可空维持 / Q2 终态允许追加日志维持 / Q3 会话↔执行 MVP 软关联（新增 §5.4b 可观测键约定 + §12 决策 9 + §10 归位）；③ 1.3 F25 daemon 移除（ADR-029，2026-08-07 用户拍板）：task 会话类型保留，语义 = 外部 agent 任务履历（F20 MCP / ADR-022 skills 调用），全文「F25 daemon」表述改写
 >
@@ -503,7 +505,7 @@ GET /api/v1/sessions/9b1c2d3e-.../logs?offset=0&limit=50
 
 ```bash
 # 创建会话
-inkflow session create --type task --project-id <id> --title "每日定时写作" [--description <text>] [--context-json '<json>']
+inkflow session create --type task --project-id <id> --title "每日定时写作" [--description <text>] [--content-file <path>] [--context-json '<json>']
 #   长文本 context 用 --context-file <path>（JSON 文件；--context-json 与 --context-file 互斥，同 F9 双通道约定）
 
 # 列出会话（履历查询）
@@ -513,7 +515,7 @@ inkflow session list [--type task] [--status completed] [--project-id <id>] [--s
 inkflow session get --id <session-id> [--json]
 
 # 更新会话（标题/描述/上下文）
-inkflow session update --id <session-id> [--title <text>] [--description <text>] [--context-json '<json>'] [--json]
+inkflow session update --id <session-id> [--title <text>] [--description <text>] [--content-file <path>] [--context-json '<json>'] [--json]
 
 # 状态机动作
 inkflow session pause --id <session-id>
@@ -933,10 +935,10 @@ F24 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| inkflow session create --type writing/task --project-id <id> --title ... | 项目存在（若传 --project-id） | 创建会话（--context-json 或 --context-file 双通道） | 退出 0；--json 信封 data = SessionView | NOT_FOUND（项目不存在）→ 退出 1；VALIDATION_ERROR → 退出 1 | --context-json 与 --context-file 互斥 |
+| inkflow session create --type writing/task --project-id <id> --title ... | 项目存在（若传 --project-id） | 创建会话（--context-json 或 --context-file 双通道） | 退出 0；--json 信封 data = SessionView | NOT_FOUND（项目不存在）→ 退出 1；VALIDATION_ERROR → 退出 1 | --context-json 与 --context-file 互斥；--content-file <path> 读正文=description（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | inkflow session list [--type/--status/--project-id/--search/--limit/--offset] | — | 履历查询（过滤可任意组合） | 退出 0；data = {items, total, offset, limit} | — | — |
 | inkflow session get --id | 会话存在 | 详情（含履历摘要 + 日志条数） | 退出 0 | NOT_FOUND → 退出 1 | 归档会话可查 |
-| inkflow session update --id [--title/--description/--context-json] | 会话存在 | 部分更新（不承载 status） | 退出 0 | NOT_FOUND → 退出 1 | status 不经 CLI 修改 |
+| inkflow session update --id [--title/--description/--context-json] | 会话存在 | 部分更新（不承载 status） | 退出 0 | NOT_FOUND → 退出 1 | status 不经 CLI 修改；--content-file <path> 读正文=description（与 --description 互斥 → 退出码 2） |
 | inkflow session pause / resume / complete / fail --id | 会话存在且迁移合法 | 状态机动作（complete 带 --result-json；fail 带 --error） | 退出 0 | NOT_FOUND → 退出 1；VALIDATION_ERROR（非法迁移/校验失败）→ 退出 1 | 重复动作 → VALIDATION_ERROR（不幂等） |
 | inkflow session logs --id | 会话存在 | 履历列表（seq ASC） | 退出 0 | NOT_FOUND → 退出 1 | — |
 | inkflow session log add --id --message [--level/--payload-json] | 会话存在（含终态） | 追加日志（seq 递增） | 退出 0 | NOT_FOUND → 退出 1；VALIDATION_ERROR → 退出 1 | 终态可追加 |

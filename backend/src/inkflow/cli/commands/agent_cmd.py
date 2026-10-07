@@ -17,6 +17,7 @@ import uuid
 import typer
 
 from inkflow.cli.commands.pipeline_args import load_pipeline_config, resolve_pipeline_arg
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.agent_pipeline import PipelineExecuteRequest, RoleOverride
@@ -450,6 +451,9 @@ def template_create(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="模板名称"),
     description: str | None = typer.Option(None, "--description"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取模板说明（与 --description 互斥）"
+    ),
     main_model: str | None = typer.Option(None, "--main-model"),
     default_temperature: float | None = typer.Option(None, "--default-temperature"),
     roles_json: str | None = typer.Option(None, "--roles-json", help="roles 四键 JSON"),
@@ -457,9 +461,12 @@ def template_create(
 ) -> None:
     """创建 Agent 模板"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     body: dict = {"name": name}
-    if description is not None:
-        body["description"] = description
+    if description_text is not None:
+        body["description"] = description_text
     if main_model is not None:
         body["main_model"] = main_model
     if default_temperature is not None:
@@ -489,6 +496,9 @@ def template_update(
     template_id: str = typer.Option(..., "--id", help="模板 ID"),
     name: str | None = typer.Option(None, "--name", help="模板名称"),
     description: str | None = typer.Option(None, "--description"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新模板说明（与 --description 互斥）"
+    ),
     main_model: str | None = typer.Option(None, "--main-model"),
     default_temperature: float | None = typer.Option(None, "--default-temperature"),
     roles_json: str | None = typer.Option(None, "--roles-json", help="roles 四键 JSON"),
@@ -497,11 +507,14 @@ def template_update(
 ) -> None:
     """更新 Agent 模板"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     body: dict = {}
     if name is not None:
         body["name"] = name
-    if description is not None:
-        body["description"] = description
+    if description_text is not None:
+        body["description"] = description_text
     if main_model is not None:
         body["main_model"] = main_model
     if default_temperature is not None:

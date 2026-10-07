@@ -1,9 +1,9 @@
 # F4: Agent 编排 (agent_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
+> **Spec 版本**: 1.2 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
 > **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#4](https://github.com/zhx-xi/InkFlow/issues/4) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（CLI `--watch` 语义 + `agent status` 信封）
+> **关联 Issues**: [#4](https://github.com/zhx-xi/InkFlow/issues/4) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（CLI `--watch` 语义 + `agent status` 信封） · [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（`agent template create/update` 的 `--content-file`；补录本 spec 缺失的 template CRUD CLI 签名）
 > **依赖**: F1 (project_service) ✅, F3 (writing_service), F5 (llm_service)
 > **状态**: ✅ 已实现（PR #22）
 
@@ -314,6 +314,18 @@ inkflow agent validate \
     [--json]
 
 inkflow agent template list \
+    [--json]
+
+inkflow agent template create \
+    --name <str> [--description <str>] [--content-file <path>] \
+    [--main-model <provider/model>] [--default-temperature <float>] [--default-words <int>] \
+    [--roles-json '<json>'] \
+    [--json]
+
+inkflow agent template update \
+    --id <id> [--name <str>] [--description <str>] [--content-file <path>] \
+    [--main-model <provider/model>] [--default-temperature <float>] [--default-words <int>] \
+    [--roles-json '<json>'] [--is-default] \
     [--json]
 ```
 
@@ -825,6 +837,8 @@ stage_results = [
 | inkflow agent status --run-id [--json] | 执行记录存在 | 查询状态/结果 | 人类可读（执行 ID / 管线 / 状态 / 耗时 / 错误行）/ `--json` → F7 §5 统一信封 `{ok, data: <执行记录>}` | 404「执行记录不存在」 → 退出码 1（`--json` → `NOT_FOUND` 错误信封） | 重复查询幂等（§5.3） |
 | inkflow agent validate --file <pipeline.yaml> [--json] | 无 | 结构校验（走 Protocol.validate） | 校验结果 / --json | 422 → 退出码 1 | Phase 1 即支持 |
 | inkflow agent template list [--json] | 无 | 列出内置模板 | {items} / --json | — | — |
+| inkflow agent template create --name [--description --content-file <path> --main-model --default-temperature --default-words --roles-json] [--json] | — | 创建模板 | 信封 / 人类可读 | 422 VALIDATION_ERROR → 退出码 1 | --content-file <path> 从 UTF-8 文件读正文=模板 description（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1）；--roles-json 非法 JSON → VALIDATION_ERROR |
+| inkflow agent template update --id [--name --description --content-file <path> --main-model --default-temperature --default-words --roles-json --is-default] [--json] | 模板存在 | 更新模板 | 信封 / 人类可读 | 404/422 → 退出码 1 | --content-file <path> 读正文=模板 description（与 --description 互斥 → 退出码 2） |
 
 ### 13.3 验收锚点
 
@@ -841,5 +855,6 @@ stage_results = [
 
 | 版本 | 日期 | 变更 | 关联 |
 |------|------|------|------|
+| 1.2 | 2026-10-07 | `agent template create` / `agent template update` 新增 `--content-file <path>`（UTF-8 文件读正文=模板 description；与 `--description` 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1）。**补录**：本 spec §4 CLI 签名块此前仅列 `agent template list`，本轮补齐 create/update 完整签名；§13.2 状态流同步。语义 = F7 §4.0 通用约定 | [#1520](https://github.com/zhx-xi/InkFlow/issues/1520) |
 | 1.1 | 2026-10-06 | CLI `run --watch` 如实实现：轮询退避（1s→2s→…封顶 30s）+ `--watch-timeout` 总超时（默认 600s）+ 超时报错退出码 1 且保留 run_id + 轮询失败不静默 + 终态 failed 退出码 0；`agent status --json` 改走 F7 §5 统一信封（根级/命令级 `--json` 等价）；新增 §4.2 轮询语义表，§4 / §4.1 / §13.2 同步 | [#1478](https://github.com/zhx-xi/InkFlow/issues/1478) |
 | 1.0 | 2026-07-31 | 首版（PR #22） | [#4](https://github.com/zhx-xi/InkFlow/issues/4) |

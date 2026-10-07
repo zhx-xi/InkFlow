@@ -30,6 +30,7 @@ import typer
 from pydantic import ValidationError
 
 from inkflow.cli._time import format_local
+from inkflow.cli.content_input import resolve_content
 from inkflow.cli.context import CliContext
 from inkflow.cli.output import print_error, print_result
 from inkflow.domain.models.foreshadowing import (
@@ -111,6 +112,9 @@ def create_foreshadowing_cmd(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     title: str = typer.Option(..., "--title", "-t", help="伏笔名（1-100 字符）"),
     description: str = typer.Option("", "--description", "-d", help="伏笔详情"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取伏笔详情（与 --description 互斥）"
+    ),
     priority: int = typer.Option(50, "--priority", help="注入优先级（0-100，默认 50）"),
     location: str = typer.Option("", "--location", help="埋设位置自由文本"),
     event_id: str | None = typer.Option(
@@ -119,6 +123,9 @@ def create_foreshadowing_cmd(
 ) -> None:
     """创建伏笔（status 固定为 open，即创建即埋设）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
     parsed_event_id: uuid.UUID | None = None
     if event_id is not None:
@@ -126,7 +133,7 @@ def create_foreshadowing_cmd(
     data = ForeshadowingCreate(
         project_id=pid,
         title=title,
-        description=description,
+        description=description_text if description_text is not None else "",
         priority=priority,
         location=location,
         event_id=parsed_event_id,
@@ -268,6 +275,9 @@ def update_foreshadowing_cmd(
     foreshadowing_id: str = typer.Option(..., "--id", "-i", help="伏笔 ID (UUID)"),
     title: str | None = typer.Option(None, "--title", "-t", help="新伏笔名"),
     description: str | None = typer.Option(None, "--description", "-d", help="新伏笔详情"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新伏笔详情（与 --description 互斥）"
+    ),
     priority: int | None = typer.Option(None, "--priority", help="新注入优先级（0-100）"),
     location: str | None = typer.Option(
         None, "--location", help='新埋设位置；传空字符串 "" 表示清除'
@@ -278,13 +288,16 @@ def update_foreshadowing_cmd(
 ) -> None:
     """更新伏笔（仅更新传入的字段；status 不可直接修改）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     fid = _parse_uuid(cli_ctx, foreshadowing_id, "伏笔不存在")
 
     update_fields: dict[str, Any] = {}
     if title is not None:
         update_fields["title"] = title
-    if description is not None:
-        update_fields["description"] = description
+    if description_text is not None:
+        update_fields["description"] = description_text
     if priority is not None:
         update_fields["priority"] = priority
     if location is not None:

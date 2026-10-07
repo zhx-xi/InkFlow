@@ -8,9 +8,11 @@
 >
 > **Spec 变更（v1.2，2026-10-07，#1483）**: `outline create` / `outline update` 新增 `--content-file <path>`（从 UTF-8 文件读取大纲正文=**总体描述**，解决内联 `--description` 受命令行长度限制（Windows ~32KB）且中文经 PowerShell 管道易 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.1 签名与 §14.2 状态流同步；子实体（`point` / `arc`）与其他模块另开 follow-up（F7 §4.0 范围边界）。
 >
-> **Spec 版本**: 1.2 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
+> **Spec 变更（v1.3，2026-10-07，#1520）**: `outline point create|update` 与 `outline arc create|update` 新增 `--content-file <path>`（从 UTF-8 文件读取**要点描述 / 弧线说明**）。语义与互斥规则 = F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.2/§4.3 签名与 §14.2 状态流同步（#1483 的「子实体另开 follow-up」在本轮收口）。
+>
+> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第三个模块，估算 3-4 人天）
-> **关联 Issues**: [#41](https://github.com/zhx-xi/InkFlow/issues/41) · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.2 `--content-file`）
+> **关联 Issues**: [#41](https://github.com/zhx-xi/InkFlow/issues/41) · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.2 `--content-file`） · [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（v1.3 point/arc 横向覆盖）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）；F2（边界声明，非硬依赖，见 §11）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 > **状态**: ✅ 已实现（PR #58）
@@ -656,11 +658,11 @@ inkflow outline delete --id <uuid> [--force] [--json]     # v1.1 真删（--perm
 inkflow outline point list --outline-id <uuid> [--json]
 
 inkflow outline point create --outline-id <uuid> --name <str> \
-    [--type <str>] [--description <str>] [--position <int>] [--arc-id <uuid>] [--json]
+    [--type <str>] [--description <str>] [--content-file <path>] [--position <int>] [--arc-id <uuid>] [--json]
     # --position 缺省 = 大纲末尾追加
 
 inkflow outline point update --id <uuid> \
-    [--name <str>] [--type <str>] [--description <str>] [--position <int>] \
+    [--name <str>] [--type <str>] [--description <str>] [--content-file <path>] [--position <int>] \
     [--arc-id <uuid|"">] [--json]       # --arc-id "" 表示清除弧线归属
 
 inkflow outline point delete --id <uuid> [--force] [--json]
@@ -671,9 +673,9 @@ inkflow outline point delete --id <uuid> [--force] [--json]
 ```bash
 inkflow outline arc list --project-id <uuid> [--json]
 
-inkflow outline arc create --project-id <uuid> --name <str> [--description <str>] [--json]
+inkflow outline arc create --project-id <uuid> --name <str> [--description <str>] [--content-file <path>] [--json]
 
-inkflow outline arc update --id <uuid> [--name <str>] [--description <str>] [--json]
+inkflow outline arc update --id <uuid> [--name <str>] [--description <str>] [--content-file <path>] [--json]
 
 inkflow outline arc delete --id <uuid> [--force] [--json]
 ```
@@ -1255,12 +1257,12 @@ F11 被依赖:
 | outline delete | 大纲存在 | 二次确认（--force 跳过）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除（真删无软/硬之分） |
 | ~~outline restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 | outline point list | 大纲存在 | 列表 | 列表 / JSON | 404 | — |
-| outline point create | 大纲存在 | 创建（--position 缺省=末尾追加） | 「✅ 情节点创建成功: [主角登场] (开篇)」 | 404；422 | — |
-| outline point update | 情节点存在 | 更新（--arc-id "" 清除弧线归属） | JSON | 404；422 | — |
+| outline point create | 大纲存在 | 创建（--position 缺省=末尾追加） | 「✅ 情节点创建成功: [主角登场] (开篇)」 | 404；422 | --content-file <path> 从 UTF-8 文件读正文=要点描述（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
+| outline point update | 情节点存在 | 更新（--arc-id "" 清除弧线归属） | JSON | 404；422 | --content-file <path> 从 UTF-8 文件读正文=要点描述（与 --description 互斥 → 退出码 2） |
 | outline point delete | 情节点存在 | 二次确认（--force） | 204 | 404；--json 无 --force → VALIDATION_ERROR | — |
 | outline arc list | 项目存在 | 列表 | 列表 / JSON | 404 | — |
-| outline arc create | 项目存在 | 创建 | 「✅ 弧线创建成功: [主角成长线]」 | 404；422 同名 | — |
-| outline arc update | 弧线存在 | 更新 | JSON | 404；422 | — |
+| outline arc create | 项目存在 | 创建 | 「✅ 弧线创建成功: [主角成长线]」 | 404；422 同名 | --content-file <path> 从 UTF-8 文件读正文=弧线说明（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
+| outline arc update | 弧线存在 | 更新 | JSON | 404；422 | --content-file <path> 从 UTF-8 文件读正文=弧线说明（与 --description 互斥 → 退出码 2） |
 | outline arc delete | 弧线存在 | 二次确认（--force） | 204 | 404；--json 无 --force → VALIDATION_ERROR | — |
 | outline generate | 项目存在 | AI 生成（--save 默认开/--no-save 预览；--model） | 「✅ 大纲生成并保存: [...]，含 8 个情节点、2 条弧线」/「🔍 大纲预览（未保存）: ...」/「⚠️ 生成完成但有警告: ...」；--json 信封 | 404；422；500 LLM_ERROR | --prompt 与 --prompt-file 互斥（同传 → 退出码 2）；错误码 NOT_FOUND/VALIDATION_ERROR/LLM_ERROR/DB_ERROR |
 

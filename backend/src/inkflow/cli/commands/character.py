@@ -360,9 +360,15 @@ def relate_characters(
     to_character_id: str = typer.Option(..., "--to", help="终点角色 ID (UUID)"),
     relation_type: str = typer.Option(..., "--type", "-t", help="关系类型"),
     description: str = typer.Option("", "--description", "-d", help="关系描述"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取关系描述（与 --description 互斥）"
+    ),
 ) -> None:
     """创建角色关系（from = 路径角色）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     cid = _parse_uuid(cli_ctx, character_id, "角色不存在")
     to = _parse_uuid(cli_ctx, to_character_id, "角色不存在")
 
@@ -375,7 +381,7 @@ def relate_characters(
                 json={
                     "to_character_id": str(to),
                     "relation_type": relation_type,
-                    "description": description,
+                    "description": description_text if description_text is not None else "",
                 },
             )
 
@@ -530,9 +536,15 @@ def create_group_cmd(
     project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
     name: str = typer.Option(..., "--name", "-n", help="分组名"),
     description: str = typer.Option("", "--description", "-d", help="分组说明"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取分组说明（与 --description 互斥）"
+    ),
 ) -> None:
     """创建角色分组"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
 
     async def _impl() -> dict:
@@ -541,7 +553,10 @@ def create_group_cmd(
         async with client:
             return await client.post(
                 f"/projects/{pid}/character-groups",
-                json={"name": name, "description": description},
+                json={
+                    "name": name,
+                    "description": description_text if description_text is not None else "",
+                },
             )
 
     group = _run(cli_ctx, _impl)
@@ -609,17 +624,23 @@ def update_group_cmd(
     group_id: str = typer.Option(..., "--id", "-i", help="分组 ID (UUID)"),
     name: str | None = typer.Option(None, "--name", "-n", help="新分组名"),
     description: str | None = typer.Option(None, "--description", "-d", help="新分组说明"),
+    content_file: str | None = typer.Option(
+        None, "--content-file", help="从 UTF-8 文件读取新分组说明（与 --description 互斥）"
+    ),
 ) -> None:
     """更新分组（仅更新传入的字段）"""
     cli_ctx: CliContext = ctx.obj
+    description_text = resolve_content(
+        description, content_file, cli_ctx=cli_ctx, inline_flag="--description"
+    )
     gid = _parse_uuid(cli_ctx, group_id, "分组不存在")
 
     async def _impl() -> dict:
         update_fields: dict[str, Any] = {}
         if name is not None:
             update_fields["name"] = name
-        if description is not None:
-            update_fields["description"] = description
+        if description_text is not None:
+            update_fields["description"] = description_text
         handle = await ensure_kernel()
         client = InkFlowHTTPClient(handle)
         async with client:

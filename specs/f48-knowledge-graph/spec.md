@@ -1,7 +1,9 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.5 | **日期**: 2026-10-02 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **Spec 版本**: 1.6 | **日期**: 2026-10-07 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+>
+> **Spec 变更**（1.5 → 1.6，2026-10-07 #1520）：`knowledge relation add` / `knowledge relation update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**关系说明** `description`）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4 签名与 §14 状态流同步。
 >
 > **Spec 变更**（1.4 → 1.5，2026-10-02 #1360）：**新增 drawio（mxGraph XML）导入/导出**（§5.7，ADR-061）——两端点（`GET …/knowledge-graph/export?format=mxgraph` + `POST …/knowledge-graph/import?mode=merge|replace`）、交换格式 v1（节点 id = `entity_type:entity_uuid`、边用 `<object label tooltip>` 包装）、导入**复用既有校验链**（冲突按幂等跳过 + 计数回报）、`total == imported + skipped + failed`；同步 §3.1-§3.3 端点与异常表（新增 `MxGraphImportError` → 422）、§7 边界 18-25、§8 文件结构、§9 测试场景 18-22、§10（「图谱导出/分享」状态演进：导出已交付、分享仍不做）、§12 决策 13、§13 M9、§14.1/§14.3（A7）。**不内嵌编辑器**（否决 iframe 内嵌 / 桌面包内嵌，见 ADR-061）。
 >
@@ -422,10 +424,10 @@ inkflow knowledge relation list <project_id> [--source-type <type>]
                                 [--target-type <type>] [--relation-type <text>]
 inkflow knowledge relation add <project_id> --source-type <type> --source-id <UUID>
                                --target-type <type> --target-id <UUID>
-                               --relation-type <text> [--description <text>]
+                               --relation-type <text> [--description <text>] [--content-file <path>]
 inkflow knowledge relation get <relation_id>
 inkflow knowledge relation update <relation_id> [--relation-type <text>]
-                                   [--description <text>] [--source-id <UUID>] ...
+                                   [--description <text>] [--content-file <path>] [--source-id <UUID>] ...
 inkflow knowledge relation delete <relation_id>                   # 真删
 ```
 
@@ -1091,9 +1093,9 @@ F48 被依赖:
 |------|------|------|------|------|------|
 | inkflow knowledge graph &lt;project_id&gt; [--json] | 项目存在 | 图谱聚合查询（nodes + edges） | 退出码 0（文本模式 edges 摘要行 source --label--&gt; target；--json 原样输出） | 404 → 退出码 1 | — |
 | inkflow knowledge relation list &lt;project_id&gt; [--source-type/--target-type/--relation-type] | — | 关系列表 | 退出码 0 + 信封 | 退出码 1 | — |
-| inkflow knowledge relation add &lt;project_id&gt; --source-type --source-id --target-type --target-id --relation-type [--description] | 实体存在 + 同项目 | 创建 | 退出码 0 + 实体 | 422 → 退出码 1 | — |
+| inkflow knowledge relation add &lt;project_id&gt; --source-type --source-id --target-type --target-id --relation-type [--description] | 实体存在 + 同项目 | 创建 | 退出码 0 + 实体 | 422 → 退出码 1 | --content-file &lt;path&gt; 从 UTF-8 文件读正文=关系说明（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | inkflow knowledge relation get &lt;relation_id&gt; | 关系存在 | 详情 | 退出码 0 | 404 → 退出码 1 | — |
-| inkflow knowledge relation update &lt;relation_id&gt; [--relation-type/--description/--source-id ...] | 关系存在 | 更新 | 退出码 0 | 404/422 → 退出码 1 | — |
+| inkflow knowledge relation update &lt;relation_id&gt; [--relation-type/--description/--source-id ...] | 关系存在 | 更新 | 退出码 0 | 404/422 → 退出码 1 | --content-file &lt;path&gt; 从 UTF-8 文件读正文=关系说明（与 --description 互斥 → 退出码 2） |
 | inkflow knowledge relation delete &lt;relation_id&gt; | 关系存在 | 真删（二次确认） | 退出码 0 | 404 → 退出码 1 | 删除类命令二次确认（同 F9/F36） |
 
 ### 14.3 验收锚点

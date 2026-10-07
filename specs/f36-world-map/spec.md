@@ -1,7 +1,9 @@
 # F36: 世界观地图视图（world-map）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.4 | **日期**: 2026-08-15 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+> **Spec 版本**: 1.5 | **日期**: 2026-10-07 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+>
+> **Spec 变更**（1.4 → 1.5，2026-10-07 #1520）：`map create` / `map update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**地图描述** `description`）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4 签名与 §14 状态流同步；`map pin update` 无正文字段，**刻意不接**。
 >
 > **Spec 变更**（1.3 → 1.4，2026-08-15 #378 拍板）：GUI 拖拽调层级——`WorldMapUpdate` 加 `parent_map_id`（PATCH 改挂：null=变根图 / id=成为其子图）；`update_map` 校验链扩展（父图存在/同项目复用 `MapParentMapNotFoundError` + **循环校验**——不能挂到自己子孙，新增 422 `MapParentCycleError`）；前端地图工作台左栏目录树（根图→子图→孙图）+ 原生 HTML5 拖拽。同步：§2.1 业务规则、§2.3 领域模型、§3.1 端点总览、§5.4 服务层校验链、§7 错误表、§12 决策 17、§13 M3/M4 验收。
 >
@@ -346,10 +348,10 @@ DELETE /api/v1/maps/9
 
 ```bash
 inkflow map create <project_id> --name <name> --image <path>
-                [--root-location <UUID>] [--description <text>]     # 上传本地图片创建地图
+                [--root-location <UUID>] [--description <text>] [--content-file <path>]     # 上传本地图片创建地图
 inkflow map list <project_id> [--root-location <UUID>|none]          # 地图列表（含 root_location_id）
 inkflow map get <map_id> [--image-output <path>]                    # 详情；--image-output 下载图片
-inkflow map update <map_id> [--name] [--description] [--root-location <UUID>|none]
+inkflow map update <map_id> [--name] [--description] [--content-file <path>] [--root-location <UUID>|none]
 inkflow map image <map_id> --image <path>                           # 换图
 inkflow map delete <map_id> [--cascade] [--reparent-to <map_id>]    # 真删；有子地图必须显式选择
 inkflow map children <map_id>                                       # 子地图（drill-down）
@@ -707,10 +709,10 @@ F36 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| map create <project_id> --name --image | 项目存在·图片有效 | 上传本地图片建图 | ✅ / --json | 图片上传失败（文件不存在/类型不支持）→ VALIDATION_ERROR；404 NOT_FOUND | --root-location/--description 可选 |
+| map create <project_id> --name --image | 项目存在·图片有效 | 上传本地图片建图 | ✅ / --json | 图片上传失败（文件不存在/类型不支持）→ VALIDATION_ERROR；404 NOT_FOUND | --root-location/--description 可选；--content-file <path> 从 UTF-8 文件读正文=地图描述（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | map list <project_id> | 项目存在 | 列表 | 列表 / --json | — | --root-location <UUID>/none |
 | map get <map_id> | 地图存在 | 详情；--image-output 下载图片 | JSON / 图片文件 | NOT_FOUND 退出码 1 | — |
-| map update <map_id> | 地图存在 | 更新元数据 | JSON | NOT_FOUND；VALIDATION_ERROR | --root-location <UUID>/none |
+| map update <map_id> | 地图存在 | 更新元数据 | JSON | NOT_FOUND；VALIDATION_ERROR | --root-location <UUID>/none；--content-file <path> 从 UTF-8 文件读正文=地图描述（与 --description 互斥 → 退出码 2） |
 | map image <map_id> --image | 地图存在 | 换图 | JSON | 文件无效 → VALIDATION_ERROR | — |
 | map delete <map_id> | 地图存在 | 二次确认 → 真删 | ✅ / --json | 有子未指定 → VALIDATION_ERROR（与 API 422 一致）；NOT_FOUND | --cascade / --reparent-to <map_id> |
 | map children <map_id> | 地图存在 | drill-down | JSON | NOT_FOUND | — |

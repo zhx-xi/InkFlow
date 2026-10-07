@@ -1,9 +1,9 @@
 # F7: CLI 命令行接口 (cli_interface) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
+> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
 > **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（`agent status --json` 走统一信封）
+> **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（`agent status --json` 走统一信封） · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（`--content-file` 首轮） · [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（`--content-file` 横向覆盖）
 > **依赖**: F1-F6 全部（对外统一入口）
 > **参考 ADR**: [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru 日志), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁)
 > **状态**: ✅ 已实现（PR #28）
@@ -90,11 +90,11 @@ def main(
 
 ## 4. 各命令组详细签名
 
-### 4.0 正文双通道通用约定（`--content-file` · v1.2）
+### 4.0 正文双通道通用约定（`--content-file` · v1.3）
 
 **背景**（#1483）：内联正文传参受命令行长度限制（Windows ~32KB），且中文经 PowerShell 管道易 ANSI 误码 → 长正文（长设定 / 长章节正文 / 总纲）只能绕过 CLI 直连 HTTP。
 
-**约定**（适用于 `world` / `chapter` / `outline` / `character` 各 create/update 命令）：
+**约定**（适用于各模块 create/update 型命令的**正文字段**，映射见下表；#1483 先行四模块实体级，#1520 横向补齐）：
 
 | 项 | 规则 | 修改履历 |
 |----|------|----------|
@@ -106,16 +106,26 @@ def main(
 | 落库语义 | 文件内容**原样**透传（不做 strip、不做编码转换）；行尾跟随上行的通用换行读取结果（文件 CRLF 在 payload 中呈现为 LF） | 新增 |
 | 公共实现 | 单处 helper `cli/content_input.py::resolve_content`（读文件 + 互斥校验），各命令复用，**禁止逐命令重复实现** | 新增 |
 
-**各命令正文字段映射**（本轮范围 = #1483 点名的四个模块的实体级 create/update）：
+**各命令正文字段映射**（#1483 实体级四模块 + #1520 横向覆盖）：
 
 | 命令 | 目标字段 | 互斥对象 | 归属 spec | 修改履历 |
 |------|----------|----------|-----------|----------|
-| `world create` / `world update` | `content` | `--content` | F10 §4.1 | 新增 |
-| `chapter create` / `chapter update` | `content` | `--content` | F2 §4 | 新增 |
-| `outline create` / `outline update` | `description` | `--description` | F11 §4.1 | 新增 |
-| `character create` / `character update` | `background` | `--background` | F9 §4.1 | 新增 |
+| `world create` / `world update` | `content` | `--content` | F10 §4.1 | 新增（#1483） |
+| `chapter create` / `chapter update` | `content` | `--content` | F2 §4 | 新增（#1483） |
+| `outline create` / `outline update` | `description` | `--description` | F11 §4.1 | 新增（#1483） |
+| `character create` / `character update` | `background` | `--background` | F9 §4.1 | 新增（#1483） |
+| `outline point create` / `outline point update` | `description` | `--description` | F11 §4.1 | 新增（#1520） |
+| `outline arc create` / `outline arc update` | `description` | `--description` | F11 §4.1 | 新增（#1520） |
+| `character group create` / `character group update` | `description` | `--description` | F9 §4.1 | 新增（#1520） |
+| `character relate` | `description` | `--description` | F9 §4.1 | 新增（#1520） |
+| `foreshadowing create` / `foreshadowing update` | `description` | `--description` | F13 §4 | 新增（#1520） |
+| `timeline create` / `timeline update` | `description` | `--description` | F12 §4 | 新增（#1520） |
+| `session create` / `session update` | `description` | `--description` | F24 §4 | 新增（#1520） |
+| `map create` / `map update` | `description` | `--description` | F36 §4 | 新增（#1520） |
+| `knowledge relation add` / `knowledge relation update` | `description` | `--description` | F48 §4 | 新增（#1520） |
+| `agent template create` / `agent template update` | `description` | `--description` | F4 §4 | 新增（#1520） |
 
-> **范围边界（#1483）**：同模块子实体（`outline point` / `outline arc` / `character group`）与其他模块（`foreshadowing` / `timeline` / `session` / `map` / `knowledge relation` / `agent template`）的 create/update 正文通道**不在本轮**，另开 follow-up 跟踪；其中 `session` 已有 `--context-file`、`agent template` 已有 `--file` / `--roles-json`，避免同义参数混淆（详见 §10）。
+> **范围边界（#1520 收口）**：`--content-file` 覆盖上表全部 create/update 型正文字段。**明确不覆盖**（无对应正文字段 / 语义不符）：`project create/update`（name/tags/language/target_words/config）、`volume create/update`（title/order）、`map pin update`（label/location 坐标类）、`write next --outline`（提纲输入，语义不同）。**不同语义的既有文件通道保持原名并存**：`session` 的 `--context-file`（JSON 上下文快照）、`agent validate --file`（管线 YAML），均**不并入** `--content-file`（详见 §10）。
 
 ### 4.1 serve
 
@@ -365,7 +375,8 @@ backend/tests/
 | 项 | 原因 |
 |----|------|
 | character / world / outline / audit / export 命令组 | 对应模块 F8-F17 为 Phase 2；命令树按 PRD F7 限定 Phase 1 六组 |
-| `--content-file` 的子实体与其他模块覆盖 | 本轮（#1483）仅覆盖四模块**实体级** create/update；`outline point` / `outline arc` / `character group`、`foreshadowing` / `timeline` / `session` / `map` / `knowledge relation` / `agent template` 另开 follow-up（其中 `session` 已有 `--context-file`、`agent template` 已有 `--file`，避免同义参数混淆） |
+| `--content-file` 的「无正文参数」命令 | 「无对应正文字段 / 语义不符」命令**刻意不接** `--content-file`（#1520 拍板）：`project create/update`（name/tags/language/target_words/config）、`volume create/update`（title/order）、`map pin update`（label/location 坐标类）、`write next --outline`（提纲输入，语义不同）。覆盖已完整：`outline point/arc`、`character group`、`character relate`、`foreshadowing`、`timeline`、`session`、`map`、`knowledge relation`、`agent template` 于 #1520 补齐（§4.0 映射表） |
+| 同义命名通道合并（`session --context-file` / `agent validate --file`） | 语义不同物，**保持原名并存**，不并入 `--content-file`：`--context-file` = JSON 上下文快照；`--file` = 管线 YAML（`agent validate`，非 `agent template create/update`） |
 | 交互式 TUI / 富终端界面 | Phase 2 Web UI |
 | 命令历史 / 会话恢复 | Phase 2+ |
 | 自定义补全逻辑（动态值补全） | 依赖模块 Phase 2 落地后按需增强 |
@@ -432,7 +443,7 @@ F7 被依赖:
 | --version / -V | — | 打印版本号（pyproject.toml）并退出 | 版本号 | — | — |
 | --help | 每级命令 | Typer 原生帮助 | 帮助文本（含选项/参数说明） | — | no_args_is_help |
 | --install-completion / --show-completion [bash/zsh/fish/powershell] | — | 安装/显示补全脚本 | 写入 rc 文件 / 脚本内容 | — | 四种 Shell 覆盖 |
-| --content-file <path> | create/update 命令（world/chapter/outline/character，§4.0） | 读取 UTF-8 文件为命令正文字段 | 文件内容原样落入目标字段（逐字符、不 strip、不转码） | 同传内联正文参数 → 退出码 2 + stderr「<flag> 与 --content-file 不能同时使用」（不发生写入）；文件缺失/不可读 → VALIDATION_ERROR + 退出码 1（不泄漏栈回溯） | 显式 UTF-8（与 PowerShell 代码页无关）；长正文（>32KB）可用；与内联参数互斥 |
+| --content-file <path> | create/update 命令的正文字段（§4.0 映射表；`world`/`chapter`/`outline`/`outline point`/`outline arc`/`character`/`character group`/`character relate`/`foreshadowing`/`timeline`/`session`/`map`/`knowledge relation`/`agent template`） | 读取 UTF-8 文件为命令正文字段 | 文件内容原样落入目标字段（逐字符、不 strip、不转码） | 同传内联正文参数 → 退出码 2 + stderr「<flag> 与 --content-file 不能同时使用」（不发生写入）；文件缺失/不可读 → VALIDATION_ERROR + 退出码 1（不泄漏栈回溯） | 显式 UTF-8（与 PowerShell 代码页无关）；长正文（>32KB）可用；与内联参数互斥；不同语义的既有文件通道（`session --context-file` / `agent validate --file`）保持并存 |
 | 无参数 | — | — | — | 显示 help，退出码 2 | no_args_is_help=True |
 
 ### 14.2 命令组状态流
@@ -474,6 +485,7 @@ F7 被依赖:
 
 | 版本 | 日期 | 变更 | 关联 |
 |------|------|------|------|
+| 1.3 | 2026-10-07 | §4.0 映射表**横向扩列**（+15 行：#1520 补齐 `outline point`/`outline arc`/`character group`/`character relate`/`foreshadowing`/`timeline`/`session`/`map`/`knowledge relation`/`agent template`，共 19 命令）+ 范围边界改写为 **#1520 收口**（明列「无正文参数」命令 + `--context-file`/`--file` 保持并存）；§10 同步两条边界行；§14.1 `--content-file` 行适用命令集扩全 | [#1520](https://github.com/zhx-xi/InkFlow/issues/1520) |
 | 1.2 | 2026-10-07 | §4 新增 **4.0 正文双通道通用约定（`--content-file`）**——统一语义（显式 UTF-8 读文件 / 与内联正文参数互斥 → 退出码 2 / 文件缺失 → VALIDATION_ERROR 退出码 1 / 原样落库）+ 四模块正文字段映射表 + 公共 helper 约定；§4.3 chapter 签名补 `[--content-file <path>]`；§14.1 全局选项状态流补 `--content-file` 行；§10 登记范围边界（子实体与其他模块另开 follow-up） | [#1483](https://github.com/zhx-xi/InkFlow/issues/1483) |
 | 1.1 | 2026-10-06 | §5 补 `agent status --json` 信封条目（`data` = 执行记录；根级 `--json` 与命令级 `--json` 等价；404 → 错误信封）；`agent run --watch` 的 CLI 语义归 F4 §4.2 | [#1478](https://github.com/zhx-xi/InkFlow/issues/1478) |
 | 1.0 | 2026-07-31 | 首版（PR #28） | [#7](https://github.com/zhx-xi/InkFlow/issues/7) |

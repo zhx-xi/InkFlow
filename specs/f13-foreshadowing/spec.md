@@ -4,7 +4,8 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
+> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
+> **Spec 变更**: v1.3 — #1520 `foreshadowing create` / `foreshadowing update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**伏笔详情**，叙事型长文本）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4.1 签名与 §14 状态流同步。
 > **Spec 变更**: v1.2 — 删除语义统一（issue #211，「普通实体软删→真删」）**文档同步补齐**：Foreshadowing 移除 `is_deleted` 字段（§2.1）；DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /foreshadowings/{id}/restore` 端点与 `foreshadowing restore` 命令移除（§3/§4/§14）；§2.4 状态机的 `deleted` 态与 `restore` 迁移一并移除（两态 + 专用动作端点）；§2.3 partial unique → 全唯一索引。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后，2026-09-18 补齐（原变更日期 2026-08-13）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C：伏笔绑定 F12 时间线事件（event_id 锚点）；移除独立 narrative_position；F12 升级为硬依赖（须先合入 main）；详见 §2.2/§11/§12
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第五个模块，估算 2-3 人天）
@@ -488,7 +489,7 @@ POST /api/v1/foreshadowings/9b1c2d3e-.../resolve
 
 ```bash
 inkflow foreshadowing create --project-id <uuid> --title <str> \
-    [--description <str>] [--priority <int>] [--location <str>] \
+    [--description <str>] [--content-file <path>] [--priority <int>] [--location <str>] \
     [--event-id <uuid>] [--json]
     # status 固定为 open（创建即埋设）；--event-id 挂接 F12 时间线事件（缺省 = 不挂接）
 
@@ -501,7 +502,7 @@ inkflow foreshadowing list --project-id <uuid> \
 inkflow foreshadowing get --id <uuid> [--json]
 
 inkflow foreshadowing update --id <uuid> \
-    [--title <str>] [--description <str>] [--priority <int>] \
+    [--title <str>] [--description <str>] [--content-file <path>] [--priority <int>] \
     [--location <str|"">] [--event-id <uuid|"">] [--json]
     # --location "" 表示清除埋设位置；--event-id "" 表示解除事件挂接（置为 None）
 
@@ -1036,10 +1037,10 @@ F13 被依赖:
 
 | 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |------|------|------|------|------|------|
-| foreshadowing create | 项目存在 | 创建（--event-id 挂接 F12 事件，缺省不挂接） | 「✅ 伏笔创建成功: [林晚的身世]（优先级 80，未回收）」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR（含事件校验） | status 固定 open |
+| foreshadowing create | 项目存在 | 创建（--event-id 挂接 F12 事件，缺省不挂接） | 「✅ 伏笔创建成功: [林晚的身世]（优先级 80，未回收）」/ --json | 404 NOT_FOUND；422 VALIDATION_ERROR（含事件校验） | status 固定 open；--content-file <path> 从 UTF-8 文件读正文=伏笔详情（与 --description 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | foreshadowing list | 项目存在 | 列表（--status open/resolved 过滤） | 「📋 未回收伏笔 3 条: ...」/「🔍 已回收伏笔 1 条: ...（回收于 ...）」 | 404 | --status 非法值 → 退出码 2（Typer Choice） |
 | foreshadowing get | 伏笔存在 | 查询 | JSON | 404「伏笔不存在」 | — |
-| foreshadowing update | 伏笔存在 | 更新（--location ""/--event-id "" 清除） | JSON | 404；422 | — |
+| foreshadowing update | 伏笔存在 | 更新（--location ""/--event-id "" 清除） | JSON | 404；422 | --content-file <path> 从 UTF-8 文件读正文=伏笔详情（与 --description 互斥 → 退出码 2） |
 | foreshadowing delete | 伏笔存在 | 二次确认（--force）→ **真删** | 204 | 404；--json 无 --force → VALIDATION_ERROR「删除需 --force 或交互确认」（退出码 1） | **v1.1**：`--permanent` 移除 |
 | ~~foreshadowing restore~~ | — | **（v1.1 移除）** 命令已不存在 | — | 调用 → UsageError | — |
 | foreshadowing resolve | 伏笔存在 | 标记回收（open→resolved） | 「✅ 伏笔已回收: [林晚的身世]」/ --json | 404 | 幂等（已 resolved 再 resolve 不更新 resolved_at） |
