@@ -144,7 +144,10 @@ def serve(
         KERNEL_CONFLICT_LINE,
         _default_state_file,
     )
-    from inkflow.infrastructure.kernel.idle_reclaim import resolve_idle_timeout
+    from inkflow.infrastructure.kernel.idle_reclaim import (
+        activity_tracker,
+        resolve_idle_timeout,
+    )
     from inkflow.infrastructure.kernel.instance_kind import resolve_instance_kind
 
     # ── 内核准入（#1487 / ADR-066 ①）：存活期互斥由**内核进程自持** ──────────
@@ -239,6 +242,10 @@ def serve(
         # 空闲回收看门狗（#1487 / ADR-066 ②）：阈值未设置 → 不启动（手工 serve 常驻不变）
         idle_timeout = resolve_idle_timeout()
         if idle_timeout is not None:
+            # 🔴 倒计时起点 = **就绪时刻**，不是进程/import 时刻：内核冷启动 import 树
+            # 可达数秒（CI ~60s），若从模块导入起算，小阈值下内核刚就绪即被回收
+            # （#1487 实证抓出：6s 阈值内核起来后 /health 立即连不上）。
+            activity_tracker().touch()
 
             def _on_idle() -> None:
                 if _current_server is not None:

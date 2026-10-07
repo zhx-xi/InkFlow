@@ -63,6 +63,55 @@ def test_serve_acquires_lifetime_mutex_once(tmp_path):
     assert Path(state_file).name == "kernel.json"
 
 
+def test_serve_touches_activity_at_ready_before_watchdog(tmp_path):
+    """🔴 空闲倒计时**起点 = 就绪时刻**（#1487 实证抓出：从 import 起算 → 刚就绪即被回收）。
+
+    顺序断言：先 `activity_tracker().touch()`（把时钟拨到就绪），后启动看门狗。
+    可证伪性：删掉 touch（恢复「import 起算」）→ 本用例 FAIL。
+    """
+    order: list[str] = []
+
+    def _start_watchdog(*_a: object, **_k: object) -> object:
+        order.append("watchdog")
+        return SimpleNamespace(stop=lambda: None)
+
+    with (
+        patch("inkflow.cli.commands.serve._acquire_kernel_lifetime_mutex", return_value=object()),
+        patch("inkflow.cli.commands.serve._run_server", return_value=12345),
+        patch("inkflow.cli.commands.serve._write_kernel_registry"),
+        patch("inkflow.cli.commands.serve.resolve_idle_timeout", return_value=5.0),
+        patch("inkflow.cli.commands.serve.activity_tracker") as tracker,
+        patch(
+            "inkflow.cli.commands.serve._start_idle_watchdog", side_effect=_start_watchdog
+        ) as watchdog,
+    ):
+        tracker.return_value.touch.side_effect = lambda: order.append("touch")
+        result = runner.invoke(
+            serve_app, ["--port", "0", "--port-file", str(tmp_path / "kernel.json")]
+        )
+
+    assert result.exit_code == 0
+    watchdog.assert_called_once()
+    assert order == ["touch", "watchdog"]
+
+
+def test_serve_without_idle_timeout_starts_no_watchdog(tmp_path):
+    """阈值未设置（默认）→ 不启动看门狗（手工 serve 常驻语义不变，ADR-030 D2=A 兼容面）。"""
+    with (
+        patch("inkflow.cli.commands.serve._acquire_kernel_lifetime_mutex", return_value=object()),
+        patch("inkflow.cli.commands.serve._run_server", return_value=12345),
+        patch("inkflow.cli.commands.serve._write_kernel_registry"),
+        patch("inkflow.cli.commands.serve.resolve_idle_timeout", return_value=None),
+        patch("inkflow.cli.commands.serve._start_idle_watchdog") as watchdog,
+    ):
+        result = runner.invoke(
+            serve_app, ["--port", "0", "--port-file", str(tmp_path / "kernel.json")]
+        )
+
+    assert result.exit_code == 0
+    watchdog.assert_not_called()
+
+
 # ── resolve_gui_exe：检测已安装 GUI ───────────────────────────────────────
 
 
