@@ -28,6 +28,7 @@ import {
   argvHasTrayOnly,
   isKernelConflictExit,
   kernelSpawnEnv,
+  killKernelByPid,
   killProcessTree,
   nextBackoffDelayMs,
   parseReadyLine,
@@ -501,6 +502,7 @@ const kernelConflict = createKernelConflictController({
   },
   clearTimers: clearMonitorTimers,
   rebuildTray: rebuildTrayMenu,
+  kill: (pid) => killKernelByPid(pid, { graceMs: KILL_GRACE_MS }),
   scheduleRestart: (fn, ms) => {
     restartTimer = setTimeout(fn, ms);
   },

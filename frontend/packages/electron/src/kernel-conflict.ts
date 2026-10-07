@@ -14,7 +14,6 @@
  */
 import type { ChildProcess } from 'node:child_process';
 import {
-  killKernelByPid,
   readInstanceRegistry,
   resolveMachineRegistryDir,
   selectConflictingInstance,
@@ -26,8 +25,6 @@ import {
 export const MAX_CONFLICT_RECOVERIES = 2;
 /** 停旧后重拉前的间隔（让 OS 完成进程回收/互斥释放） */
 const RESTART_DELAY_MS = 200;
-/** taskkill 等待宽限（与 #78 stopKernel 同口径） */
-const KILL_GRACE_MS = 3_000;
 
 /** 宿主（main.ts）注入的副作用面（纯逻辑与 electron/模块状态解耦） */
 export interface KernelConflictHost {
@@ -39,6 +36,8 @@ export interface KernelConflictHost {
   getKind(): string;
   /** app.getPath('appData')；不可用（测试 mock）→ null */
   getAppDataPath(): string | null;
+  /** taskkill 单 pid 并等其退出（宿主注入 `killKernelByPid(pid, {graceMs})`；测试可注入假实现） */
+  kill(pid: number): Promise<void>;
   /** 清空当前内核引用（kernelProcess/kernelInfo/pendingReadyPayload） */
   clearKernelRefs(): void;
   /** 停止健康检查/看门狗/重启计时器 */
@@ -93,7 +92,7 @@ export function createKernelConflictController(
       return false;
     }
     host.logStopOld(conflict);
-    await killKernelByPid(conflict.pid, { graceMs: KILL_GRACE_MS });
+    await host.kill(conflict.pid);
     return true;
   }
 
