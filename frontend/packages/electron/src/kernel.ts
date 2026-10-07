@@ -342,8 +342,9 @@ export function formatKernelMenuLabel(info: { port: number; pid: number } | null
 }
 
 /** 单个存活内核实例（F30 1.2 §2.4.2 注册表条目；托盘展示用，不含 token） */
+export type KernelInstanceKind = 'dev' | 'rc' | 'prod' | 'release';
 export interface KernelInstance {
-  kind: 'dev' | 'rc' | 'release';
+  kind: KernelInstanceKind;
   port: number;
   pid: number;
   version: string;
@@ -351,7 +352,13 @@ export interface KernelInstance {
   data_dir: string;
 }
 
-const INSTANCE_KINDS = ['dev', 'rc', 'release'] as const;
+/**
+ * 可接受的 kind（#1487 / ADR-066 ③ 修正跨语言契约错位）：
+ * 后端 `VALID_KINDS = ("dev","rc","prod")`（ADR-059 1.3 已把 release 重命名为 prod），
+ * 而本文件此前只认 `release` → **后端写的 prod 条目被静默丢弃**（托盘/重启判据都瞎）。
+ * 现同时接受 `prod`（现行）与 `release`（旧版遗留条目兼容）。
+ */
+const INSTANCE_KINDS = ['dev', 'rc', 'prod', 'release'] as const;
 
 function isKernelInstance(value: unknown): value is KernelInstance {
   if (typeof value !== 'object' || value === null) {
@@ -462,9 +469,10 @@ export function formatInstanceMenuLabel(instances: KernelInstance[]): string[] {
     const only = instances[0];
     return [`内核状态: 运行中 (${only.port} 端口 · ${only.pid} PID)`];
   }
-  const kindLabel: Record<KernelInstance['kind'], string> = {
+  const kindLabel: Record<KernelInstanceKind, string> = {
     dev: 'dev',
     rc: 'rc',
+    prod: '正式',
     release: '正式',
   };
   return [
@@ -474,4 +482,154 @@ export function formatInstanceMenuLabel(instances: KernelInstance[]): string[] {
         `● ${kindLabel[i.kind]} :${i.port}  pid ${i.pid}  ${i.data_dir}`
     ),
   ];
+}
+
+// ── #1487 / ADR-066：内核自持互斥冲突 + tray-only + 机器级实例（纯函数，vitest node 可测）──
+
+/** 内核自持存活期互斥被占时的退出码（与 backend `KERNEL_CONFLICT_EXIT_CODE` 同值） */
+export const KERNEL_CONFLICT_EXIT_CODE = 3;
+/** tray-only 启动开关（argv；同时经 env 冗余注入） */
+export const TRAY_ONLY_FLAG = '--tray-only';
+/** tray-only env 开关（`--tray-only` 不可用时的等价入口） */
+export const TRAY_ONLY_ENV = 'INKFLOW_TRAY_ONLY';
+/** 内核空闲回收阈值 env（backend `idle_reclaim.IDLE_TIMEOUT_ENV` 同名） */
+export const IDLE_TIMEOUT_ENV = 'INKFLOW_KERNEL_IDLE_TIMEOUT';
+/** 客户端拉起内核的默认空闲回收阈值（30 min；backend 同源默认值） */
+export const DEFAULT_KERNEL_IDLE_TIMEOUT_SECONDS = 1800;
+
+const TRUTHY_ENV_VALUES = ['1', 'true', 'on', 'yes'];
+
+/** argv 是否显式请求 tray-only（用于 second-instance 分流：tray-only 再来一次不弹窗） */
+export function argvHasTrayOnly(argv: readonly string[]): boolean {
+  return argv.includes(TRAY_ONLY_FLAG);
+}
+
+/**
+ * 启动形态判定（spec f31 §5.1 1.3 新增）：`--tray-only` 或 env `INKFLOW_TRAY_ONLY=1`
+ * → tray-only（不建主窗口，只创建托盘；点击托盘 → 唤醒/创建主窗口）。
+ */
+export function resolveTrayOnly(argv: readonly string[], env: NodeJS.ProcessEnv): boolean {
+  if (argvHasTrayOnly(argv)) {
+    return true;
+  }
+  return TRUTHY_ENV_VALUES.includes((env[TRAY_ONLY_ENV] ?? '').trim().toLowerCase());
+}
+
+/**
+ * spawn 内核的 env（spec f31 §5.4 1.3 新增）：注入 UTF-8 与**默认空闲回收阈值**。
+ * 已显式设置 `INKFLOW_KERNEL_IDLE_TIMEOUT` 时原样保留（可覆盖/关闭）。
+ */
+export function kernelSpawnEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = { ...env, PYTHONIOENCODING: 'utf-8' };
+  if (!result[IDLE_TIMEOUT_ENV]) {
+    result[IDLE_TIMEOUT_ENV] = String(DEFAULT_KERNEL_IDLE_TIMEOUT_SECONDS);
+  }
+  return result;
+}
+
+/** 子进程退出码是否为「内核自持互斥被占」（ADR-066 ①：据此分流，不进退避重拉链路） */
+export function isKernelConflictExit(code: number | null | undefined): boolean {
+  return code === KERNEL_CONFLICT_EXIT_CODE;
+}
+
+/**
+ * 注册表目录（ADR-066 ③ 按 kind 分域）：`dev` → `<data_dir>/running/`；
+ * `rc`/`prod` → **机器级** `<appData>/InkFlow/running/`（不随 INKFLOW_DATA_DIR 变）。
+ */
+export function registryDirForKind(
+  kind: string,
+  stateFilePath: string | null,
+  appDataPath: string
+): string | null {
+  if (kind === 'dev') {
+    return stateFilePath === null ? null : path.join(path.dirname(stateFilePath), 'running');
+  }
+  return path.join(appDataPath, 'InkFlow', 'running');
+}
+
+/** 路径等价判定（Windows 大小写不敏感；两侧 resolve 归一相对/绝对） */
+function samePath(a: string, b: string): boolean {
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+}
+
+/**
+ * 选出「阻塞本次拉起」的机器级既有实例（spec f31 §5.3 1.3 新增，用户拍板 1B）：
+ * kind 相同 **且** data_dir 与本次不同 → 需要「先停旧、起新」。
+ * 同 data_dir 的实例不在此列（交给复用判定 / 内核互斥兜底）。
+ */
+export function selectConflictingInstance(
+  instances: KernelInstance[],
+  kind: string,
+  dataDir: string | null
+): KernelInstance | null {
+  for (const instance of instances) {
+    if (instance.kind !== kind) {
+      continue;
+    }
+    if (dataDir !== null && samePath(instance.data_dir, dataDir)) {
+      continue;
+    }
+    return instance;
+  }
+  return null;
+}
+
+/**
+ * 机器级注册表目录（#1487 / ADR-066 ③）：`appDataPath` 不可用（测试 mock）→ null。
+ * kind 分域与 backend `registry.registry_dir_for` 同构。
+ */
+export function resolveMachineRegistryDir(
+  isPackaged: boolean,
+  stateFilePath: string | null,
+  appDataPath: string | null
+): string | null {
+  if (appDataPath === null) {
+    return null;
+  }
+  return registryDirForKind(isPackaged ? 'prod' : 'dev', stateFilePath, appDataPath);
+}
+
+export interface KillKernelDeps {
+  /** taskkill 兜底宽限（毫秒） */
+  graceMs: number;
+  /** 装配缝（测试注入）：spawn / 存活判定 / 等待 */
+  spawnFn?: typeof spawn;
+  isAlive?: (pid: number) => boolean;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * `taskkill /T /F` 单个进程并**等其真的退出**（#1487 / spec f31 §5.3）。
+ *
+ * 等退出是必须的：存活期互斥由内核自持，**旧内核进程结束**才释放互斥——不等就
+ * spawn 新内核必然撞互斥（退出码 3）。
+ */
+export async function killKernelByPid(pid: number, deps: KillKernelDeps): Promise<void> {
+  const spawnFn = deps.spawnFn ?? spawn;
+  const isAlive = deps.isAlive ?? isProcessAlive;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    };
+    try {
+      const killer = spawnFn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.once('error', finish);
+      killer.once('exit', finish);
+    } catch {
+      finish();
+    }
+    setTimeout(finish, deps.graceMs);
+  });
+  const deadline = Date.now() + deps.graceMs;
+  while (isAlive(pid) && Date.now() < deadline) {
+    await sleep(100);
+  }
 }

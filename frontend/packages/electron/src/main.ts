@@ -18,16 +18,22 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
+import { isDebugMode } from './debug-mode';
+import { createKernelConflictController } from './kernel-conflict';
 import {
   MAX_CONSECUTIVE_FAILURES,
+  argvHasTrayOnly,
+  isKernelConflictExit,
+  kernelSpawnEnv,
+  killKernelByPid,
   killProcessTree,
   nextBackoffDelayMs,
   parseReadyLine,
   resolveSpawnCommand,
+  resolveTrayOnly,
   tryReuseKernel,
   writeKernelStateFile,
   type KernelInfo,
@@ -98,6 +104,8 @@ let trayHintDismissed = false;
 let tray: Tray | null = null;
 /** kernel.json 状态文件路径（spec f31 §5.4）：%APPDATA%\InkFlow\kernel.json；测试环境为 null 时跳过闭环 */
 let kernelStatePath: string | null = null;
+/** tray-only 启动形态（spec f31 §5.1 1.3 新增 #1487）：不建主窗口、只创建托盘 */
+let trayOnlyMode = false;
 /** 内核 stderr 落盘句柄（#1382）：每次 spawn 换代；data_dir 不可用时为 null（退化为仅 console.error） */
 let kernelErrLog: KernelErrLog | null = null;
 /** __trayInfo.windowVisible 数据源：hide/show 事件驱动维护（spec f31 §9） */
@@ -105,75 +113,6 @@ let trayInfoWindowVisible = true;
 /** 已注册的 DevTools 快捷键集合（幂等去重，spec §5.2.9） */
 const registeredDevToolsAccelerators = new Set<string>();
 const mainLogger = createMainLogger('electron.main');
-
-/** 解析 instance.env 文本 → KEY=VALUE 映射（解析规则与 backend load_instance_env
- * 对齐：空行 / # 注释 / 无 = 行跳过；KEY/VALUE strip；空值键跳过）。 */
-function parseInstanceEnv(content: string): Record<string, string> {
-  const vars: Record<string, string> = {};
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) {
-      continue;
-    }
-    const eq = line.indexOf('=');
-    if (eq < 0) {
-      continue;
-    }
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim();
-    if (key && value) {
-      vars[key] = value;
-    }
-  }
-  return vars;
-}
-
-/**
- * F51 debug-mode 统一开关：INKFLOW_DEBUG 贯穿三层（D6/D7 三层对称）。
- * 优先级（D1）：env > instance.env > config.json。
- * - env 显式设置（非空串）：'1'/'true'/'on'（trim+lowercase）→ true；'0' 等 → false 且
- *   不再读文件（显式关 > instance.env=1，D8 壳侧镜像，S3f-T1 G3）；空串=未设置（f51 §7）。
- * - instance.env 含 INKFLOW_DEBUG=1 → true；config.json "debug": true → true
- *   （data_dir = instance.env INKFLOW_DATA_DIR 优先、缺省 %APPDATA%/InkFlow）。
- * app.getPath 不可用（测试 mock）→ try/catch 返回 env 显式判定结果。
- */
-function isDebugMode(): boolean {
-  const envDebug = process.env.INKFLOW_DEBUG;
-  if (envDebug !== undefined && envDebug !== '') {
-    // env 显式设置：'1'/'true'/'on'（不区分大小写）→ true；'0'/'false'/'off'/其他 → false，
-    // 且【不再读 instance.env / config.json】（显式关 > instance.env=1，D8）
-    return ['1', 'true', 'on'].includes(envDebug.trim().toLowerCase());
-  }
-  try {
-    const appData = app.getPath('appData');
-    const instanceEnvPath = path.join(appData, 'InkFlow', 'instance.env');
-    const envVars = existsSync(instanceEnvPath)
-      ? parseInstanceEnv(readFileSync(instanceEnvPath, 'utf8'))
-      : {};
-    if (envVars.INKFLOW_DEBUG === '1') {
-      return true;
-    }
-    const dataDir = envVars.INKFLOW_DATA_DIR || path.join(appData, 'InkFlow');
-    const configPath = path.join(dataDir, 'config.json');
-    if (existsSync(configPath)) {
-      const fileConfig = JSON.parse(readFileSync(configPath, 'utf8')) as {
-        debug?: unknown;
-      };
-      if (fileConfig.debug === true) {
-        return true;
-      }
-    }
-  } catch {
-    // getPath 不可用（测试 mock）/ 文件解析失败 → 回退 env 显式判定（等价顶部分支；重读 env 规避 TS 控制流把 envDebug 收窄为 never 的编译错误）
-    const catchEnvDebug = process.env.INKFLOW_DEBUG;
-    return (
-      catchEnvDebug !== undefined &&
-      catchEnvDebug !== '' &&
-      ['1', 'true', 'on'].includes(catchEnvDebug.trim().toLowerCase())
-    );
-  }
-  return false;
-}
 
 /** dev 测试钩子（spec §3.6）：app.isPackaged === false 时暴露 __kernelInfo 供 Playwright 断言 */
 function updateKernelInfoHook(): void {
@@ -193,11 +132,17 @@ function updateTrayInfoHook(): void {
     return;
   }
   (globalThis as unknown as {
-    __trayInfo?: { created: boolean; closeBehavior: string; windowVisible: boolean };
+    __trayInfo?: {
+      created: boolean;
+      closeBehavior: string;
+      windowVisible: boolean;
+      trayOnly: boolean;
+    };
   }).__trayInfo = {
     created: tray !== null,
     closeBehavior,
     windowVisible: trayInfoWindowVisible,
+    trayOnly: trayOnlyMode,
   };
 }
 
@@ -381,8 +326,7 @@ function spawnKernel(): void {
   const child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'] as const,
     windowsHide: true,
-    // #1388 根因根治：内核子进程 stdout/stderr 固定 UTF-8；增量注入，保留既有 env
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    env: kernelSpawnEnv(process.env),
     // #187 双保险：打包版 spawn cwd 固定为 exe 所在目录，任意 cwd 启动不依赖相对路径解析
     cwd: app.isPackaged ? path.dirname(process.execPath) : undefined,
   });
@@ -409,6 +353,7 @@ function spawnKernel(): void {
     const effectivePid = child.pid ?? parsed.pid;
     const readyInfo: KernelInfo = { ...parsed, pid: effectivePid };
     kernelInfo = readyInfo;
+    kernelConflict.resetRecoveries(); // 成功就绪 → 冲突自愈计数清零（spec f31 §7 边界 17）
     if (startupWatchdog) {
       clearTimeout(startupWatchdog);
       startupWatchdog = null;
@@ -451,6 +396,12 @@ function spawnKernel(): void {
   child.on('exit', (code, signal) => {
     mainLogger.error('kernel_exit', 'log.event.kernel_exit', { code, signal });
     if (kernelProcess !== child) {
+      return;
+    }
+    if (isKernelConflictExit(code)) {
+      // 内核自持互斥被占（ADR-066 ①）：**不**进入退避重拉链路，走 1B 自愈
+      // （同 data_dir → 复用 / 不同 data_dir → 先停旧、起新；spec f31 §7 边界 17）
+      kernelConflict.onKernelConflict(child);
       return;
     }
     if (!stopping) {
@@ -532,9 +483,60 @@ async function shutdown(): Promise<void> {
   app.exit(0);
 }
 
+/** #1487 / ADR-066 ①④：内核冲突自愈控制器（逻辑见 kernel-conflict.ts，此处仅注入宿主面） */
+const kernelConflict = createKernelConflictController({
+  isCurrentKernel: (child) => kernelProcess === child,
+  getStateFilePath: () => kernelStatePath,
+  getKind: () => (app.isPackaged ? 'prod' : 'dev'),
+  getAppDataPath: () => {
+    try {
+      return app.getPath('appData');
+    } catch {
+      return null;
+    }
+  },
+  clearKernelRefs: () => {
+    kernelProcess = null;
+    kernelInfo = null;
+    pendingReadyPayload = null;
+  },
+  clearTimers: clearMonitorTimers,
+  rebuildTray: rebuildTrayMenu,
+  kill: (pid) => killKernelByPid(pid, { graceMs: KILL_GRACE_MS }),
+  scheduleRestart: (fn, ms) => {
+    restartTimer = setTimeout(fn, ms);
+  },
+  isStopping: () => stopping,
+  tryReuseAndAttach: async () => {
+    const reused = kernelStatePath ? await tryReuseKernel(kernelStatePath) : null;
+    if (reused) {
+      kernelInfo = reused;
+      updateKernelInfoHook();
+      sendReadyToRenderer();
+      startHealthCheck();
+      rebuildTrayMenu();
+    }
+    return reused;
+  },
+  spawnKernel,
+  onGiveUp: async () => {
+    consecutiveFailures = MAX_CONSECUTIVE_FAILURES;
+    await showStartupErrorDialog();
+  },
+  logConflict: (pid) => {
+    mainLogger.warn('kernel_conflict', 'log.event.kernel_conflict', { pid });
+  },
+  logStopOld: (instance) => {
+    mainLogger.warn('kernel_conflict_stop_old', 'log.event.kernel_conflict_stop_old', {
+      pid: instance.pid,
+      data_dir: instance.data_dir,
+    });
+  },
+});
+
 /**
  * 内核连接（spec f31 §5.1/§5.3）：先 tryReuseKernel（kernel.json + pid 存活 + /health 200），
- * 成功 → 直接连接不 spawn；失败 → #78 既有 spawnKernel。
+ * 成功 → 直接连接不 spawn；失败 →（1B）先停不同 data_dir 的机器级既有实例 → spawnKernel。
  */
 async function connectKernel(): Promise<void> {
   if (kernelStatePath) {
@@ -547,6 +549,7 @@ async function connectKernel(): Promise<void> {
       return;
     }
   }
+  await kernelConflict.stopConflictingKernel();
   spawnKernel();
 }
 
@@ -727,7 +730,7 @@ function createTray(): void {
     instance.on('click', showWindow); // Windows 惯例：点击托盘图标打开主窗口
     tray = instance;
     rebuildTrayMenu();
-    trayInfoWindowVisible = true;
+    trayInfoWindowVisible = !trayOnlyMode; // tray-only 无窗口（spec f31 §5.1 1.3）
     updateTrayInfoHook();
   } catch (err) {
     console.error('[main] tray creation failed:', err);
@@ -802,6 +805,10 @@ export function setupAppMenu(isPackaged: boolean, isDebug = false): void {
 }
 
 app.whenReady().then(async () => {
+  // 启动形态（spec f31 §5.1 1.3 新增 #1487）：`--tray-only` / env `INKFLOW_TRAY_ONLY=1`
+  // → **不**建主窗口（不 loadFile renderer），只创建托盘；点击托盘 → showWindow() 建窗。
+  trayOnlyMode = resolveTrayOnly(process.argv, process.env);
+  trayInfoWindowVisible = !trayOnlyMode;
   // 单实例锁最先执行（spec f31 §5.5）：失败 → 静默让位已有实例（不 spawn、不建窗、不弹错）
   // （typeof 守卫：部分测试 mock 未提供该方法，视为单实例获取成功）
   const gotLock =
@@ -810,7 +817,11 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    if (argvHasTrayOnly(argv ?? [])) {
+      // CLI 以 tray-only 再次拉起（正常路径：托盘已存在）→ 不弹窗打扰用户（ADR-066 ⑤）
+      return;
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore();
@@ -820,7 +831,7 @@ app.whenReady().then(async () => {
       trayInfoWindowVisible = true;
       updateTrayInfoHook();
     } else {
-      createMainWindow(); // 窗口被销毁但托盘仍在 → 重建（spec f31 §5.2 边界 #9）
+      createMainWindow(); // 窗口被销毁/从未创建（tray-only）→ 重建（spec f31 §5.2 边界 #9/#15）
     }
   });
 
@@ -829,7 +840,9 @@ app.whenReady().then(async () => {
   registerWindowControlsHandlers();
   registerSettingsHandlers();
   registerExportHandlers();
-  createMainWindow();
+  if (!trayOnlyMode) {
+    createMainWindow();
+  }
   // 内核连接：先复用判定（kernel.json + pid 存活 + /health 200），失败回落 spawn（spec f31 §5.1）
   kernelStatePath = resolveKernelStatePath();
   await connectKernel();

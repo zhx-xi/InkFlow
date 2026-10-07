@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,43 @@ app = typer.Typer(name="serve", help="启动 Web 服务", no_args_is_help=True)
 # INKFLOW_READY 交付行后 join 保活；Ctrl+C 经 _current_server 优雅关闭。
 _server_thread: threading.Thread | None = None
 _current_server: Any | None = None  # uvicorn.Server 引用，Ctrl+C 优雅关闭用
+# #1487 / ADR-066 ①：存活期互斥句柄由**本（内核）进程**持有到退出（模块级保活，
+# 防被 GC 回收；绝不释放 —— 随进程退出由 OS 回收）。
+_lifetime_mutex_handle: object | None = None
+# #1487 / ADR-066 ②：空闲回收看门狗（阈值未设置时为 None）
+_idle_watchdog: Any | None = None
+
+
+# ── 装配缝（测试 patch 点）──────────────────────────────────────────────
+
+
+def _acquire_kernel_lifetime_mutex(kind: str, state_file: Path) -> object | None:
+    """内核自持存活期互斥（ADR-066 ①）：成功 → 句柄（须持有到进程退出）；被占 → None。"""
+    from inkflow.infrastructure.kernel.bootstrap import hold_lifetime_mutex
+
+    return hold_lifetime_mutex(kind, state_file)
+
+
+def _write_kernel_registry(kind: str, state_file: Path, payload: dict) -> None:
+    """内核自注册（ADR-066 ③）：`<kind>-<pid>.json` 写进按 kind 分域的注册表目录。"""
+    from inkflow.infrastructure.kernel import registry
+
+    entry = {"kind": kind, "data_dir": str(state_file.parent), **payload}
+    registry.write_instance(entry, registry.registry_dir_for(kind, state_file))
+
+
+def _remove_kernel_registry(kind: str, state_file: Path, pid: int) -> None:
+    """内核退出时自删注册条目（幂等；ADR-066 ③）。"""
+    from inkflow.infrastructure.kernel import registry
+
+    registry.remove_instance(registry.registry_dir_for(kind, state_file), kind=kind, pid=pid)
+
+
+def _start_idle_watchdog(timeout: float, on_idle: Any) -> Any:
+    """启动空闲看门狗（ADR-066 ②）：空闲超阈 → on_idle()（置 server.should_exit）。"""
+    from inkflow.infrastructure.kernel.idle_reclaim import activity_tracker, start_idle_watchdog
+
+    return start_idle_watchdog(activity_tracker(), timeout, on_idle=on_idle)
 
 
 def _run_server(host: str, port: int, reload: bool, debug: bool = False) -> int:
@@ -101,6 +139,28 @@ def serve(
 
     from inkflow import __version__
     from inkflow.core.config import config
+    from inkflow.infrastructure.kernel.bootstrap import (
+        KERNEL_CONFLICT_EXIT_CODE,
+        KERNEL_CONFLICT_LINE,
+        _default_state_file,
+    )
+    from inkflow.infrastructure.kernel.idle_reclaim import (
+        activity_tracker,
+        resolve_idle_timeout,
+    )
+    from inkflow.infrastructure.kernel.instance_kind import resolve_instance_kind
+
+    # ── 内核准入（#1487 / ADR-066 ①）：存活期互斥由**内核进程自持** ──────────
+    # 任何路径（GUI spawn / CLI / MCP / 手工 serve）拉起的同 kind 内核都撞同一互斥
+    # → 「机器级限 1」名实相符；拿不到 → 退出码 3（拉起方据此报既有实例 / 先停旧起新）。
+    global _lifetime_mutex_handle, _idle_watchdog
+    kernel_kind = resolve_instance_kind()
+    kernel_state_file = port_file or _default_state_file()
+    _lifetime_mutex_handle = _acquire_kernel_lifetime_mutex(kernel_kind, kernel_state_file)
+    if _lifetime_mutex_handle is None:
+        conflict = {"kind": kernel_kind, "data_dir": str(kernel_state_file.parent)}
+        typer.echo(f"{KERNEL_CONFLICT_LINE} {json.dumps(conflict, ensure_ascii=False)}")
+        raise typer.Exit(code=KERNEL_CONFLICT_EXIT_CODE)
 
     is_debug = config.debug or debug
 
@@ -133,14 +193,10 @@ def serve(
     # （实测：分片文件只记到 uvicorn 前两行，其余全落回 stderr → 引导日志）。
     # 内核分支不再加 stderr sink：stderr 已被 Popen 重定向到引导日志，
     # 全量日志再灌进去正是 #1477 的膨胀根因（实测 246MB 且无归档）。
-    from inkflow.infrastructure.kernel.bootstrap import (
-        _default_state_file,
-        kernel_runtime_log_path,
-    )
-    from inkflow.infrastructure.kernel.instance_kind import resolve_instance_kind
+    from inkflow.infrastructure.kernel.bootstrap import kernel_runtime_log_path
 
     os.environ["INKFLOW_KERNEL_LOG_FILE"] = str(
-        kernel_runtime_log_path(resolve_instance_kind(), port_file or _default_state_file())
+        kernel_runtime_log_path(kernel_kind, kernel_state_file)
     )
 
     typer.echo(f"🚀 InkFlow 服务启动于 http://{host}:{port}")
@@ -173,6 +229,29 @@ def serve(
         typer.echo(f"INKFLOW_READY {json.dumps(payload, ensure_ascii=False)}")
         if port_file is not None:
             _write_port_file(port_file, payload)
+        # 内核自注册（#1487 / ADR-066 ③）：就绪后写自己的注册条目（退出时自删），
+        # 使 GUI 自己 spawn 的内核也出现在注册表/托盘中。
+        from datetime import UTC, datetime
+
+        with contextlib.suppress(OSError):  # 不可写 → 降级：仅影响可见性，不阻塞内核
+            _write_kernel_registry(
+                kernel_kind,
+                kernel_state_file,
+                {**payload, "started_at": datetime.now(UTC).isoformat()},
+            )
+        # 空闲回收看门狗（#1487 / ADR-066 ②）：阈值未设置 → 不启动（手工 serve 常驻不变）
+        idle_timeout = resolve_idle_timeout()
+        if idle_timeout is not None:
+            # 🔴 倒计时起点 = **就绪时刻**，不是进程/import 时刻：内核冷启动 import 树
+            # 可达数秒（CI ~60s），若从模块导入起算，小阈值下内核刚就绪即被回收
+            # （#1487 实证抓出：6s 阈值内核起来后 /health 立即连不上）。
+            activity_tracker().touch()
+
+            def _on_idle() -> None:
+                if _current_server is not None:
+                    _current_server.should_exit = True
+
+            _idle_watchdog = _start_idle_watchdog(idle_timeout, _on_idle)
 
     if not reload and _server_thread is not None:
         try:
@@ -182,3 +261,8 @@ def serve(
             if _current_server is not None:
                 _current_server.should_exit = True
             _server_thread.join(timeout=5)
+        finally:
+            # 自删注册条目 + 停看门狗（存活期互斥随进程退出由 OS 回收，spec §5.6）
+            if _idle_watchdog is not None:
+                _idle_watchdog.stop()
+            _remove_kernel_registry(kernel_kind, kernel_state_file, os.getpid())

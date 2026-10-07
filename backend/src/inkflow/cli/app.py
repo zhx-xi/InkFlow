@@ -10,6 +10,7 @@ import typer
 from inkflow import __version__
 from inkflow.cli.context import CliContext
 from inkflow.cli.log_bridge import cli_log_sink
+from inkflow.cli.tray_launch import tray_gui_sink
 
 _JSON_GLOBAL_HINT = "--json 是全局选项，请放在子命令前（如 inkflow --json config show）"
 
@@ -94,7 +95,8 @@ class _JsonHintGroup(typer.main.TyperGroup):
             raise click.UsageError(_JSON_GLOBAL_HINT)
         # #942: CLI 会话主体包在 cli_log_sink 内转发内核（SystemExit/异常路径
         # 同样触发退出 flush；隔离性：子 app 直接 CliRunner 不经本入口 → 零 patch）
-        with cli_log_sink():
+        # #1487: 同时包 tray_gui_sink —— CLI 真正拉起内核时以 tray-only 拉起 GUI（需求 2/3）
+        with cli_log_sink(), tray_gui_sink():
             return super().main(
                 args, prog_name, complete_var, standalone_mode, windows_expand_args, **extra
             )

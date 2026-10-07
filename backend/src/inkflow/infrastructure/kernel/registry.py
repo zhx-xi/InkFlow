@@ -38,8 +38,32 @@ class InstanceEntry:
 
 
 def registry_dir(state_file: Path) -> Path:
-    """注册表目录 = kernel.json 所在 data_dir 下的 running/（spec §2.4.2）。"""
+    """注册表目录 = kernel.json 所在 data_dir 下的 running/（spec §2.4.2 dev 分支）。"""
     return state_file.parent / REGISTRY_DIR_NAME
+
+
+def machine_registry_dir() -> Path:
+    """**机器级**注册表目录 = 标准数据目录下的 running/（spec §2.4.2 / ADR-066 ③）。
+
+    不随 ``INKFLOW_DATA_DIR`` 变化——rc/prod 是**机器级单实例**，其可见性锚点必须
+    机器级（否则跨 data_dir 的既有实例互相发现不了 = #1487 根因 ③）。
+    锚点复用既有 ``core.config.get_instance_env_path().parent``
+    （Windows = ``%APPDATA%\\InkFlow``，其他平台 = ``~/InkFlow``）。
+    """
+    from inkflow.core.config import get_instance_env_path
+
+    return get_instance_env_path().parent / REGISTRY_DIR_NAME
+
+
+def registry_dir_for(kind: str, state_file: Path) -> Path:
+    """按 kind 分域解析注册表目录（ADR-066 ③；与 ``_lifetime_mutex_name`` 同构）。
+
+    ``dev`` → 既有 ``<data_dir>/running/``（同 data_dir 单内核，worktree 互不干扰）；
+    ``rc`` / ``prod`` → **机器级** ``machine_registry_dir()``。
+    """
+    if kind == "dev":
+        return registry_dir(state_file)
+    return machine_registry_dir()
 
 
 def write_instance(entry: dict, dir_path: Path) -> Path:

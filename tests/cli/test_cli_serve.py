@@ -105,6 +105,13 @@ def cli_runner():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_kernel_data_dir(monkeypatch, tmp_path):
+    """#1487：`serve` 现自持互斥（dev 按 data_dir 分域）→ 每用例隔离 data_dir，
+    否则同进程内第二次 invoke 撞同一互斥被拒（退出码 3）；既有断言不变。"""
+    monkeypatch.setenv("INKFLOW_DATA_DIR", str(tmp_path / "kernel-data"))
+
+
+@pytest.fixture(autouse=True)
 def _restore_server_token_env(monkeypatch):
     """serve 命令会向进程 env 注入 INKFLOW_SERVER_TOKEN；用例结束后恢复原值."""
     yield
@@ -191,14 +198,14 @@ class TestServeDelivery:
         assert isinstance(token, str) and token  # 非空（随机生成）
         assert os.environ["INKFLOW_SERVER_TOKEN"] == token  # env 注入的是使用中的 token
 
-    def test_serve_default_token_is_random_per_start(self, cli_runner):
-        """缺省 token 每次启动随机：两次调用生成不同 token（spec §2.2「每次启动随机」）."""
+    def test_serve_default_token_is_random_per_start(self, cli_runner, tmp_path):
+        """缺省 token 每次启动随机；#1487：两次独立启动各用独立 data_dir（--port-file 隔离）。"""
         from inkflow.cli.commands.serve import app
 
         with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
-            result1 = cli_runner.invoke(app, [])
+            result1 = cli_runner.invoke(app, ["--port-file", str(tmp_path / "a" / "serve.json")])
         with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
-            result2 = cli_runner.invoke(app, [])
+            result2 = cli_runner.invoke(app, ["--port-file", str(tmp_path / "b" / "serve.json")])
         token1 = _parse_ready(result1.output)["token"]
         token2 = _parse_ready(result2.output)["token"]
         assert token1 and token2
@@ -538,15 +545,19 @@ class TestServeDebugMode:
         assert _parse_ready(result.output)["token"] == "fnord"
         assert os.environ["INKFLOW_SERVER_TOKEN"] == "fnord"
 
-    def test_debug_default_token_fixed_across_starts(self, cli_runner, monkeypatch):
-        """--debug 缺省 token：固定默认串（确定性），两次启动 token 相同（非随机）。"""
+    def test_debug_default_token_fixed_across_starts(self, cli_runner, monkeypatch, tmp_path):
+        """--debug 缺省 token 固定（确定性）；#1487：两次独立启动各用独立 data_dir。"""
         monkeypatch.delenv("INKFLOW_DEBUG_TOKEN", raising=False)
         from inkflow.cli.commands.serve import app
 
         with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
-            result1 = cli_runner.invoke(app, ["--debug"])
+            result1 = cli_runner.invoke(
+                app, ["--debug", "--port-file", str(tmp_path / "a" / "serve.json")]
+            )
         with patch(f"{SERVE_MOD}._run_server", return_value=FAKE_PORT):
-            result2 = cli_runner.invoke(app, ["--debug"])
+            result2 = cli_runner.invoke(
+                app, ["--debug", "--port-file", str(tmp_path / "b" / "serve.json")]
+            )
         token1 = _parse_ready(result1.output)["token"]
         token2 = _parse_ready(result2.output)["token"]
         assert token1  # 非空

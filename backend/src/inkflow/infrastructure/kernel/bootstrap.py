@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from inkflow.infrastructure.kernel import registry, state
+from inkflow.infrastructure.kernel import idle_reclaim, registry, state
 from inkflow.infrastructure.kernel.instance_kind import (
     normalize_instance_kind,
     resolve_instance_kind,
@@ -136,12 +136,16 @@ def _lifetime_mutex_name(kind: str, state_file: Path) -> str:
 
 
 def _acquire_lifetime_mutex(kind: str, state_file: Path) -> object | None:
-    """获取**存活期**互斥（spec §5.6 / ADR-059 ②）：具名互斥体，三 kind 统一走此路。
+    """获取**存活期**互斥（spec §5.6 / ADR-066 ①）：具名互斥体，三 kind 统一走此路。
 
     与 ``_acquire_mutex``（拉起动作互斥，finally 释放）不同：本互斥表达
-    「同互斥名只允许一个内核**存活**」，故**永不释放**——随调用方进程退出由
+    「同互斥名只允许一个内核**存活**」，故**永不释放**——随**内核进程**退出由
     OS 自动回收（互斥名由 ``_lifetime_mutex_name`` 决定；rc/prod 全局各一个、
     dev 按 data_dir 分域）。
+
+    🔴 **持有者 = 内核进程**（ADR-066 ①，修订 ADR-059 ②）：本函数由 ``serve``
+    启动路径调用并持有到进程退出；**客户端不得调用**（修订前由 `ensure_kernel`
+    客户端持有 → 客户端退出即释放 → 内核存活不受约束 = #1477 的 76 孤儿根因）。
 
     成功 → 句柄；已被占用（Windows 错误码 183）→ None；非 Windows 平台返回
     哨兵对象（无互斥语义，测试全 mock）。
@@ -159,6 +163,23 @@ def _acquire_lifetime_mutex(kind: str, state_file: Path) -> object | None:
         ctypes.windll.kernel32.CloseHandle(handle)
         return None
     return handle
+
+
+# ── 内核侧准入原语（spec §5.6 / ADR-066 ①）───────────────────────────────
+
+#: 内核拿不到存活期互斥时的退出码（拉起方据此分流：报既有实例 / 先停旧起新）
+KERNEL_CONFLICT_EXIT_CODE = 3
+#: 内核冲突行前缀（stdout：人类可读 + 可解析，spec f30 §7 边界 14）
+KERNEL_CONFLICT_LINE = "INKFLOW_KERNEL_CONFLICT"
+
+
+def hold_lifetime_mutex(kind: str, state_file: Path) -> object | None:
+    """**内核侧**获取并持有存活期互斥（ADR-066 ①；``serve`` 启动即调）。
+
+    与 ``_acquire_lifetime_mutex`` 同一实现——本函数是面向内核进程的**公开**入口
+    （命名表达「持有」语义，避免调用方误以为可释放）。返回句柄须持有到进程退出。
+    """
+    return _acquire_lifetime_mutex(kind, state_file)
 
 
 def _spawn_kernel(cmd: list[str], boot_log: Path) -> subprocess.Popen:
@@ -181,11 +202,18 @@ def _spawn_kernel(cmd: list[str], boot_log: Path) -> subprocess.Popen:
     creationflags = 0
     if sys.platform == "win32":
         creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    spawn_env: dict[str, str] = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    # ADR-066 ②：由**客户端拉起**的内核注入默认空闲回收阈值（未显式设置时）。
+    # 手工 `inkflow serve`（不经本函数）不注入 → 空闲回收关闭，行为同 ADR-030 D2=A。
+    spawn_env.setdefault(
+        idle_reclaim.IDLE_TIMEOUT_ENV,
+        str(int(idle_reclaim.DEFAULT_KERNEL_IDLE_TIMEOUT_SECONDS)),
+    )
     return subprocess.Popen(
         cmd,
         stdout=log_handle,
         stderr=subprocess.STDOUT,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        env=spawn_env,
         creationflags=creationflags,
     )
 
@@ -473,6 +501,29 @@ def _await_mutex_holder(
     return None, None
 
 
+# ── 准入冲突（ADR-066 ①）───────────────────────────────────────────────
+
+
+def _kernel_conflict_error(kind: str, state_file: Path) -> KernelStartupError:
+    """内核自持互斥被占 → 可感知的错误（spec f30 §5.6 1.6 修订 / §7 边界 14）。
+
+    消息含既有实例的 `kind` / `port` / `pid` / `data_dir`（注册表查得时）——
+    「不得静默并存、也不得只报错」（用户拍板 1B）。注册表按 kind 分域：
+    rc/prod 查**机器级**目录（跨 data_dir 的阻塞实例因此可见，修 #1487 根因 ③）。
+    """
+    existing = registry.find_by_kind(registry.registry_dir_for(kind, state_file), kind)
+    detail = (
+        f"pid={existing[0].pid} port={existing[0].port} data_dir={existing[0].data_dir}"
+        if existing
+        else "注册表未记录存活实例（可能刚退出，请稍后重试）"
+    )
+    return KernelStartupError(
+        f"{kind} 内核实例已存在（内核自持存活期互斥 "
+        f"{_lifetime_mutex_name(kind, state_file)} 已被占用）：{detail}；"
+        "请先退出既有实例再拉起（GUI 换数据目录走「先停旧、起新」）"
+    )
+
+
 # ── ensure_kernel（spec §3.2）────────────────────────────────────────
 
 
@@ -545,48 +596,15 @@ async def ensure_kernel(
     if reused is not None:
         return reused
 
-    # 5. 实例类型准入（spec §5.6 / ADR-059 ②）：**只在确实要拉起时**取存活期互斥。
-    #    三 kind 统一走此路，差异仅在互斥名（_lifetime_mutex_name）——rc/prod
-    #    全局单内核；dev 按 data_dir 分域（同 data_dir 单内核，不同 worktree 互不阻塞）。
-    #    被占 → 提示既有实例（同 data_dir）。
-    # 显式传入 → 归一（``release`` 别名 / 大小写 / 空白）；非法显式值回落自判
-    # （宽松语义，与 resolve_instance_kind 对非法 env 的处理一致）。
+    # 5. 实例类型判定（spec §5.6 / ADR-066 ①，**修订 ADR-059 ②**）：
+    #    **客户端不再取存活期互斥**——互斥由**内核进程自持**（`serve` 启动即取、
+    #    持锁至自身退出；拿不到 → 退出码 3）。此处仅解析 kind：用于判定注册表
+    #    分域目录（rc/prod 机器级 / dev 按 data_dir）与冲突错误消息。
+    #    显式传入 → 归一（``release`` 别名 / 大小写 / 空白）；非法显式值回落自判
+    #    （宽松语义，与 resolve_instance_kind 对非法 env 的处理一致）。
     kind = normalize_instance_kind(instance_kind) or resolve_instance_kind()
-    lifetime_handle = _acquire_lifetime_mutex(kind, state_file)
-    if lifetime_handle is None:
-        # 互斥被占 ≠ 一定冲突：持有者可能刚就绪并写好 kernel.json（拉起竞态窗口）
-        # → 复检一次复用。
-        reused = _try_reuse()
-        if reused is not None:
-            return reused
-        # 判定信号 = **单一事实源：kernel.json 是否已就绪**（方案 A，用户拍板）。
-        #   - 就绪 → 前持有者已拉起完成 → 复用
-        #   - 未就绪（含超时）→ 判定为（同 data_dir 的）既有实例冲突 → 拒绝
-        # 不用注册表做准入判据（有 GC 延迟，非可靠信号）；注册表仅用于**拒绝消息**。
-        st = _poll_state_file(state_file, timeout=timeout)
-        if st is not None:
-            _log_kernel_event(f"复用并发实例内核 pid={st.pid} port={st.port}")
-            return KernelHandle(
-                port=st.port,
-                token=st.token,
-                pid=st.pid,
-                version=st.version,
-                started_at=st.started_at,
-                reused=True,
-            )
-        existing = registry.find_by_kind(registry.registry_dir(state_file), kind)
-        detail = (
-            f"pid={existing[0].pid} port={existing[0].port} data_dir={existing[0].data_dir}"
-            if existing
-            else "注册表未记录存活实例（可能刚退出，请稍后重试）"
-        )
-        raise KernelStartupError(
-            f"{kind} 内核实例已存在（存活期互斥 "
-            f"{_lifetime_mutex_name(kind, state_file)} 已被占用）：{detail}；"
-            "请先退出既有实例再拉起"
-        )
 
-    # 6. 互斥（spec §5.1 分支 2/3）
+    # 6. 拉起动作互斥（spec §5.1 分支 2/3；**只防双 spawn**，finally 释放）
     mutex_handle = _acquire_mutex("InkFlowKernelBootstrap")
     if mutex_handle is None:
         # 183：其他实例在拉起 → 轮询等待复用（#1142：并区分持有者是否已死）
@@ -629,19 +647,8 @@ async def ensure_kernel(
                     "started_at": st.started_at.isoformat(),
                 }
                 state.write_kernel_state(state_file, write_payload)
-                # 全量注册表（spec §2.4.2 / ADR-059 ③）：拉起成功才写，复用不写
-                registry.write_instance(
-                    {
-                        "kind": kind,
-                        "port": st.port,
-                        "token": st.token,
-                        "pid": st.pid,
-                        "version": st.version,
-                        "started_at": st.started_at.isoformat(),
-                        "data_dir": str(state_file.parent),
-                    },
-                    registry.registry_dir(state_file),
-                )
+                # 全量注册表（spec §2.4.2 / ADR-066 ③）：**由内核自身写**（`serve` 就绪后
+                # 自注册、退出时自删）——客户端不再写，确保 GUI 自己 spawn 的内核也可见。
                 _log_kernel_event(f"内核就绪 pid={st.pid} port={st.port}")
                 return KernelHandle(
                     port=st.port,
@@ -652,6 +659,17 @@ async def ensure_kernel(
                     reused=False,
                 )
             if proc.poll() is not None:
+                if getattr(proc, "returncode", None) == KERNEL_CONFLICT_EXIT_CODE:
+                    # 内核自持互斥被占（ADR-066 ①）：**不重试**——复检复用（对端可能刚
+                    # 就绪落盘），否则报既有实例（可感知，含注册表明细）。
+                    _log_kernel_event(
+                        f"内核拒绝准入（{KERNEL_CONFLICT_LINE} / "
+                        f"退出码 {KERNEL_CONFLICT_EXIT_CODE}）"
+                    )
+                    reused = _try_reuse()
+                    if reused is not None:
+                        return reused
+                    raise _kernel_conflict_error(kind, state_file)
                 if attempts >= 3:
                     raise KernelStartupError(
                         f"内核启动后立即退出（已尝试 {attempts} 次）；{_log_hint(kind, state_file)}"
