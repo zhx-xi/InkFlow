@@ -132,6 +132,7 @@ const electronMock = vi.hoisted(() => {
 
   const trayInstance = {
     setContextMenu: vi.fn(),
+    setToolTip: vi.fn(),
     on: vi.fn(),
     destroy: vi.fn(),
   };

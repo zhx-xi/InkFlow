@@ -112,7 +112,7 @@ const electronMock = vi.hoisted(() => {
   // #167 F31：main.ts 新增 Tray/nativeImage import（托盘常驻）——mock 必须提供对应导出，
   // 否则 vitest 报 "No Tray export is defined on the electron mock"（B2 后 19 errors 实测）。
   // 本文件不测托盘行为（main.tray.test.ts 专责），最小 stub 满足 import 即可。
-  const trayStub = { setContextMenu: vi.fn(), on: vi.fn(), destroy: vi.fn() };
+  const trayStub = { setContextMenu: vi.fn(), setToolTip: vi.fn(), on: vi.fn(), destroy: vi.fn() };
 
   return {
     __win: win,
