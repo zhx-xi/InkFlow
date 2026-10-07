@@ -112,6 +112,56 @@ def test_serve_without_idle_timeout_starts_no_watchdog(tmp_path):
     watchdog.assert_not_called()
 
 
+def test_serve_idle_watchdog_seam_delegates_and_on_idle_sets_should_exit(tmp_path):
+    """#1487：装配缝 `_start_idle_watchdog` 真实委派 + `_on_idle` 置 should_exit。"""
+    from inkflow.cli.commands import serve as serve_mod
+
+    captured: dict[str, object] = {}
+    server = SimpleNamespace(should_exit=False)
+
+    def _fake_start_watchdog(
+        _tracker: object, timeout: float, *, on_idle: object, **_kw: object
+    ) -> object:
+        captured["timeout"] = timeout
+        captured["on_idle"] = on_idle
+        return SimpleNamespace(stop=lambda: None)
+
+    with (
+        patch("inkflow.cli.commands.serve._acquire_kernel_lifetime_mutex", return_value=object()),
+        patch("inkflow.cli.commands.serve._run_server", return_value=12345),
+        patch("inkflow.cli.commands.serve._write_kernel_registry"),
+        patch("inkflow.infrastructure.kernel.idle_reclaim.resolve_idle_timeout", return_value=1.5),
+        patch(
+            "inkflow.infrastructure.kernel.idle_reclaim.start_idle_watchdog",
+            side_effect=_fake_start_watchdog,
+        ),
+    ):
+        serve_mod._current_server = server
+        try:
+            result = runner.invoke(
+                serve_app, ["--port", "0", "--port-file", str(tmp_path / "kernel.json")]
+            )
+            assert result.exit_code == 0
+            assert captured["timeout"] == 1.5
+            on_idle = captured["on_idle"]
+            assert callable(on_idle)
+            on_idle()
+            assert server.should_exit is True
+        finally:
+            serve_mod._current_server = None
+
+
+def test_sibling_gui_exe_real_implementation(monkeypatch, tmp_path):
+    """`_sibling_gui_exe` 真实实现：同目录无 `InkFlow.exe` → None；有 → 该绝对路径。"""
+    fake_python = tmp_path / "python.exe"
+    fake_python.write_bytes(b"x")
+    monkeypatch.setattr(tray_launch.sys, "executable", str(fake_python))
+    assert tray_launch._sibling_gui_exe() is None
+    gui = tmp_path / "InkFlow.exe"
+    gui.write_bytes(b"x")
+    assert tray_launch._sibling_gui_exe() == gui
+
+
 # ── resolve_gui_exe：检测已安装 GUI ───────────────────────────────────────
 
 
