@@ -4,7 +4,7 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.5 | **日期**: 2026-10-07 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）；v1.4 增量依据 Issue #1420（客户端超时后审计明细不可恢复——findings 落库 + 读口 + 超时文案对齐）；v1.5 增量依据 Issue #1425（审计异步语义——触发即返回 `log_id`（202）+ 后台执行 + 按 id 轮询状态；用户 2026-10-06 拍板**方案 B**）
+> **Spec 版本**: 1.6 | **日期**: 2026-10-07 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）；v1.4 增量依据 Issue #1420（客户端超时后审计明细不可恢复——findings 落库 + 读口 + 超时文案对齐）；v1.5 增量依据 Issue #1425（审计异步语义——触发即返回 `log_id`（202）+ 后台执行 + 按 id 轮询状态；用户 2026-10-06 拍板**方案 B**）；v1.6 增量依据 Issue #1484（批量章节审计入口——批量编排 + 断点续跑 + 结果聚合；在 v1.5 异步语义之上加**编排薄层**，不新造审计执行机制）
 > **所属阶段**: 0.6.0（#208 章节审计，估算 5-7 人天——v1.1 拍板含轻量记录 + CLI 确认 + GUI 最小版）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=C **轻量审计记录**（audit_logs 表：时间/章节/结果/确认状态/备注，不含 findings 明细；可追溯性落地且避免全量持久化膨胀）；Q2=B **CLI 支持确认**（`--confirm accept|reject`——单 CLI 用户不应被迫下载 GUI，双入口确认状态统一落 audit_logs）；Q3=C **GUI 最小版一并做**（章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知——确认闭环是功能定义）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 同步修订；Issue #208 验收标准已更新（gh comment 留痕 2026-08-09）。
@@ -23,6 +23,21 @@
 > ⑤ **CLI 默认保 UX**：`audit chapter <章> -p <项目>` 默认 `--wait`（内部轮询至终态后输出报告，人类输出与今天一致），`--no-wait` 立即返回 `log_id`。
 > ⑥ **审计域 TIMEOUT hint 收敛**（#1425 顺带项）：MCP `_hint_for("TIMEOUT")` 文案原为「请先用对应 list/get 工具查询结果」——审计域**没有 list/get action**，恢复路径是「按 `log_id` 查询」；审计工具改用域专属 hint（`audit` action=`result`），并同步升级 `backend/tests/unit/mcp/test_mcp_llm_timeout_926.py`（属契约演进）。
 > 连带修订：§1 / §2.3 / §2.4 / §3.1 / §3.2 / §3.3 / §4 / §5.1 / §5.7 / §7 / §8.1 / §8.2 / §9 / §10 / §12 / §13。
+>
+> **Spec 变更（v1.5 → v1.6）——批量编排（#1484，加法式，端点零变化）**: `audit chapter` 实测
+> 65–305 秒/章（均值 ~150-170），520 章全量约 **16 小时**；此前**无官方批量入口**，只能外部脚本
+> 循环调用（断点续跑 + 报告全自建）。
+> ① **新增 CLI 命令 `inkflow audit batch`**（§4 / §5.8）：`--project-id` + `--chapters 区间` +
+> `--resume` + `--concurrency` + `--out` + `--json`；**纯编排薄层**——单章执行仍走 §5.1 v1.5 的
+> 「202 受理 + 后台执行 + 轮询」，本层**不新增端点、不新增表、不改 `audit chapter` 行为**。
+> ② **断点续跑依据 = `audit_logs` 既有记录**（该章存在 `run_status='completed'` 记录即视为已完成，
+> §5.8）；**不新建进度表**（issue 拍板：复用既有记录）。
+> ③ **默认串行**（`--concurrency` 默认 1，LLM 限流友好）；**聚合报告** = Markdown 清单 + JSON，
+> 按**检查项 / 严重度**双视图归类，双视图计数与各章 findings 之和一致（§13 M21 计数断言防丢）。
+> ④ 报告落点 `--out PATH`（Markdown + 同主名 `.json`）；**省略 `--out` 只打印到 stdout，不落盘**
+> （默认值刻意不写文件，避免污染仓库）。
+> 连带修订：§1 / §4 / §5.8（新增）/ §7 / §8.1 / §9.1 / §9.2 / §10 / §11 / §12 / §13。
+
 >
 > **关联 Issues**: [#208](https://github.com/zhx-xi/InkFlow/issues/208)（本模块）；[#54](https://github.com/zhx-xi/InkFlow/issues/54)（F22 全文搜索——本模块为 F22「AI 自动维护」的增强触发语义前置，**F22 不阻塞等待本模块**）；[#45](https://github.com/zhx-xi/InkFlow/issues/45)（F15 审计服务——静态档案一致性，与本模块互补）
 > **依赖**: ✅ F2（章节 + ChapterStatus 四态：REVIEW/FINAL 为「写完一章」天然钩子）· ✅ F5（LLM 管线，ChatOpenAI 既有）· ✅ F9（角色档案读取）· ✅ F10（世界观条目读取）· ✅ F15（静态一致性审计可委托，API 已存在）· ✅ F19（GUI 渲染层，确认流程 UI 接线）· ⏳ F22（#54，被依赖方，非前置）
@@ -64,7 +79,7 @@ ChapterAuditReport（检查项 + 严重级别 + 建议）
 ```
 
 **边界声明**:
-- F34 做**章节级**审计（一章一报告），**不做**全书批处理审计（F15 已覆盖档案间一致性，全书级由 CLI 循环调用实现）
+- F34 做**章节级**审计（一章一报告）；v1.6（#1484）起全书**批量编排**由 CLI `inkflow audit batch` 承担（§4 / §5.8）——批量层只做编排与聚合，**单章审计机制不变**（仍是本章节级实现）；服务端批量端点 / GUI 批量面仍不在范围内（§10）
 - F34 的 LLM 漂移检查是**辅助建议**（提示「此段与人设描述可能有冲突」），**不自动改文**；最终由作者确认/修改（F27 哲学）
 - F34 新增**一张轻量记录表 audit_logs**（Q1=C 拍板：仅摘要级字段，无 findings 明细、无 JSON 快照；schema 由 `Base.metadata.create_all` 管理，零迁移）
 - F34 的确认流程 GUI（最小版）+ CLI 双入口均属于本功能范围（Q2=B / Q3=C 拍板）；F22 索引同步**不阻塞等待**本模块（F22 v1.1 用内容变更 + REVIEW/FINAL 状态触发增量，本模块实现后审计确认可作为增强触发点，见 §10）
@@ -358,6 +373,33 @@ inkflow audit chapter [<chapter>] --project <name|id> [--include-static] [--wait
 成功: 退出 0；人类可读输出按 severity 排序打印 findings；--json 输出记录明细/受理凭证/确认结果/记录列表
 失败: 项目/章节/记录不存在 → 退出 1；用法错误 → 退出 2；--confirm 时无 pending 记录 → 退出 1；
       --wait 轮询到 run_status=failed（或超时）→ 退出 1（错误信封含 log_id 恢复指引）
+
+── inkflow audit batch（v1.6 #1484 批量编排，详规见 §5.8）──
+
+inkflow [--json] audit batch --project-id <name|id> [--chapters <区间>] [--resume] [--concurrency N] [--out PATH]
+
+参数:
+  --project-id, -p     项目名称或 ID（必填）
+  --chapters           **v1.6（#1484）** 章节序号区间（1-based，按 order_index 升序，见 §5.8）：
+                       单区间 `1-520` / 单点 `8` / 逗号组合 `1-5,8,10-12`；省略 = 全部章节
+  --resume             **v1.6（#1484）** 断点续跑：跳过 `audit_logs` 中已有
+                       `run_status='completed'` 记录的章节（依据既有记录，不新建进度表）
+  --concurrency N      **v1.6（#1484）** 并发章数，默认 1（串行，LLM 限流友好）；N < 1 → 退出 2
+  --out PATH           **v1.6（#1484）** 报告落点：Markdown 写 `PATH`、JSON 写同主名 `.json`
+                       （`--out report.md` → `report.md` + `report.json`）；省略 = 只打印 stdout（不落盘）
+  --json               **全局选项**（须置于子命令**前**：`inkflow --json audit batch …`）——
+                       输出 JSON 信封（data = 聚合报告对象）；进度行恒走 stderr
+
+用法:
+  全量批次:  inkflow audit batch -p <项目>
+  区间批次:  inkflow audit batch -p <项目> --chapters 1-5
+  断点续跑:  inkflow audit batch -p <项目> --resume --out report.md
+  限流并发:  inkflow audit batch -p <项目> --concurrency 2
+  机器可读:  inkflow --json audit batch -p <项目>      → stdout 仅 JSON 信封（进度在 stderr）
+
+成功: 退出 0（单章 `run_status=failed` 属「结果」，记入报告失败清单，**不中断整批**）
+失败: 批次级错误（项目不存在 / 过滤后无匹配章节 / 内核不可用 / 报告写入失败）→ 退出 1；
+      用法错误（`--chapters` 区间非法 / `--concurrency` < 1）→ 退出 2
 ```
 
 > v1.4 说明（#1420）：`--log` 是**超时恢复路径**——先 `--history -p <项目>` 找到目标记录的 id，再 `--log <id>` 取回明细（`--history` 只给 `severity_summary`，不足以复核）。`--log` 与触发/确认/列表互斥（一次一个动作）；缺 `-p` 且无 `--log` → 用法错误（退出 2）。
@@ -365,6 +407,10 @@ inkflow audit chapter [<chapter>] --project <name|id> [--include-static] [--wait
 > v1.5 说明（#1425，**CLI 契约演进**）：触发路径不再直接返回报告——POST 得 202 `{log_id, status}` 后，`--wait`（默认）轮询 `GET /audit-logs/{log_id}/status`（间隔 1s，总预算 `_POLL_TOTAL_TIMEOUT`）至 `completed`/`failed`，再经 `GET /audit-logs/{log_id}` 取回记录明细并以**与今天一致的人类输出**打印 findings（`--json` 的 data 因此由 `ChapterAuditReport` 变为 `AuditLogDetail`——属破坏性变更，见 PR 清单）。`--no-wait` 则直接以受理凭证为 `data` 输出。轮询超时/`failed` → 退出 1（错误消息含 `--log <id>` 恢复指引）。`--history` / `--log` / `--confirm` 行为不变（`--history` 输出行增补 `run_status`）。轮询只在触发路径生效，`--no-wait` 与之互斥语义由「不等待」表达（不额外禁用）。
 
 > v1.1 说明：`--confirm` 与 `--history` 互斥（一次一个动作）；`--note` 仅与 `--confirm reject` 有业务意义（accept 也可留备注，如「改过再确认」），无 `--confirm` 时 `--note` 报用法错误（退出 2）。
+
+> v1.6 说明（#1484）：批量是**编排薄层**——单章执行仍走 §5.1 v1.5 的「202 受理 + 后台执行 + 轮询」，本命令**不新增端点、不新增表**，`audit chapter` 行为零变化。报告双视图（按检查项 / 按严重度）计数与各章 findings 之和一致（§13 M21）。断点依据 = `audit_logs` 既有记录（§5.8）。默认**不落盘**：省略 `--out` 只打印到 stdout，避免污染仓库。
+
+> **修改履历**（v1.6 #1484，2026-10-07）：§4 新增 `inkflow audit batch` 命令块（详规见 §5.8）；既有 `audit chapter` 命令未改。
 
 ---
 
@@ -490,6 +536,64 @@ chapter_audit_drift.yaml:
 | 新 API | 1 只读端点 | 1 端点 | **5 端点（触发（v1.5 起 202 异步）+ 确认 + 记录列表 + v1.4 记录明细读口 + v1.5 任务状态轮询）** |
 | 跨模块 MODIFY | 无 | 无 | **无（前端编排自动触发）** |
 | LLM 失败语义 | N/A | 可选降级 | **降级不阻塞（200 + degraded 标记落记录）** |
+### 5.8 批量编排（v1.6 #1484）
+
+> **定位**：批量入口是**编排薄层**。它**不新造审计执行机制**——单章执行仍走 §5.1 v1.5 的
+> 「202 受理 + 后台执行 + 轮询」，本层只做「枚举章节 → 逐章派发 → 轮询收口 → 聚合报告」。
+
+```text
+inkflow audit batch --project-id <pid> [--chapters 1-520] [--resume]
+                    [--concurrency N] [--out report.md]        （--json 为全局选项，置于 audit 前）
+                          │
+                          ▼
+ ① 项目解析：UUID 直传；名称 → GET /projects 匹配 name（复用 audit chapter 同款解析）
+ ② 枚举章节：GET /projects/{pid}/chapters 分页循环（order_index 升序，见下）
+ ③ --chapters 过滤：1-based 序号（= 大纲序内的位置）；越界序号**静默丢弃**
+ ④ --resume 过滤：断点依据 = audit_logs 中该章存在 run_status='completed' 记录
+ ⑤ 逐章派发（默认串行；--concurrency N 以信号量限流）：
+      POST /projects/{pid}/chapters/{cid}/audit → 202 {log_id, status}
+        · status='completed'（#1425 幂等复用）→ 不轮询，直接 ⑥
+        · status='running'  → 轮询 GET /audit-logs/{log_id}/status 至 completed / failed
+ ⑥ 取回明细 GET /audit-logs/{log_id} → findings（聚合用；failed 章记错误清单）
+ ⑦ 聚合报告（Markdown + JSON，按检查项 / 严重度双视图归类）→ stdout 或 --out 落盘
+```
+
+**章节序号（`--chapters`）**：序号 = `GET /projects/{pid}/chapters` 返回序中的 1-based 位置——
+该端点按 `order_index ASC` 排序（§3.1 一致性委托同源），故「第 N 章」= 大纲序列中的第 N 章。
+
+**断点续跑语义（`--resume`）**：
+
+- **断点依据 = `audit_logs` 既有记录**（不新建进度表，issue 拍板）：该项目下存在
+  `chapter_id == 本章` 且 `run_status == 'completed'` 的记录即视为**已完成**
+  （数据面来自 `GET /projects/{pid}/audit-logs` 分页全量拉取后的集合）。
+- 命中 → **跳过该章**（不派发、不产生新记录），计入报告 `skipped`；想重审就不要加 `--resume`。
+- `run_status='failed'` / `run_status='running'`（含内核崩溃遗留，§7 E21）**都不算已完成**
+  → 会重新派发；是否复用/新建由 #1425 幂等谓词自行决定，**本层不介入**。
+
+**并发（`--concurrency`，默认 1 = 串行）**：
+
+- 默认串行 → 任意时刻**最多一章在 running**（LLM 限流友好；实测 65–305 秒/章）。
+- `--concurrency N` → 信号量限流，同时最多 N 章在飞（本层**不承诺** N 章都处于 `running`：
+  幂等复用会即时返回 `completed`）。
+- `N < 1` → 用法错误（退出 2）。
+
+**聚合报告（Markdown + JSON）**：
+
+- 双视图归类：**按检查项**（`check_type` 6 项）+ **按严重度**（`error`/`warning`/`info`）；
+  两视图计数**均等于各章 findings 之和**（§13 M21 计数断言防丢）。
+- 章节清单（序号 / 标题 / 执行态 / 三级计数）+ 失败章节清单（含 `log_id` 与 `error`）+
+  跳过章节清单（`--resume`）。
+- JSON 另含每章 `findings` 明细（机器可读全量）；Markdown 只给计数清单（520 章文档不膨胀）。
+- 落点：`--out PATH` → Markdown 写 `PATH`、JSON 写同主名 `.json`；**省略 `--out` 只打印 stdout**。
+
+**退出码**：
+
+- `0` = 批次执行完毕（个别章节 `run_status='failed'` 属「结果」而非「执行错误」，记入失败清单——
+  同 §4 F15 `check` 的「发现不一致是结果不是错误」口径）；单章轮询超时同样记失败清单、不中断整批。
+- `1` = 批次级错误（项目不存在 / `--chapters` 过滤后无匹配章节 / 内核不可用 / 报告写入失败）。
+- `2` = 用法错误（`--chapters` 区间非法 / `--concurrency < 1`）。
+
+> **修改履历**（v1.6 #1484，2026-10-07）：§5 新增本小节（§5.8 批量编排）；§5.1-§5.7 未改。
 
 ---
 
@@ -537,6 +641,13 @@ chapter_audit_drift.yaml:
 | E21 | **v1.5（#1425）** 内核崩溃遗留 `running` 行 | 超过复用窗口（`_REUSE_STALE_SECONDS`）后**不再复用**（不阻塞重审）；旧行**保持 `running`**（其余实例可能仍在跑，遵循 #1317「不误伤」纪律）——`--history` 可见，`/status` 仍报 running，客户端轮询超时后经 `--log` 查看 |
 | E22 | **v1.5（#1425）** 复用命中已完成记录（幂等重跑） | 202 返回 `status='completed'` + 同一 `log_id`；**不启动**后台任务、不新增记录；`--wait` 直接取回该记录明细 |
 | E23 | **v1.5（#1425）** 旧库（v1.5 前建的 audit_logs 无新列） | lifespan 迁移补列（`ensure_audit_logs_async_columns`；`run_status` 默认 `'completed'`、`content_hash`/`error` 默认空串）→ 历史行读作「已完成」；`content_hash=''` 永不参与去重命中 |
+| E24 | **v1.6（#1484）** 批量中单章执行失败（`run_status='failed'`） | **不中断整批**——该章记入报告失败清单（含 `log_id` + `error`），继续下一章；批次退出码仍 0（§5.8 退出码） |
+| E25 | **v1.6（#1484）** `--resume` 断点判定 | 依据 = `audit_logs` 中该章存在 `run_status='completed'` 记录（不新建进度表）；`failed`/`running` **不算**已完成 → 重新派发；命中章节计入报告 `skipped`（§5.8） |
+| E26 | **v1.6（#1484）** `--chapters` 区间越界（如 520 章的项目传 `1-600`） | 越界序号静默丢弃（不报错）；**过滤后无匹配章节** → 退出 1（批次级错误） |
+| E27 | **v1.6（#1484）** `--chapters` 区间非法（`5-3` / `0-2` / 非数字） | 用法错误 → 退出 2（不发起任何审计请求） |
+| E28 | **v1.6（#1484）** 报告落盘 | `--out PATH` → Markdown 写 `PATH`、JSON 写同主名 `.json`；省略 `--out` → 只打印 stdout（**不写文件**，避免污染仓库）；写入失败 → 退出 1 |
+
+> **修改履历**（v1.6 #1484，2026-10-07）：本表新增 E24-E28（批量失败不中断 / 断点依据 / 区间越界 / 区间非法 / 报告落盘）；既有行未改。
 
 ---
 
@@ -605,6 +716,12 @@ chapter_audit_drift.yaml:
 > - CREATE 测试：`backend/tests/unit/core/test_audit_logs_async_migration_1425.py`、`backend/tests/unit/domain/models/test_chapter_audit_run_status_1425.py`、`backend/tests/unit/infrastructure/database/test_audit_log_async_repo_1425.py`、`backend/tests/unit/domain/services/test_chapter_audit_async_1425.py`、`tests/api/test_chapter_audit_async_1425.py`、`tests/cli/test_cli_audit_async_1425.py`
 > - MODIFY 测试（契约演进）：`tests/api/test_chapter_audit_api.py`（POST 200 → 202 + `submit` 契约）、`tests/cli/test_cli_audit_chapter.py`、`backend/tests/unit/mcp/test_mcp_llm_timeout_926.py`（C-R5 审计 POST 去 300s 覆盖 + 审计域 hint 独立断言）、`frontend/packages/renderer/src/api/audit.test.ts`
 > - 契约生成物（同 PR 刷新）：`ci_cd/openapi_snapshot.json` + `frontend/packages/renderer/src/api/schema/openapi.d.ts`
+>
+> **v1.6（#1484）增量清单 / 修改履历**（相对上表的改动；**端点零变化、零迁移**）:
+> - MODIFY `cli/commands/audit.py` — 新增 `inkflow audit batch` 命令（编排派发 + 断点续跑 + 并发 + 聚合报告，§4 / §5.8）；F15 `check` 与 F34 `chapter` 行为不动
+> - CREATE 测试：`tests/cli/test_cli_audit_batch_1484.py`（逐章派发 / 聚合双视图计数一致 / `--chapters` 区间 / `--resume` 跳过已完成 / 默认串行 + `--concurrency 2` 限并发 / 单章 failed 不中断 / `--out` 双文件落盘 / 用法错误退出 2）
+> - **无 API 契约变更**（不增删端点 → `ci_cd/openapi_snapshot.json` 与 `openapi.d.ts` 不需刷新）
+> - **无迁移**（断点依据复用 `audit_logs` 既有列 `chapter_id` + `run_status`，不新建表/列）
 
 ### 8.2 注入依赖（ChapterAuditService 构造签名）
 
@@ -662,6 +779,9 @@ class ChapterAuditService:
 | 单元 | `backend/tests/unit/domain/services/test_chapter_audit_async_1425.py` | **v1.5** `submit` 新建 running 记录 / 幂等复用（不新增）/ 404 透传；`run_audit_job` 完成落库 == 报告 findings / 异常 → `failed` + error |
 | API | `tests/api/test_chapter_audit_async_1425.py` | **v1.5** POST → 202 `{log_id, status}` + 立即返回 + 后台任务被派发（created 才派发）；复用 → 202 completed 且不派发；404 语义不变；`/status` 200（running/completed/failed）/404 |
 | CLI | `tests/cli/test_cli_audit_async_1425.py` | **v1.5** 默认 `--wait` 轮询至 completed 后人类输出报告；`--no-wait` 输出受理凭证；`run_status=failed` → 退出 1；`--json` 信封形态 |
+| CLI | `tests/cli/test_cli_audit_batch_1484.py` | **v1.6** 批量编排：逐章派发 + 聚合报告（Markdown + JSON 双视图计数一致）/ `--chapters` 区间过滤（范围外不派发）/ `--resume` 跳过已完成 / 默认串行（最多一章 `running`）与 `--concurrency 2` 限并发 / 单章 `failed` 不中断整批 / `--out` 双文件落盘 / 用法错误退出 2 |
+
+> **修改履历**（v1.6 #1484，2026-10-07）：本表新增 1 行（`test_cli_audit_batch_1484.py`）；既有行未改。
 
 ### 9.2 关键场景
 
@@ -680,6 +800,7 @@ class ChapterAuditService:
 13. **v1.5 失败可见（#1425）**：后台任务异常 → 记录 `run_status='failed'` + `error` 非空；`/status` 与 `--history` 均可见；CLI `--wait` 以退出 1 收口
 14. **v1.5 审计域 hint（#1425）**：审计工具 TIMEOUT 信封 hint 指向「按 log_id 查询」（`audit` action=`result`），不含 `list/get`；其他域 hint 不变
 15. **v1.5 降级记录也复用（#1425 实测修正）**：LLM 不可用（无可用模型）→ 记录 `run_status='completed'` + `degraded=true` + 确定性 findings；同章同内容**再次触发 → 复用同一 `log_id`（202 status=completed），不新增记录**——#1425 的 M7 实证探针在真实内核上抓到首版实现（复用谓词带 `degraded=false`）会导致「每次重试 +1 条记录」，与本 issue 目标相反，故谓词收敛为「completed + pending」；刷新降级结果的路径 = 确认（accept/reject）或改正文
+16. **v1.6 批量编排（#1484）**：`--chapters 1-3` → 仅派发 3 章并聚合出报告；`--resume` → 已有 `run_status='completed'` 记录的章节**不重复派发**；单章 `failed` → 记入失败清单、其余照跑（不中断）；双视图计数 == 各章 findings 之和
 
 ### 9.3 覆盖率
 
@@ -691,7 +812,7 @@ class ChapterAuditService:
 
 | 项 | 归属/原因 |
 |----|-----------|
-| 全书批处理审计 | F15 已覆盖档案间一致性；章节审计是单章粒度，全书级由 CLI 循环调用 |
+| ~~全书批处理审计~~ **（v1.6 部分交付）** | F15 已覆盖档案间一致性；章节审计是单章粒度。**v1.6（#1484）**交付 `inkflow audit batch` 批量**编排**（枚举 / 区间 / 断点续跑 / 聚合报告），但**无服务端批量端点、无 GUI 批量面**——编排在 CLI 侧，单章仍走 `POST .../audit`（§5.8） |
 | 自动改文/自动修复漂移 | F27 哲学：AI 只建议，用户决策；自动改文是未来 Agent 化（F27 writer-agent）职责 |
 | ~~audit_logs 存 findings 明细/JSON 快照~~ **（v1.4 已演进，见下）** | ~~Q1=C 拍板：轻量记录（摘要级）即可追溯；明细是即时消费，历史回看场景弱（§2.3 决策论证）~~ → **v1.4（#1420）改为落 JSON 快照列 + 按记录 ID 读口**：客户端 300s 超时会让「即时消费」的明细彻底丢失（实测 2.6% 命中），副作用超过节省的存储 |
 | ~~**v1.4 仍在范围外**：异步语义（触发即返回 log_id，超时后按 id 轮询）~~ **（v1.5 已交付）** | #1425（用户 2026-10-06 拍板方案 B）已落地：`POST /audit` → 202 + 后台执行 + `/status` 轮询 + 幂等重跑；本条自 v1.5 起移出「范围外」 |
@@ -705,6 +826,8 @@ class ChapterAuditService:
 | 风格分析/文笔建议 | F16 已覆盖（风格统计 + AI 痕迹），F34 不重复 |
 | 多章节批量审计 UI | GUI 按单章确认流程做；批量是 CLI 场景 |
 | 审计发现自动生成修复建议的落库 | 建议随报告展示，不写入章节（无副作用原则） |
+
+> **修改履历**（v1.6 #1484，2026-10-07）：本表「全书批处理审计」行改写（批量编排已交付 → §5.8）；「多章节批量审计 UI」仍范围外（GUI 批量面是另一轨）；其余行未改。
 
 ---
 
@@ -730,7 +853,7 @@ class ChapterAuditService:
 | F44 全自动写作链（#1267） | **写作门禁**：`severity=error`（阻断级，口径 `_audit_bridge.BLOCKING_SEVERITY`）→ 停止后续章节，被阻断章 `progress=needs_review`，run 终态 `blocked`；`warning`/`info` 不阻断；`degraded=true` **不阻断但告警**（「没审出来 ≠ 审出问题」）。阻断判定唯一实现点 = `_audit_bridge.audit_blocks_writing` / `inspect_audit_conclusion`（交 F44 §5.5 展开） |
 | F22 搜索（#54） | 增强触发语义（审计确认 → 索引增量），**非阻塞**（F22 v1.1 已用状态变更触发） |
 | GUI | 章节页审计按钮 + 确认弹层（交互式轨 = 用户决定是否阻断，复用 `confirm accept\|reject` 状态机） |
-| CLI | `inkflow audit chapter`（触发 + 确认 + 历史 + **v1.4 按记录 ID 取明细**） |
+| CLI | `inkflow audit chapter`（触发 + 确认 + 历史 + **v1.4 按记录 ID 取明细**）；**v1.6 批量 `inkflow audit batch`**（编排 + 断点续跑 + 聚合报告，§5.8） |
 
 ### 编号口径声明
 
@@ -754,6 +877,9 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 | D10 | 自有端口 audit_log_repository | 本模块自己的 Protocol + repo | 业务表之外的补充持久化不 MODIFY 既有 Protocol（F15 audit_repo 先例）；SQLite 轻量 CRUD 可独立测试 | 复用 F32 settings_repo（语义不同，key-value vs 记录表）；service 直连 ORM（破坏分层） |
 | D11 | **v1.4（#1420）：findings 落库 + 按记录 ID 读口（Q1=C 演进）** | `audit_logs` 增 `findings` JSON 快照列（`LenientJSON`，`TEXT NOT NULL DEFAULT '[]'`）；`add(*, findings=...)` 落库（与 POST 响应体同源）；新增 `GET /api/v1/audit-logs/{log_id}` + CLI `--log <id>`；**列表端点仍返回轻量 `AuditLog`**（独立 `AuditLogDetail` 模型，不污染列表形态） | 客户端 300s 超时会让「即时消费」的明细永久丢失（352 章批审计命中 2.6%，重跑 200–300 秒且新增重复记录）；快照成本（单章几 KB~几十 KB）远低于重跑成本；读口独立模型使 Q1=C 的摘要级列表契约零变化（向后兼容） | 仅改文案（明细仍不可恢复——#1420 方案 1 单独不足）；异步语义（触发即返回 log_id + 轮询，#1420 方案 3，改动面大，归后续）；写产物文件 + 存路径（引入清理策略与孤儿文件问题，DB 列更内聚） |
 | D12 | **v1.5（#1425）：审计触发异步语义（202 + 后台 + 轮询）** | `POST .../audit` 由阻塞 200 改 **202 + `{log_id, status}`**；检查走 `spawn_background_task`（fire-and-forget，F44 #456 先例）；**状态承载复用 `audit_logs` 本表**（增 `run_status`/`error`/`content_hash` 三列，不新建表）；新增 `GET /api/v1/audit-logs/{log_id}/status` 轮询读口（findings 仍由 v1.4 读口复用）；CLI `--wait`（默认）/`--no-wait`；三消费面（GUI/CLI/MCP）同 PR 同步 | ① 与既有超时文案「服务端任务可能仍在进行」天然一致（v1.4 只解决「事后可查」，v1.5 解决「当场可知状态」）；② 幂等去重根治 #1420 残留的「重跑重复记录」；③ 状态落表 → 进程崩溃后状态可观测（不再有「不知道任务是否在跑」的黑洞）；④ 复用本表 = 一条记录即一次「任务 + 确认」，零新表零新装配面；⑤ 与 #1484（批量审计入口）的断点续跑/状态可观测需求直接对齐（任务状态语义写进 spec 供其引用） | 方案 A 维持同步（重复记录 + 无状态，痛点未解）；方案 C `?wait=false` 双语义并存（心智负担 + 老路径仍超时，未采纳）；方案 D 复用 `agent_executions`（语义不匹配：那是 agent 管线运行记录，字段面 stages/final_output 与审计无关，查询面须额外适配）；新建 `audit_tasks` 表（一条审计拆两表 → 一致性与级联复杂度，YAGNI）。**架构参照**：ADR-011（异步无阻塞架构）+ F44 #456 202 fire-and-forget 先例；模块级决策记录沿用 F34 惯例（D1–D11 均记于本表，未单开 ADR 文件） |
+| D13 | **v1.6（#1484）：批量审计走 CLI 编排层（不新增端点 / 表 / 进度存储）** | 新增 `inkflow audit batch`：枚举章节 → `--chapters` 区间过滤 → `--resume` 跳过已完成 → 逐章 `POST .../audit`（202）+ 轮询 `/status` + `GET /audit-logs/{log_id}` 取 findings → 聚合 Markdown / JSON（按检查项 / 严重度双视图）。**端点零变化、零迁移**：断点依据复用 `audit_logs` 的 `chapter_id` + `run_status='completed'` | ① 单章执行机制已有（v1.5 异步语义），批量的痛点是**编排与聚合**而非执行——薄层即可（模块化单体 + P5 YAGNI）；② 断点复用既有表 → 无迁移、无对账、无孤儿进度行；③ 编排放 CLI 侧与 §5.6「前端编排」同构（服务端零业务耦合，零跨模块 MODIFY） | ① 服务端批量端点（`POST /projects/{pid}/audit-batch`）：须新增长任务状态面 / 进度表 / 实例归属，且违背「单章执行已有」——在无 GUI 批量面时收益为零；② 新建 `audit_batch_runs` 进度表：与 `audit_logs` 信息重复，多一份一致性与级联负担；③ 外部脚本循环（本 issue 现状）：无断点续跑 / 聚合 / 并发控制的统一实现，每个用户重造 |
+
+> **修改履历**（v1.6 #1484，2026-10-07）：本表新增 D13（批量编排层）；D1-D12 未改。
 
 ---
 
@@ -783,6 +909,11 @@ F34 编号为 0.6.0 新增（2026-08-09 用户拍板立项，F 编号顺序 F33 
 | M18 | **v1.5（#1425）：触发即返回 log_id（202）** —— POST → 202 + `{log_id, status}` 且**立即返回**；后台执行完成后 `/status` → completed 且读口可取 findings | API+单元 | `pytest ../tests/api/test_chapter_audit_async_1425.py backend/tests/unit/domain/services/test_chapter_audit_async_1425.py` |
 | M19 | **v1.5（#1425）：幂等重跑 + CLI UX 不退化** —— 同章同内容重复触发不新增记录（202 completed 复用同一 log_id）；CLI 默认 `--wait` 输出报告、`--no-wait` 输出 `log_id`；后台失败 → `failed` 可见 | 单元+API+CLI | `pytest backend/tests/unit/infrastructure/database/test_audit_log_async_repo_1425.py ../tests/api/test_chapter_audit_async_1425.py ../tests/cli/test_cli_audit_async_1425.py` |
 | M20 | **v1.5（#1425）：审计域 TIMEOUT hint 收敛** —— 审计工具 TIMEOUT hint 指向按 `log_id` 查询（不含 `list/get`）；其他域 hint 不变；`test_mcp_llm_timeout_926.py` 同步升级后全绿 | 单元 | `pytest backend/tests/unit/mcp/test_mcp_llm_timeout_926.py` |
+| M21 | **v1.6（#1484）：批量入口 + 聚合报告** —— `audit batch` 逐章派发并聚合出报告（Markdown + JSON）；按检查项 / 严重度双视图归类，**双视图计数 == 各章 findings 之和**（防丢）；`--chapters 1-5` 区间过滤生效、范围外章节不派发；`--out` 落盘 Markdown + 同名 `.json` | CLI | `pytest ../tests/cli/test_cli_audit_batch_1484.py` |
+| M22 | **v1.6（#1484）：断点续跑** —— 中断后重跑（`--resume`）已完成（`run_status='completed'`）章节**不重复审计**；`failed` / `running` 记录不算已完成（会重派发） | CLI | `pytest ../tests/cli/test_cli_audit_batch_1484.py -k resume` |
+| M23 | **v1.6（#1484）：并发控制 + 失败不中断** —— 默认串行（同时最多一章 `running`）；`--concurrency 2` 限并发 2；单章 `failed` 不中断整批（记入失败清单，批次退出 0） | CLI | `pytest ../tests/cli/test_cli_audit_batch_1484.py -k conc` |
+
+> **修改履历**（v1.6 #1484，2026-10-07）：本表新增 M21-M23（批量入口 / 断点续跑 / 并发 + 失败不中断）；M1-M19 未改。
 
 > Issue #208 验收标准映射（v1.1 拍板同步 2026-08-09）：写完一章可触发=M11（前端自动触发） · 报告含字数/人设/设定+级别=M1/M3 · GUI 确认交互=M11 · **记录可追溯=Q1=C 轻量记录（M5/M7/M8，audit_logs + CLI --history + API audit-logs）** · **CLI 可确认=Q2=B（M7）**。
 
