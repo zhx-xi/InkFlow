@@ -31,39 +31,124 @@ TRAY_ONLY_FLAG = "--tray-only"
 TRAY_ONLY_ENV = "INKFLOW_TRAY_ONLY"
 #: GUI 可执行文件名（electron-builder ``productName: InkFlow``）
 GUI_EXE_NAME = "InkFlow.exe"
+#: NSIS 安装会把安装目录写进该键的每个实例子键（探测链候选 3，#1525）
+_UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+#: 上述子键下的安装目录值名
+_INSTALL_LOCATION_VALUE = "InstallLocation"
 
 _DISABLE_TRUTHY = frozenset({"1", "true", "on", "yes"})
 
 
+def _exact_exe_in_dir(directory: Path) -> Path | None:
+    """在 `directory` 中按**精确大小写**查找 `InkFlow.exe`，返回磁盘上的真实路径。
+
+    Windows 文件系统大小写不敏感——`Path(dir) / "InkFlow.exe"` + `is_file()` 会把同目录的
+    **小写 `inkflow.exe`（内核）**误判为 GUI（#1525 根因 1a）。此处逐 entry 比对
+    `entry.name == GUI_EXE_NAME`（`os.scandir` 返回磁盘真实名），杜绝大小写假命中。
+    目录不存在 / 不可读 → None（静默）。
+    """
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.name != GUI_EXE_NAME:
+                    continue
+                if entry.is_file():
+                    return Path(entry.path)
+    except OSError:
+        return None
+    return None
+
+
 def _sibling_gui_exe() -> Path | None:
-    """CLI 可执行文件**同目录**的 `InkFlow.exe`（便携/同发行目录形态）。"""
-    candidate = Path(sys.executable).parent / GUI_EXE_NAME
-    return candidate if candidate.is_file() else None
+    """CLI 可执行文件**同目录**的 `InkFlow.exe`（便携/同发行目录形态）。
+
+    精确大小写比对：CLI zip 布局下同目录只有小写 `inkflow.exe`（内核），
+    不得作为 GUI 命中（#1525 根因 1a）。
+    """
+    return _exact_exe_in_dir(Path(sys.executable).parent)
+
+
+def _registry_gui_exe() -> Path | None:
+    """从 `HKCU\\...\\Uninstall\\*` 的 `InstallLocation` 探测 GUI（#1525 根因 1b）。
+
+    NSIS 安装会写该键，据此覆盖 `%LOCALAPPDATA%\\Programs\\` / `%PROGRAMFILES%\\` 之外的
+    **自定义安装路径**。注册表不可用 / 键缺失 / 权限异常 / 值非法 → **静默跳过**（返回 None，
+    绝不抛）；非 Windows（`sys.platform != "win32"`）→ 直接跳过（不 import `winreg`）。
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+    except ImportError:
+        return None
+    try:
+        root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _UNINSTALL_KEY)
+    except OSError:
+        return None
+    with root:
+        index = 0
+        while True:
+            try:
+                subkey = winreg.EnumKey(root, index)
+            except OSError:
+                break
+            index += 1
+            location = _query_install_location(winreg, root, subkey)
+            if not location:
+                continue
+            exe = _exact_exe_in_dir(Path(location))
+            if exe is not None:
+                return exe
+    return None
+
+
+def _query_install_location(winreg_mod: Any, root: Any, subkey: str) -> str | None:
+    """读子键的 `InstallLocation` 字符串值；打开失败 / 值缺失 / 空 / 非字符串 → None（不抛）。"""
+    try:
+        sub = winreg_mod.OpenKey(root, subkey)
+    except OSError:
+        return None
+    with sub:
+        try:
+            value, _ = winreg_mod.QueryValueEx(sub, _INSTALL_LOCATION_VALUE)
+        except OSError:
+            return None
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 def _standard_gui_exe() -> Path | None:
-    """标准安装位置候选（Windows NSIS 默认：%LOCALAPPDATA%\\Programs\\InkFlow\\）。"""
+    """标准安装位置候选（Windows NSIS 默认：%LOCALAPPDATA%\\Programs\\InkFlow\\）。
+
+    同样**精确大小写比对**（`_exact_exe_in_dir`）。
+    """
     candidates: list[Path] = []
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        candidates.append(Path(local_app_data) / "Programs" / "InkFlow" / GUI_EXE_NAME)
+        candidates.append(Path(local_app_data) / "Programs" / "InkFlow")
     program_files = os.environ.get("PROGRAMFILES")
     if program_files:
-        candidates.append(Path(program_files) / "InkFlow" / GUI_EXE_NAME)
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+        candidates.append(Path(program_files) / "InkFlow")
+    for directory in candidates:
+        exe = _exact_exe_in_dir(directory)
+        if exe is not None:
+            return exe
     return None
 
 
 def resolve_gui_exe() -> Path | None:
-    """检测已安装 GUI（按序命中即用）：env 覆盖 → 同目录 → 标准安装位置。"""
+    """检测已安装 GUI（按序命中即用）：
+
+    env `INKFLOW_GUI_EXE` → CLI 同目录（**精确比对**）→ 注册表 `InstallLocation`
+    （**精确比对**，#1525 新增）→ 标准安装位置（**精确比对**）。
+    """
     override = os.environ.get(GUI_EXE_ENV)
     if override:
         candidate = Path(override)
         if candidate.is_file():
             return candidate
-    return _sibling_gui_exe() or _standard_gui_exe()
+    return _sibling_gui_exe() or _registry_gui_exe() or _standard_gui_exe()
 
 
 def _tray_gui_disabled() -> bool:

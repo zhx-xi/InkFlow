@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -176,6 +178,7 @@ def test_resolve_gui_exe_prefers_env_override(tmp_path, monkeypatch):
 def test_resolve_gui_exe_env_points_to_missing_file_falls_through(tmp_path, monkeypatch):
     monkeypatch.setenv(tray_launch.GUI_EXE_ENV, str(tmp_path / "nope.exe"))
     monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
+    monkeypatch.setattr(tray_launch, "_registry_gui_exe", lambda: None)  # #1525 新增候选：桩掉
     monkeypatch.setattr(tray_launch, "_standard_gui_exe", lambda: None)
     assert tray_launch.resolve_gui_exe() is None
 
@@ -215,6 +218,7 @@ def test_maybe_launch_skips_when_no_gui(tmp_path, monkeypatch):
     """🔴 负例：检测不到 GUI → 不拉起（走内核空闲回收兜底，决策 3A）。"""
     monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
     monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
+    monkeypatch.setattr(tray_launch, "_registry_gui_exe", lambda: None)  # #1525 新增候选：桩掉
     monkeypatch.setattr(tray_launch, "_standard_gui_exe", lambda: None)
     with patch("inkflow.cli.tray_launch.subprocess.Popen") as popen:
         assert tray_launch.maybe_launch_tray_gui(reused=False) is None
@@ -327,3 +331,251 @@ def test_tray_gui_sink_disabled_by_env(monkeypatch, value):
         with tray_launch.tray_gui_sink():
             asyncio.run(module.ensure_kernel())
     popen.assert_not_called()
+
+
+# ── #1525：探测链两处缺陷（大小写假命中 + 自定义安装路径）─────────────────
+# 背景：0.17.0-rc1 产物验证实测——CLI zip 场景托盘 100% 不出现（issue #1525）。
+# 1a：`_sibling_gui_exe` 曾用 `is_file()` 的存在性判据，在 Windows 大小写不敏感下
+#     假命中同目录的小写内核 `inkflow.exe` → 拉起必然失败（No such option: --tray-only）。
+# 1b：探测链缺注册表候选 → 自定义安装路径不可见 → 不拉起。
+# 本组测试一律用 tmp_path 造假 exe + winreg 替身，不依赖机器状态/真实注册表。
+
+
+def test_sibling_gui_exe_ignores_lowercase_kernel_exe(tmp_path, monkeypatch):
+    """🔴 1a 回归：同目录只有小写 `inkflow.exe`（CLI zip 内核）→ 不得假命中为 GUI。"""
+    kernel = tmp_path / "inkflow.exe"
+    kernel.write_bytes(b"k")
+    monkeypatch.setattr(tray_launch.sys, "executable", str(kernel))
+    assert tray_launch._sibling_gui_exe() is None
+
+
+def test_sibling_gui_exe_requires_a_regular_file(tmp_path, monkeypatch):
+    """精确比对 + 类型判定：同名**目录** `InkFlow.exe` 不算命中。"""
+    (tmp_path / "InkFlow.exe").mkdir()
+    monkeypatch.setattr(tray_launch.sys, "executable", str(tmp_path / "python.exe"))
+    assert tray_launch._sibling_gui_exe() is None
+
+
+def test_cli_zip_layout_never_launches_kernel_as_gui(tmp_path, monkeypatch):
+    """🔴 端到端（1a）：CLI zip 布局（同目录仅内核 `inkflow.exe`，无 GUI / 注册表项 / 标准位置）
+    → 不拉起任何进程（杜绝内核被当 GUI 拉起后的 `No such option: --tray-only`）。"""
+    cli_dir = tmp_path / "cli-unpacked" / "inkflow"
+    cli_dir.mkdir(parents=True)
+    kernel = cli_dir / "inkflow.exe"
+    kernel.write_bytes(b"k")
+    monkeypatch.setattr(tray_launch.sys, "executable", str(kernel))
+    monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
+    monkeypatch.delenv(tray_launch.DISABLE_ENV, raising=False)
+    _install_fake_winreg(monkeypatch, {})  # 注册表无 InkFlow 安装项
+    monkeypatch.setattr(tray_launch, "_standard_gui_exe", lambda: None)
+    with patch("inkflow.cli.tray_launch.subprocess.Popen") as popen:
+        assert tray_launch.maybe_launch_tray_gui(reused=False) is None
+    popen.assert_not_called()
+
+
+# ── winreg 替身（最小实现；不触碰真实注册表）────────────────────────────
+
+
+def _install_fake_winreg(monkeypatch, entries):
+    """装 winreg 替身 + 平台置 win32；`entries` = {子键名: {值名: 值}}。"""
+    subkeys = {name: _FakeKey(values=values) for name, values in entries.items()}
+    monkeypatch.setitem(sys.modules, "winreg", _FakeWinreg(_FakeKey(subkeys=subkeys)))
+    monkeypatch.setattr(tray_launch.sys, "platform", "win32")
+
+
+class _FakeKey:
+    """复刻 winreg 句柄（子键枚举 / 子键打开 / 值查询；不存在即抛 OSError）。"""
+
+    def __init__(self, subkeys=None, values=None):
+        self._subkeys = dict(subkeys or {})
+        self._names = list(self._subkeys)
+        self._values = dict(values or {})
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def EnumKey(self, index):  # noqa: N802  # 复刻 winreg API 名（小写化即脱离真实契约）
+        if 0 <= index < len(self._names):
+            return self._names[index]
+        raise OSError("no more subkeys")
+
+    def OpenKey(self, subkey):  # noqa: N802  # 复刻 winreg API 名
+        if subkey not in self._subkeys:
+            raise FileNotFoundError(subkey)
+        return self._subkeys[subkey]
+
+    def QueryValueEx(self, name):  # noqa: N802  # 复刻 winreg API 名
+        if name not in self._values:
+            raise FileNotFoundError(name)
+        return (self._values[name], 1)
+
+
+class _FakeWinreg:
+    """winreg 模块替身：`OpenKey` 同时接受 HKEY 常量与已打开句柄（同真实 winreg）。"""
+
+    HKEY_CURRENT_USER = "HKCU_ROOT"
+
+    def __init__(self, root_key):
+        self._root = root_key
+
+    def OpenKey(self, key, sub_key):  # noqa: N802  # 复刻 winreg API 名
+        if key == "HKCU_ROOT":
+            if sub_key != tray_launch._UNINSTALL_KEY:
+                raise FileNotFoundError(sub_key)
+            return self._root
+        return key.OpenKey(sub_key)
+
+    def EnumKey(self, key, index):  # noqa: N802  # 复刻 winreg API 名（模块级函数）
+        return key.EnumKey(index)
+
+    def QueryValueEx(self, key, name):  # noqa: N802  # 复刻 winreg API 名（模块级函数）
+        return key.QueryValueEx(name)
+
+
+def test_registry_gui_exe_finds_custom_install_location(tmp_path, monkeypatch):
+    """🔴 1b：注册表 `InstallLocation` 指向自定义安装路径 → 命中该目录的 `InkFlow.exe`。"""
+    install_dir = tmp_path / "program" / "InkFlow"
+    install_dir.mkdir(parents=True)
+    gui = install_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+    _install_fake_winreg(
+        monkeypatch,
+        {
+            "InkFlow_is1": {"InstallLocation": str(install_dir) + os.sep},  # NSIS 常带尾分隔符
+            "UnrelatedApp": {"InstallLocation": str(tmp_path / "elsewhere")},
+        },
+    )
+    assert tray_launch._registry_gui_exe() == gui
+
+
+def test_resolve_gui_exe_falls_through_to_registry(tmp_path, monkeypatch):
+    """端到端探测链：env 未设 + 同目录无 GUI → 注册表自定义路径命中。"""
+    monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
+    monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
+    install_dir = tmp_path / "custom" / "InkFlow"
+    install_dir.mkdir(parents=True)
+    gui = install_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+    _install_fake_winreg(monkeypatch, {"InkFlow_is1": {"InstallLocation": str(install_dir)}})
+    assert tray_launch.resolve_gui_exe() == gui
+
+
+def test_registry_gui_exe_skips_when_uninstall_key_missing(monkeypatch):
+    """负例：注册表无 Uninstall 键（OpenKey 抛）→ 静默 None，不抛。"""
+
+    class _NoKeyWinreg:
+        HKEY_CURRENT_USER = "HKCU_ROOT"
+
+        def OpenKey(self, _hive, path):  # noqa: N802  # 复刻 winreg API 名
+            raise FileNotFoundError(path)
+
+    monkeypatch.setitem(sys.modules, "winreg", _NoKeyWinreg())
+    monkeypatch.setattr(tray_launch.sys, "platform", "win32")
+    assert tray_launch._registry_gui_exe() is None
+
+
+def test_registry_gui_exe_skips_invalid_values(tmp_path, monkeypatch):
+    """负例：子键缺 `InstallLocation` / 值空白 / 值非字符串 / 目录无精确 `InkFlow.exe`
+    → 逐项跳过、最终 None，不抛。"""
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    _install_fake_winreg(
+        monkeypatch,
+        {
+            "AppNoValue": {},
+            "AppBlank": {"InstallLocation": "   "},
+            "AppNonStr": {"InstallLocation": 123},
+            "AppWrongDir": {"InstallLocation": str(empty_dir)},
+        },
+    )
+    assert tray_launch._registry_gui_exe() is None
+
+
+def test_registry_gui_exe_skips_unopenable_subkey(tmp_path, monkeypatch):
+    """负例：某子键 OpenKey 抛 OSError → 跳过该子键、继续后续候选（命中即止）。"""
+    good_dir = tmp_path / "good"
+    good_dir.mkdir()
+    gui = good_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+
+    class _Sub:
+        def __init__(self, values):
+            self._values = values
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def QueryValueEx(self, name):  # noqa: N802  # 复刻 winreg API 名
+            if name in self._values:
+                return (self._values[name], 1)
+            raise FileNotFoundError(name)
+
+    class _Root:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def EnumKey(self, index):  # noqa: N802  # 复刻 winreg API 名
+            if index == 0:
+                return "Broken"
+            if index == 1:
+                return "Good"
+            raise OSError("end")
+
+        def OpenKey(self, subkey):  # noqa: N802  # 复刻 winreg API 名
+            if subkey == "Broken":
+                raise OSError("access denied")
+            return _Sub({"InstallLocation": str(good_dir)})
+
+    class _Winreg:
+        HKEY_CURRENT_USER = "HKCU_ROOT"
+
+        def OpenKey(self, key, sub_key):  # noqa: N802  # 复刻 winreg API 名
+            if key == "HKCU_ROOT":
+                return _Root()
+            return key.OpenKey(sub_key)
+
+        def EnumKey(self, key, index):  # noqa: N802  # 复刻 winreg API 名（模块级函数）
+            return key.EnumKey(index)
+
+        def QueryValueEx(self, key, name):  # noqa: N802  # 复刻 winreg API 名（模块级函数）
+            return key.QueryValueEx(name)
+
+    monkeypatch.setitem(sys.modules, "winreg", _Winreg())
+    monkeypatch.setattr(tray_launch.sys, "platform", "win32")
+    assert tray_launch._registry_gui_exe() == gui
+
+
+def test_registry_gui_exe_noop_on_non_windows(monkeypatch):
+    """非 Windows → 跳过注册表探测（不 import winreg、不抛）。"""
+    monkeypatch.setattr(tray_launch.sys, "platform", "linux")
+    assert tray_launch._registry_gui_exe() is None
+
+
+def test_registry_gui_exe_survives_missing_winreg(monkeypatch):
+    """winreg 不可导入（ImportError）→ 静默 None（`None in sys.modules` 注入 ImportError）。"""
+    monkeypatch.setattr(tray_launch.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "winreg", None)
+    assert tray_launch._registry_gui_exe() is None
+
+
+def test_standard_gui_exe_returns_none_when_dirs_absent(tmp_path, monkeypatch):
+    """标准位置目录不存在 → None（覆盖 scandir 的 OSError 兜底）。"""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "no-local"))
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "no-pf"))
+    assert tray_launch._standard_gui_exe() is None
+
+
+def test_standard_gui_exe_none_without_env(monkeypatch):
+    """环境变量缺失 → 无候选 → None。"""
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    assert tray_launch._standard_gui_exe() is None

@@ -1,7 +1,7 @@
 # F30: 内核冷启动基建（kernel_bootstrap）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.6 | **日期**: 2026-08-07（1.4 修订 2026-10-06；1.5 修订 2026-10-06；1.6 修订 2026-10-07） | **依据**: ADR-030（本地内核服务化 ②）、ADR-059（实例类型化并发约束）、ADR-021（内核进程化交付契约）、**ADR-064（内核日志分片与自管理运行期轮转）**、**ADR-066（内核自持存活期互斥 + 可重置空闲回收 + 机器级实例可见性）**、Constitution P1-P6
+> **Spec 版本**: 1.7 | **日期**: 2026-08-07（1.4 修订 2026-10-06；1.5 修订 2026-10-06；1.6 修订 2026-10-07；1.7 修订 2026-10-08） | **依据**: ADR-030（本地内核服务化 ②）、ADR-059（实例类型化并发约束）、ADR-021（内核进程化交付契约）、**ADR-064（内核日志分片与自管理运行期轮转）**、**ADR-066（内核自持存活期互斥 + 可重置空闲回收 + 机器级实例可见性）**、Constitution P1-P6
 >
 > **Spec 变更**（1.0 → 1.1）: Q1-Q3 全部拍板（2026-08-07 用户选 A/A/A）——Q1 冷启动超时默认 30s + env `INKFLOW_KERNEL_TIMEOUT` 覆盖；Q2 版本校验 major 相同即复用；Q3 保留 `inkflow kernel status` 调试命令（dev 标注）
 >
@@ -40,15 +40,22 @@
 >   `<data_dir>/running/`
 > - §1.2 / §7 / §9 / §10 **同步**：边界表、错误表、测试场景 13/14、「不在范围内」相应改写
 >
-> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 1 个模块，估算 3-4 人天）；1.2 修订挂 0.14.0；**1.4 修订挂 0.17.0；1.6 修订挂 0.17.0**
+> **Spec 变更**（1.6 → 1.7，#1525）:
+> - §5.7 **新增**「GUI 检测与托盘拉起探测链」：候选 2/4 改**精确大小写比对**（`os.scandir` 逐 entry 比对，
+>   杜绝 Windows 大小写不敏感下把 CLI zip 的内核 `inkflow.exe` 假命中为 GUI）+ **新增候选 3 注册表**
+>   `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\*\InstallLocation`（NSIS 写；覆盖自定义
+>   安装路径；`winreg` stdlib 零新依赖；非 Windows 跳过）
+> - §9 测试场景 15 **扩写**：新增 1a 大小写假命中回归 / 1b 注册表自定义路径 / 注册表负例 / 非 Windows 四类断言
 >
-> **关联 Issues**: #166（本模块）；#167（GUI 托盘，**依赖本模块**）；#168（CLI 产物，**依赖本模块**）；#169（CLI 恒 HTTP，**依赖本模块**）；#49（F20 MCP，**依赖本模块**）；**#1153（1.2 修订来源）**；**#1380（1.3 修订来源）**；**#1477（1.4 修订来源）**；#1487（内核单实例化补全——1.4 记录的遗留）
+> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 1 个模块，估算 3-4 人天）；1.2 修订挂 0.14.0；**1.4 修订挂 0.17.0；1.6 修订挂 0.17.0；1.7 修订挂 0.17.0**
+>
+> **关联 Issues**: #166（本模块）；#167（GUI 托盘，**依赖本模块**）；#168（CLI 产物，**依赖本模块**）；#169（CLI 恒 HTTP，**依赖本模块**）；#49（F20 MCP，**依赖本模块**）；**#1153（1.2 修订来源）**；**#1380（1.3 修订来源）**；**#1477（1.4 修订来源）**；#1487（内核单实例化补全——1.4 记录的遗留）；**#1525（1.7 修订来源：CLI 托盘探测两处缺陷）**
 >
 > **依赖**: ✅ F19（serve 命令 + INKFLOW_READY 交付契约 + `--port-file` 原子写入）· ✅ F1（config.data_dir = %APPDATA%\InkFlow）· ⏳ 无
 >
 > **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：kernel.json + ensure_kernel）· [ADR-059](../../adr/kernel/ADR-059.md)（实例类型化并发约束——**修订 ADR-030 ②**）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：INKFLOW_READY/端口文件/token）· [ADR-064](../../adr/kernel/ADR-064.md)（内核日志分片与自管理运行期轮转）· [ADR-066](../../adr/kernel/ADR-066.md)（内核自持存活期互斥 + 可重置空闲回收 + 机器级实例可见性——**本 spec 1.6 修订来源，修订 ADR-030 ③ / ADR-059 ②③**）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 >
-> **状态**: ✅ 已实现（PR #171，#166 2026-08-08）；1.2 修订实施中（#1153）；1.3 修订实施中（#1380）；1.4 修订实施中（#1477）；1.5 修订实施中（#1488）；**1.6 修订实施中（#1487）**
+> **状态**: ✅ 已实现（PR #171，#166 2026-08-08）；1.2 修订实施中（#1153）；1.3 修订实施中（#1380）；1.4 修订实施中（#1477）；1.5 修订实施中（#1488）；**1.6 修订实施中（#1487）**；**1.7 修订实施中（#1525）**
 
 ---
 
@@ -343,6 +350,28 @@ inkflow kernel status    # 调试命令：输出内核状态（运行中 PID/端
 - **失败消息**（可感知，不静默）：`KernelStartupError` 含既有实例的 `kind` / `port` / `pid` / `data_dir`，指引用户处理既有实例；GUI 侧转为「先停旧、起新」（ADR-066 ④）
 - **1B 落地（ADR-066 ④）**：既有实例与本次 `data_dir` **不同**时——GUI 先 `taskkill` 旧内核再起新内核；CLI 抛含完整实例信息的 `KernelStartupError`（不替用户杀他人内核）
 
+### 5.7 GUI 检测与托盘拉起探测链（1.7 修订 #1525）
+
+> **修订来源**：0.17.0-rc1 产物验证实测——CLI zip 场景下托盘 **100% 不出现**（两处独立缺陷，见 #1525）。
+
+CLI 会话在 `ensure_kernel` **本次真正拉起内核**（`reused=False`）后，按序探测「已安装 GUI」并以 `--tray-only` detach 拉起（ADR-066 ⑤ 决策 2A）：
+
+| 序 | 候选 | 判据 |
+|----|------|------|
+| 1 | env `INKFLOW_GUI_EXE` | 路径存在（`is_file`）——操作者/测试逃生口，**优先级最高** |
+| 2 | CLI 可执行文件**同目录** `InkFlow.exe` | **精确大小写比对**（`os.scandir` 逐 entry 比 `entry.name == "InkFlow.exe"`，返回磁盘真实名） |
+| 3 | 注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\*` 的 `InstallLocation` | 拼 `InstallLocation\InkFlow.exe` 后**精确比对**；注册表不可用 / 键缺失 / 权限异常 → **静默跳过**（不抛） |
+| 4 | `%LOCALAPPDATA%\Programs\InkFlow\` · `%PROGRAMFILES%\InkFlow\` | **精确大小写比对** |
+
+**两处根因（#1525 实测取证）**：
+
+- **1a 大小写假命中**：CLI zip 布局 `inkflow/` 内含**小写 `inkflow.exe`（内核）**；Windows 文件系统大小写不敏感 → `Path(...) / "InkFlow.exe"` + `is_file()` **假命中内核** → 拉起 `…/InkFlow.exe --tray-only` → `Error: No such option: --tray-only` → 静默降级 → 托盘永不出现。**修法**：候选 2/4 一律改用**精确大小写比对**，不得用路径存在性判断。
+- **1b 自定义安装路径不可见**：仅探标准位置时，用户装在 `D:\…\InkFlow\`（NSIS 自定义路径）→ 探测不到 → 不拉起。**修法**：**新增候选 3（注册表 `InstallLocation`）**，用 stdlib `winreg`（零新依赖）。
+
+**平台兜底**：`sys.platform != "win32"` → **跳过**注册表探测（不 import `winreg`），保证非 Windows 平台/CI 不炸。
+
+**失败语义不变**：任一候选探测失败静默跳过；全部未命中 → 不拉起（走 ② 内核空闲回收兜底）。`INKFLOW_NO_TRAY_GUI` 逃生口与 `reused=True` 不拉起两条既有约定不变。
+
 ---
 
 ## 6. 组织规则
@@ -511,7 +540,7 @@ CLI 测试: kernel status（信封/退出码/未运行语义）              ~4 
 12. **测试内核进程回收**（1.5 新增 #1488）：测试拉起的 `inkflow serve` 在 pytest **会话结束**按归属回收——判据两条（CommandLine 含本会话 pytest 临时根 `basetemp`；亲缘链上溯到本 pytest 进程 pid），且**不误杀**手工常驻内核与并行会话/其他 worktree 的内核；枚举/终止失败只记日志、绝不使测试 ERROR（载体：`tests/conftest.py` 会话级 autouse fixture `_reclaim_kernel_processes` + `tests/cli/test_kernel_cleanup_1488.py`；两套 pytest 根镜像，`backend/conftest.py` 同）
 13. **内核自持互斥**（1.6 新增 #1487 / ADR-066 ②）：① 装配缝 `_acquire_lifetime_mutex` 由**内核侧**调用（`serve` 路径）——**真实双进程**用例：以同一 data_dir 连起两个 `inkflow serve` → 第二个**退出码 3** 且首个不受影响；② **客户端退出后内核仍持锁**（拉起方进程结束 → `/health` 仍 200、后续 spawn 仍被拒）；③ 拉起方 `ensure_kernel` 不再取存活期互斥（装配缝断言 `_acquire_lifetime_mutex` **未被客户端调用**）
 14. **空闲回收**（1.6 新增 #1487 / ADR-066 ②）：① `parse_idle_timeout` 边界（未设置/`0`/`off`/负数 → `None`；正数 → 秒；非法 → `None`）；② 活动追踪器 `touch()` 刷新 → `idle_seconds` 归零；③ **真实内核**：`INKFLOW_KERNEL_IDLE_TIMEOUT=2` 拉起 → 无请求 → 内核自行退出（pid 不再存活）；④ 期间持续请求 → 不退出（可重置）
-15. **CLI 拉起 tray-only GUI**（1.6 新增 #1487 / ADR-066 ⑤，载体在 `tests/cli/`）：① 检测命中（env `INKFLOW_GUI_EXE` / 同目录 `InkFlow.exe` / 标准安装位置）→ 以 `--tray-only` detach 拉起（`subprocess.Popen` 装配缝断言 argv）；② `handle.reused=True`（复用）时**不**拉起；③ 检测不到 GUI → 不拉起（负例）
+15. **CLI 拉起 tray-only GUI**（1.6 新增 #1487 / ADR-066 ⑤；**1.7 修订 #1525**，载体在 `tests/cli/`）：① 检测命中（env `INKFLOW_GUI_EXE` / 同目录 `InkFlow.exe`（**精确大小写**） / 注册表 `InstallLocation` / 标准安装位置）→ 以 `--tray-only` detach 拉起（`subprocess.Popen` 装配缝断言 argv）；② `handle.reused=True`（复用）时**不**拉起；③ 检测不到 GUI → 不拉起（负例）；④ **（1.7）大小写假命中回归**：同目录只有小写 `inkflow.exe`（内核）→ 返回 None、不拉起（杜绝 `No such option: --tray-only`）；⑤ **（1.7）注册表自定义路径**：`InstallLocation` 指向自定义目录 → 命中该 `InkFlow.exe`；⑥ **（1.7）注册表负例**：无键 / 读失败 / `InstallLocation` 缺失或空 → 不抛、继续下一候选；⑦ **（1.7）非 Windows** → 跳过注册表探测
 
 ### 覆盖率目标
 
