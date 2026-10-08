@@ -19,6 +19,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { axisLabels } from './timeline-axis-labels';
+import { timeScaleText } from './timeline-era-axes';
 import type { TimelineEventDTO } from './TimelineView';
 
 /** t() 桩：只关心 lib.tlTimeUnknown 的渲染值（其余原样回键） */
@@ -62,5 +63,40 @@ describe('#1374 axisLabels 双序分流（叙事序降级小字 / 世界序主�
     for (const view of ['narrative', 'world'] as const) {
       expect(axisLabels(ev, view, t).sub).toBe('');
     }
+  });
+});
+
+/**
+ * #1526 世界序「原文而非未知」兜底（方案 C）。
+ *
+ * 背景：rc1 实测 `time_display` 空 182/183 → 世界序满屏「未知」。修好提取侧（方案 A）
+ * 之外，前端取值链必须**优先消费 `time_display`（原文表达）**：`time_display` 非空时
+ * 即便 `time_value` 为空也显示原文；只有**两者都空**才落「未知」占位（守住真实未知）。
+ *
+ * 覆盖两条独立的取值链：
+ * - `axisLabels`：事件行主轴（叙事序行内小字 / 世界序轴刻度）
+ * - `timeScaleText`：世界序**纪元泳道内的时间刻度**（`tl-timenode` 节点）
+ */
+describe('#1526 time_display 原文兜底（显示原文而非「未知」）', () => {
+  const c1: TimelineEventDTO = {
+    ...ev, id: 'evC1', time_display: '三月初二', time_value: null, time_unit: null,
+  };
+  const bothEmpty: TimelineEventDTO = {
+    ...ev, id: 'evC2', time_display: null, time_value: null, time_unit: null,
+  };
+
+  it('C1 time_display 非空 + time_value=null → 原文表达（两序均如此）', () => {
+    expect(axisLabels(c1, 'world', t).main).toBe('三月初二');
+    expect(axisLabels(c1, 'narrative', t).main).toBe('三月初二');
+  });
+
+  it('C2 time_display 与 time_value 都空 → 「未知」（守住真实未知）', () => {
+    expect(axisLabels(bothEmpty, 'world', t).main).toBe('未知');
+    expect(axisLabels(bothEmpty, 'narrative', t).main).toBe('未知');
+  });
+
+  it('C3 纪元泳道刻度 timeScaleText 走同一条回退链', () => {
+    expect(timeScaleText(c1)).toBe('三月初二');
+    expect(timeScaleText(bothEmpty)).toBeNull();
   });
 });

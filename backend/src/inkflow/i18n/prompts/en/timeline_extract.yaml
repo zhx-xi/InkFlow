@@ -7,10 +7,15 @@ system_prompt: |
   several chapters; extract only events newly appearing in this chapter, and only output
   update information for events already mentioned before.
   Only extract information directly present or clearly implied in the text; do not invent anything.
+  time_display records the event's **time expression verbatim from the original text**
+  (e.g. "the second day of the third month", "two years after awakening past-life
+  memories"); output an empty string when the text gives no time cue at all.
   time_value is the **cumulative number of days within the project** (a running day count
-  from the story's starting point), and time_unit is always "日" (day). Output null for
-  time_value when the cumulative day count cannot be determined — never use a relative
-  in-chapter counter such as "day N of this chapter", and do not invent eras or years.
+  from the story's starting point), and time_unit is always "日" (day). When the time
+  expression cannot be converted into a cumulative day count, output null for time_value
+  and an empty string for time_unit — but time_display **must still keep the original
+  expression** (never leave both empty). Never use a relative in-chapter counter such as
+  "day N of this chapter", and do not invent eras or years.
   narrative_position = the order in which the event appears in this chapter's narration
   (starting from 1); output null when undeterminable.
   narrative_position is **meaningful within this chapter only** (an in-chapter ordinal; the
@@ -23,7 +28,8 @@ system_prompt: |
   {
     "events": [
       {"title": "event title (short, e.g. \"Lin Wan enters the palace\")", "description": "what happened at this moment or empty",
-       "time_value": 3.5, "time_unit": "日", "narrative_position": 1, "timeline_flag": ""}
+       "time_display": "the second day of the third month", "time_value": 3.5, "time_unit": "日",
+       "narrative_position": 1, "timeline_flag": ""}
     ]
   }
   events must not contain duplicate event titles.

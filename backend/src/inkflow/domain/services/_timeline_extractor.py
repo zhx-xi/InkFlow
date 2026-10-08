@@ -301,6 +301,11 @@ class TimelineExtractor:
             positions = _composite_positions(pending_creates, chapter_base=chapter_base)
             for slot, ee in enumerate(pending_creates):
                 now = _utcnow()
+                # #1526：time_unit 是 time_value 的**尺度标签**——未解析出累计天数时留空
+                # （rc1 实测 `'日' ×182` 是「无信息的假非空」，会掩盖真实缺口，见 f14 §5.5 T3）。
+                # time_display 是**原文时间表达**，必须原样保留（此前硬编码 "" → 空 182/183，
+                # 世界序满屏「未知」，见 f14 §5.5 T1/T2）。
+                time_unit = (ee.time_unit or "") if ee.time_value is not None else ""
                 new_event = await self._repo.add(
                     TimelineEvent(
                         id=uuid.uuid4(),
@@ -308,8 +313,8 @@ class TimelineExtractor:
                         title=ee.title,
                         description=ee.description or "",
                         time_value=ee.time_value,
-                        time_unit=ee.time_unit or "",
-                        time_display="",
+                        time_unit=time_unit,
+                        time_display=ee.time_display or "",
                         narrative_position=positions[slot],
                         timeline_flag=ee.timeline_flag or "",
                         source_chapter_id=request.chapter_id,
@@ -377,8 +382,8 @@ def _composite_positions(
 def _merge_event_fields(
     existing: TimelineEvent, ee: ExtractedTimelineEvent
 ) -> TimelineEvent | None:
-    """非空字段覆盖合并（description/time_value/time_unit/narrative_position/
-    timeline_flag 独立判断）.
+    """非空字段覆盖合并（description/time_value/time_unit/time_display/
+    narrative_position/timeline_flag 独立判断）.
 
     提取字段 None = 「未知/不覆盖」，保留 existing 原值；空字符串是明确值
     （如 timeline_flag="" = 明确无标记），照常覆盖（spec §5.5 表）。
@@ -399,6 +404,8 @@ def _merge_event_fields(
     new_description = ee.description if ee.description is not None else existing.description
     new_time_value = ee.time_value if ee.time_value is not None else existing.time_value
     new_time_unit = ee.time_unit if ee.time_unit is not None else existing.time_unit
+    # #1526：原文时间表达（展示面兜底）——非空覆盖，None = 不覆盖（同其他字段语义）
+    new_time_display = ee.time_display if ee.time_display is not None else existing.time_display
     new_narrative_position = (
         ee.narrative_position if ee.narrative_position is not None else existing.narrative_position
     )
@@ -407,6 +414,7 @@ def _merge_event_fields(
         new_description == existing.description
         and new_time_value == existing.time_value
         and new_time_unit == existing.time_unit
+        and new_time_display == existing.time_display
         and new_narrative_position == existing.narrative_position
         and new_timeline_flag == existing.timeline_flag
     ):
@@ -418,7 +426,7 @@ def _merge_event_fields(
         description=new_description,
         time_value=new_time_value,
         time_unit=new_time_unit,
-        time_display=existing.time_display,
+        time_display=new_time_display,
         narrative_position=new_narrative_position,
         timeline_flag=new_timeline_flag,
         source_chapter_id=existing.source_chapter_id,
