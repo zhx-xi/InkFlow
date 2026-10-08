@@ -137,6 +137,7 @@ class AgentServiceStreamMixin:
             _apply_agent_order,
             _apply_agent_relations,
             _build_custom_stages,
+            _inherit_default_model,
             _project_role_models,
         )
 
@@ -210,7 +211,10 @@ class AgentServiceStreamMixin:
             # 再走既有 _merge_role_configs 装配链。
             if request.pipeline_config is not None or request.stages is not None:
                 if request.pipeline_config is not None:
-                    template_stages = list(request.pipeline_config.stages)
+                    # #1531：YAML 形态为用户数据——未显式写 model 的 stage 继承全局默认
+                    template_stages = _inherit_default_model(
+                        list(request.pipeline_config.stages), config.llm_default_model
+                    )
                 else:
                     try:
                         template_stages = _build_custom_stages(request.stages or [], agents_by_role)

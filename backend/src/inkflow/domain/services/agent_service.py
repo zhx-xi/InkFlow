@@ -118,6 +118,8 @@ def _apply_agent_order(
     filtered_layers = [[role for role in layer if role in enabled_roles] for layer in agent_order]
 
     # 层级映射：agent_xxx → stage.id；模板无此 stage → 占位构造（模板/真源/跳过）
+    from inkflow.core.config import config  # #1531：占位 stage 继承全局默认模型
+
     stage_by_id = {s.id: s for s in stages}
     mapped_layers: list[list[str]] = []
     for layer in filtered_layers:
@@ -134,7 +136,7 @@ def _apply_agent_order(
                         id=stage_id,
                         name=role_template.name or stage_id,
                         system_prompt=role_template.prompt,
-                        model=role_template.model or "openai/gpt-4o",
+                        model=role_template.model or config.llm_default_model,
                         temperature=role_template.temperature,
                     )
                     stage_by_id[stage_id] = PipelineStage(
@@ -144,11 +146,13 @@ def _apply_agent_order(
                     )
                     mapped.append(stage_id)
                 elif source is not None:
-                    # model/temperature 不在此硬编码——_merge_role_configs 按默认链装配
+                    # #1531：model 取全局默认（此前不传 → AgentRole 字段默认值 openai/gpt-4o
+                    # 静默路由 openai）；temperature 交给 _merge_role_configs 默认链装配
                     placeholder_agent = AgentRole(
                         id=stage_id,
                         name=source["name"] or stage_id,
                         system_prompt=source["system_prompt"],
+                        model=config.llm_default_model,
                         temperature=(
                             role_template.temperature if role_template is not None else None
                         ),
@@ -373,13 +377,18 @@ def _build_custom_stages(
 
     第 i 个 stage 的 `input_from=[第 i-1 个 id]`、`output_to=[第 i+1 个 id]`；
     首 stage 无上游、末 stage 无下游。`stage.id = role_key`；
-    `name` / `agent.system_prompt` 取 **Agent 真源**（空名回退 role_key）；
-    `model` / `temperature` 一律不设——交给既有 `_merge_role_configs` 装配链
-    （与 `_apply_agent_order` 占位构造同纪律）。
+    `name` / `agent.system_prompt` 取 **Agent 真源**（空名回退 role_key）。
+
+    `model` 取**当前**全局默认（`config.llm_default_model`，与内置模板
+    `pipeline_templates._current_default_model()` 同口径，#1531）——`AgentRole.model`
+    的字段默认值 `"openai/gpt-4o"` 会把未赋值 stage 静默路由到 openai（未配 key 必失败）。
+    `temperature` 不设——交给既有 `_merge_role_configs` 装配链。
 
     未知 role_key（真源无该 role_key）→ `ValueError`：显式通道不静默跳过，
     用户点名的角色不可用必须报错（调用方映射为 `AgentServiceError` → API 422）。
     """
+    from inkflow.core.config import config  # #1531：自定义 stage 继承全局默认模型
+
     stages: list[PipelineStage] = []
     for index, role_key in enumerate(role_keys):
         agent = agents_by_role.get(role_key)
@@ -390,12 +399,38 @@ def _build_custom_stages(
             PipelineStage(
                 id=role_key,
                 name=name,
-                agent=AgentRole(id=role_key, name=name, system_prompt=agent.system_prompt),
+                agent=AgentRole(
+                    id=role_key,
+                    name=name,
+                    system_prompt=agent.system_prompt,
+                    model=config.llm_default_model,
+                ),
                 input_from=[role_keys[index - 1]] if index > 0 else [],
                 output_to=[role_keys[index + 1]] if index + 1 < len(role_keys) else [],
             )
         )
     return stages
+
+
+def _inherit_default_model(
+    stages: Sequence[PipelineStage], default_model: str
+) -> list[PipelineStage]:
+    """#1531：自定义通道的 stage 未**显式**指定 model 时继承全局默认模型。
+
+    YAML 形态（`pipeline_config`）的 stage 是用户数据——未写 `model` 时 Pydantic
+    填入字段默认值 `"openai/gpt-4o"`（静默路由 provider=openai，未配 key 必失败）。
+    本函数仅改写 `model_fields_set` **不含** `model` 的 stage：YAML 里写死 /
+    role 序列构造时显式传入的 model 保持不动（用户显式意图优先）。
+    """
+    result: list[PipelineStage] = []
+    for stage in stages:
+        if "model" in stage.agent.model_fields_set:
+            result.append(stage)
+        else:
+            result.append(
+                replace(stage, agent=stage.agent.model_copy(update={"model": default_model}))
+            )
+    return result
 
 
 def _stage_snapshots(stage_results: Sequence[StageResult]) -> list[dict]:
