@@ -43,7 +43,10 @@ from inkflow.domain.ports.chapter_audit_errors import AuditLogNotFoundError, NoP
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ChapterNotFoundError
 from inkflow.domain.services.chapter_audit_service import ChapterAuditService
-from inkflow.infrastructure.background.tasks import spawn_background_task
+from inkflow.infrastructure.background.tasks import (
+    run_with_session_release,
+    spawn_background_task,
+)
 from inkflow.logging import instrument
 
 router = APIRouter(prefix="/api/v1", tags=["章节审计"])
@@ -154,8 +157,12 @@ async def trigger_audit(
     svc = await _get_svc(db, pid)
     log, created = await _run_service(svc.submit(pid, cid, include_static=request.include_static))
     if created:
+        # #1530：后台任务复用请求 session——跑完显式 close 归还连接（防泄漏）
         spawn_background_task(
-            svc.run_audit_job(pid, cid, log.id, include_static=request.include_static),
+            run_with_session_release(
+                svc.run_audit_job(pid, cid, log.id, include_static=request.include_static),
+                db,
+            ),
             key=str(log.id),
         )
     return {"log_id": str(log.id), "status": log.run_status.value}

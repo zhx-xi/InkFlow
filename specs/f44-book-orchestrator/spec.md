@@ -648,6 +648,7 @@ START → bootstrap → prepare_continuity（B：写前定承接表，一次 LLM
 - `POST /runs` body 新增 `force: bool = False` / `confirm_overwrite: bool = False`；**两者必须成对**，只给其一 → `ValueError`「force 与 confirm_overwrite 必须同时提供」→ **422**。目的：防止任何自动化链路**静默**带上 force（覆盖正文 = 数据丢失，必须有人显式二次确认）。
 - **force 只做显式跳过**：`force=True + confirm_overwrite=True` 时跳过「内容已写」安全阀；🔴 **安全阀判据本身（#1265）零改动** —— 否则 `reset` 的语义解释会跟着漂移（reset 之所以安全，正因「正文还在 ⇒ 闸门仍拦」）。`force=False` 路径行为与调用面**逐字不变**。
 - **force 必须到达后台执行体**：`prepare_run` 只预检 + 落 `running`，真正写正文的是后台任务里的 `write_book` / `write_book_volume` / `write_book_agentic` —— 三者都吃 `force`（否则 force 只跳过入口预检，后台写正文时仍撞阀 → 特性等于没做）。
+- **后台执行体的 session 归属（#1530）**：`POST /runs` 的后台执行体在**请求 session** 上运行（`Depends(get_db)`）——请求结束会话关闭后任务仍触库会重新 checkout 连接且不归还（连接泄漏，GC 打印 `non-checked-in connection` 告警）；故经 `run_with_session_release(coro, db)` 包装，任务结束（**含异常**）显式 `close()` 归还连接（幂等）。行为 / 端点零变化。
 - **备份落点随响应可见**（硬约束「不做静默备份」）：force 成功（202）时响应体带
 
   ```jsonc

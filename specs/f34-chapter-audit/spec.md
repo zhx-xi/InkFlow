@@ -473,7 +473,9 @@ inkflow [--json] audit batch --project-id <name|id> [--chapters <区间>] [--res
       - 异常 → fail(log_id, error=...)（run_status='failed'，绝不透传进程外）
 ```
 
-**v1.5 要点**：① **状态承载复用 `audit_logs` 本表**（不新建表）——一条记录即一次「审计任务 + 其确认状态」；执行态（`run_status`）与确认态（`status`）正交。② **幂等去重键** = `(chapter_id, content_hash)` + 复用谓词（见 §7 E8）；确认后的记录不再被复用（用户已决策的审计周期已闭合）。③ **同步 `audit()` 保持不变**（F44 写作链 `_audit_bridge` / 卷级 `book_pipeline` / agent `reader_tools` 三处**进程内**调用仍走同步路径，落 `run_status='completed'`）——异步只改变 **HTTP 触发面**。④ 后台任务先例 = F44 #456（`infrastructure/background/tasks.py`），状态落表使进程崩溃后**状态可观测**（不再「不知道任务是否在跑」）。
+**v1.5 要点**：① **状态承载复用 `audit_logs` 本表**（不新建表）——一条记录即一次「审计任务 + 其确认状态」；执行态（`run_status`）与确认态（`status`）正交。② **幂等去重键** = `(chapter_id, content_hash)` + 复用谓词（见 §7 E8）；确认后的记录不再被复用（用户已决策的审计周期已闭合）。③ **同步 `audit()` 保持不变**（F44 写作链 `_audit_bridge` / 卷级 `book_pipeline` / agent `reader_tools` 三处**进程内**调用仍走同步路径，落 `run_status='completed'`）——异步只改变 **HTTP 触发面**。④ 后台任务先例 = F44 #456（`infrastructure/background/tasks.py`），状态落表使进程崩溃后**状态可观测**（不再「不知道任务是否在跑」）。⑤ **后台任务显式归还会话（#1530）**：fire-and-forget 任务复用请求级 session（`Depends(get_db)`）——请求结束关闭会话后任务仍在其上 `execute` 会重新 checkout 连接且不归还（连接泄漏，GC 打印 `non-checked-in connection` 告警，长会话可致池耗尽）；故经 `run_with_session_release(coro, db)` 包装，任务结束（**含异常**）即显式 `close()` 归还连接（幂等）。
+
+> **修改履历**（#1530，2026-10-08）：§5.1 v1.5 要点补 ⑤（后台任务 session 显式归还）；端点 / 表 / 状态机零变化。
 
 **模式要点**:
 1. **LLM 主体 + 确定性兜底**：字数/静态是确定性检查（快、可断言），人设/设定漂移是 LLM 分析（慢、非确定）——两类 findings 同报告不同性质，测试策略分层（§9）
