@@ -386,8 +386,9 @@ class TestAgentSourceStageV15:
         否则 agent_source 有该角色 → system_prompt/name 从真源取（内置 = AgentEntity 出厂
         prompt；自定义 = AgentEntity.system_prompt）；
         两者都无 → 跳过 + warning（既有 C4 防御保持）。
-    占位 stage 参与层级重排/全连接边（与既有角色同等待遇）；model/temperature 跟随默认链
-    （_merge_role_configs 后续装配，占位 AgentRole.model 不硬编码 openai/gpt-4o）。
+    占位 stage 参与层级重排/全连接边（与既有角色同等待遇）；model 取全局默认
+    （config.llm_default_model，构造时显式赋值——不落 AgentRole 字段默认值
+    openai/gpt-4o，#1531）；temperature 跟随默认链（_merge_role_configs 后续装配）。
 
     成品身份扩展（spec §5.7.4）：worldview/polisher 是内容角色（输出可作成品）——
     worldview 排最后不触发 C2 回退；architect/auditor 排最后仍回退（既有）。

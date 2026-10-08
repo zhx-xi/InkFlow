@@ -1,16 +1,18 @@
 # F42: Agent 链配置驱动编排（agent-chain-config）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.7（#1520 澄清 agent template CLI 归属，2026-10-07；承 1.6 #1475 自定义管线 stage / YAML）
+**Spec 版本**: 1.8（#1531 自定义 stage 继承全局默认模型，2026-10-08；承 1.7 #1520 agent template CLI 归属 / 1.6 #1475 自定义管线 stage / YAML）
 **日期**: 2026-08-12
 **依据**: 0.8.0 路线图拍板记录 5-9（design/inkflow-0-8-0-roadmap-2026-08-12.md）+ Issue #268（Agent 链模型选择）+ Issue #269（Agent 执行顺序编辑）+ #225 三态语义（已合入）+ F26/F27 已合入实现源码核查 + 2026-08-12 用户拍板（Q1-Q3 + 执行节点 10 槽 + 评审修正 B1/B2/自定义 Agent 0.8.0）+ #484（Agent 链动态化 + 模板联动，D5，2026-08-19 拍板）+ #473 角色单一来源（PR #492 已合入）
 **所属阶段**: 0.8.0（轨道 B Agent 编排：F42 spec → #268 → #269 → #161 F29），估算 8-14 人天（#268 前端 2-3 + #269 前后端 3-6 + GUI 写作管线化与自定义 Agent 数据面 3-5，拆 issue）；#484 链动态化为 0.10.1 增量（估算 5-8 人天，S2 实现轨）
-**关联 Issues**: #268（模型选择，W2 启动）、#269（执行顺序，W3，🔗#268）、#270（关联关系编辑，0.9.0 预留，不实现）、#484（Agent 链动态化 + 模板联动，0.10.1，本 v1.5 修订）、#1475（自定义 stage 列表 / YAML，0.17.0 W4 轨 a，本 v1.6 修订）
+**关联 Issues**: #268（模型选择，W2 启动）、#269（执行顺序，W3，🔗#268）、#270（关联关系编辑，0.9.0 预留，不实现）、#484（Agent 链动态化 + 模板联动，0.10.1，本 v1.5 修订）、#1475（自定义 stage 列表 / YAML，0.17.0 W4 轨 a，本 v1.6 修订）、#1531（自定义 stage 未继承全局默认模型，0.17.0 rc1 修复批，本 v1.8 修订）
 **依赖**: ✅ #225 三态语义（0.7.0 已合入）· ✅ F26 deepagents 集成层（PR #236 已合入）· ✅ F27 agentic writer（已合入）· ✅ F9/F13/F34 服务（工具包装对象）· ✅ #473 角色单一来源（PR #492 已合入，role_key 映射真源）· ⏳ #251 CLI project update（0.8.0 P1，agent_order CLI 读写联动）· ⏳ #268 先于 #269（编排域串行）
 **参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原字母 ADR-E，#283 已落盘）、ADR-015（LangChain 隔离）、ADR-019（编号口径）
 **状态**: ✅ 已实现（PR #299/#305/#308/#309/#315/#314，2026-08-13；#484 链动态化 v1.5 PR #501，2026-08-19）
 
 > **Spec 变更**（v1.4 → v1.5，2026-08-19，#484 链动态化 + 模板联动）：Agent 链从「固定 4 位置」动态化为「6 内置皆可进链 + 自定义 Agent 可进链 + 模板引用任意角色组合」。修订背景：#473 角色单一来源（PR #492）已合入——后端 6 内置 Agent 暴露 `role_key` 映射（架构师=architect/写手=writer/审校员=auditor/修订师=reviser；世界观顾问/润色师=null），前端 AgentChainCard 内置行已从 `/api/v1/agents` 真源派生。本修订在此之上把「链角色集合」从真源完全派生：① **role_key 全集 4→6**（世界观顾问=`worldview`、润色师=`polisher`，§5.7.1）；② **链增/删/改角色**（不再固定 4 位置，UI 从角色池选择进链/移除，§5.7.3）；③ **自定义 Agent 进链**（Agent 管理创建的自定义角色可进链，prompt 真源 = AgentEntity.system_prompt，§5.7.2/§5.7.4）；④ **模板引用任意角色组合**（TemplateDialog 4 键硬编码 → 从真源派生角色列表，§5.7.5）；⑤ 执行层 stage 构造扩展（6 内置 prompt 从 Agent 真源取，不再只依赖内置模板 4 角色 stage，§5.7.4）。正文修订位置：§1.1/§1.3/§2.1/§2.3/§5.3.4/§5.7（新增）/§7/§8/§9/§10/§11/§12/§13。
+
+> **Spec 变更**（v1.7 → v1.8，2026-10-08，#1531 自定义 stage 继承全局默认模型）：自定义 stage（`--pipeline` role 序列 / YAML）未**显式**指定 `model` 时，此前落到 `AgentRole.model` 字段默认值 `"openai/gpt-4o"` → 静默路由 provider=openai（未配 key 必失败，`阶段 'architect' 重试耗尽`）。本修订：两形态 stage 一律继承**全局默认模型** `config.llm_default_model`（role 序列在 `_build_custom_stages` 构造时赋值；YAML 经 `_inherit_default_model` 按 `model_fields_set` 判据补齐，写死的 `model` 不覆盖）；优先级不变（`--override <role>.model=` > 项目 `agent_<role>` > 全局默认）。触发前置 = 项目**引用模板**（`template_id` 非 None）——`_merge_role_configs` 仅在未引用模板时才回退全局默认。正文修订位置：§5.7.4（占位 stage model 同根因一并修）/§5.8.2（步骤 2）/§5.8.2.1/§5.8.3/§8/§13（新增 M12）。
 
 > **Spec 变更**（v1.5 → v1.6，2026-10-07，#1475 自定义管线 stage / YAML）：新增**用户显式给定的管线拓扑**通道——`POST /agent/pipelines/execute` 的 `PipelineExecuteRequest` 增 `stages: list[str] | None`（role_key 序列，服务端按 Agent 真源展开为顺序链）与 `pipeline_config: PipelineConfig | None`（完整 YAML 形态）两互斥可选字段；CLI `agent run --pipeline <值>` 取值从「只认内置模板 id」扩展为三形态（内置 id / YAML 文件路径 / 逗号分隔 role_key 列表），§4。修订背景（方案 B，用户 2026-10-06 拍板）：内置 6 Agent 中世界观顾问（`worldview`）/润色师（`polisher`）**无任何内置管线可执行**，且 `AgentTemplate` 只影响角色模型/温度、不改变拓扑（#1475 现象节实证：6 角色模板挂项目后 `stages` 仍为 4 个）——两者由**自定义 stage 能力**覆盖，**不补内置 6 角色管线**（方案 A 不做）。另：内置 Agent `PATCH /agents/{id}` → 409 保持（不放开编辑），其 skill 挂载需求由 #1473 通用 skill 机制绕开。正文修订位置：§1.1（新增 ⑫）/§1.3/§3/§4/§5.8（新增）/§7/§8/§9/§12/§13/§14。
 
@@ -242,7 +244,7 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 ```
 
 - 依赖注入：`AGENT_DEFAULT_SENTINEL` 从 `domain/models/project.py` import（同模块域，无循环依赖风险）。
-- **跟随默认的完整解析链**（不覆盖后回退路径）：模板 role.model（builtin 恒 `openai/gpt-4o`）→ 自定义 AgentTemplate role.model（`RoleTemplate.model`，可 None）→ `None` → `langchain_client.chat(model=None)` → `self._default_model`（全局默认 `config.llm_default_model`，`langchain_client.py` L73）——三层兜底与既有温度链同构。
+- **跟随默认的完整解析链**（不覆盖后回退路径）：模板 role.model（builtin 恒 `openai/gpt-4o`）→ 自定义 AgentTemplate role.model（`RoleTemplate.model`，可 None）→ `None` → `langchain_client.chat(model=None)` → `self._default_model`（全局默认 `config.llm_default_model`，`langchain_client.py` L73）——三层兜底与既有温度链同构。（⚠️ #1531：`AgentRole.model` 的字段默认值实为 `"openai/gpt-4o"` 而非 `None`——自定义 stage 未显式赋值时会落到该默认值并静默路由 openai；故 §5.8.2.1 在构造时显式赋全局默认，`model=None` 分支仅在显式传入 None 时可达。）
 - **裸模型名兼容策略**（Q3 拍板，防御性）：执行层 `_merge_role_configs` 对 project_model 做格式预检——无 `/` 且非 sentinel → 记 warning + 不覆盖（按跟随默认处理），不抛错（存量数据零迁移；新数据由前端格式标记引导修正，§2.2）。
 - **测试锚点**：`agent_* = "__default__"` 时执行不再抛 ValueError，且模型回退模板角色模型（mock LLM 断言 model 参数）；`agent_* = "gpt-4o"`（裸名）→ warning + 回退跟随默认。
 
@@ -404,7 +406,7 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 - **扩展方案**：`_apply_agent_order`（或 `_merge_role_configs` 前置装配点）对 agent_order 中**模板 stages 缺失的角色**（6 内置新增 2 + 自定义 Agent）构造占位 stage：
   - **内置角色**：`system_prompt`/`name` 从 **AgentEntity 真源**取（`agent_entity_service` 已存 6 内置 prompt：世界观顾问「你是世界观顾问，负责校验角色与伏笔的世界观一致性。」、润色师「你是润色师，负责在前文基础上润色文笔。」）——`agent_service` 注入 AgentRepositoryProtocol 查询（或 `GET /api/v1/agents` 数据缓存，实现确认）
   - **自定义角色**：`system_prompt` 从 `AgentEntity.system_prompt` 取；模板 roles 同名键可覆盖（既有 `_merge_role_configs` prompt 覆盖逻辑）
-  - `model`/`temperature`：跟随默认链不变（§5.1 三层兜底）
+  - `model`/`temperature`：`model` 取**当前**全局默认 `config.llm_default_model`（#1531：构造时显式赋值——此前模板 roles 分支硬编码 `"openai/gpt-4o"`、agent_source 分支落到 `AgentRole.model` 字段默认值 `"openai/gpt-4o"`，均在同项目语境下静默路由 openai）；`temperature` 跟随默认链不变（§5.1 三层兜底）
 - **与模板角色的关系**：模板 roles 键 = `agent_<role_key>` 对应键时，RoleTemplate 的 `model/temperature/prompt/name` 覆盖 Agent 真源（模板优先——模板是场景化覆盖层，Agent 是真源）；无模板键时纯 Agent 真源。
 - **成品身份（v1.3 语义扩展）**：世界观顾问/润色师是**内容角色**（输出可作成品）——成品选择规则扩展为「reviser 输出 → 否则最后一个内容角色（writer/reviser/worldview/polisher）输出；architect/auditor 永不作为成品」（§5.6 成品身份 + §7 边界行同步）。
 - **prompt 变量注入不变**：新角色 stage 沿用 `_build_messages` 占位符扫描 + 空注入契约（§5.3.3）——世界观顾问/润色师 prompt 若引用 `{writer_output}` 等，按前序层/空注入规则处理。
@@ -440,7 +442,7 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 
 1. **模板查找跳过**：`stages`/`pipeline_config` 任一非 None → **不调用** `self._get_template(request.pipeline)`（自定义取值不查内置表；`pipeline` 为路径/role 串时查不到会误报「未知管线模板」）。
 2. **拓扑构造**（二选一）：
-   - `pipeline_config` 非 None → `template_stages = list(request.pipeline_config.stages)`（用户显式 stage/agent，逐字段采用）；
+   - `pipeline_config` 非 None → `template_stages = _inherit_default_model(list(request.pipeline_config.stages), config.llm_default_model)`（用户显式 stage/agent 逐字段采用；**未显式写 `model` 的 stage 继承全局默认模型**，#1531）；
    - `stages` 非 None → `template_stages = _build_custom_stages(request.stages, agents_by_role)`（下 §5.8.2.1；`agents_by_role` 复用既有 `_load_agents_by_role()` 真源，含 `skill_ids`）。
 3. **拓扑校验**（新增，仅自定义通道）：`self._pipeline.validate(template_stages)` → 非空 errors → `AgentServiceError("自定义管线配置无效: " + "; ".join(errors))` → API **422**（同步拒绝，不落一段注定失败的执行记录）。校验项 = 引擎既有 `validate`：非空 / id 不重复 / 至少一个入口 / 至少一个终点 / 上游引用存在 / 无环。
 4. **模型·温度·prompt 装配**：`await self._merge_role_configs(template_stages, project.config, request.role_overrides)`（既有装配链不变——项目 `agent_<role_key>` / 模板 roles / 温度链 / `--override` 全部照常生效）。
@@ -450,7 +452,9 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 ##### 5.8.2.1 `_build_custom_stages(role_keys, agents_by_role) -> list[PipelineStage]`（纯函数，`agent_service.py`）
 
 - **顺序单链**：第 *i* 个 stage 的 `input_from = [第 i-1 个 id]`，`output_to = [第 i+1 个 id]`；首 stage `input_from=[]`，末 stage `output_to=[]`（即「一个入口 + 一个终点」，引擎 `validate` 直接通过）。
-- **stage 字段来源**：`id = role_key`；`name = Agent 真源 name`（空则回退 role_key）；`agent = AgentRole(id=role_key, name=同上, system_prompt=Agent 真源 system_prompt)`——`model`/`temperature` 交给 §5.8.2 步骤 4 装配链（**不在本函数硬编码**，与 `_apply_agent_order` 占位构造同纪律）。
+- **stage 字段来源**：`id = role_key`；`name = Agent 真源 name`（空则回退 role_key）；`agent = AgentRole(id=role_key, name=同上, system_prompt=Agent 真源 system_prompt, model=config.llm_default_model)`——`model` 取**当前**全局默认（`config.llm_default_model`，与内置模板 `pipeline_templates._current_default_model()` 同口径，#1531）；`temperature` 交给 §5.8.2 步骤 4 装配链（**不在本函数硬编码**，与 `_apply_agent_order` 占位构造同纪律）。
+- **模型继承（#1531）**：两种自定义形态的 stage 未**显式**指定 `model` 时，一律取**当前**全局默认模型 `config.llm_default_model`——role 序列形态在 `_build_custom_stages` 构造时赋值；YAML 形态经 `_inherit_default_model(stages, default_model)` 按 `model_fields_set` 判据补齐（YAML 里**写死** `model` 的 stage 不被覆盖，用户显式意图优先）。触发背景：`AgentRole.model` 的字段默认值 `"openai/gpt-4o"` 会把未赋值 stage 静默路由 provider=openai（未配 key 必失败）。优先级不变：`--override <role>.model=` > 项目 `agent_<role>` > 全局默认。
+- **全局默认未配置（负例，#1531）**：`config.llm_default_model` 为空串时，stage `agent.model=""` → `parse_model_string("")` 抛 `Invalid model format`（**明确报错，不静默回落** openai 的 `API key not configured` 原始错误）。
 - **未知 role_key** → `ValueError("未知 stage 角色: <key>")` → `AgentServiceError` → **422**（显式通道不静默跳过：用户点名的角色不可用必须报错，与 §5.7.4「占位构造失败则跳过」的链路径不同）。
 - **重复 role_key** → 由 §5.8.2 步骤 3 拓扑校验拒绝（「阶段 id 不能重复」）。
 - **为什么复用 Agent 真源**：6 内置 + 自定义 Agent 的 `system_prompt` 唯一真源是 `AgentEntity`（§5.7.2/#473）；真源加载失败（仓库缺失/异常）时 `agents_by_role` 为空 → 任何 role_key 都报「未知 stage 角色」（诚实失败，不静默降级）。YAML 形态不受此限（prompt 随配置自带）。
@@ -461,7 +465,7 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 |------|-------------------|------|
 | `project.config.agent_order`（§5.3 配置驱动模式） | **旁路**（不调用 `_apply_agent_order`） | 用户显式给定的 stage 序列即最终拓扑；再按项目 `agent_order` 重排/过滤会让「点名的角色被静默摘除」 |
 | `project.config.agent_relations`（F46 条件/显式边） | **旁路**（`conditional_edges` 保持 `[]`） | 同上：显式边集已由用户给定（YAML）或为顺序链（role_key 形态） |
-| `project.config.agent_*` 三态（模型） | **照常生效**（步骤 4 装配链） | 模型是「角色参数」而非拓扑；关掉 `agent_polisher` 不应使显式 `--pipeline polisher` 变成跳过 |
+| `project.config.agent_*` 三态（模型） | **照常生效**（步骤 4 装配链；未配置角色 → 继承全局默认模型，#1531） | 模型是「角色参数」而非拓扑；关掉 `agent_polisher` 不应使显式 `--pipeline polisher` 变成跳过 |
 | 模板 roles（`template_id` 引用） | **照常作为覆盖层**（步骤 4） | 与 §5.7.4 同口径：模板 prompt/模型/温度可覆盖真源 |
 | `_attach_agent_skills`（#1473） | **照常生效** | 显式挂载 ∪ 通用 skill（未挂载即通用），自定义 stage 的 role_key 命中同一 Agent |
 | 成品身份（§5.6/§5.7.4） | 由**用户给定的拓扑**决定：`final_output` = 终点 stage 输出 | 终端校验（C2 终点非 architect/auditor）**只在 `_apply_agent_order` 内**——自定义通道的终点由用户负责（`--pipeline "architect"` 合法但成品是规划文本） |
@@ -476,6 +480,8 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 - **不做 `agent validate -f` 之外的新校验命令**：YAML 校验复用既有端点/命令。
 
 > **修改履历**（v1.6 #1475，2026-10-07）：§5 新增本小节（§5.8/5.8.1/5.8.2/5.8.2.1/5.8.3/5.8.4）；§5.1-§5.7 未改。
+>
+> **修改履历**（v1.8 #1531，2026-10-08）：§5.7.4 占位 stage `model` 来源改为全局默认（同根因，一并修）；§5.8.2 步骤 2（YAML 分支）改为经 `_inherit_default_model` 补齐；§5.8.2.1「stage 字段来源」`model` 改为取全局默认 + 新增「模型继承」/「全局默认未配置（负例）」两条；§5.8.3 表格模型行同步；§8 新增 `_inherit_default_model` + `agent_service_stream.py` MODIFY 行；§13 新增 M12。
 
 ---
 
@@ -564,7 +570,9 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 | MODIFY | `backend/tests/unit/domain/services/test_agent_service.py`（v1.5，追加） | 模板 stages 缺失角色 stage 构造（worldview/polisher/自定义，prompt 真源断言）；成品身份扩展断言（worldview 排最后 → 成品 = worldview 输出） |
 | MODIFY | `backend/src/inkflow/domain/models/agent_pipeline.py`（v1.6 #1475） | `PipelineExecuteRequest` 增 `stages: list[str] \| None` + `pipeline_config: PipelineConfig \| None` + `model_validator`（互斥 / static-only / 非空，§5.8.1） |
 | MODIFY | `backend/src/inkflow/domain/services/agent_service.py`（v1.6 #1475） | 新增模块级纯函数 `_build_custom_stages(role_keys, agents_by_role)`（顺序单链 + 真源 prompt + 未知 role_key → ValueError，§5.8.2.1） |
+| MODIFY | `backend/src/inkflow/domain/services/agent_service.py`（v1.8 #1531） | `_build_custom_stages` 增 `model=config.llm_default_model`（自定义 stage 继承全局默认）；新增模块级 `_inherit_default_model(stages, default_model)`（未显式指定 model 的 stage 补齐，§5.8.2.1） |
 | MODIFY | `backend/src/inkflow/domain/services/agent_service_stream.py`（v1.6 #1475） | `_build_pipeline_context` 增自定义分派：模板查找跳过 + 拓扑构造（两种形态）+ `validate` 同步拒绝 + 装配链复用（§5.8.2） |
+| MODIFY | `backend/src/inkflow/domain/services/agent_service_stream.py`（v1.8 #1531） | `_build_pipeline_context` 自定义通道 YAML 分支经 `_inherit_default_model` 补齐全局默认模型 |
 | CREATE | `backend/src/inkflow/cli/commands/pipeline_args.py`（v1.6 #1475） | CLI `--pipeline` 取值解析（三形态判别）+ YAML 读取/`PipelineConfig` 校验（从 `agent_cmd.py` 迁出 `_load_pipeline_config` 以满足 900 行护栏） |
 | MODIFY | `backend/src/inkflow/cli/commands/agent_cmd.py`（v1.6 #1475） | `agent run` 使用 `pipeline_args.resolve_pipeline_arg` 构造 `stages`/`pipeline_config`；`agent validate -f` 改用迁出的读取器（§4.1） |
 | CREATE | `backend/tests/unit/domain/services/test_agent_service_custom_stages_1475.py`（v1.6 #1475） | 服务层 RED 契约：`_build_custom_stages` 单链/真源 prompt/未知 key；自定义通道端到端（`stages` 含 polisher 真执行、skill 装配、agent_order 旁路）；内置 4 管线 stage 序列零回归 |
@@ -708,6 +716,7 @@ if project_model and project_model != AGENT_DEFAULT_SENTINEL:
 - **M9 链动态化 + 模板联动（v1.5 #484，S2 实现轨）**: `pytest backend/tests/unit/domain/services/test_agent_entity_service.py` + `test_agent_service.py` + `pnpm vitest run src/components/AgentChainCard.test.tsx src/components/TemplateDialog.test.tsx` — ① role_key 全集 6（世界观顾问=worldview/润色师=polisher，存量 seed 迁移补值）；② 链增/删/改角色（添加角色 → 三态 + agent_order → 重启保持；关闭 → 从 agent_order 移除）；③ 自定义 Agent 进链（创建 → role_key 分配 → 角色池 → 进链执行，prompt = AgentEntity.system_prompt）；④ 模板引用任意角色组合（TemplateDialog 角色列表从真源派生，roles Record 保存/回读）；⑤ 执行层缺失角色 stage 构造 + 成品身份扩展（worldview 排最后 → 成品 = worldview 输出）；⑥ 三组件 4 键硬编码删除（AgentChainCard/AgentRelationEditor/TemplateDialog）+ 回归；⑦ GUI 手工闭环：设置页链添加世界观顾问 → 保存 → 重启保持 → 写作按新链执行（stderr 可查）
 - **M10 自定义 stage 管线（v1.6 #1475，本批）**: `pytest backend/tests/unit/domain/services/test_agent_service_custom_stages_1475.py` + `pytest ../tests/cli/test_cli_agent_custom_pipeline_1475.py ../tests/api/test_pipeline_custom_stages_1475.py` — ① `_build_custom_stages` 顺序单链 + 真源 name/prompt + 未知 role_key → `ValueError`；② `stages` 形态端到端：自定义序列（含 `worldview` / `polisher`）真实执行且出现在执行记录 `stages` 结果（M6 实证贴 PR body）；③ `pipeline_config`（YAML）形态端到端：`agent validate -f <yaml>` 通过 → `agent run --pipeline <yaml>` 跑通；④ 自定义 stage 的 Agent 携带其 `skill_ids` 命中的 skill（对齐 #1473 语义）；⑤ 互斥 / `mode=supervisor` / 空序列 → 422；未知 role_key / 拓扑非法 → 422；⑥ **内置 4 条管线（write_chapter/write_auto/write_continue/chat）stage 序列逐条零回归**；`list_templates()` / `agent template pipelines` 恒 4 条；⑦ `PATCH /api/v1/agents/{id}` 对内置 Agent 仍 **409**（负例）
 - **M11 自定义 stage 负例（v1.6 #1475，本批）**: ① 显式管线 + 项目 `agent_order` 非空 → 拓扑仍为显式序列（`agent_order` 被旁路）；② Agent 真源为空 + 自定义 role_key → 422「未知 stage 角色」（不静默跳过）；③ YAML 文件不存在 → CLI 退出码 1 且不发请求
+- **M12 自定义 stage 模型继承（v1.8 #1531，本批）**: `pytest backend/tests/unit/domain/services/test_agent_service_custom_stages_1475.py::TestCustomStageInheritsGlobalDefaultModel` — ① role 序列 `_build_custom_stages` 产出 stage `agent.model == config.llm_default_model`（非 `openai/gpt-4o`）；② 引用模板项目中 role 序列 / YAML 两形态经 `_merge_role_configs` 后仍为全局默认；③ YAML **显式**写 `model` 不被覆盖；④ 优先级保持：`--override <role>.model=` > 项目 `agent_<role>` > 全局默认；⑤ 全局默认未配置（`""`）→ stage `model=""`（不落 `openai/gpt-4o`）；⑥ 内置 4 条管线 stage `agent.model` 仍为全局默认（零回归）；⑦ 同类路径：`_apply_agent_order` 占位 stage（模板 roles / agent_source 两分支，#484 链路径）继承全局默认
 
 ---
 
