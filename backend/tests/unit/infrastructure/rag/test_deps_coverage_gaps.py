@@ -42,7 +42,7 @@ async def test_get_index_rebuild_service_injects_vector_when_available(
         "inkflow.api.deps.get_vector_store_optional",
         return_value=MagicMock(),
     ):
-        svc = await deps.get_index_rebuild_service(db=MagicMock())
+        svc = await deps.get_index_rebuild_service()
 
     assert isinstance(svc, IndexRebuildService)
     # DI 装配断言：vector store 可用时注入重建器（镜像 test_book_deps_assembly 的装配检查）

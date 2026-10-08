@@ -9,12 +9,12 @@
 模块契约（tests/api/test_search_api.py 锁定）:
 - `router = APIRouter(prefix="/api/v1/search", tags=["Search"])`——GET 端点
   路径为空串 ""，POST rebuild 路径为 "/rebuild"
-- `_get_svc() -> SearchService`：零参模块级工厂（镜像 settings.py
-  `_get_key_manager()` 模式）——测试经
+- `_get_svc(db) -> SearchService`：接收端点 `Depends(get_db)` 的**请求 session**
+  （#1539：连接由 get_db 统一归还，不再自建会话）——测试经
   `patch("inkflow.api.routers.search._get_svc")` 注入 mock service；
   生产路径经 deps.get_search_service 装配（vector_store=None 懒装配：
   semantic 空结果、keyword 不受 embedding 配置影响，spec §5.8）
-- 端点经 `Depends(get_db)` 注入 session 后再调用 `_get_svc()` 获取服务
+- 端点经 `Depends(get_db)` 注入 session 后调用 `_get_svc(db)` 获取服务
 
 错误映射（spec §3.3 异常映射表）:
 - 任一 project_id 不存在（ProjectNotFoundError，F9 character_errors）→
@@ -39,7 +39,6 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inkflow.api.deps import get_db, get_search_service
-from inkflow.core.database import async_session_factory
 from inkflow.domain.models.search import (
     SearchEntityType,
     SearchMode,
@@ -53,15 +52,14 @@ from inkflow.logging import instrument
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
 
-async def _get_svc() -> SearchService:
+async def _get_svc(db: AsyncSession) -> SearchService:
     """获取 SearchService 实例（F22 全文搜索，spec §8.1）.
 
-    零参模块级工厂（镜像 settings.py `_get_key_manager()` 模式）：测试经
-    `patch("inkflow.api.routers.search._get_svc")` 注入 mock service；
-    生产路径经 deps.get_search_service 装配（自建会话，与端点
-    `Depends(get_db)` 同源 async_session_factory）。
+    测试经 `patch("inkflow.api.routers.search._get_svc")` 注入 mock service；
+    生产路径复用端点 `Depends(get_db)` 的**请求 session**（#1539：连接由 get_db
+    统一归还，不再自建 async_session_factory 会话而从不 close）。
     """
-    return await get_search_service(async_session_factory())
+    return await get_search_service(db)
 
 
 def _resolve_project_ids(project_id: str | None, project_ids: str | None) -> list[uuid.UUID]:
@@ -153,7 +151,7 @@ async def search_endpoint(
         )
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors(include_context=False)) from e
-    svc = await _get_svc()
+    svc = await _get_svc(db)
     return cast(SearchResponse, await _run_service(svc.search(query)))
 
 
@@ -175,5 +173,5 @@ async def rebuild_endpoint(
     else:
         pids = _resolve_project_ids(project_id, project_ids)
         pid_list = [p.int for p in pids]
-    svc = await _get_svc()
+    svc = await _get_svc(db)
     return cast(dict[str, Any], await _run_service(svc.rebuild(pid_list)))

@@ -32,10 +32,10 @@
    - `router = APIRouter(prefix="/api/v1/search", tags=["Search"])`
      （app.py 需 `app.include_router(search.router)`，与既有 router
      模块级模式一致）
-   - `_get_svc() -> SearchService`：零参模块级工厂函数（镜像
-     api/routers/settings.py 既有 `_get_key_manager()` 模式）——本
+   - `_get_svc(db) -> SearchService`：接收端点请求 session 的模块级工厂
+     （#1539：不再自建会话，连接由 `Depends(get_db)` 统一归还）——本
      文件全部用例经 `patch("inkflow.api.routers.search._get_svc")`
-     注入 mock service，GREEN 必须保留此工厂名与零参签名
+     注入 mock service（AsyncMock 容纳任意实参，签名变更不影响 patch 目标）
    - SearchService 方法契约：
      `async def search(self, query: SearchQuery) -> SearchResponse`
      `async def rebuild(self, project_id: int | None) -> dict`
