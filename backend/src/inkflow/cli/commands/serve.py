@@ -42,6 +42,19 @@ def _write_kernel_registry(kind: str, state_file: Path, payload: dict) -> None:
     registry.write_instance(entry, registry.registry_dir_for(kind, state_file))
 
 
+def _write_gui_record() -> None:
+    """GUI **内置内核**形态 → 自登记 GUI exe 到机器级 `gui.json`（#1537）；其它形态 no-op。
+
+    判定只看内核自身 exe 路径（`resources/kernel/` 下的形态 = GUI spawn 的），
+    故 CLI zip / venv / 手工 serve 一律不写（**测试环境天然零副作用**）。
+    """
+    from inkflow.infrastructure.kernel import registry
+
+    gui = registry.detect_bundled_gui_exe()
+    if gui is not None:
+        registry.record_bundled_gui(gui)
+
+
 def _remove_kernel_registry(kind: str, state_file: Path, pid: int) -> None:
     """内核退出时自删注册条目（幂等；ADR-066 ③）。"""
     from inkflow.infrastructure.kernel import registry
@@ -239,6 +252,8 @@ def serve(
                 kernel_state_file,
                 {**payload, "started_at": datetime.now(UTC).isoformat()},
             )
+            # GUI 自登记（#1537）：内置内核形态 → 写机器级 gui.json，供 CLI 探测便携版 GUI
+            _write_gui_record()
         # 空闲回收看门狗（#1487 / ADR-066 ②）：阈值未设置 → 不启动（手工 serve 常驻不变）
         idle_timeout = resolve_idle_timeout()
         if idle_timeout is not None:

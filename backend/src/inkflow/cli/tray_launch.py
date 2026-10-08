@@ -68,6 +68,20 @@ def _sibling_gui_exe() -> Path | None:
     return _exact_exe_in_dir(Path(sys.executable).parent)
 
 
+def _self_registered_gui_exe() -> Path | None:
+    """内核自登记的 GUI 路径（`<标准数据目录>/gui.json`，#1537）→ 便携/安装通吃。
+
+    GUI 内置内核启动期写入（`registry.record_bundled_gui`）；读出后仍按本模块的
+    **精确名**纪律复验（`#1525` 教训：绝不把非 GUI 的 exe 送进 `--tray-only`）。
+    """
+    from inkflow.infrastructure.kernel import registry
+
+    recorded = registry.read_gui_exe()
+    if recorded is None or recorded.name != GUI_EXE_NAME:
+        return None
+    return recorded
+
+
 def _registry_gui_exe() -> Path | None:
     """从 `HKCU\\...\\Uninstall\\*` 的 `InstallLocation` 探测 GUI（#1525 根因 1b）。
 
@@ -140,15 +154,20 @@ def _standard_gui_exe() -> Path | None:
 def resolve_gui_exe() -> Path | None:
     """检测已安装 GUI（按序命中即用）：
 
-    env `INKFLOW_GUI_EXE` → CLI 同目录（**精确比对**）→ 注册表 `InstallLocation`
-    （**精确比对**，#1525 新增）→ 标准安装位置（**精确比对**）。
+    env `INKFLOW_GUI_EXE` → CLI 同目录（**精确比对**）→ **内核自登记 `gui.json`**
+    （#1537）→ 注册表 `InstallLocation`（**精确比对**，#1525）→ 标准安装位置。
     """
     override = os.environ.get(GUI_EXE_ENV)
     if override:
         candidate = Path(override)
         if candidate.is_file():
             return candidate
-    return _sibling_gui_exe() or _registry_gui_exe() or _standard_gui_exe()
+    return (
+        _sibling_gui_exe()
+        or _self_registered_gui_exe()
+        or _registry_gui_exe()
+        or _standard_gui_exe()
+    )
 
 
 def _tray_gui_disabled() -> bool:

@@ -579,3 +579,118 @@ def test_standard_gui_exe_none_without_env(monkeypatch):
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     monkeypatch.delenv("PROGRAMFILES", raising=False)
     assert tray_launch._standard_gui_exe() is None
+
+
+# ── #1537：内核自登记 gui.json（便携版 GUI 探测）──────────────────────────
+
+
+@pytest.fixture
+def machine_home(tmp_path, monkeypatch):
+    """机器级锚点（APPDATA）→ tmp；返回 `<tmp>/InkFlow`（gui.json 所在目录）。"""
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    return tmp_path / "InkFlow"
+
+
+def _record_gui(tmp_path, path) -> None:
+    """按内核自登记的真实路径写 gui.json（复用被测 write 侧，避免手搓格式）。"""
+    from inkflow.infrastructure.kernel import registry
+
+    registry.record_bundled_gui(path)
+
+
+def test_write_gui_record_noop_for_non_bundled(monkeypatch):
+    """非内置内核形态（venv / CLI zip）→ 不自登记（测试环境天然零副作用）。"""
+    from inkflow.cli.commands import serve as serve_mod
+
+    monkeypatch.setattr(
+        "inkflow.infrastructure.kernel.registry.detect_bundled_gui_exe",
+        lambda *_a, **_k: None,
+    )
+    with patch("inkflow.infrastructure.kernel.registry.record_bundled_gui") as record:
+        serve_mod._write_gui_record()
+
+    record.assert_not_called()
+
+
+def test_write_gui_record_writes_for_bundled(monkeypatch, tmp_path):
+    """内置内核形态 → 委派 registry.record_bundled_gui 写下 GUI exe。"""
+    from inkflow.cli.commands import serve as serve_mod
+
+    gui = tmp_path / "InkFlow.exe"
+    monkeypatch.setattr(
+        "inkflow.infrastructure.kernel.registry.detect_bundled_gui_exe",
+        lambda *_a, **_k: gui,
+    )
+    with patch("inkflow.infrastructure.kernel.registry.record_bundled_gui") as record:
+        serve_mod._write_gui_record()
+
+    record.assert_called_once_with(gui)
+
+
+def test_serve_invokes_gui_record_seam(tmp_path):
+    """serve 就绪路径确实调用了 GUI 自登记缝（否则便携版探测永远无源）。"""
+    with (
+        patch("inkflow.cli.commands.serve._acquire_kernel_lifetime_mutex", return_value=object()),
+        patch("inkflow.cli.commands.serve._run_server", return_value=12345),
+        patch("inkflow.cli.commands.serve._write_kernel_registry"),
+        patch("inkflow.cli.commands.serve._write_gui_record") as gui_record,
+    ):
+        result = runner.invoke(
+            serve_app, ["--port", "0", "--port-file", str(tmp_path / "kernel.json")]
+        )
+
+    assert result.exit_code == 0
+    gui_record.assert_called_once()
+
+
+def test_self_registered_gui_exe_hit(machine_home, tmp_path):
+    """gui.json 记的 GUI exe → 命中（不依赖注册表/标准位置 = 便携版场景）。"""
+    gui = tmp_path / "portable" / "InkFlow.exe"
+    gui.parent.mkdir(parents=True)
+    gui.write_bytes(b"g")
+    _record_gui(tmp_path, gui)
+
+    assert tray_launch._self_registered_gui_exe() == gui
+
+
+def test_self_registered_gui_exe_requires_exact_name(machine_home, tmp_path):
+    """🔴 精确名纪律：#1525 的教训不在此破例——非 `InkFlow.exe` 一律不返回。"""
+    kernel = tmp_path / "inkflow.exe"
+    kernel.write_bytes(b"k")
+    _record_gui(tmp_path, kernel)
+
+    assert tray_launch._self_registered_gui_exe() is None
+
+
+def test_self_registered_gui_exe_none_without_record(machine_home):
+    assert tray_launch._self_registered_gui_exe() is None
+
+
+def test_resolve_gui_exe_falls_through_to_self_registered(machine_home, monkeypatch, tmp_path):
+    """端到端探测链：env 未设 + 同目录无 GUI → 内核自登记命中。"""
+    monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
+    monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
+    monkeypatch.setattr(tray_launch, "_registry_gui_exe", lambda: None)
+    gui = tmp_path / "portable" / "InkFlow.exe"
+    gui.parent.mkdir(parents=True)
+    gui.write_bytes(b"g")
+    _record_gui(tmp_path, gui)
+
+    assert tray_launch.resolve_gui_exe() == gui
+
+
+def test_maybe_launch_uses_self_registered_gui(machine_home, monkeypatch, tmp_path):
+    """端到端：便携版自登记 → 真以 `--tray-only` detach 拉起该 exe。"""
+    monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
+    monkeypatch.delenv(tray_launch.DISABLE_ENV, raising=False)
+    gui = tmp_path / "portable" / "InkFlow.exe"
+    gui.parent.mkdir(parents=True)
+    gui.write_bytes(b"g")
+    _record_gui(tmp_path, gui)
+    popen = MagicMock()
+    popen.return_value = SimpleNamespace(pid=777)
+    with patch("inkflow.cli.tray_launch.subprocess.Popen", popen):
+        pid = tray_launch.maybe_launch_tray_gui(reused=False)
+
+    assert pid == 777
+    assert popen.call_args.args[0][0] == str(gui)

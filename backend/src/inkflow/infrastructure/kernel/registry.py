@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from inkflow.infrastructure.kernel import state
 from inkflow.infrastructure.kernel.instance_kind import VALID_KINDS
 
 REGISTRY_DIR_NAME = "running"
+#: GUI 自登记文件名（#1537）：内核为「GUI 内置」形态时写下 GUI exe 绝对路径，供 CLI 探测
+GUI_RECORD_NAME = "gui.json"
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,52 @@ def registry_dir_for(kind: str, state_file: Path) -> Path:
     if kind == "dev":
         return registry_dir(state_file)
     return machine_registry_dir()
+
+
+def gui_record_path() -> Path:
+    """GUI 自登记文件路径 = `<标准数据目录>/gui.json`（#1537；机器级，同 `running/`）。"""
+    return machine_registry_dir().parent / GUI_RECORD_NAME
+
+
+def detect_bundled_gui_exe(exe: Path | None = None) -> Path | None:
+    """GUI **内置内核**形态 → 反推出 GUI exe；其它形态 → None（#1537）。
+
+    GUI(Electron) spawn 内核用的就是 `<GUI>/resources/kernel/<kernel exe>`（spec §5.2）；
+    CLI zip / venv / 手工 serve 的 exe 不在 `resources/kernel` 下 → None。
+    **只做路径形态判定、不枚举进程**：内核自己的 exe 路径已编码 GUI 位置，
+    便携版与安装版通吃。
+    """
+    resolved = (exe or Path(sys.executable)).resolve()
+    shape = (resolved.parent.name.casefold(), resolved.parent.parent.name.casefold())
+    if shape != ("kernel", "resources"):
+        return None
+    candidate = resolved.parent.parent.parent / "InkFlow.exe"
+    return candidate if candidate.is_file() else None
+
+
+def record_bundled_gui(exe: Path) -> Path:
+    """原子写 `gui.json`（`{"exe": "<abs>"}`）；GUI 换安装路径时覆盖。返回目标路径。"""
+    target = gui_record_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text(json.dumps({"exe": str(exe)}, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, target)
+    return target
+
+
+def read_gui_exe() -> Path | None:
+    """读 `gui.json` 记的 GUI exe；缺失 / 损坏 / 值非法 / 目标不存在 → None（不抛）。"""
+    try:
+        data = json.loads(gui_record_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get("exe")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    path = Path(value)
+    return path if path.is_file() else None
 
 
 def write_instance(entry: dict, dir_path: Path) -> Path:
