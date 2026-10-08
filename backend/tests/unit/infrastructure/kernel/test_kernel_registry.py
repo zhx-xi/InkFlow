@@ -274,3 +274,102 @@ def test_find_by_kind_returns_matching_entries(tmp_path):
     assert [e.pid for e in found] == [ALIVE_PID]
     assert found[0].port == 60001
     assert registry.find_by_kind(tmp_path, "prod") == []
+
+
+# ── GUI 自登记 gui.json（#1537 / ADR-066 ⑤ 1.8）────────────────────────────
+
+
+@pytest.fixture
+def machine_home(tmp_path, monkeypatch):
+    """把「标准数据目录」锚点指到 tmp（`get_instance_env_path` 读 APPDATA）。"""
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    return tmp_path / "InkFlow"
+
+
+def _bundled_exe(root, name: str = "inkflow.exe"):
+    """造 GUI 内置内核布局：`<root>/resources/kernel/<name>`（GUI exe 由调用方补）。"""
+    kernel_dir = root / "resources" / "kernel"
+    kernel_dir.mkdir(parents=True)
+    exe = kernel_dir / name
+    exe.write_bytes(b"k")
+    return exe
+
+
+def test_gui_record_path_is_machine_level(machine_home):
+    """自登记文件落在**机器级**标准数据目录（不随 INKFLOW_DATA_DIR 变）。"""
+    assert registry.gui_record_path() == machine_home / "gui.json"
+
+
+def test_detect_bundled_gui_exe_recognizes_gui_layout(machine_home, tmp_path):
+    """`<GUI>/resources/kernel/inkflow.exe` → GUI 根下的 InkFlow.exe（spec §5.2 形态）。"""
+    gui_dir = tmp_path / "program" / "InkFlow"
+    exe = _bundled_exe(gui_dir)
+    gui = gui_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+
+    assert registry.detect_bundled_gui_exe(exe) == gui
+
+
+def test_detect_bundled_gui_exe_none_without_sibling_gui(machine_home, tmp_path):
+    """形态像 GUI 内置内核，但 GUI 根没有 InkFlow.exe → None（不臆造路径）。"""
+    assert registry.detect_bundled_gui_exe(_bundled_exe(tmp_path / "gui")) is None
+
+
+@pytest.mark.parametrize(
+    "parts",
+    [
+        ("Scripts", "python.exe"),  # venv（源码 / 手工 serve）
+        ("inkflow", "inkflow.exe"),  # CLI zip
+        ("resources", "kernel"),  # 只有两层 → 不成形
+    ],
+)
+def test_detect_bundled_gui_exe_none_for_other_shapes(machine_home, tmp_path, parts):
+    """非内置内核形态一律 None（零副作用：CLI zip / venv 下不会写 gui.json）。"""
+    exe = tmp_path.joinpath(*parts)
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_bytes(b"x")
+
+    assert registry.detect_bundled_gui_exe(exe) is None
+
+
+def test_detect_bundled_gui_exe_defaults_to_sys_executable(machine_home, monkeypatch, tmp_path):
+    """缺省取 `sys.executable`（内核进程的真实路径）。"""
+    gui_dir = tmp_path / "InkFlow"
+    exe = _bundled_exe(gui_dir)
+    gui = gui_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+    monkeypatch.setattr(registry.sys, "executable", str(exe))
+
+    assert registry.detect_bundled_gui_exe() == gui
+
+
+def test_record_and_read_gui_exe_roundtrip(machine_home, tmp_path):
+    """写 → 读回同一路径（原子写落在机器级）。"""
+    gui = tmp_path / "InkFlow.exe"
+    gui.write_bytes(b"g")
+
+    assert registry.record_bundled_gui(gui) == machine_home / "gui.json"
+    assert registry.read_gui_exe() == gui
+
+
+def test_read_gui_exe_none_when_record_missing(machine_home):
+    assert registry.read_gui_exe() is None
+
+
+@pytest.mark.parametrize("content", ["not json", "[]", '{"exe": 123}', '{"exe": "   "}', "{}"])
+def test_read_gui_exe_none_for_invalid_records(machine_home, content):
+    """损坏 / 非对象 / 值非字符串 / 值空白 / 缺键 → None（不抛）。"""
+    machine_home.mkdir(parents=True, exist_ok=True)
+    (machine_home / "gui.json").write_text(content, encoding="utf-8")
+
+    assert registry.read_gui_exe() is None
+
+
+def test_read_gui_exe_none_when_target_absent(machine_home, tmp_path):
+    """记录在但 GUI 已卸载/移位 → None（绝不返回死路径）。"""
+    machine_home.mkdir(parents=True, exist_ok=True)
+    (machine_home / "gui.json").write_text(
+        json.dumps({"exe": str(tmp_path / "gone" / "InkFlow.exe")}), encoding="utf-8"
+    )
+
+    assert registry.read_gui_exe() is None
