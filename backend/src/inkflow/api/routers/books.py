@@ -24,7 +24,10 @@ from inkflow.domain.services.planner_service import PlannerService
 from inkflow.infrastructure.agent.book_agentic_pipeline import BookAgenticPipeline
 from inkflow.infrastructure.agent.book_pipeline import BookVolumePipeline
 from inkflow.infrastructure.agent.execution_store import ExecutionStore
-from inkflow.infrastructure.background.tasks import spawn_background_task
+from inkflow.infrastructure.background.tasks import (
+    run_with_session_release,
+    spawn_background_task,
+)
 from inkflow.logging import instrument
 from inkflow.logging.correlation import (
     reset_request_correlation_id,
@@ -575,6 +578,7 @@ async def get_planner_session(
 async def start_run(
     data: BookRunRequest,
     svc: BookService = Depends(get_book_service),
+    db: AsyncSession = Depends(get_db),
 ):
     """启动书级运行（202 异步语义）：prepare_run 预校验（错误立即 404/409/422）→
     返回 {run_id, status}；status=running 时后台 asyncio task fire-and-forget
@@ -626,14 +630,18 @@ async def start_run(
         raise HTTPException(status_code=422, detail=detail) from e
     if result["status"] != "running":
         return result
+    # #1530：后台任务复用请求 session——跑完显式 close 归还连接（防泄漏）
     spawn_background_task(
-        _run_book(
-            svc,
-            data.writing_plan_id,
-            limits,
-            mode=data.mode,
-            config=agentic_config,
-            force=data.force,
+        run_with_session_release(
+            _run_book(
+                svc,
+                data.writing_plan_id,
+                limits,
+                mode=data.mode,
+                config=agentic_config,
+                force=data.force,
+            ),
+            db,
         ),
         key=result["run_id"],
     )
