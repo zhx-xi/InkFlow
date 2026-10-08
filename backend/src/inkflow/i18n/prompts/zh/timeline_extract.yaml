@@ -5,9 +5,12 @@ system_prompt: |
   事件本身、时间、叙事位置与倒叙/插叙标记。事件是实例——同一事件可能在
   多个章节被提及，本章新出现的事件才提取；已提过的事件只输出更新信息。
   只提取文本中直接出现的或明确暗示的信息，不要臆造。
+  time_display 填该事件在**原文中的时间表达，原样照抄**（如「三月初二」
+  「觉醒前世记忆后两年」）；文本未给出任何时间线索时输出空串。
   time_value 统一为**项目内累计天数**（自故事起点起算的连续天数），time_unit 恒为「日」；
-  无法确定累计值时 time_value 输出 null——不要用「本章第几天」这类段内相对计数器，
-  也不要臆造纪元/年份/月份等时间轴。
+  无法把 time_display 换算为累计天数时 time_value 输出 null——此时 time_unit 也输出空串，
+  但 time_display **必须保留原文表达**（不得两者都空）。
+  不要用「本章第几天」这类段内相对计数器，也不要臆造纪元/年份/月份等时间轴。
   叙事位置 = 事件在本章叙事中出现的先后（从 1 开始）；无法判断输出 null。
   叙事位置**仅在本章内有意义**（章内序，系统会自行换算为全局序），不要跨章延续编号。
   timeline_flag 只取以下值之一（无标记输出空串）：
@@ -17,7 +20,8 @@ system_prompt: |
   {
     "events": [
       {"title": "事件标题（短，如『林晚入宫』）", "description": "该时刻发生了什么或空",
-       "time_value": 3.5, "time_unit": "日", "narrative_position": 1, "timeline_flag": ""}
+       "time_display": "三月初二", "time_value": 3.5, "time_unit": "日",
+       "narrative_position": 1, "timeline_flag": ""}
     ]
   }
   events 中不要包含重复的事件标题。

@@ -15,6 +15,7 @@
 | `m6-1494-world-first-open.png` | `.tmp/m6-first-open.png`（本轮生成） | PR #1499（#1494 世界观页首开 · M6 真实内核实证截图：新建项目 → 首开 = 1 个默认根 + 根下引导行） |
 | `m6-1465-kg-default.png` 等 4 张 | `.verify-1465/`（本轮生成） | PR（#1465 知识图谱筛选语义与布局四改 · M6 实证：真实 React 渲染 4 态 —— 默认全选/等高、多选过滤随类别、折叠左侧竖条、实体列表内滚；脚本 = Vite dev + `page.route` mock，23 条几何/行为断言 ALL PASS） |
 | `m6-1467-world-eras-tree.png` / `m6-1467-world-single-axis.png` | `.tmp/m6/`（本轮生成） | PR（#1467 时间线世界序纪元轴组头 + 时间刻度树状分层 · M6 实证：真实 React 渲染 2 态 —— 多纪元树状泳道（轴名组头一次 + 时间节点 + 缩进事件行）/ 无纪元单轴零变化；脚本 = Vite dev + `page.route` mock） |
+| `m6-1526-world-order-time-display.png` | 本轮生成（临时探针目录） | PR（#1526 时间线提取不产出时间表达 · M6 实证：真实 React 渲染世界序 —— 3 条「time_display 非空 + time_value 空」事件显示**原文**（三月初二 / 同年腊月 / 次年开春），仅「两者皆空」事件显示「未知」；脚本 = Vite dev + `page.route` mock，含阴性对照——移掉 `time_display` 分支 → 断言 FAIL） |
 
 ## ⚠️ 已知悬空引用（原件已丢失）
 

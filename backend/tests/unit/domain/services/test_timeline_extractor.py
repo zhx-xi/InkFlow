@@ -42,6 +42,7 @@ from inkflow.domain.services._timeline_extractor import (
     _extract_json_fragment,
     _first_error,
 )
+from inkflow.infrastructure.llm.prompt_manager import LangChainPromptManager
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 CID = uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001")
@@ -524,6 +525,15 @@ class TestExtractedTimelineEventSchema:
         assert ev.narrative_position is None
         assert ev.timeline_flag is None
 
+    def test_time_display_field_defaults_none_and_validated(self) -> None:
+        """#1526：`time_display`（原文时间表达）默认 None，去空白且 ≤ 100 字符。"""
+        ev = ExtractedTimelineEvent.model_validate({"title": "t"})
+        assert ev.time_display is None  # 修复前字段不存在 → AttributeError → FAIL
+        ev2 = ExtractedTimelineEvent.model_validate({"title": "t", "time_display": "  三月初二  "})
+        assert ev2.time_display == "三月初二"
+        with pytest.raises(ValidationError):
+            ExtractedTimelineEvent.model_validate({"title": "t", "time_display": "长" * 101})
+
 
 class TestExtractJsonFragment:
     """_extract_json_fragment 纯函数测试。"""
@@ -542,3 +552,149 @@ class TestExtractJsonFragment:
         """字符串字面量内的转义引号不提前闭合字符串（escaped 状态机分支）。"""
         text = '{"msg": "他说 \\"你好\\""}'
         assert _extract_json_fragment(text) == text
+
+
+# ── #1526：时间表达（time_display）提取契约 ──────────────────────────────
+
+
+class TestTimelineTimeDisplayContract1526:
+    """#1526 回归锁定：提取管线必须保留 `time_display`（原文时间表达）。
+
+    背景（0.17.0-rc1 实测）：183 事件中 `time_value` 空 181（98.9%）、`time_display`
+    空 182 → 世界序满屏「未知」。根因有二：① 管线在新建落库处**硬编码**
+    `time_display=""`（`_merge`）；② 提示词未要求该字段。
+
+    契约（f14 §5.5；**不推翻** f12 §2.7 S10「单位固定 + 项目内累计时基 +
+    不确定即 null」）：每事件必须给 `time_display`（原文表达）；解析不出累计天数时
+    `time_value` 为 null，但 `time_display` 必须保留。`time_unit` 是 `time_value`
+    的尺度标签 → **未解析出 `time_value` 时留空**（防「假非空」掩盖问题：rc1 的
+    `'日' ×182` 即此类噪声）。
+    """
+
+    async def test_time_display_persisted_when_value_unparsed(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """time_display 非空 + time_value=null → 原文表达必须落库（不被丢弃）。"""
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                events=[
+                    {
+                        "title": "拜入山门",
+                        "description": "少年初见",
+                        "time_value": None,
+                        "time_unit": "",
+                        "time_display": "三月初二",
+                        "narrative_position": 1,
+                        "timeline_flag": "",
+                    }
+                ]
+            )
+        )
+        result = await extractor.extract(
+            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
+            default_model=DEFAULT_MODEL,
+        )
+        assert len(result.created) == 1
+        created = result.created[0]
+        assert created.time_display == "三月初二"  # 修复前硬编码 "" → FAIL
+        assert created.time_value is None
+        assert created.time_unit == ""  # 无值 → 单位留空
+
+    async def test_time_display_and_value_both_persisted(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """能解析出累计天数时：time_value/time_unit/time_display 三者并存。"""
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                events=[
+                    {
+                        "title": "围城三月",
+                        "time_value": 90.0,
+                        "time_unit": "日",
+                        "time_display": "围城三月",
+                        "narrative_position": 1,
+                    }
+                ]
+            )
+        )
+        result = await extractor.extract(
+            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
+            default_model=DEFAULT_MODEL,
+        )
+        created = result.created[0]
+        assert created.time_display == "围城三月"  # 修复前 FAIL
+        assert created.time_value == 90.0
+        assert created.time_unit == "日"
+
+    async def test_time_unit_blank_when_value_unparsed(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """负例（防「假非空」）：time_value=null 时 time_unit 必须留空。
+
+        不得因提示词「单位恒为日」而无条件写 `'日'` —— rc1 实测 `'日' ×182`
+        正是这种「看起来有值、实际毫无信息」的噪声，会掩盖真实缺口。
+        """
+        mock_llm.chat.return_value = _ok_response(
+            _payload(events=[{"title": "无时间事件", "time_value": None, "time_unit": "日"}])
+        )
+        result = await extractor.extract(
+            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
+            default_model=DEFAULT_MODEL,
+        )
+        assert result.created[0].time_unit == ""  # 修复前 '日' → FAIL
+
+    async def test_time_display_nonempty_ratio_over_80pct(
+        self, extractor, mock_llm, mock_repo
+    ) -> None:
+        """回归锁定（#1526 验收判据）：含明确时间线索的样本 → 非空率 > 80%。"""
+        events = [
+            {"title": f"事件{i}", "time_display": display, "narrative_position": i}
+            for i, display in enumerate(
+                ["三月初二", "同年腊月", "次年开春", "又过半月", "五日后"], start=1
+            )
+        ]
+        mock_llm.chat.return_value = _ok_response(_payload(events=events))
+        result = await extractor.extract(
+            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
+            default_model=DEFAULT_MODEL,
+        )
+        nonempty = sum(1 for e in result.created if e.time_display)
+        assert nonempty / len(result.created) > 0.8  # 修复前 0/5 → FAIL
+
+    async def test_time_display_merged_on_update(self, extractor, mock_llm, mock_repo) -> None:
+        """更新路径：time_display 非空 → 覆盖库中原值（None = 不覆盖）。"""
+        mock_repo.list_by_chapter.return_value = [
+            _event("拜入山门", time_value=1.0, time_unit="日")
+        ]
+        mock_llm.chat.return_value = _ok_response(
+            _payload(
+                events=[
+                    {
+                        "title": "拜入山门",
+                        "time_value": 1.0,
+                        "time_unit": "日",
+                        "time_display": "三月初二",
+                    }
+                ]
+            )
+        )
+        result = await extractor.extract(
+            TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
+            default_model=DEFAULT_MODEL,
+        )
+        assert len(result.updated) == 1
+        assert result.updated[0].time_display == "三月初二"  # 修复前不覆盖 → FAIL
+
+
+class TestTimelineExtractPromptContract1526:
+    """#1526 提示词契约（zh/en 双语同源）：模板必须要求 `time_display`。
+
+    断言的是**运行时实际加载的产物**（`LangChainPromptManager` 读
+    `inkflow/i18n/prompts/<locale>/timeline_extract.yaml`），非仓库副本。
+    """
+
+    @pytest.mark.parametrize("locale", ["zh", "en"])
+    def test_prompt_requires_time_display(self, locale: str) -> None:
+        """提示词须显式要求输出 `time_display`（原文时间表达）。"""
+        template = LangChainPromptManager().load("timeline_extract", locale=locale)
+        assert "time_display" in template.system_prompt  # 修复前 FAIL

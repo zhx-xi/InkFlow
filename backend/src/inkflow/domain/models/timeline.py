@@ -567,7 +567,10 @@ class ExtractedTimelineEvent(BaseModel):
         description: 事件描述（该时刻发生了什么）；None = 不覆盖.
         time_value: 世界内时间数值键（无法推断 → null）；None = 不覆盖；
             校验同 F12：有限且 |v| ≤ 1e12.
-        time_unit: 时间单位标签（纪元/年/月/日/时）；None = 不覆盖.
+        time_unit: 时间单位标签（纪元/年/月/日/时）；None = 不覆盖。仅在确实
+            解析出 time_value 时有意义（解析不出值时管线留空，防「假非空」）。
+        time_display: 原文时间表达（照抄文本，如「三月初二」）；解析不出累计
+            天数时仍必须保留本字段；None = 不覆盖。
         narrative_position: 叙事位置（LLM 输出或 null——新建时 null = F12
             追加语义）；None = 不覆盖.
         timeline_flag: 时间线标记（""/flashback/flashforward）；None = 不覆盖.
@@ -577,6 +580,7 @@ class ExtractedTimelineEvent(BaseModel):
     description: str | None = None
     time_value: float | None = None
     time_unit: str | None = None
+    time_display: str | None = None
     narrative_position: int | None = None
     timeline_flag: str | None = None
 
@@ -603,6 +607,12 @@ class ExtractedTimelineEvent(BaseModel):
     def validate_time_unit(cls, v: str | None) -> str | None:
         """验证时间单位：None（不覆盖）直接返回；否则去空白且不超过 20 字符."""
         return _validate_short_text(v, "时间单位", 20) if v is not None else None
+
+    @field_validator("time_display")
+    @classmethod
+    def validate_time_display(cls, v: str | None) -> str | None:
+        """#1526 验证原文时间表达：None（不覆盖）直接返回；否则去空白且 ≤ 100 字符."""
+        return _validate_short_text(v, "时间显示文本", 100) if v is not None else None
 
     @field_validator("narrative_position")
     @classmethod

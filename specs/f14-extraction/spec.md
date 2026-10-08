@@ -2,10 +2,11 @@
 > **时间口径（ADR-055 / #1000，#1069 收口）**：本模块时间字段（run_at 等）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-08-16 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
+> **Spec 版本**: 1.4 | **日期**: 2026-10-08 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 A（STYLE 注册占位 + 调用 422，v1.0 已按此设计，仅标记确认——**本拍板已被 F16 兑现**：F16 ✅ 已注册 handler，§6.1/§12，占位表述随 F16 spec §8.2 第 10 项同步修订）/ Q2=选项 B（TIMELINE 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项，默认 false）/ Q3=综合方案（保留源 sha256 增量 + F12 事件 `source_chapter_id` 章节联动）；v1.0 的「TIMELINE 委托 F12 确定性检查」改为设置项关闭时的兜底语义（跨模块 MODIFY F12，F13 改 F6 sources.py 先例）
 > **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，用户拍板按 docs 建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
 > **Spec 变更**: v1.3 — 类型面口径统一（#1408）：`ExtractionType.KNOWLEDGE_RELATION`（F48 知识图谱关系提取）接入统一提取入口——§6.1 注册表补第 7 槽（委托 `RelationExtractionService.extract_for_project(project_id, method="rule")`，与 `knowledge extract --method rule` 殊途同归：项目级、规则集、零 LLM）、§6.3/§6.4/§7 补项目级单源与输入约束（不接受 text/chapter_ids → 显式 422）、§2.1/§3.1/§4.1 类型清单 6 种 → 7 种；CLI 组 help / `--type` help / choices 三者口径一致由 `tests/cli/test_cli_extract_type_contract_1408.py` 契约测试守卫（枚举扩张未同步 → FAIL）
+> **Spec 变更**: v1.4 — 时间线提取补「时间表达」契约（#1526，0.17.0 rc1 数据质量）：`ExtractedTimelineEvent` 新增 `time_display`（**原文时间表达**，如「三月初二」）；提示词（zh/en 同源）要求**每事件必须给 `time_display`**，解析不出累计天数时 `time_value` 仍为 `null` 但**必须保留 `time_display`**；`time_unit` 仅在确实解析出 `time_value` 时写入（未解析出值 → 留空，防「假非空」噪声）；§5.5 schema / 模板 / 合并策略同步。**不推翻** [f12 §2.7](../f12-timeline/spec.md) S10（单位固定 + 项目内累计时基 + 不确定即 null）——本契约只补「原文表达不得丢」的展示面兜底，不改数值语义
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
 > **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
@@ -980,7 +981,8 @@ variables:
 | title | str（必填，1-100 字符） | 事件标题 |
 | description | str \| None | 事件描述（该时刻发生了什么；None = 不覆盖） |
 | time_value | float \| None | 世界内时间数值键（无法推断 → null；校验同 F12：有限且 \|v\| ≤ 1e12） |
-| time_unit | str \| None | 时间单位标签（纪元/年/月/日/时；None = 不覆盖） |
+| time_unit | str \| None | 时间单位标签（纪元/年/月/日/时；None = 不覆盖）。**仅在确实解析出 `time_value` 时有意义**——解析不出值时管线留空（防「假非空」，§5.5 #1526） |
+| time_display | str \| None | **原文时间表达**（照抄文本，如「三月初二」「觉醒前世记忆后两年」）；≤ 100 字符、去空白；None = 不覆盖。**解析不出累计天数时必须保留本字段**（原文表达不得丢，§5.5 #1526） |
 | narrative_position | int \| None | 叙事位置（LLM 输出或 null——新建时 null = F12 追加语义） |
 | timeline_flag | str \| None | 时间线标记（""/flashback/flashforward；None = 不覆盖） |
 
@@ -994,13 +996,23 @@ system_prompt: |
   事件本身、时间、叙事位置与倒叙/插叙标记。事件是实例——同一事件可能在
   多个章节被提及，本章新出现的事件才提取；已提过的事件只输出更新信息。
   只提取文本中直接出现的或明确暗示的信息，不要臆造。
-  时间推断不确定时 time_value 输出 null；时间单位用（纪元/年/月/日/时）。
+  time_display 填该事件在**原文中的时间表达，原样照抄**（如「三月初二」
+  「觉醒前世记忆后两年」）；文本未给出任何时间线索时输出空串。
+  time_value 统一为**项目内累计天数**（自故事起点起算的连续天数），time_unit 恒为「日」；
+  无法把 time_display 换算为累计天数时 time_value 输出 null——此时 time_unit 也输出空串，
+  但 time_display **必须保留原文表达**（不得两者都空）。
+  不要用「本章第几天」这类段内相对计数器，也不要臆造纪元/年份/月份等时间轴。
   叙事位置 = 事件在本章叙事中出现的先后（从 1 开始）；无法判断输出 null。
+  叙事位置**仅在本章内有意义**（章内序，系统会自行换算为全局序），不要跨章延续编号。
+  timeline_flag 只取以下值之一（无标记输出空串）：
+  ""（正叙，默认）、"倒叙"（本章叙述顺序早于其世界内时间的回溯段落）、
+  "插叙"（本章叙述顺序晚于其世界内时间的预叙/前瞻段落）。
   输出严格 JSON，不要输出任何其他文字，格式如下：
   {
     "events": [
       {"title": "事件标题（短，如『林晚入宫』）", "description": "该时刻发生了什么或空",
-       "time_value": 3.5, "time_unit": "年", "narrative_position": 1, "timeline_flag": ""}
+       "time_display": "三月初二", "time_value": 3.5, "time_unit": "日",
+       "narrative_position": 1, "timeline_flag": ""}
     ]
   }
   events 中不要包含重复的事件标题。
@@ -1015,8 +1027,8 @@ variables:
 
 | 情况 | 行为 | 计入 |
 |------|------|------|
-| 项目内存在同 (title, source_chapter_id) 的**活动**事件 | 非空提取字段覆盖（title/description/time_value/time_unit/narrative_position/timeline_flag **独立判断，不动 None 未知值**），更新 updated_at | `updated` |
-| 不存在 | 创建新事件（source_chapter_id=当前章节；time_value=None、narrative_position=LLM 输出或 None——None 走 F12 追加语义、timeline_flag 透传） | `created` |
+| 项目内存在同 (title, source_chapter_id) 的**活动**事件 | 非空提取字段覆盖（title/description/time_value/time_unit/**time_display**/narrative_position/timeline_flag **独立判断，不动 None 未知值**），更新 updated_at | `updated` |
+| 不存在 | 创建新事件（source_chapter_id=当前章节；`time_value`/`time_display` = LLM 输出（未解析出则为 `null` → 落 `None`/空串）；`time_unit` 仅在 `time_value` 非 None 时落值、否则空串——#1526；narrative_position=LLM 输出或 None——None 走 F12 追加语义、timeline_flag 透传） | `created` |
 | 存在但已**软删除** | 视为不存在 → 创建新事件 + warning「存在已删除的同名同章事件」 | `created` + warning |
 | 提取字段非法（title 空/超长、time_value 越界等） | 该条跳过 | `warnings` |
 
@@ -1033,6 +1045,20 @@ variables:
 | 手工事件（source_chapter_id=None） | 不参与提取合并匹配（匹配键含来源章；跨章同名 = 不同事件） |
 
 **幂等性**: 对同一文本重复提取，第二次应产出空 created/updated（全部命中已有事件，非空覆盖后值不变）——与 F9/F10/F13 相同的验收点。
+
+**时间表达契约（#1526，0.17.0 rc1 数据质量修复）**:
+
+0.17.0-rc1 隔离库实测：183 事件中 `time_value` 空 181（98.9%）、`time_display` 空 182 → 世界序视图满屏「未知」，时间线校验能力失效。根因有二：① 管线在新建落库处**硬编码** `time_display=""`；② 提示词未要求该字段。修法（用户 2026-10-08 拍板 **A + C**：A 治根、C 兜底展示）：
+
+| # | 契约 |
+|---|------|
+| T1 | **每事件必须给 `time_display`**（原文时间表达，照抄文本）；文本无任何时间线索 → 空串 |
+| T2 | 解析不出累计天数 → `time_value = null` **但 `time_display` 必须保留**（不得两者都空） |
+| T3 | `time_unit` 仅在**确实解析出 `time_value`** 时写入；未解析出值 → 留空（防「假非空」：rc1 的 `time_unit='日' ×182` 即此类噪声，会掩盖真实缺口） |
+| T4 | **不变量不回归**：§2.7 S10「单位固定（日）+ 项目内累计时基 + 不确定即 null」语义不变；`time_display` 是**展示面兜底**，不参与排序 / 一致性检查（同 F12 §2.7 S6「归一用比较、不回写库」的精神） |
+| T5 | 前端（方案 C）世界序取值链**优先消费 `time_display`**（原文），两者皆空才落「未知」占位——前端既有实现已满足（`timeline-axis-labels.ts` 的 `axisLabels` 与 `timeline-era-axes.ts` 的 `timeScaleText`），本轨以契约测试**守护**（防 #1527 等后续改动回归） |
+
+**契约测试**: `tests/unit/domain/services/test_timeline_extractor.py::TestTimelineTimeDisplayContract1526`（管线保留原文 / 非空率 > 80% / `time_unit` 防假非空 / 更新覆盖）+ `TestTimelineExtractPromptContract1526`（zh/en 提示词必须要求 `time_display`）+ 前端 `timeline-axis-labels.test.ts`（原文兜底 C1-C3）。
 
 **设置项切换（门面层判定，§2.6）**: `auto_extract=false`（请求/CLI/项目配置任一显式关闭）→ 门面**不调用 LLM**，直接委托 `TimelineService.check_consistency()`（§5.1 步骤 ④）；`auto_extract=true` → 进入本节提取管线。判定顺序：请求显式值 → 项目配置 `timeline_auto_extract` → 默认 false。
 
