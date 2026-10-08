@@ -126,6 +126,9 @@ class SearchResponse(BaseModel):
 - GET query：`q`（必填）、`project_id` **或** `project_ids`（必填其一；`project_ids` 逗号分隔 UUID 数组 = 同世界观选择器，v1.1）、`types`（可选，逗号分隔枚举）、`mode`（可选，`keyword`/`semantic`，默认 keyword）、`limit`（默认 20）、`offset`（默认 0）
 - GET 响应：200 `SearchResponse` JSON；幂等只读
 - POST rebuild：query 参数 `project_id`（可选 UUID）**或** `project_ids`（可选逗号分隔 UUID 数组，同世界观选择器）——**都缺省 = 重建全部项目索引**；任一提供 = 仅重建指定项目/项目组（#251 P3 多项目升级）。响应 200 `{"rebuilt_at": "<ISO8601 UTC>", "project_ids": [str] | null}`；有副作用（写 FTS 索引），**用 POST 非 GET**（F12 check 只读先例不适用）
+- **会话生命周期（#1539）**：`_get_svc(db)` 复用端点 `Depends(get_db)` 的**请求 session**（不再自建 `async_session_factory()` 会话而从不 `close()`，连接由 get_db 统一归还）；索引重建装配（`api/deps.py::get_index_rebuild_service`）的模块级单例同样**不持有 session**——后台各阶段自持 `async with async_session_factory()`（#1530 同族范式），项目校验经 `SessionScopedRepository`（按调用开短会话）→ 搜索/重建均不随次数扣住连接
+
+> **修改履历**（#1539，2026-10-09）：§3.1 补「会话生命周期」说明（搜索复用请求 session + 索引重建单例不持有 session）；端点 / DTO / 错误映射零变化。
 
 ### 3.2 请求/响应示例
 

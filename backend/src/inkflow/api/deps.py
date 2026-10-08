@@ -143,6 +143,7 @@ from inkflow.infrastructure.database.repositories.user_preference_repo import (
 from inkflow.infrastructure.database.repositories.world_repo import (
     SQLiteWorldRepository,
 )
+from inkflow.infrastructure.database.session_scoped import SessionScopedRepository
 from inkflow.infrastructure.llm import LangChainLLMClient, LangChainPromptManager
 
 if TYPE_CHECKING:
@@ -655,35 +656,33 @@ _index_rebuild_service_instance: IndexRebuildService | None = None
 """模块级 IndexRebuildService 单例 — 懒加载（首次调用构建，跨请求复用，#682）。"""
 
 
-async def get_index_rebuild_service(
-    db: AsyncSession | None = None,
-) -> IndexRebuildService:
-    """获取 IndexRebuildService 实例（#659 统一异步重建）. fulltext 复用 get_search_service.rebuild；vector ..."""  # noqa: E501  # 中文 docstring 长描述
+async def get_index_rebuild_service() -> IndexRebuildService:
+    """获取 IndexRebuildService 实例（#659 统一异步重建）. fulltext 复用 get_search_service.rebuild；vector 逐项目 extraction_service.reindex；#1539：单例不持有 session（各阶段自持短会话）。"""  # noqa: E501  # 中文 docstring 长描述
     global _index_rebuild_service_instance
     if _index_rebuild_service_instance is None:
-        db = db or async_session_factory()
 
         async def _fulltext_rebuild(project_ids: list[int] | None) -> None:
-            """全文重建：复用 SearchService.rebuild（返回 dict，此处丢弃 → None）."""
-            search_svc = await get_search_service(db)
-            await search_svc.rebuild(project_ids)
+            """全文重建：自持 session（#1539）——复用 SearchService.rebuild（返回 dict 丢弃）."""
+            async with async_session_factory() as session:
+                await (await get_search_service(session)).rebuild(project_ids)
 
         async def _vector_rebuild_all(project_ids: list[int] | None) -> None:
-            """向量重建：按 project_ids 逐个调 extraction_service.reindex（per-project 签名）."""
-            extraction_svc = await get_extraction_service(db)
-            if project_ids is not None:
-                for pid in project_ids:
-                    await extraction_svc.reindex(uuid.UUID(int=pid))
-            else:
-                projects, _ = await SQLiteProjectRepository(db).list_all(offset=0, limit=50)
-                for project in projects:
-                    await extraction_svc.reindex(uuid.UUID(int=project.id.int))
+            """向量重建：自持 session（#1539）——按 project_ids 逐个调 extraction_service.reindex."""
+            async with async_session_factory() as session:
+                extraction_svc = await get_extraction_service(session)
+                if project_ids is not None:
+                    for pid in project_ids:
+                        await extraction_svc.reindex(uuid.UUID(int=pid))
+                else:
+                    projects, _ = await SQLiteProjectRepository(session).list_all(limit=50)
+                    for project in projects:
+                        await extraction_svc.reindex(uuid.UUID(int=project.id.int))
 
         vector: Callable[[list[int] | None], Awaitable[None]] | None = None
         if await get_vector_store_optional() is not None:
             vector = _vector_rebuild_all
         _index_rebuild_service_instance = IndexRebuildService(
-            project_repo=SQLiteProjectRepository(db),
+            project_repo=SessionScopedRepository(SQLiteProjectRepository, async_session_factory),
             fulltext=_fulltext_rebuild,
             vector=vector,
         )
