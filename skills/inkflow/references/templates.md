@@ -7,6 +7,7 @@ agent 使用：Agent 模板 CRUD + 默认模板设置。GUI 对应：`/settings?
 | 命令 | 说明 |
 |---|---|
 | `agent template list/get/create/update/delete/duplicate` | DB Agent 模板 CRUD（create/update 用 `--roles-json` 四键 JSON；delete `--force`） |
+| `agent template create/update --content-file` | 从 UTF-8 文件读取模板**说明**（`--description` 互斥；#1520） |
 | `agent template set-default/get-default` | 默认模板设置/查询 |
 | `agent template pipelines` | 列**内置 pipeline 模板**（`GET /agent/pipelines/templates`）——与 DB 的 agent_template 表**无关** |
 
@@ -41,3 +42,4 @@ Invoke-RestMethod -Uri "$base/agent-templates/default" -Method Patch -Headers $H
 - `PATCH /default` 的 body 是 `{id: "..."}` **字符串 id**（契约明确）
 - 被引用模板删除有风险确认（GUI 弹框）；HTTP 直调无确认——删前先看引用数
 - 默认模板删除 → 409（保护语义）
+- 长模板说明首选 `--content-file`（0.17.0+，显式 UTF-8，与 `--description` 互斥）

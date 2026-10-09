@@ -1,7 +1,7 @@
 ---
 name: inkflow
 description: "操作 InkFlow 本地 AI 小说创作内核与 CLI：项目/章节/卷管理、AI 写作生成与续写、章节审计、角色/世界观/大纲/时间线/伏笔/RAG 资料库、LLM 模型配置、Agent 链编排、导出与提取。触发：agent 需要为 InkFlow 用户创建或管理小说项目、调用 AI 写作、操作资料库数据、查看模型配置或验证操作结果时。"
-version: 0.8.0
+version: 0.17.0
 license: MIT
 compatibility: InkFlow >= 0.8.0
 metadata:
@@ -17,7 +17,7 @@ InkFlow 是一个本地 AI 辅助小说创作工具（单机应用）。本 skil
 
 ## 安装后如何用（三步起步）
 
-1. **探活**：`inkflow --version` 确认 CLI 可用；`inkflow --help` 查看全部命令组（26 组）
+1. **探活**：`inkflow --version` 确认 CLI 可用；`inkflow --help` 查看全部命令组（26 组 + 3 个压平单命令 `serve`/`search`/`chat`）
 2. **发现**：`inkflow project list --json` 列出用户现有项目（拿真实 UUID——不要猜测 UUID，seed 惯例下第一个项目是 `00000000-0000-0000-0000-000000000001`，但请以 list 返回为准）
 3. **走查**（旅程 C：agent 辅助写作闭环）：
    - `inkflow project list --json` → 选择项目 UUID
@@ -46,12 +46,12 @@ InkFlow 是一个本地 AI 辅助小说创作工具（单机应用）。本 skil
 | `character` / `world` / `outline` / `timeline` / `foreshadowing` / `map` | 资料库 | `library-*.md` |
 | `knowledge` | 知识图谱（实体关系） | `library-*.md` |
 | `vector` | RAG 向量库（status/reindex/retrieve） | `library-rag.md` |
-| `extract` | 统一提取（run/status，7 类型） | `extract.md` |
+| `extract` | 统一提取（run/status/rollback，7 类型） | `extract.md` |
 | `export` | 书籍导出 | `cli-commands.md` §6 |
 | `style` | 文风管理 | `cli-commands.md` §6 |
 | `agent` / `session` / `memory` | Agent 链/会话/项目记忆 | `agent.md` / `memory.md` |
 | `context` | 上下文装配预览 | `cli-commands.md` §7 |
-| `skills` / `skill` | 技能包文件导入（复数）/ F39 实体域（单数） | `cli-commands.md` §7 |
+| `skills` / `skill` | 技能包文件导入（复数）/ F39 实体域（单数，含 `[专属]/[通用]` 与**通用 skill 语义**） | `cli-commands.md` §7 / `agent.md` |
 | `llm` / `config` | Provider 注册表/key/配置 | `models.md` / `system.md` |
 | `search` | 全文搜索 | `system.md` |
 | `kernel` / `serve` | 内核生命周期 | `kernel.md` / `system.md` |
@@ -69,7 +69,7 @@ InkFlow 是一个本地 AI 辅助小说创作工具（单机应用）。本 skil
 | 章节审计/评审 | `references/audit.md` |
 | 角色/世界观/大纲/时间线/伏笔/RAG | `references/library-*.md` |
 | Provider/模型/key 配置 | `references/models.md` |
-| Agent 模板/链/会话/记忆 | `references/templates.md` / `agent.md` / `memory.md` |
+| Agent 模板/链/会话/记忆 + **通用 skill 装配** | `references/templates.md` / `agent.md` / `memory.md` |
 | 导出/风格 | `references/cli-commands.md`（§6） |
 | serve/kernel/search/config/llm 系统命令 | `references/system.md` |
 | 完整命令参考与 JSON 契约 | `references/cli-commands.md` / `json-contracts.md` |
