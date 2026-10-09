@@ -204,3 +204,13 @@ class TestExtractStagingRepository:
         assert await repo.delete_by_batch(_pid(project), BATCH) == 1
         assert await repo.list_by_batch(_pid(project), BATCH) == []
         assert [i.name for i in await repo.list_by_batch(_pid(other), BATCH)] == ["乙"]
+
+
+def test_orm_utcnow_is_timezone_aware() -> None:
+    """ORM 模块的 ``_utcnow``（created_at 默认工厂）返回 tz-aware UTC。"""
+    from inkflow.infrastructure.database.models.extract_staging import _utcnow
+
+    now = _utcnow()
+    assert now.tzinfo is not None
+    assert now.utcoffset() is not None
+    assert now.utcoffset().total_seconds() == 0

@@ -31,6 +31,7 @@ from inkflow.domain.models.extraction import (
     ExtractionRequest,
     ExtractionType,
     StagedEntry,
+    StagedListResult,
 )
 from inkflow.domain.models.world import WorldExtractionResult, WorldSetting
 from inkflow.domain.ports.extraction_errors import ExtractionValidationError
@@ -198,3 +199,25 @@ class TestCancelStaged:
         svc._character_repo.add.assert_not_awaited()
         svc._character_repo.update.assert_not_awaited()
         svc._staging_repo.delete_by_batch.assert_awaited_once()
+
+
+class TestListStaged:
+    """``list_staged``：读取本批暂存条目（前端结果视图数据源）。"""
+
+    async def test_list_staged_returns_items(self, svc) -> None:
+        svc._staging_repo.list_by_batch = AsyncMock(
+            return_value=[
+                StagedEntry(
+                    entity_type="character",
+                    action="create",
+                    name="角色甲",
+                    payload={"name": "角色甲"},
+                )
+            ]
+        )
+        out = await svc.list_staged(PID, "ext-1")
+
+        assert isinstance(out, StagedListResult)
+        assert out.batch_id == "ext-1"
+        assert out.items[0].name == "角色甲"
+        svc._staging_repo.list_by_batch.assert_awaited_once()
