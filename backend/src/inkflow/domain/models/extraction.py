@@ -104,6 +104,7 @@ class ExtractionRequest(BaseModel):
     force: bool = False  # 忽略增量 skip，强制重跑（§5.2）
     granularity: Granularity = Granularity.FINE  # #1485：提取粒度（仅 character/setting）
     dry_run: bool = False  # #1485：预览不落库（仅 character/setting）
+    stage: bool = False  # #1545：两段式暂存（仅 character/setting，与 dry_run 互斥）
 
     @field_validator("text")
     @classmethod
@@ -253,3 +254,42 @@ class RollbackResult(BaseModel):
     batch_id: str
     deleted: int = 0
     warnings: list[str] = []
+
+
+class StagedEntry(BaseModel):
+    """暂存批次条目（§5.9）— 实体类型 / 动作 / 名称 / 原始 payload.
+
+    Attributes:
+        entity_type: 实体类型（``character`` / ``world_setting``，confirm 时
+            决定反序列化目标与物化仓储）.
+        action: 动作（``create`` / ``update``，决定 confirm 时走 add 还是 update）.
+        name: 条目名（暂存列表展示与人工辨认用）.
+        payload: 条目原始 model_dump（mode="json"），confirm 时反序列化回领域实体.
+    """
+
+    entity_type: str
+    action: str
+    name: str
+    payload: dict[str, Any]
+
+
+class StagedListResult(BaseModel):
+    """暂存批次条目列表（§5.9，GET 暂存端点返回）."""
+
+    batch_id: str
+    items: list[StagedEntry] = []
+
+
+class ConfirmStagedResult(BaseModel):
+    """确认暂存批次结果（§5.9）— 物化计数 + 批次标识."""
+
+    batch_id: str
+    created: int = 0
+    updated: int = 0
+
+
+class CancelStagedResult(BaseModel):
+    """取消暂存批次结果（§5.9）— 清空的暂存行数 + 批次标识."""
+
+    batch_id: str
+    deleted: int = 0

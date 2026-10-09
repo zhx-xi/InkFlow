@@ -1,8 +1,10 @@
-"""F14 统一提取 REST API — 4 个端点：统一提取 + runs 查询 + 向量索引/检索。
+"""F14 统一提取 REST API — 统一提取 + runs 查询 + 批次回滚 + 暂存 + 向量索引/检索。
 
 端点风格（spec §3.1）: 统一提取入口**扁平**（POST /api/v1/extract——type 是
 资源维度而非项目维度，镜像 F9 `/characters/extract` 扁平先例）；runs 查询与
-向量动作**嵌套项目路径**（/projects/{project_id}/extractions/runs、
+批次回滚 / 两段式暂存（#1545 §5.9）与向量动作**嵌套项目路径**
+（/projects/{project_id}/extractions/runs、/extractions/rollback、
+/extractions/staging/{batch_id}、
 /projects/{project_id}/vector/reindex、/projects/{project_id}/vector/retrieve）。
 `/extract` 为静态路径段，无与既有路由的歧义（spec §3.1 注）。
 
@@ -288,6 +290,59 @@ async def rollback_extraction_batch(
     pid = _parse_id(project_id)
     svc = await _get_svc(db)
     result = await _run_service(svc.rollback_batch(pid, data.batch_id))
+    return result.model_dump(mode="json")
+
+
+@router.get("/projects/{project_id}/extractions/staging/{batch_id}")
+@instrument(caller_type="api")
+async def list_staged_extraction(
+    project_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """读取本批暂存条目（spec §5.9，GET 暂存端点）——项目不存在 → 404。
+
+    返回 ``StagedListResult{batch_id, items[]}``（元素 ``StagedEntry`` 含
+    entity_type / action / name / payload）；空批 → items 空列表（幂等）。
+    """
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    result = await _run_service(svc.list_staged(pid, batch_id))
+    return result.model_dump(mode="json")
+
+
+@router.post("/projects/{project_id}/extractions/staging/{batch_id}/confirm")
+@instrument(caller_type="api")
+async def confirm_staged_extraction(
+    project_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """确认暂存批次（spec §5.9）——逐行物化进正式表后清空本批暂存，幂等。
+
+    返回 ``ConfirmStagedResult{batch_id, created, updated}``；项目不存在 →
+    404「项目不存在」（同 rollback 口径）。
+    """
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    result = await _run_service(svc.confirm_staged(pid, batch_id))
+    return result.model_dump(mode="json")
+
+
+@router.post("/projects/{project_id}/extractions/staging/{batch_id}/cancel")
+@instrument(caller_type="api")
+async def cancel_staged_extraction(
+    project_id: str,
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """取消暂存批次（spec §5.9）——仅清空暂存行，零物化，幂等。
+
+    返回 ``CancelStagedResult{batch_id, deleted}``；项目不存在 → 404。
+    """
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    result = await _run_service(svc.cancel_staged(pid, batch_id))
     return result.model_dump(mode="json")
 
 

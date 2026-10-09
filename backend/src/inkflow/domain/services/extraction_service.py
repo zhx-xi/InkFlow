@@ -37,6 +37,10 @@ specs/f16-style-analysis/spec.md §8.2（STYLE 槽位落地）。
 RAG 编排拆分（#307）: `reindex` / `retrieve` / `_paged_list` 与投影纯函数迁至
 `_extraction_rag.py`（`_ExtractionRAGMixin`，本类继承）；本类保留 extract 的
 增量索引编排（`_collect_index_entities`，§5.1 步骤 ⑥）。
+
+两段式暂存拆分（#1545）: `_staged_entries` 纯函数与 `_staging` / `confirm_staged`
+/ `cancel_staged` / `list_staged` 迁至 `_extraction_staging.py`
+（`_ExtractionStagingMixin`，本类继承）；抽取入口 `extract(stage=True)` 仍在本类。
 """
 
 from __future__ import annotations
@@ -88,6 +92,7 @@ from inkflow.domain.ports.extraction_errors import (
     UnsupportedExtractionTypeError,
 )
 from inkflow.domain.ports.extraction_run_repository import ExtractionRunRepositoryProtocol
+from inkflow.domain.ports.extraction_staging_repository import ExtractionStagingRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
@@ -104,6 +109,10 @@ from inkflow.domain.services._extraction_rag import (
     _project_foreshadowing,
     _project_setting,
     _project_timeline_event,
+)
+from inkflow.domain.services._extraction_staging import (
+    _ExtractionStagingMixin,
+    _staged_entries,
 )
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
@@ -202,7 +211,7 @@ def _normalize_result(type_: ExtractionType, result: Any) -> _Normalized:
     )
 
 
-class ExtractionService(_ExtractionRAGMixin):
+class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
     """统一提取服务门面（spec §5）— 分发 7 种类型 + 增量提取 + RAG 编排.
 
     依赖全部通过构造函数注入（ADR-015，测试注入 Mock）:
@@ -223,6 +232,8 @@ class ExtractionService(_ExtractionRAGMixin):
             槽位委托，项目级规则提取，零 LLM）.
         character_repo / world_repo / timeline_repo / foreshadowing_repo:
             reindex 全量重建用档案仓储（§5.6）.
+        staging_repo: 两段式暂存仓储（#1545 §5.9）；None = 未装配
+            （stage=true 时报 ExtractionRunError，DI 由 deps.py 装配）.
         vector_store: RAG 向量存储（ADR-013）；None = 未装配，
             index=true / reindex / retrieve 时报 RAGUnavailableError（§5.6/§6.3）.
         fingerprint_provider: reindex 四步协议指纹提供器（#276）——返回当前
@@ -255,6 +266,7 @@ class ExtractionService(_ExtractionRAGMixin):
         world_repo: WorldRepositoryProtocol | None = None,
         timeline_repo: TimelineRepositoryProtocol | None = None,
         foreshadowing_repo: ForeshadowingRepositoryProtocol | None = None,
+        staging_repo: ExtractionStagingRepositoryProtocol | None = None,
         vector_store: VectorStoreProtocol | None = None,
         fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
         chunking: ChunkingConfig | None = None,
@@ -276,6 +288,7 @@ class ExtractionService(_ExtractionRAGMixin):
         self._world_repo = world_repo
         self._timeline_repo = timeline_repo
         self._foreshadowing_repo = foreshadowing_repo
+        self._staging_repo = staging_repo
         self._vector_store = vector_store
         self._fingerprint_provider = fingerprint_provider
         self._chunking = chunking if chunking is not None else ChunkingConfig()
@@ -340,10 +353,17 @@ class ExtractionService(_ExtractionRAGMixin):
         # ④⑤ 逐源执行 + 每源成功后立即 upsert run（断点续跑基础，§6.2）
         result, executed = await self._run_sources(request, sources, project, batch_id)
 
+        # ⑤' #1545 §5.9: stage=true → 产物落暂存区（零写入：不写实体 / 不写 run 表）
+        if request.stage and batch_id is not None:
+            entries = _staged_entries(request.type, result.detail)
+            await self._staging().add_many(
+                request.project_id, batch_id, request.type.value, entries
+            )
+
         # ⑥ index=true → 索引本次产物（§5.6；outline/timeline 关闭时与 STYLE
         # 恒 False——忽略 + warning，§8.2 表 #7）
-        # #1485 §5.8.4: dry_run 零写入 —— 预览条目未落库，不索引
-        if request.index and not request.dry_run:
+        # #1485 §5.8.4 / #1545 §5.9: dry_run 与 stage 零写入 —— 条目未落库，不索引
+        if request.index and not (request.dry_run or request.stage):
             if self._indexing_enabled(request, project):
                 if result.status is ExtractionStatus.SUCCESS and executed:
                     if self._vector_store is None:
@@ -385,6 +405,11 @@ class ExtractionService(_ExtractionRAGMixin):
             request.granularity is not Granularity.FINE or request.dry_run
         ):
             raise ExtractionValidationError("granularity/dry_run 仅支持 character/setting 类型")
+        # #1545 §5.9: stage 仅 character/setting（首刀），且与 dry_run 互斥
+        if request.stage and request.dry_run:
+            raise ExtractionValidationError("stage 与 dry_run 不能同时使用")
+        if request.stage and request.type not in (ExtractionType.CHARACTER, ExtractionType.SETTING):
+            raise ExtractionValidationError("stage 仅支持 character/setting 类型")
         has_source = request.text is not None or request.chapter_ids is not None
         if request.type is ExtractionType.OUTLINE:
             if has_source:
@@ -499,10 +524,12 @@ class ExtractionService(_ExtractionRAGMixin):
         detail: dict[str, Any] = {}
         executed: list[tuple[_Source, Any]] = []
         run_indexed = request.index and self._indexing_enabled(request, project)
+        # #1545 §5.9: stage 与 dry_run 同为「零写入」（不写 run 表、恒执行不 skip）
+        zero_write = request.dry_run or request.stage
 
         for src in sources:
             # #1485 §5.8.4: dry-run 下每个源都视为未 skip
-            if src.skip and not request.dry_run:
+            if src.skip and not zero_write:
                 skipped += 1
                 continue
             normalized = await self._dispatch(request, src, project, batch_id)
@@ -515,7 +542,7 @@ class ExtractionService(_ExtractionRAGMixin):
                 detail = normalized.detail
             executed.append((src, normalized.raw))
             # #1485 §5.8.4: dry-run 预览不写 run 表
-            if not request.dry_run:
+            if not zero_write:
                 await self._run_repo.upsert(
                     ExtractionRun(
                         id=0,  # DB 自增主键占位（同仓储测试约定）
@@ -545,7 +572,7 @@ class ExtractionService(_ExtractionRAGMixin):
             # 全源 skip: 对首个源 upsert 一行 skipped（记录确认事实，§6.2；
             # #1485: dry_run 预览零写入 → 不落该行）
             first = sources[0]
-            if not request.dry_run:
+            if not zero_write:
                 await self._run_repo.upsert(
                     ExtractionRun(
                         id=0,
@@ -606,7 +633,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     model=request.model,
                 ),
                 granularity=request.granularity,
-                dry_run=request.dry_run,
+                dry_run=request.dry_run or request.stage,
                 batch_id=batch_id,
             )
         elif request.type is ExtractionType.SETTING:
@@ -617,7 +644,7 @@ class ExtractionService(_ExtractionRAGMixin):
                     model=request.model,
                 ),
                 granularity=request.granularity,
-                dry_run=request.dry_run,
+                dry_run=request.dry_run or request.stage,
                 batch_id=batch_id,
             )
         elif request.type is ExtractionType.OUTLINE:

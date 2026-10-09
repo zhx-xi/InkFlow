@@ -1318,6 +1318,36 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 - **不恢复被更新条目的历史值**（未存快照）→ 返回 warning 提示「本次 run 的更新条目不回滚」。
 - 回滚替代「按 `created_at` 小时窗口猜时间」的历史做法（#1485 现象节的处置记录）。
 
+#### 5.9 两段式暂存（stage / confirm / cancel，#1545）
+
+**语义**：提取产物先落**暂存区**（正式表零变更），用户确认后物化进正式表；取消则清空暂存。
+
+**请求**：`POST /api/v1/extract` 增 `stage: bool = False`。
+
+- `stage=true`：对该次提取**走零写入**（character/setting 管线以 `dry_run=true` 调用，
+  不写实体、不写 run 表），随后把 `detail.created` / `detail.updated` 的条目清单落到
+  `extract_staging` 表；信封回 `batch_id`。
+- **仅 character / setting 支持 `stage`**（首刀，#1545）；其余类型带 `stage` → 422。
+- `stage` 与 `dry_run` 同时传 → 422（互斥）。
+
+**暂存表 `extract_staging`**（§8）：`project_id` / `batch_id` / `type` / `entity_type` /
+`action`(create\|update) / `target_id`(update 时指向被覆盖行) / `payload`(JSON) / `created_at`。
+
+**端点**：
+
+| 方法 | 路径 | 返回 |
+|---|---|---|
+| GET | `/api/v1/projects/{pid}/extractions/staging/{batch_id}` | `StagedListResult{batch_id, items[]}`（元素 `StagedEntry{entity_type, action, name, payload}`） |
+| POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/confirm` | `ConfirmStagedResult{batch_id, created, updated}` |
+| POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/cancel` | `CancelStagedResult{batch_id, deleted}` |
+
+**物化纪律**：confirm 逐行按 `action` 走既有仓储路径（`create` → `repo.add(entity)`；
+`update` → `repo.update(entity)`），**不得绕过既有合并语义**；物化后删除本批暂存行。
+**幂等**：重复 cancel / confirm 空批 → 计数 0，不报错；项目不存在 → 404（同 rollback 口径）。
+
+**过期清理**：N 天未确认的暂存行应定期清理（对齐软删 30 天纪律）——**本刀仅登记语义，
+不实现定时 job**（后续增量）。
+
 ## 6. 提取类型注册表与增量状态语义
 
 （对应 F9 §6「关系图谱与分组管理规则」的位置；F14 无图谱，本节承载类型注册、输入约束与 run 状态语义）

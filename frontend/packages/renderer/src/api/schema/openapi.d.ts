@@ -2313,6 +2313,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staged Extraction
+         * @description 读取本批暂存条目（spec §5.9，GET 暂存端点）——项目不存在 → 404。
+         *
+         *     返回 ``StagedListResult{batch_id, items[]}``（元素 ``StagedEntry`` 含
+         *     entity_type / action / name / payload）；空批 → items 空列表（幂等）。
+         */
+        get: operations["list_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Staged Extraction
+         * @description 取消暂存批次（spec §5.9）——仅清空暂存行，零物化，幂等。
+         *
+         *     返回 ``CancelStagedResult{batch_id, deleted}``；项目不存在 → 404。
+         */
+        post: operations["cancel_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Staged Extraction
+         * @description 确认暂存批次（spec §5.9）——逐行物化进正式表后清空本批暂存，幂等。
+         *
+         *     返回 ``ConfirmStagedResult{batch_id, created, updated}``；项目不存在 →
+         *     404「项目不存在」（同 rollback 口径）。
+         */
+        post: operations["confirm_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/foreshadowings": {
         parameters: {
             query?: never;
@@ -4729,6 +4797,11 @@ export interface components {
              * @default true
              */
             save: boolean;
+            /**
+             * Stage
+             * @default false
+             */
+            stage: boolean;
             /** Text */
             text?: string | null;
             type: components["schemas"]["ExtractionType"];
@@ -11391,6 +11464,102 @@ export interface operations {
             header?: never;
             path: {
                 project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
             };
             cookie?: never;
         };
