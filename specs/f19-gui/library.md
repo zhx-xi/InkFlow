@@ -84,6 +84,34 @@
   - `knowledge_relation`：**不带** `text` / `chapter_ids`（项目级提取）
 - 章节 / 卷列表**全量加载**（#1407：翻页取满 `total`；卷→章用章节的 `volume_id` 归并）
 
+### 2.2 AI 提取结果视图 + 最小化（#1532 / #1546）
+
+> 原型：`design/GUI/library/library.html`（`extract-result` / `extract-min` 两态）+ `library-extract-result.png` / `library-extract-min.png`
+
+```text
+┌─ AI 提取 ──────────────────────────────────────────── × ┐
+│ ● 提取完成 · 待确认（未落库）                             │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ 新增 3                                             │ │
+│ │  角色甲 [角色] / 角色壬 [角色] / 角色癸 [角色]        │ │
+│ │ 更新 1                                             │ │
+│ │  角色乙 [将覆盖]                                    │ │
+│ └────────────────────────────────────────────────────┘ │
+│ 确认后才写入设定库；取消将丢弃本次结果。批次 ext-…        │
+│ [取消]                          [确认落库]              │
+└─────────────────────────────────────────────────────────┘
+   最小化后 → 页面右下角浮窗：[● 提取中 · … 62%  还原]
+```
+
+- **两段式**：提交一律带 `stage: true` → 产物只进暂存区（正式表零变更）；结果视图展示
+  **新增** / **更新（替换）** 清单（更新项标注「将覆盖」）
+- 「**确认落库**」→ `POST /projects/{pid}/extractions/staging/{batch_id}/confirm` → 关闭 + ok toast
+- 「**取消**」→ `POST /projects/{pid}/extractions/staging/{batch_id}/cancel` → 关闭（丢弃本次结果）
+- **最小化**：提取进行中可点「—」收起对话框 → 右下角 `ai-extract-float` 浮窗；点击浮窗「还原」恢复对话框
+- testid：`ai-extract-result` / `ai-extract-created` / `ai-extract-created-item` /
+  `ai-extract-updated` / `ai-extract-updated-item` / `ai-extract-confirm` / `ai-extract-cancel` /
+  `ai-extract-min` / `ai-extract-float`
+
 ## 3. 验收
 
 - N1：无项目 → 空态引导 +「前往项目页」跳 /projects
@@ -95,3 +123,6 @@
 - N7（#1528 / #1544）：AI 提取对话框类型单选含**时间线 / 伏笔 / 知识图谱**（共 6 项含「通用」）；中英文 i18n 键对齐
 - N8（#1544）：**通用**多选 → 每选中类型各发一次 `POST /api/v1/extract`，`type` 映射正确；`knowledge_relation` 不带源、`timeline` 带 `chapter_ids` + `auto_extract`
 - N9（#1544）：范围「全文」→ `chapter_ids` = 全部章；「按卷」多选 → 选中卷全部章；「按章」区间 → 展开；单批 > 100 章 → 自动分批
+- N10（#1532 / #1546）：提取成功 → 对话框切结果视图（新增/更新清单）；提交带 `stage: true`；正式表零变更（确认前）
+- N11（#1546）：「确认落库」→ 调 confirm 端点（带 `batch_id`）→ 关框 + ok toast；「取消」→ 调 cancel 端点 → 关框
+- N12（#1546）：提取进行中可最小化 → 对话框收起 + 右下角 `ai-extract-float` 浮窗；点浮窗「还原」恢复对话框
