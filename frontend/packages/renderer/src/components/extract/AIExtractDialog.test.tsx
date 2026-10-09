@@ -1,53 +1,51 @@
 /**
- * 「AI 提取」弹窗 RED 契约测试（#652，GUI 提取通道）。
+ * 「AI 提取」弹窗 RED 契约测试（#652 建 / #1528 + #1544 扩展）。
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * 【契约（父侧定稿，2026-08-26，排版确认门 M2 已过：触发=A 整章一键 / 通用带上 / 记录按建议 / 写作默认当前章）】
+ * 【契约 v2（#1528 / #1544，2026-10-09）】
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * 新组件 components/extract/AIExtractDialog.tsx（GREEN CREATE）。
- * 直调 apiFetch（镜像 KnowledgeExtractCard 先例，不建 api/extract.ts 模块，
- * 规避「测试 import 未建模块 → 文件级 0 用例连坐」）。
+ * 组件 components/extract/AIExtractDialog.tsx。直调 apiFetch。
  *
  * Props：{ open, onClose, projectId, defaultChapterId?, defaultText? }
- * - open=true 挂载时拉取：GET /api/v1/projects/{projectId}/chapters（章节列表）+
- *   GET /api/v1/projects/{projectId}/extractions/runs?limit=1（最近一次运行摘要）
+ * - open=true 挂载时拉取：
+ *   GET /api/v1/projects/{projectId}/chapters       （章节列表，全量翻页）
+ *   GET /api/v1/projects/{projectId}/volumes        （卷列表，#1544 新增）
+ *   GET /api/v1/projects/{projectId}/extractions/runs（最近一次运行摘要）
  *
  * DOM 结构（data-testid 即契约）：
- * - ai-extract-dialog：对话框根容器
- * - ai-extract-type：提取类型 radio 组（容器）
- *   选项可访问名「角色 / 世界观 / 通用」（i18n extract.character/world/generic）
- * - ai-extract-type-generic：通用模式下类型 Select（选项 foreshadowing / knowledge_relation）
- * - ai-extract-chapter：章节 Select（整章一键，源 = 所选章节）
- * - ai-extract-run：提交按钮「开始提取」
- * - ai-extract-running：运行中指示（按钮 disabled 时存在）
- * - ai-extract-last-run：最近一次运行摘要卡
+ * - ai-extract-dialog         对话框根容器
+ * - ai-extract-type           提取类型 radio 组（容器）
+ *   选项可访问名「角色 / 世界观 / 时间线 / 伏笔 / 知识图谱 / 通用」
+ *   （i18n extract.character/world/timeline/foreshadowing/knowledgeGraph/generic）
+ * - ai-extract-generic        「通用」多选面板（容器，仅「通用」选中时渲染）
+ *   选项可访问名同上 5 类（不含「通用」）
+ * - ai-extract-scope          提取范围 radio 组（容器）
+ *   选项可访问名「全文 / 按卷 / 按章」（i18n extract.scope.all/volume/chapter）
+ * - ai-extract-volume-list    「按卷」卷多选容器（仅「按卷」时渲染）
+ * - ai-extract-range-from / ai-extract-range-to / ai-extract-range-add
+ *                             「按章」区间输入 + 添加按钮（仅「按章」时渲染）
+ * - ai-extract-run            提交按钮「开始提取」
+ * - ai-extract-running        运行中指示
+ * - ai-extract-last-run       最近一次运行摘要卡
  *
- * 提交语义（触发 = A，整章一键 → 前端取所选章节内容作 text）：
- * - 取 text：若已选章节 == defaultChapterId 且 defaultText 非空 → 直接用 defaultText；
- *   否则 GET /api/v1/chapters/{selectedId} → content
- * - 角色 → POST /api/v1/characters/extract，body { project_id, text }
- * - 世界观 → POST /api/v1/world-settings/extract，body { project_id, text }
- * - 通用 → POST /api/v1/extract，body { project_id, type, text }
- *   （通用 type Select 默认 foreshadowing；角色/世界观不填 type）
+ * 提交语义（#1544 统一走 POST /api/v1/extract，type 由所选类型决定）：
+ * - 类型 → type 映射：角色→character、世界观→setting、时间线→timeline、
+ *   伏笔→foreshadowing、知识图谱→knowledge_relation
+ * - 单选 = 只发 1 次；「通用」多选 = 每个选中类型各发 1 次
+ * - 范围 → chapter_ids：全文=全部章；按卷=选中卷全部章；按章=各区间展开
+ * - 单次 chapter_ids ≤ 100；超出自动分批（每批 ≤100，多请求）
+ * - timeline：body 带 chapter_ids + auto_extract=true（不带 text）
+ * - knowledge_relation：body 不带 text / chapter_ids（项目级提取）
  *
- * 反馈三态：
- * - 进行中：提交后按钮 disabled + ai-extract-running 出现（await POST，不轮询）
- * - 完成：toast ok「提取完成 · 新增 N · 更新 M · 已落地设定库」+ 重拉最近运行摘要
- * - 失败：toast err（errorMessage 来自后端 ApiError.detail；未配模型/embedding 优雅降级
- *   ——拒绝时不硬崩、按钮恢复 enabled）
- *
- * i18n 键（GREEN 补 zh/en extract.*）：
- * extract.title/extract.character/extract.world/extract.generic/extract.typeGeneric/
- * extract.chapter/extract.run/extract.running/extract.done/extract.failed/extract.lastRun/
- * extract.noRun（中文：title=AI 提取、run=开始提取、running=提取中、
- * lastRun=最近一次提取、noRun=暂无提取记录；其余文案 GREEN 自由定但键必须存在）
+ * 反馈三态（保留 #652 语义）：
+ * - 进行中：按钮 disabled + ai-extract-running
+ * - 完成：toast ok「提取完成 · ...」+ 重拉最近运行摘要
+ * - 失败：toast err（errorMessage）+ 按钮恢复 enabled
  *
  * ───────────────────────────────────────────────────────────────────────────
- * 【RED 预期失败形态】
- * ① element-missing：ai-extract-* testid 不存在（组件未建）
- * ② i18n 键 undefined：zh/en 的 extract.* 为 undefined（assert 类）
- * ③ 本文件不 import 任何未建模块（apiFetch/client 已存在），module-not-found 不出现。
+ * 【RED 预期失败形态】v2 新契约在 v1 实现下必 FAIL（无 timeline radio / 无范围选择 /
+ * 无多选 / 仍打 /characters/extract 等）；结构性 testid 不存在 = element-missing。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -64,189 +62,281 @@ vi.mock('../../api/client', async (importOriginal) => {
 
 const apiFetchMock = vi.mocked(apiFetch);
 
-/** 章节列表响应（镜像 useChapterStore ChapterListResponse） */
-const CHAPTERS_RESP = {
+/** 卷列表响应（镜像 GET /projects/{pid}/volumes） */
+const VOLUMES_RESP = {
   items: [
-    { id: 'ch1', title: '第三章 青云之巅', volume_id: null, order_index: 3, word_count: 3200 },
-    { id: 'ch2', title: '第二章 往事', volume_id: null, order_index: 2, word_count: 2100 },
+    { id: 'v1', project_id: 'p1', title: '第一卷 起', order_index: 0 },
+    { id: 'v2', project_id: 'p1', title: '第二卷 承', order_index: 1 },
   ],
-  total: 2, offset: 0, limit: 50,
 };
 
-/** 章节全文（镜像 Chapter 含 content） */
-const CHAPTER_DETAIL = { id: 'ch1', title: '第三章 青云之巅', volume_id: null, order_index: 3, word_count: 3200, project_id: 'p1', content: '地点甲巅，剑气纵横。' };
+/** 章节列表响应（全量翻页后） */
+const CHAPTERS_RESP = {
+  items: [
+    { id: 'ch1', title: '第一章', volume_id: 'v1', order_index: 0, word_count: 10 },
+    { id: 'ch2', title: '第二章', volume_id: 'v1', order_index: 1, word_count: 10 },
+    { id: 'ch3', title: '第三章', volume_id: 'v2', order_index: 2, word_count: 10 },
+  ],
+  total: 3,
+  offset: 0,
+  limit: 50,
+};
 
 /** 最近一次运行：GET extractions/runs 响应（ExtractionRun 形态） */
 const RUN_LIST = {
   items: [
     {
-      id: 9, project_id: 'p1', type: 'character', source_key: 'ch1',
-      content_hash: 'abc', status: 'success', created_count: 3, updated_count: 1,
-      warnings_json: '[]', error: null, model: 'deepseek-chat', indexed: false,
-      run_at: '2026-08-26T00:00:00Z',
+      id: 9,
+      project_id: 'p1',
+      type: 'timeline',
+      source_key: 'ch1',
+      content_hash: 'abc',
+      status: 'success',
+      created_count: 3,
+      updated_count: 1,
+      warnings_json: '[]',
+      error: null,
+      model: 'deepseek-chat',
+      indexed: false,
+      run_at: '2026-10-09T00:00:00Z',
     },
   ],
-  total: 1, offset: 0, limit: 1,
+  total: 1,
+  offset: 0,
+  limit: 1,
 };
 
-/** 角色提取结果（CharacterExtractionResult 形态） */
-const CHAR_RESULT = {
-  created: [{ id: 'c1', name: '角色甲' }, { id: 'c2', name: '角色壬' }],
-  updated: [{ id: 'c3', name: '角色癸' }],
-  relations_created: [], relations_updated: [], warnings: [], model: 'deepseek-chat',
+/** 统一提取结果信封（ExtractionResult 形态） */
+const ENVELOPE = {
+  type: 'character',
+  status: 'success',
+  skipped_reason: null,
+  processed_sources: 1,
+  skipped_sources: 0,
+  created: 2,
+  updated: 1,
+  warnings: [],
+  model: 'deepseek-chat',
+  indexed: false,
+  batch_id: 'ext-abc',
+  detail: {},
 };
 
-/** 世界观提取结果（WorldExtractionResult 形态） */
-const WORLD_RESULT = {
-  created: [{ id: 'w1', name: '门派甲' }],
-  updated: [], warnings: [], model: 'deepseek-chat',
-};
-
-/** 通用提取结果（ExtractionResult 形态，created/updated 为计数） */
-const GENERIC_RESULT = {
-  type: 'foreshadowing', status: 'success', skipped_reason: null,
-  processed_sources: 1, skipped_sources: 0, created: 2, updated: 0,
-  warnings: [], model: 'deepseek-chat', indexed: false, detail: {},
-};
-
-/** i18n 契约键集（extract.*，zh/en 双断言；RED 期 undefined） */
-const EXTRACT_KEYS = [
-  'title', 'character', 'world', 'generic', 'typeGeneric', 'chapter',
-  'run', 'running', 'done', 'failed', 'lastRun', 'noRun',
-] as const;
+/** 已拨出的 POST /api/v1/extract 请求体清单（按调用顺序） */
+function extractBodies(): Array<Record<string, unknown>> {
+  return apiFetchMock.mock.calls
+    .filter((c) => c[0] === '/api/v1/extract' && (c[1] as { method?: string })?.method === 'POST')
+    .map((c) => (c[1] as { body: Record<string, unknown> }).body);
+}
 
 function renderDialog(props: Partial<React.ComponentProps<typeof AIExtractDialog>> = {}) {
-  return render(
-    <AIExtractDialog open onClose={() => {}} projectId="p1" {...props} />,
-  );
+  return render(<AIExtractDialog open onClose={() => {}} projectId="p1" {...props} />);
 }
 
 beforeEach(() => {
   apiFetchMock.mockReset();
   useToastStore.setState({ toasts: [] });
-  // URL 分发默认 mock：章节 / runs / 章节全文 / 三提取端点
-  apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+  apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
     if (path === '/api/v1/projects/p1/chapters') return { ...CHAPTERS_RESP };
-    if (path === '/api/v1/projects/p1/extractions/runs') return { ...RUN_LIST };
-    if (path === '/api/v1/chapters/ch1') return { ...CHAPTER_DETAIL };
+    if (path.startsWith('/api/v1/projects/p1/chapters')) return { ...CHAPTERS_RESP };
+    if (path === '/api/v1/projects/p1/volumes') return { ...VOLUMES_RESP };
     if (path.startsWith('/api/v1/projects/p1/extractions/runs')) return { ...RUN_LIST };
-    if (path === '/api/v1/characters/extract' && init?.method === 'POST') return { ...CHAR_RESULT };
-    if (path === '/api/v1/world-settings/extract' && init?.method === 'POST') return { ...WORLD_RESULT };
-    if (path === '/api/v1/extract' && init?.method === 'POST') return { ...GENERIC_RESULT };
+    if (path === '/api/v1/extract' && init?.method === 'POST') return { ...ENVELOPE };
     return { ok: true };
   });
 });
 
-describe('「AI 提取」弹窗（#652）', () => {
-  it('契约1（结构）：渲染出 ai-extract-dialog + 标题「AI 提取」+ 三类型选项', async () => {
+describe('「AI 提取」弹窗（#652 / #1528 / #1544）', () => {
+  it('契约1（结构）：渲染出 dialog + 标题 + 六类型单选 + 三范围单选', async () => {
     renderDialog();
     const dlg = await screen.findByTestId('ai-extract-dialog');
     expect(within(dlg).getByText('AI 提取')).toBeInTheDocument();
-    expect(within(dlg).getByRole('radio', { name: '角色' })).toBeInTheDocument();
-    expect(within(dlg).getByRole('radio', { name: '世界观' })).toBeInTheDocument();
-    expect(within(dlg).getByRole('radio', { name: '通用' })).toBeInTheDocument();
+    const typeGroup = within(dlg).getByTestId('ai-extract-type');
+    for (const name of ['角色', '世界观', '时间线', '伏笔', '知识图谱', '通用']) {
+      expect(within(typeGroup).getByRole('radio', { name })).toBeInTheDocument();
+    }
+    const scopeGroup = within(dlg).getByTestId('ai-extract-scope');
+    for (const name of ['全文', '按卷', '按章']) {
+      expect(within(scopeGroup).getByRole('radio', { name })).toBeInTheDocument();
+    }
   });
 
-  it('契约2（章节+记录）：open 拉取章节列表与最近一次运行摘要', async () => {
+  it('契约2（数据加载）：open 拉取章节 / 卷 / 最近运行摘要', async () => {
     renderDialog();
-    // 章节 Select 渲染（整章一键来源）
-    await screen.findByTestId('ai-extract-chapter');
-    // 最近一次运行摘要卡渲染（记录 status + created/updated）
+    await screen.findByTestId('ai-extract-dialog');
+    await waitFor(() => {
+      const paths = apiFetchMock.mock.calls.map((c) => c[0]);
+      expect(paths).toContain('/api/v1/projects/p1/chapters');
+      expect(paths).toContain('/api/v1/projects/p1/volumes');
+    });
     const lastRun = await screen.findByTestId('ai-extract-last-run');
-    expect(within(lastRun).getByText(/角色/)).toBeInTheDocument();
-    expect(within(lastRun).getByText(/新增 3 · 更新 1/)).toBeInTheDocument();
+    // RUN_TYPE_LABELS 映射：timeline → 「时间线」（#1528 验收：非原始值）
+    expect(within(lastRun).getByText(/时间线/)).toBeInTheDocument();
   });
 
-  it('契约3a（角色）：选「角色」+ 提交 → POST /api/v1/characters/extract，body {project_id,text}', async () => {
+  it('契约3a（角色 + 全文）：POST /extract {type:character, chapter_ids:全部章}', async () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(await screen.findByRole('radio', { name: '角色' }));
+    await user.click(await screen.findByRole('radio', { name: '全文' }));
     await user.click(await screen.findByTestId('ai-extract-run'));
     await waitFor(() => {
-      const call = apiFetchMock.mock.calls.find(
-        (c) => c[0] === '/api/v1/characters/extract' && (c[1] as { method?: string })?.method === 'POST',
-      );
-      expect(call).toBeDefined();
-      const body = (call![1] as { body?: Record<string, unknown> }).body;
-      expect(body?.project_id).toBe('p1');
-      expect(typeof body?.text).toBe('string');
-      expect(body?.text).toBeTruthy();
-    });
-    // 完成 toast：ok「提取完成 · 新增 2 · 更新 1 · 已落地设定库」（用 created.length/updated.length）
-    await waitFor(() => {
-      const toast = useToastStore.getState().toasts.find((x) => x.type === 'ok');
-      expect(toast?.message).toMatch(/新增 2/);
-      expect(toast?.message).toMatch(/更新 1/);
-      expect(toast?.message).toMatch(/已落地设定库/);
+      const bodies = extractBodies();
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0].project_id).toBe('p1');
+      expect(bodies[0].type).toBe('character');
+      expect(bodies[0].chapter_ids).toEqual(['ch1', 'ch2', 'ch3']);
     });
   });
 
-  it('契约3b（世界观）：选「世界观」+ 提交 → POST /api/v1/world-settings/extract，body {project_id,text}', async () => {
+  it('契约3b（世界观）：type=setting（非 world）', async () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(await screen.findByRole('radio', { name: '世界观' }));
+    await user.click(await screen.findByRole('radio', { name: '全文' }));
     await user.click(await screen.findByTestId('ai-extract-run'));
     await waitFor(() => {
-      const call = apiFetchMock.mock.calls.find(
-        (c) => c[0] === '/api/v1/world-settings/extract' && (c[1] as { method?: string })?.method === 'POST',
-      );
-      expect(call).toBeDefined();
-      const body = (call![1] as { body?: Record<string, unknown> }).body;
-      expect(body?.project_id).toBe('p1');
-      expect(typeof body?.text).toBe('string');
+      const bodies = extractBodies();
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0].type).toBe('setting');
     });
   });
 
-  it('契约3c（通用）：选「通用」+ 提交 → POST /api/v1/extract，body {project_id,type,text}', async () => {
+  it('契约3c（时间线）：token=timeline + chapter_ids + auto_extract（不带 text）', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(await screen.findByRole('radio', { name: '时间线' }));
+    await user.click(await screen.findByRole('radio', { name: '全文' }));
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      const bodies = extractBodies();
+      expect(bodies[0].type).toBe('timeline');
+      expect(bodies[0].auto_extract).toBe(true);
+      expect(bodies[0].chapter_ids).toEqual(['ch1', 'ch2', 'ch3']);
+      expect(bodies[0].text).toBeUndefined();
+    });
+  });
+
+  it('契约3d（知识图谱）：type=knowledge_relation，不带 text / chapter_ids', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(await screen.findByRole('radio', { name: '知识图谱' }));
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      const bodies = extractBodies();
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0].type).toBe('knowledge_relation');
+      expect(bodies[0].chapter_ids).toBeUndefined();
+      expect(bodies[0].text).toBeUndefined();
+    });
+  });
+
+  it('契约4（通用多选）：勾选角色+伏笔 → 各发一次，type 正确', async () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(await screen.findByRole('radio', { name: '通用' }));
-    // 通用模式出现类型 Select（默认 foreshadowing）
-    const typeSel = await screen.findByTestId('ai-extract-type-generic');
-    await user.click(typeSel);
-    await user.click(await screen.findByRole('option', { name: /伏笔/ }));
+    const panel = await screen.findByTestId('ai-extract-generic');
+    // 默认全不选 → 勾选角色 + 伏笔
+    await user.click(within(panel).getByRole('checkbox', { name: '角色' }));
+    await user.click(within(panel).getByRole('checkbox', { name: '伏笔' }));
     await user.click(await screen.findByTestId('ai-extract-run'));
     await waitFor(() => {
-      const call = apiFetchMock.mock.calls.find(
-        (c) => c[0] === '/api/v1/extract' && (c[1] as { method?: string })?.method === 'POST',
-      );
-      expect(call).toBeDefined();
-      const body = (call![1] as { body?: Record<string, unknown> }).body;
-      expect(body?.project_id).toBe('p1');
-      // 用户选「伏笔」option → type='foreshadowing'（GENERIC_RESULT 同值）
-      expect(body?.type).toBe('foreshadowing');
-      expect(typeof body?.text).toBe('string');
+      const types = extractBodies().map((b) => b.type).sort();
+      expect(types).toEqual(['character', 'foreshadowing']);
     });
   });
 
-  it('契约4（三态-进行中）：提交后运行中→按钮 disabled + ai-extract-running 出现', async () => {
-    let resolvePost: (v: typeof CHAR_RESULT) => void;
+  it('契约5（按卷）：选中第二卷 → chapter_ids=该卷全部章', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(await screen.findByRole('radio', { name: '角色' }));
+    await user.click(await screen.findByRole('radio', { name: '按卷' }));
+    const volList = await screen.findByTestId('ai-extract-volume-list');
+    await user.click(within(volList).getByRole('checkbox', { name: /第二卷/ }));
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      expect(extractBodies()[0].chapter_ids).toEqual(['ch3']);
+    });
+  });
+
+  it('契约6（按章区间）：第 1–2 章 → chapter_ids=前两章', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(await screen.findByRole('radio', { name: '角色' }));
+    await user.click(await screen.findByRole('radio', { name: '按章' }));
+    await user.type(await screen.findByTestId('ai-extract-range-from'), '1');
+    await user.type(await screen.findByTestId('ai-extract-range-to'), '2');
+    await user.click(await screen.findByTestId('ai-extract-range-add'));
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      expect(extractBodies()[0].chapter_ids).toEqual(['ch1', 'ch2']);
+    });
+  });
+
+  it('契约7（分批）：全文 150 章 → 每批 ≤100，共 2 次请求', async () => {
+    const many = Array.from({ length: 150 }, (_, i) => ({
+      id: `c${i}`,
+      title: `第${i + 1}章`,
+      volume_id: 'v1',
+      order_index: i,
+      word_count: 1,
+    }));
     apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-      if (path === '/api/v1/projects/p1/chapters') return { ...CHAPTERS_RESP };
-      if (path === '/api/v1/projects/p1/extractions/runs') return { ...RUN_LIST };
-      if (path === '/api/v1/characters/extract' && init?.method === 'POST') {
-        return new Promise((res) => { resolvePost = res; });
+      if (path.startsWith('/api/v1/projects/p1/chapters')) {
+        // 分页语义 mock：只翻全量才能真正拿到 150 章（覆盖 #1407 全量加载契约）
+        const qs = new URLSearchParams(path.slice('/api/v1/projects/p1/chapters'.length));
+        const offset = Number(qs.get('offset') ?? 0);
+        const limit = Math.min(Number(qs.get('limit') ?? 50), 100);
+        return { items: many.slice(offset, offset + limit), total: many.length, offset, limit };
+      }
+      if (path === '/api/v1/projects/p1/volumes') return { ...VOLUMES_RESP };
+      if (path.startsWith('/api/v1/projects/p1/extractions/runs')) return { ...RUN_LIST };
+      if (path === '/api/v1/extract' && init?.method === 'POST') return { ...ENVELOPE };
+      return { ok: true };
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(await screen.findByRole('radio', { name: '角色' }));
+    await user.click(await screen.findByRole('radio', { name: '全文' }));
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      const bodies = extractBodies();
+      expect(bodies).toHaveLength(2);
+      const sizes = bodies.map((b) => (b.chapter_ids as string[]).length).sort((a, b) => a - b);
+      expect(sizes).toEqual([50, 100]);
+    });
+  });
+
+  it('契约8（三态-进行中）：提交后按钮 disabled + running 指示', async () => {
+    let resolvePost: (v: typeof ENVELOPE) => void;
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith('/api/v1/projects/p1/chapters')) return { ...CHAPTERS_RESP };
+      if (path === '/api/v1/projects/p1/volumes') return { ...VOLUMES_RESP };
+      if (path.startsWith('/api/v1/projects/p1/extractions/runs')) return { ...RUN_LIST };
+      if (path === '/api/v1/extract' && init?.method === 'POST') {
+        return new Promise((res) => {
+          resolvePost = res as (v: typeof ENVELOPE) => void;
+        });
       }
       return { ok: true };
     });
     const user = userEvent.setup();
     renderDialog();
     await user.click(await screen.findByRole('radio', { name: '角色' }));
+    await user.click(await screen.findByRole('radio', { name: '全文' }));
     const run = await screen.findByTestId('ai-extract-run');
     await user.click(run);
-    // 进行中：按钮 disabled + running 指示
     await waitFor(() => expect(run).toBeDisabled());
     expect(screen.getByTestId('ai-extract-running')).toBeInTheDocument();
-    resolvePost!({ ...CHAR_RESULT } as typeof CHAR_RESULT);
+    resolvePost!({ ...ENVELOPE });
   });
 
-  it('契约5（三态-失败降级）：后端拒绝（未配模型）→ err toast + 按钮恢复 enabled（不硬崩）', async () => {
-    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
-      if (path === '/api/v1/projects/p1/chapters') return { ...CHAPTERS_RESP };
-      if (path === '/api/v1/projects/p1/extractions/runs') return { ...RUN_LIST };
-      if (path === '/api/v1/chapters/ch1') return { ...CHAPTER_DETAIL };
-      if (path === '/api/v1/characters/extract' && init?.method === 'POST') {
-        // 模拟后端 422（未配置模型/LLM 路径走 500，这里统一 ApiError 形态）
+  it('契约9（失败降级）：后端拒绝 → err toast + 按钮恢复 enabled', async () => {
+    apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith('/api/v1/projects/p1/chapters')) return { ...CHAPTERS_RESP };
+      if (path === '/api/v1/projects/p1/volumes') return { ...VOLUMES_RESP };
+      if (path.startsWith('/api/v1/projects/p1/extractions/runs')) return { ...RUN_LIST };
+      if (path === '/api/v1/extract' && init?.method === 'POST') {
         throw new (await import('../../api/client')).ApiError(422, '未配置大模型，请先在设置中配置模型');
       }
       return { ok: true };
@@ -254,56 +344,44 @@ describe('「AI 提取」弹窗（#652）', () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(await screen.findByRole('radio', { name: '角色' }));
+    await user.click(await screen.findByRole('radio', { name: '全文' }));
     const run = await screen.findByTestId('ai-extract-run');
     await user.click(run);
-    // 失败 → err toast（优雅降级文案来自 errorMessage）
     await waitFor(() => {
       const toast = useToastStore.getState().toasts.find((x) => x.type === 'err');
       expect(toast?.message).toMatch(/未配置大模型/);
     });
-    // 按钮恢复 enabled（不硬崩）
     await waitFor(() => expect(run).toBeEnabled());
   });
 
-  it('契约6（i18n）：extract.* 键 zh/en 均存在（RED 期 undefined 失败形态）', () => {
-    for (const k of EXTRACT_KEYS) {
-      const key = `extract.${k}` as const;
-      expect(extractZh[key]).toBeTruthy();
-      expect(extractEn[key]).toBeTruthy();
+  it('契约10（i18n）：新增 extract.* 键 zh/en 均存在', async () => {
+    const keys = [
+      'title',
+      'character',
+      'world',
+      'timeline',
+      'foreshadowing',
+      'knowledgeGraph',
+      'generic',
+      'scope',
+      'scope.all',
+      'scope.volume',
+      'scope.chapter',
+      'genericHint',
+      'rangeHint',
+      'run',
+      'running',
+      'done',
+      'failed',
+      'lastRun',
+      'noRun',
+    ] as const;
+    for (const k of keys) {
+      const key = `extract.${k}`;
+      expect(extractZh[key], `${key} zh`).toBeTruthy();
+      expect(extractEn[key], `${key} en`).toBeTruthy();
     }
-    expect(extractZh['extract.title']).toBe('AI 提取');
-    expect(extractZh['extract.run']).toBe('开始提取');
-  });
-
-  /**
-   * #1407：章节下拉必须翻全量。后端 `GET /projects/{pid}/chapters` 默认 50/页 →
-   * 裸请求只拿第一页 → 第 51 章及以后无法做「整章一键提取」。
-   * mock 形态：同一路径 + `?offset=&limit=` 查询串 → 必须模拟后端分页语义分发。
-   */
-  it('#1407（全量）：total=138、单页 50 → 章节下拉含第 51 章及末章', async () => {
-    const all = Array.from({ length: 138 }, (_, i) => ({
-      id: `ch${i}`, title: `第${i + 1}章 测试`, volume_id: null, order_index: i, word_count: 0,
-    }));
-    const chapterCalls: string[] = [];
-    apiFetchMock.mockImplementation(async (path: string) => {
-      if (path === '/api/v1/projects/p1/extractions/runs') return { ...RUN_LIST };
-      if (!path.startsWith('/api/v1/projects/p1/chapters')) return { ok: true };
-      chapterCalls.push(path);
-      const qs = new URLSearchParams(path.slice('/api/v1/projects/p1/chapters'.length));
-      const offset = Number(qs.get('offset') ?? 0);
-      const limit = Math.min(Number(qs.get('limit') ?? 50), 100);
-      return { items: all.slice(offset, offset + limit), total: all.length, offset, limit };
-    });
-
-    const user = userEvent.setup();
-    renderDialog();
-    const trigger = await screen.findByTestId('ai-extract-chapter');
-    // 全量翻页完成（首页 + 一页续页）
-    await waitFor(() => expect(chapterCalls).toHaveLength(2));
-
-    await user.click(trigger);
-    // 第 51 章与末章均可选（修复前下拉仅到第 50 章）
-    expect(await screen.findByRole('option', { name: '第51章 测试' })).toBeInTheDocument();
-    expect(await screen.findByRole('option', { name: '第138章 测试' })).toBeInTheDocument();
+    expect(extractZh['extract.timeline']).toBe('时间线');
+    expect(extractZh['extract.knowledgeGraph']).toBe('知识图谱');
   });
 });
