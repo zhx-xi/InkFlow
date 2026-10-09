@@ -1,6 +1,6 @@
 {
-  "charset_sha256": "a9ea5b41bdad5ee17af1e40e4bae82029766276d070e48419a0c0349ab86f752",
-  "charset_size": 1153,
+  "charset_sha256": "18347f776bb2b9930393b1fffbde1b17e7bc3cd9a50217f5802a3dceebd28a32",
+  "charset_size": 1165,
   "fonts": {
     "serif": {
       "family": "InkFlow Serif",
@@ -8,16 +8,16 @@
       "source": "Noto Serif SC (static) v2.003-H1 — Google Fonts CDN legacy kit",
       "files": {
         "inkflow-serif-400.woff2": {
-          "bytes": 191884,
-          "sha256": "e9ac36cdec788dec0701ad8ca2d655438f1d0369702ee30ea188497dbae6c874",
-          "glyphs": 1184,
-          "covered": 1144
+          "bytes": 194100,
+          "sha256": "e4509a6face7af72222010964604885fc30cf2cd8bf510c51560ed4f046272cb",
+          "glyphs": 1197,
+          "covered": 1156
         },
         "inkflow-serif-600.woff2": {
-          "bytes": 194856,
-          "sha256": "9e8c5ad9bc6c09c44965a77683ed9cad6562b5f65773432d566d41c11aa712c2",
-          "glyphs": 1184,
-          "covered": 1144
+          "bytes": 197440,
+          "sha256": "ac7a5745475a7cc2bd1802770d7a0eeefbfe538099865e3f5b936ee14ce7dd4f",
+          "glyphs": 1197,
+          "covered": 1156
         }
       },
       "missing_codepoints": [
@@ -38,16 +38,16 @@
       "source": "Noto Sans SC (static) — Google Fonts CDN legacy kit",
       "files": {
         "inkflow-sans-400.woff2": {
-          "bytes": 150188,
-          "sha256": "86e19335fa5a063febcdb2154111c73ca5449f25ff57ee5bcd8f2d79f9607c5a",
-          "glyphs": 1184,
-          "covered": 1144
+          "bytes": 151884,
+          "sha256": "16613a53d8873e728463ccd3468ea982d4affb0acc73640b4081e25bd64d817c",
+          "glyphs": 1197,
+          "covered": 1156
         },
         "inkflow-sans-600.woff2": {
-          "bytes": 152584,
-          "sha256": "bd0eddc1955b50822ddde9417a8d768ed6ebb324705362eb1b6e74b06df3673b",
-          "glyphs": 1184,
-          "covered": 1144
+          "bytes": 154320,
+          "sha256": "5310a389db747758b1e211dd833f9eadf933094ae5d5780c79019fc78250f9ee",
+          "glyphs": 1197,
+          "covered": 1156
         }
       },
       "missing_codepoints": [

@@ -196,6 +196,22 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 .tl-timenode-events::before{content:"";position:absolute;left:8px;top:2px;bottom:8px;width:2px;border-radius:1px;background:var(--line)}
 .tl-timenode-events .tl-node::before{left:-17px;background:var(--surface)}
 
+/* #1527-v2：多历共存「单块刻度带」——左侧 N 条历竖轴（刻度按流速换算定位，隔断疏密不同）+ 右侧对应事件。
+   范式参考：Perfetto 多 track 合入单一共享时间线 + 左侧轨道标签；Wikipedia EasyTimeline 多平行竖轴（每轴一色 + 独立刻度）。 */
+.mvs{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.mvs-colhead{position:absolute;top:14px;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;color:var(--ink);white-space:nowrap;transform:translateX(-50%)}
+.mvs-colhead .swatch{width:10px;height:3px;border-radius:2px;background:var(--c)}
+.mvs-colhead .cnt{font-weight:400;color:var(--ink-3)}
+.mvs-spine{position:absolute;width:2px;border-radius:1px;background:var(--c);opacity:.42}
+.mvs-tickmark{position:absolute;height:2px;border-radius:1px;background:var(--c);opacity:.55;transform:translateY(-50%)}
+.mvs-tick{position:absolute;z-index:2;font-size:11px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums;transform:translateY(-50%);background:var(--surface);padding:0 4px}
+.mvs-node{position:absolute;z-index:2;width:9px;height:9px;border-radius:999px;background:var(--surface);border:2px solid var(--c);transform:translate(-50%,-50%)}
+.mvs-link{position:absolute;z-index:1;height:1px;background:var(--c);opacity:.2}
+.mvs-rule{position:absolute;z-index:1;left:0;right:0;height:0;border-top:1px dashed var(--line)}
+.mvs-ev{position:absolute;z-index:3;display:flex;align-items:center;gap:8px;height:24px;padding:0 8px;border-radius:6px;font-size:12.5px;transition:background 150ms}
+.mvs-ev:hover{background:var(--surface-2)}
+.mvs-ev .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
 body[data-state="empty"] .tl-toolbar,body[data-state="empty"] [data-testid="tl-axis"]{display:none}
@@ -351,6 +367,8 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="world-eras">世界序 · 纪元轴（默认：仅主力轴）</option>
       <option value="world-eras-multi">世界序 · 纪元轴（多轴同时显示）</option>
       <option value="world-eras-b">世界序 · 纪元轴（对照 B：行内时间）</option>
+      <option value="world-single">世界序 · 单轴（按时间刻度分段）</option>
+      <option value="world-band">世界序 · 多历共存（单块多竖轴刻度带）</option>
       <option value="empty">空态</option>
     </select>
   </label>
@@ -492,7 +510,7 @@ const PRIMARY_AXIS = AXIS_KEYS.slice().sort((a, b) => {
 })[0];
 const KIND_LABEL = { none: '（默认轴）' };
 
-const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','empty'];
+const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','world-single','world-band','empty'];
 const LEGENDS = {
   'narrative':        '轴=章 · 事件按章推进排列；行内小字=世界内时间',
   'narrative-filter': '轴=章 · 已筛选：第十二章（筛选对两序共用）',
@@ -500,6 +518,8 @@ const LEGENDS = {
   'world-eras':       '轴=纪元 · 默认只显示主力轴 · 勾选控制显示哪几条轴（至少保留一条）',
   'world-eras-multi': '轴=纪元 · 每轴独立时间刻度（轴内按纪元值升序）· 默认轴「未分纪元」= R6-4 的旧单标量时间线',
   'world-eras-b':     '轴=纪元 · 组头显示轴名一次 · 组内事件行行内显示时间刻度（不合并同刻度）',
+  'world-single':     '轴=世界内时间（升序，未知末尾）· 项目无纪元数据（era 全空）→ 组头=时间刻度段、组内缩进（#1527）',
+  'world-band':       '多历共存 · 单块：左侧多历竖轴（刻度按流速换算，隔断各不同）+ 右侧对应事件（#1527-v2 草案）',
 };
 const NOTES = {
   'narrative':
@@ -507,13 +527,17 @@ const NOTES = {
   'narrative-filter':
     '<b>按章筛选（新）</b>：数据面 ✅（source_chapter_id + 章节列表）。已选「第十二章」→ 列表仅显示该章事件。按事件类型（正叙/倒叙/插叙）同样可做；<b>按世界 / 按角色关联 = 0.16.0</b>（无字段，见 B 版缺口说明）。',
   'world':
-    '<b>世界序 · 方案 A（拆半，推荐）</b>：轴 = <b>世界内时间</b>，全局升序、未知末尾，<b>不再按章分组</b>；行尾小字 = 来源章。<b>纪元分轴（多纪元）留 0.16.0</b>（#1353，需 era 数据面）——避免与多纪元体系二次重构。',
+    '<b>世界序 · 方案 A（拆半，推荐）</b>：轴 = <b>世界内时间</b>，全局升序、未知末尾，<b>不再按章分组</b>；行尾小字 = 来源章。<b>纪元分轴（多纪元）留 0.16.0</b>（#1353，需 era 数据面）——避免与多纪元体系二次重构。<br>⚠️ <b>#1527 前的旧形态（此处仅作改前对照）</b>：单轴 = 平铺、无层级。目标形态见下方「世界序 · 单轴（按时间刻度分段）」。',
   'world-eras':
     '<b>世界序 · 纪元轴（#1353 / 0.16.0 落地）</b>：事件以 <code>extra.era</code>（轴名）+ <code>extra.era_value</code>（轴内值）承载纪元，<b>零 DDL</b>（既有 JSON 列，无新列/无迁移）。<b>默认只显示主力轴</b>（事件数最多的轴 —— 「主角所在轴」的启发式，主角↔纪元映射归后续里程碑）；切换 chips 即按选中轴分组渲染。<code>time_value</code> 仍是<b>跨轴全局标量</b>，一致性检查<b>不按纪元分桶</b>（跨纪元比较归 #1411）。',
   'world-eras-multi':
     '<b>世界序 · 纪元轴 · 多轴同时显示</b>：每轴一条泳道、各自时间刻度（轴内按 <code>era_value</code> 升序、缺失排末尾）；<b>默认轴「未分纪元」</b>= R6-4 保留的旧「单标量时间线」（无纪元事件不丢、不改判）。标签规则：<code>time_display</code> 原样优先 → 无则「轴名 + 轴内值」。至少保留一条轴（取消最后一条无效）。',
   'world-eras-b':
     '<b>世界序 · 纪元轴 · 对照方案 B</b>：组头仍是「轴名 + 计数」（只出现一次），但<b>不做时间节点分层</b>——每条事件行自己显示时间刻度（<code>time_display</code> 优先 → 轴内值 + 单位），同刻度不合并。<b>比方案 A 紧凑</b>（事件多、年份分散时更省行），但「同一年多事件」看不出归属。<b>方案 A（树状）为推荐形态</b>：把同刻度事件收进同一时间节点下，缩进一级。',
+  'world-single':
+    '<b>世界序 · 单轴（#1527 / 方案 A 泛化）</b>：项目<b>无纪元数据</b>（<code>era</code> 全空 → 单一默认轴）时，把 #1467 的「组头 + 树状」<b>泛化为「（era，时间刻度段）两级」</b>——第一级 = <b>时间刻度段</b>（<code>time_display</code> 原样，如「示例历 217 年」；同刻度事件收进同一节点并计数），组内事件行<b>缩进一级</b>、不再逐行重复时间。<b>无轴名组头</b>（单轴无歧义）。时间缺失事件归末尾「未知」节点，不破坏分组。分桶口径与 #1411 不冲突：本轨是<b>显示文本分段</b>（同轴内视觉层级），#1411 是<b>跨轴数值比较键</b>（<code>to_global</code>，判定层）。',
+  'world-band':
+    '<b>世界序 · 多历共存「单块刻度带」（#1527-v2 草案）</b>：不把每个历截断成独立卡片，而是<b>一个块内</b>——<b>左侧并列多条历竖轴</b>（每条轴标该历刻度），<b>右侧</b>是与各刻度<b>对应的事件</b>。各历刻度按 <code>to_global = 本地值 / 流速比</code>（<code>era_scale</code>，#1411 口径）映射到同一纵向空间 → <b>流速不同 ⇒ 刻度隔断疏密不同</b>。本草案取：示例历 1:1（刻度 17/217/314）与示例仙历 1:10（刻度 1024/4096，换算后落不同高度）。<br><b>待拍板</b>：① 纵向口径＝「全局时间等比」（本草案）还是「按事件顺序等高」；② 同刻度多事件＝错开（本草案）/ 合并；③ 是否取代 #1467 多泳道形态。',
   'empty':
     '<b>空态</b>：无变化（「还没有时间线，去创建」+ CTA）。',
 };
@@ -626,6 +650,87 @@ function renderWorldErasB(onKeys){
 }
 
 
+/* #1527：世界序·单轴（项目无纪元数据，era 全空）—— 把 #1467 的「组头 + 树状」
+   泛化为「（era，时间刻度段）两级」的单轴形态：第一级 = **时间刻度段**
+   （组头 = time_display 原样，同刻度事件收进同一节点并计数）、组内事件行缩进一级、不再逐行重复时间。
+   无轴名组头（单轴无歧义）；时间缺失事件经 byEraValue 排末尾 → 归末尾「未知」节点。 */
+function renderWorldSingle(){
+  const evs = ALL_EVENTS.filter((ev) => ev.axis === 'qingyuan' || ev.axis === 'none').slice().sort(byEraValue);
+  const nodes = groupByTime(evs).map((g, i) => `<div class="tl-timenode" data-testid="tl-timenode-__none__-${i}">
+        <div class="tl-timenode-head">
+          <span class="tn-dot"></span>
+          <span class="tl-timenode-label" data-testid="tl-tick-__none__-${i}">${esc(g.key)}</span>${g.evs.length > 1 ? `<span class="tl-timenode-count">${g.evs.length} 个事件</span>` : ''}
+        </div>
+        <div class="tl-timenode-events">${g.evs.map((ev) => nodeHTML(ev, { timeMode:'tick', showSrc:true, showTime:false })).join('')}</div>
+      </div>`).join('');
+  return `<div class="tl-axis tl-axis--time" data-testid="tl-axis">${nodes}</div>`;
+}
+
+/* #1527-v2：多历共存「单块刻度带」——一个块内左侧 N 条历竖轴（每轴一色 + 独立刻度，
+   刻度位置 = to_global = 本地值/流速比，故各历隔断疏密不同）+ 右侧对应事件（历色连线指回本轴刻度）。
+   范式：Perfetto 多 track 合入单一共享时间线 + 左侧轨道标签；Wikipedia EasyTimeline 多平行竖轴。
+   ponytail: 固定块高 + 线性映射，够评审形态；真实实现需虚拟滚动 + 碰撞规避 + 刻度自适应密度。 */
+function renderWorldBand(){
+  const AXES = [
+    { key:'qingyuan', name:'示例历',   color:'#b3462f', scale:1 },
+    { key:'xianjie',  name:'示例仙历', color:'#34607f', scale:10 },
+  ];
+  const EVS = [
+    { id:'b1', axis:'qingyuan', t:17,   ch:'c11', title:'师父闭关前夜，问角色甲「事件乙」' },
+    { id:'b2', axis:'qingyuan', t:217,  ch:'c12', title:'角色甲下山，角色乙追随' },
+    { id:'b3', axis:'qingyuan', t:217,  ch:'c12', title:'夜访地点乙，发现二十年前异动痕迹' },
+    { id:'b4', axis:'qingyuan', t:314,  ch:'c13', title:'事件甲，断剑于地点己' },
+    { id:'b5', axis:'xianjie',  t:1024, ch:null,  title:'示例仙界法旨降下（另一纪元轴事件）' },
+    { id:'b6', axis:'xianjie',  t:4096, ch:null,  title:'示例仙界天劫降临（另一纪元轴事件）' },
+    { id:'b7', axis:null,       t:null, ch:null,  title:'角色戊失踪（手工录入，未归章、未设纪元）' },
+  ];
+  const H = 430, TOP = 54, SPINE_BOT = 372, AX0 = 150, AXDX = 104, EVX = 352, LH = 26;
+  const timed = EVS.filter((e) => e.t !== null);
+  const axOf = (e) => AXES.find((a) => a.key === e.axis);
+  const gv = (e) => e.t / axOf(e).scale;                        // to_global（#1411：本地值 / 流速比）
+  const gmax = Math.max.apply(null, timed.map(gv)) * 1.05;
+  const Y = (g) => TOP + (g / gmax) * (SPINE_BOT - TOP);
+  const row = (e, top) => `<div class="mvs-ev" data-testid="tl-axis-node-${e.id}" style="left:${EVX}px;right:18px;top:${top}px">
+      <span class="tname">${esc(e.title)}</span>
+      <span class="tl-src" data-testid="tl-src-${e.id}">${esc(chTitle(e.ch))}</span>
+      <button class="check-one" data-testid="tl-check-one-${e.id}">单事件检查</button>
+    </div>`;
+  let html = '';
+  AXES.forEach((ax, i) => {
+    const x = AX0 + i * AXDX;
+    const mine = timed.filter((e) => e.axis === ax.key);
+    html += `<span class="mvs-colhead" style="left:${x}px;--c:${ax.color}"><span class="swatch"></span>${esc(ax.name)}<span class="cnt">${mine.length}</span></span>`;
+    html += `<span class="mvs-spine" style="left:${x}px;top:${TOP}px;height:${SPINE_BOT - TOP}px;--c:${ax.color}"></span>`;
+    const ticks = Array.from(new Set(mine.map((e) => e.t))).sort((a, b) => a - b);
+    for (const t of ticks) {
+      const y = Y(t / ax.scale);
+      html += `<span class="mvs-tickmark" style="left:${x - 5}px;top:${y}px;width:12px;--c:${ax.color}"></span>`;
+      html += `<span class="mvs-node" style="left:${x}px;top:${y}px;--c:${ax.color}"></span>`;
+      html += `<span class="mvs-tick" style="left:${x + 9}px;top:${y}px">${t} 年</span>`;
+    }
+  });
+  /* 事件：全局时间升序；同刻度（#1527 决策 3B）合并刻度、事件行顺次错开；历色连线指回本轴刻度 */
+  const seen = {};
+  for (const e of timed.slice().sort((a, b) => gv(a) - gv(b))) {
+    const ax = axOf(e);
+    const x = AX0 + AXES.indexOf(ax) * AXDX;
+    const gy = Y(gv(e));
+    const slot = Math.round(gy / LH);
+    const n = (seen[slot] = (seen[slot] || 0) + 1);
+    const y = gy + (n - 1) * LH;
+    html += `<span class="mvs-link" style="left:${x}px;top:${y}px;width:${EVX - x - 6}px;--c:${ax.color}"></span>`;
+    html += row(e, y - 12);
+  }
+  /* 时间未知：轴底虚线区（不破坏刻度带结构） */
+  const unk = EVS.filter((e) => e.t === null);
+  html += `<span class="mvs-rule" style="top:${SPINE_BOT + 16}px"></span>`;
+  if (unk.length) {
+    html += `<span class="mvs-tick" style="left:${AX0 + 9}px;top:${SPINE_BOT + 32}px">未知</span>`;
+    unk.forEach((e, i) => { html += row(e, SPINE_BOT + 20 + i * LH); });
+  }
+  return `<div class="mvs" data-testid="tl-band" style="height:${H}px">${html}</div>`;
+}
+
 /* 筛选面板（按章）：narrative-filter 态演示「已选第十二章」 */
 function renderFilterPanel(state){
   const items = [{ key:'all', title:'全部章节' }]
@@ -652,6 +757,8 @@ function renderBody(state){
   if (state === 'world-eras') return renderWorldEras(['qingyuan']);
   if (state === 'world-eras-b') return renderWorldErasB(['qingyuan']);
   if (state === 'world-eras-multi') return renderWorldEras(AXIS_KEYS);
+  if (state === 'world-single') return renderWorldSingle();
+  if (state === 'world-band') return renderWorldBand();
   return '';
 }
 
@@ -676,7 +783,7 @@ function setState(s){
   document.body.dataset.state = s;
   const sel = document.getElementById('stateSel');
   if (sel) sel.value = s;
-  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi' || s === 'world-eras-b';
+  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi' || s === 'world-eras-b' || s === 'world-single' || s === 'world-band';
   document.getElementById('segNarrative').classList.toggle('active', !isWorld);
   document.getElementById('segWorld').classList.toggle('active', isWorld);
   document.getElementById('tlLegend').textContent = LEGENDS[s] || '';

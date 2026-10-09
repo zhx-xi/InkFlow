@@ -34,11 +34,12 @@
  * LibraryItemList.tsx:148-167 先例（group-hover + focus-within 双触发保证键盘可达可见）；
  * 编辑复用 LibraryCreateDialog（editing prop），删除走页面级 ConfirmDialog。
  */
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Check, ChevronDown, Filter, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
-import { deriveEraAxes, eraKeyOf, groupByTime, primaryEraKey, sortByEraValue } from './timeline-era-axes';
+import { deriveEraAxes, eraKeyOf, primaryEraKey } from './timeline-era-axes';
+import { BAND_DEFAULT_COLOR, BAND_ROW_GAP, buildBandLayout } from './timeline-band';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
@@ -256,12 +257,20 @@ export function TimelineView({
   // #1353：纪元轴族（世界序泳道 + 轴选择器数据面；叙事序不消费）
   const axes = useMemo(() => deriveEraAxes(eventTimeline), [eventTimeline]);
   const showAxisPicker = view === 'world' && axes.length >= 2;
-  // #1467：有纪元数据（轴族含 ≥1 条真实纪元轴）→ 世界序按泳道渲染（轴名要有地方显示 = 组头）；
-  // 无纪元数据（轴族只有默认轴）→ 维持 v1.2 单轴形态逐字段不变（反例守护，见 §3 N13）。
-  const showEraLanes = view === 'world' && axes.some((axis) => !axis.isDefault);
   const activeAxisKeys = useMemo(
     () => (selectedAxes ?? (primaryEraKey(axes) ? [primaryEraKey(axes) as string] : [])),
     [selectedAxes, axes],
+  );
+
+  // #1541：世界序「单块刻度带」布局（左侧选中历竖轴 + 右侧对应事件）。
+  // 纵向 = `to_global`（#1411 口径 / ADR-065）→ 流速不同 ⇒ 刻度隔断疏密不同；单轴（era 全空）= 1 条竖轴。
+  const band = useMemo(
+    () =>
+      buildBandLayout(
+        filtered.filter((ev) => activeAxisKeys.includes(eraKeyOf(ev))),
+        axes.filter((axis) => activeAxisKeys.includes(axis.key)),
+      ),
+    [filtered, axes, activeAxisKeys],
   );
 
   // #1323：章分组（仅叙事序；一章一个刻度；组内顺序 = 章内叙事序）
@@ -648,77 +657,163 @@ export function TimelineView({
                   </ol>
                 </div>
               ))
-            ) : showEraLanes ? (
-              // #1353 / #1467：世界序多纪元 → 每条**选中**轴一条泳道：
-              // 组头 = 轴名 + 计数（**只出现一次**）；组内按 era_value 升序后按**时间刻度**分层
-              // （同刻度事件收进同一时间节点 `tl-timenode-<key>-<i>`、事件行缩进一级）
-              <>
-                {axes
-                  .filter((axis) => activeAxisKeys.includes(axis.key))
-                  .map((axis) => {
-                    const laneEvents = sortByEraValue(
-                      filtered.filter((ev) => eraKeyOf(ev) === axis.key),
-                    );
-                    const timeNodes = groupByTime(laneEvents);
-                    return (
-                      <section
-                        key={axis.key}
-                        data-testid={`tl-lane-${axis.key}`}
-                        className="relative rounded-lg border border-line bg-surface px-4 py-3 shadow-card"
-                      >
-                        <span aria-hidden="true" className="absolute bottom-5 left-[7px] top-5 w-px bg-line" />
-                        <div
-                          data-testid={`tl-lanehead-${axis.key}`}
-                          className="relative mb-2 pl-5 text-[12px] font-medium text-ink"
+            ) : (
+              // #1541：世界序「单块刻度带」——左侧选中历竖轴（刻度按 to_global 定位）+ 右侧对应事件，
+              // 取代 #1467 的上下堆叠泳道卡片；单轴（era 全空）= 1 条竖轴（#1527 目标）。
+              (() => {
+                const AX0 = 150;
+                const AXDX = 104;
+                const EVX = 352;
+                const TOP = 54;
+                const unknownBlock = band.unknown.length > 0 ? 20 + band.unknown.length * BAND_ROW_GAP + 8 : 0;
+                const height = Math.max(
+                  400,
+                  120 + (band.rows.length + band.unknown.length) * BAND_ROW_GAP + unknownBlock,
+                );
+                const spineH = height - TOP - 80;
+                const yOf = (g: number): number => TOP + (g / (band.gmax * 1.05)) * spineH;
+                const xOf = (key: string): number =>
+                  AX0 + band.axes.findIndex((axis) => axis.key === key) * AXDX;
+                const colorOf = (key: string): string =>
+                  band.axes.find((axis) => axis.key === key)?.color ?? BAND_DEFAULT_COLOR;
+                const unknownTop = TOP + spineH + 24;
+                const bandRow = (ev: TimelineEventDTO, top: number) => (
+                  <div
+                    key={String(ev.id)}
+                    data-testid={`tl-axis-node-${ev.id}`}
+                    className="absolute flex h-6 items-center gap-2 rounded-md px-2 text-[12px] transition-colors duration-150 hover:bg-surface-2"
+                    style={{ left: EVX, right: 18, top }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-ink">{ev.title ?? ''}</span>
+                    <span
+                      data-testid={`tl-src-${ev.id}`}
+                      className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-3"
+                    >
+                      {chapterLabel(chapterKeyOf(ev))}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid={`tl-check-one-${ev.id}`}
+                      className="shrink-0 rounded-md border border-line px-2.5 py-1 text-[11px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => void handleCheckOne(ev.id)}
+                    >
+                      {t('lib.tlCheckOne')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`tl-edit-${ev.id}`}
+                      aria-label={`${t('lib.edit')} ${ev.title ?? ''}`}
+                      className="rounded p-1 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => onEdit?.(ev)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`tl-delete-${ev.id}`}
+                      aria-label={`${t('lib.delete')} ${ev.title ?? ''}`}
+                      className="rounded p-1 text-ink-3 transition duration-180 hover:bg-surface-3 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => onDelete?.(ev)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+                return (
+                  <div
+                    data-testid="tl-band"
+                    className="relative rounded-lg border border-line bg-surface shadow-card"
+                    style={{ height }}
+                  >
+                    {band.axes.map((axis) => (
+                      <Fragment key={axis.key}>
+                        <span
+                          data-testid={`tl-band-head-${axis.key}`}
+                          className="absolute top-3 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap text-[11.5px] font-medium text-ink"
+                          style={{ left: xOf(axis.key) }}
                         >
                           <span
                             aria-hidden="true"
-                            className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 rounded-[2px] bg-accent"
+                            className="h-[3px] w-[10px] rounded-sm"
+                            style={{ background: axis.color }}
                           />
                           {axis.isDefault ? t('lib.tlEraDefault') : axis.label}
-                          <span className="ml-2 text-[11px] font-normal text-ink-3">
-                            {t('lib.tlChCount', { n: laneEvents.length })}
-                          </span>
-                        </div>
-                        {timeNodes.map((node, index) => (
-                          <div key={`${axis.key}-${index}`} data-testid={`tl-timenode-${axis.key}-${index}`}>
-                            <div className="relative flex items-center gap-2 py-0.5 pl-5 text-[12px]">
-                              <span
-                                aria-hidden="true"
-                                className="absolute left-0 top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full border border-accent bg-surface"
-                              />
-                              <span
-                                data-testid={`tl-tick-${axis.key}-${index}`}
-                                className="font-medium tabular-nums text-ink"
-                              >
-                                {node.key ?? t('lib.tlTimeUnknown')}
-                              </span>
-                              {node.events.length > 1 ? (
-                                <span className="text-[11px] text-ink-3">
-                                  {t('lib.tlChCount', { n: node.events.length })}
-                                </span>
-                              ) : null}
-                            </div>
-                            <ol className="relative mt-1 space-y-2 pl-4">
-                              {/* 组内引导线（缩进一级的树状层） */}
-                              <span aria-hidden="true" className="absolute bottom-2 left-[19px] top-1 w-px bg-line" />
-                              {node.events.map((ev) =>
-                                renderEventNode(ev, { showSrc: true, showTime: false, hollow: true }),
-                              )}
-                            </ol>
-                          </div>
+                          <span className="font-normal text-ink-3">{axis.count}</span>
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          data-testid={`tl-band-spine-${axis.key}`}
+                          className="absolute w-[2px] rounded-sm"
+                          style={{
+                            left: xOf(axis.key),
+                            top: TOP,
+                            height: spineH,
+                            background: axis.color,
+                            opacity: 0.42,
+                          }}
+                        />
+                        {axis.ticks.map((tick, index) => (
+                          <Fragment key={`${axis.key}-${index}`}>
+                            <span
+                              aria-hidden="true"
+                              data-testid={`tl-band-node-${axis.key}-${index}`}
+                              className="absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-surface"
+                              style={{ left: xOf(axis.key), top: yOf(tick.g), borderColor: axis.color }}
+                            />
+                            <span
+                              data-testid={`tl-band-tick-${axis.key}-${index}`}
+                              className="absolute -translate-y-1/2 whitespace-nowrap bg-surface px-1 text-[11px] tabular-nums text-ink-3"
+                              style={{ left: xOf(axis.key) + 9, top: yOf(tick.g) }}
+                            >
+                              {tick.unit ? `${tick.value} ${tick.unit}` : tick.value}
+                            </span>
+                          </Fragment>
                         ))}
-                      </section>
-                    );
-                  })}
-              </>
-            ) : (
-              <div className="relative rounded-lg border border-line bg-surface px-4 py-3 shadow-card">
-                <span aria-hidden="true" className="absolute bottom-5 left-[7px] top-5 w-px bg-line" />
-                <ul className="space-y-2">
-                  {filtered.map((ev) => renderEventNode(ev, { showSrc: true }))}
-                </ul>
-              </div>
+                      </Fragment>
+                    ))}
+                    {band.rows.map((rowItem) => {
+                      const x = xOf(rowItem.axisKey);
+                      const y = yOf(rowItem.g) + rowItem.slot * BAND_ROW_GAP;
+                      return (
+                        <Fragment key={String(rowItem.ev.id)}>
+                          <span
+                            aria-hidden="true"
+                            data-testid={`tl-band-link-${rowItem.ev.id}`}
+                            className="absolute h-px"
+                            style={{
+                              left: x,
+                              top: y,
+                              width: EVX - x - 6,
+                              background: colorOf(rowItem.axisKey),
+                              opacity: 0.2,
+                            }}
+                          />
+                          {bandRow(rowItem.ev, y - 12)}
+                        </Fragment>
+                      );
+                    })}
+                    {band.unknown.length > 0 ? (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          data-testid="tl-band-unknown"
+                          className="absolute left-0 right-0 border-t border-dashed border-line"
+                          style={{ top: TOP + spineH + 12 }}
+                        />
+                        <span
+                          className="absolute -translate-y-1/2 text-[11px] text-ink-3"
+                          style={{ left: AX0 + 9, top: unknownTop }}
+                        >
+                          {t('lib.tlTimeUnknown')}
+                        </span>
+                        {band.unknown.map((ev, index) =>
+                          bandRow(ev, unknownTop - 12 + index * BAND_ROW_GAP),
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })()
             )}
           </div>
         </div>
