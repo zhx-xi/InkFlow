@@ -32,6 +32,37 @@ agent 使用：Agent 管线执行与运行记录、草稿确认/拒绝、会话�
 | `<file>.yaml` / `.yml` / 存在的文件 | 本地读 YAML → `PipelineConfig`（本地校验，失败即退出 1） |
 | 逗号分隔 role_key 序列 | 自定义 stages（如 `outline,write,review`） |
 
+## 通用 skill 与管线装配（0.17.0，#1472/#1473/#1474）
+
+三件事一起说清 skill 在**生成管线**里如何被装配：
+
+### 1. 管线 stage 装配 skill（#1472）
+
+执行 Agent 管线时，每个 stage（role）的 system prompt 会拼上其**有效技能集**的内容（形如 `# 技能：<name>` 段）。
+
+### 2. 「通用 skill」对所有 Agent 生效（#1473）
+
+有效技能集 = **显式挂载（explicit） ∪ 通用（general）**：
+
+| 来源 | 判据 | 顺序 |
+|---|---|---|
+| explicit | 该 Agent 的 `skill_ids` 显式挂载 | 按白名单序（去重） |
+| general（通用） | 库中**未被任何 Agent 挂载**的 skill（目录名不在全库 `skill_ids` 并集） | 按目录名升序 |
+
+- 覆盖顺序：explicit 优先（已进 explicit 的目录名不再以 general 出现）
+- 库中不存在该目录（无 SKILL.md）→ 跳过（防御语义）
+- ⚠️ 这**推翻** #1472 的「只拼白名单」语义：**未挂载的通用 skill 会注入到所有 Agent**
+
+`skill list` 输出带 `[专属]`（被某 Agent 挂载）/ `[通用]`（未被任何 Agent 挂载）标记，据此判断。
+
+### 3. chat stage 注入项目设定块（#1474）
+
+chat 管线模板的 assistant stage prompt 含「**项目设定**（供你对齐事实；仅在与提问相关时引用，勿逐字复述）」块，由项目 outline / character 摘要填充——避免对话助手凭想象编造设定。
+
+### 观测（#1480）
+
+`context assemble --show-system-prompt/--show-skills/--show-tools` 可打印目标装配（system prompt / 有效技能集含 source / tool id 清单），用于外部验收「这一次运行注入了什么」。
+
 ## 会话（session）
 
 | 命令 | 必选参数 | 可选/易错 | 说明 |
