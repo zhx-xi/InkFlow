@@ -94,6 +94,9 @@ from inkflow.domain.ports.extraction_errors import (
 from inkflow.domain.ports.extraction_run_repository import ExtractionRunRepositoryProtocol
 from inkflow.domain.ports.extraction_staging_repository import ExtractionStagingRepositoryProtocol
 from inkflow.domain.ports.foreshadowing_repository import ForeshadowingRepositoryProtocol
+from inkflow.domain.ports.knowledge_relation_repository import (
+    KnowledgeRelationRepositoryProtocol,
+)
 from inkflow.domain.ports.project_repository import ProjectRepositoryProtocol
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
 from inkflow.domain.ports.vector_store import (
@@ -232,6 +235,8 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
             槽位委托，项目级规则提取，零 LLM）.
         character_repo / world_repo / timeline_repo / foreshadowing_repo:
             reindex 全量重建用档案仓储（§5.6）.
+        relation_repo: 知识图谱关系仓储（#1545 PR-2b §5.9）；confirm_staged 物化
+            entity_type=knowledge_relation 暂存行用；None = 未装配（该行不可确认）.
         staging_repo: 两段式暂存仓储（#1545 §5.9）；None = 未装配
             （stage=true 时报 ExtractionRunError，DI 由 deps.py 装配）.
         vector_store: RAG 向量存储（ADR-013）；None = 未装配，
@@ -266,6 +271,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
         world_repo: WorldRepositoryProtocol | None = None,
         timeline_repo: TimelineRepositoryProtocol | None = None,
         foreshadowing_repo: ForeshadowingRepositoryProtocol | None = None,
+        relation_repo: KnowledgeRelationRepositoryProtocol | None = None,
         staging_repo: ExtractionStagingRepositoryProtocol | None = None,
         vector_store: VectorStoreProtocol | None = None,
         fingerprint_provider: Callable[[], Awaitable[dict | None]] | None = None,
@@ -288,6 +294,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
         self._world_repo = world_repo
         self._timeline_repo = timeline_repo
         self._foreshadowing_repo = foreshadowing_repo
+        self._relation_repo = relation_repo
         self._staging_repo = staging_repo
         self._vector_store = vector_store
         self._fingerprint_provider = fingerprint_provider
@@ -382,13 +389,20 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
         # ⑦ 汇总返回（result 由 _run_sources 构建）
         return result
 
-    async def _knowledge_relation_handler(self, request: ExtractionRequest) -> ExtractionResult:
+    async def _knowledge_relation_handler(
+        self, request: ExtractionRequest, *, dry_run: bool = False
+    ) -> ExtractionResult:
         """KNOWLEDGE_RELATION 槽位 handler（#1408）— 项目级规则关系提取（零 LLM）.
 
         委托 F48 RelationExtractionService.extract_for_project，与
         `inkflow knowledge extract --method rule` 同一执行体（两条入口殊途同归）：
         项目级单源、不读 text/chapter_ids（_validate_input 已显式拒绝）、不花 LLM。
+
+        #1545 §5.9: `dry_run`（stage 零写入）下改走 `_staged_relation_result`——
+        F48 写库入口不可调用，改复用其确定性规则集只算不写。
         """
+        if dry_run:
+            return await self._staged_relation_result(request.project_id)
         if self._relation_extraction_service is None:
             raise UnsupportedExtractionTypeError()
         return await self._relation_extraction_service.extract_for_project(
@@ -405,11 +419,12 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
             request.granularity is not Granularity.FINE or request.dry_run
         ):
             raise ExtractionValidationError("granularity/dry_run 仅支持 character/setting 类型")
-        # #1545 §5.9: stage 仅 character/setting（首刀），且与 dry_run 互斥
+        # #1545 §5.9: stage 与 dry_run 互斥；stage 门控 = 该类型物化目标已装配
         if request.stage and request.dry_run:
             raise ExtractionValidationError("stage 与 dry_run 不能同时使用")
-        if request.stage and request.type not in (ExtractionType.CHARACTER, ExtractionType.SETTING):
-            raise ExtractionValidationError("stage 仅支持 character/setting 类型")
+        # （PR-2b 放开全类型，判定见 _stage_capable）
+        if request.stage and not self._stage_capable(request.type):
+            raise ExtractionValidationError("stage 仅支持已装配物化目标的提取类型")
         has_source = request.text is not None or request.chapter_ids is not None
         if request.type is ExtractionType.OUTLINE:
             if has_source:
@@ -621,10 +636,10 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
     ) -> _Normalized:
         """按类型分发到对应管线并归一化结果（spec §5.1 步骤 ④/§5.3）.
 
-        #1485: granularity / dry_run / batch_id 仅转发给 character / setting
-        两个 handler（其余类型保持原样，§5.8）。
+        #1485/#1545: granularity 仅 character/setting；dry_run 与 stage 零写入透传各可写管线。
         """
         result: Any
+        zero_write = request.dry_run or request.stage
         if request.type is ExtractionType.CHARACTER:
             result = await self._character_service.extract(
                 CharacterExtractRequest(
@@ -633,7 +648,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
                     model=request.model,
                 ),
                 granularity=request.granularity,
-                dry_run=request.dry_run or request.stage,
+                dry_run=zero_write,
                 batch_id=batch_id,
             )
         elif request.type is ExtractionType.SETTING:
@@ -644,7 +659,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
                     model=request.model,
                 ),
                 granularity=request.granularity,
-                dry_run=request.dry_run or request.stage,
+                dry_run=zero_write,
                 batch_id=batch_id,
             )
         elif request.type is ExtractionType.OUTLINE:
@@ -658,7 +673,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
                 ),
             )
         elif request.type is ExtractionType.TIMELINE:
-            result = await self._timeline_handler(request, source, project)
+            result = await self._timeline_handler(request, source, project, dry_run=zero_write)
             if result is None:  # 防御: 项目已校验存在，正常不会发生
                 return _Normalized(0, 0, [], None, {}, None)
             if isinstance(result, ConsistencyReport):
@@ -689,6 +704,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
                 ),
                 default_model=resolve_model(None, project.config.model, self._llm_default_model)
                 or "",
+                dry_run=zero_write,
             )
         elif request.type is ExtractionType.STYLE:
             # F16 落地（§8.2 表 #6）: 委托 StyleService.analyze——门面恒确定性
@@ -711,13 +727,15 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
                 raw=result,
             )
         elif request.type is ExtractionType.KNOWLEDGE_RELATION:
-            result = await self._knowledge_relation_handler(request)
+            result = await self._knowledge_relation_handler(request, dry_run=zero_write)
+            # #1545 §5.9: stage 下 would-be 关系清单在信封 detail（暂存来源）；非 stage 不变
+            detail = result.detail if request.stage else result.model_dump(mode="json")
             return _Normalized(
                 created=result.created,
                 updated=result.updated,
                 warnings=list(result.warnings),
                 model=result.model,
-                detail=result.model_dump(mode="json"),
+                detail=detail,
                 raw=result,
             )
         else:
@@ -729,6 +747,8 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
         request: ExtractionRequest,
         source: _Source,
         project: Project,
+        *,
+        dry_run: bool = False,
     ) -> ConsistencyReport | TimelineExtractionResult | None:
         """TIMELINE 槽位双 handler 选择器（§5.5）— 设置项判定在门面层.
 
@@ -747,6 +767,7 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
                 ),
                 default_model=resolve_model(None, project.config.model, self._llm_default_model)
                 or "",
+                dry_run=dry_run,
             )
         return await self._timeline_service.check_consistency(
             request.project_id, include_flashbacks=request.include_flashbacks

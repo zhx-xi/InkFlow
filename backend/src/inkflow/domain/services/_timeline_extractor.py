@@ -175,6 +175,7 @@ class TimelineExtractor:
         request: TimelineExtractRequest,
         *,
         default_model: str,
+        dry_run: bool = False,
     ) -> TimelineExtractionResult:
         """执行时间线提取管线（§5.5 步骤 ②-⑦）。
 
@@ -182,6 +183,9 @@ class TimelineExtractor:
             request: 提取请求（project_id / chapter_id / text / 可选 model 覆盖）.
             default_model: 项目默认模型（project.config.model，
                 由调用方门面校验项目存在后传入）.
+            dry_run: 仅预览（§5.9 两段式暂存 / `stage=True` 走零写入；只算不写，
+                返回同一份 created / updated 结果，不调用 `timeline_repo` 的
+                add / update —— `next_position` 只读取合成序基址，仍照跑）.
 
         Returns:
             合并落库后的提取报告.
@@ -228,6 +232,7 @@ class TimelineExtractor:
             events=outcome.events,
             item_warnings=outcome.warnings,
             model=model,
+            dry_run=dry_run,
         )
 
     # ── 解析 ────────────────────────────────────────────────────
@@ -267,8 +272,14 @@ class TimelineExtractor:
         events: list[ExtractedTimelineEvent],
         item_warnings: list[str],
         model: str,
+        dry_run: bool,
     ) -> TimelineExtractionResult:
-        """合并落库: 按 (project_id, title, source_chapter_id) 匹配事件。"""
+        """合并落库: 按 (project_id, title, source_chapter_id) 匹配事件.
+
+        `dry_run=True`（§5.9 stage 零写入）: 匹配/合并规则完全照跑，只是不调用
+        `self._repo.add` / `self._repo.update` —— 返回同一份 created / updated
+        结果供暂存区接管（镜像 F9 `_character_extractor` 的 dry_run 口径）。
+        """
         warnings = list(item_warnings)
         # #1291：project_id/chapter_id 均为领域 UUID，直传仓储（不再 int 中转）
         pid = request.project_id
@@ -294,7 +305,7 @@ class TimelineExtractor:
             if merged is None:
                 # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
                 continue
-            updated.append(await self._repo.update(merged))
+            updated.append(merged if dry_run else await self._repo.update(merged))
 
         if pending_creates:
             chapter_base = await self._repo.next_position(pid)
@@ -306,23 +317,21 @@ class TimelineExtractor:
                 # time_display 是**原文时间表达**，必须原样保留（此前硬编码 "" → 空 182/183，
                 # 世界序满屏「未知」，见 f14 §5.5 T1/T2）。
                 time_unit = (ee.time_unit or "") if ee.time_value is not None else ""
-                new_event = await self._repo.add(
-                    TimelineEvent(
-                        id=uuid.uuid4(),
-                        project_id=request.project_id,
-                        title=ee.title,
-                        description=ee.description or "",
-                        time_value=ee.time_value,
-                        time_unit=time_unit,
-                        time_display=ee.time_display or "",
-                        narrative_position=positions[slot],
-                        timeline_flag=ee.timeline_flag or "",
-                        source_chapter_id=request.chapter_id,
-                        created_at=now,
-                        updated_at=now,
-                    )
+                new_event = TimelineEvent(
+                    id=uuid.uuid4(),
+                    project_id=request.project_id,
+                    title=ee.title,
+                    description=ee.description or "",
+                    time_value=ee.time_value,
+                    time_unit=time_unit,
+                    time_display=ee.time_display or "",
+                    narrative_position=positions[slot],
+                    timeline_flag=ee.timeline_flag or "",
+                    source_chapter_id=request.chapter_id,
+                    created_at=now,
+                    updated_at=now,
                 )
-                created.append(new_event)
+                created.append(new_event if dry_run else await self._repo.add(new_event))
 
         for w in warnings:
             logger.warning("时间线提取警告: %s", w)

@@ -104,7 +104,7 @@ class ExtractionRequest(BaseModel):
     force: bool = False  # 忽略增量 skip，强制重跑（§5.2）
     granularity: Granularity = Granularity.FINE  # #1485：提取粒度（仅 character/setting）
     dry_run: bool = False  # #1485：预览不落库（仅 character/setting）
-    stage: bool = False  # #1545：两段式暂存（仅 character/setting，与 dry_run 互斥）
+    stage: bool = False  # #1545：两段式暂存（有档案实体产物的类型；与 dry_run 互斥）
 
     @field_validator("text")
     @classmethod
