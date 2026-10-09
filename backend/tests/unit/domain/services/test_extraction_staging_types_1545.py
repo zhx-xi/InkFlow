@@ -135,3 +135,59 @@ class TestConfirmDispatchesByEntityType:
         assert out.created == 1
         svc._foreshadowing_repo.add.assert_awaited_once()
         svc._staging_repo.delete_by_batch.assert_awaited_once()
+
+
+class TestStageKnowledgeRelationStaging:
+    """关系服务在线时：stage 产出 would-be 关系并落暂存（零落库）。"""
+
+    async def test_stage_knowledge_relation_stages_would_be_relations(self) -> None:
+        from inkflow.domain.models.knowledge_graph import KnowledgeRelationCreate
+        from inkflow.domain.ports.vector_store import EntityType
+
+        project_repo = MagicMock()
+        project_repo.get = AsyncMock(return_value=_project())
+        run_repo = MagicMock()
+        run_repo.get = AsyncMock(return_value=None)
+        run_repo.upsert = AsyncMock()
+
+        relation_service = MagicMock()
+
+        async def _rules(pid, candidates, warnings):  # 测试替身：签名对齐 _extract_rules
+            candidates.append(
+                KnowledgeRelationCreate(
+                    source_type=EntityType.CHARACTER,
+                    source_id=str(uuid.uuid4()),
+                    target_type=EntityType.CHARACTER,
+                    target_id=str(uuid.uuid4()),
+                    relation_type="师承",
+                )
+            )
+
+        relation_service._extract_rules = _rules
+        staging_repo = MagicMock()
+        staging_repo.add_many = AsyncMock(return_value=1)
+        staging_repo.list_by_batch = AsyncMock(return_value=[])
+        staging_repo.delete_by_batch = AsyncMock(return_value=0)
+
+        svc = ExtractionService(
+            project_repo=project_repo,
+            chapter_repo=MagicMock(),
+            run_repo=run_repo,
+            character_service=MagicMock(),
+            world_service=MagicMock(),
+            outline_service=MagicMock(),
+            timeline_service=MagicMock(),
+            foreshadowing_extractor=MagicMock(),
+            timeline_extractor=MagicMock(),
+            style_service=MagicMock(),
+            relation_extraction_service=relation_service,
+            staging_repo=staging_repo,
+        )
+
+        await svc.extract(
+            ExtractionRequest(project_id=PID, type=ExtractionType.KNOWLEDGE_RELATION, stage=True)
+        )
+
+        staging_repo.add_many.assert_awaited_once()
+        entries = staging_repo.add_many.await_args.args[-1]
+        assert [e.entity_type for e in entries] == ["knowledge_relation"]
