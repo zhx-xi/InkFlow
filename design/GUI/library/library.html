@@ -225,6 +225,56 @@ body[data-state="tab-empty"] .tab-empty{display:flex}
 /* #1400/#1402 同款截图态规则（本页由 #1457 补齐）：隐藏 demo-bar + 冻结动效 */
 body[data-shot="1"] .demo-bar{display:none}
 body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[data-shot="1"] *::after{animation:none!important;transition:none!important}
+
+/* ═══════════ AI 提取对话框（#1528 类型面 / #1532 两段式结果视图） ═══════════ */
+.ext-overlay{display:none;position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.30);align-items:center;justify-content:center}
+body[data-state="extract-single"] .ext-overlay,body[data-state="extract-generic"] .ext-overlay,body[data-state="extract-result"] .ext-overlay{display:flex}
+.ext-dlg{width:600px;max-height:80vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:24px}
+.ext-head{display:flex;align-items:center;justify-content:space-between}
+.ext-head h2{margin:0;font-family:var(--font-serif);font-size:18px;font-weight:600}
+.ext-head-actions{display:flex;align-items:center;gap:4px}
+.ext-min,.ext-close{border:none;background:none;color:var(--ink-2);line-height:1;cursor:pointer;padding:2px 8px;border-radius:4px}
+.ext-min{font-size:16px}
+.ext-close{font-size:20px}
+.ext-min:hover,.ext-close:hover{background:var(--surface-3);color:var(--ink)}
+.ext-form-single,.ext-form-generic,.ext-result-only{display:none}
+body[data-state="extract-single"] .ext-form-single{display:block}
+body[data-state="extract-generic"] .ext-form-generic{display:block}
+body[data-state="extract-result"] .ext-result-only{display:block}
+.ext-field{margin-top:16px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--ink-2)}
+.ext-radios{display:flex;flex-wrap:wrap;gap:8px}
+.ext-radio{display:flex;cursor:pointer;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:6px 14px;font-size:13px;color:var(--ink)}
+.ext-radio input,.ext-check input{accent-color:var(--accent)}
+.ext-checks{display:flex;flex-wrap:wrap;gap:8px}
+.ext-check{display:flex;cursor:pointer;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:5px 12px;font-size:13px;color:var(--ink)}
+.ext-scope{display:flex;gap:8px}
+.ext-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ext-range-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 10px;font-size:12px;color:var(--ink)}
+.ext-range-chip b{color:var(--ink-3);font-weight:400;cursor:pointer}
+.ext-chip-add{border:1px dashed var(--line);border-radius:6px;background:none;padding:4px 10px;font-size:12px;color:var(--ink-2)}
+.ext-chip-all{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 10px;font-size:12px;color:var(--ink-2)}
+.ext-hint{font-size:11px;color:var(--ink-3)}
+.ext-run{margin-top:24px;display:flex;align-items:center;gap:12px}
+.ext-result{margin-top:20px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:14px}
+.ext-result-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink)}
+.ext-result-head .pend-dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+.ext-sec{margin-top:12px}
+.ext-sec-title{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2)}
+.ext-count{border-radius:999px;background:var(--surface-3);padding:1px 8px;font-size:11px;color:var(--ink-2)}
+.ext-items{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.ext-item{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:6px 10px;font-size:13px;color:var(--ink)}
+.ext-item .kind,.ext-item .merged{margin-left:auto;border-radius:999px;padding:1px 8px;font-size:11px}
+.ext-item .kind{background:var(--surface-3);color:var(--ink-2)}
+.ext-item .merged{background:var(--accent-weak);color:var(--accent)}
+.ext-note{margin-top:8px;font-size:11px;color:var(--ink-3)}
+.ext-actions{margin-top:20px;display:flex;align-items:center;gap:12px}
+.ext-actions .spacer{margin-left:auto}
+/* 最小化浮窗（右下角） */
+.ext-float{display:none;position:fixed;right:16px;bottom:16px;z-index:160;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:10px 14px;font-size:12px;color:var(--ink)}
+body[data-state="extract-min"] .ext-float{display:flex}
+.ext-float .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
+.ext-float .pct{color:var(--ink-2)}
+.ext-float .up{color:var(--accent);cursor:pointer;border-left:1px solid var(--line);padding-left:10px}
 </style>
 </head>
 <body data-state="main" data-cat="characters">
@@ -554,6 +604,122 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
   </div>
 </div>
 
+<!-- ═══ AI 提取对话框（#1528 类型面 / #1532 两段式结果视图 + 最小化） ═══ -->
+<div class="ext-overlay">
+  <div class="ext-dlg" data-testid="ai-extract-dialog" role="dialog" aria-modal="true" aria-label="AI 提取">
+    <div class="ext-head">
+      <h2>AI 提取</h2>
+      <div class="ext-head-actions">
+        <button class="ext-min" aria-label="最小化">—</button>
+        <button class="ext-close" aria-label="关闭">×</button>
+      </div>
+    </div>
+
+    <!-- 默认：单选（只提这一类） + 范围 -->
+    <div class="ext-form-single">
+      <div class="ext-field">
+        <span>提取类型</span>
+        <div class="ext-radios" data-testid="ai-extract-type" role="radiogroup" aria-label="提取类型">
+          <label class="ext-radio"><input type="radio" name="t1" checked /> 角色</label>
+          <label class="ext-radio"><input type="radio" name="t1" /> 世界观</label>
+          <label class="ext-radio"><input type="radio" name="t1" /> 时间线</label>
+          <label class="ext-radio"><input type="radio" name="t1" /> 伏笔</label>
+          <label class="ext-radio"><input type="radio" name="t1" /> 知识图谱</label>
+          <label class="ext-radio"><input type="radio" name="t1" /> 通用</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>提取范围</span>
+        <div class="ext-scope" role="radiogroup" aria-label="提取范围">
+          <label class="ext-radio"><input type="radio" name="s1" checked /> 全文</label>
+          <label class="ext-radio"><input type="radio" name="s1" /> 按卷</label>
+          <label class="ext-radio"><input type="radio" name="s1" /> 按章</label>
+        </div>
+      </div>
+      <div class="ext-run"><button class="btn-primary" data-testid="ai-extract-run">开始提取</button></div>
+    </div>
+
+    <!-- 通用：多选设定 + 按章多段范围 -->
+    <div class="ext-form-generic">
+      <div class="ext-field">
+        <span>提取类型</span>
+        <div class="ext-radios" data-testid="ai-extract-type" role="radiogroup" aria-label="提取类型">
+          <label class="ext-radio"><input type="radio" name="t2" /> 角色</label>
+          <label class="ext-radio"><input type="radio" name="t2" /> 世界观</label>
+          <label class="ext-radio"><input type="radio" name="t2" /> 时间线</label>
+          <label class="ext-radio"><input type="radio" name="t2" /> 伏笔</label>
+          <label class="ext-radio"><input type="radio" name="t2" /> 知识图谱</label>
+          <label class="ext-radio"><input type="radio" name="t2" checked /> 通用</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>要提取的设定（可多选）</span>
+        <div class="ext-checks" data-testid="ai-extract-generic">
+          <label class="ext-check"><input type="checkbox" checked /> 角色</label>
+          <label class="ext-check"><input type="checkbox" checked /> 世界观</label>
+          <label class="ext-check"><input type="checkbox" /> 时间线</label>
+          <label class="ext-check"><input type="checkbox" checked /> 伏笔</label>
+          <label class="ext-check"><input type="checkbox" /> 知识图谱</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>提取范围</span>
+        <div class="ext-scope" role="radiogroup" aria-label="提取范围">
+          <label class="ext-radio"><input type="radio" name="s2" /> 全文</label>
+          <label class="ext-radio"><input type="radio" name="s2" /> 按卷</label>
+          <label class="ext-radio"><input type="radio" name="s2" checked /> 按章</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>章节范围（可多段）</span>
+        <div class="ext-chips">
+          <span class="ext-range-chip">第 1–10 章 <b>×</b></span>
+          <span class="ext-range-chip">第 13–20 章 <b>×</b></span>
+          <button class="ext-chip-add">＋ 添加范围</button>
+          <button class="ext-chip-all">全选</button>
+        </div>
+        <span class="ext-hint">单次上限 100 章，超出自动分批；选「按卷」可多选卷一/卷三</span>
+      </div>
+      <div class="ext-run"><button class="btn-primary" data-testid="ai-extract-run">开始提取</button></div>
+    </div>
+
+    <!-- 两段式结果（未落库，待确认） -->
+    <div class="ext-result-only">
+      <div class="ext-result" data-testid="ai-extract-result">
+        <div class="ext-result-head"><span class="pend-dot"></span>提取完成 · 待确认（未落库）</div>
+        <div class="ext-sec" data-testid="ai-extract-created">
+          <div class="ext-sec-title">新增 <span class="ext-count">3</span></div>
+          <div class="ext-items">
+            <div class="ext-item" data-testid="ai-extract-created-item">角色甲<span class="kind">角色</span></div>
+            <div class="ext-item" data-testid="ai-extract-created-item">角色壬<span class="kind">角色</span></div>
+            <div class="ext-item" data-testid="ai-extract-created-item">角色癸<span class="kind">角色</span></div>
+          </div>
+        </div>
+        <div class="ext-sec" data-testid="ai-extract-updated">
+          <div class="ext-sec-title">更新 / 替换 <span class="ext-count">1</span></div>
+          <div class="ext-items">
+            <div class="ext-item" data-testid="ai-extract-updated-item">角色乙<span class="merged">将覆盖</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ext-note">确认后才写入设定库；取消将丢弃本次结果。批次 ext-9f3c1a7e</div>
+      <div class="ext-actions">
+        <button class="btn-ghost" data-testid="ai-extract-cancel">取消</button>
+        <span class="spacer"></span>
+        <button class="btn-primary" data-testid="ai-extract-confirm">确认落库</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 最小化后的右下角浮窗（extract-min 状态） -->
+<div class="ext-float" data-testid="ai-extract-float">
+  <span class="dot"></span>
+  <span>提取中 · 全文 · 角色/世界观/伏笔</span>
+  <span class="pct">62%</span>
+  <span class="up">还原</span>
+</div>
+
 <!-- ═══ 演示切换条 ═══ -->
 <div class="demo-bar">
   <label>状态
@@ -561,6 +727,10 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="main">主视图（角色分类）</option>
       <option value="noproject">无项目空态</option>
       <option value="tab-empty">分类空态</option>
+      <option value="extract-single">AI 提取对话框（单选）</option>
+      <option value="extract-generic">AI 提取对话框（通用多选 + 按章范围）</option>
+      <option value="extract-result">AI 提取结果视图（待确认）</option>
+      <option value="extract-min">AI 提取最小化浮窗</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -661,7 +831,7 @@ function applyHash(){
   const h = location.hash.replace('#','');
   const m = h.match(/^cat=([a-z]+)$/);
   if (m && CAT_LABELS[m[1]]) setCat(m[1]);
-  else if (['main','noproject','tab-empty'].includes(h)) setState(h);
+  else if (['main','noproject','tab-empty','extract-single','extract-generic','extract-result','extract-min'].includes(h)) setState(h);
 }
 applyHash();
 window.addEventListener('hashchange', applyHash);

@@ -17,7 +17,7 @@
  *   characters    3  shot-characters-pagination.cjs
  *   foreshadow   11  shot-1376-foreshadow-filter.cjs
  *   knowledge    10  shot-knowledge-graph-scope.cjs
- *   library       3  ← 本脚本（缺口页；shot-pagination.cjs 只断言不出图）
+ *   library       5  ← 本脚本（缺口页；shot-pagination.cjs 只断言不出图；+2 为 #1528/#1532 提取对话框态）
  *   memory        3  ← 本脚本（缺口页）
  *   outline       3  ← 本脚本（缺口页）
  *   projects      4  ← 本脚本（缺口页）
@@ -71,6 +71,11 @@ const PAGES = [
       ['main', 'library-main.png'],
       ['noproject', 'library-noproject.png'],
       ['tab-empty', 'library-tab-empty.png'],
+      // #1528/#1532：AI 提取对话框新增四态（单选 / 通用多选+按章范围 / 两段式结果 / 最小化浮窗）
+      ['extract-single', 'library-extract-single.png'],
+      ['extract-generic', 'library-extract-generic.png'],
+      ['extract-result', 'library-extract-result.png'],
+      ['extract-min', 'library-extract-min.png'],
     ],
   },
   {
