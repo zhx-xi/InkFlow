@@ -20,7 +20,7 @@ from __future__ import annotations
 import builtins
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,6 +125,25 @@ class SQLExtractStagingRepository:
             ExtractStagingORM.project_id == int_pk_for_filter(project_id),
             ExtractStagingORM.batch_id == batch_id,
         )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+
+    async def delete_expired(self, retention_days: int) -> int:
+        """删除超期未确认的暂存行，返回删除行数（#1551，spec §5.9；幂等）.
+
+        删除 ``created_at`` 早于「当前 UTC − ``retention_days`` 天」的全部暂存行
+        （**全表按时间**清理，不分项目——项目硬删的级联清理另由 FK CASCADE 承担）。
+        供内核启动期幂等维护调用；重复执行 → 第二次 0 行，不报错。
+
+        Args:
+            retention_days: 过期阈值天数（默认口径 30，对齐软删 30 天纪律）.
+
+        Returns:
+            实际删除的行数（无超期行 → 0）.
+        """
+        cutoff = _utcnow() - timedelta(days=retention_days)
+        stmt = delete(ExtractStagingORM).where(ExtractStagingORM.created_at < cutoff)
         result = await self._session.execute(stmt)
         await self._session.commit()
         return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）

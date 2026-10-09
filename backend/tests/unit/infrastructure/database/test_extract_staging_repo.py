@@ -14,6 +14,7 @@ FK CASCADE 语义才生效（同 test_extraction_run_repo.py 惯例）。
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import event, func, select
@@ -86,6 +87,22 @@ async def _count_rows(db_session, project_id: int) -> int:
         .where(ExtractStagingORM.project_id == project_id)
     )
     return result.scalar_one()
+
+
+async def _insert_with_age(db_session, project_id: int, age_days: int, batch_id: str) -> None:
+    """直接插入暂存行并显式指定 ``created_at``（构造超期/未超期，绕过 add_many 的现在时刻）."""
+    db_session.add(
+        ExtractStagingORM(
+            project_id=project_id,
+            batch_id=batch_id,
+            type="character",
+            entity_type="character",
+            action="create",
+            payload="{}",
+            created_at=datetime.now(UTC) - timedelta(days=age_days),
+        )
+    )
+    await db_session.commit()
 
 
 @pytest.mark.integration
@@ -204,6 +221,46 @@ class TestExtractStagingRepository:
         assert await repo.delete_by_batch(_pid(project), BATCH) == 1
         assert await repo.list_by_batch(_pid(project), BATCH) == []
         assert [i.name for i in await repo.list_by_batch(_pid(other), BATCH)] == ["乙"]
+
+    # ── delete_expired（#1551 过期清理）──
+
+    async def test_delete_expired_removes_only_expired(self, db_session, project):
+        """delete_expired 删除超期行、保留窗口内行（阈值 30 天）。"""
+        repo = SQLExtractStagingRepository(db_session)
+        await _insert_with_age(db_session, project.id, 40, "old")
+        await _insert_with_age(db_session, project.id, 1, "new")
+
+        deleted = await repo.delete_expired(30)
+
+        assert deleted == 1
+        assert await _count_rows(db_session, project.id) == 1
+        # 保留的是「未超期」批次
+        assert len(await repo.list_by_batch(_pid(project), "new")) == 1
+        assert await repo.list_by_batch(_pid(project), "old") == []
+
+    async def test_delete_expired_is_idempotent(self, db_session, project):
+        """重复 delete_expired → 第二次 0、不报错（幂等）。"""
+        repo = SQLExtractStagingRepository(db_session)
+        await _insert_with_age(db_session, project.id, 40, "old")
+
+        assert await repo.delete_expired(30) == 1
+        assert await repo.delete_expired(30) == 0
+        assert await _count_rows(db_session, project.id) == 0
+
+    async def test_delete_expired_spans_projects(self, db_session, project):
+        """清理为全表按时间删除（不分项目）；窗口内行跨项目均保留。"""
+        other = ProjectORM(name="其他项目")
+        db_session.add(other)
+        await db_session.commit()
+        await db_session.refresh(other)
+        repo = SQLExtractStagingRepository(db_session)
+        await _insert_with_age(db_session, project.id, 40, "old-a")
+        await _insert_with_age(db_session, other.id, 50, "old-b")
+        await _insert_with_age(db_session, other.id, 2, "new-b")
+
+        assert await repo.delete_expired(30) == 2
+        assert await _count_rows(db_session, project.id) == 0
+        assert await _count_rows(db_session, other.id) == 1
 
 
 def test_orm_utcnow_is_timezone_aware() -> None:

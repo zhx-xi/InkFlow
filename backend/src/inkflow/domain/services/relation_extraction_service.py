@@ -141,7 +141,7 @@ class RelationExtractionService:
         model: str | None = None
 
         if method in {"rule", "both"}:
-            await self._extract_rules(pid, relations, warnings)
+            await self.extract_rules(pid, relations, warnings)
 
         if method in {"ai", "both"}:
             providers: list[str] = []
@@ -193,13 +193,19 @@ class RelationExtractionService:
 
     # ── 规则提取（零 LLM） ────────────────────────────────────────────────
 
-    async def _extract_rules(
+    async def extract_rules(
         self,
         pid: uuid.UUID,
         relations: list[KnowledgeRelationCreate],
         warnings: list[str],
     ) -> None:
-        """规则提取三规则集：R1 父子世界观 / R2 伏笔事件 / R3 地图 pin."""
+        """规则提取三规则集：R1 父子世界观 / R2 伏笔事件 / R3 地图 pin.
+
+        #1551：本方法为**公开 compute-only 入口**（原私有 ``_extract_rules``）——
+        确定性规则集「只算不写」（零 LLM、零落库），供两段式暂存 stage 下的
+        would-be 关系计算（``_extraction_staging``）与 ``extract_for_project`` 复用。
+        结果经 ``relations`` / ``warnings`` 出参返回，**不触发任何写入**。
+        """
 
         await self._rule_r1(pid, relations, warnings)
         await self._rule_r2(pid, relations, warnings)

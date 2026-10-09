@@ -152,7 +152,7 @@ class TestStageKnowledgeRelationStaging:
 
         relation_service = MagicMock()
 
-        async def _rules(pid, candidates, warnings):  # 测试替身：签名对齐 _extract_rules
+        async def _rules(pid, candidates, warnings):  # 测试替身：签名对齐 extract_rules（公开入口）
             candidates.append(
                 KnowledgeRelationCreate(
                     source_type=EntityType.CHARACTER,
@@ -163,7 +163,7 @@ class TestStageKnowledgeRelationStaging:
                 )
             )
 
-        relation_service._extract_rules = _rules
+        relation_service.extract_rules = _rules  # #1551：公开入口（原私有 _extract_rules）
         staging_repo = MagicMock()
         staging_repo.add_many = AsyncMock(return_value=1)
         staging_repo.list_by_batch = AsyncMock(return_value=[])
