@@ -1,17 +1,24 @@
 /**
- * #652 / #1528 / #1544「AI 提取」GUI 通道（前端契约 GREEN）：
+ * #652 / #1528 / #1544 / #1546「AI 提取」GUI 通道（前端契约 GREEN）：
  * - 类型面：角色 / 世界观 / 时间线 / 伏笔 / 知识图谱（单选，默认「角色」）+ 通用（多选 5 类）
  * - 范围面：全文 / 按卷（多选卷）/ 按章（区间，多段并集）
  * - 提交：统一 `POST /api/v1/extract`，type 由所选类型决定；N 个类型 = N 次请求
+ * - 两段式（#1546）：提交恒带 `stage: true` → 产物只进暂存区（确认前正式表零变更）
  * - 范围 → `chapter_ids`：全文 = 项目全部章；按卷 = 选中卷的全部章；按章 = 各区间展开
  * - 单批 `chapter_ids` ≤ 100（后端 validator），超出自动分批（多请求）
  * - 逐类型 body 差异：`timeline` 带 `chapter_ids` + `auto_extract: true`（不带 text）；
  *   `knowledge_relation` 不带 `chapter_ids` / `text`（项目级提取）；其余带 `chapter_ids`
- * - 反馈三态（沿用 #652）：进行中（按钮 disabled + `ai-extract-running`）/ 完成 toast ok /
+ * - 反馈：进行中（按钮 disabled + `ai-extract-running`）/ 成功 → 结果视图 /
  *   失败 toast err（errorMessage，按钮恢复 enabled，不硬崩）
+ * - 结果视图（#1546）：`ai-extract-result` 容器 + 新增（`ai-extract-created-item`）/
+ *   更新（`ai-extract-updated-item`，标「将覆盖」）清单；
+ *   「确认落库」→ `POST .../staging/{batch_id}/confirm` → onClose + ok toast；
+ *   「取消」→ `POST .../staging/{batch_id}/cancel` → onClose（丢弃本次结果，零物化）
+ * - 最小化（#1546）：头部 `ai-extract-min` 收起对话框 → 右下角 `ai-extract-float` 浮窗；
+ *   点浮窗「还原」恢复对话框
  */
 import { useEffect, useState } from 'react';
-import { LoaderCircle } from 'lucide-react';
+import { LoaderCircle, Minus } from 'lucide-react';
 import {
   fetchAllChapters,
   fetchVolumes,
@@ -130,10 +137,28 @@ function resolveChapterIds(
   return ordered.map((ch) => ch.id);
 }
 
-/** 单个提取结果信封（POST /api/v1/extract 响应；计数为数字口径） */
+/** #1546：暂存条目（信封 detail.created / detail.updated 元素；GUI 只读 name） */
+interface StagedEntry {
+  id?: string;
+  name?: string;
+}
+
+/** #1546：两段式暂存结果（结果视图展示新增/更新清单，确认/取消按批次调暂存端点） */
+interface StagedResult {
+  batchIds: string[];
+  created: StagedEntry[];
+  updated: StagedEntry[];
+}
+
+/** 单个提取结果信封（POST /api/v1/extract 响应；#1546 stage=true 时带批次 + would-be 清单） */
 interface ExtractEnvelope {
   created?: number;
   updated?: number;
+  batch_id?: string | null;
+  detail?: {
+    created?: StagedEntry[];
+    updated?: StagedEntry[];
+  };
 }
 
 export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogProps) {
@@ -152,6 +177,10 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
   const [rangeTo, setRangeTo] = useState('');
   const [ranges, setRanges] = useState<ChapterRange[]>([]);
   const [running, setRunning] = useState(false);
+  /** #1546：最小化 → 收起对话框，只留右下角浮窗 */
+  const [minimized, setMinimized] = useState(false);
+  /** #1546：暂存结果（非 null = 结果视图：新增/更新清单 + 确认落库/取消） */
+  const [staged, setStaged] = useState<StagedResult | null>(null);
 
   // open 变 true：拉取章节列表（全量翻页，#1407）+ 卷列表（#1544）+ 最近一次运行摘要
   useEffect(() => {
@@ -213,8 +242,8 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
   };
 
   /**
-   * 提交：解析所选类型 → 逐类型 POST /api/v1/extract → 成功 toast + 重拉 runs；
-   * 失败 err toast（errorMessage）+ 按钮恢复 enabled。
+   * 提交（#1546 两段式）：解析所选类型 → 逐类型 POST /api/v1/extract（带 stage: true）
+   * → 成功切结果视图（暂存清单）；失败 err toast（errorMessage）+ 按钮恢复 enabled。
    */
   const handleRun = async () => {
     if (running) return;
@@ -233,30 +262,28 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
 
     setRunning(true);
     try {
-      let created = 0;
-      let updated = 0;
+      const batchIds: string[] = [];
+      const created: StagedEntry[] = [];
+      const updated: StagedEntry[] = [];
       for (const type of backendTypes) {
         // knowledge_relation = 项目级提取：不带 chapter_ids / text
         const carriesChapters = type !== 'knowledge_relation';
         const batches = carriesChapters ? chunkChapterIds(chapterIds) : [[]];
         for (const batch of batches) {
-          const body: Record<string, unknown> = { project_id: projectId, type };
+          // stage=true：产物只进暂存区，确认前正式表零变更（#1545/#1546）
+          const body: Record<string, unknown> = { project_id: projectId, type, stage: true };
           if (carriesChapters) body.chapter_ids = batch;
           if (type === 'timeline') body.auto_extract = true;
           const result = await apiFetch<ExtractEnvelope>('/api/v1/extract', {
             method: 'POST',
             body,
           });
-          created += result.created ?? 0;
-          updated += result.updated ?? 0;
+          if (result.batch_id) batchIds.push(result.batch_id);
+          created.push(...(result.detail?.created ?? []));
+          updated.push(...(result.detail?.updated ?? []));
         }
       }
-      pushToast('ok', `${t('extract.done')} · 新增 ${created} · 更新 ${updated} · 已落地设定库`);
-      // 重拉最近一次运行摘要
-      const runData = await apiFetch<{ items: ExtractionRun[] }>(
-        `/api/v1/projects/${projectId}/extractions/runs`,
-      );
-      setRuns(runData.items ?? []);
+      setStaged({ batchIds, created, updated });
     } catch (err) {
       pushToast('err', errorMessage(err));
     } finally {
@@ -264,7 +291,58 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
     }
   };
 
+  /** #1546：确认落库——逐批次物化进正式表后 onClose + ok toast */
+  const confirmStaged = async () => {
+    if (!staged) return;
+    try {
+      for (const batchId of staged.batchIds) {
+        await apiFetch(`/api/v1/projects/${projectId}/extractions/staging/${batchId}/confirm`, {
+          method: 'POST',
+        });
+      }
+      pushToast('ok', t('extract.done'));
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+      return;
+    }
+    onClose();
+  };
+
+  /** #1546：取消——逐批次清空暂存（零物化）后 onClose */
+  const cancelStaged = async () => {
+    if (!staged) return;
+    try {
+      for (const batchId of staged.batchIds) {
+        await apiFetch(`/api/v1/projects/${projectId}/extractions/staging/${batchId}/cancel`, {
+          method: 'POST',
+        });
+      }
+    } catch (err) {
+      pushToast('err', errorMessage(err));
+      return;
+    }
+    onClose();
+  };
+
   if (!open) return null;
+
+  // #1546：最小化 → 对话框收起到右下角浮窗（点「还原」恢复对话框）
+  if (minimized) {
+    return (
+      <div className="fixed right-4 bottom-4 z-50">
+        <button
+          type="button"
+          data-testid="ai-extract-float"
+          onClick={() => setMinimized(false)}
+          className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-[12px] text-ink shadow-card transition duration-180 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        >
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
+          <span>{t('extract.title')}</span>
+          <span className="text-accent">{t('extract.floatRestore')}</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
@@ -278,16 +356,93 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
       >
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-[18px] font-semibold">{t('extract.title')}</h2>
-          <button
-            type="button"
-            aria-label={t('audit.close')}
-            className="rounded p-1 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <div className="flex items-center gap-1">
+            {/* #1546：最小化（收起对话框 → 右下角浮窗；提取进行中/结果待确认时可用） */}
+            <button
+              type="button"
+              data-testid="ai-extract-min"
+              aria-label="最小化"
+              className="rounded p-1 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => setMinimized(true)}
+            >
+              <Minus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('audit.close')}
+              className="rounded p-1 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={onClose}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
         </div>
 
+        {staged ? (
+          /* #1546：结果视图——暂存产出（新增/更新清单）+ 确认落库 / 取消 */
+          <div data-testid="ai-extract-result" className="mt-4 space-y-3">
+            <p className="text-[12px] text-ink-2">{t('extract.resultTitle')}</p>
+
+            <div
+              data-testid="ai-extract-created"
+              className="rounded-md border border-line bg-surface-2 px-3 py-2"
+            >
+              <h3 className="text-[13px] font-medium text-ink-2">
+                {t('extract.createdTitle', { count: staged.created.length })}
+              </h3>
+              <ul className="mt-1.5 space-y-1 text-[12px] text-ink">
+                {staged.created.map((item, idx) => (
+                  <li key={item.id ?? idx} data-testid="ai-extract-created-item">
+                    {item.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div
+              data-testid="ai-extract-updated"
+              className="rounded-md border border-line bg-surface-2 px-3 py-2"
+            >
+              <h3 className="text-[13px] font-medium text-ink-2">
+                {t('extract.updatedTitle', { count: staged.updated.length })}
+              </h3>
+              <ul className="mt-1.5 space-y-1 text-[12px] text-ink">
+                {staged.updated.map((item, idx) => (
+                  <li
+                    key={item.id ?? idx}
+                    data-testid="ai-extract-updated-item"
+                    className="flex items-center gap-2"
+                  >
+                    <span>{item.name}</span>
+                    <span className="rounded border border-line px-1.5 py-0.5 text-[11px] text-ink-2">
+                      {t('extract.willOverwrite')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                data-testid="ai-extract-cancel"
+                onClick={() => void cancelStaged()}
+                className="rounded-md border border-line px-4 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              >
+                {t('extract.cancel')}
+              </button>
+              <button
+                type="button"
+                data-testid="ai-extract-confirm"
+                onClick={() => void confirmStaged()}
+                className="rounded-md bg-accent px-4 py-1.5 text-[13px] text-accent-ink transition duration-180 hover:bg-accent-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              >
+                {t('extract.confirm')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* 类型面：6 单选（默认「角色」） */}
         <fieldset className="mt-4">
           <legend className="text-[12px] text-ink-2">{t('extract.typeGeneric')}</legend>
@@ -470,6 +625,8 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
             )
           ) : null}
         </div>
+          </>
+        )}
       </div>
     </div>
   );
