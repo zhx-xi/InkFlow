@@ -96,11 +96,12 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
     // 叙事序（默认）：主轴 = 世界内时间 + ink-3 降级类（行内小字）
     await waitFor(() => expect(screen.getByTestId('tl-axis-main-evC')).toHaveTextContent('100 年'));
     expect(screen.getByTestId('tl-axis-main-evC').className).toContain('text-ink-3');
-    // 世界序：主轴 = 世界内时间（刻度态，非降级）
+    // 世界序（#1541）：刻度带 —— 事件行**不**渲染 tl-axis-main（时间刻度移到竖轴）
     const user = userEvent.setup();
     await user.click(screen.getByTestId('tl-view-world'));
-    await waitFor(() => expect(screen.getByTestId('tl-axis-main-evC')).toHaveTextContent('100 年'));
-    expect(screen.getByTestId('tl-axis-main-evC').className).not.toContain('text-ink-3');
+    await waitFor(() => expect(screen.getByTestId('tl-band')).toBeInTheDocument());
+    expect(screen.queryByTestId('tl-axis-main-evC')).toBeNull();
+    expect(screen.getByTestId('tl-band-tick-__none__-0')).toHaveTextContent('100 year');
   });
 
   it('A3 叙事序：轴刻度 = 章（tl-chtick-<chapterId> = 真实章节标题）；主轴不含伪章号', async () => {
@@ -113,14 +114,15 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
     expect(mains).not.toMatch(/第\s*[0-9]+\s*章/);
   });
 
-  it('A4 时间未知事件（time_value=null）在轴上用「未知」占位，不消失', async () => {
+  it('A4 世界序（#1541）：时间未知事件归轴底「未知」区，不消失、不破坏结构', async () => {
     renderView();
     const user = userEvent.setup();
     await user.click(screen.getByTestId('tl-view-world'));
     const node = await screen.findByTestId('tl-axis-node-evB');
     expect(node).toBeInTheDocument();
-    // 主轴无 time_display → 回退未知占位（i18n lib.tlTimeUnknown）
-    expect(screen.getByTestId('tl-axis-main-evB')).toHaveTextContent('未知');
+    expect(screen.getByTestId('tl-band-unknown')).toBeInTheDocument();
+    // 未知事件不产生刻度（不污染刻度带比例）
+    expect(screen.queryAllByTestId(/^tl-band-tick-__none__-/)).toHaveLength(2); // 100 / 300
   });
 
   it('A5 既有行为不破：双序 chips / tl-check-all / tl-check-one / tl-legend 仍存在可用', async () => {

@@ -12,7 +12,8 @@
  * 状态集（与 timeline.html 的 demo-bar 一致）：
  *   narrative          叙事序 · 章为轴（章刻度 + 章下事件；行内小字=世界内时间）
  *   narrative-filter   叙事序 + 按章筛选面板展开（已选第十二章 → 列表仅 c12）
- *   world              世界序 · 单轴（项目无纪元数据时的形态；此处演示「时间轴」本体）
+ *   world              世界序 · 单轴（项目无纪元数据）：**#1527 前**平铺形态（改前对照）
+ *   world-single       世界序 · 单轴（#1527 目标态）：按**时间刻度段**分组 + 组内缩进（两级树状）
  *   world-eras         世界序 · 纪元轴族（默认只勾选主力轴 → 1 条泳道 + 3 chips）
  *   world-eras-multi   世界序 · 纪元轴族（全部轴勾选 → 3 条泳道，含默认轴「未分纪元」）
  *   world-eras-b       世界序 · 纪元轴族（对照方案 B：组头 + 行内时间刻度，不合并同刻度）
@@ -32,6 +33,8 @@ const SHOTS = [
   { state: 'narrative', out: 'timeline-narrative.png' },
   { state: 'narrative-filter', out: 'timeline-narrative-filter.png' },
   { state: 'world', out: 'timeline-world.png' },
+  { state: 'world-single', out: 'timeline-world-single.png' },
+  { state: 'world-band', out: 'timeline-world-band.png' },
   { state: 'world-eras', out: 'timeline-world-eras.png' },
   { state: 'world-eras-multi', out: 'timeline-world-eras-multi.png' },
   { state: 'world-eras-b', out: 'timeline-world-eras-b.png' },
@@ -71,6 +74,20 @@ async function probe(page) {
       return lane ? ids(lane, '[data-testid^="tl-axis-node-"]') : [];
     };
     const chipOf = (key) => q(`[data-testid="tl-axis-chip-${key}"]`);
+    /* #1527：单轴（无 lane 容器）的时间节点 —— 库内 tl-tick-__none__-<i> 下的刻度 + 事件 id + 缩进 */
+    const singleTn = (() => {
+      const axis = q('.tl-axis--time');
+      if (!axis || q('.tl-lane')) return [];
+      return Array.from(axis.querySelectorAll('[data-testid^="tl-tick-"]')).map((lab) => {
+        const node = lab.closest('.tl-timenode');
+        const host = node ? node.querySelector('.tl-timenode-events') : null;
+        return {
+          label: lab.textContent.trim(),
+          ids: host ? ids(host, '[data-testid^="tl-axis-node-"]') : [],
+          indented: host ? getComputedStyle(host).paddingLeft : 'MISSING',
+        };
+      });
+    })();
     /* #1467 几何：主轴轴线 / 时间刻度点 / 缩进事件点 是否落在同一条竖线上（视觉对齐的数值判据） */
     const geom = (() => {
       const lane = q('[data-testid="tl-lane-qingyuan"]');
@@ -124,6 +141,12 @@ async function probe(page) {
       laneNameCount: qa('[data-testid^="tl-lanehead-"]').length,
       laneMainCount: qa('.tl-lane [data-testid^="tl-axis-main-"]').length,
       timeNodes: qa('.tl-timenode').length,
+      laneNameTotal: qa('[data-testid^="tl-lanehead-"]').length,
+      singleTn,
+      band: !!q('[data-testid="tl-band"]'),
+      bandSpines: qa('.mvs-spine').length,
+      bandTicks: qa('.mvs-node').length,
+      bandUnknown: qa('.mvs-rule').length,
       tnQy: timeNodesOf('qingyuan'),
       tnNone: timeNodesOf('none'),
       tnXianjie: timeNodesOf('xianjie'),
@@ -211,6 +234,41 @@ function checkAll(d, state) {
     chk(`来源章小字 tl-src-1=第十一章…（实际 ${d.src1}）`, d.src1 === '第十一章 事件乙');
     chk(`来源章小字 tl-src-5=未分章（实际 ${d.src5}）`, d.src5 === '未分章');
     chk(`事件数=6 且无重复（实际 ${d.nodeCount}）`, d.nodeCount === 6 && d.dup === 0);
+  }
+
+  if (state === 'world-single') {
+    /* #1527：单轴（era 全空）→ 按时间刻度段分组 + 组内缩进（两级树状），无轴名组头 */
+    chk('时间轴容器（tl-axis--time）', d.timeAxis);
+    chk(`无章分组（实际 ${d.groupKeys.length}）`, d.groupKeys.length === 0);
+    chk(`无纪元泳道（单轴不套 lane，实际 ${d.laneCount}）`, d.laneCount === 0);
+    chk(`无轴名组头（实际 ${d.laneNameTotal}）`, d.laneNameTotal === 0);
+    chk(`事件序=时间升序（未知末尾）[1..5]（实际 ${JSON.stringify(d.nodeIds)}）`,
+      JSON.stringify(d.nodeIds) === JSON.stringify(['1', '2', '3', '4', '5']));
+    chk(`时间刻度段节点=4（实际 ${d.singleTn.length}）`, d.singleTn.length === 4);
+    chk(`组头刻度=['示例历 17 年','示例历 217 年','示例历 314 年','未知']（实际 ${JSON.stringify(d.singleTn.map((n) => n.label))}）`,
+      JSON.stringify(d.singleTn.map((n) => n.label)) === JSON.stringify(['示例历 17 年', '示例历 217 年', '示例历 314 年', '未知']));
+    chk(`同刻度合并：217 年节点下=['2','3']（实际 ${JSON.stringify(d.singleTn[1] ? d.singleTn[1].ids : null)}）`,
+      JSON.stringify(d.singleTn[1] ? d.singleTn[1].ids : null) === JSON.stringify(['2', '3']));
+    chk(`时间缺失事件归「未知」节点（末尾）（实际 ${JSON.stringify(d.singleTn[3] ? d.singleTn[3].ids : null)}）`,
+      JSON.stringify(d.singleTn[3] ? d.singleTn[3].ids : null) === JSON.stringify(['5']));
+    chk(`组内事件行缩进（padding-left=${d.singleTn[0] ? d.singleTn[0].indented : 'MISSING'}）`,
+      d.singleTn[0] ? d.singleTn[0].indented !== '0px' && d.singleTn[0].indented !== 'MISSING' : false);
+    chk(`组内事件行不重复时间刻度（tl-axis-main 数=${d.laneMainCount + (d.main1 ? 1 : 0)}）`,
+      d.main1 === null);
+    chk(`事件数=5 且无重复（实际 ${d.nodeCount} dup=${d.dup}）`, d.nodeCount === 5 && d.dup === 0);
+    chk(`世界序专属：无轴选择器（实际 ${d.pickerDisplay}）`, d.pickerDisplay === 'none');
+  }
+
+  if (state === 'world-band') {
+    /* #1527-v2 草案：单块多历竖轴刻度带（无 tl-axis 容器，改用 tl-band） */
+    chk(`刻度带块存在（实际 ${!!d.band}）`, d.band === true);
+    chk(`历竖轴=2（实际 ${d.bandSpines}）`, d.bandSpines === 2);
+    chk(`刻度点总数=5（实际 ${d.bandTicks}）`, d.bandTicks === 5);
+    chk(`未知区虚线=1（实际 ${d.bandUnknown}）`, d.bandUnknown === 1);
+    chk(`事件数=7（实际 ${d.nodeCount}）`, d.nodeCount === 7);
+    chk(`事件无重复（dup=${d.dup}）`, d.dup === 0);
+    chk(`无泳道卡片（实际 ${d.laneCount}）`, d.laneCount === 0);
+    chk(`世界序专属：无轴选择器（实际 ${d.pickerDisplay}）`, d.pickerDisplay === 'none');
   }
 
   if (state === 'world-eras' || state === 'world-eras-multi') {
