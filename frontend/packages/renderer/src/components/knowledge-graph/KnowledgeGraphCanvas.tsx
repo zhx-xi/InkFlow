@@ -17,7 +17,7 @@
  *   右下角提示升级为六类图例（原提示并入图例行尾）
  * - 新增可选 prop：`filterActive`（筛选生效时隐藏节点详情卡）/ `showLegend`（图谱空态不渲染图例）
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addEdge,
   applyEdgeChanges,
@@ -51,11 +51,14 @@ export const ENTITY_TYPE_KEYS: Record<EntityType, string> = {
   map_pin: 'lib.knowledge.type.map_pin',
 };
 
-type KgNodeData = { id: string; name: string; type: EntityType; entity_id: string };
+type KgNodeData = { id: string; name: string; type: EntityType; entity_id: string; dim: boolean };
 type KgRFNode = RFNode<KgNodeData>;
 
 /** 位置持久化 localStorage 基键（#1325）；带 project_id 时以 `:<project_id>` 后缀隔离 */
 const KG_POSITIONS_STORAGE_KEY = 'inkflow:kg:positions';
+
+/** #1529 降灰样式：未勾选 = 灰显而非摘除（个体着色保留，仅整体降透明度 + 去饱和） */
+const DIM_STYLE: CSSProperties = { opacity: 0.3, filter: 'grayscale(1)' };
 
 /** 位置记忆键：`<基键>` 或 `<基键>:<project_id>`（跨项目位置互不污染） */
 function kgPositionsKey(persistKey?: string): string {
@@ -97,8 +100,14 @@ function KgNode({ data }: NodeProps<KgRFNode>) {
   return (
     <div
       data-testid={`library-kg-node-${data.type}-${data.entity_id}`}
+      data-dim={data.dim ? '1' : '0'}
       className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium shadow-card"
-      style={{ backgroundColor: style.bg, borderColor: style.border, color: style.text }}
+      style={{
+        backgroundColor: style.bg,
+        borderColor: style.border,
+        color: style.text,
+        ...(data.dim ? DIM_STYLE : {}),
+      }}
     >
       <Handle
         type="target"
@@ -119,11 +128,19 @@ function KgNode({ data }: NodeProps<KgRFNode>) {
 }
 
 /** 自定义边：贝塞尔路径 + 有向箭头 + label（SVG text；真实浏览器渲染层） */
-function KgEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, label }: EdgeProps) {
+function KgEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, label, data }: EdgeProps) {
   const [edgePath] = getBezierPath({ sourceX, sourceY, targetX, targetY });
+  // #1529：边降灰判据 = 两端至少一端未高亮（由画布把 dim 放进 edge.data）
+  const dim = data?.dim === true;
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        data-dim={dim ? '1' : '0'}
+        style={dim ? DIM_STYLE : undefined}
+      />
       <text
         x={(sourceX + targetX) / 2}
         y={(sourceY + targetY) / 2}
@@ -158,6 +175,8 @@ export interface KnowledgeGraphCanvasProps {
   onDeleteEdge?: (edge: GraphEdge) => void;
   /** 筛选生效中 → 隐藏节点详情卡（spec N12：用户尚未点选） */
   filterActive?: boolean;
+  /** #1529：高亮（正常彩色）节点集；提供时**全部节点/边都渲染**，未高亮的降灰（`data-dim="1"`） */
+  activeIds?: ReadonlySet<string>;
   /** 是否渲染右下角图例（图谱空态不渲染） */
   showLegend?: boolean;
 }
@@ -174,6 +193,7 @@ export function KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) {
 function CanvasInner({
   nodes,
   edges,
+  activeIds,
   persistKey,
   onConnectNodes,
   onSelectNode,
@@ -199,9 +219,15 @@ function CanvasInner({
         id: n.id,
         type: 'kgNode',
         position: { x: 32 + (i % 5) * 180, y: 40 + Math.floor(i / 5) * 110 },
-        data: { id: n.id, name: n.name, type: n.type, entity_id: n.entity_id },
+        data: {
+          id: n.id,
+          name: n.name,
+          type: n.type,
+          entity_id: n.entity_id,
+          dim: activeIds !== undefined && !activeIds.has(n.id),
+        },
       })),
-    [nodes],
+    [nodes, activeIds],
   );
 
   const dataEdges = useMemo<RFEdge[]>(
@@ -212,9 +238,13 @@ function CanvasInner({
         target: e.target,
         type: 'kgEdge',
         label: e.label,
+        data: {
+          dim:
+            activeIds !== undefined && !(activeIds.has(e.source) && activeIds.has(e.target)),
+        },
         markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--ink-3)' },
       })),
-    [edges],
+    [edges, activeIds],
   );
 
   /** 持久化位置（localStorage，按 project_id 键）——挂载/切项目时读一次 */

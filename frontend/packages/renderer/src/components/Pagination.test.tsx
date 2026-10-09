@@ -16,6 +16,8 @@
  *   totalText?: boolean       是否在 info 中携带总数（默认 true；info 恒含 part/total(pageSize 选择区)
  *   testIdPrefix?: string     testid 前缀（默认 'pagination'）；logs 页传 'log-page'、大纲传 'outline-page'
  *                             以保留既有契约 testid（log-page-prev / outline-page-next …）
+ *   compact?: boolean         精简形态（默认 false）：info 只显示 `{page} / {pages}`（无 i18n 句子），
+ *                             供筛选面板等窄栏使用；prev/next 边界语义不变
  *
  * testid 形状（prefix 参数化单点生成，禁手写双份）：
  *   `${prefix}-prev` / `${prefix}-next` / `${prefix}-info` / `${prefix}-size-select`
@@ -219,6 +221,17 @@ describe('#1300 Pagination 公共组件', () => {
       expect(tStatic('pagination.page.info')).toBe('Page {page} / {pages} · {total} entries');
       expect(tStatic('pagination.page.size.label')).toBe('Page size');
       useThemeStore.setState({ lang: 'zh' });
+    });
+  });
+
+  describe('compact 精简形态', () => {
+    it('compact → info 只显示「page / pages」(无 i18n 句子)；首页 prev 仍禁用', () => {
+      renderPagination({ page: 0, pageSize: 10, total: 20, compact: true });
+      const info = screen.getByTestId('pagination-info');
+      // 逐字等于「1 / 2」（非 `第 1 / 2 页 · 共 20 条` 的子串）→ 旧实现必 FAIL
+      expect(info.textContent?.trim()).toBe('1 / 2');
+      expect(info).not.toHaveTextContent('共');
+      expect(screen.getByTestId('pagination-prev')).toBeDisabled();
     });
   });
 });

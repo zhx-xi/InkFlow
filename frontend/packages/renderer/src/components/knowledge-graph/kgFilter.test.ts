@@ -1,15 +1,19 @@
 /**
  * #1373 知识图谱「类别/实体筛选」纯函数契约（unit 层，纯函数 + 记忆读写）
  * #1465：类别由「单选」改为「**多选（默认全选）**」——全选 = 显示全部，取消某类 = 隐藏该类。
- * 对应 specs/f19-gui/knowledge.md §4.2（筛选语义）+ 验收 N11/N12/N13/N15/N18
+ * #1529（W8g）：**① 实体同步改为多选集合（默认全选）**；**② 未勾选 = 灰显而非摘除**（画布保留全部节点）；
+ *                 **③ 邻接子图语义退休**（不再「选中一个实体 = 该实体 + 一跳邻居」）。
+ * 对应 specs/f19-gui/knowledge.md §4.2（筛选语义）+ 验收 N11/N12/N15/N18/N19
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * 【拍板口径（#1465，2026-10-07）】
- * - 🔴 类别 = **多选、默认全选**（`categories: EntityType[]`；全选 == 显示全部）
- * - 实体 = 单选（再点取消）→ 该实体 + 一跳邻居；与类别取交集
- * - 记忆键 `inkflow:kg:filters:<project_id>`（值 `{categories, entity}`）
- *   + `inkflow:kg:panel`（`'open' | 'closed'`）；**旧格式 `{category}` 兼容为「只勾该类」**
- * - 零后端改动（对既有 graph 响应做前端过滤）
+ * 【拍板口径（#1529，2026-10-08 用户）】
+ * - 🔴 实体 = **多选集合、默认全选**（`entities: string[] | null`；`null` = 全选）
+ * - 🔴 未勾选 = **统一灰显**（节点与边都保留在画布上）→ `computeVisibleIds` 返回的是
+ *      **「高亮（正常彩色）节点集」**，不再摘除任何节点（`visibleEdges` 已删除——边由画布按两端是否高亮自行降灰）
+ * - 🔴 邻接子图退休：选中单个实体**不再**把一跳邻居带进来
+ * - 记忆键 `inkflow:kg:filters:<project_id>`（值 `{categories, entities}`）
+ *   + `inkflow:kg:panel`（`'open' | 'closed'`）；旧格式 `{category}` / `{entity}` 向后兼容
+ * - 零后端改动（对既有 graph 响应做前端高亮/灰显）
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -17,16 +21,13 @@ import {
   KG_CATEGORIES,
   KG_FILTERS_STORAGE_KEY,
   KG_PANEL_STORAGE_KEY,
-  adjacentOf,
   computeVisibleIds,
   kgFiltersKey,
   readKgFilter,
   readKgPanel,
   sanitizeKgFilter,
-  visibleEdges,
   writeKgFilter,
   writeKgPanel,
-  type KgFilterState,
 } from './kgFilter';
 import type { GraphEdge, GraphNode } from '../../api/knowledge-graph';
 
@@ -45,118 +46,99 @@ const EDGES: GraphEdge[] = [
 ];
 
 const ALL = [...KG_CATEGORIES];
-const visible = (filter: KgFilterState): string[] => [...computeVisibleIds(NODES, EDGES, filter)].sort();
+/** 高亮（正常彩色）节点集 */
+const active = (filter: { categories: typeof ALL; entities: string[] | null }): string[] =>
+  [...computeVisibleIds(NODES, EDGES, filter)].sort();
 const allNodeIds = (): string[] => NODES.map((n) => n.id).sort();
 
 beforeEach(() => {
   localStorage.clear();
 });
 
-describe('#1465 类别多选（默认全选）', () => {
-  it('默认态 = 六类全选 + 未选实体 → 显示全部', () => {
-    expect(DEFAULT_KG_FILTER).toEqual({ categories: ALL, entity: null });
-    expect(visible(DEFAULT_KG_FILTER)).toEqual(allNodeIds());
+describe('#1529 实体多选（默认全选）——与类别语义统一', () => {
+  it('默认态 = 六类全选 + 实体全选（`entities: null`）→ 全部节点高亮', () => {
+    expect(DEFAULT_KG_FILTER).toEqual({ categories: ALL, entities: null });
+    expect(active(DEFAULT_KG_FILTER)).toEqual(allNodeIds());
   });
 
-  it('N18① 负例守护：全选 == 显示全部', () => {
-    expect(visible({ categories: [...ALL], entity: null })).toEqual(allNodeIds());
+  it('N19① 负例守护：全选 == 显示全部（无任何灰显）', () => {
+    expect(active({ categories: [...ALL], entities: null })).toEqual(allNodeIds());
   });
 
-  it('N11 取消某类 → 该类节点隐藏，其余保留（多选非替换）', () => {
-    expect(visible({ categories: ALL.filter((t) => t !== 'character'), entity: null })).toEqual([
-      'world:w1',
-      'world:w2',
-    ]);
-    expect(visible({ categories: ['character'], entity: null })).toEqual([
-      'character:c1',
-      'character:c2',
-      'character:c3',
-    ]);
+  it('N19① 取消某实体 → 该实体不再高亮，其余照常（`entities` = 高亮白名单，非黑名单）', () => {
+    expect(active({ categories: [...ALL], entities: ['character:c2', 'character:c3', 'world:w1', 'world:w2'] })).toEqual(
+      ['character:c2', 'character:c3', 'world:w1', 'world:w2'],
+    );
   });
 
-  it('类别全部取消 → 无可见节点（合法态，画布走筛选空态）', () => {
-    expect(visible({ categories: [], entity: null })).toEqual([]);
+  it('N19① 实体集合为空 → 无高亮节点（合法态，画布走筛选空态）', () => {
+    expect(active({ categories: [...ALL], entities: [] })).toEqual([]);
   });
 
-  it('N12 实体筛选：邻接子图 = 该实体 + 一跳邻居', () => {
-    expect(visible({ categories: [...ALL], entity: 'character:c1' })).toEqual([
-      'character:c1',
-      'character:c2',
-      'world:w1',
-    ]);
-    // 孤立视角：w2 只有 w1 一个邻居
-    expect(visible({ categories: [...ALL], entity: 'world:w2' })).toEqual(['world:w1', 'world:w2']);
+  it('🔴 邻接子图退休：只勾一个实体 → **只它高亮**（不再带一跳邻居 c2 / w1）', () => {
+    expect(active({ categories: [...ALL], entities: ['character:c1'] })).toEqual(['character:c1']);
+    expect(active({ categories: [...ALL], entities: ['world:w2'] })).toEqual(['world:w2']);
   });
 
   it('N12 类别 ∩ 实体：两者同时生效时取交集', () => {
-    // 实体邻接 = {c1, c2, w1}；类别 world → 交集 = {w1}
-    expect(visible({ categories: ['world'], entity: 'character:c1' })).toEqual(['world:w1']);
-    // 实体邻接 = {c1, c2, w1}；类别 character → 交集 = {c1, c2}
-    expect(visible({ categories: ['character'], entity: 'character:c1' })).toEqual([
+    expect(active({ categories: ['world'], entities: ['character:c1', 'world:w1'] })).toEqual(['world:w1']);
+    expect(active({ categories: ['character'], entities: ['character:c1', 'character:c2', 'world:w1'] })).toEqual([
       'character:c1',
       'character:c2',
     ]);
   });
 
-  it('adjacentOf：含自身 + 双向一跳邻居', () => {
-    expect([...adjacentOf('character:c1', EDGES)].sort()).toEqual([
-      'character:c1',
-      'character:c2',
-      'world:w1',
-    ]);
-    expect([...adjacentOf('character:c3', EDGES)]).toEqual(['character:c3']);
-  });
-
-  it('保留边 = 两端节点均可见（任一端被过滤掉 → 边不保留）', () => {
-    const vis = computeVisibleIds(NODES, EDGES, { categories: ['character'], entity: null });
-    const kept = visibleEdges(EDGES, vis).map((e) => e.id);
-    // kr:1 两端 c1(可见)/w1(不可见) → 丢弃；kr:2 两端均角色 → 保留
-    expect(kept).toEqual(['kr:2']);
-    // 全量时边一条不少
-    const all = computeVisibleIds(NODES, EDGES, DEFAULT_KG_FILTER);
-    expect(visibleEdges(EDGES, all)).toHaveLength(EDGES.length);
+  it('N11 类别多选：取消某类 → 该类节点不再高亮，其余保留（多选非替换）', () => {
+    expect(active({ categories: ALL.filter((t) => t !== 'character'), entities: null })).toEqual(['world:w1', 'world:w2']);
   });
 
   it('筛选不修改入参（纯函数：不就地排序/删除调用方数组）', () => {
     const nodeIds = NODES.map((n) => n.id);
     const edgeIds = EDGES.map((e) => e.id);
-    computeVisibleIds(NODES, EDGES, { categories: ['world'], entity: 'character:c1' });
-    visibleEdges(EDGES, new Set(['world:w1']));
+    computeVisibleIds(NODES, EDGES, { categories: ['world'], entities: ['character:c1'] });
     expect(NODES.map((n) => n.id)).toEqual(nodeIds);
     expect(EDGES.map((e) => e.id)).toEqual(edgeIds);
   });
 });
 
-describe('#1465 选择记忆（新格式 + 旧格式向后兼容）', () => {
+describe('#1529 选择记忆（新格式 + 旧格式向后兼容）', () => {
   it('N15 记忆键形态：`inkflow:kg:filters:<project_id>` 与 `inkflow:kg:panel`', () => {
     expect(KG_FILTERS_STORAGE_KEY).toBe('inkflow:kg:filters');
     expect(KG_PANEL_STORAGE_KEY).toBe('inkflow:kg:panel');
     expect(kgFiltersKey('p1')).toBe('inkflow:kg:filters:p1');
-    // 无 project_id 时退化为基键（与画布位置记忆同构）
     expect(kgFiltersKey(undefined)).toBe('inkflow:kg:filters');
   });
 
-  it('N15 读写往返：写入 categories 后在 `<基键>:<pid>` 上可读回，且与其它项目隔离', () => {
-    writeKgFilter('p1', { categories: ['character'], entity: 'character:c1' });
-    expect(localStorage.getItem('inkflow:kg:filters:p1')).toContain('"categories"');
-    expect(readKgFilter('p1')).toEqual({ categories: ['character'], entity: 'character:c1' });
-    // 另一个项目读不到本项目记忆
+  it('N15 读写往返：写入 categories + entities 后可读回，且与其它项目隔离', () => {
+    writeKgFilter('p1', { categories: ['character'], entities: ['character:c1'] });
+    expect(localStorage.getItem('inkflow:kg:filters:p1')).toContain('"entities"');
+    expect(readKgFilter('p1')).toEqual({ categories: ['character'], entities: ['character:c1'] });
     expect(readKgFilter('p2')).toEqual(DEFAULT_KG_FILTER);
   });
 
-  it('N15 无记忆 = 默认（六类全选 + 面板展开）', () => {
+  it('N15 无记忆 = 默认（六类全选 + 实体全选 + 面板展开）', () => {
     expect(readKgFilter('p1')).toEqual(DEFAULT_KG_FILTER);
     expect(readKgPanel()).toBeNull();
   });
 
-  it('N18 旧格式（#1373 单选 `category`）兼容：具体类 → 只勾该类；all → 全选', () => {
-    expect(sanitizeKgFilter({ category: 'character', entity: null })).toEqual({
-      categories: ['character'],
-      entity: null,
+  it('N19 新格式：`entities: null` = 全选；数组 = 只勾这些', () => {
+    expect(sanitizeKgFilter({ categories: ['world'], entities: null })).toEqual({ categories: ['world'], entities: null });
+    expect(sanitizeKgFilter({ categories: ['world'], entities: ['world:w1'] })).toEqual({
+      categories: ['world'],
+      entities: ['world:w1'],
     });
-    expect(sanitizeKgFilter({ category: 'all', entity: null })).toEqual({
+    expect(sanitizeKgFilter({ categories: ['world'], entities: [] })).toEqual({ categories: ['world'], entities: [] });
+  });
+
+  it('N18 旧格式（#1373 单选 `category`）兼容：具体类 → 只勾该类；all → 全选', () => {
+    expect(sanitizeKgFilter({ category: 'character', entity: null })).toEqual({ categories: ['character'], entities: null });
+    expect(sanitizeKgFilter({ category: 'all', entity: null })).toEqual({ categories: ALL, entities: null });
+  });
+
+  it('N19 旧格式 `entity`（单选）兼容为「只勾该实体」', () => {
+    expect(sanitizeKgFilter({ categories: ALL, entity: 'character:c1' })).toEqual({
       categories: ALL,
-      entity: null,
+      entities: ['character:c1'],
     });
   });
 
@@ -170,22 +152,31 @@ describe('#1465 选择记忆（新格式 + 旧格式向后兼容）', () => {
     expect(readKgPanel()).toBeNull();
   });
 
-  it('N15 记忆值校验：非法类别回全选；已不存在的实体回 null（防幽灵选中）', () => {
-    expect(sanitizeKgFilter({ categories: ['不存在的类别'] })).toEqual({
-      categories: [],
-      entity: null,
-    });
+  it('N19 记忆值校验：非法类别回全选；已不存在的实体被丢弃（防幽灵选中）', () => {
+    expect(sanitizeKgFilter({ categories: ['不存在的类别'] })).toEqual({ categories: [], entities: null });
     expect(sanitizeKgFilter(null)).toEqual(DEFAULT_KG_FILTER);
     expect(sanitizeKgFilter('字符串')).toEqual(DEFAULT_KG_FILTER);
     expect(sanitizeKgFilter({ category: '不存在的类别' })).toEqual(DEFAULT_KG_FILTER);
-    expect(sanitizeKgFilter({ categories: ['world'], entity: 'character:c1' })).toEqual({
+    // 传入当前图谱节点集 → 幽灵实体被丢弃；**全被丢弃 = 回退全选**（不出现「选中了不存在的实体」）
+    expect(sanitizeKgFilter({ categories: ['world'], entities: ['character:c9'] }, new Set(['world:w1']))).toEqual({
       categories: ['world'],
-      entity: 'character:c1',
+      entities: null,
     });
-    // 实体不在当前图谱中 → 丢弃（否则会出现「选中了不存在的实体」）
+    // 部分幽灵 → 只保留仍存在的；**收敛后恰好覆盖全集 → 塌缩为全选**（「实体 n/n」假筛选态不许出现）
     expect(
-      sanitizeKgFilter({ categories: ['world'], entity: 'character:c9' }, new Set(['world:w1'])),
-    ).toEqual({ categories: ['world'], entity: null });
+      sanitizeKgFilter({ categories: ['world'], entities: ['world:w1', 'character:c9'] }, new Set(['world:w1'])),
+    ).toEqual({ categories: ['world'], entities: null });
+    expect(
+      sanitizeKgFilter(
+        { categories: ['world'], entities: ['world:w1'] },
+        new Set(['world:w1', 'world:w2']),
+      ),
+    ).toEqual({ categories: ['world'], entities: ['world:w1'] });
+    // 数组 = 全集 → 塌缩为 null（全选）
+    expect(sanitizeKgFilter({ categories: ALL, entities: ['character:c1', 'character:c2'] }, new Set(['character:c1', 'character:c2']))).toEqual({
+      categories: ALL,
+      entities: null,
+    });
   });
 
   it('N15 面板开合记忆：open/closed 往返', () => {
