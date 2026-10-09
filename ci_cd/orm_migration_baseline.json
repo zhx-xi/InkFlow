@@ -635,6 +635,44 @@
         "nullable": true
       }
     },
+    "extract_staging": {
+      "action": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "batch_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "created_at": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "entity_type": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "payload": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "project_id": {
+        "has_server_default": false,
+        "nullable": false
+      },
+      "target_id": {
+        "has_server_default": false,
+        "nullable": true
+      },
+      "type": {
+        "has_server_default": false,
+        "nullable": false
+      }
+    },
     "extraction_runs": {
       "content_hash": {
         "has_server_default": false,
