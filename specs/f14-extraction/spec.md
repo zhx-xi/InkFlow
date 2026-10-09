@@ -1324,14 +1324,22 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 
 **请求**：`POST /api/v1/extract` 增 `stage: bool = False`。
 
-- `stage=true`：对该次提取**走零写入**（character/setting 管线以 `dry_run=true` 调用，
-  不写实体、不写 run 表），随后把 `detail.created` / `detail.updated` 的条目清单落到
+- `stage=true`：对该次提取**走零写入**（各类型管线以 `dry_run=true` 调用，不写实体 /
+  关系、不写 run 表），随后把 `detail.created` / `detail.updated` 的条目清单落到
   `extract_staging` 表；信封回 `batch_id`。
-- **仅 character / setting 支持 `stage`**（首刀，#1545）；其余类型带 `stage` → 422。
+- **支持范围（#1545 PR-2b 放开全类型）**：`granularity` / `dry_run` 仍**仅
+  character / setting**（不变）；`stage` 覆盖全部**可物化**类型——character /
+  setting / foreshadowing / timeline（要求该类型物化仓储已装配）+ knowledge_relation
+  （关系物化走 F48 关系写入点）；outline / style 无档案实体产物 → 422。
 - `stage` 与 `dry_run` 同时传 → 422（互斥）。
 
 **暂存表 `extract_staging`**（§8）：`project_id` / `batch_id` / `type` / `entity_type` /
 `action`(create\|update) / `target_id`(update 时指向被覆盖行) / `payload`(JSON) / `created_at`。
+
+**entity_type 枚举（#1545 PR-2b）**：`character` / `world_setting` / `foreshadowing` /
+`timeline_event` / `knowledge_relation`（由 ExtractionType 映射，见 `_STAGE_TARGETS`
+分派表）。knowledge_relation 的 stage 结果由 F48 确定性规则集「只算不写」产出
+would-be 关系、置于信封 `detail.created` 后落暂存（不写 knowledge_relations 表）。
 
 **端点**：
 
@@ -1341,8 +1349,11 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/confirm` | `ConfirmStagedResult{batch_id, created, updated}` |
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/cancel` | `CancelStagedResult{batch_id, deleted}` |
 
-**物化纪律**：confirm 逐行按 `action` 走既有仓储路径（`create` → `repo.add(entity)`；
-`update` → `repo.update(entity)`），**不得绕过既有合并语义**；物化后删除本批暂存行。
+**物化纪律**：confirm 逐行按 `entity_type` 反序列化（Character / WorldSetting /
+Foreshadowing / TimelineEvent / KnowledgeRelation 各自 `model_validate(payload)`），再按
+`action` 走**该类型对应**仓储（`create` → `repo.add(entity)`；`update` →
+`repo.update(entity)`；knowledge_relation → 关系仓储 `add`）——只要求该行对应仓储已装配
+（支持部分装配），**不得绕过既有合并语义**；物化后删除本批暂存行。
 **幂等**：重复 cancel / confirm 空批 → 计数 0，不报错；项目不存在 → 404（同 rollback 口径）。
 
 **过期清理**：N 天未确认的暂存行应定期清理（对齐软删 30 天纪律）——**本刀仅登记语义，
