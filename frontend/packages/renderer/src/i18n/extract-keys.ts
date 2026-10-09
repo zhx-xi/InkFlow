@@ -24,6 +24,13 @@ export const extractZh: Record<string, string> = {
   'extract.failed': '提取失败',
   'extract.lastRun': '最近一次提取',
   'extract.noRun': '暂无提取记录',
+  'extract.resultTitle': '提取完成 · 待确认',
+  'extract.createdTitle': '新增 {count}',
+  'extract.updatedTitle': '更新 {count}',
+  'extract.confirm': '确认落库',
+  'extract.cancel': '取消',
+  'extract.willOverwrite': '将覆盖',
+  'extract.floatRestore': '还原',
   'write.toolbar.extract': 'AI 提取',
 };
 
@@ -50,5 +57,12 @@ export const extractEn: Record<string, string> = {
   'extract.failed': 'Extraction failed',
   'extract.lastRun': 'Last extraction',
   'extract.noRun': 'No extraction records',
+  'extract.resultTitle': 'Extraction staged · pending confirm',
+  'extract.createdTitle': 'New {count}',
+  'extract.updatedTitle': 'Updated {count}',
+  'extract.confirm': 'Confirm & save',
+  'extract.cancel': 'Cancel',
+  'extract.willOverwrite': 'Will overwrite',
+  'extract.floatRestore': 'Restore',
   'write.toolbar.extract': 'AI Extract',
 };
