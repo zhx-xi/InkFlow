@@ -121,3 +121,25 @@ def test_lifespan_wires_reconcile() -> None:
     assert source.index("reconcile_stale_running_plans") < source.index("yield"), (
         "RED-3a: reconcile 必须在 lifespan yield 之前执行（启动段），防函数存在但从不调用"
     )
+
+
+def test_lifespan_wires_cleanup_expired_staging() -> None:
+    """【#1551】最小 wiring 守护：lifespan 启动段必须调用 cleanup_expired_staging
+    且位于 yield 之前（防「清理函数存在但从不接入启动」）。
+
+    注释（同 test_lifespan_wires_reconcile 的形态②理由）：全量 TestClient(app)
+    触发 create_tables/seed/scheduler 副作用过重，故选源码级断言。
+    """
+    import importlib
+    import inspect
+
+    app_mod = importlib.import_module("inkflow.api.app")
+    lifespan_fn = getattr(app_mod.lifespan, "__wrapped__", app_mod.lifespan)
+    source = inspect.getsource(lifespan_fn)
+
+    assert "cleanup_expired_staging" in source, (
+        "#1551: lifespan 启动钩子必须调用 cleanup_expired_staging(异步工厂)"
+    )
+    assert source.index("cleanup_expired_staging") < source.index("yield"), (
+        "#1551: 暂存清理必须在 lifespan yield 之前执行（启动段）"
+    )

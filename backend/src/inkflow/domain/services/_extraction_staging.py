@@ -149,7 +149,7 @@ class _ExtractionStagingMixin:
         """stage（零写入）下的 KNOWLEDGE_RELATION 结果（§5.9，#1545 PR-2b）.
 
         关系落库发生在 F48 `RelationExtractionService.extract_for_project` 内部，stage
-        下不可调用 → 复用其确定性规则集（`_extract_rules`：只算不写、零 LLM），把
+        下不可调用 → 复用其确定性规则集（`extract_rules`：只算不写、零 LLM），把
         would-be 关系装配成完整 `KnowledgeRelation`（补 id / project_id / 时间戳；
         source=ai 对齐既有写入口径）后放进信封 detail 的 created 清单，供暂存区接管
         （`_staged_entries` → entity_type=knowledge_relation）。
@@ -164,7 +164,7 @@ class _ExtractionStagingMixin:
             )
         candidates: list[KnowledgeRelationCreate] = []
         warnings: list[str] = []
-        await service._extract_rules(project_id, candidates, warnings)
+        await service.extract_rules(project_id, candidates, warnings)
         now = _utcnow()
         relations = [
             KnowledgeRelation(

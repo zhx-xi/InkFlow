@@ -114,6 +114,7 @@ from inkflow.core.migrations_extraction_batch import (
 )
 from inkflow.core.migrations_timeline_era import ensure_timeline_era_columns
 from inkflow.core.migrations_writing_plan import ensure_writing_plan_tasklist_column
+from inkflow.core.startup_cleanup import cleanup_expired_staging
 from inkflow.core.startup_reconcile import reconcile_stale_running_plans
 from inkflow.domain.ports.extraction_errors import RAGUnavailableError
 from inkflow.domain.services.agent_entity_service import seed_builtin_agents
@@ -215,6 +216,8 @@ async def lifespan(app: FastAPI):
     # 「存在进行中的」挡掉重跑）；须在 seed 之后、scheduler 之前执行
     # #1317：注入存活判据——只释放无归属/归属已死的 running 行，别实例存活的不碰
     await reconcile_stale_running_plans(async_session_factory, is_alive=is_process_alive)
+    # #1551：内核启动幂等清理超期未确认的提取暂存行（对齐软删 30 天纪律；失败不阻塞启动）
+    await cleanup_expired_staging(async_session_factory)
     # #479 G2: 知识图谱定时提取调度器装配（应用级 session 长活，shutdown 关闭；
     # 手动触发端点与定时触发共用 RelationExtractionService，G1 契约
     # extraction_run_repo=None，run 记录落盘归 #496 承接）

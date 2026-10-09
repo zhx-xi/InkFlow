@@ -2,11 +2,12 @@
 > **时间口径（ADR-055 / #1000，#1069 收口）**：本模块时间字段（run_at 等）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 > **端**: backend
 
-> **Spec 版本**: 1.4 | **日期**: 2026-10-08 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
+> **Spec 版本**: 1.5 | **日期**: 2026-10-09 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
 > **Spec 变更**: v1.1 — 用户拍板 Q1=选项 A（STYLE 注册占位 + 调用 422，v1.0 已按此设计，仅标记确认——**本拍板已被 F16 兑现**：F16 ✅ 已注册 handler，§6.1/§12，占位表述随 F16 spec §8.2 第 10 项同步修订）/ Q2=选项 B（TIMELINE 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项，默认 false）/ Q3=综合方案（保留源 sha256 增量 + F12 事件 `source_chapter_id` 章节联动）；v1.0 的「TIMELINE 委托 F12 确定性检查」改为设置项关闭时的兜底语义（跨模块 MODIFY F12，F13 改 F6 sources.py 先例）
 > **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，用户拍板按 docs 建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
 > **Spec 变更**: v1.3 — 类型面口径统一（#1408）：`ExtractionType.KNOWLEDGE_RELATION`（F48 知识图谱关系提取）接入统一提取入口——§6.1 注册表补第 7 槽（委托 `RelationExtractionService.extract_for_project(project_id, method="rule")`，与 `knowledge extract --method rule` 殊途同归：项目级、规则集、零 LLM）、§6.3/§6.4/§7 补项目级单源与输入约束（不接受 text/chapter_ids → 显式 422）、§2.1/§3.1/§4.1 类型清单 6 种 → 7 种；CLI 组 help / `--type` help / choices 三者口径一致由 `tests/cli/test_cli_extract_type_contract_1408.py` 契约测试守卫（枚举扩张未同步 → FAIL）
 > **Spec 变更**: v1.4 — 时间线提取补「时间表达」契约（#1526，0.17.0 rc1 数据质量）：`ExtractedTimelineEvent` 新增 `time_display`（**原文时间表达**，如「三月初二」）；提示词（zh/en 同源）要求**每事件必须给 `time_display`**，解析不出累计天数时 `time_value` 仍为 `null` 但**必须保留 `time_display`**；`time_unit` 仅在确实解析出 `time_value` 时写入（未解析出值 → 留空，防「假非空」噪声）；§5.5 schema / 模板 / 合并策略同步。**不推翻** [f12 §2.7](../f12-timeline/spec.md) S10（单位固定 + 项目内累计时基 + 不确定即 null）——本契约只补「原文表达不得丢」的展示面兜底，不改数值语义
+> **Spec 变更**: v1.5 — 暂存过期清理落地（#1551，0.17.0 W8c 收尾）：§5.9「过期清理」从「仅登记语义、不实现」改为「已实现」（内核启动期幂等清理超期未确认暂存行，阈值常量 30 天、失败不阻塞启动、不新增索引）；§5.9 / §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` **公开 compute-only 入口**（原私有 `_extract_rules` 升公开，消除跨模块私有调用）——关系提取算法与语义不变
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
 > **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
@@ -1340,6 +1341,8 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 `timeline_event` / `knowledge_relation`（由 ExtractionType 映射，见 `_STAGE_TARGETS`
 分派表）。knowledge_relation 的 stage 结果由 F48 确定性规则集「只算不写」产出
 would-be 关系、置于信封 `detail.created` 后落暂存（不写 knowledge_relations 表）。
+该「只算不写」经 F48 `RelationExtractionService.extract_rules` **公开 compute-only 入口**
+（#1551：原私有 `_extract_rules` 升公开），消除跨模块私有调用，规则集与语义不变。
 
 **端点**：
 
@@ -1356,8 +1359,21 @@ Foreshadowing / TimelineEvent / KnowledgeRelation 各自 `model_validate(payload
 （支持部分装配），**不得绕过既有合并语义**；物化后删除本批暂存行。
 **幂等**：重复 cancel / confirm 空批 → 计数 0，不报错；项目不存在 → 404（同 rollback 口径）。
 
-**过期清理**：N 天未确认的暂存行应定期清理（对齐软删 30 天纪律）——**本刀仅登记语义，
-不实现定时 job**（后续增量）。
+**过期清理（#1551，已实现）**：内核**启动期幂等清理**超期未确认的暂存行——`created_at`
+早于「当前 UTC − 阈值天数」的行，在 lifespan（`reconcile_stale_running_plans` 之后、
+scheduler 之前）被删除（`core/startup_cleanup.py: cleanup_expired_staging` →
+`SQLExtractStagingRepository.delete_expired`），返回清理条数并落日志。
+
+- **阈值**：模块常量 `STAGING_RETENTION_DAYS = 30`（对齐软删 30 天纪律），函数参数
+  `retention_days` 可覆盖（测试 / 后续接入设置）；阈值走**代码常量**（对齐本仓
+  F15/F16「阈值 → 代码常量 YAGNI」惯例）——**未新增全局 config 项**。
+- **范式**：复用 #953 `reconcile_stale_running_plans` 的**启动期维护范式**（lifespan 内
+  幂等执行、返回条数）——本仓**无真定时器范式**，故不引入调度库（AGENTS §10.2 简单优先）。
+- **幂等**：重复清理 → 第二次 0 行、0 报错；已 confirm / cancel 批次无残留行 → 清理
+  不报错、**正式表零影响**（暂存表独立）。
+- **失败不阻塞启动**：清理异常被吞并记 WARNING（同 scheduler shutdown 吞异常约定）。
+- **不新增索引**：暂存表小且随 confirm / cancel 清空，启动期全表扫描成本可忽略
+  （故不走 `ensure_*` 幂等迁移三件套）。
 
 ## 6. 提取类型注册表与增量状态语义
 
@@ -1374,6 +1390,11 @@ Foreshadowing / TimelineEvent / KnowledgeRelation 各自 `model_validate(payload
 | `foreshadowing` | `ForeshadowingExtractor`（F14 新建） | text / chapter_ids | ✅ | foreshadowing | F13 ✅ |
 | `style` | `StyleService.analyze`（F16 注册，§12） | text / chapter_ids | ❌（每次执行，确定性只读计算——F16 语义） | —（不在 RAG 范围） | F16 ✅ |
 | `knowledge_relation` | `RelationExtractionService.extract_for_project`（#1408 接入，`method="rule"`） | 无（项目级单源 `"full"`；text/chapter_ids → 422） | ❌（每次执行，规则集确定性计算，无增量价值） | —（不在 RAG 范围；index=true 忽略 + warning） | F48 ✅ |
+
+> **关系 no-write 公开入口（#1551）**：两段式暂存 stage 下知识关系「只算不写」经
+> `RelationExtractionService.extract_rules`（**公开 compute-only 入口**，原私有
+> `_extract_rules`；`extract_for_project` 内部同样复用之）——消除 `_extraction_staging`
+> 对 F48 服务的**私有跨模块调用**；规则集与提取语义**不变**（仅可见性提升）。
 
 **注册表实现**（`extraction_service.py` 内部 dict：`ExtractionType → handler`）:
 
@@ -1960,3 +1981,4 @@ F14 被依赖:
 |------|------|------|
 | 2026-10-07 | 新增 §5.8「提取写入策略」五条（类别归属归一 / 近义合并 / 粒度控制 / dry-run 预览 / batch_id 整批回滚）；`ExtractionRequest` 增 `granularity`·`dry_run`，`ExtractionResult` 增 `batch_id`，新增 `Granularity`·`RollbackResult`；§3.1 端点 6 → 7（新增 rollback）；§4.1 增 `--granularity`/`--dry-run` 与 `extract rollback` 命令；§6.4 输入约束表增 `granularity`/`dry_run` 两列 | #1485（0.17.0 W5b） |
 | 2026-10-07 | 边界：新列 `world_settings.batch_id` / `characters.batch_id`（可空 TEXT）+ 幂等迁移三件套 | #1485（0.17.0 W5b） |
+| 2026-10-09 | §5.9「过期清理」从「仅登记语义、不实现」改为「已实现」：内核启动期幂等清理超期未确认暂存行（`core/startup_cleanup.py: cleanup_expired_staging` → `SQLExtractStagingRepository.delete_expired`，阈值常量 30 天、失败不阻塞启动、不新增索引/迁移）；§5.9 · §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` 公开 compute-only 入口（私有 `_extract_rules` 升公开，消除跨模块私有调用，算法与语义不变） | #1551（0.17.0 W8c） |
