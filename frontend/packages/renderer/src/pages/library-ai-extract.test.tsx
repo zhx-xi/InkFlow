@@ -1,11 +1,12 @@
 /**
  * 设定库页「AI 提取」入口 RED 契约测试（#652）。
  *
- * 【契约（父侧定稿）】
+ * 【契约（父侧定稿；#1544 迁移：章节下拉 → 类型/范围选择）】
  * - library.tsx 工具栏新增按钮 data-testid='extract-entry-lib'（「AI 提取」，位于「新建」右侧）
  * - 仅当已选项目（currentProjectId 非 null）时渲染；点击 → 打开 AIExtractDialog
- * - dialog 打开时拉取章节列表 GET /api/v1/projects/{pid}/chapters + 运行记录
- *   GET /api/v1/projects/{pid}/extractions/runs?limit=1（镜像 AIExtractDialog 契约）
+ * - dialog 打开时拉取章节列表 GET /api/v1/projects/{pid}/chapters + 卷列表
+ *   GET /api/v1/projects/{pid}/volumes + 运行记录
+ *   GET /api/v1/projects/{pid}/extractions/runs（镜像 AIExtractDialog 契约）
  *
  * 【RED 预期失败形态】extract-entry-lib 不存在（library.tsx 未加按钮 / AIExtractDialog 未挂载）
  */
@@ -80,10 +81,11 @@ describe('设定库页 — 「AI 提取」入口（#652）', () => {
     renderLibrary();
     await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
     await user.click(screen.getByTestId('extract-entry-lib'));
-    // Dialog 打开：ai-extract-dialog 出现 + 章节下拉渲染 + 拉取章节端点被调用
+    // Dialog 打开：ai-extract-dialog 出现 + 类型单选渲染 + 拉取章节端点被调用
     const dlg = await screen.findByTestId('ai-extract-dialog');
     expect(within(dlg).getByText('AI 提取')).toBeInTheDocument();
-    expect(within(dlg).getByTestId('ai-extract-chapter')).toBeInTheDocument();
+    // #1544 迁移：旧 ai-extract-chapter 下拉已由「类型单选 + 范围选择」取代
+    expect(within(dlg).getByTestId('ai-extract-type')).toBeInTheDocument();
     await waitFor(() => {
       expect(apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/projects/p1/chapters')).toBe(true);
       expect(apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/projects/p1/extractions/runs')).toBe(true);

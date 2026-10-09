@@ -50,11 +50,39 @@
 | 分类 tab（library-tabs） | 当前分类 accent 下边框 | handleTabChange → URL cat 同步 + 内容重载 | 拉取中 → 内容区骨架 | 新分类视图渲染 | 拉取失败 → 错误态可重试 | 侧边导航 /library?cat=x 直达联动（URL 变化反向同步 tab）；切换时重置角色详情面板 |
 | 前往项目页（library-go-projects） | 空态主按钮 | navigate('/projects') | — | 路由切换 | — | 仅 currentProjectId===null 时渲染 |
 | 去创建（library-create-btn） | accent 主按钮（列表非空时） | 打开 LibraryCreateDialog（cat=activeCat，编辑态空） | 保存中按钮禁用 | 保存成功 → 关框 + reloadKey 刷新列表 | err toast，对话框保持可改重试 | knowledge 不渲染；world 需选中分类（语义=创建子条目）；outline 不渲染；world 工作台态隐藏；空列表由空态 CTA 覆盖 |
-| AI 提取（extract-entry-lib） | 描边按钮 | 打开 AIExtractDialog（提取类型/章节选择/开始提取） | 提取中（extract.running） | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；提取类型含角色/世界观/伏笔/知识关系等，结果写入对应分类；章节下拉**全量加载**（#1407：翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
+| AI 提取（extract-entry-lib） | 描边按钮 | 打开 AIExtractDialog（类型/范围选择，见 §2.1） | 提取中（extract.running） | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；类型=角色/世界观/时间线/伏笔/知识图谱（单选）+ 通用多选；范围=全文/按卷/按章（多选+区间）；章节下拉**全量加载**（#1407：翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
 | 顶部保存指示（lib-save-indicator） | 不渲染（idle） | 编辑保存发起 → saving | 「保存中…」 | 「已保存」2s 自动隐藏（timer 清理防重叠） | 失败回 idle + err toast | 仅编辑（PATCH）路径驱动；创建/删除保持 toast 语义 |
 | 加载骨架 | 3 行 Skeleton | — | — | 数据到达渲染列表 | — | 骨架保持至请求 settle |
 | 失败重试（library-retry） | 「加载失败，请重试」+ 重试按钮 | reloadKey+1 重新拉取 | 骨架 | 列表渲染 | 再次失败仍错误态 | 重试不丢当前分类与 URL |
 | 分页条（library-page） | 首页：prev 禁用 / next 可用（total > pageSize 时）；信息「第 1 / {m} 页 · 共 {k} 条」 | 「下一页」→ setPage(p+1) → 服务端按 `offset=(p+1)*50` 重拉；「上一页」→ setPage(p-1) | 列表区保持骨架/旧数据（hook 内部 loading） | 列表换页 + 信息更新 | 拉取失败 → 走既有错误态（library-error） | 仅 characters/foreshadow 渲染；末页 next 禁用；total ≤ 50 → 双向禁用；「每页条数」Select 变档（默认 50） |
+
+### 2.1 AI 提取对话框（#1528 / #1544：类型面 + 范围面）
+
+> 原型：`design/GUI/library/library.html`（`extract-single` / `extract-generic` 两态）+ `library-extract-single.png` / `library-extract-generic.png`
+
+```text
+┌─ AI 提取 ──────────────────────────────────────────── × ┐
+│ 提取类型（单选，默认「角色」）                             │
+│ (●角色) ( 世界观) ( 时间线) ( 伏笔) ( 知识图谱) ( 通用)    │
+│ [通用时] 要提取的设定（多选）                              │
+│   ☑角色 ☑世界观 ☐时间线 ☑伏笔 ☐知识图谱                   │
+│ 提取范围   (●全文) ( 按卷) ( 按章)                        │
+│ [按卷时] ☑卷一 ☐卷二 ☑卷三                              │
+│ [按章时] [第 1–10 章 ×] [第 13–20 章 ×]  ＋添加范围  全选  │
+│           单次上限 100 章，超出自动分批                    │
+│ [开始提取]                                              │
+└─────────────────────────────────────────────────────────┘
+```
+
+- **单选** = 只提取该类；**通用** = 多选（一次提多类）。设定页默认单选。
+- 类型 → 后端 `type` 映射：角色→`character`、世界观→`setting`、时间线→`timeline`、伏笔→`foreshadowing`、知识图谱→`knowledge_relation`
+- **提交语义**（统一走 `POST /api/v1/extract`，`type` 由所选类型决定）：
+  - 多类型 = **逐个类型各发一次请求**（N 类 = N 次）
+  - 范围 → `chapter_ids`：全文 = 项目全部章；按卷 = 选中卷的全部章；按章 = 各区间展开的章
+  - 单次 `chapter_ids` **≤ 100**（后端 `ExtractionRequest` validator）；超出**自动分批**（每批 ≤ 100，多请求）
+  - `timeline`：只发 `chapter_ids` + `auto_extract: true`（后端只收章节模式，不收 `text`）
+  - `knowledge_relation`：**不带** `text` / `chapter_ids`（项目级提取）
+- 章节 / 卷列表**全量加载**（#1407：翻页取满 `total`；卷→章用章节的 `volume_id` 归并）
 
 ## 3. 验收
 
@@ -64,3 +92,6 @@
 - N4：加载骨架 / 失败重试闭环
 - N5：「去创建」与「AI 提取」按分类可见性规则正确显隐（knowledge 无创建；world 需选中分类；outline 树内创建）
 - N6（#1300 / PR #1314）：characters / foreshadow 分类列表下方渲染分页条（`library-page` 前缀）——首页 prev 禁用、末页 next 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 50/页）；点「下一页」→ 服务端按 offset 重拉且 total 不变；world 分类**不**渲染分页条（全量取数）
+- N7（#1528 / #1544）：AI 提取对话框类型单选含**时间线 / 伏笔 / 知识图谱**（共 6 项含「通用」）；中英文 i18n 键对齐
+- N8（#1544）：**通用**多选 → 每选中类型各发一次 `POST /api/v1/extract`，`type` 映射正确；`knowledge_relation` 不带源、`timeline` 带 `chapter_ids` + `auto_extract`
+- N9（#1544）：范围「全文」→ `chapter_ids` = 全部章；「按卷」多选 → 选中卷全部章；「按章」区间 → 展开；单批 > 100 章 → 自动分批

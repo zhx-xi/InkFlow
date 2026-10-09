@@ -82,3 +82,26 @@ export async function restorePreviousContent(chapterId: string): Promise<Chapter
     method: 'POST',
   });
 }
+
+/** 卷列表项（镜像 GET /projects/{pid}/volumes 响应项） */
+export interface VolumeListDto {
+  id: string;
+  project_id: string;
+  title: string;
+  order_index?: number;
+}
+
+/** 卷列表响应（后端恒有 items；与 ChapterListResponse 同形） */
+export interface VolumeListResponse {
+  items: VolumeListDto[];
+}
+
+/**
+ * #1544：取项目卷列表（GET /api/v1/projects/{projectId}/volumes）。
+ *
+ * AI 提取对话框「按卷」范围用：卷 → 章由章节的 `volume_id` 归并（见 AIExtractDialog）。
+ * 后端返回 {items:[...]}（无分页），失败由 apiFetch 抛 ApiError。
+ */
+export async function fetchVolumes(projectId: string): Promise<VolumeListResponse> {
+  return apiFetch<VolumeListResponse>(`/api/v1/projects/${projectId}/volumes`);
+}
