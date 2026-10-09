@@ -190,6 +190,7 @@ class ForeshadowingExtractor:
         request: ForeshadowingExtractRequest,
         *,
         default_model: str,
+        dry_run: bool = False,
     ) -> ForeshadowingExtractionResult:
         """执行伏笔提取管线（§5.4 步骤 ②-⑦）。
 
@@ -197,6 +198,8 @@ class ForeshadowingExtractor:
             request: 提取请求（project_id / text / 可选 model 覆盖）.
             default_model: 项目默认模型（project.config.model，
                 由调用方门面校验项目存在后传入）.
+            dry_run: 仅预览（§5.9 两段式暂存 / `stage=True` 走零写入；只算不写，
+                返回同一份 created / updated 结果，不调用 `foreshadowing_repo`）.
 
         Returns:
             合并落库后的提取报告.
@@ -248,6 +251,7 @@ class ForeshadowingExtractor:
             item_warnings=outcome.warnings,
             model=model,
             chapters=chapters,
+            dry_run=dry_run,
         )
 
     # ── 解析 ────────────────────────────────────────────────────
@@ -288,8 +292,14 @@ class ForeshadowingExtractor:
         item_warnings: list[str],
         model: str,
         chapters: list[Chapter],
+        dry_run: bool,
     ) -> ForeshadowingExtractionResult:
-        """合并落库: 按 (project_id, title) 匹配伏笔 → 覆盖/新建。"""
+        """合并落库: 按 (project_id, title) 匹配伏笔 → 覆盖/新建.
+
+        `dry_run=True`（§5.9 stage 零写入）: 匹配/合并规则完全照跑，只是不调用
+        `self._repo.add` / `self._repo.update` —— 返回同一份 created / updated
+        结果供暂存区接管（镜像 F9 `_character_extractor` 的 dry_run 口径）。
+        """
         warnings = list(item_warnings)
         # #1291：project_id 为领域 UUID，直传仓储
         pid = request.project_id
@@ -303,22 +313,20 @@ class ForeshadowingExtractor:
             existing = await self._repo.get_by_title(pid, ef.title)
             if existing is None:
                 now = _utcnow()
-                new_fs = await self._repo.add(
-                    Foreshadowing(
-                        id=uuid.uuid4(),
-                        project_id=request.project_id,
-                        title=ef.title,
-                        description=ef.description or "",
-                        priority=50,
-                        status=ForeshadowingStatus.OPEN,
-                        location=ef.location or "",
-                        event_id=None,
-                        first_chapter_id=_chapter_id_for_number(chapters, ef.first_chapter_number),
-                        created_at=now,
-                        updated_at=now,
-                    )
+                candidate = Foreshadowing(
+                    id=uuid.uuid4(),
+                    project_id=request.project_id,
+                    title=ef.title,
+                    description=ef.description or "",
+                    priority=50,
+                    status=ForeshadowingStatus.OPEN,
+                    location=ef.location or "",
+                    event_id=None,
+                    first_chapter_id=_chapter_id_for_number(chapters, ef.first_chapter_number),
+                    created_at=now,
+                    updated_at=now,
                 )
-                created.append(new_fs)
+                created.append(candidate if dry_run else await self._repo.add(candidate))
                 continue
 
             merged = _merge_foreshadowing_fields(
@@ -329,7 +337,7 @@ class ForeshadowingExtractor:
             if merged is None:
                 # 幂等: 非空覆盖后字段无变化 → 不更新、不计入 updated
                 continue
-            updated.append(await self._repo.update(merged))
+            updated.append(merged if dry_run else await self._repo.update(merged))
 
         for w in warnings:
             logger.warning("伏笔提取警告: %s", w)

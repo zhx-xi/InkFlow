@@ -148,12 +148,13 @@ class TestStageExtract:
         assert len(entries) == 2
         assert sorted(e.action for e in entries) == ["create", "update"]
 
-    async def test_stage_rejected_for_non_character_setting(self, svc) -> None:
+    async def test_stage_rejected_for_type_without_materialization_target(self, svc) -> None:
+        """#1545 PR-2b 迁移：stage 现覆盖全部「有档案实体产物」的类型
+        （character/setting/foreshadowing/timeline/knowledge_relation）；
+        outline / style 无实体产物 → 仍 422。"""
         with pytest.raises(ExtractionValidationError):
             await svc.extract(
-                ExtractionRequest(
-                    project_id=PID, type=ExtractionType.FORESHADOWING, text="t", stage=True
-                )
+                ExtractionRequest(project_id=PID, type=ExtractionType.STYLE, text="t", stage=True)
             )
 
 

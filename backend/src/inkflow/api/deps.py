@@ -105,6 +105,9 @@ from inkflow.infrastructure.database.repositories.extraction_run_repo import (
 from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
     SQLiteForeshadowingRepository,
 )
+from inkflow.infrastructure.database.repositories.knowledge_relation_repo import (
+    SQLiteKnowledgeRelationRepository,
+)
 from inkflow.infrastructure.database.repositories.memory_event_repo import (
     SQLiteMemoryEventRepository,
 )
@@ -578,6 +581,7 @@ async def get_extraction_service(
         world_repo=SQLiteWorldRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
+        relation_repo=SQLiteKnowledgeRelationRepository(db),
         staging_repo=SQLExtractStagingRepository(db),
         vector_store=vector_store,
         fingerprint_provider=_fingerprint_provider,
@@ -880,12 +884,7 @@ def get_knowledge_graph_service(
     db: AsyncSession,
 ) -> KnowledgeGraphService:
     """获取 KnowledgeGraphService 实例（F48 八仓储装配：关系 + 六类实体 + 项目）."""
-    from inkflow.infrastructure.database.repositories.knowledge_relation_repo import (
-        SQLiteKnowledgeRelationRepository,
-    )
-    from inkflow.infrastructure.database.repositories.map_repo import (
-        SQLiteMapRepository,
-    )
+    from inkflow.infrastructure.database.repositories.map_repo import SQLiteMapRepository
 
     return KnowledgeGraphService(
         relation_repo=SQLiteKnowledgeRelationRepository(db),
