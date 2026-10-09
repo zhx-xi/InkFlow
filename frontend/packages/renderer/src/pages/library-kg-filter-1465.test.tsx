@@ -7,13 +7,18 @@
  *              折叠态由「画布下方横条」改为「画布左侧竖条（含明确展开按钮 + 六类圆点）」。
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * 【拍板口径（#1465，2026-10-07）】
+ * 【拍板口径（#1465，2026-10-07；#1529 2026-10 修订）】
  * - 类别：**多选，默认全选**；全选 == 显示全部（负例守护）；取消某类 == 隐藏该类
- * - 实体列表：**随类别过滤**（选中哪类就只列哪类的实体）
+ * - 实体：**多选**（`entities: string[] | null`，null = 全选）；#1529 起取消类别**不再清空**实体选择
+ * - 🔴 筛选信号：节点**永不从 DOM 移除** —— 活跃 = `data-dim="0"` / 变暗 = `data-dim="1"`
+ *   （旧「邻接子图 = 该实体 + 一跳邻居」语义已废弃；只保留单个实体被选中 → 仅该实体活跃）
+ * - 实体列表：**随类别过滤** + 按 `Intl.Collator('zh')` 排序 + **客户端分页**（页大小 10；本种子单页不渲染分页条）
  * - 高度：筛选面板/折叠竖条 **= 画布高 520px**，列表过长时**内部滚动**
  * - 折叠态：**画布左侧竖状条**（含 `[» 展开筛选]` 明确回入口 + 六类圆点 + `[✕ 清除]`）
+ * - 记忆键：`inkflow:kg:filters:<pid>` 值 `{categories, entities}`；旧 `{category, entity}` 读时迁移
  *
- * 【RED 预期】本文件在实现前必须真跑起来并 FAIL（断言失败，非 collection error）。
+ * 【RED 预期】本文件在实现前（旧 src）必须真跑起来并 FAIL（断言失败，非 collection error）：
+ *   节点已无 `data-dim` 属性 → 以 data-dim 判活跃/变暗的用例断言失败。
  *
  * ⚠️ jsdom 无布局引擎：几何类断言（真实宽高/等高/左对齐）只能由
  *    `design/GUI/_tools/shot-knowledge-graph-scope.cjs` 在真实浏览器里验证；
@@ -81,8 +86,14 @@ async function openGraph(user: ReturnType<typeof userEvent.setup>) {
   return result;
 }
 
-function visibleNodeTestIds(): string[] {
-  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id) !== null).sort();
+/** 变暗（dim）节点 testid：全部种子节点**始终在 DOM**，筛选信号是 data-dim="1" */
+function dimmedNodeTestIds(): string[] {
+  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '1').sort();
+}
+
+/** 活跃（正常着色）节点 testid：data-dim="0" */
+function activeNodeTestIds(): string[] {
+  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '0').sort();
 }
 
 /** 某一个类别行的复选框（实现里 testid 直接挂在 input 上；原型里挂在 label 上 → 两者都兼容） */
@@ -122,33 +133,44 @@ describe('#1465-A 类别多选：默认全选（N18①）', () => {
   it('N18① 负例守护：全选 == 显示全部（画布与摘要与改动前一致）', async () => {
     const user = userEvent.setup();
     await openGraph(user);
-    expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(dimmedNodeTestIds()).toEqual([]);
     expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 5 个实体');
     expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('全部');
   });
 
-  it('N18① 点某类 = 取消该类（多选非替换）：画布只剩其余类', async () => {
+  it('N18① 点某类 = 取消该类（多选非替换）：该类节点变暗，其余保留', async () => {
     const user = userEvent.setup();
     await openGraph(user);
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
     });
+    expect(dimmedNodeTestIds()).toEqual([
+      'library-kg-node-character-c1',
+      'library-kg-node-character-c2',
+      'library-kg-node-character-c3',
+    ]);
     // 多选：另一类**保持勾选**（不是替换）
     expect(catChecked('world')).toBe(true);
   });
 });
 
 describe('#1465-B 实体列表随类别过滤（N18②）', () => {
-  it('N18② 取消某类 → 该类实体从画布与实体列表双双消失；勾回 → 恢复', async () => {
+  it('N18② 取消某类 → 该类节点与实体行双双让位；勾回 → 恢复', async () => {
     const user = userEvent.setup();
     await openGraph(user);
 
-    // 取消「角色」
+    // 取消「角色」→ 角色节点变暗（仍在 DOM），实体列表也只剩世界观
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
     });
+    expect(dimmedNodeTestIds()).toEqual([
+      'library-kg-node-character-c1',
+      'library-kg-node-character-c2',
+      'library-kg-node-character-c3',
+    ]);
     // 实体列表里角色全部让位，只剩世界观
     expect(screen.queryByTestId('library-kg-filter-panel-entity-character-c1')).toBeNull();
     expect(screen.queryByTestId('library-kg-filter-panel-entity-character-c2')).toBeNull();
@@ -159,7 +181,7 @@ describe('#1465-B 实体列表随类别过滤（N18②）', () => {
     // 勾回「角色」→ 恢复
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+      expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
     });
     expect(screen.getByTestId('library-kg-filter-panel-entity-character-c1')).toBeInTheDocument();
     expect(screen.getByTestId('library-kg-filter-panel-entity-count')).toHaveTextContent('5');
@@ -169,7 +191,9 @@ describe('#1465-B 实体列表随类别过滤（N18②）', () => {
     const user = userEvent.setup();
     await openGraph(user);
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(2));
+    await waitFor(() =>
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']),
+    );
 
     const search = screen.getByTestId('library-kg-filter-panel-search');
     await user.type(search, '断崖');
@@ -179,18 +203,25 @@ describe('#1465-B 实体列表随类别过滤（N18②）', () => {
     expect(screen.queryByTestId('library-kg-filter-panel-entity-world-w1')).toBeNull();
   });
 
-  it('N18② 取消已选实体所属类别 → 实体选择被清空（不出现「选中了看不见的实体」）', async () => {
+  it('N18② 取消已选实体所属类别 → 实体选择被**保留**（#1529）；勾回类别即恢复活跃', async () => {
     const user = userEvent.setup();
     await openGraph(user);
-    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(3));
 
+    // 只保留「林尘」被选中：取消其余 4 个实体 → entities = [character:c1]
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c2'));
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c3'));
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-world-w1'));
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-world-w2'));
+    await waitFor(() => expect(activeNodeTestIds()).toEqual(['library-kg-node-character-c1']));
+
+    // 取消「角色」类（林尘所属）→ 无活跃节点，但实体选择**不清空**
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
-    await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
-    });
-    // 实体选择已清空 → 摘要里不再出现实体名
-    expect(screen.getByTestId('library-kg-filter-summary')).not.toHaveTextContent('林尘');
+    await waitFor(() => expect(activeNodeTestIds()).toEqual([]));
+    expect(localStorage.getItem('inkflow:kg:filters:p1')).toContain('character:c1');
+
+    // 勾回「角色」→ 记忆里的实体选择被恢复 → 林尘再次活跃
+    await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
+    await waitFor(() => expect(activeNodeTestIds()).toEqual(['library-kg-node-character-c1']));
   });
 });
 
@@ -247,12 +278,18 @@ describe('#1465-D 折叠态：画布左侧竖条（N18④）', () => {
     const user = userEvent.setup();
     await openGraph(user);
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(2));
+    await waitFor(() =>
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']),
+    );
 
     await user.click(screen.getByTestId('library-kg-filter-collapse'));
     await waitFor(() => expect(screen.getByTestId('library-kg-filterbar')).toBeInTheDocument());
-    // 折叠不牺牲筛选结果
-    expect(visibleNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
+    // 折叠不牺牲筛选结果：角色类变暗，世界观活跃
+    expect(dimmedNodeTestIds()).toEqual([
+      'library-kg-node-character-c1',
+      'library-kg-node-character-c2',
+      'library-kg-node-character-c3',
+    ]);
     // 隐藏的类别圆点 aria-pressed=false，其余 true
     expect(screen.getByTestId('library-kg-rail-dot-character').getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByTestId('library-kg-rail-dot-world').getAttribute('aria-pressed')).toBe('true');
@@ -260,7 +297,7 @@ describe('#1465-D 折叠态：画布左侧竖条（N18④）', () => {
     // 点圆点勾回角色 → 画布恢复全量（折叠态也能切）
     await user.click(screen.getByTestId('library-kg-rail-dot-character'));
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+      expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
     });
   });
 
@@ -298,12 +335,13 @@ describe('#1465-E 记忆兼容与前序行为不回归', () => {
     const user = userEvent.setup();
     await openGraph(user);
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([
+      expect(activeNodeTestIds()).toEqual([
         'library-kg-node-character-c1',
         'library-kg-node-character-c2',
         'library-kg-node-character-c3',
       ]);
     });
+    expect(dimmedNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
     expect(catChecked('character')).toBe(true);
     expect(catChecked('world')).toBe(false);
   });
@@ -312,7 +350,8 @@ describe('#1465-E 记忆兼容与前序行为不回归', () => {
     localStorage.setItem('inkflow:kg:filters:p1', JSON.stringify({ category: 'all', entity: null }));
     const user = userEvent.setup();
     await openGraph(user);
-    expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(dimmedNodeTestIds()).toEqual([]);
     for (const t of CAT_TYPES) expect(catChecked(t), t).toBe(true);
   });
 

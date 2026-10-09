@@ -4,32 +4,41 @@
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 【本次要证明的命题（一句话）】
- * 图谱视图出现「左侧筛选面板（可折叠）+ 底部折叠栏 + 图例」，类别/实体筛选真正作用到画布，
+ * 图谱视图出现「左侧筛选面板（可折叠）+ 折叠栏 + 图例」，类别/实体筛选真正作用到画布，
  * 折叠不牺牲画布宽度（面板整块移出 DOM），且选择结果被本地记忆（重挂载后恢复）。
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * 【拍板口径（2026-09-30，不得改方案）】
+ * 【拍板口径（2026-09-30 起，经 #1465 / #1529 演进）】
  * - 决策① 着色 A（色相分层）→ 画布节点用「类型基准色相 4 档 × 3 明度 = 12 色槽」的个体色（非固定 hex）
  * - 决策② 筛选 B（左侧 224px 面板 + 可折叠；折叠后画布全宽）——非顶部 chip 组
  * - 决策③ 默认 = 全部实体 + 面板展开；选择记忆（记住上次筛选与面板开合）
  * - 决策④ 筛选不作用于关系列表：列表视图/空态不渲染筛选控件
- * - 🔴 类别 = **单选**（specs/f19-gui/knowledge.md §2「类别行」/§4.2：点另一类替换、全不选=不过滤）
+ * - 🔴 #1529 语义：类别 = 多选（默认全选）；实体 = 多选（`entities: string[] | null`，null = 全选）。
+ *   节点「活跃」= type ∈ categories 且（entities === null 或 id ∈ entities）；其余**变暗但仍渲染**，
+ *   画布**永不**按筛选裁剪节点集 —— 筛选信号是节点上的 `data-dim="1|0"`，不再是「节点从 DOM 消失」。
+ *   点实体行 = 取消/勾回该实体（默认全选态下点一次 = 仅它变暗）；旧「邻接子图 = 该实体 + 一跳邻居」
+ *   语义已退休（只保留单个实体被选中 → 仅该实体活跃）。
  *
  * 【实现面契约（父侧定稿）】
  * - 纯函数模块：`components/knowledge-graph/kgColor.ts`（TYPE_HUE / hash32 / deriveNodeColor / typeBaseDot）
- *   + `components/knowledge-graph/kgFilter.ts`（DEFAULT_KG_FILTER / adjacentOf / computeVisibleIds /
- *   visibleEdges / kgFiltersKey / readKgFilter / writeKgFilter / sanitizeKgFilter / readKgPanel / writeKgPanel）
+ *   + `components/knowledge-graph/kgFilter.ts`（DEFAULT_KG_FILTER / computeVisibleIds（返回**活跃**节点集）/
+ *   kgFiltersKey / readKgFilter / writeKgFilter / sanitizeKgFilter / readKgPanel / writeKgPanel）
  *   —— 单测见 kgColor.test.ts / kgFilter.test.ts（本文件只证明「接线到 UI」）
- * - 画布节点 testid：`library-kg-node-<type>-<entity_id>`；个体色写在节点与圆点的内联样式上
+ * - 画布节点 testid：`library-kg-node-<type>-<entity_id>`；**始终渲染**，并带 `data-dim="1|0"`；
+ *   个体色写在节点与圆点的内联样式上
  * - 筛选面板 testid：`library-kg-filter-panel` · `-search` · `-cat-count` · `-cat-<type>` ·
  *   `-entity-count` · `-entity-<type>-<entity_id>` · `-panel-clear`；折叠 `library-kg-filter-collapse`；
  *   摘要 `library-kg-filter-summary`
  * - 折叠栏 testid：`library-kg-filterbar` · `-summary` · `-clear` · `-expand`
  * - 图例 testid：`library-kg-legend` · `library-kg-legend-<type>`；筛选无结果 `library-kg-filter-empty`
- * - 记忆键：`inkflow:kg:filters:<project_id>`（`{category, entity}`）+ `inkflow:kg:panel`（'open' | 'closed'）
+ *   （`!graphEmpty && activeIds.size === 0`）
+ * - 实体列表：`Intl.Collator('zh')` 按 name 排序 + **客户端分页**（页大小 10）；本种子 5 节点 →
+ *   单页、不渲染分页条
+ * - 记忆键：`inkflow:kg:filters:<project_id>`（`{categories, entities}`）+ `inkflow:kg:panel`（'open' | 'closed'）
+ *   —— 旧 `{category, entity}` 读时迁移
  *
- * 【RED 预期】本文件在实现前必须真跑起来并 FAIL（断言失败，非 collection error）：
- *   筛选面板/折叠栏/图例 testid 全部查不到（element-missing）→ 面板与折叠栏相关的用例断言失败。
+ * 【RED 预期】本文件在实现前（旧 src）必须真跑起来并 FAIL（断言失败，非 collection error）：
+ *   节点尚无 `data-dim` 属性 → 所有以 data-dim 判「活跃/变暗」的用例断言失败。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -54,7 +63,7 @@ const projectP1 = {
   created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-05T10:00:00Z',
 };
 
-/** 图谱种子：3 角色 + 2 世界观；c1 的邻接 = {c1, c2（同门）, w1（属于）}
+/** 图谱种子：3 角色 + 2 世界观；c1 的邻接 = {c1, c2（同门）, w1（属于）}(#1529 邻接语义已退休，仅留作种子)
  *  🔴 显式标注 GraphNode/GraphEdge：否则字面量把 type 推成 string，无法喂给强类型的 deriveNodeColor */
 const GRAPH_SEED: { nodes: GraphNode[]; edges: GraphEdge[] } = {
   nodes: [
@@ -95,9 +104,19 @@ async function openGraph(user: ReturnType<typeof userEvent.setup>) {
   return result;
 }
 
-/** 画布上「当前可见的节点 testid」集合 */
-function visibleNodeTestIds(): string[] {
-  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id) !== null).sort();
+/** 变暗（dim）节点的 testid：画布上所有种子节点**始终在 DOM**，筛选信号是 data-dim="1" */
+function dimmedNodeTestIds(): string[] {
+  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '1').sort();
+}
+
+/** 活跃（正常着色）节点的 testid：data-dim="0"（type ∈ 已选类别 且 实体命中） */
+function activeNodeTestIds(): string[] {
+  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '0').sort();
+}
+
+/** 断言画布仍渲染全部种子节点（#1529：筛选只变暗，不移除） */
+function expectAllNodesRendered(): void {
+  for (const id of NODE_TESTIDS) expect(screen.getByTestId(id), id).toBeInTheDocument();
 }
 
 /** 读取元素内联样式里的某个颜色（jsdom 会把颜色归一化为 rgb(...)） */
@@ -151,11 +170,14 @@ beforeEach(() => {
 });
 
 describe('#1373-A 节点个体着色（决策①：色相分层，同类型个体可辨）', () => {
-  it('N10 画布节点 testid = library-kg-node-<type>-<entity_id>（供着色/筛选断言锚定）', async () => {
+  it('N10 画布节点 testid = library-kg-node-<type>-<entity_id> 且默认带 data-dim="0"（供着色/筛选断言锚定）', async () => {
     const user = userEvent.setup();
     await openGraph(user);
+    // #1529：全部种子节点始终在 DOM，默认（未筛选）均为 data-dim="0"
     for (const id of NODE_TESTIDS) {
-      expect(screen.getByTestId(id), id).toBeInTheDocument();
+      const el = screen.getByTestId(id);
+      expect(el, id).toBeInTheDocument();
+      expect(el.getAttribute('data-dim'), id).toBe('0');
     }
   });
 
@@ -210,7 +232,9 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     expect(screen.getByTestId('library-kg-filter-panel')).toBeInTheDocument();
     // 折叠态入口在展开态不出现
     expect(screen.queryByTestId('library-kg-filterbar')).toBeNull();
-    expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    // #1529：默认全量活跃、无人变暗（画布不被裁剪）
+    expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(dimmedNodeTestIds()).toEqual([]);
     expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 5 个实体');
     // 类别组 = 六类（每类一行）
     for (const t of ['character', 'world', 'outline', 'timeline', 'foreshadow', 'map_pin']) {
@@ -229,52 +253,77 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
      pages/library-kg-filter-1465.test.tsx（#1465 契约）取代 —— 类别改「多选、默认全选」，
      点某类 = 取消该类（不再是「替换/回全部」）。 */
 
-  it('N12 实体筛选：邻接子图 = 该实体 + 一跳邻居；再点取消', async () => {
+  it('N12 实体多选：点实体 = 取消它（仅它变暗，其余保留）；再点恢复全量', async () => {
     const user = userEvent.setup();
     await openGraph(user);
 
+    // #1529：点「林尘」→ 从全选里去掉它 → 仅它变暗，其余 4 个仍活跃（且全部仍在 DOM）
     await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([
+      expect(dimmedNodeTestIds()).toEqual(['library-kg-node-character-c1']);
+    });
+    expect(activeNodeTestIds()).toEqual([
+      'library-kg-node-character-c2',
+      'library-kg-node-character-c3',
+      'library-kg-node-world-w1',
+      'library-kg-node-world-w2',
+    ]);
+    expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 4 个实体');
+    expectAllNodesRendered();
+
+    // 再点同一实体 → 勾回 = 恢复全量（entities 回到 null）
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
+    await waitFor(() => {
+      expect(dimmedNodeTestIds()).toEqual([]);
+    });
+    expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 5 个实体');
+  });
+
+  it('N12 类别 ∩ 实体 + 邻接语义退休：只留「林尘」被选中 → 仅林尘活跃（不再带一跳邻居 c2）', async () => {
+    const user = userEvent.setup();
+    await openGraph(user);
+
+    // #1465：点类别 = 取消该类 → 取消世界观，世界观两节点变暗
+    await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
+    await waitFor(() => {
+      expect(dimmedNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
+    });
+    // #1529：取消 c2 / c3 → 角色类里只留「林尘」被选中
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c2'));
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c3'));
+    // 交集合：仅 type ∈ categories(非世界观) ∩ 实体命中(c1) = {c1}；旧邻接语义会带出 c2 → 此处必须有 c1 无 c2
+    await waitFor(() => {
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-character-c1']);
+    });
+    expect(dimmedNodeTestIds()).toEqual([
+      'library-kg-node-character-c2',
+      'library-kg-node-character-c3',
+      'library-kg-node-world-w1',
+      'library-kg-node-world-w2',
+    ]);
+    expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 1 个实体');
+  });
+
+  it('N11 类别变更不清空无关实体选择（#1529：取消无关类别 → 实体选择保持）', async () => {
+    const user = userEvent.setup();
+    await openGraph(user);
+
+    // 取消（变暗）「林尘」
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
+    await waitFor(() => expect(dimmedNodeTestIds()).toEqual(['library-kg-node-character-c1']));
+    // 取消**世界观**（与「林尘」无关的类别）→ 实体选择保持；世界观两节点一并变暗
+    await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
+    await waitFor(() => {
+      expect(dimmedNodeTestIds()).toEqual([
         'library-kg-node-character-c1',
-        'library-kg-node-character-c2',
         'library-kg-node-world-w1',
+        'library-kg-node-world-w2',
       ]);
     });
-    expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 3 个实体');
-
-    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
-    await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
-    });
-  });
-
-  it('N12 类别 ∩ 实体：留角色 + 选实体「林尘」→ 邻接子图 ∩ 角色类', async () => {
-    const user = userEvent.setup();
-    await openGraph(user);
-
-    // #1465：点类别 = 取消该类 → 取消世界观，只留角色
-    await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(3));
-    // 选「林尘」(character:c1)：邻接 {c1, c2, w1} ∩ 角色 = {c1, c2}
-    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
-    await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual(['library-kg-node-character-c1', 'library-kg-node-character-c2']);
-    });
-    expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 2 个实体');
-  });
-
-  it('N11 类别变更不清空无关实体选择（#1465：仅当实体所属类别被取消才清空）', async () => {
-    const user = userEvent.setup();
-    await openGraph(user);
-
-    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(3));
-    // 取消**世界观**（与已选实体「林尘」所属角色类无关）→ 实体选择保持：邻接 ∩ 角色
-    await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
-    await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual(['library-kg-node-character-c1', 'library-kg-node-character-c2']);
-    });
+    expect(activeNodeTestIds()).toEqual(['library-kg-node-character-c2', 'library-kg-node-character-c3']);
+    // 实体选择未被清空（记忆仍是 entities 数组，未回退全选）
+    expect(localStorage.getItem('inkflow:kg:filters:p1')).toContain('"entities"');
   });
 
   it('N15 搜索只过滤实体列表，不改画布', async () => {
@@ -288,20 +337,24 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
       expect(screen.getByTestId('library-kg-filter-panel-entity-world-w2')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('library-kg-filter-panel-entity-character-c1')).toBeNull();
-    // 画布不受搜索影响
-    expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    // 画布不受搜索影响（全部活跃、无人变暗）
+    expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(dimmedNodeTestIds()).toEqual([]);
   });
 
-  it('筛选无结果：library-kg-filter-empty 提示（画布仍为图谱视图）', async () => {
+  it('筛选无结果：全部节点变暗但仍在 DOM + library-kg-filter-empty 提示', async () => {
     const user = userEvent.setup();
     await openGraph(user);
-    // #1465：取消种子里的全部两类（角色 + 世界观）→ 可见 0
+    // #1465：取消种子里的全部两类（角色 + 世界观）→ 无活跃节点
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([]);
+      expect(screen.getByTestId('library-kg-filter-empty')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('library-kg-filter-empty')).toBeInTheDocument();
+    // #1529：画布不裁剪 —— 所有节点仍在 DOM，只是全部变暗
+    expect(activeNodeTestIds()).toEqual([]);
+    expect(dimmedNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expectAllNodesRendered();
     // 图谱本身非空 → 不误报「图谱为空」
     expect(screen.queryByTestId('library-kg-empty')).toBeNull();
   });
@@ -310,17 +363,23 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     const user = userEvent.setup();
     await openGraph(user);
 
-    // #1465：点类别 = 取消该类 → 取消角色，只留世界观
+    // #1465：点类别 = 取消该类 → 取消角色，世界观保持活跃
     await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(2));
+    await waitFor(() =>
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']),
+    );
 
     await user.click(screen.getByTestId('library-kg-filter-collapse'));
     await waitFor(() => {
       expect(screen.queryByTestId('library-kg-filter-panel')).toBeNull();
       expect(screen.getByTestId('library-kg-filterbar')).toBeInTheDocument();
     });
-    // 折叠不牺牲筛选结果（N14 的核心）
-    expect(visibleNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
+    // 折叠不牺牲筛选结果（N14 的核心）：角色类仍变暗，世界观活跃
+    expect(dimmedNodeTestIds()).toEqual([
+      'library-kg-node-character-c1',
+      'library-kg-node-character-c2',
+      'library-kg-node-character-c3',
+    ]);
     expect(screen.getByTestId('library-kg-filterbar-summary')).toHaveTextContent('显示 2 个实体');
   });
 
@@ -343,34 +402,39 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     await openGraph(user);
 
     // ① 面板入口
-    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(3));
+    await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1')); // 取消林尘
+    await waitFor(() => expect(dimmedNodeTestIds()).toEqual(['library-kg-node-character-c1']));
     await user.click(screen.getByTestId('library-kg-filter-panel-clear'));
-    await waitFor(() => expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort()));
+    await waitFor(() => expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort()));
+    expect(dimmedNodeTestIds()).toEqual([]);
     expect(localStorage.getItem('inkflow:kg:filters:p1')).toContain('"categories"');
 
     // ② 折叠栏入口
-    await user.click(screen.getByTestId('library-kg-filter-panel-cat-character'));
+    await user.click(screen.getByTestId('library-kg-filter-panel-cat-character')); // 取消角色类
     await user.click(screen.getByTestId('library-kg-filter-collapse'));
-    await waitFor(() => expect(visibleNodeTestIds()).toHaveLength(2));
+    await waitFor(() =>
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']),
+    );
     await user.click(screen.getByTestId('library-kg-filterbar-clear'));
-    await waitFor(() => expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort()));
+    await waitFor(() => expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort()));
   });
 
   it('N15 选择即记忆：类别/实体/折叠写入 localStorage（决策③）', async () => {
     const user = userEvent.setup();
     await openGraph(user);
 
-    // #1465：取消「世界观」（与要选的实体无关）→ 实体选择保持；记忆写 categories
-    await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
+    // #1529：点实体 = 取消它；记忆写 categories + entities（数组）
     await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c2'));
+    await user.click(screen.getByTestId('library-kg-filter-panel-cat-world'));
     await user.click(screen.getByTestId('library-kg-filter-collapse'));
 
     await waitFor(() => {
       const raw = localStorage.getItem('inkflow:kg:filters:p1') ?? '';
       expect(raw).toContain('"categories"');
-      expect(raw).not.toContain('"world"');
-      expect(raw).toContain('character:c2');
+      expect(raw).toContain('"entities"'); // #1529：新记忆形态（旧 `entity` 已废弃）
+      expect(raw).not.toContain('"world"'); // 类别已取消「世界观」
+      expect(raw).not.toContain('"character:c2"'); // 点实体 = 取消它（多选集合）
+      expect(raw).toContain('character:c1'); // 其余实体保持选中
       expect(localStorage.getItem('inkflow:kg:panel')).toBe('closed');
     });
   });
@@ -385,13 +449,13 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
 
     first.unmount();
 
-    // 重新挂载（模拟切页签 / 刷新）：应恢复「类别=角色 + 面板收起」
+    // 重新挂载（模拟切页签 / 刷新）：应恢复「角色类已取消 + 面板收起」→ 仅世界观活跃
     const user2 = userEvent.setup();
     renderLibrary();
     await user2.click(screen.getByRole('tab', { name: '知识图谱' }));
     await screen.findByTestId('library-kg-canvas');
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
+      expect(activeNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
     });
     expect(screen.queryByTestId('library-kg-filter-panel')).toBeNull();
     expect(screen.getByTestId('library-kg-filterbar')).toBeInTheDocument();
@@ -403,11 +467,13 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     const user = userEvent.setup();
     await openGraph(user);
 
-    expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+    expect(dimmedNodeTestIds()).toEqual([]);
     expect(screen.getByTestId('library-kg-filter-panel')).toBeInTheDocument();
   });
 
   it('N15 记忆里的实体已不存在 → 丢弃（不出现「选中了不存在的实体」）', async () => {
+    // 旧格式 {category, entity}（#1529 读时迁移）；幽灵实体 character:c9 不在图谱中
     localStorage.setItem(
       'inkflow:kg:filters:p1',
       JSON.stringify({ category: 'all', entity: 'character:c9' }),
@@ -415,9 +481,9 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     const user = userEvent.setup();
     await openGraph(user);
 
-    // 节点集到位后记忆里的幽灵实体被丢弃 → 画布恢复全量
+    // 节点集到位后记忆里的幽灵实体被丢弃 → 恢复全量（全部活跃）
     await waitFor(() => {
-      expect(visibleNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
+      expect(activeNodeTestIds()).toEqual([...NODE_TESTIDS].sort());
     });
   });
 });

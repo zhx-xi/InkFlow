@@ -12,6 +12,7 @@ import type {
 } from '../../api/knowledge-graph';
 import { useI18n } from '../../i18n/useI18n';
 import { cn } from '../../lib/cn';
+import { Pagination } from '../Pagination';
 import { DrawioIoControls } from './DrawioIoControls';
 import { ENTITY_TYPE_KEYS, KnowledgeGraphCanvas } from './KnowledgeGraphCanvas';
 import { deriveNodeColor, typeBaseDot } from './kgColor';
@@ -21,7 +22,8 @@ import {
   computeVisibleIds,
   readKgFilter,
   readKgPanel,
-  visibleEdges,
+  reconcileKgFilter,
+  sortByEntityName,
   writeKgFilter,
   writeKgPanel,
   type KgFilterState,
@@ -92,57 +94,68 @@ export function KnowledgeGraphView({
   const [panelOpen, setPanelOpen] = useState<boolean>(() => readKgPanel() !== false);
   /** 搜索词（只过滤下方实体列表，不改画布） */
   const [query, setQuery] = useState('');
+  /** #1529：分类块 / 实体块各一套分页状态（page 0 基，两块互不相干） */
+  const [catPage, setCatPage] = useState(0);
+  const [catPageSize, setCatPageSize] = useState(10);
+  const [entityPage, setEntityPage] = useState(0);
+  const [entityPageSize, setEntityPageSize] = useState(10);
 
-  /** 节点集到位后校验记忆里的实体仍存在（防「选中了不存在的实体」） */
+  /** #1529：节点集变化 → 收敛记忆里的幽灵实体（无变化返回原引用，不触发重渲染） */
   useEffect(() => {
-    if (nodes.length === 0) return;
-    setFilter((prev) =>
-      prev.entity && !nodes.some((n) => n.id === prev.entity) ? { ...prev, entity: null } : prev,
-    );
+    setFilter((prev) => reconcileKgFilter(prev, new Set(nodes.map((n) => n.id))));
   }, [nodes]);
 
   const graphEmpty = nodes.length === 0;
-  // #1465：类别默认全选 → 少勾任意一类（或选中实体）即视为筛选生效
+  // #1529：判据统一——类别少勾 或 实体非全选（entities !== null）即视为筛选生效
   const filterActive =
-    filter.categories.length < KG_CATEGORIES.length || filter.entity !== null;
-  const visibleIds = useMemo(() => computeVisibleIds(nodes, edges, filter), [nodes, edges, filter]);
-  const visibleNodes = useMemo(() => nodes.filter((n) => visibleIds.has(n.id)), [nodes, visibleIds]);
-  const visibleEdgeList = useMemo(() => visibleEdges(edges, visibleIds), [edges, visibleIds]);
-  /** 实体列表池：先按**已勾选类别**过滤（#1465），再受搜索词收窄（不改画布可见集） */
+    filter.categories.length < KG_CATEGORIES.length || filter.entities !== null;
+  /** #1529：画布不再摘除节点/边——只算「高亮（正常彩色）节点集」，未高亮者由画布降灰 */
+  const activeIds = useMemo(() => computeVisibleIds(nodes, edges, filter), [nodes, edges, filter]);
+  /** 实体列表池（#1529）：已勾选类别 ∩ 搜索词 → 拼音序（纯前端分页切片，不改画布高亮） */
   const entityPool = useMemo(() => {
     const q = query.trim();
-    return nodes.filter(
-      (n) => filter.categories.includes(n.type) && (q === '' || n.name.includes(q)),
+    return sortByEntityName(
+      nodes.filter((n) => filter.categories.includes(n.type) && (q === '' || n.name.includes(q))),
     );
   }, [nodes, query, filter.categories]);
-  const selectedEntityName = filter.entity
-    ? (nodes.find((n) => n.id === filter.entity)?.name ?? null)
-    : null;
+  /** 实体池变化（类别勾选 / 搜索词）→ 实体块回第 1 页（分类块分页不受影响） */
+  useEffect(() => {
+    setEntityPage(0);
+  }, [entityPool]);
+  const entityRows = entityPool.slice(entityPage * entityPageSize, (entityPage + 1) * entityPageSize);
+  /** 分类块（#1529）：6 条自带一套分页 —— 常态 ≤ 每页条数 → 分页条不出场 */
+  const catRows = KG_CATEGORIES.slice(catPage * catPageSize, (catPage + 1) * catPageSize);
   const categoryLabel =
     filter.categories.length === KG_CATEGORIES.length
       ? t('lib.knowledge.filter.all')
       : filter.categories.map((type) => t(ENTITY_TYPE_KEYS[type])).join('/');
-  const filterLabel = selectedEntityName ? `${categoryLabel} · ${selectedEntityName}` : categoryLabel;
-  const shownText = t('lib.knowledge.filter.shown', { n: visibleNodes.length });
+  /** 实体非全选时在标签后附「 · 实体 已选/总数」 */
+  const filterLabel =
+    filter.entities === null
+      ? categoryLabel
+      : `${categoryLabel} · ${t('lib.knowledge.filter.entity')} ${filter.entities.length}/${nodes.length}`;
+  const shownText = t('lib.knowledge.filter.shown', { n: activeIds.size });
 
-  /** 类别多选（#1465）：切换某类（取消 = 隐藏该类 / 勾回 = 恢复）；
-   *  已选实体若属**被取消的类别** → 一并清空（避免「选中了看不见的实体」） */
+  /** 类别多选（#1465）：切换某类（取消 = 该类降灰 / 勾回 = 恢复）；
+   *  #1529：**不再清空实体选择**（消隐改降灰后不存在「选中了看不见的实体」） */
   const toggleCategory = (type: EntityType) => {
     const categories = filter.categories.includes(type)
       ? filter.categories.filter((t) => t !== type)
       : KG_CATEGORIES.filter((t) => t === type || filter.categories.includes(t));
-    const selectedType = nodes.find((n) => n.id === filter.entity)?.type;
-    const entity =
-      selectedType !== undefined && !categories.includes(selectedType) ? null : filter.entity;
-    const next: KgFilterState = { categories, entity };
+    const next: KgFilterState = { categories, entities: filter.entities };
     setFilter(next);
     writeKgFilter(persistKey, next);
   };
-  /** 实体单选：点同一实体取消 */
+  /** 实体多选（#1529）：按「当前有效集合」（`entities ?? 全部节点 id`）翻转；
+   *  勾满 = 塌缩为 `null`（全选同义），避免与默认态两种表示并存 */
   const toggleEntity = (id: string) => {
+    const effective = filter.entities ?? nodes.map((n) => n.id);
+    const flipped = effective.includes(id)
+      ? effective.filter((x) => x !== id)
+      : [...effective, id];
     const next: KgFilterState = {
       categories: filter.categories,
-      entity: filter.entity === id ? null : id,
+      entities: flipped.length === nodes.length ? null : flipped,
     };
     setFilter(next);
     writeKgFilter(persistKey, next);
@@ -233,14 +246,14 @@ export function KnowledgeGraphView({
                   className="w-full border-none bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-3"
                 />
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto py-1">
-                <div>
-                  <div className="flex items-center justify-between px-2.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-3">
-                    <span>{t('lib.knowledge.filter.category')}</span>
-                    <span data-testid="library-kg-filter-panel-cat-count">{KG_CATEGORIES.length}</span>
-                  </div>
-                  {/* 类别单选（点另一类替换；点同类取消） */}
-                  {KG_CATEGORIES.map((type) => (
+              {/* 块① 类别（#1529：独立滚动体 + 自带一套分页；点某类 = 取消/勾回该类，多选非替换） */}
+              <div className="flex min-h-0 flex-1 flex-col border-b border-line">
+                <div className="flex flex-none items-center justify-between px-2.5 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wider text-ink-3">
+                  <span>{t('lib.knowledge.filter.category')}</span>
+                  <span data-testid="library-kg-filter-panel-cat-count">{KG_CATEGORIES.length}</span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto pb-1">
+                  {catRows.map((type) => (
                     <label
                       key={type}
                       className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1 text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink"
@@ -261,21 +274,36 @@ export function KnowledgeGraphView({
                     </label>
                   ))}
                 </div>
-                <div>
-                  <div className="flex items-center justify-between px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-ink-3">
-                    <span>{t('lib.knowledge.filter.entity')}</span>
-                    <span data-testid="library-kg-filter-panel-entity-count">{entityPool.length}</span>
+                {KG_CATEGORIES.length > catPageSize && (
+                  <div data-testid="library-kg-cat-page" className="flex-none border-t border-line px-1.5 py-1">
+                    <Pagination
+                      compact
+                      page={catPage}
+                      pageSize={catPageSize}
+                      total={KG_CATEGORIES.length}
+                      onPageChange={setCatPage}
+                      onPageSizeChange={setCatPageSize}
+                      testIdPrefix="library-kg-cat-page"
+                    />
                   </div>
-                  {/* 实体单选（邻接子图 = 该实体 + 一跳邻居） */}
-                  {entityPool.map((n) => (
+                )}
+              </div>
+              {/* 块② 实体（#1529：多选集合、拼音序、独立滚动体 + 独立分页与每页条数） */}
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="flex flex-none items-center justify-between px-2.5 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wider text-ink-3">
+                  <span>{t('lib.knowledge.filter.entity')}</span>
+                  <span data-testid="library-kg-filter-panel-entity-count">{entityPool.length}</span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto pb-1">
+                  {entityRows.map((n) => (
                     <label
                       key={n.id}
+                      data-testid={`library-kg-filter-panel-entity-${n.type}-${n.entity_id}`}
                       className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1 text-[12px] text-ink-2 hover:bg-surface-2 hover:text-ink"
                     >
                       <input
                         type="checkbox"
-                        data-testid={`library-kg-filter-panel-entity-${n.type}-${n.entity_id}`}
-                        checked={filter.entity === n.id}
+                        checked={filter.entities === null || filter.entities.includes(n.id)}
                         onChange={() => toggleEntity(n.id)}
                         className="h-3.5 w-3.5 flex-none accent-accent"
                       />
@@ -284,10 +312,23 @@ export function KnowledgeGraphView({
                         style={{ backgroundColor: deriveNodeColor(n).dot }}
                         aria-hidden="true"
                       />
-                      <span className="truncate">{n.name}</span>
+                      <span className="nm truncate">{n.name}</span>
                     </label>
                   ))}
                 </div>
+                {entityPool.length > entityPageSize && (
+                  <div data-testid="library-kg-entity-page" className="flex-none border-t border-line px-1.5 py-1">
+                    <Pagination
+                      compact
+                      page={entityPage}
+                      pageSize={entityPageSize}
+                      total={entityPool.length}
+                      onPageChange={setEntityPage}
+                      onPageSizeChange={setEntityPageSize}
+                      testIdPrefix="library-kg-entity-page"
+                    />
+                  </div>
+                )}
               </div>
               <div
                 data-testid="library-kg-filter-summary"
@@ -371,8 +412,9 @@ export function KnowledgeGraphView({
           <div className="min-w-0 flex-1">
             {!graphEmpty && (
               <KnowledgeGraphCanvas
-                nodes={visibleNodes}
-                edges={visibleEdgeList}
+                nodes={nodes}
+                edges={edges}
+                activeIds={activeIds}
                 persistKey={persistKey}
                 onConnectNodes={onConnectNodes}
                 onOpenEntity={onOpenEntity}
@@ -383,7 +425,7 @@ export function KnowledgeGraphView({
               />
             )}
             {/* 筛选无结果（图谱本身非空） */}
-            {!graphEmpty && visibleNodes.length === 0 && (
+            {!graphEmpty && activeIds.size === 0 && (
               <div
                 data-testid="library-kg-filter-empty"
                 className="mt-3 rounded-lg border border-dashed border-line bg-surface px-6 py-8 text-center"

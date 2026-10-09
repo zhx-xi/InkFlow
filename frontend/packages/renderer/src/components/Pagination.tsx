@@ -7,6 +7,7 @@
  *   pageSizeOptions?          —— 默认 [10, 25, 50, 100]（对齐日志页现状）
  *   testIdPrefix?             —— 默认 'pagination'；logs 页传 'log-page'、大纲传 'outline-page'
  *                                以保留既有契约 testid（迁移零改测）
+ *   compact?                  —— #1529：紧凑形态（窄侧栏双块分页条；默认 false = 与旧形态逐字一致）
  *   className?                —— 外层布局钩子（各页容器间距不同）
  *
  * 边界语义（契约 Pagination.test.tsx 锁定）：
@@ -21,7 +22,10 @@ import { cn } from '../lib/cn';
 export const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const BUTTON_CLS =
-  'rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50';
+  'rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2 transition duration-180 hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap';
+
+/** #1529：紧凑形态的覆盖类（tw-merge 会以本组覆盖 BUTTON_CLS 的同族项） */
+const COMPACT_BUTTON_CLS = 'px-2 py-0.5 text-[11px] whitespace-nowrap';
 
 export interface PaginationProps {
   /** 当前页（0 基） */
@@ -40,6 +44,8 @@ export interface PaginationProps {
   testIdPrefix?: string;
   /** 外层容器类名（布局钩子） */
   className?: string;
+  /** #1529：紧凑形态（窄侧栏；true 时容器两端对齐 + 更小控件与 info 简写 `n / m`） */
+  compact?: boolean;
 }
 
 export function Pagination({
@@ -51,6 +57,7 @@ export function Pagination({
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   testIdPrefix = 'pagination',
   className,
+  compact = false,
 }: PaginationProps) {
   const { t } = useI18n();
   const safeSize = pageSize > 0 ? pageSize : 10;
@@ -70,14 +77,19 @@ export function Pagination({
   };
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-3', className)}>
+    <div
+      className={cn(
+        compact ? 'flex flex-wrap items-center justify-between gap-1.5' : 'flex flex-wrap items-center gap-3',
+        className,
+      )}
+    >
       {onPageSizeChange && (
         <div className="flex flex-col gap-1.5">
           <Select value={String(safeSize)} onValueChange={handlePageSizeChange}>
             <SelectTrigger
               data-testid={`${testIdPrefix}-size-select`}
               aria-label={t('pagination.page.size.label')}
-              className="h-8 w-24"
+              className={compact ? 'h-7 w-14 text-[11px]' : 'h-8 w-24'}
             >
               <SelectValue />
             </SelectTrigger>
@@ -95,19 +107,24 @@ export function Pagination({
         type="button"
         data-testid={`${testIdPrefix}-prev`}
         disabled={safePage === 0}
-        className={BUTTON_CLS}
+        className={compact ? cn(BUTTON_CLS, COMPACT_BUTTON_CLS) : BUTTON_CLS}
         onClick={() => onPageChange(safePage - 1)}
       >
         {t('pagination.page.prev')}
       </button>
-      <span data-testid={`${testIdPrefix}-info`} className="text-[13px] text-ink-2">
-        {t('pagination.page.info', { page: safePage + 1, pages, total: safeTotal })}
+      <span
+        data-testid={`${testIdPrefix}-info`}
+        className={compact ? 'text-[11px] whitespace-nowrap' : 'text-[13px] text-ink-2'}
+      >
+        {compact
+          ? `${safePage + 1} / ${pages}`
+          : t('pagination.page.info', { page: safePage + 1, pages, total: safeTotal })}
       </span>
       <button
         type="button"
         data-testid={`${testIdPrefix}-next`}
         disabled={lastPage}
-        className={BUTTON_CLS}
+        className={compact ? cn(BUTTON_CLS, COMPACT_BUTTON_CLS) : BUTTON_CLS}
         onClick={() => onPageChange(safePage + 1)}
       >
         {t('pagination.page.next')}
