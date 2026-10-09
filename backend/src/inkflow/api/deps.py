@@ -95,8 +95,9 @@ from inkflow.infrastructure.database.repositories.chapter_repo import (
 from inkflow.infrastructure.database.repositories.character_repo import (
     SQLiteCharacterRepository,
 )
-from inkflow.infrastructure.database.repositories.draft_repo import (
-    SQLiteDraftRepository,
+from inkflow.infrastructure.database.repositories.draft_repo import SQLiteDraftRepository
+from inkflow.infrastructure.database.repositories.extract_staging_repo import (
+    SQLExtractStagingRepository,
 )
 from inkflow.infrastructure.database.repositories.extraction_run_repo import (
     SQLExtractionRunRepository,
@@ -107,9 +108,7 @@ from inkflow.infrastructure.database.repositories.foreshadowing_repo import (
 from inkflow.infrastructure.database.repositories.memory_event_repo import (
     SQLiteMemoryEventRepository,
 )
-from inkflow.infrastructure.database.repositories.outline_repo import (
-    SQLiteOutlineRepository,
-)
+from inkflow.infrastructure.database.repositories.outline_repo import SQLiteOutlineRepository
 from inkflow.infrastructure.database.repositories.preference_repo import (
     SQLitePreferenceRepository,
 )
@@ -579,6 +578,7 @@ async def get_extraction_service(
         world_repo=SQLiteWorldRepository(db),
         timeline_repo=SQLiteTimelineRepository(db),
         foreshadowing_repo=SQLiteForeshadowingRepository(db),
+        staging_repo=SQLExtractStagingRepository(db),
         vector_store=vector_store,
         fingerprint_provider=_fingerprint_provider,
         chunking=chunking,

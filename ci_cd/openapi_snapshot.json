@@ -2110,6 +2110,11 @@
             "title": "Save",
             "type": "boolean"
           },
+          "stage": {
+            "default": false,
+            "title": "Stage",
+            "type": "boolean"
+          },
           "text": {
             "anyOf": [
               {
@@ -13163,6 +13168,156 @@
           }
         },
         "summary": "List Extraction Runs",
+        "tags": [
+          "提取"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}": {
+      "get": {
+        "description": "读取本批暂存条目（spec §5.9，GET 暂存端点）——项目不存在 → 404。\n\n返回 ``StagedListResult{batch_id, items[]}``（元素 ``StagedEntry`` 含\nentity_type / action / name / payload）；空批 → items 空列表（幂等）。",
+        "operationId": "list_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Staged Extraction",
+        "tags": [
+          "提取"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/cancel": {
+      "post": {
+        "description": "取消暂存批次（spec §5.9）——仅清空暂存行，零物化，幂等。\n\n返回 ``CancelStagedResult{batch_id, deleted}``；项目不存在 → 404。",
+        "operationId": "cancel_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Staged Extraction",
+        "tags": [
+          "提取"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/confirm": {
+      "post": {
+        "description": "确认暂存批次（spec §5.9）——逐行物化进正式表后清空本批暂存，幂等。\n\n返回 ``ConfirmStagedResult{batch_id, created, updated}``；项目不存在 →\n404「项目不存在」（同 rollback 口径）。",
+        "operationId": "confirm_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Staged Extraction",
         "tags": [
           "提取"
         ]
