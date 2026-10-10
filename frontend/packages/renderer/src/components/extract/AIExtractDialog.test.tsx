@@ -375,6 +375,11 @@ describe('「AI 提取」弹窗（#652 / #1528 / #1544）', () => {
       'failed',
       'lastRun',
       'noRun',
+      // #1567：范围块 chip / 删除入口 / 非法提示 / 重叠提示
+      'rangeChip',
+      'removeRange',
+      'rangeError',
+      'rangeOverlap',
     ] as const;
     for (const k of keys) {
       const key = `extract.${k}`;
@@ -383,5 +388,158 @@ describe('「AI 提取」弹窗（#652 / #1528 / #1544）', () => {
     }
     expect(extractZh['extract.timeline']).toBe('时间线');
     expect(extractZh['extract.knowledgeGraph']).toBe('知识图谱');
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // #1566：弹框默认类型随来源页（拍板：各页**直接单选**自身类型；通用不预选）
+  // ═══════════════════════════════════════════════════════════════════════════
+  it('契约11（#1566）：initialKind=timeline → 默认选中「时间线」（不再恒为角色）', async () => {
+    renderDialog({ initialKind: 'timeline' });
+    const group = await screen.findByTestId('ai-extract-type');
+    expect(within(group).getByRole('radio', { name: '时间线' })).toBeChecked();
+    expect(within(group).getByRole('radio', { name: '角色' })).not.toBeChecked();
+  });
+
+  it('契约12（#1566）：5 个来源页类型各自默认选中，且不预选「通用」', async () => {
+    const cases = [
+      ['character', '角色'],
+      ['world', '世界观'],
+      ['timeline', '时间线'],
+      ['foreshadowing', '伏笔'],
+      ['knowledgeGraph', '知识图谱'],
+    ] as const;
+    for (const [kind, label] of cases) {
+      const { unmount } = renderDialog({ initialKind: kind });
+      const group = await screen.findByTestId('ai-extract-type');
+      expect(within(group).getByRole('radio', { name: label }), label).toBeChecked();
+      expect(within(group).getByRole('radio', { name: '通用' })).not.toBeChecked();
+      unmount();
+    }
+  });
+
+  it('契约13（#1566 负例）：无来源页上下文 → 回落「角色」，不报错', async () => {
+    renderDialog();
+    const group = await screen.findByTestId('ai-extract-type');
+    expect(within(group).getByRole('radio', { name: '角色' })).toBeChecked();
+  });
+
+  it('契约14（#1566）：同实例换来源页重开 → 按新来源页重置（非仅挂载取初值）', async () => {
+    const { rerender } = render(
+      <AIExtractDialog open onClose={() => {}} projectId="p1" initialKind="timeline" />,
+    );
+    let group = await screen.findByTestId('ai-extract-type');
+    expect(within(group).getByRole('radio', { name: '时间线' })).toBeChecked();
+
+    rerender(
+      <AIExtractDialog open={false} onClose={() => {}} projectId="p1" initialKind="timeline" />,
+    );
+    rerender(<AIExtractDialog open onClose={() => {}} projectId="p1" initialKind="world" />);
+    group = await screen.findByTestId('ai-extract-type');
+    expect(within(group).getByRole('radio', { name: '世界观' })).toBeChecked();
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // #1567：按章范围块（渲染 / 删除 / 非法提示 / 提交一致性）
+  // ═══════════════════════════════════════════════════════════════════════════
+  const EN_DASH = '\u2013';
+
+  async function openChapterScope() {
+    const user = userEvent.setup();
+    const view = renderDialog();
+    await user.click(await screen.findByRole('radio', { name: '按章' }));
+    return {
+      user,
+      unmount: view.unmount,
+      from: await screen.findByTestId('ai-extract-range-from'),
+      to: await screen.findByTestId('ai-extract-range-to'),
+      add: await screen.findByTestId('ai-extract-range-add'),
+    };
+  }
+
+  it('契约15（#1567）：添加范围 → 立即出现范围块 chip（内容 = 起止编号）', async () => {
+    const { user, from, to, add } = await openChapterScope();
+    await user.type(from, '1');
+    await user.type(to, '2');
+    await user.click(add);
+
+    const chips = await screen.findAllByTestId('ai-extract-range-chip');
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent(`1${EN_DASH}2`);
+  });
+
+  it('契约16（#1567）：每块可单独删除，删除后 chips 与提交集合同步', async () => {
+    const { user, from, to, add } = await openChapterScope();
+    await user.type(from, '1');
+    await user.type(to, '1');
+    await user.click(add);
+    await user.type(from, '3');
+    await user.type(to, '3');
+    await user.click(add);
+    expect(await screen.findAllByTestId('ai-extract-range-chip')).toHaveLength(2);
+
+    const removes = await screen.findAllByTestId('ai-extract-range-remove');
+    expect(removes).toHaveLength(2);
+    await user.click(removes[1]);
+
+    const chips = await screen.findAllByTestId('ai-extract-range-chip');
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent(`1${EN_DASH}1`);
+
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      expect(extractBodies()[0].chapter_ids).toEqual(['ch1']);
+    });
+  });
+
+  it('契约17（#1567）：非法输入（空 / 0 / 倒置）有可见提示，不静默丢弃', async () => {
+    const cases: Array<[string, string]> = [
+      ['', ''],
+      ['0', '3'],
+      ['9', '5'],
+    ];
+    for (const [f, t2] of cases) {
+      const { user, unmount, from, to, add } = await openChapterScope();
+      if (f !== '') await user.type(from, f);
+      if (t2 !== '') await user.type(to, t2);
+      await user.click(add);
+
+      expect(await screen.findByTestId('ai-extract-range-error'), `${f}|${t2}`).toBeInTheDocument();
+      expect(screen.queryAllByTestId('ai-extract-range-chip')).toHaveLength(0);
+      unmount();
+    }
+  });
+
+  it('契约18（#1567 关键）：提交集合 = 界面所见范围块之并集', async () => {
+    const { user, from, to, add } = await openChapterScope();
+    await user.type(from, '1');
+    await user.type(to, '2');
+    await user.click(add);
+    await user.type(from, '3');
+    await user.type(to, '3');
+    await user.click(add);
+    expect(await screen.findAllByTestId('ai-extract-range-chip')).toHaveLength(2);
+
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      expect(extractBodies()[0].chapter_ids).toEqual(['ch1', 'ch2', 'ch3']);
+    });
+  });
+
+  it('契约20（#1567 拍板 2=B）：重叠只提示不合并（保留两段，提交取并集）', async () => {
+    const { user, from, to, add } = await openChapterScope();
+    await user.type(from, '1');
+    await user.type(to, '2');
+    await user.click(add);
+    await user.type(from, '2');
+    await user.type(to, '3');
+    await user.click(add);
+
+    expect(await screen.findAllByTestId('ai-extract-range-chip')).toHaveLength(2);
+    expect(await screen.findByTestId('ai-extract-range-overlap')).toBeInTheDocument();
+
+    await user.click(await screen.findByTestId('ai-extract-run'));
+    await waitFor(() => {
+      expect(extractBodies()[0].chapter_ids).toEqual(['ch1', 'ch2', 'ch3']);
+    });
   });
 });

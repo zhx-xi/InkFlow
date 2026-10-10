@@ -58,7 +58,7 @@
 
 ### 2.1 AI 提取对话框（#1528 / #1544：类型面 + 范围面）
 
-> 原型：`design/GUI/library/library.html`（`extract-single` / `extract-generic` 两态）+ `library-extract-single.png` / `library-extract-generic.png`
+> 原型：`design/GUI/library/library.html`（`extract-single` / `extract-generic` 两态；#1566/#1567 增补 `extract-timeline` 来源页默认类型 · `extract-chapter` 按章范围块（非法提示）· `extract-chapter-overlap` 重叠提示）+ `library-extract-single.png` / `library-extract-generic.png` / `library-extract-timeline.png` / `library-extract-chapter.png` / `library-extract-chapter-overlap.png`
 
 ```text
 ┌─ AI 提取 ──────────────────────────────────────────── × ┐
@@ -83,6 +83,9 @@
   - `timeline`：只发 `chapter_ids` + `auto_extract: true`（后端只收章节模式，不收 `text`）
   - `knowledge_relation`：**不带** `text` / `chapter_ids`（项目级提取）
 - 章节 / 卷列表**全量加载**（#1407：翻页取满 `total`；卷→章用章节的 `volume_id` 归并）
+- **默认类型随来源页**（#1566）：弹框接受来源页传入的默认类型（prop `initialKind`），打开即**单选**选中该页自身类型 —— 角色页→`character`、世界观页→`world`、时间线页→`timeline`、伏笔页→`foreshadowing`、知识图谱页→`knowledgeGraph`；**每次打开按来源页重置**（资料库入口跨分类复用同一实例，故不能只在挂载时取初值）；无来源页上下文（写作页、大纲页）→ 回落 `character`，不报错。「通用」多选**不预选**（要同时提多类由用户自行切「通用」）。
+- **按章范围块**（#1567）：已添加的每个 `{from,to}` 在「按章」输入区**下方**渲染为可读 chip（`第 {from}–{to} 章`），每块带 `×` 删除入口（容器 `ai-extract-range-list`、单块 `ai-extract-range-chip`、删除钮 `ai-extract-range-remove`）；删除后 chips 与提交集合同步。
+- **非法输入就地提示 + 重叠提示**（#1567）：空 / 非数字 / `< 1` / 起 > 止 → 就地红字提示（`ai-extract-range-error`，复用 `text-err` 12px 校验风格），**不再静默 return**；重复/重叠区间**只提示不合并**（`extract.rangeOverlap`，两段 chip 均保留），提交时按**并集**去重；「界面所见范围块之并集 = `resolveChapterIds` 产出集合」。
 
 ### 2.2 AI 提取结果视图 + 最小化（#1532 / #1546）
 
@@ -126,3 +129,11 @@
 - N10（#1532 / #1546）：提取成功 → 对话框切结果视图（新增/更新清单）；提交带 `stage: true`；正式表零变更（确认前）
 - N11（#1546）：「确认落库」→ 调 confirm 端点（带 `batch_id`）→ 关框 + ok toast；「取消」→ 调 cancel 端点 → 关框
 - N12（#1546）：提取进行中可最小化 → 对话框收起 + 右下角 `ai-extract-float` 浮窗；点浮窗「还原」恢复对话框
+- N13（#1566）：弹框默认类型**随来源页**——从时间线页打开 → 「时间线」单选即选中；角色 / 世界观 / 伏笔 / 知识图谱页各自对应；无来源页上下文 → 回落「角色」且不报错；「通用」多选默认不预选（与 #1544 类型面不冲突）
+- N14（#1567）：「按章」添加范围 → 输入区下方**立即出现范围块 chip**（`第 {from}–{to} 章` + `×`）；每块可**单独删除**，删除后 chips 与提交集合同步；非法输入（空 / 0 / 起 > 止）有**可见提示**、不静默丢弃；重叠**只提示不合并**（保留两段）；提交时 `resolveChapterIds` 产出的章节集合 = 界面所见范围块之并集；zh/en i18n 键对齐
+
+## 4. 修改履历
+
+| 项 | 内容 | 修改履历 |
+|----|------|----------|
+| 弹框默认类型随来源页 + 按章范围块 | #1566：弹框默认类型写死 `character` → 加 `initialKind` prop，由资料库 5 分类页传入（每次打开按来源页重置，缺省回落 `character`）。#1567：`ranges` state 零 JSX 渲染 + `addRange` 静默 return → 范围块 chip（`第 {from}–{to} 章` + `×` 删除）+ 非法输入就地提示；拍板：重叠**只提示不合并**、默认类型为各页**直接单选**自身类型（不预选「通用」）。原型增补 `extract-timeline` / `extract-chapter` / `extract-chapter-overlap` 三态 + PNG。 | 2026-10-10（#1566 / #1567，0.17.0 rc2 修复批 W10a 轨 4） |

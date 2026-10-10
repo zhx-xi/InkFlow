@@ -91,4 +91,53 @@ describe('设定库页 — 「AI 提取」入口（#652）', () => {
       expect(apiFetchMock.mock.calls.some((c) => c[0] === '/api/v1/projects/p1/extractions/runs')).toBe(true);
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // #1566：弹框默认类型随来源页（同一实例跨分类复用 → 每次打开都要按当前页重置）
+  // ═══════════════════════════════════════════════════════════════════════════
+  it('契约3（#1566）：默认类型随来源页——角色页打开是「角色」，切到时间线页重开是「时间线」', async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
+
+    // 默认分类（角色）→ 「角色」
+    await user.click(screen.getByTestId('extract-entry-lib'));
+    let dlg = await screen.findByTestId('ai-extract-dialog');
+    expect(
+      within(within(dlg).getByTestId('ai-extract-type')).getByRole('radio', { name: '角色' }),
+    ).toBeChecked();
+    await user.click(within(dlg).getByRole('button', { name: '关闭' }));
+
+    // 切到时间线分类（同一 AIExtractEntry 实例）→ 重开 → 「时间线」
+    await user.click(within(screen.getByTestId('library-tabs')).getByRole('tab', { name: '时间线' }));
+    await user.click(screen.getByTestId('extract-entry-lib'));
+    dlg = await screen.findByTestId('ai-extract-dialog');
+    expect(
+      within(within(dlg).getByTestId('ai-extract-type')).getByRole('radio', { name: '时间线' }),
+    ).toBeChecked();
+  });
+
+  it('契约4（#1566）：5 个分类页各自打开 → 默认选中对应类型', async () => {
+    const user = userEvent.setup();
+    const cases: Array<[string, string]> = [
+      ['角色', '角色'],
+      ['世界观', '世界观'],
+      ['时间线', '时间线'],
+      ['伏笔', '伏笔'],
+      ['知识图谱', '知识图谱'],
+    ];
+    for (const [tab, kind] of cases) {
+      const { unmount } = renderLibrary();
+      await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
+      await user.click(within(screen.getByTestId('library-tabs')).getByRole('tab', { name: tab }));
+      await user.click(screen.getByTestId('extract-entry-lib'));
+
+      const dlg = await screen.findByTestId('ai-extract-dialog');
+      expect(
+        within(within(dlg).getByTestId('ai-extract-type')).getByRole('radio', { name: kind }),
+        tab,
+      ).toBeChecked();
+      unmount();
+    }
+  });
 });

@@ -275,6 +275,22 @@ body[data-state="extract-min"] .ext-float{display:flex}
 .ext-float .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
 .ext-float .pct{color:var(--ink-2)}
 .ext-float .up{color:var(--accent);cursor:pointer;border-left:1px solid var(--line);padding-left:10px}
+
+/* ═══ #1566/#1567 增补态：来源页默认类型 · 按章范围块（chip + × 删除 · 非法提示） ═══ */
+body[data-state="extract-timeline"] .ext-overlay,body[data-state="extract-chapter"] .ext-overlay{display:flex}
+.ext-form-timeline,.ext-form-chapter{display:none}
+body[data-state="extract-timeline"] .ext-form-timeline{display:block}
+body[data-state="extract-chapter"] .ext-form-chapter{display:block}
+.ext-range-inputs{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ext-num{width:72px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 8px;font-size:13px;color:var(--ink)}
+.ext-err{font-size:11px;color:var(--err)}
+.ext-range-chip b:hover{color:var(--err)}
+.ext-annotation{margin-top:14px;border:1px dashed var(--warn);border-radius:6px;background:var(--surface-2);padding:8px 10px;font-size:11px;color:var(--ink-2);display:flex;flex-direction:column;gap:4px}
+.ext-annotation b{color:var(--warn);font-weight:600}
+body[data-state="extract-chapter-overlap"] .ext-overlay{display:flex}
+.ext-form-chapter-overlap{display:none}
+body[data-state="extract-chapter-overlap"] .ext-form-chapter-overlap{display:block}
+.ext-warn{font-size:11px;color:var(--warn)}
 </style>
 </head>
 <body data-state="main" data-cat="characters">
@@ -683,6 +699,125 @@ body[data-state="extract-min"] .ext-float{display:flex}
       <div class="ext-run"><button class="btn-primary" data-testid="ai-extract-run">开始提取</button></div>
     </div>
 
+    <!-- ═══ #1566：来源页默认类型（时间线页打开 → 默认选中「时间线」） ═══ -->
+    <div class="ext-form-timeline">
+      <div class="ext-field">
+        <span>提取类型（默认随来源页）</span>
+        <div class="ext-radios" data-testid="ai-extract-type" role="radiogroup" aria-label="提取类型">
+          <label class="ext-radio"><input type="radio" name="t3"  /> 角色</label>
+          <label class="ext-radio"><input type="radio" name="t3"  /> 世界观</label>
+          <label class="ext-radio"><input type="radio" name="t3" checked /> 时间线</label>
+          <label class="ext-radio"><input type="radio" name="t3"  /> 伏笔</label>
+          <label class="ext-radio"><input type="radio" name="t3"  /> 知识图谱</label>
+          <label class="ext-radio"><input type="radio" name="t3"  /> 通用</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>提取范围</span>
+        <div class="ext-scope" role="radiogroup" aria-label="提取范围">
+          <label class="ext-radio"><input type="radio" name="s3" checked /> 全文</label>
+          <label class="ext-radio"><input type="radio" name="s3" /> 按卷</label>
+          <label class="ext-radio"><input type="radio" name="s3" /> 按章</label>
+        </div>
+      </div>
+      <div class="ext-run"><button class="btn-primary" data-testid="ai-extract-run">开始提取</button></div>
+      <div class="ext-annotation" data-design-annotation="1">
+        <b>来源页 → 默认提取类型</b>
+        <div>角色页 → 角色 · 世界观页 → 世界观 · 时间线页 → 时间线（本图）</div>
+        <div>伏笔页 → 伏笔 · 知识图谱页 → 知识图谱（单选即默认选中；「通用」由用户自行选择）</div>
+        <div>缺省（无来源页）→ 回落「角色」。</div>
+        <div>本节为评审注解，实现时不做进产品 UI。</div>
+      </div>
+    </div>
+
+    <!-- ═══ #1567：按章范围块（chip + × 删除）+ 非法输入就地提示 ═══ -->
+    <div class="ext-form-chapter">
+      <div class="ext-field">
+        <span>提取类型</span>
+        <div class="ext-radios" data-testid="ai-extract-type" role="radiogroup" aria-label="提取类型">
+          <label class="ext-radio"><input type="radio" name="t4" checked /> 角色</label>
+          <label class="ext-radio"><input type="radio" name="t4"  /> 世界观</label>
+          <label class="ext-radio"><input type="radio" name="t4"  /> 时间线</label>
+          <label class="ext-radio"><input type="radio" name="t4"  /> 伏笔</label>
+          <label class="ext-radio"><input type="radio" name="t4"  /> 知识图谱</label>
+          <label class="ext-radio"><input type="radio" name="t4"  /> 通用</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>提取范围</span>
+        <div class="ext-scope" role="radiogroup" aria-label="提取范围">
+          <label class="ext-radio"><input type="radio" name="s4" /> 全文</label>
+          <label class="ext-radio"><input type="radio" name="s4" /> 按卷</label>
+          <label class="ext-radio"><input type="radio" name="s4" checked /> 按章</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>章节范围（可多段，自动归并重复/重叠）</span>
+        <div class="ext-range-inputs">
+          <input class="ext-num" value="9" />
+          <span>–</span>
+          <input class="ext-num" value="5" />
+          <button class="ext-chip-add">＋ 添加范围</button>
+        </div>
+        <div class="ext-chips">
+          <span class="ext-range-chip">第 1–3 章 <b>×</b></span>
+          <span class="ext-range-chip">第 7–9 章 <b>×</b></span>
+        </div>
+        <span class="ext-err">请输入有效的章节范围：起止均 ≥ 1，且起始不得超过末尾</span>
+        <span class="ext-hint">单次上限 100 章，超出自动分批</span>
+      </div>
+      <div class="ext-run"><button class="btn-primary" data-testid="ai-extract-run">开始提取</button></div>
+      <div class="ext-annotation" data-design-annotation="1">
+        <b>按章范围块</b>
+        <div>每块可单独删除（×）；重复/重叠自动归并；空 / 0 / 起 &gt; 止 → 就地提示，不静默丢弃</div>
+        <div>本图输入 9–5（起 &gt; 止）→ 上方红字提示。本节为评审注解，实现时不做进产品 UI。</div>
+      </div>
+    </div>
+
+    <!-- ═══ #1567（拍板 2=B）：重叠只就地提示，保留两段（不归并） ═══ -->
+    <div class="ext-form-chapter-overlap">
+      <div class="ext-field">
+        <span>提取类型</span>
+        <div class="ext-radios" data-testid="ai-extract-type" role="radiogroup" aria-label="提取类型">
+          <label class="ext-radio"><input type="radio" name="t5" checked /> 角色</label>
+          <label class="ext-radio"><input type="radio" name="t5"  /> 世界观</label>
+          <label class="ext-radio"><input type="radio" name="t5"  /> 时间线</label>
+          <label class="ext-radio"><input type="radio" name="t5"  /> 伏笔</label>
+          <label class="ext-radio"><input type="radio" name="t5"  /> 知识图谱</label>
+          <label class="ext-radio"><input type="radio" name="t5"  /> 通用</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>提取范围</span>
+        <div class="ext-scope" role="radiogroup" aria-label="提取范围">
+          <label class="ext-radio"><input type="radio" name="s5" /> 全文</label>
+          <label class="ext-radio"><input type="radio" name="s5" /> 按卷</label>
+          <label class="ext-radio"><input type="radio" name="s5" checked /> 按章</label>
+        </div>
+      </div>
+      <div class="ext-field">
+        <span>章节范围（可多段）</span>
+        <div class="ext-range-inputs">
+          <input class="ext-num" value="3" />
+          <span>–</span>
+          <input class="ext-num" value="7" />
+          <button class="ext-chip-add">＋ 添加范围</button>
+        </div>
+        <div class="ext-chips">
+          <span class="ext-range-chip">第 1–5 章 <b>×</b></span>
+          <span class="ext-range-chip">第 3–7 章 <b>×</b></span>
+        </div>
+        <span class="ext-warn">该范围与已添加范围重叠（保留，提交取并集）</span>
+        <span class="ext-hint">单次上限 100 章，超出自动分批</span>
+      </div>
+      <div class="ext-run"><button class="btn-primary" data-testid="ai-extract-run">开始提取</button></div>
+      <div class="ext-annotation" data-design-annotation="1">
+        <b>按章范围块（重叠提示）</b>
+        <div>每段可单独删除（×）· 重叠只提示不合并 · 空 / 0 / 起 &gt; 止 就地提示</div>
+        <div>本图输入 3–7 与已添加的 1–5 重叠 → 上方黄字提示。本节为评审注解，实现时不做进产品 UI。</div>
+      </div>
+    </div>
+
     <!-- 两段式结果（未落库，待确认） -->
     <div class="ext-result-only">
       <div class="ext-result" data-testid="ai-extract-result">
@@ -731,6 +866,9 @@ body[data-state="extract-min"] .ext-float{display:flex}
       <option value="extract-generic">AI 提取对话框（通用多选 + 按章范围）</option>
       <option value="extract-result">AI 提取结果视图（待确认）</option>
       <option value="extract-min">AI 提取最小化浮窗</option>
+      <option value="extract-timeline">AI 提取对话框（来源页默认类型 · 时间线页）</option>
+      <option value="extract-chapter">AI 提取对话框（按章范围块 + 非法提示）</option>
+      <option value="extract-chapter-overlap">AI 提取对话框（按章范围块 · 重叠提示）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -831,7 +969,7 @@ function applyHash(){
   const h = location.hash.replace('#','');
   const m = h.match(/^cat=([a-z]+)$/);
   if (m && CAT_LABELS[m[1]]) setCat(m[1]);
-  else if (['main','noproject','tab-empty','extract-single','extract-generic','extract-result','extract-min'].includes(h)) setState(h);
+  else if (['main','noproject','tab-empty','extract-single','extract-generic','extract-result','extract-min','extract-timeline','extract-chapter','extract-chapter-overlap'].includes(h)) setState(h);
 }
 applyHash();
 window.addEventListener('hashchange', applyHash);

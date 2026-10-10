@@ -76,6 +76,11 @@ const PAGES = [
       ['extract-generic', 'library-extract-generic.png'],
       ['extract-result', 'library-extract-result.png'],
       ['extract-min', 'library-extract-min.png'],
+      // #1566/#1567：来源页默认类型态 + 按章范围块（chip + × 删除 + 非法提示）态
+      ['extract-timeline', 'library-extract-timeline.png'],
+      ['extract-chapter', 'library-extract-chapter.png'],
+      // #1567（拍板 2=B）：重叠只就地提示、保留两段
+      ['extract-chapter-overlap', 'library-extract-chapter-overlap.png'],
     ],
   },
   {

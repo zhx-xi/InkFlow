@@ -33,6 +33,8 @@ export interface AIExtractDialogProps {
   open: boolean;
   onClose: () => void;
   projectId: string;
+  /** #1566：来源页默认提取类型（资料库分类页传入；缺省回落 'character'） */
+  initialKind?: ExtractKind;
   /** 写作页默认当前章（保留接口兼容；#1544 起提交走范围面，不再依赖单章 text） */
   defaultChapterId?: string;
   /** 写作页默认当前章正文（保留接口兼容） */
@@ -49,7 +51,7 @@ interface ExtractionRun {
 }
 
 /** 提取类型（单选 6 项；`generic` 走多选面板） */
-type ExtractKind =
+export type ExtractKind =
   | 'character'
   | 'world'
   | 'timeline'
@@ -161,7 +163,7 @@ interface ExtractEnvelope {
   };
 }
 
-export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogProps) {
+export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExtractDialogProps) {
   const { t } = useI18n();
   const pushToast = useToastStore((s) => s.pushToast);
 
@@ -169,18 +171,26 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
   const [volumes, setVolumes] = useState<VolumeListDto[]>([]);
   const [runs, setRuns] = useState<ExtractionRun[]>([]);
   const [runsLoaded, setRunsLoaded] = useState(false);
-  const [extractKind, setExtractKind] = useState<ExtractKind>('character');
+  const [extractKind, setExtractKind] = useState<ExtractKind>(initialKind ?? 'character');
   const [genericSelected, setGenericSelected] = useState<ExtractKind[]>([]);
   const [scope, setScope] = useState<ExtractScope>('all');
   const [selectedVolumeIds, setSelectedVolumeIds] = useState<string[]>([]);
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [ranges, setRanges] = useState<ChapterRange[]>([]);
+  const [rangeError, setRangeError] = useState('');
+  const [rangeWarn, setRangeWarn] = useState('');
   const [running, setRunning] = useState(false);
   /** #1546：最小化 → 收起对话框，只留右下角浮窗 */
   const [minimized, setMinimized] = useState(false);
   /** #1546：暂存结果（非 null = 结果视图：新增/更新清单 + 确认落库/取消） */
   const [staged, setStaged] = useState<StagedResult | null>(null);
+
+  // #1566：来源页默认类型——资料库入口跨分类复用同一实例，故每次打开都要按来源页重置
+  useEffect(() => {
+    if (!open) return;
+    setExtractKind(initialKind ?? 'character');
+  }, [open, initialKind]);
 
   // open 变 true：拉取章节列表（全量翻页，#1407）+ 卷列表（#1544）+ 最近一次运行摘要
   useEffect(() => {
@@ -235,10 +245,29 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
   const addRange = () => {
     const from = Number.parseInt(rangeFrom, 10);
     const to = Number.parseInt(rangeTo, 10);
-    if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < 1) return;
+    if (
+      rangeFrom.trim() === '' ||
+      rangeTo.trim() === '' ||
+      !Number.isFinite(from) ||
+      !Number.isFinite(to) ||
+      from < 1 ||
+      to < 1 ||
+      from > to
+    ) {
+      setRangeError(t('extract.rangeError'));
+      setRangeWarn('');
+      return;
+    }
+    // #1567 拍板：重叠只提示不合并（两段都保留，提交时按并集去重）
+    setRangeError('');
+    setRangeWarn(ranges.some((r) => from <= r.to && to >= r.from) ? t('extract.rangeOverlap') : '');
     setRanges((prev) => [...prev, { from, to }]);
     setRangeFrom('');
     setRangeTo('');
+  };
+
+  const removeRange = (index: number) => {
+    setRanges((prev) => prev.filter((_, i) => i !== index));
   };
 
   /**
@@ -554,7 +583,10 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
                 type="number"
                 min={1}
                 value={rangeFrom}
-                onChange={(e) => setRangeFrom(e.target.value)}
+                onChange={(e) => {
+                  setRangeFrom(e.target.value);
+                  setRangeError('');
+                }}
                 className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               />
               <span aria-hidden="true">–</span>
@@ -563,7 +595,10 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
                 type="number"
                 min={1}
                 value={rangeTo}
-                onChange={(e) => setRangeTo(e.target.value)}
+                onChange={(e) => {
+                  setRangeTo(e.target.value);
+                  setRangeError('');
+                }}
                 className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               />
               <button
@@ -575,6 +610,38 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
                 {t('extract.addRange')}
               </button>
             </div>
+            {ranges.length > 0 && (
+              <div data-testid="ai-extract-range-list" className="flex flex-wrap items-center gap-2">
+                {ranges.map((range, idx) => (
+                  <span
+                    key={`${range.from}-${range.to}-${idx}`}
+                    data-testid="ai-extract-range-chip"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[12px] text-ink"
+                  >
+                    {t('extract.rangeChip', { from: range.from, to: range.to })}
+                    <button
+                      type="button"
+                      data-testid="ai-extract-range-remove"
+                      aria-label={t('extract.removeRange', { from: range.from, to: range.to })}
+                      onClick={() => removeRange(idx)}
+                      className="text-ink-3 transition duration-180 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                    >
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {rangeError !== '' && (
+              <p data-testid="ai-extract-range-error" className="text-[12px] text-err">
+                {rangeError}
+              </p>
+            )}
+            {rangeWarn !== '' && (
+              <p data-testid="ai-extract-range-overlap" className="text-[12px] text-warn">
+                {rangeWarn}
+              </p>
+            )}
             <span>{t('extract.rangeHint')}</span>
           </div>
         )}
