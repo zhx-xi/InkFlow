@@ -2,7 +2,7 @@
  *  图谱画布（含空态引导）/ 关系列表；装配回调由 pages/library.tsx 提供）
  *  #1325：工具栏追加独立「全量节点」开关（图谱节点集范围 related/all）。 */
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronsRight, Plus, Search, X } from 'lucide-react';
+import { Check, ChevronsRight, Plus, Search, X } from 'lucide-react';
 import type {
   EntityType,
   GraphEdge,
@@ -19,6 +19,7 @@ import { deriveNodeColor, typeBaseDot } from './kgColor';
 import {
   DEFAULT_KG_FILTER,
   KG_CATEGORIES,
+  computeHiddenIds,
   computeVisibleIds,
   readKgFilter,
   readKgPanel,
@@ -109,8 +110,10 @@ export function KnowledgeGraphView({
   // #1529：判据统一——类别少勾 或 实体非全选（entities !== null）即视为筛选生效
   const filterActive =
     filter.categories.length < KG_CATEGORIES.length || filter.entities !== null;
-  /** #1529：画布不再摘除节点/边——只算「高亮（正常彩色）节点集」，未高亮者由画布降灰 */
+  /** #1529：画布不再摘除节点/边——只算「高亮（正常彩色）节点集」，未高亮者由画布降灰
+   *  #1568：实体定向激活时另算「隐藏集」（三态：彩色/灰显保位/隐藏） */
   const activeIds = useMemo(() => computeVisibleIds(nodes, edges, filter), [nodes, edges, filter]);
+  const hiddenIds = useMemo(() => computeHiddenIds(nodes, edges, filter), [nodes, edges, filter]);
   /** 实体列表池（#1529）：已勾选类别 ∩ 搜索词 → 拼音序（纯前端分页切片，不改画布高亮） */
   const entityPool = useMemo(() => {
     const q = query.trim();
@@ -128,7 +131,10 @@ export function KnowledgeGraphView({
   const categoryLabel =
     filter.categories.length === KG_CATEGORIES.length
       ? t('lib.knowledge.filter.all')
-      : filter.categories.map((type) => t(ENTITY_TYPE_KEYS[type])).join('/');
+      : /* #1568：「全部取消」后类别为空 → 读「无」（否则摘要留空档「筛选： · …」） */
+        filter.categories.length === 0
+        ? t('lib.knowledge.filter.none')
+        : filter.categories.map((type) => t(ENTITY_TYPE_KEYS[type])).join('/');
   /** 实体非全选时在标签后附「 · 实体 已选/总数」 */
   const filterLabel =
     filter.entities === null
@@ -164,6 +170,15 @@ export function KnowledgeGraphView({
     const next: KgFilterState = { ...DEFAULT_KG_FILTER };
     setFilter(next);
     setQuery('');
+    writeKgFilter(persistKey, next);
+  };
+  /** #1568：「全选」的**反义入口** —— 取消所有选中（类别 + 实体全不选；画布走筛选空态） */
+  const cancelAllFilter = () => {
+    const next: KgFilterState = { categories: [], entities: [] };
+    setFilter(next);
+    setQuery('');
+    setEntityPage(0);
+    setCatPage(0);
     writeKgFilter(persistKey, next);
   };
   const setPanel = (open: boolean) => {
@@ -345,6 +360,15 @@ export function KnowledgeGraphView({
                 >
                   {t('lib.knowledge.filter.collapse')}
                 </button>
+                {/* #1568：「全部取消」与「全选」并列（两态分开，不混用一个入口） */}
+                <button
+                  type="button"
+                  data-testid="library-kg-filter-panel-cancel-all"
+                  className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={cancelAllFilter}
+                >
+                  {t('lib.knowledge.filter.cancelAll')}
+                </button>
                 <button
                   type="button"
                   data-testid="library-kg-filter-panel-clear"
@@ -394,6 +418,17 @@ export function KnowledgeGraphView({
                   />
                 ))}
               </div>
+              {/* #1568：「全部取消」（✕）与「全选」（✓）并列——与面板底部同语义 */}
+              <button
+                type="button"
+                data-testid="library-kg-filterbar-cancel-all"
+                aria-label={t('lib.knowledge.filter.cancelAll')}
+                title={t('lib.knowledge.filter.cancelAll')}
+                className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-line text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={cancelAllFilter}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
               <button
                 type="button"
                 data-testid="library-kg-filterbar-clear"
@@ -402,7 +437,7 @@ export function KnowledgeGraphView({
                 className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-line text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={clearFilter}
               >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                <Check className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
               <span data-testid="library-kg-filterbar-summary" className="sr-only">
                 {t('lib.knowledge.filterbar.summary', { label: filterLabel, shown: shownText })}
@@ -415,6 +450,7 @@ export function KnowledgeGraphView({
                 nodes={nodes}
                 edges={edges}
                 activeIds={activeIds}
+                hiddenIds={hiddenIds}
                 persistKey={persistKey}
                 onConnectNodes={onConnectNodes}
                 onOpenEntity={onOpenEntity}

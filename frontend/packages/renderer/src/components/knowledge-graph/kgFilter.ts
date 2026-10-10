@@ -175,3 +175,30 @@ export function computeVisibleIds(
   }
   return ids;
 }
+
+/** #1568：实体定向「隐藏」节点集 —— **部分收窄 #1529 的「一律降灰、不隐藏」**（仅实体定向这一路）。
+ *  仅在**实体定向激活**（`entities !== null`）时启用三态；`null`（全选）→ 空集（保持 #1529 二态）。
+ *    · 彩色 = `computeVisibleIds`（已勾选类别 ∩ 已勾选实体）
+ *    · 灰显保位 = 与高亮集**相连**（无向，邻接来自 edges）但未高亮者
+ *    · 隐藏 = 其余；🔴 **类别外节点除外** —— 类别路维持「不摘除、只降灰」（spec §4.2 / N21）
+ *  返回**新增 Set**、不修改入参。边由画布按「任一端被隐藏 → 不画」处理。 */
+export function computeHiddenIds(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  filter: KgFilterState,
+): Set<string> {
+  const hidden = new Set<string>();
+  if (filter.entities === null) return hidden;
+  const active = computeVisibleIds(nodes, edges, filter);
+  const adjacent = new Set<string>();
+  for (const e of edges) {
+    if (active.has(e.source)) adjacent.add(e.target);
+    if (active.has(e.target)) adjacent.add(e.source);
+  }
+  for (const n of nodes) {
+    if (active.has(n.id) || adjacent.has(n.id)) continue;
+    if (!filter.categories.includes(n.type)) continue;
+    hidden.add(n.id);
+  }
+  return hidden;
+}

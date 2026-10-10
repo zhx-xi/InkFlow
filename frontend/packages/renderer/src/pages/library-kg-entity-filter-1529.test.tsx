@@ -97,6 +97,10 @@ async function openGraph(user: ReturnType<typeof userEvent.setup>) {
 function dimmedNodeTestIds(): string[] {
   return NODE_TESTIDS.filter((id) => screen.getByTestId(id).getAttribute('data-dim') === '1').sort();
 }
+/** #1568：实体定向三态下被**隐藏**的节点（`data-hidden="1"`） */
+function hiddenNodeTestIds(): string[] {
+  return NODE_TESTIDS.filter((id) => screen.getByTestId(id).getAttribute('data-hidden') === '1').sort();
+}
 /** 可见实体行（面板实体块当前页） */
 function entityRowTestIds(): string[] {
   return screen.getAllByTestId(ENTITY_ROW).map((el) => el.getAttribute('data-testid') ?? '').sort();
@@ -178,29 +182,31 @@ describe('#1529-A 实体多选：默认全选 + 未勾选统一灰显（不摘�
     expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 12 个实体');
   });
 
-  it('🔴 邻接子图退休：只勾一个实体 → 只有它不灰显（不再带一跳邻居）', async () => {
+  it('🔴 #1568 实体定向三态：只勾一个实体 → 它彩色 / 相连者灰显保位 / 其余**隐藏**（收窄 #1529 的「统一灰显」）', async () => {
     const user = userEvent.setup();
     await openGraph(user);
     const ordered = pinyinSorted(SEED_NAMES);
-    // 逐页取消全部 12 个实体 → 全灰
+    // 逐页取消全部 12 个实体（entities = [] → 空选，画布走筛选空态）
     for (const name of ordered.slice(0, 10)) {
       await user.click(screen.getByTestId(`library-kg-filter-panel-entity-${idOfName(name)}`));
     }
-    await waitFor(() => expect(dimmedNodeTestIds()).toHaveLength(10));
+    await waitFor(() => expect(dimmedNodeTestIds()).toHaveLength(0));
     await user.click(screen.getByTestId('library-kg-entity-page-next'));
     await waitFor(() => expect(entityRowNames()).toEqual(ordered.slice(10)));
     for (const name of ordered.slice(10)) {
       await user.click(screen.getByTestId(`library-kg-filter-panel-entity-${idOfName(name)}`));
     }
-    await waitFor(() => expect(dimmedNodeTestIds()).toHaveLength(12));
-
-    // 只勾回「林尘」→ **仅它正常**；旧邻接语义会把 c2 / w1（一跳邻居）也带回
     await user.click(screen.getByTestId('library-kg-entity-page-prev'));
+
+    // 只勾回「林尘」（c1）→ 三态：它彩色；c2 / w1（相连）灰显保位；其余 9 个隐藏。
+    // 旧邻接语义会把一跳邻居**变彩色** —— 三态下它们只灰显，不重新点亮。
     await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c1'));
-    await waitFor(() => expect(dimmedNodeTestIds()).toHaveLength(11));
-    expect(screen.getByTestId('library-kg-node-character-c1').getAttribute('data-dim')).toBe('0');
-    expect(screen.getByTestId('library-kg-node-character-c2').getAttribute('data-dim')).toBe('1');
-    expect(screen.getByTestId('library-kg-node-world-w1').getAttribute('data-dim')).toBe('1');
+    await waitFor(() => {
+      expect(screen.getByTestId('library-kg-node-character-c1').getAttribute('data-dim')).toBe('0');
+    });
+    expect(screen.getByTestId('library-kg-node-character-c1').getAttribute('data-hidden')).toBe('0');
+    expect(dimmedNodeTestIds()).toEqual(['library-kg-node-character-c2', 'library-kg-node-world-w1']);
+    expect(hiddenNodeTestIds()).toHaveLength(9);
   });
 
   it('N19① filterActive 判据统一：仅取消一个实体 → 筛选生效（折叠后竖条描边 accent）', async () => {

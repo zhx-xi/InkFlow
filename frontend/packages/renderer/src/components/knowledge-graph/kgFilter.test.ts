@@ -21,6 +21,7 @@ import {
   KG_CATEGORIES,
   KG_FILTERS_STORAGE_KEY,
   KG_PANEL_STORAGE_KEY,
+  computeHiddenIds,
   computeVisibleIds,
   kgFiltersKey,
   readKgFilter,
@@ -186,5 +187,48 @@ describe('#1529 选择记忆（新格式 + 旧格式向后兼容）', () => {
     writeKgPanel(false);
     expect(localStorage.getItem('inkflow:kg:panel')).toBe('closed');
     expect(readKgPanel()).toBe(false);
+  });
+});
+
+/**
+ * #1568（0.17.0 rc2）：实体定向**三态**的「隐藏」集 —— **部分收窄 #1529 的「一律降灰、不隐藏」**。
+ * 语义：仅 `entities !== null`（实体定向激活）时启用；类别外节点**永不隐藏**（类别路不回归）。
+ */
+describe('#1568 computeHiddenIds 实体定向三态', () => {
+  it('实体全选（`entities === null`）→ 无隐藏（保持 #1529 二态）', () => {
+    expect([...computeHiddenIds(NODES, EDGES, { categories: [...ALL], entities: null })]).toEqual([]);
+  });
+
+  it('选中 1 个实体 → 隐藏「既未选中也不相连」者；相连者不隐藏', () => {
+    // c1 的邻居 = c2（同门）/ w1（属于）→ 二者不隐藏；c3 / w2 隐藏
+    expect(
+      [...computeHiddenIds(NODES, EDGES, { categories: [...ALL], entities: ['character:c1'] })].sort(),
+    ).toEqual(['character:c3', 'world:w2']);
+  });
+
+  it('多选（≥2）按**并集邻居**处理', () => {
+    // 选中 c1 + w2 → 并集邻居 = {c2, w1}；仅 c3 隐藏
+    expect(
+      [...computeHiddenIds(NODES, EDGES, { categories: [...ALL], entities: ['character:c1', 'world:w2'] })].sort(),
+    ).toEqual(['character:c3']);
+  });
+
+  it('🔴 类别外节点**永不隐藏**（类别路维持「不摘除、只降灰」）', () => {
+    // 类别只留 character；选中 c1 → w1 / w2 属类别外 → 只降灰、不隐藏
+    expect([
+      ...computeHiddenIds(NODES, EDGES, { categories: ['character'], entities: ['character:c1'] }),
+    ]).toEqual(['character:c3']);
+  });
+
+  it('空选（`entities: []`）→ 全部隐藏（「全部取消」的实体侧效果）', () => {
+    expect([
+      ...computeHiddenIds(NODES, EDGES, { categories: [...ALL], entities: [] }),
+    ].sort()).toEqual(NODES.map((n) => n.id).sort());
+  });
+
+  it('纯函数：不修改入参', () => {
+    const ids = NODES.map((n) => n.id);
+    computeHiddenIds(NODES, EDGES, { categories: [...ALL], entities: ['character:c1'] });
+    expect(NODES.map((n) => n.id)).toEqual(ids);
   });
 });
