@@ -199,7 +199,7 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 /* #1527-v2：多历共存「单块刻度带」——左侧 N 条历竖轴（刻度按流速换算定位，隔断疏密不同）+ 右侧对应事件。
    范式参考：Perfetto 多 track 合入单一共享时间线 + 左侧轨道标签；Wikipedia EasyTimeline 多平行竖轴（每轴一色 + 独立刻度）。 */
 .mvs{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
-.mvs-colhead{position:absolute;top:14px;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;color:var(--ink);white-space:nowrap;transform:translateX(-50%)}
+.mvs-colhead{position:absolute;top:4px;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;color:var(--ink);white-space:nowrap;transform:translateX(-50%)}
 .mvs-colhead .swatch{width:10px;height:3px;border-radius:2px;background:var(--c)}
 .mvs-colhead .cnt{font-weight:400;color:var(--ink-3)}
 .mvs-spine{position:absolute;width:2px;border-radius:1px;background:var(--c);opacity:.42}
@@ -212,6 +212,23 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 .mvs-ev:hover{background:var(--surface-2)}
 .mvs-ev .tname{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
 
+/* #1564 世界序刻度带 v2 —— 不定高刻度 + 时间主轴 + 按刻度分页 */
+.mvs-mainhead{position:absolute;top:4px;transform:translateX(-50%);font-size:11px;color:var(--ink-3);white-space:nowrap}
+.mvs-mainspine{position:absolute;width:2px;border-radius:1px;background:var(--ink-3);opacity:.45}
+.mvs-mainnode{position:absolute;z-index:2;width:7px;height:7px;border-radius:999px;background:var(--surface);border:1.5px solid var(--ink-3);transform:translate(-50%,-50%)}
+.mvs-rowguide{position:absolute;z-index:0;height:0;border-top:1px dashed var(--line);opacity:.75}
+.mvs-ev--flow{position:relative;left:auto;right:auto;top:auto}
+.mvs-unkblock{position:absolute;left:0;right:0}
+.mvs-unkblock .mvs-rule{position:relative;left:auto;right:auto;top:auto;display:block;height:0;border-top:1px dashed var(--line)}
+.mvs-unkhead{display:flex;align-items:center;gap:6px;height:24px;padding:0 8px 0 104px;font-size:11.5px;color:var(--ink-3)}
+.mvs-unkhead .cnt{color:var(--ink-2);font-variant-numeric:tabular-nums}
+.mvs-unklist{overflow-y:auto;padding:0 0 2px 0}
+.mvs-pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px;font-size:12px;color:var(--ink-2)}
+.mvs-pg-btn{border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink-2);font-size:12px;padding:4px 12px;cursor:pointer;transition:border-color 150ms,color 150ms}
+.mvs-pg-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.mvs-pg-btn:disabled{opacity:.45;cursor:default}
+.mvs-pg-info{font-variant-numeric:tabular-nums}
+.mvs-badge{position:absolute;top:4px;right:16px;font-size:11px;color:var(--ink-3)}
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
 body[data-state="empty"] .tl-toolbar,body[data-state="empty"] [data-testid="tl-axis"]{display:none}
@@ -279,7 +296,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
     <header class="topbar" role="banner">
       <span class="page-title">设定库</span>
       <span class="spacer"></span>
-      <span class="select"><span data-ic="palette"></span>素笺 · 纸张<span data-ic="chevron-down"></span></span>
+      <span class="select"><span data-ic="palette"></span><span id="themeLabel">素笺 · 纸张</span><span data-ic="chevron-down"></span></span>
       <span class="select">中文<span data-ic="chevron-down"></span></span>
       <div class="win-ctrl">
         <button><span data-ic="minus"></span></button>
@@ -368,7 +385,11 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="world-eras-multi">世界序 · 纪元轴（多轴同时显示）</option>
       <option value="world-eras-b">世界序 · 纪元轴（对照 B：行内时间）</option>
       <option value="world-single">世界序 · 单轴（按时间刻度分段）</option>
-      <option value="world-band">世界序 · 多历共存（单块多竖轴刻度带）</option>
+      <option value="world-band">世界序 · 刻度带 v2（不定高 + 主轴 + 分页）</option>
+      <option value="world-band-p2">世界序 · 刻度带 v2（第 2 页）</option>
+      <option value="world-band-metric">世界序 · 刻度带 v2（B：分位数截断）</option>
+      <option value="world-band-dense">世界序 · 刻度带 v2（252 事件量级）</option>
+      <option value="world-band-dense-legacy">世界序 · #1541 旧形态（252 事件·改前对照）</option>
       <option value="empty">空态</option>
     </select>
   </label>
@@ -510,7 +531,7 @@ const PRIMARY_AXIS = AXIS_KEYS.slice().sort((a, b) => {
 })[0];
 const KIND_LABEL = { none: '（默认轴）' };
 
-const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','world-single','world-band','empty'];
+const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','world-single','world-band','world-band-p2','world-band-metric','world-band-dense','world-band-dense-legacy','empty'];
 const LEGENDS = {
   'narrative':        '轴=章 · 事件按章推进排列；行内小字=世界内时间',
   'narrative-filter': '轴=章 · 已筛选：第十二章（筛选对两序共用）',
@@ -519,7 +540,11 @@ const LEGENDS = {
   'world-eras-multi': '轴=纪元 · 每轴独立时间刻度（轴内按纪元值升序）· 默认轴「未分纪元」= R6-4 的旧单标量时间线',
   'world-eras-b':     '轴=纪元 · 组头显示轴名一次 · 组内事件行行内显示时间刻度（不合并同刻度）',
   'world-single':     '轴=世界内时间（升序，未知末尾）· 项目无纪元数据（era 全空）→ 组头=时间刻度段、组内缩进（#1527）',
-  'world-band':       '多历共存 · 单块：左侧多历竖轴（刻度按流速换算，隔断各不同）+ 右侧对应事件（#1527-v2 草案）',
+  'world-band':       '轴=世界内时间 · 每个刻度的高度=该刻度事件数 · 左侧时间主轴定位 · 按刻度分页（第 1 页）',
+  'world-band-p2':    '轴=世界内时间 · 同一形态翻到第 2 页（分页单位 = 刻度）',
+  'world-band-metric':'轴=世界内时间 · B 方案：纵向等比 + p10–p90 截断（越界夹端点·需 ≥10 刻度才有意义）',
+  'world-band-dense': '轴=世界内时间 · 真实量级（252 事件 = 12 有值 + 240 未知）仍紧凑可翻页',
+  'world-band-dense-legacy': '#1541 旧形态复现（同 252 事件）：高度 ∝ 事件总数 → 大面空白',
 };
 const NOTES = {
   'narrative':
@@ -537,7 +562,15 @@ const NOTES = {
   'world-single':
     '<b>世界序 · 单轴（#1527 / 方案 A 泛化）</b>：项目<b>无纪元数据</b>（<code>era</code> 全空 → 单一默认轴）时，把 #1467 的「组头 + 树状」<b>泛化为「（era，时间刻度段）两级」</b>——第一级 = <b>时间刻度段</b>（<code>time_display</code> 原样，如「示例历 217 年」；同刻度事件收进同一节点并计数），组内事件行<b>缩进一级</b>、不再逐行重复时间。<b>无轴名组头</b>（单轴无歧义）。时间缺失事件归末尾「未知」节点，不破坏分组。分桶口径与 #1411 不冲突：本轨是<b>显示文本分段</b>（同轴内视觉层级），#1411 是<b>跨轴数值比较键</b>（<code>to_global</code>，判定层）。',
   'world-band':
-    '<b>世界序 · 多历共存「单块刻度带」（#1527-v2 草案）</b>：不把每个历截断成独立卡片，而是<b>一个块内</b>——<b>左侧并列多条历竖轴</b>（每条轴标该历刻度），<b>右侧</b>是与各刻度<b>对应的事件</b>。各历刻度按 <code>to_global = 本地值 / 流速比</code>（<code>era_scale</code>，#1411 口径）映射到同一纵向空间 → <b>流速不同 ⇒ 刻度隔断疏密不同</b>。本草案取：示例历 1:1（刻度 17/217/314）与示例仙历 1:10（刻度 1024/4096，换算后落不同高度）。<br><b>待拍板</b>：① 纵向口径＝「全局时间等比」（本草案）还是「按事件顺序等高」；② 同刻度多事件＝错开（本草案）/ 合并；③ 是否取代 #1467 多泳道形态。',
+    '<b>世界序 · 刻度带 v2（#1564）</b>：① 每个刻度的高度 = <b>该刻度实际事件数</b>（不定高）；② 分页单位 = <b>时间刻度</b>；③ <b>时间主轴</b>（最左）= 定位 / 分页依据；④ 离群值不压扁其余刻度。<br><b>旧形态（#1541）的缺陷</b>：高度公式把 <code>unknown</code> <b>计两次</b>（<code>(rows+unknown)×28</code> 又加一个含 <code>unknown×28</code> 的 <code>unknownBlock</code>）；高度 ∝ <b>事件总数</b>而坐标按 <code>to_global</code> 线性铺满 → 252 事件（仅 12 有值）时画布 ≈ <b>13,924px</b>；每个刻度同高；无分页。<br><b>离群策略二选一</b>：<b>A（推荐）序号行</b> = 纵向位置取刻度序号、行高取事件数 → 结构性免疫离群（本态）；<b>B 等比 + p10–p90 截断</b> = 保留时间间隔比例感，越界刻度夹到端点（见 B 态）。',
+  'world-band-p2':
+    '<b>按刻度分页</b>：分页推进单位 = <b>时间刻度</b>（不是事件条数）。翻页后<b>刻度集合</b>变化（本页 = 第 9–15 个刻度），事件随之切片；页码器显示「第 x / y 页 · 每页 8 刻度 · 共 N 刻度」。',
+  'world-band-metric':
+    '<b>离群策略 B（对照）</b>：纵向位置仍按 <code>to_global</code> 等比，但范围取 <b>p10–p90 分位截断</b>（越界刻度夹到端点、聚在顶端/底端）。保留时间间距比例感，但离群刻度会与其他刻度重叠 → 需再叠加「碰撞下推」。',
+  'world-band-dense':
+    '<b>真实数据量级（252 事件 = 12 有值 + 240 未知）</b>：新形态画布 ≈ <b>676px</b>（刻度区按页 8 刻度 + 未知区限高 220px 内滚动）——对比旧形态 <b>13,924px</b>。未知事件仍全部在 DOM（不丢事件），只是收进限高滚动区。',
+  'world-band-dense-legacy':
+    '<b>改前对照（#1541 旧公式复现）</b>：<code>height = max(400, 120 + (rows+unknown)×28 + unknownBlock)</code> = <b>13,924px</b>。截图为该画布<b>顶部 800px</b>——刻度被拉散在 1.4 万像素高、近乎全空白的画布上（即用户截图实录）。<code>unknown</code> 在公式里被计两次。',
   'empty':
     '<b>空态</b>：无变化（「还没有时间线，去创建」+ CTA）。',
 };
@@ -666,70 +699,224 @@ function renderWorldSingle(){
   return `<div class="tl-axis tl-axis--time" data-testid="tl-axis">${nodes}</div>`;
 }
 
-/* #1527-v2：多历共存「单块刻度带」——一个块内左侧 N 条历竖轴（每轴一色 + 独立刻度，
-   刻度位置 = to_global = 本地值/流速比，故各历隔断疏密不同）+ 右侧对应事件（历色连线指回本轴刻度）。
-   范式：Perfetto 多 track 合入单一共享时间线 + 左侧轨道标签；Wikipedia EasyTimeline 多平行竖轴。
-   ponytail: 固定块高 + 线性映射，够评审形态；真实实现需虚拟滚动 + 碰撞规避 + 刻度自适应密度。 */
-function renderWorldBand(){
-  const AXES = [
-    { key:'qingyuan', name:'示例历',   color:'#b3462f', scale:1 },
-    { key:'xianjie',  name:'示例仙历', color:'#34607f', scale:10 },
-  ];
-  const EVS = [
-    { id:'b1', axis:'qingyuan', t:17,   ch:'c11', title:'师父闭关前夜，问角色甲「事件乙」' },
-    { id:'b2', axis:'qingyuan', t:217,  ch:'c12', title:'角色甲下山，角色乙追随' },
-    { id:'b3', axis:'qingyuan', t:217,  ch:'c12', title:'夜访地点乙，发现二十年前异动痕迹' },
-    { id:'b4', axis:'qingyuan', t:314,  ch:'c13', title:'事件甲，断剑于地点己' },
-    { id:'b5', axis:'xianjie',  t:1024, ch:null,  title:'示例仙界法旨降下（另一纪元轴事件）' },
-    { id:'b6', axis:'xianjie',  t:4096, ch:null,  title:'示例仙界天劫降临（另一纪元轴事件）' },
-    { id:'b7', axis:null,       t:null, ch:null,  title:'角色戊失踪（手工录入，未归章、未设纪元）' },
-  ];
-  const H = 430, TOP = 54, SPINE_BOT = 372, AX0 = 150, AXDX = 104, EVX = 352, LH = 26;
-  const timed = EVS.filter((e) => e.t !== null);
-  const axOf = (e) => AXES.find((a) => a.key === e.axis);
-  const gv = (e) => e.t / axOf(e).scale;                        // to_global（#1411：本地值 / 流速比）
-  const gmax = Math.max.apply(null, timed.map(gv)) * 1.05;
-  const Y = (g) => TOP + (g / gmax) * (SPINE_BOT - TOP);
-  const row = (e, top) => `<div class="mvs-ev" data-testid="tl-axis-node-${e.id}" style="left:${EVX}px;right:18px;top:${top}px">
-      <span class="tname">${esc(e.title)}</span>
-      <span class="tl-src" data-testid="tl-src-${e.id}">${esc(chTitle(e.ch))}</span>
-      <button class="check-one" data-testid="tl-check-one-${e.id}">单事件检查</button>
-    </div>`;
-  let html = '';
-  AXES.forEach((ax, i) => {
-    const x = AX0 + i * AXDX;
-    const mine = timed.filter((e) => e.axis === ax.key);
-    html += `<span class="mvs-colhead" style="left:${x}px;--c:${ax.color}"><span class="swatch"></span>${esc(ax.name)}<span class="cnt">${mine.length}</span></span>`;
-    html += `<span class="mvs-spine" style="left:${x}px;top:${TOP}px;height:${SPINE_BOT - TOP}px;--c:${ax.color}"></span>`;
-    const ticks = Array.from(new Set(mine.map((e) => e.t))).sort((a, b) => a - b);
-    for (const t of ticks) {
-      const y = Y(t / ax.scale);
-      html += `<span class="mvs-tickmark" style="left:${x - 5}px;top:${y}px;width:12px;--c:${ax.color}"></span>`;
-      html += `<span class="mvs-node" style="left:${x}px;top:${y}px;--c:${ax.color}"></span>`;
-      html += `<span class="mvs-tick" style="left:${x + 9}px;top:${y}px">${t} 年</span>`;
-    }
+/* ══ #1564 世界序刻度带 v2 ══
+   拍板（2026-10-10）：① 每个刻度的高度 = 该刻度实际事件数（不定高）；
+   ② 分页单位 = 时间刻度；③ 新增「时间主轴」= 定位 / 分页依据；
+   ④ 离群值不得压扁其余刻度（策略二选一）。
+   ❗ 与 #1541 旧形态差异：不再用「高度 ∝ 事件总数 + 线性铺满」
+      （该式把 unknown 计两次，且 252 事件中仅 ~12 有值时画布撑到 ≈13,900px）。 */
+const B2 = {
+  PAD_T: 12, MAINX: 92, AX0: 196, AXDX: 104, EVX: 436,
+  ROW_PAD: 4, ROW_H: 24, PER_PAGE: 8, RULE_GAP: 10, BOT_PAD: 6, UNK_MAX: 60,
+};
+/* 刻度带样本数据集（独立于 DEMO.events，避免影响其他演示态）：16 有值 + 3 未知 */
+const BAND_ERAS = [
+  { key:'qingyuan', name:'示例历',     color:'#b3462f', scale:1 },
+  { key:'xianjie',  name:'示例仙历', color:'#34607f', scale:10 },
+];
+const BAND_EVENTS = (function () {
+  const out = [];
+  [17, 121, 217, 217, 258, 314, 402, 517, 517].forEach(function (v, i) {
+    out.push({ id:'q'+(i+1), ch:DEMO.chapters[i % 3].key, axis:'qingyuan', time:v, timeText:'示例历 '+v+' 年', title:'示例历事件 '+(i+1) });
   });
-  /* 事件：全局时间升序；同刻度（#1527 决策 3B）合并刻度、事件行顺次错开；历色连线指回本轴刻度 */
-  const seen = {};
-  for (const e of timed.slice().sort((a, b) => gv(a) - gv(b))) {
+  [1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192].forEach(function (v, i) {
+    out.push({ id:'x'+(i+1), ch:null, axis:'xianjie', time:v, unit:'年', timeText:'', title:'示例仙界事件 '+(i+1) });
+  });
+  ['有历但时间待考的记录一', '有历但时间待考的记录二', '有历但时间待考的记录三'].forEach(function (t, i) {
+    out.push({ id:'u'+(i+1), ch:null, axis:'qingyuan', time:null, timeText:'', title:t });
+  });
+  return out;
+})();
+/* 真实数据量级样本（#1564 现象复现）：单默认轴 252 条 = 12 有值 + 240 无时间 */
+const DENSE_ERAS = [{ key:'none', name:'未分纪元', color:'#7a7a7a', scale:1 }];
+const DENSE_EVENTS = (function () {
+  const out = [];
+  [17, 121, 217, 217, 258, 314, 402, 517, 1024, 2048, 3072, 1000000].forEach(function (v, i) {
+    out.push({ id:'dv'+(i+1), ch:null, axis:'none', time:v, timeText:'示例历 '+v+' 年', title:'有值事件 '+(i+1) });
+  });
+  for (let i = 1; i <= 240; i++) out.push({ id:'dn'+i, ch:null, axis:'none', time:null, timeText:'', title:'提取事件 '+i+'（无时间表达）' });
+  return out;
+})();
+
+/* 主轴行模型：合并选中历刻度（g = to_global 去重升序） */
+function bandRowsV2(eras, evs) {
+  const axOf = function (e) { return eras.filter(function (a) { return a.key === e.axis; })[0]; };
+  const map = new Map();
+  evs.forEach(function (e) {
     const ax = axOf(e);
-    const x = AX0 + AXES.indexOf(ax) * AXDX;
+    if (!ax || e.time === null || e.time === undefined) return;
+    const g = e.time / (ax.scale || 1);
+    let row = map.get(g);
+    if (!row) { row = { g:g, count:0, evs:[], perAxis:{} }; map.set(g, row); }
+    row.count += 1;
+    row.evs.push(e);
+    if (!row.perAxis[e.axis]) row.perAxis[e.axis] = { local:e.time, label:timeScaleOf(e) };
+  });
+  return Array.from(map.values()).sort(function (a, b) { return a.g - b.g; });
+}
+
+/* 事件行：mode='abs' 绝对定位（刻度区）/ 'flow' 文档流（未知区滚动列表） */
+function bandEventRow(ev, mode, top) {
+  const cls = 'mvs-ev' + (mode === 'flow' ? ' mvs-ev--flow' : '');
+  const style = mode === 'abs' ? ' style="left:' + B2.EVX + 'px;right:18px;top:' + top + 'px"' : '';
+  return '<div class="' + cls + '" data-testid="tl-axis-node-' + ev.id + '"' + style + '>'
+    + '<span class="tname">' + esc(ev.title) + '</span>'
+    + '<span class="tl-src" data-testid="tl-src-' + ev.id + '">' + esc(chTitle(ev.ch)) + '</span>'
+    + '<button class="check-one" data-testid="tl-check-one-' + ev.id + '">单事件检查</button>'
+    + '</div>';
+}
+
+/* 刻度带 v2：不定高刻度 + 时间主轴 + 按刻度分页。mode = 'ordinal' | 'metric' */
+function renderBandV2(eras, evs, mode, page) {
+  const rows = bandRowsV2(eras, evs);
+  /* 度量态（B）单页全量展示（分位数需全量计算）*/
+  const per = mode === 'metric' ? Math.max(1, rows.length) : B2.PER_PAGE;
+  const pageCount = Math.max(1, Math.ceil(rows.length / per));
+  const p = Math.min(Math.max(page || 0, 0), pageCount - 1);
+  const pageRows = rows.slice(p * per, p * per + per);
+  const unknown = evs.filter(function (e) {
+    return eras.some(function (a) { return a.key === e.axis; }) && (e.time === null || e.time === undefined);
+  });
+  /* 行高 = 该刻度实际事件数（拍板 ①） */
+  const rowH = function (r) { return B2.ROW_PAD * 2 + Math.max(1, r.count) * B2.ROW_H; };
+  const span = pageRows.reduce(function (s, r) { return s + rowH(r); }, 0);
+  /* 离群策略（拍板 ④） */
+  let idealOf = function () { return B2.PAD_T; };
+  if (mode === 'metric' && pageRows.length > 2) {
+    const gs = pageRows.map(function (r) { return r.g; }).sort(function (a, b) { return a - b; });
+    const lo = gs[Math.floor((gs.length - 1) * 0.10)];
+    const hi = gs[Math.ceil((gs.length - 1) * 0.90)];
+    const d = (hi - lo) || 1;
+    idealOf = function (r) { return B2.PAD_T + ((Math.min(Math.max(r.g, lo), hi) - lo) / d) * span; };
+  }
+  let cursor = B2.PAD_T;
+  const placed = pageRows.map(function (r) {
+    const h = rowH(r);
+    const top = Math.max(cursor, idealOf(r));
+    cursor = top + h;
+    return { row:r, top:top, h:h };
+  });
+  const bottom = cursor;
+  /* 未知区列表高度按整数行取整（避免半行被裁成「破损」观感） */
+  const rawListH = Math.min(unknown.length * B2.ROW_H, B2.UNK_MAX);
+  const listH = unknown.length ? Math.max(B2.ROW_H, Math.floor(rawListH / B2.ROW_H) * B2.ROW_H) : 0;
+  const unknownH = unknown.length ? B2.RULE_GAP + 24 + listH + 8 : 0;
+  const H = bottom + unknownH + B2.BOT_PAD;
+  const spineH = Math.max(0, bottom - B2.PAD_T);
+  let html = '';
+  eras.forEach(function (ax, i) {
+    const x = B2.AX0 + i * B2.AXDX;
+    const cnt = evs.filter(function (e) { return e.axis === ax.key; }).length;
+    html += '<span class="mvs-colhead" style="left:' + x + 'px;--c:' + ax.color + '"><span class="swatch"></span>'
+      + esc(ax.name) + '<span class="cnt">' + cnt + '</span></span>';
+  });
+  /* 时间主轴（拍板 ③） */
+  html += '<span class="mvs-mainhead" style="left:' + B2.MAINX + 'px">时间主轴</span>';
+  html += '<span class="mvs-mainspine" style="left:' + B2.MAINX + 'px;top:' + B2.PAD_T + 'px;height:' + spineH + 'px"></span>';
+  placed.forEach(function (it, i) {
+    const cy = it.top + it.h / 2;
+    html += '<span class="mvs-rowguide" style="left:' + B2.MAINX + 'px;right:18px;top:' + cy + 'px"></span>';
+    html += '<span class="mvs-mainnode" data-testid="tl-band-mainnode-' + i + '" style="left:' + B2.MAINX + 'px;top:' + cy + 'px"></span>';
+  });
+  eras.forEach(function (ax, i) {
+    const x = B2.AX0 + i * B2.AXDX;
+    html += '<span class="mvs-spine" style="left:' + x + 'px;top:' + B2.PAD_T + 'px;height:' + spineH + 'px;--c:' + ax.color + '"></span>';
+    placed.forEach(function (it) {
+      const info = it.row.perAxis[ax.key];
+      if (!info) return;
+      const cy = it.top + it.h / 2;
+      html += '<span class="mvs-tickmark" style="left:' + (x - 5) + 'px;top:' + cy + 'px;width:12px;--c:' + ax.color + '"></span>';
+      html += '<span class="mvs-node" style="left:' + x + 'px;top:' + cy + 'px;--c:' + ax.color + '"></span>';
+      html += '<span class="mvs-tick" style="left:' + (x + 9) + 'px;top:' + cy + 'px">' + esc(info.label) + '</span>';
+    });
+  });
+  placed.forEach(function (it) {
+    eras.forEach(function (ax, ai) {
+      const x = B2.AX0 + ai * B2.AXDX;
+      it.row.evs.filter(function (e) { return e.axis === ax.key; }).forEach(function (e, k) {
+        const y = it.top + B2.ROW_PAD + k * B2.ROW_H;
+        html += '<span class="mvs-link" style="left:' + x + 'px;top:' + (y + 12) + 'px;width:' + (B2.EVX - x - 6) + 'px;--c:' + ax.color + '"></span>';
+        html += bandEventRow(e, 'abs', y);
+      });
+    });
+  });
+  if (unknown.length) {
+    html += '<div class="mvs-unkblock" style="top:' + (bottom + B2.RULE_GAP) + 'px">'
+      + '<span class="mvs-rule" data-testid="tl-band-unknown"></span>'
+      + '<div class="mvs-unkhead">未知 <span class="cnt">' + unknown.length + '</span></div>'
+      + '<div class="mvs-unklist" style="height:' + listH + 'px">'
+      + unknown.map(function (e) { return bandEventRow(e, 'flow', 0); }).join('')
+      + '</div></div>';
+  }
+  if (mode === 'metric') html += '<span class="mvs-badge">离群压缩：p10–p90 截断（越界夹端点）· 单页全量</span>';
+  const pager = '<div class="mvs-pager" data-testid="tl-band-pager">'
+    + '<button class="mvs-pg-btn" data-testid="tl-band-page-prev"' + (p === 0 ? ' disabled' : '') + ' onclick="bandGo(-1)">‹ 上一页</button>'
+    + '<span class="mvs-pg-info" data-testid="tl-band-pageinfo">第 ' + (p + 1) + ' / ' + pageCount + ' 页 · 每页 ' + per + ' 刻度 · 共 ' + rows.length + ' 刻度</span>'
+    + '<button class="mvs-pg-btn" data-testid="tl-band-page-next"' + (p >= pageCount - 1 ? ' disabled' : '') + ' onclick="bandGo(1)">下一页 ›</button>'
+    + '</div>';
+  return '<div class="mvs" data-testid="tl-band" style="height:' + H + 'px">' + html + '</div>' + pager;
+}
+
+/* #1541 旧形态复现（M6 改前对照）：高度 ∝ 事件总数 + 线性铺满 + unknown 双计 */
+function renderBandLegacy() {
+  const eras = DENSE_ERAS, evs = DENSE_EVENTS;
+  const TOP = 54, AX0 = 150, AXDX = 104, EVX = 352, GAP = 28, LH = 26;
+  const axOf = function (e) { return eras.filter(function (a) { return a.key === e.axis; })[0]; };
+  const timed = evs.filter(function (e) { const ax = axOf(e); return ax && e.time !== null && e.time !== undefined; });
+  const unknown = evs.filter(function (e) { const ax = axOf(e); return ax && (e.time === null || e.time === undefined); });
+  const gv = function (e) { return e.time / (axOf(e).scale || 1); };
+  const gmax = Math.max.apply(null, timed.map(gv).concat([0])) * 1.05;
+  const unknownBlock = unknown.length > 0 ? 20 + unknown.length * GAP + 8 : 0;
+  const height = Math.max(400, 120 + (timed.length + unknown.length) * GAP + unknownBlock);
+  const spineH = height - TOP - 80;
+  const Y = function (g) { return TOP + (g / gmax) * spineH; };
+  let html = '';
+  eras.forEach(function (ax, i) {
+    const x = AX0 + i * AXDX;
+    const mine = timed.filter(function (e) { return e.axis === ax.key; });
+    html += '<span class="mvs-colhead" style="left:' + x + 'px;--c:' + ax.color + '"><span class="swatch"></span>'
+      + esc(ax.name) + '<span class="cnt">' + evs.filter(function (e) { return e.axis === ax.key; }).length + '</span></span>';
+    html += '<span class="mvs-spine" style="left:' + x + 'px;top:' + TOP + 'px;height:' + spineH + 'px;--c:' + ax.color + '"></span>';
+    Array.from(new Set(mine.map(function (e) { return e.time; }))).sort(function (a, b) { return a - b; }).forEach(function (t) {
+      const y = Y(t / (ax.scale || 1));
+      html += '<span class="mvs-node" style="left:' + x + 'px;top:' + y + 'px;--c:' + ax.color + '"></span>';
+      html += '<span class="mvs-tick" style="left:' + (x + 9) + 'px;top:' + y + 'px">' + t + ' 年</span>';
+    });
+  });
+  const seen = {};
+  timed.slice().sort(function (a, b) { return gv(a) - gv(b); }).forEach(function (e) {
+    const ax = axOf(e);
+    const x = AX0 + eras.indexOf(ax) * AXDX;
     const gy = Y(gv(e));
     const slot = Math.round(gy / LH);
-    const n = (seen[slot] = (seen[slot] || 0) + 1);
-    const y = gy + (n - 1) * LH;
-    html += `<span class="mvs-link" style="left:${x}px;top:${y}px;width:${EVX - x - 6}px;--c:${ax.color}"></span>`;
-    html += row(e, y - 12);
-  }
-  /* 时间未知：轴底虚线区（不破坏刻度带结构） */
-  const unk = EVS.filter((e) => e.t === null);
-  html += `<span class="mvs-rule" style="top:${SPINE_BOT + 16}px"></span>`;
-  if (unk.length) {
-    html += `<span class="mvs-tick" style="left:${AX0 + 9}px;top:${SPINE_BOT + 32}px">未知</span>`;
-    unk.forEach((e, i) => { html += row(e, SPINE_BOT + 20 + i * LH); });
-  }
-  return `<div class="mvs" data-testid="tl-band" style="height:${H}px">${html}</div>`;
+    seen[slot] = (seen[slot] || 0) + 1;
+    const y = gy + (seen[slot] - 1) * LH;
+    html += '<span class="mvs-link" style="left:' + x + 'px;top:' + y + 'px;width:' + (EVX - x - 6) + 'px;--c:' + ax.color + '"></span>';
+    html += bandEventRow(e, 'abs', y - 12);
+  });
+  const uy = TOP + spineH + 24;
+  html += '<span class="mvs-rule" data-testid="tl-band-unknown" style="top:' + (TOP + spineH + 12) + 'px"></span>';
+  html += '<span class="mvs-tick" style="left:' + (AX0 + 9) + 'px;top:' + uy + 'px">未知</span>';
+  unknown.forEach(function (e, i) { html += bandEventRow(e, 'abs', uy - 12 + i * GAP); });
+  html += '<span class="mvs-badge">#1541 旧形态复现：height = max(400, 120 + (rows+unknown)×28 + unknownBlock) = ' + height + 'px</span>';
+  return '<div class="mvs" data-testid="tl-band" style="height:' + height + 'px">' + html + '</div>';
 }
+
+/* 状态 → 刻度带 HTML（分页管理） */
+let bandCur = { state:'world-band', page:0 };
+function renderBandStateHTML(state, page) {
+  if (state === 'world-band') return renderBandV2(BAND_ERAS, BAND_EVENTS, 'ordinal', page);
+  if (state === 'world-band-p2') return renderBandV2(BAND_ERAS, BAND_EVENTS, 'ordinal', page);
+  if (state === 'world-band-metric') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'metric', page);
+  if (state === 'world-band-dense') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'ordinal', page);
+  if (state === 'world-band-dense-legacy') return renderBandLegacy();
+  return '';
+}
+window.bandGo = function (d) {
+  bandCur.page = Math.max(0, bandCur.page + d);
+  document.getElementById('tlBody').innerHTML = renderBandStateHTML(bandCur.state, bandCur.page);
+  mountDynIcons();
+};
 
 /* 筛选面板（按章）：narrative-filter 态演示「已选第十二章」 */
 function renderFilterPanel(state){
@@ -758,7 +945,11 @@ function renderBody(state){
   if (state === 'world-eras-b') return renderWorldErasB(['qingyuan']);
   if (state === 'world-eras-multi') return renderWorldEras(AXIS_KEYS);
   if (state === 'world-single') return renderWorldSingle();
-  if (state === 'world-band') return renderWorldBand();
+  if (state === 'world-band') { bandCur = { state:'world-band', page:0 }; return renderBandStateHTML('world-band', 0); }
+  if (state === 'world-band-p2') { bandCur = { state:'world-band-p2', page:1 }; return renderBandStateHTML('world-band-p2', 1); }
+  if (state === 'world-band-metric') { bandCur = { state:'world-band-metric', page:0 }; return renderBandStateHTML('world-band-metric', 0); }
+  if (state === 'world-band-dense') { bandCur = { state:'world-band-dense', page:0 }; return renderBandStateHTML('world-band-dense', 0); }
+  if (state === 'world-band-dense-legacy') { bandCur = { state:'world-band-dense-legacy', page:0 }; return renderBandStateHTML('world-band-dense-legacy', 0); }
   return '';
 }
 
@@ -783,7 +974,7 @@ function setState(s){
   document.body.dataset.state = s;
   const sel = document.getElementById('stateSel');
   if (sel) sel.value = s;
-  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi' || s === 'world-eras-b' || s === 'world-single' || s === 'world-band';
+  const isWorld = s === 'world' || s === 'world-eras' || s === 'world-eras-multi' || s === 'world-eras-b' || s === 'world-single' || s.indexOf('world-band') === 0;
   document.getElementById('segNarrative').classList.toggle('active', !isWorld);
   document.getElementById('segWorld').classList.toggle('active', isWorld);
   document.getElementById('tlLegend').textContent = LEGENDS[s] || '';
@@ -796,6 +987,12 @@ function setState(s){
 function setTheme(th){
   document.documentElement.dataset.theme = th;
   document.body.dataset.theme = th;
+  const sel = document.getElementById('themeSel');
+  const label = document.getElementById('themeLabel');
+  if (sel && label) {
+    const opt = Array.prototype.find.call(sel.options, (o) => o.value === th);
+    if (opt) label.textContent = opt.textContent;
+  }
 }
 document.getElementById('stateSel').addEventListener('change', (e) => setState(e.target.value));
 document.getElementById('themeSel').addEventListener('change', (e) => setTheme(e.target.value));
