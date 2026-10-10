@@ -35,6 +35,11 @@ const SHOTS = [
   { state: 'world', out: 'timeline-world.png' },
   { state: 'world-single', out: 'timeline-world-single.png' },
   { state: 'world-band', out: 'timeline-world-band.png' },
+  { state: 'world-band', out: 'timeline-world-band-night.png', theme: 'night' },
+  { state: 'world-band-p2', out: 'timeline-world-band-p2.png' },
+  { state: 'world-band-metric', out: 'timeline-world-band-metric.png' },
+  { state: 'world-band-dense', out: 'timeline-world-band-dense.png' },
+  { state: 'world-band-dense-legacy', out: 'timeline-world-band-dense-legacy.png' },
   { state: 'world-eras', out: 'timeline-world-eras.png' },
   { state: 'world-eras-multi', out: 'timeline-world-eras-multi.png' },
   { state: 'world-eras-b', out: 'timeline-world-eras-b.png' },
@@ -147,6 +152,22 @@ async function probe(page) {
       bandSpines: qa('.mvs-spine').length,
       bandTicks: qa('.mvs-node').length,
       bandUnknown: qa('.mvs-rule').length,
+      /* #1564：刻度带 v2（不定高 + 时间主轴 + 按刻度分页） */
+      bandH: q('[data-testid="tl-band"]') ? Math.round(q('[data-testid="tl-band"]').getBoundingClientRect().height) : 0,
+      bandMainNodes: qa('.mvs-mainnode').length,
+      bandRowGuides: qa('.mvs-rowguide').length,
+      bandRowTops: qa('.mvs-rowguide').map((n) => Math.round(n.getBoundingClientRect().top)),
+      bandPager: txt(q('[data-testid="tl-band-pageinfo"]')),
+      bandTickTexts: qa('.mvs-tick').map((n) => n.textContent.trim()),
+      bandUnkHead: txt(q('.mvs-unkhead')),
+      bandUnkListH: q('.mvs-unklist') ? Math.round(q('.mvs-unklist').getBoundingClientRect().height) : 0,
+      bandBadge: txt(q('.mvs-badge')),
+      bandEvents: qa('[data-testid^="tl-axis-node-"]').length,
+      /* #1565：刻度带容器底色 vs 页面底色 vs 卡片面（--surface）——计算样式 */
+      theme: document.body.dataset.theme,
+      bandBg: q('[data-testid="tl-band"]') ? getComputedStyle(q('[data-testid="tl-band"]')).backgroundColor : 'MISSING',
+      pageBg: getComputedStyle(document.body).backgroundColor,
+      cardBg: q('.tl-seg') ? getComputedStyle(q('.tl-seg')).backgroundColor : 'MISSING',
       tnQy: timeNodesOf('qingyuan'),
       tnNone: timeNodesOf('none'),
       tnXianjie: timeNodesOf('xianjie'),
@@ -186,10 +207,11 @@ async function probe(page) {
 const QY = '示例界 · 示例历';
 const XJ = '示例仙界 · 示例仙历';
 
-function checkAll(d, state) {
+function checkAll(d, state, sh) {
   const fails = [];
   const chk = (label, cond) => { if (!cond) fails.push(label); };
 
+  chk(`theme=${(sh && sh.theme) || '默认'}（实际 ${d.theme}）`, (sh && sh.theme) === d.theme);
   chk(`icons ${d.svgs}/${d.icons}`, d.icons === d.svgs && d.icons > 0);
   chk(`horizontal scroll ${d.scrollW}>${d.innerW}`, d.scrollW <= d.innerW);
   chk(`body[data-state]=${state}（实际 ${d.state}）`, d.state === state);
@@ -259,16 +281,67 @@ function checkAll(d, state) {
     chk(`世界序专属：无轴选择器（实际 ${d.pickerDisplay}）`, d.pickerDisplay === 'none');
   }
 
-  if (state === 'world-band') {
-    /* #1527-v2 草案：单块多历竖轴刻度带（无 tl-axis 容器，改用 tl-band） */
+  if (state === 'world-band' || state === 'world-band-p2') {
+    /* #1564 刻度带 v2：不定高刻度 + 时间主轴 + 按刻度分页（#1541 形态重做） */
+    const isP2 = state === 'world-band-p2';
     chk(`刻度带块存在（实际 ${!!d.band}）`, d.band === true);
     chk(`历竖轴=2（实际 ${d.bandSpines}）`, d.bandSpines === 2);
-    chk(`刻度点总数=5（实际 ${d.bandTicks}）`, d.bandTicks === 5);
-    chk(`未知区虚线=1（实际 ${d.bandUnknown}）`, d.bandUnknown === 1);
-    chk(`事件数=7（实际 ${d.nodeCount}）`, d.nodeCount === 7);
-    chk(`事件无重复（dup=${d.dup}）`, d.dup === 0);
+    chk(`刻度点=本页行数 ${isP2 ? 7 : 8}（实际 ${d.bandTicks}）`, d.bandTicks === (isP2 ? 7 : 8));
+    chk(`未知区=1（实际 ${d.bandUnknown}）`, d.bandUnknown === 1);
+    chk(`本页事件数=${isP2 ? 11 : 12}（实际 ${d.bandEvents}）`, d.bandEvents === (isP2 ? 11 : 12));
     chk(`无泳道卡片（实际 ${d.laneCount}）`, d.laneCount === 0);
     chk(`世界序专属：无轴选择器（实际 ${d.pickerDisplay}）`, d.pickerDisplay === 'none');
+    /* 拍板 ③：时间主轴 = 定位 / 分页依据（刻度点 + 每行参考线） */
+    chk(`时间主轴刻度点=${isP2 ? 7 : 8}（实际 ${d.bandMainNodes}）`, d.bandMainNodes === (isP2 ? 7 : 8));
+    chk(`主轴参考线行数=${isP2 ? 7 : 8}（实际 ${d.bandRowGuides}）`, d.bandRowGuides === (isP2 ? 7 : 8));
+    /* 拍板 ②：分页单位 = 时间刻度 */
+    const expPager = `第 ${isP2 ? 2 : 1} / 2 页 · 每页 8 刻度 · 共 15 刻度`;
+    chk(`分页信息=「${expPager}」（实际 ${d.bandPager}）`, d.bandPager === expPager);
+    const has17 = d.bandTickTexts.includes('示例历 17 年');
+    const has517 = d.bandTickTexts.includes('示例历 517 年');
+    chk(`翻页后刻度集合变化（17年=${has17} 517年=${has517}）`, isP2 ? (!has17 && has517) : (has17 && !has517));
+    /* 拍板 ①：不定高（同轴内不同刻度行高不同 —— 217 年双事件行更高） */
+    const diffs = d.bandRowTops.slice(1).map((t, i) => t - d.bandRowTops[i]).filter((v) => v > 0);
+    chk(`不定高：行距种类>1（实际 ${JSON.stringify(diffs)}）`, new Set(diffs).size > 1);
+    chk(`画布高度受限（实际 ${d.bandH}px）`, d.bandH > 200 && d.bandH < 900);
+    /* #1565：容器底色 = 页面底色 token（且非卡片面 --surface）；由 night 场景覆盖深色主题 */
+    chk(`底色=页面底色（band=${d.bandBg} page=${d.pageBg} theme=${d.theme}）`, d.bandBg === d.pageBg);
+    chk(`底色≠卡片面（card=${d.cardBg}）`, d.bandBg !== d.cardBg);
+  }
+
+  if (state === 'world-band-metric') {
+    /* #1564 拍板 ④ 选项 B：等比定位 + p10–p90 截断（单页全量对照） */
+    chk(`刻度带块存在（实际 ${!!d.band}）`, d.band === true);
+    chk(`历竖轴=1（实际 ${d.bandSpines}）`, d.bandSpines === 1);
+    chk(`事件数=252（实际 ${d.bandEvents}）`, d.bandEvents === 252);
+    chk(`单页全量（实际 ${d.bandPager}）`, /第 1 \/ 1 页/.test(String(d.bandPager)));
+    chk(`badge 标注 p10–p90（实际 ${d.bandBadge}）`, String(d.bandBadge).includes('p10–p90'));
+    const dm = d.bandRowTops.slice(1).map((t, i) => t - d.bandRowTops[i]).filter((v) => v > 0);
+    chk(`等比间距（最大行距>=2×最小，实际 ${JSON.stringify(dm)}）`,
+      dm.length > 0 && Math.max.apply(null, dm) >= 2 * Math.min.apply(null, dm));
+    chk(`离群夹端点后画布受限（实际 ${d.bandH}px）`, d.bandH > 200 && d.bandH < 1200);
+  }
+
+  if (state === 'world-band-dense') {
+    /* #1564 M6：真实数据量级（252 事件 = 12 有值 + 240 未知）→ 新形态紧凑 */
+    chk(`刻度带块存在（实际 ${!!d.band}）`, d.band === true);
+    chk(`历竖轴=1（实际 ${d.bandSpines}）`, d.bandSpines === 1);
+    chk(`本页事件数=249（实际 ${d.bandEvents}）`, d.bandEvents === 249);
+    chk(`刻度点=本页行数 8（实际 ${d.bandTicks}）`, d.bandTicks === 8);
+    chk(`未知区表头含 240（实际 ${d.bandUnkHead}）`, String(d.bandUnkHead).includes('240'));
+    chk(`未知区限高（列表高 ${d.bandUnkListH} <= 240）`, d.bandUnkListH > 0 && d.bandUnkListH <= 240);
+    chk(`画布高度紧凑 <900px（实际 ${d.bandH}px）`, d.bandH < 900);
+    chk(`分页覆盖全部刻度（实际 ${d.bandPager}）`, /共 11 刻度/.test(String(d.bandPager)));
+  }
+
+  if (state === 'world-band-dense-legacy') {
+    /* #1564 M6 改前对照：#1541 旧公式复现 → 画布 13924px */
+    chk(`刻度带块存在（实际 ${!!d.band}）`, d.band === true);
+    chk(`事件数=252（实际 ${d.bandEvents}）`, d.bandEvents === 252);
+    chk(`画布高度=13924px（实际 ${d.bandH}px）`, d.bandH === 13924);
+    chk(`badge 标注旧公式高度（实际 ${d.bandBadge}）`, String(d.bandBadge).includes('13924'));
+    chk(`旧形态无时间主轴（实际 ${d.bandMainNodes}）`, d.bandMainNodes === 0);
+    chk(`旧形态无分页（实际 ${d.bandPager}）`, d.bandPager === null);
   }
 
   if (state === 'world-eras' || state === 'world-eras-multi') {
@@ -350,16 +423,20 @@ function checkAll(d, state) {
   for (const s of SHOTS) {
     const url = 'file:///' + path.join(ROOT, 'timeline', 'timeline.html').replace(/\\/g, '/');
     await page.goto(url); // 每状态一次干净加载（绕开 file:// hash 导航不重载的坑）
-    await page.evaluate((st) => {
-      // 首态（narrative）不显式 setState —— 顺带验证「双击打开」的初始渲染链（坑：初始化链抛错→页面空白）
-      if (st !== 'narrative') window.setState(st);
-      document.body.dataset.shot = '1'; // 隐藏 demo-bar + review-note
-    }, s.state);
+    await page.evaluate(
+      ({ st, th }) => {
+        // 首态（narrative）不显式 setState —— 顺带验证「双击打开」的初始渲染链（坑：初始化链抛错→页面空白）
+        if (st !== 'narrative') window.setState(st);
+        if (th) window.setTheme(th); // #1565：深色主题底色证据
+        document.body.dataset.shot = '1'; // 隐藏 demo-bar + review-note
+      },
+      { st: s.state, th: s.theme || '' },
+    );
     await page.waitForTimeout(400);
     const out = path.join(ROOT, 'timeline', s.out);
     await page.screenshot({ path: out });
     const d = await probe(page);
-    const fails = checkAll(d, s.state);
+    const fails = checkAll(d, s.state, s);
     if (fails.length) { totalFails += fails.length; console.log(`[${s.state}] FAIL: ${fails.join(' | ')}`); }
     else console.log(`[${s.state}] OK -> ${s.out}`);
   }
