@@ -198,14 +198,14 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 
 /* #1527-v2：多历共存「单块刻度带」——左侧 N 条历竖轴（刻度按流速换算定位，隔断疏密不同）+ 右侧对应事件。
    范式参考：Perfetto 多 track 合入单一共享时间线 + 左侧轨道标签；Wikipedia EasyTimeline 多平行竖轴（每轴一色 + 独立刻度）。 */
-.mvs{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.mvs{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:var(--shadow);overflow:hidden}
 .mvs-colhead{position:absolute;top:4px;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;color:var(--ink);white-space:nowrap;transform:translateX(-50%)}
 .mvs-colhead .swatch{width:10px;height:3px;border-radius:2px;background:var(--c)}
 .mvs-colhead .cnt{font-weight:400;color:var(--ink-3)}
 .mvs-spine{position:absolute;width:2px;border-radius:1px;background:var(--c);opacity:.42}
 .mvs-tickmark{position:absolute;height:2px;border-radius:1px;background:var(--c);opacity:.55;transform:translateY(-50%)}
-.mvs-tick{position:absolute;z-index:2;font-size:11px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums;transform:translateY(-50%);background:var(--surface);padding:0 4px}
-.mvs-node{position:absolute;z-index:2;width:9px;height:9px;border-radius:999px;background:var(--surface);border:2px solid var(--c);transform:translate(-50%,-50%)}
+.mvs-tick{position:absolute;z-index:2;font-size:11px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums;transform:translateY(-50%);background:var(--bg);padding:0 4px}
+.mvs-node{position:absolute;z-index:2;width:9px;height:9px;border-radius:999px;background:var(--bg);border:2px solid var(--c);transform:translate(-50%,-50%)}
 .mvs-link{position:absolute;z-index:1;height:1px;background:var(--c);opacity:.2}
 .mvs-rule{position:absolute;z-index:1;left:0;right:0;height:0;border-top:1px dashed var(--line)}
 .mvs-ev{position:absolute;z-index:3;display:flex;align-items:center;gap:8px;height:24px;padding:0 8px;border-radius:6px;font-size:12.5px;transition:background 150ms}
@@ -215,7 +215,7 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 /* #1564 世界序刻度带 v2 —— 不定高刻度 + 时间主轴 + 按刻度分页 */
 .mvs-mainhead{position:absolute;top:4px;transform:translateX(-50%);font-size:11px;color:var(--ink-3);white-space:nowrap}
 .mvs-mainspine{position:absolute;width:2px;border-radius:1px;background:var(--ink-3);opacity:.45}
-.mvs-mainnode{position:absolute;z-index:2;width:7px;height:7px;border-radius:999px;background:var(--surface);border:1.5px solid var(--ink-3);transform:translate(-50%,-50%)}
+.mvs-mainnode{position:absolute;z-index:2;width:7px;height:7px;border-radius:999px;background:var(--bg);border:1.5px solid var(--ink-3);transform:translate(-50%,-50%)}
 .mvs-rowguide{position:absolute;z-index:0;height:0;border-top:1px dashed var(--line);opacity:.75}
 .mvs-ev--flow{position:relative;left:auto;right:auto;top:auto}
 .mvs-unkblock{position:absolute;left:0;right:0}

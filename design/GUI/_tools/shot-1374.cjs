@@ -35,6 +35,7 @@ const SHOTS = [
   { state: 'world', out: 'timeline-world.png' },
   { state: 'world-single', out: 'timeline-world-single.png' },
   { state: 'world-band', out: 'timeline-world-band.png' },
+  { state: 'world-band', out: 'timeline-world-band-night.png', theme: 'night' },
   { state: 'world-band-p2', out: 'timeline-world-band-p2.png' },
   { state: 'world-band-metric', out: 'timeline-world-band-metric.png' },
   { state: 'world-band-dense', out: 'timeline-world-band-dense.png' },
@@ -162,6 +163,11 @@ async function probe(page) {
       bandUnkListH: q('.mvs-unklist') ? Math.round(q('.mvs-unklist').getBoundingClientRect().height) : 0,
       bandBadge: txt(q('.mvs-badge')),
       bandEvents: qa('[data-testid^="tl-axis-node-"]').length,
+      /* #1565：刻度带容器底色 vs 页面底色 vs 卡片面（--surface）——计算样式 */
+      theme: document.body.dataset.theme,
+      bandBg: q('[data-testid="tl-band"]') ? getComputedStyle(q('[data-testid="tl-band"]')).backgroundColor : 'MISSING',
+      pageBg: getComputedStyle(document.body).backgroundColor,
+      cardBg: q('.tl-seg') ? getComputedStyle(q('.tl-seg')).backgroundColor : 'MISSING',
       tnQy: timeNodesOf('qingyuan'),
       tnNone: timeNodesOf('none'),
       tnXianjie: timeNodesOf('xianjie'),
@@ -205,6 +211,7 @@ function checkAll(d, state, sh) {
   const fails = [];
   const chk = (label, cond) => { if (!cond) fails.push(label); };
 
+  chk(`theme=${(sh && sh.theme) || '默认'}（实际 ${d.theme}）`, (sh && sh.theme) === d.theme);
   chk(`icons ${d.svgs}/${d.icons}`, d.icons === d.svgs && d.icons > 0);
   chk(`horizontal scroll ${d.scrollW}>${d.innerW}`, d.scrollW <= d.innerW);
   chk(`body[data-state]=${state}（实际 ${d.state}）`, d.state === state);
@@ -297,6 +304,9 @@ function checkAll(d, state, sh) {
     const diffs = d.bandRowTops.slice(1).map((t, i) => t - d.bandRowTops[i]).filter((v) => v > 0);
     chk(`不定高：行距种类>1（实际 ${JSON.stringify(diffs)}）`, new Set(diffs).size > 1);
     chk(`画布高度受限（实际 ${d.bandH}px）`, d.bandH > 200 && d.bandH < 900);
+    /* #1565：容器底色 = 页面底色 token（且非卡片面 --surface）；由 night 场景覆盖深色主题 */
+    chk(`底色=页面底色（band=${d.bandBg} page=${d.pageBg} theme=${d.theme}）`, d.bandBg === d.pageBg);
+    chk(`底色≠卡片面（card=${d.cardBg}）`, d.bandBg !== d.cardBg);
   }
 
   if (state === 'world-band-metric') {
@@ -413,11 +423,15 @@ function checkAll(d, state, sh) {
   for (const s of SHOTS) {
     const url = 'file:///' + path.join(ROOT, 'timeline', 'timeline.html').replace(/\\/g, '/');
     await page.goto(url); // 每状态一次干净加载（绕开 file:// hash 导航不重载的坑）
-    await page.evaluate((st) => {
-      // 首态（narrative）不显式 setState —— 顺带验证「双击打开」的初始渲染链（坑：初始化链抛错→页面空白）
-      if (st !== 'narrative') window.setState(st);
-      document.body.dataset.shot = '1'; // 隐藏 demo-bar + review-note
-    }, s.state);
+    await page.evaluate(
+      ({ st, th }) => {
+        // 首态（narrative）不显式 setState —— 顺带验证「双击打开」的初始渲染链（坑：初始化链抛错→页面空白）
+        if (st !== 'narrative') window.setState(st);
+        if (th) window.setTheme(th); // #1565：深色主题底色证据
+        document.body.dataset.shot = '1'; // 隐藏 demo-bar + review-note
+      },
+      { st: s.state, th: s.theme || '' },
+    );
     await page.waitForTimeout(400);
     const out = path.join(ROOT, 'timeline', s.out);
     await page.screenshot({ path: out });

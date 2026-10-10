@@ -111,7 +111,7 @@ export function TimelineBand({
     <>
       <div
         data-testid="tl-band"
-        className="relative rounded-lg border border-line bg-surface shadow-card"
+        className="relative rounded-lg border border-line bg-bg shadow-card"
         style={{ height: geo.height }}
       >
         {/* 历列头（轴名 + 计数） */}
@@ -156,7 +156,7 @@ export function TimelineBand({
             <span
               data-testid={`tl-band-mainnode-${index}`}
               aria-hidden="true"
-              className="absolute h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-ink-3 bg-surface"
+              className="absolute h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-ink-3 bg-bg"
               style={{ left: MAINX, top: item.top + item.height / 2 }}
             />
           </Fragment>
@@ -186,12 +186,12 @@ export function TimelineBand({
                     <span
                       aria-hidden="true"
                       data-testid={`tl-band-node-${axis.key}-${index}`}
-                      className="absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-surface"
+                      className="absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-bg"
                       style={{ left: xOf(axis.key), top: cy, borderColor: axis.color }}
                     />
                     <span
                       data-testid={`tl-band-tick-${axis.key}-${index}`}
-                      className="absolute -translate-y-1/2 whitespace-nowrap bg-surface px-1 text-[11px] tabular-nums text-ink-3"
+                      className="absolute -translate-y-1/2 whitespace-nowrap bg-bg px-1 text-[11px] tabular-nums text-ink-3"
                       style={{ left: xOf(axis.key) + 9, top: cy }}
                     >
                       {tick.unit ? `${tick.value} ${tick.unit}` : tick.value}
