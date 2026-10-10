@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -201,6 +202,37 @@ _BATCH_POLL_TOTAL_TIMEOUT = 900.0
 
 _BATCH_LOG_PAGE_SIZE = 100
 """审计记录分页页大小（`GET /projects/{pid}/audit-logs` 端点上限 100，f34 §3.1）."""
+
+_AUDIT_SEVERITY_SUMMARY_RE = re.compile(r"^\d+ error, \d+ warnings, \d+ info$")
+"""**F34 审计记录签名**：`severity_summary` 的计数落库格式（如 "1 error, 2 warnings, 0 info"）.
+
+`audit_logs` 表被多模块共用，且 `severity_summary` 同时被借用承载「动作语义」——
+F44 草稿生命周期（`draft_saved` / `draft_confirmed` / `draft_rejected`）、agentic writer
+（`auto_saved` / `run_completed` / `run_failed` / `guardrail_terminated`）、F27 记忆动作
+（`preference_learned` …）。这些行同样 `run_status='completed'` 且可能带 `chapter_id`，
+**但不是审计记录**（#1562 根因）。只有 F34 章节审计落库的计数摘要符合本格式——
+两处同源产生（`ChapterAuditService._severity_summary` 与本模块 `_severity_summary`）。
+"""
+
+
+def _is_audit_record(log: dict) -> bool:
+    """该 `audit_logs` 行是否为**已完成的 F34 审计记录**（#1562 收窄判据）.
+
+    正向认「审计记录」，而非排除已知的草稿生命周期标记：后者挡不住同一根因类
+    （agentic writer 也写 `chapter_id` 非空 + `run_status='completed'` 的动作行 →
+    该章仍被 `--resume` 静默跳过）。格式漂移的失败方向安全：判不出 → 视为未审计 →
+    重审（多花 LLM 时间），而非静默漏审（质检门禁失效）。
+
+    Args:
+        log: `GET /projects/{pid}/audit-logs` 返回的轻量记录.
+
+    Returns:
+        True = `run_status='completed'` 且 `severity_summary` 符合审计计数格式。
+    """
+    if log.get("run_status") != "completed":
+        return False
+    return bool(_AUDIT_SEVERITY_SUMMARY_RE.match(str(log.get("severity_summary", ""))))
+
 
 _SEVERITIES: tuple[str, ...] = ("error", "warning", "info")
 """严重度视图键序（f34 §6：error < warning < info）."""
@@ -430,16 +462,19 @@ def _write_reports(cli_ctx: CliContext, out_path: Path, report: dict) -> None:
 
 
 async def _load_completed_chapter_ids(client: InkFlowHTTPClient, pid: uuid.UUID) -> set[str]:
-    """断点依据：项目 audit_logs 中 `run_status='completed'` 的章节 id 集合（分页全量）.
+    """断点依据：项目 audit_logs 中**已完成的审计记录**（真实审计行）对应章节 id 集合.
 
     **不新建进度表**（f34 §5.8 拍板）——已完成判定完全复用既有审计记录。
+    **#1562 收窄**：`audit_logs` 混载 F44 草稿生命周期 / agentic writer 动作行（同样
+    `run_status='completed'` 且可能带 `chapter_id`），故只收 `_is_audit_record` 认下的
+    行——否则「写作 + 转正」过的章会被当成「已审计」而**永久跳过**（静默门禁失效）。
 
     Args:
         client: 内核 HTTP 客户端.
         pid: 项目 UUID.
 
     Returns:
-        已完成章节的 id 字符串集合（`failed` / `running` 不计入）。
+        已完成审计章节的 id 字符串集合（非审计行 / `failed` / `running` 不计入）。
     """
     done: set[str] = set()
     offset = 0
@@ -450,7 +485,7 @@ async def _load_completed_chapter_ids(client: InkFlowHTTPClient, pid: uuid.UUID)
         )
         logs = list(data.get("logs", []))
         for log in logs:
-            if log.get("run_status") == "completed" and log.get("chapter_id"):
+            if _is_audit_record(log) and log.get("chapter_id"):
                 done.add(str(log["chapter_id"]))
         if not logs:
             break
@@ -572,7 +607,9 @@ def batch_audit_cmd(
         help="章节序号区间（1-based，如 1-520 / 1-5,8,10-12；省略 = 全部章节）",
     ),
     resume: bool = typer.Option(
-        False, "--resume", help="断点续跑：跳过 audit_logs 中 run_status=completed 的章节"
+        False,
+        "--resume",
+        help="断点续跑：跳过已有审计记录的章节（F44 草稿生命周期行不计入）",
     ),
     concurrency: int = typer.Option(
         1, "--concurrency", help="并发章数（默认 1 = 串行，LLM 限流友好）"
