@@ -36,3 +36,21 @@ def test_skills_package_exists():
     """#342 前提：仓库官方 skills 包存在（随包源 = 单一真相）。"""
     assert SKILLS_DIR.is_dir(), f"skills/inkflow 不存在: {SKILLS_DIR}"
     assert (SKILLS_DIR / "SKILL.md").is_file(), "skills/inkflow/SKILL.md 缺失"
+
+
+def test_kernel_md_documents_debug_no_browser_escape_hatch():
+    """#1572：外部 skill kernel.md 必须记载 F51 v1.1 逃生门 INKFLOW_DEBUG_NO_BROWSER（#949）。
+
+    内置 skill（`backend/src/inkflow/i18n/skills/{zh,en}/system.md`）已记载该键；外部
+    agent skill（`skills/inkflow/`）此前只写「`serve --debug` … 自动打开 `/docs`」，
+    零处提及逃生门 → 只读外部 skill 的 agent 不知道如何消除 debug 态自动弹浏览器，
+    e2e / 无头 / 批量验证被窗口打断（rc 验证判据「debug 态不弹浏览器」也无知识锚点）。
+    本断言把「外部 skill 记载该键 + `--open-browser` 不受影响」固化为静态契约，
+    文档再漂移即 CI 红（外部 skill 与内置 skill 是 #563 的两个实体，须各自留痕）。
+    """
+    kernel = (SKILLS_DIR / "references" / "kernel.md").read_text(encoding="utf-8")
+    assert "INKFLOW_DEBUG_NO_BROWSER" in kernel, (
+        "kernel.md 未记载 INKFLOW_DEBUG_NO_BROWSER 逃生门（#1572）"
+    )
+    # 语义边界也须在册：`--open-browser` 显式路径不受该逃生门影响
+    assert "--open-browser" in kernel, "kernel.md 未说明 --open-browser 显式路径不受影响（#1572）"

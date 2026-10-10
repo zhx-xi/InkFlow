@@ -45,7 +45,7 @@ agent 使用：InkFlow 内核 = 本地常驻 HTTP 服务（uvicorn/FastAPI），
 ## serve 诊断模式（拿 stderr 的可靠方式）
 
 - `serve --port 0`：随机端口；就绪信息走 stdout `INKFLOW_READY {"port":..,"token":..,"pid":..,"version":..}`；**不写 kernel.json**（kernel.json 由 ensure_kernel 客户端路径写）
-- `serve --debug`：Debug 模式（等价 `INKFLOW_DEBUG=1`，env 优先）→ uvicorn 日志 debug 级别 + 自动打开 `/docs`
+- `serve --debug`：Debug 模式（等价 `INKFLOW_DEBUG=1`，env 优先）→ uvicorn 日志 debug 级别 + 自动打开 `/docs`；逃生门 `INKFLOW_DEBUG_NO_BROWSER=1/true/on`（#949，trim+lowercase 判真）→ debug 态**不**自动弹浏览器打开 `/docs`（默认仍未设即弹；`--open-browser` 显式路径不受影响；e2e / 无头 / 批量验证注入该键消噪）
 - 500 错误排查：`serve --port 0 --port-file <f>` 前台 + `-RedirectStandardError` 重定向 → traceback 在 stderr；stdout 只有 INKFLOW_READY + 请求行
 - GUI 拉起的内核无 stderr 捕获——排查用 serve 前台，不用 GUI 内核
 
