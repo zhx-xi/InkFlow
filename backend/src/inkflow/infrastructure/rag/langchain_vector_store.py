@@ -39,11 +39,12 @@ from inkflow.domain.ports.vector_store import (
 # chromadb 元数据值类型（含 bool，bool 是 int 子类，运行时兼容领域契约）
 _Metadata = dict[str, str | int | float | bool]
 
-# #873 读侧多级重试步长原口径 0.25s；#1011 评审 M2 进一步引入调用级共享预算，
-# 单次 retrieve 全类型累计 sleep ≤1.5s——自愈链 retrieve1(≤1.5) + reindex +
-# retrieve2(≤1.5) 守住 30s 客户端口径（infrastructure/http/client.py:65）。
-_RETRIEVE_RETRY_STEP_S = 0.25
-_RETRIEVE_RETRY_BUDGET_S = 1.5
+# #1563: hnsw 段卡死自愈的**写**次数上限。实测（rc2 真实库确定性复现 + 二分定位）：
+# 一次「别的 collection 的写」（reindex 的 commit-last 指纹写 `inkflow_meta` 恒为最后
+# 一次写）会让本 collection 的 `METADATA.max_seq_id` 领先 `VECTOR` 段且**不再自动追赶**
+# ——**等待永不恢复**（只读/只等待 ≥60s 仍 FAIL），只有「对本 collection 再写一次」才
+# 触发 pending log apply。故读侧自愈 = 空写 + 重试（取代 #1011 的读侧 0.25s×6 固定重试）。
+_SEGMENT_HEAL_MAX_WRITES = 2
 # #1011 评审 m1：写侧落盘自检固定小步长 + 轮数封顶（预算 = 轮数 × 步长，不依赖
 # 墙钟），单条 sleep ≤1s、每类型累计 ≤4s，reindex 5 类型不再额外叠加 77s。
 _FLUSH_PROBE_MAX_ROUNDS = 8
@@ -223,6 +224,24 @@ class LangChainVectorStore:
         """附加 project_id 到实体 metadata（检索过滤键，spec §5.6）。"""
         return {**entity.metadata, "project_id": entity.project_id}
 
+    def _heal_stuck_segment(self, collection: chromadb.Collection, project_id: str) -> bool:
+        """#1563: 空写触发本 collection 的 pending log apply（**等待无效，写才有效**）。
+
+        取该 collection 中本项目的一条现存记录，把其 metadata **原样回写**——chroma
+        ``update`` 只替换传入字段，document/embedding 不动，数据面语义零变化。实测：
+        写后带 ``where`` 的读 plan 立即恢复（动作矩阵见 PR）；只读/只等待永不恢复。
+
+        注意：调用方必须已持有 self._lock（#468，Lock 不可重入）。
+        """
+        fetched = collection.get(where={"project_id": project_id}, limit=1, include=["metadatas"])
+        ids = fetched["ids"]
+        metadatas = fetched["metadatas"]
+        if not ids or not metadatas:
+            # 该 collection 内本项目无记录 → 无 id 可空写（此时读 plan 也不会报错）
+            return False
+        collection.update(ids=[ids[0]], metadatas=[metadatas[0]])
+        return True
+
     def _ensure_hnsw_flushed(self, collection: chromadb.Collection) -> None:
         """#1011 写后 hnsw 段落盘自检（签名单参，被 RED spy 契约锁定）。
 
@@ -379,10 +398,6 @@ class LangChainVectorStore:
         types = list(entity_types) if entity_types else list(EntityType)
         query_embedding = self._embeddings.embed_query(query)
         with self._lock:
-            # #1011 评审 M2: 调用级 sleep 预算——跨类型共享同一变量，全类型合计
-            # ≤1.5s（预算即记账，非墙钟 deadline：RED 测试把 time.sleep patch 成
-            # 记账器，monotonic 永不推进会失效）。
-            retry_budget_s = _RETRIEVE_RETRY_BUDGET_S
             merged: list[RetrievedEntity] = []
             for entity_type in types:
                 collection = self._get_collection(entity_type)
@@ -395,46 +410,41 @@ class LangChainVectorStore:
                         include=["documents", "metadatas", "distances"],
                     )
                 except chromadb.errors.InternalError as exc:
-                    # #823/#873/#1011: chromadb hnsw 段读取失败（"Nothing found on
-                    # disk"，#468 同族）——常为小批量写入未落盘（WAL-only）或残留
-                    # 空/旧 hnsw 段。多级重试语义不变（首查失败触发重试链、失败上抛
-                    # VectorStoreError 由服务层 #823 自愈）；#1011 评审 M2 把步长
-                    # 恢复 #873 原口径 0.25s，并在调用级共享 1.5s 预算——单次
-                    # retrieve 全类型累计 sleep ≤1.5s，自愈链 retrieve1(≤1.5) +
-                    # reindex + retrieve2(≤1.5) 守住 30s 客户端口径。
+                    # #823/#873/#1011/#1563: chromadb hnsw 段读取失败（"Nothing found
+                    # on disk" / "Error finding id"，#468 同族）。#1563 实测根因：一次
+                    # 「别的 collection 的写」（reindex 的 commit-last 指纹写恒为最后
+                    # 一次写）会让本 collection 的 METADATA 段领先 VECTOR 段且**不再
+                    # 自动追赶**——等待永不恢复，只有「对本 collection 再写一次」才触发
+                    # pending log apply。故自愈 = 空写（元数据原样回写，见
+                    # _heal_stuck_segment）+ 重试真实查询；写次数有界，失败上抛清晰
+                    # VectorStoreError 由服务层 #823 自愈兜底。
                     logger.warning(
-                        "chromadb hnsw 段读取失败，强制落盘后重试: "
+                        "chromadb hnsw 段读取失败，空写触发段 apply 后重试: "
                         "entity_type={} project_id={} err={}",
                         entity_type.value,
                         project_id,
                         exc,
                     )
-                    max_attempts = 7  # 首查 + 6 次重试；循环上界，预算是真封顶（取先到）
-                    for _ in range(max_attempts - 1):
-                        if retry_budget_s < _RETRIEVE_RETRY_STEP_S:
-                            # 预算耗尽：放弃本类型剩余重试，维持 else 既有上抛语义
-                            raise VectorStoreError(
-                                "向量检索失败：chromadb hnsw 段读取失败（"
-                                f"{entity_type.value}），建议重建索引后重试"
-                            ) from exc
-                        retry_budget_s -= _RETRIEVE_RETRY_STEP_S
+                    collection.count()  # #873: 顺带触发 WAL→段落盘（成本可忽略）
+                    healed = False
+                    for _ in range(_SEGMENT_HEAL_MAX_WRITES):
+                        if not self._heal_stuck_segment(collection, project_id):
+                            break
                         try:
-                            # count() 触发 WAL→段落盘；0.25s 给落盘/载入留时间（#873）
-                            collection.count()
-                            time.sleep(_RETRIEVE_RETRY_STEP_S)
                             result = collection.query(
                                 query_embeddings=cast(Any, [query_embedding]),
                                 n_results=top_k,
                                 where={"project_id": project_id},
                                 include=["documents", "metadatas", "distances"],
                             )
-                            break
                         except chromadb.errors.InternalError:
                             continue
-                    else:
+                        healed = True
+                        break
+                    if not healed:
                         raise VectorStoreError(
-                            "向量检索失败：chromadb hnsw 段读取失败（"
-                            f"{entity_type.value}），建议重建索引后重试"
+                            "向量检索失败：chromadb hnsw 段未就绪（"
+                            f"{entity_type.value}），请重试一次"
                         ) from exc
                 ids = result["ids"]
                 if not ids or not ids[0]:
