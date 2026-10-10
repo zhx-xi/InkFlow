@@ -125,6 +125,10 @@ export function KnowledgeGraphView({
   useEffect(() => {
     setEntityPage(0);
   }, [entityPool]);
+  /** #1569：**改「每页条数」也要归零**——否则页号越界 → 空白页（原先只覆盖 entityPool 变化） */
+  useEffect(() => {
+    setEntityPage(0);
+  }, [entityPageSize]);
   const entityRows = entityPool.slice(entityPage * entityPageSize, (entityPage + 1) * entityPageSize);
   /** 分类块（#1529）：6 条自带一套分页 —— 常态 ≤ 每页条数 → 分页条不出场 */
   const catRows = KG_CATEGORIES.slice(catPage * catPageSize, (catPage + 1) * catPageSize);
@@ -331,7 +335,9 @@ export function KnowledgeGraphView({
                     </label>
                   ))}
                 </div>
-                {entityPool.length > entityPageSize && (
+                {/* #1569：**池非空即渲染分页条**（判据不再绑「池 > 每页条数」）——
+                    否则改大到 ≥ 池时整条（含每页条数选择器）消失，用户无法改回，只能刷新 */}
+                {entityPool.length > 0 && (
                   <div data-testid="library-kg-entity-page" className="flex-none border-t border-line px-1.5 py-1">
                     <Pagination
                       compact

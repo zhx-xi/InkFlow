@@ -108,6 +108,14 @@ async function focusEntities(user: ReturnType<typeof userEvent.setup>, ids: stri
   }
 }
 
+/** #1569：驱动实体块的「每页条数」Select（Radix 需先点 trigger 再点 option） */
+async function pickEntityPageSize(user: ReturnType<typeof userEvent.setup>, size: string) {
+  await user.click(screen.getByTestId('library-kg-entity-page-size-select'));
+  const opt = await screen.findByRole('option', { name: size });
+  await user.click(opt);
+  await waitFor(() => {});
+}
+
 beforeEach(() => {
   apiFetchMock.mockReset();
   localStorage.clear();
@@ -270,5 +278,80 @@ describe('#1568-B 实体定向三态（彩色 / 灰显保位 / 隐藏）', () =>
     expect(hiddenNodeTestIds()).toEqual(
       ['character:c3', 'foreshadow:f1', 'outline:o1', 'timeline:t1'].map(nodeTid).sort(),
     );
+  });
+});
+
+describe('#1569 分页条：改「每页条数」后不消失 + 回第 1 页 + 两块独立', () => {
+  /** 43 条池（贴近真实项目「43+ 角色」）—— 单页装不下，才谈得上「改 size 后翻页能力」 */
+  const BIG: GraphNode[] = Array.from({ length: 43 }, (_, i) => ({
+    id: `character:c${i + 1}`,
+    type: 'character' as const,
+    entity_id: `c${i + 1}`,
+    name: `角色${String(i + 1).padStart(2, '0')}`,
+  }));
+  const BIG_ROW = /^library-kg-filter-panel-entity-character-/;
+
+  function mockBigGraph() {
+    apiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects') return { items: [projectP1], total: 1, offset: 0, limit: 50 };
+      if (path === '/api/v1/projects/p1/maps') return { items: [] };
+      if (path.startsWith('/api/v1/projects/p1/knowledge-graph')) {
+        return { nodes: BIG.map((n) => ({ ...n })), edges: [] };
+      }
+      return { items: [], total: 0, offset: 0, limit: 50 };
+    });
+  }
+
+  it('N22 翻页后改「每页条数」→ 分页条仍在 + 回到第 1 页（不出现空白页）', async () => {
+    mockBigGraph();
+    const user = userEvent.setup();
+    await openGraph(user);
+
+    expect(screen.getByTestId('library-kg-entity-page-info')).toHaveTextContent('1 / 5');
+    await user.click(screen.getByTestId('library-kg-entity-page-next'));
+    await waitFor(() => expect(screen.getByTestId('library-kg-entity-page-info')).toHaveTextContent('2 / 5'));
+
+    // 改 size：分页条必须仍在 + 页码归零（原实现：页号不归零 → 可能空白页）
+    await pickEntityPageSize(user, '25');
+    expect(screen.getByTestId('library-kg-entity-page')).toBeInTheDocument();
+    expect(screen.getByTestId('library-kg-entity-page-info')).toHaveTextContent('1 / 2');
+    expect(screen.queryAllByTestId(BIG_ROW)).toHaveLength(25);
+    expect(screen.getAllByTestId(BIG_ROW)[0].getAttribute('data-testid')).toBe(
+      'library-kg-filter-panel-entity-character-c1',
+    );
+  });
+
+  it('N22 池 ≤ 新 size 时分页条**仍在**（含每页条数选择器 → 用户能改回来）', async () => {
+    mockBigGraph();
+    const user = userEvent.setup();
+    await openGraph(user);
+
+    // 43 ≤ 100：原实现整体消失（含选择器）→ 用户无法改回，只能刷新
+    await pickEntityPageSize(user, '100');
+    expect(screen.getByTestId('library-kg-entity-page')).toBeInTheDocument();
+    expect(screen.getByTestId('library-kg-entity-page-size-select')).toBeInTheDocument();
+    expect(screen.getByTestId('library-kg-entity-page-info')).toHaveTextContent('1 / 1');
+    expect(screen.getByTestId('library-kg-entity-page-next')).toBeDisabled();
+    expect(screen.queryAllByTestId(BIG_ROW)).toHaveLength(43);
+
+    // 改回来仍然可用
+    await pickEntityPageSize(user, '10');
+    expect(screen.getByTestId('library-kg-entity-page-info')).toHaveTextContent('1 / 5');
+  });
+
+  it('N22 分类块与实体块判据各自独立：改实体块 size 不影响分类块的出场', async () => {
+    mockBigGraph();
+    const user = userEvent.setup();
+    await openGraph(user);
+
+    // 六类 ≤ 每页条数 → 分类块分页条常态不出现（#1529 锁定契约）
+    expect(screen.queryByTestId('library-kg-cat-page')).toBeNull();
+
+    await pickEntityPageSize(user, '100');
+    expect(screen.getByTestId('library-kg-entity-page')).toBeInTheDocument();
+    expect(screen.queryByTestId('library-kg-cat-page')).toBeNull();
+    for (const t of ['character', 'world', 'outline', 'timeline', 'foreshadow', 'map_pin']) {
+      expect(screen.getByTestId(`library-kg-filter-panel-cat-${t}`), t).toBeInTheDocument();
+    }
   });
 });

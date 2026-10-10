@@ -334,8 +334,9 @@ describe('#1529-C 实体列表：拼音排序 + 独立分页 + 每页条数', ()
       // 拼音序：断剑(duànjiàn) < 断崖(duànyá)
       expect(entityRowNames()).toEqual(['断剑', '断崖']);
     });
-    // 池 2 条 ≤ 每页 10 → 分页条让位（且不再停在第 2 页）
-    expect(screen.queryByTestId('library-kg-entity-page')).toBeNull();
+    // #1569：池收窄后分页条**仍在**（每页条数选择器不再随「池 ≤ size」整体消失 → 用户可改回）
+    expect(screen.getByTestId('library-kg-entity-page')).toBeInTheDocument();
+    expect(screen.getByTestId('library-kg-entity-page-info')).toHaveTextContent('1 / 1');
   });
 });
 
