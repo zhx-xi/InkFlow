@@ -142,6 +142,11 @@ body[data-filter-form="b"] .kg-filters{display:none}
    不摘除 → 画布布局不随勾选跳动（邻接子图/隐藏式筛选退休）。 */
 .kg-node.kg-dim{opacity:.3;filter:grayscale(1)}
 .kg-edges .kg-dim{opacity:.25;filter:grayscale(1)}
+/* #1568：实体定向三态 —— 既未选中、也不与选中实体相连者**隐藏**（不渲染、不参与连线）。
+   与 #1529 并存：类别路（取消某类）维持「只降灰」（.kg-dim），仅**实体定向路**启用隐藏。 */
+.kg-node.kg-hidden,.kg-edges .kg-hidden{display:none}
+/* #1568：面板底部两个并列入口（全选 / 全部取消），右侧成组不换行 */
+.kf-foot-actions{display:flex;align-items:center;gap:6px;flex:none}
 
 /* ── #1465 项4：折叠态「左侧竖条」（替代原底部横条）──
    rail-a（默认）= 图标 + 六类圆点竖列 + 清除；rail-b = 极窄把手（图标 + 竖排标签）。
@@ -396,7 +401,8 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
           <span class="rail-sep"></span>
           <span class="rail-label">筛选</span>
           <div class="rail-dots" id="railDots"></div>
-          <button type="button" class="rail-btn" data-testid="library-kg-filterbar-clear" title="清除筛选" aria-label="清除筛选"><span data-ic="x"></span></button>
+          <button type="button" class="rail-btn" data-testid="library-kg-filterbar-cancel-all" title="全部取消" aria-label="全部取消"><span data-ic="x"></span></button>
+          <button type="button" class="rail-btn" data-testid="library-kg-filterbar-clear" title="全选" aria-label="全选"><span data-ic="check"></span></button>
           <span class="sr-only" id="library-kg-filterbar-summary" data-testid="library-kg-filterbar-summary"></span>
         </aside>
         <aside class="kg-fpanel" data-testid="library-kg-filter-panel">
@@ -437,7 +443,10 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
           <!-- #1373 底部折叠栏：右侧「折叠」收起为画布下方的一条栏（零横向占用） -->
           <div class="kf-foot">
             <button data-testid="library-kg-filter-collapse"><span data-ic="chevronsleft"></span>折叠</button>
-            <button data-testid="library-kg-filter-panel-clear">清除筛选</button>
+            <span class="kf-foot-actions">
+              <button data-testid="library-kg-filter-panel-cancel-all"><span data-ic="x"></span>全部取消</button>
+              <button data-testid="library-kg-filter-panel-clear"><span data-ic="check"></span>全选</button>
+            </span>
           </div>
         </aside>
 
@@ -452,7 +461,8 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
               <span class="kf-label">实体</span>
               <span class="kf-search"><span data-ic="search"></span><input type="text" placeholder="搜索实体名…" data-testid="library-kg-filter-search" /></span>
               <div class="kf-chips" data-testid="library-kg-filter-entity" id="chipsEntity"></div>
-              <button class="kf-clear" data-testid="library-kg-filter-clear">清除筛选</button>
+              <button class="kf-clear" data-testid="library-kg-filter-clear">全选</button>
+              <button class="kf-clear" data-testid="library-kg-filter-cancel-all">全部取消</button>
             </div>
           </div>
 
@@ -489,7 +499,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
               <div id="kgNodes"></div>
               <div class="kg-fempty" data-testid="library-kg-filter-empty">
                 <span>当前筛选下没有可见实体</span>
-                <span style="font-size:11px;color:var(--ink-3)">调整「类别 / 实体」筛选条件，或点「清除筛选」</span>
+                <span style="font-size:11px;color:var(--ink-3)">调整「类别 / 实体」筛选条件，或点「全选」</span>
               </div>
               <!-- 选中节点详情卡 -->
               <div class="kg-detail" data-testid="library-kg-node-detail">
@@ -855,6 +865,8 @@ function colorB(nodes, edges){
 const nodeHost = document.getElementById('kgNodes');
 const svgEdges = document.querySelector('.kg-edges');
 const visibleIds = new Set();
+/** #1568：实体定向三态下的「隐藏」节点集（不渲染、不参与连线；类别路不启用） */
+const hiddenIds = new Set();
 let colorMode = 'a';
 
 NODES.forEach(function(n){
@@ -921,7 +933,9 @@ function drawEdges(){
   const hr = host.getBoundingClientRect();
   let drawn = 0;
   EDGES.forEach(function(e){
-    /* #1529：灰显模式 —— 边一律保留，两端非高亮者整体降灰（不摘除 → 布局不跳动） */
+    /* #1568：任一端被隐藏（实体定向三态）→ 整条边不画（隐藏节点不参与连线）；
+       #1529：其余边一律保留，两端非高亮者整体降灰（不摘除 → 布局不跳动） */
+    if (hiddenIds.has(e[0]) || hiddenIds.has(e[1])) return;
     const dim = !(visibleIds.has(e[0]) && visibleIds.has(e[1]));
     const s = nodeEl(e[0]);
     const t = nodeEl(e[1]);
@@ -1065,6 +1079,14 @@ function clearFilters(){
   filterState.catPage = 0; filterState.entityPage = 0;
   userChange();
 }
+/** #1568：与「全选」并列的反义入口 —— **取消所有选中**（类别 + 实体全不选） */
+function cancelAllFilters(){
+  filterState.categories = [];
+  filterState.entities = [];
+  filterState.query = '';
+  filterState.catPage = 0; filterState.entityPage = 0;
+  userChange();
+}
 function applyPanel(){
   document.body.dataset.panel = panelOpen ? 'open' : 'closed';
   /* #1529：判据与类别统一 —— 「少选即筛选生效」（entities !== null ⇔ 至少取消了一个实体） */
@@ -1115,17 +1137,44 @@ function computeVisible(){
   }).map(function(n){ return n.id; });
   return new Set(ids);
 }
+/** #1568：实体定向「隐藏」集 —— 仅在**实体定向激活**（`entities !== null`）时启用三态：
+ *   高亮（彩色）= 已勾选类别 ∩ 已勾选实体；与高亮相连者 = **灰显保位**；其余 = **隐藏**。
+ *   类别路（取消某类）维持 #1529「只降灰、不隐藏」；二者可叠加。 */
+function computeHidden(){
+  const hidden = new Set();
+  if (filterState.entities === null) return hidden; /* 实体全选 = 未做实体定向 → 无隐藏 */
+  const vis = computeVisible();
+  /* 邻接关系来自 EDGES（无向）：与任一高亮节点相连者 = 灰显保位 */
+  const adjacent = new Set();
+  EDGES.forEach(function(e){
+    if (vis.has(e[0])) adjacent.add(e[1]);
+    if (vis.has(e[1])) adjacent.add(e[0]);
+  });
+  NODES.forEach(function(n){
+    if (vis.has(n.id)) return;                              /* 高亮 → 彩色 */
+    if (adjacent.has(n.id)) return;                         /* 与选中相连 → 灰显保位 */
+    if (filterState.categories.indexOf(n.type) < 0) return; /* 类别外 → 灰显（类别路不隐藏） */
+    hidden.add(n.id);                                       /* 既未选中、也不相连 → 隐藏 */
+  });
+  return hidden;
+}
 function applyFilter(){
   const vis = computeVisible();
+  const hid = computeHidden();
   visibleIds.clear();
   vis.forEach(function(id){ visibleIds.add(id); });
-  /* #1529：未勾选 = 统一灰显（不摘除节点/边）→ 勾选只改灰度，画布布局不跳动 */
+  hiddenIds.clear();
+  hid.forEach(function(id){ hiddenIds.add(id); });
+  /* #1529 灰显（未勾选不摘除）/ #1568 隐藏（实体定向：无关节点不显示）并存 */
   NODES.forEach(function(n){
     const el = nodeEl(n.id);
     if (!el) return;
-    const dim = !vis.has(n.id);
+    const hidden = hiddenIds.has(n.id);
+    const dim = !hidden && !vis.has(n.id);
+    el.classList.toggle('kg-hidden', hidden);
     el.classList.toggle('kg-dim', dim);
     el.setAttribute('data-dim', dim ? '1' : '0');
+    el.setAttribute('data-hidden', hidden ? '1' : '0');
   });
   document.body.dataset.filterEmpty = vis.size === 0 ? '1' : '';
   /* 详情卡只在「无筛选生效」时才显示（筛选态下用户尚未点选） */
@@ -1134,13 +1183,18 @@ function applyFilter(){
   detail.style.display = detailVisible ? '' : 'none';
   const drawn = drawEdges();
   updateSummaries(vis);
-  return { visible: vis.size, edges: drawn };
+  return { visible: vis.size, edges: drawn, hidden: hid.size };
 }
 
 /** 面板底部与折叠栏共用同一句摘要（两处 id 同步） */
 function updateSummaries(vis){
   const allSel = filterState.categories.length === ENTITY_TYPES.length;
-  const cat = allSel ? '全部' : filterState.categories.map(function(t){ return TYPE_LABEL[t]; }).join('/');
+  /* #1568：「全部取消」后类别为空 → 标签显示「无」（否则会留下「筛选： · ...」的空档） */
+  const cat = allSel
+    ? '全部'
+    : (filterState.categories.length === 0
+      ? '无'
+      : filterState.categories.map(function(t){ return TYPE_LABEL[t]; }).join('/'));
   /* #1529：实体改为多选集合 → 摘要不再列实体名（可能上百），改示「实体 已选/总数」 */
   const ent = filterState.entities === null
     ? null
@@ -1306,6 +1360,8 @@ const SHOTS = {
   'color-a':            { color:'a', form:'b', panel:'closed', note:'color-a',         categories:ALL_CATS,                 entities:null, entityPage:0,           collapse:'rail-a' },
   'color-b':            { color:'b', form:'b', panel:'closed', note:'color-b',         categories:ALL_CATS,                 entities:null, entityPage:0,           collapse:'rail-a' },
   'filter-b':           { color:'a', form:'b', panel:'open',   note:'filter-b',        categories:['character','world'],    entities:['character:1','character:2','world:1','world:3'], entityPage:0, collapse:'rail-a' },
+  /* #1568：实体定向聚焦（三态）—— 只选中「角色丁」→ 它彩色、其邻居（角色甲）灰显保位、其余隐藏 */
+  'filter-focus':       { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entities:['character:1'], entityPage:0, collapse:'rail-a' },
   'entity-page':        { color:'a', form:'b', panel:'open',   note:'',                categories:ALL_CATS,                 entities:null, entityPage:1,           collapse:'rail-a' },
   'collapse-rail-a':    { color:'a', form:'b', panel:'closed', note:'filter-collapse', categories:['character','world'],    entities:null, entityPage:0, collapse:'rail-a' },
   'collapse-rail-b':    { color:'a', form:'b', panel:'closed', note:'filter-collapse', categories:['character','world'],    entities:null, entityPage:0, collapse:'rail-b' },
@@ -1372,6 +1428,11 @@ document.getElementById('chipsCat').addEventListener('click', function(){ /* chi
 ['library-kg-filter-clear', 'library-kg-filter-panel-clear', 'library-kg-filterbar-clear'].forEach(function(tid){
   const el = document.querySelector('[data-testid="' + tid + '"]');
   if (el) el.addEventListener('click', function(){ clearFilters(); });
+});
+/* #1568：「全部取消」（与「全选」并列的反义入口）—— 取消所有选中（类别 + 实体全不选） */
+['library-kg-filter-panel-cancel-all', 'library-kg-filterbar-cancel-all', 'library-kg-filter-cancel-all'].forEach(function(tid){
+  const el = document.querySelector('[data-testid="' + tid + '"]');
+  if (el) el.addEventListener('click', function(){ cancelAllFilters(); });
 });
 /* 决策②「底部折叠栏 + 折叠功能」：收起 → 面板消失、底部折叠栏接管（零横向占用，画布全宽） */
 [['library-kg-filter-collapse', false], ['library-kg-filterbar-expand', true]].forEach(function(pair){

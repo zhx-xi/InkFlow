@@ -91,9 +91,13 @@ function dimmedNodeTestIds(): string[] {
   return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '1').sort();
 }
 
-/** 活跃（正常着色）节点 testid：data-dim="0" */
+/** 活跃（正常着色）节点 testid：data-dim="0"
+ *  #1568：须同时 `data-hidden="0"`（实体定向三态下被隐藏的节点虽 data-dim="0"，但不在场） */
 function activeNodeTestIds(): string[] {
-  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '0').sort();
+  return NODE_TESTIDS.filter((id) => {
+    const el = screen.queryByTestId(id);
+    return el?.getAttribute('data-dim') === '0' && el?.getAttribute('data-hidden') === '0';
+  }).sort();
 }
 
 /** 某一个类别行的复选框（实现里 testid 直接挂在 input 上；原型里挂在 label 上 → 两者都兼容） */

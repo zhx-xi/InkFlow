@@ -109,9 +109,13 @@ function dimmedNodeTestIds(): string[] {
   return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '1').sort();
 }
 
-/** 活跃（正常着色）节点的 testid：data-dim="0"（type ∈ 已选类别 且 实体命中） */
+/** 活跃（正常着色）节点的 testid：data-dim="0"（type ∈ 已选类别 且 实体命中）
+ *  #1568：须同时 `data-hidden="0"`（被隐藏节点虽 `data-dim="0"`，但不在场） */
 function activeNodeTestIds(): string[] {
-  return NODE_TESTIDS.filter((id) => screen.queryByTestId(id)?.getAttribute('data-dim') === '0').sort();
+  return NODE_TESTIDS.filter((id) => {
+    const el = screen.queryByTestId(id);
+    return el?.getAttribute('data-dim') === '0' && el?.getAttribute('data-hidden') === '0';
+  }).sort();
 }
 
 /** 断言画布仍渲染全部种子节点（#1529：筛选只变暗，不移除） */
@@ -280,7 +284,7 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 5 个实体');
   });
 
-  it('N12 类别 ∩ 实体 + 邻接语义退休：只留「林尘」被选中 → 仅林尘活跃（不再带一跳邻居 c2）', async () => {
+  it('N12 类别 ∩ 实体：#1568 实体定向三态（只留「林尘」被选中 + 取消世界观类）', async () => {
     const user = userEvent.setup();
     await openGraph(user);
 
@@ -289,19 +293,21 @@ describe('#1373-B 类别/实体筛选（决策②③④：左侧面板 + 折叠 
     await waitFor(() => {
       expect(dimmedNodeTestIds()).toEqual(['library-kg-node-world-w1', 'library-kg-node-world-w2']);
     });
-    // #1529：取消 c2 / c3 → 角色类里只留「林尘」被选中
+    // 取消 c2 / c3 → 角色类里只留「林尘」被选中（实体定向激活）
     await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c2'));
     await user.click(screen.getByTestId('library-kg-filter-panel-entity-character-c3'));
-    // 交集合：仅 type ∈ categories(非世界观) ∩ 实体命中(c1) = {c1}；旧邻接语义会带出 c2 → 此处必须有 c1 无 c2
     await waitFor(() => {
       expect(activeNodeTestIds()).toEqual(['library-kg-node-character-c1']);
     });
+    // #1568 三态（收窄 #1529）：c2 与 c1 相连 → 灰显保位；c3 既未选中也不相连 → **隐藏**
+    // （#1529 时 c3 还只是灰显）；世界观两节点属**类别外** → 维持「只降灰、不隐藏」（N21 类别路不回归）
     expect(dimmedNodeTestIds()).toEqual([
       'library-kg-node-character-c2',
-      'library-kg-node-character-c3',
       'library-kg-node-world-w1',
       'library-kg-node-world-w2',
     ]);
+    expect(screen.getByTestId('library-kg-node-character-c3').getAttribute('data-hidden')).toBe('1');
+    expect(screen.getByTestId('library-kg-node-world-w2').getAttribute('data-hidden')).toBe('0');
     expect(screen.getByTestId('library-kg-filter-summary')).toHaveTextContent('显示 1 个实体');
   });
 

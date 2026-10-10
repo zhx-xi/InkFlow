@@ -26,6 +26,7 @@ const SCENES = [
   { id: 'color-a', out: 'knowledge-graph-color-a.png', scroll: 'rail', desc: '着色 A【采用】· 面板收起 → 左侧竖条 + 画布近全宽' },
   { id: 'color-b', out: 'knowledge-graph-color-b.png', scroll: 'rail', desc: '着色 B【备选】· 面板收起 → 左侧竖条 + 画布近全宽' },
   { id: 'filter-b', out: 'knowledge-graph-filter-b.png', scroll: 'canvas', desc: '#1529 实体多选：取消 4 类（留角色+世界观）+ 取消若干实体（4/20 已勾）' },
+  { id: 'filter-focus', out: 'knowledge-graph-filter-focus.png', scroll: 'canvas', desc: '#1568 实体定向三态：只选中「角色丁」→ 彩色 + 邻居灰显保位 + 无关节点隐藏' },
   { id: 'entity-page', out: 'knowledge-graph-entity-page.png', scroll: 'canvas', desc: '#1529 实体列表分页：第 2 / 2 页（每页 10 条）' },
   { id: 'collapse-rail-a', out: 'knowledge-graph-filter-rail-a.png', scroll: 'rail', desc: '#1465 折叠态方案 A · 左侧竖条（图标 + 类别圆点 + 清除）' },
   { id: 'collapse-rail-b', out: 'knowledge-graph-filter-rail-b.png', scroll: 'rail', desc: '#1465 折叠态方案 B · 左侧极窄把手' },
@@ -66,6 +67,7 @@ async function probe(page) {
       type: el.getAttribute('data-type'),
       name: el.getAttribute('data-name'),
       dim: el.getAttribute('data-dim') === '1',
+      hidden: el.getAttribute('data-hidden') === '1',
       dot: getComputedStyle(el.querySelector('.dot')).backgroundColor,
       bg: getComputedStyle(el).backgroundColor,
     }));
@@ -144,8 +146,12 @@ async function probe(page) {
       /* #1529：分类块自带的分页条（6 条 → 常态不出现） + 面板是否真的拆成两块 */
       catPageBox: disp('[data-testid="library-kg-cat-page"]'),
       panelBlocks: document.querySelectorAll('[data-testid="library-kg-filter-panel"] > .kf-block').length,
-      /* #1529：灰显计数（未勾选 = 保留但降灰；画布节点总数恒为全部） */
+      /* #1529：灰显计数（未勾选 = 保留但降灰；画布节点总数恒为全部）
+         #1568：隐藏计数（实体定向三态：无关节点不渲染） */
       dimNodes: document.querySelectorAll('.kg-node[data-dim="1"]').length,
+      hiddenNodes: document.querySelectorAll('.kg-node[data-hidden="1"]').length,
+      hiddenNames: Array.from(document.querySelectorAll('.kg-node[data-hidden="1"]'))
+        .map((el) => el.getAttribute('data-name')).sort(),
       dimEdges: document.querySelectorAll('.kg-edges .kg-dim').length,
       entityChipCount: document.querySelectorAll('[data-testid="library-kg-filter-entity"] .fm-chip').length,
       catActive: (q('[data-testid="library-kg-filter-cat-character"]') || {className:'MISSING'}).className,
@@ -290,7 +296,7 @@ function checks(d, scene) {
   const canvasInView = canvasTop >= 0 && canvasBottom <= d.viewportH;
   const canvasW = d.canvasRect ? d.canvasRect.w : -1;
 
-  const isGraphish = ['graph', 'color-a', 'color-b', 'filter-b', 'entity-page', 'filter-b-collapsed', 'filter-a'].includes(scene.id);
+  const isGraphish = ['graph', 'color-a', 'color-b', 'filter-b', 'filter-focus', 'entity-page', 'filter-b-collapsed', 'filter-a'].includes(scene.id);
   if (isGraphish) {
     push('图谱视图可见 / 列表隐藏', d.graphView !== 'none' && d.listView === 'none');
     push('画布完整落在视口内（截图可见）', canvasInView);
@@ -388,8 +394,10 @@ function checks(d, scene) {
 
   if (scene.id === 'filter-b') {
     push('筛选说明条 B 可见（采用态）', d.noteFB && !d.noteFA && !d.noteFC);
-    push(`#1529 取消的实体/类别 = 灰显不摘除：16 灰 + 4 正常（总 ${d.nodes.length}，实际 dim=${d.dimNodes}）`,
-      d.nodes.length === 20 && d.dimNodes === 16);
+    push(`#1568 实体定向三态：4 彩色 + 13 灰显 + 3 隐藏（可见 ${d.nodes.length}；实际 dim=${d.dimNodes}/hidden=${d.hiddenNodes}）`,
+      d.nodes.length === 17 && d.dimNodes === 13 && d.hiddenNodes === 3);
+    push(`#1568 隐藏者 = 既未选中也不相连者（实际 ${d.hiddenNames.join(',')}）`,
+      JSON.stringify(d.hiddenNames) === JSON.stringify(['角色戊', '角色己', '地点乙禁地'].sort()));
     push('#1529 正常彩色的节点只含已勾选类别（角色/世界观）',
       d.nodes.some((n) => !n.dim) &&
         d.nodes.filter((n) => !n.dim).every((n) => n.type === 'character' || n.type === 'world'));
@@ -405,6 +413,22 @@ function checks(d, scene) {
       /角色\/世界观 · 实体 4\/20 · 显示 4 个实体/.test(d.panelSummary));
     push('筛选生效标记已置位', d.filterActive === true);
     push('筛选态隐藏节点详情卡', d.detail === 'none');
+  }
+
+  /* #1568：实体定向三态（聚焦：只选中「角色丁」→ 彩色 + 邻居灰显保位 + 其余隐藏） */
+  if (scene.id === 'filter-focus') {
+    const colored = d.nodes.filter((n) => !n.dim);
+    const dimmed = d.nodes.filter((n) => n.dim);
+    push(`#1568 三态：可见仅 2 节点 = 1 彩色 + 1 灰显保位（实际 可见 ${d.nodes.length}/dim=${d.dimNodes}/hidden=${d.hiddenNodes}）`,
+      d.nodes.length === 2 && d.dimNodes === 1 && d.hiddenNodes === 18);
+    push(`#1568 彩色 = 选中实体「角色丁」（实际 ${colored.map((n) => n.name).join(',')}）`,
+      colored.length === 1 && colored[0].name === '角色丁');
+    push(`#1568 灰显保位 = 其邻居「角色甲」（实际 ${dimmed.map((n) => n.name).join(',')}）`,
+      dimmed.length === 1 && dimmed[0].name === '角色甲');
+    push('面板可见 / 竖条隐藏', d.panel !== 'none' && d.bar === 'none');
+    push(`摘要含「实体 1/20 · 显示 1 个实体」（实际 ${d.panelSummary}）`,
+      /实体 1\/20 · 显示 1 个实体/.test(d.panelSummary));
+    push('筛选生效标记已置位', d.filterActive === true);
   }
 
   /* #1529：实体列表分页（第 2 / 2 页） */

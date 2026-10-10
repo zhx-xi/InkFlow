@@ -51,14 +51,17 @@ export const ENTITY_TYPE_KEYS: Record<EntityType, string> = {
   map_pin: 'lib.knowledge.type.map_pin',
 };
 
-type KgNodeData = { id: string; name: string; type: EntityType; entity_id: string; dim: boolean };
+type KgNodeData = { id: string; name: string; type: EntityType; entity_id: string; dim: boolean; hidden: boolean };
 type KgRFNode = RFNode<KgNodeData>;
 
 /** 位置持久化 localStorage 基键（#1325）；带 project_id 时以 `:<project_id>` 后缀隔离 */
 const KG_POSITIONS_STORAGE_KEY = 'inkflow:kg:positions';
 
-/** #1529 降灰样式：未勾选 = 灰显而非摘除（个体着色保留，仅整体降透明度 + 去饱和） */
+/** #1529 降灰样式：未勾选 = 灰显而非摘除（个体着色保留，仅整体降透明度 + 去饱和）
+ *  #1568 隐藏样式：实体定向三态的「无关节点」= `display:none`（保留在 DOM 供测试锚定，
+ *  但不渲染；边由画布整条丢弃 → 不参与连线） */
 const DIM_STYLE: CSSProperties = { opacity: 0.3, filter: 'grayscale(1)' };
+const HIDDEN_STYLE: CSSProperties = { display: 'none' };
 
 /** 位置记忆键：`<基键>` 或 `<基键>:<project_id>`（跨项目位置互不污染） */
 function kgPositionsKey(persistKey?: string): string {
@@ -101,12 +104,14 @@ function KgNode({ data }: NodeProps<KgRFNode>) {
     <div
       data-testid={`library-kg-node-${data.type}-${data.entity_id}`}
       data-dim={data.dim ? '1' : '0'}
+      data-hidden={data.hidden ? '1' : '0'}
       className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-medium shadow-card"
       style={{
         backgroundColor: style.bg,
         borderColor: style.border,
         color: style.text,
         ...(data.dim ? DIM_STYLE : {}),
+        ...(data.hidden ? HIDDEN_STYLE : {}),
       }}
     >
       <Handle
@@ -175,8 +180,11 @@ export interface KnowledgeGraphCanvasProps {
   onDeleteEdge?: (edge: GraphEdge) => void;
   /** 筛选生效中 → 隐藏节点详情卡（spec N12：用户尚未点选） */
   filterActive?: boolean;
-  /** #1529：高亮（正常彩色）节点集；提供时**全部节点/边都渲染**，未高亮的降灰（`data-dim="1"`） */
+  /** #1529：高亮（正常彩色）节点集；提供时**全部节点/边都渲染**，未高亮的降灰（`data-dim="1"`）
+   *  #1568：`hiddenIds` 提供时，命中的节点**不渲染**（`data-hidden="1"` + display:none）且其边不画 */
   activeIds?: ReadonlySet<string>;
+  /** #1568：实体定向三态下的「隐藏」节点集（不渲染、不参与连线；类别路不产生隐藏） */
+  hiddenIds?: ReadonlySet<string>;
   /** 是否渲染右下角图例（图谱空态不渲染） */
   showLegend?: boolean;
 }
@@ -194,6 +202,7 @@ function CanvasInner({
   nodes,
   edges,
   activeIds,
+  hiddenIds,
   persistKey,
   onConnectNodes,
   onSelectNode,
@@ -212,7 +221,9 @@ function CanvasInner({
   const [rfNodes, setRfNodes] = useState<KgRFNode[]>([]);
   const [rfEdges, setRfEdges] = useState<RFEdge[]>([]);
 
-  /** 初始布局：固定网格（仅首次/节点集变化时用；拖拽后由 state 保持） */
+  /** 初始布局：固定网格（仅首次/节点集变化时用；拖拽后由 state 保持）。
+   *  🔴 #1568：**按全量 nodes 计算位置**（索引稳定）——隐藏节点不参与「位置重排」，
+   *     取消隐藏即回原位（与 @xyflow 的自动布局无关，本画布为固定网格）。 */
   const layoutNodes = useMemo<KgRFNode[]>(
     () =>
       nodes.map((n, i) => ({
@@ -224,27 +235,31 @@ function CanvasInner({
           name: n.name,
           type: n.type,
           entity_id: n.entity_id,
-          dim: activeIds !== undefined && !activeIds.has(n.id),
+          dim: !(hiddenIds?.has(n.id) ?? false) && activeIds !== undefined && !activeIds.has(n.id),
+          hidden: hiddenIds?.has(n.id) ?? false,
         },
       })),
-    [nodes, activeIds],
+    [nodes, activeIds, hiddenIds],
   );
 
   const dataEdges = useMemo<RFEdge[]>(
     () =>
-      edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: 'kgEdge',
-        label: e.label,
-        data: {
-          dim:
-            activeIds !== undefined && !(activeIds.has(e.source) && activeIds.has(e.target)),
-        },
-        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--ink-3)' },
-      })),
-    [edges, activeIds],
+      edges
+        /* #1568：任一端被隐藏 → 整条边不画（隐藏节点不参与连线） */
+        .filter((e) => !(hiddenIds?.has(e.source) ?? false) && !(hiddenIds?.has(e.target) ?? false))
+        .map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          type: 'kgEdge',
+          label: e.label,
+          data: {
+            dim:
+              activeIds !== undefined && !(activeIds.has(e.source) && activeIds.has(e.target)),
+          },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--ink-3)' },
+        })),
+    [edges, activeIds, hiddenIds],
   );
 
   /** 持久化位置（localStorage，按 project_id 键）——挂载/切项目时读一次 */

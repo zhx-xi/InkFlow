@@ -28,6 +28,8 @@ import { logEn, logZh } from './log';
 import { logsUxEn, logsUxZh } from './logs-ux';
 // #1360：drawio 导入/导出文案域（DrawioIoControls.tsx 的 t('lib.knowledge.drawio.*')）
 import { knowledgeDrawioEn, knowledgeDrawioZh } from './knowledge-drawio';
+// #1568：知识图谱筛选「双入口 / 三态」补充文案域（全部取消 + 无）
+import { knowledgeFilterEn, knowledgeFilterZh } from './knowledge-filter';
 import { worldFirstOpenEn, worldFirstOpenZh } from './world-first-open';
 // #1300：分页公共组件文案域（Pagination.tsx 的 t('pagination.page.*')）
 import { paginationEn, paginationZh } from './pagination';
@@ -70,6 +72,8 @@ const comboZh: Dict = {
   ...timelineEraZh,
   // #1360：drawio 导入/导出域
   ...knowledgeDrawioZh,
+  // #1568：知识图谱筛选（全部取消 + 无）
+  ...knowledgeFilterZh,
   // #1494：世界观页首开语义域（rootTitle + 引导行文案）
   ...worldFirstOpenZh,
 } as Dict;
@@ -97,6 +101,8 @@ const comboEn: Dict = {
   ...timelineEraEn,
   // #1360：drawio 导入/导出域
   ...knowledgeDrawioEn,
+  // #1568：知识图谱筛选（全部取消 + 无）
+  ...knowledgeFilterEn,
   // #1494：世界观页首开语义域（rootTitle + 引导行文案）
   ...worldFirstOpenEn,
 } as Dict;
@@ -380,6 +386,7 @@ describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静�
     ['logs-ux', logsUxZh],
     ['pagination', paginationZh],
     ['foreshadow-filter', foreshadowFilterZh],
+    ['knowledge-filter', knowledgeFilterZh],
   ];
   const sourcesEn: Array<[string, Dict]> = [
     ['en', en],
@@ -397,6 +404,7 @@ describe('#1016 i18n 契约：跨域字典重复键为零（防展开顺序静�
     ['logs-ux', logsUxEn],
     ['pagination', paginationEn],
     ['foreshadow-filter', foreshadowFilterEn],
+    ['knowledge-filter', knowledgeFilterEn],
   ];
 
   /** 顺序遍历各来源字典，返回「key（先定义域 ∩ 后定义域）」清单（撞键即非空） */
