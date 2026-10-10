@@ -4,18 +4,20 @@
 
 - ``inkflow.domain.services._world_extractor.WorldExtractor``
   · ``{categories}`` 变量注入（项目已有分类清单，§5.8.1）
-  · 类别归一（LLM 给出项目分类之外的类别 → 空串 + warning）
+  · 类别严格校验（#1570：LLM 给出项目分类之外的类别 → **拒绝整批** + 列出缺失分类名，
+    正式表零写入；替代 #1485 的「静默归空」）
   · 近义合并（归一化后互为子串 → 合并进已有条目，不新建，§5.8.2）
   · ``granularity``（coarse 每源条目上限，§5.8.3）
   · ``dry_run``（零写入预览，§5.8.4）
   · ``batch_id``（新建条目携带批次标识，§5.8.5）
 - ``inkflow.domain.services._character_extractor.CharacterExtractor``：同（除类别归属）
 
-依据: specs/f14-extraction/spec.md §5.8.1-§5.8.5（#1485，0.17.0 W5b）。
+依据: specs/f14-extraction/spec.md §5.8.1-§5.8.5（#1485，0.17.0 W5b；
+§5.8.1 类别校验由 #1570 修订为「拒绝而非写空」）。
 
 RED 预期（实现前必须 FAIL）—— 每条对应一个验收断言：
 - 类别注入      → ``variables`` 缺 ``categories`` 键
-- 类别归一      → 落库仍是 LLM 原值「魔法体系」
+- 类别校验      → 未注册类别未被拒绝（旧行为：落库为空串或原值）
 - 近义合并      → ``created`` 1 条（应为 0，走 updated）
 - 粒度          → 无该关键字参数 → TypeError
 - dry-run       → 无该关键字参数 → TypeError
@@ -47,6 +49,7 @@ from inkflow.domain.ports.prompt_template import (
     PromptTemplateProtocol,
     RenderedPrompt,
 )
+from inkflow.domain.ports.world_errors import WorldCategoryNotRegisteredError
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 from inkflow.domain.services._character_extractor import CharacterExtractor
 from inkflow.domain.services._world_extractor import WorldExtractor
@@ -183,7 +186,7 @@ def _render_variables(mock_prompt_manager: MagicMock) -> dict:
 
 
 class TestCategoryAttribution:
-    """§5.8.1 类别归属 — 渲染注入已有分类 + 落库归一。"""
+    """§5.8.1 类别归属 — 渲染注入已有分类 + 落库前严格校验（#1570 修订）。"""
 
     async def test_project_categories_injected_into_render(
         self, world_extractor, mock_llm, mock_world_repo, mock_prompt_manager
@@ -202,10 +205,13 @@ class TestCategoryAttribution:
         assert "categories" in variables, "渲染变量必须注入项目已有分类清单"
         assert list(variables["categories"]) == [PROJECT_CATEGORY]
 
-    async def test_unknown_category_falls_back_to_blank(
+    async def test_unknown_category_is_rejected_with_zero_write(
         self, world_extractor, mock_llm, mock_world_repo
     ) -> None:
-        """LLM 类别不在项目分类中 → 落空串（未分类）+ warning（不再原样落库）。"""
+        """#1570 修订：LLM 类别不在项目分类中 → **拒绝整批**（列出缺失名）+ 零写入。
+
+        替代 #1485 的「归空串 + warning」——那正是存量无类别条目（82 条）的来源。
+        """
         mock_world_repo.list_world_categories = AsyncMock(
             return_value=[(_category(PROJECT_CATEGORY), 0)]
         )
@@ -215,13 +221,13 @@ class TestCategoryAttribution:
             )
         )
 
-        result = await world_extractor.extract(
-            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
-        )
+        with pytest.raises(WorldCategoryNotRegisteredError) as excinfo:
+            await world_extractor.extract(
+                WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+            )
 
-        assert len(result.created) == 1
-        assert result.created[0].category == "", "项目分类之外的类别必须归一为空串"
-        assert any("不在项目分类中" in w for w in result.warnings)
+        assert excinfo.value.missing == [SUGGESTED_CATEGORY]
+        assert mock_world_repo.add.await_count == 0, "拒绝批次必须零写入"
 
     async def test_known_category_is_kept(self, world_extractor, mock_llm, mock_world_repo) -> None:
         """LLM 类别命中项目已有分类 → 原样落库（正向守护）。"""
@@ -237,22 +243,27 @@ class TestCategoryAttribution:
         )
 
         assert result.created[0].category == PROJECT_CATEGORY
-        assert not any("不在项目分类中" in w for w in result.warnings)
+        assert result.warnings == []
 
-    async def test_project_without_categories_keeps_llm_value(
+    async def test_project_without_categories_rejects_nonempty_category(
         self, world_extractor, mock_llm, mock_world_repo
     ) -> None:
-        """反向守护：项目无任何分类时不归一（避免无受控词表项目类别被清空）。"""
+        """#1570 修订：项目无任何分类时 LLM 产出的非空类别同样未注册 → 拒绝。
+
+        替代 #1485 的「无分类则原样落库」——该分支会让幻觉类别直接进入正式表。
+        """
         mock_world_repo.list_world_categories = AsyncMock(return_value=[])
         mock_llm.chat.return_value = _ok_response(
             _world_payload([{"name": "炼气期", "category": SUGGESTED_CATEGORY, "content": "c"}])
         )
 
-        result = await world_extractor.extract(
-            WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
-        )
+        with pytest.raises(WorldCategoryNotRegisteredError) as excinfo:
+            await world_extractor.extract(
+                WorldExtractRequest(project_id=PID, text="t"), default_model=DEFAULT_MODEL
+            )
 
-        assert result.created[0].category == SUGGESTED_CATEGORY
+        assert excinfo.value.missing == [SUGGESTED_CATEGORY]
+        assert mock_world_repo.add.await_count == 0
 
 
 # ── ② 近义合并（world + character）─────────────────────────────────────────

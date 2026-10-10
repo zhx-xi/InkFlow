@@ -188,6 +188,58 @@ def list_settings_cmd(
 
 
 # ---------------------------------------------------------------------------
+# uncategorized  —  inkflow world uncategorized --project-id <uuid>
+# ---------------------------------------------------------------------------
+
+
+@app.command("uncategorized")
+@instrument(caller_type="cli")
+def uncategorized_settings_cmd(
+    ctx: typer.Context,
+    project_id: str = typer.Option(..., "--project-id", help="项目 ID (UUID)"),
+) -> None:
+    """列出**非根且无类别**的条目（#1570 存量审计；只读，不改写任何数据）
+
+    存量无类别条目（旧版提取静默归空的产物）的**发现**入口：条目标识 + 名称 +
+    回填指引。回填走既有 `world update --id <id> --category <已注册分类名>`
+    （本命令自身零写入、可重入，不删除任何数据）。
+    """
+    cli_ctx: CliContext = ctx.obj
+    pid = _parse_uuid(cli_ctx, project_id, "项目不存在")
+
+    async def _impl() -> dict:
+        handle = await ensure_kernel()
+        client = InkFlowHTTPClient(handle)
+        async with client:
+            items: list[dict] = []
+            offset = 0
+            while True:
+                page = await client.get(
+                    f"/projects/{pid}/world-settings",
+                    params={"category": "", "offset": offset, "limit": 100},
+                )
+                batch = page.get("items", [])
+                items.extend(batch)
+                offset += len(batch)
+                if not batch or offset >= page.get("total", 0):
+                    break
+            return {"items": items, "total": len(items)}
+
+    data = _run(cli_ctx, _impl)
+    rows = [s for s in data.get("items", []) if s.get("parent_id") is not None]
+    if cli_ctx.json_output:
+        print_result(cli_ctx, {"items": rows, "total": len(rows)})
+        return
+    if not rows:
+        print_result(cli_ctx, "✅ 无非根且无类别的条目")
+        return
+    print_result(cli_ctx, f"⚠️ 非根且无类别的条目 {len(rows)} 条：")
+    for row in rows:
+        typer.echo(f"  - [{row.get('id')}] {row.get('name')}")
+    typer.echo("回填：inkflow world update --id <条目ID> --category <已注册分类名>")
+
+
+# ---------------------------------------------------------------------------
 # categories  —  inkflow world categories --project-id <uuid>
 # ---------------------------------------------------------------------------
 

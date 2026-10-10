@@ -51,6 +51,7 @@ from inkflow.domain.ports.llm_errors import LLMRequestError
 from inkflow.domain.ports.outline_errors import OutlineNameConflictError
 from inkflow.domain.ports.style_errors import StyleValidationError
 from inkflow.domain.ports.vector_store import EntityType, RetrievedEntity
+from inkflow.domain.ports.world_errors import WorldCategoryNotRegisteredError
 
 client = TestClient(app)
 
@@ -399,6 +400,21 @@ class TestExtractAPI:
         req = args[0]
         assert req.type is ExtractionType.STYLE
         assert req.text == TEXT
+
+    @patch("inkflow.api.routers.extractions.get_extraction_service")
+    def test_extract_unregistered_category_422(self, mock_get_svc: MagicMock) -> None:
+        """#1570 提取遇未注册类别 → 422，detail 列出缺失分类名（可据以建类后重试）。"""
+        svc = _mock_svc(mock_get_svc)
+        svc.extract = AsyncMock(side_effect=WorldCategoryNotRegisteredError(["地理", "制度"]))
+
+        response = client.post(
+            "/api/v1/extract",
+            json={"project_id": str(PID), "type": "setting", "text": TEXT},
+        )
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "地理" in detail
+        assert "制度" in detail
 
     @patch("inkflow.api.routers.extractions.get_extraction_service")
     def test_extract_unsupported_type_422(self, mock_get_svc: MagicMock) -> None:

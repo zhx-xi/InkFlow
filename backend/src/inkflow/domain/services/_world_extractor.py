@@ -40,7 +40,10 @@ from inkflow.domain.models.world import (
 )
 from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
-from inkflow.domain.ports.world_errors import WorldExtractionError
+from inkflow.domain.ports.world_errors import (
+    WorldCategoryNotRegisteredError,
+    WorldExtractionError,
+)
 from inkflow.domain.ports.world_repository import WorldRepositoryProtocol
 
 logger = logging.getLogger(__name__)
@@ -208,7 +211,10 @@ class WorldExtractor:
         # #1485 §5.8.1: 渲染前读取项目已有分类清单。仓储替身未配置该方法时返回
         # 非列表（既有单测 Mock）→ 退化为「无分类」，而不是抛错。
         cats = await self._repo.list_world_categories(request.project_id)
-        category_names = [c.name for c, _ in cats] if isinstance(cats, (list, tuple)) else []
+        # #1570: 区分「清单可判」（真实仓储返回列表）与「不可判」（替身/未实现）——
+        # 后者跳过类别严格校验，保持既有单测契约；前者不论清单是否为空都要校验。
+        categories_known = isinstance(cats, (list, tuple))
+        category_names = [c.name for c, _ in cats] if categories_known else []
         # #1485 §5.8.2: 合并前扫描已有条目（同一 Mock 守卫口径）。仓储支持全量扫描
         # 时，三档匹配全在该列表内完成（含新建）；不支持（替身）才回退 get_by_name。
         rows = await self._repo.list_all_active(request.project_id)
@@ -259,6 +265,7 @@ class WorldExtractor:
             item_warnings=outcome.warnings,
             model=model,
             category_names=category_names,
+            categories_known=categories_known,
             existing=existing,
             scanned=scanned,
             granularity=granularity,
@@ -304,6 +311,7 @@ class WorldExtractor:
         item_warnings: list[str],
         model: str,
         category_names: list[str],
+        categories_known: bool,
         existing: list[WorldSetting],
         scanned: bool,
         granularity: Granularity,
@@ -312,8 +320,12 @@ class WorldExtractor:
     ) -> WorldExtractionResult:
         """合并落库: 条目按 (project_id, name) 匹配活动条目，同名=同一世界观条目。
 
-        #1485 写入策略（§5.8.1-§5.8.5）: 落库前类别归一（仅项目有分类时）→
-        coarse 上限 → 同名更新 / 近义合并 / 新建三档；dry_run 只算不写。
+        #1485 写入策略（§5.8.1-§5.8.5）: 落库前类别严格校验 → coarse 上限 →
+        同名更新 / 近义合并 / 新建三档；dry_run 只算不写。
+
+        #1570 类别严格校验（§5.8.1 修订）: LLM 产出的**非空**类别必须已在项目
+        分类词表中注册，否则**整批拒绝**（`WorldCategoryNotRegisteredError`，列出
+        全部缺失分类名）且该批次**正式表零写入**。
         """
         warnings = list(item_warnings)
         # #1291：project_id 为领域 UUID，直传仓储
@@ -329,19 +341,30 @@ class WorldExtractor:
 
         created: list[WorldSetting] = []
         updated: list[WorldSetting] = []
+        # #1570: 类别严格校验 —— 写任何条目前先整批预检（含 dry_run / stage 零写入
+        # 路径）：LLM 产出的非空类别必须已注册，否则拒绝整批并列出全部缺失分类名。
+        # 项目无任何分类（清单为空但**可判**）时任何非空类别同样未注册 → 同理拒绝。
+        # 替代 #1485 的「静默归空」——那正是本 issue 存量无类别条目的来源。
+        if categories_known:
+            missing_categories = list(
+                dict.fromkeys(
+                    raw
+                    for es in world_settings
+                    if (raw := (es.category or "").strip()) and raw not in category_names
+                )
+            )
+            if missing_categories:
+                raise WorldCategoryNotRegisteredError(missing_categories)
+
         # #1297: 新建条目必须归属父级 —— 与 WorldService.get_root_setting 同机制，
         # 仅查一次项目根条目（#849: 每项目仅允许 1 条 parent_id IS NULL）。
         roots, _ = await self._repo.list(request.project_id, top_level_only=True, limit=1)
         current_root: WorldSetting | None = roots[0] if roots else None
 
         for es in world_settings:
-            # #1485 §5.8.1: 类别归一（项目无分类 → 不做归一，原样落库）
+            # #1570: 预检已保证非空类别均在词表内（清单不可判时跳过校验保持既有语义），
+            # 故此处不再需要「未注册 → 归空」的归一分支。
             category = es.category or ""
-            if category_names and category.strip() not in category_names:
-                raw = category.strip()
-                if raw:
-                    warnings.append(f"类别「{raw}」不在项目分类中，已归为未分类")
-                category = ""
 
             normalized = _normalize_name(es.name)
             matched = _first_match(existing, normalized)
