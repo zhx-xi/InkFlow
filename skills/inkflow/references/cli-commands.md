@@ -69,7 +69,7 @@ InkFlow CLI 全量命令面速查（顶层 26 组 + 3 个压平命令 `serve`/`s
 | 组 | 命令形态 | 说明 |
 |---|---|---|
 | `character` | CRUD + `group` 子组 + `extract` / `relate` / `relations` / `unrelate` | 角色管理；create 必填 `--role-rank`；relate 用 `--id --to --type`。**无 `restore` 命令**，delete 为真删（不可恢复） |
-| `world` | CRUD + `categories` / `category add` / `ancestors <id>` / `descendants <id>` / `copy <src> <tgt>` / `extract` | 世界观管理；`copy` 支持 `--root`（起点）/`--category`（仅复制指定分类）/`--auto-create-categories`（目标缺分类时自动建）。**无 `restore` 命令**，delete 为真删 |
+| `world` | CRUD + `categories` / `category add` / `uncategorized` / `ancestors <id>` / `descendants <id>` / `copy <src> <tgt>` / `extract` | 世界观管理；`copy` 支持 `--root`（起点）/`--category`（仅复制指定分类）/`--auto-create-categories`（目标缺分类时自动建）。`uncategorized` 列出**非根且无类别**条目（#1570 存量审计，只读零写入；回填走 `world update --id <id> --category <已注册分类名>`）。⚠️ **提取路径不自动建类**：LLM 产出的类别不在项目已注册分类中 → 整批拒绝（422，列出全部缺失分类名）+ 正式表零写入，须 `world category add` 建类后重试（`--auto-create-categories` 是**复制路径**的开关，与提取无关）。**无 `restore` 命令**，delete 为真删 |
 | `map` | CRUD（create 必填 `--image`）+ `children <map_id>` / `image <map_id> --image` / `pin add/list/update/delete` | 地图与标记（pin 必填 `--x --y --label`；delete 支持 `--cascade/--reparent-to`） |
 | `outline` | CRUD + `point` / `arc` 子组 + `generate` | 大纲树；`generate` 用 `--prompt/--prompt-file --num-chapters --save --model`。**无 `restore` 命令**，delete 为真删（情节点级联） |
 | `timeline` | CRUD + `view` + `check [--include-flashbacks]` + `normalize` | 时间线与一致性检查；`create`/`update` 支持 `--era`/`--era-value`/`--era-scale`（纪元轴 + 流速比，#1411）；`normalize` 归一/重锚（默认 dry-run，`--apply` 落库）。**无 `restore` 命令**，delete 为真删 |

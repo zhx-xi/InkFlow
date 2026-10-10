@@ -2,9 +2,47 @@
 
 所有重要变更记录于此文件，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 版本口径以 [ADR-019 v14](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
+> 版本口径以 [ADR-019 v15](adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](FEATURES.md)。
 
 ## [Unreleased]
+
+## [0.17.0] - 2026-10-11
+
+### 新增
+
+- **多纪元历法体系正式化（ADR-065，T1/T2/T3）**：`timeline_events` 三列（`era` / `era_value` / `era_scale`）+ 幂等迁移与存量回填（#1410）· 跨纪元流速换算引擎 + 一致性检查按轴分桶（#1411）· GUI 纪元轴选择器 + 按轴分组渲染（#1412）；总跟踪 #1328。
+- **时间线世界序「单块多竖轴刻度带」**：取代多泳道分组（#1541），吸收单轴树状分层（#1527）；形态定稿为**不定高刻度 + 时间主轴 + 按刻度分页**（#1564），底色对齐页面底色（#1565）。
+- **审计异步语义 + 批量入口**：`audit chapter` 触发即返回 `log_id`（202 受理），按 id 轮询结果（#1425）；新增 `audit batch` —— 1-based 序号区间 + 断点续跑（`--resume`）+ 并发 + Markdown/JSON 报告聚合（#1484）。
+- **提取两段式暂存**：`stage:true` 落暂存区 → confirm / cancel（取代写后回滚语义，#1545）；GUI 提取结果视图两段式 + 最小化后台浮窗（#1546）；暂存行过期清理（启动期幂等，阈值 30 天，#1551）。
+- **提取对话框类型面与范围**：单选 5 类 + 通用多选（#1544）· 全文/卷/章范围选择（#1544）· dry-run 预览与粒度选择（#1518）· 补齐 timeline 类型（#1528）。
+- **设定库跨项目复制**：`world copy <src> <tgt>` 支持 `--root` / `--category` / `--auto-create-categories`（#1482）。
+- **CLI 长正文通道**：create/update 系列支持 `--content-file`（显式 UTF-8 文件，与内联参数互斥）（#1483 / #1520）。
+- **CLI 可脚本化**：`agent status --json` 输出执行记录信封；`agent run --watch` 阻塞轮询到终态（指数退避 + `--watch-timeout`）（#1478）。
+- **可观测面**：`context assemble --show-system-prompt / --show-skills / --show-tools` 打印装配观测段（缺省不开启）（#1480）。
+- **Agent 装配链收口**：管线链路装配 skill（原仅 agentic writer 被调用，#1472）· 未显式挂载的通用 skill 被所有 Agent 自动获取（#1473）· `builtin:chat` 注入设定库（#1474）· 世界观顾问/润色师接入可执行管线（#1475）· agentic writer 检索工具参数修正（3/4 工具曾返回「项目不存在」，#1476）· 写作轨工具面与 grants 授权面口径统一（18 授权 / 11 物化 → 7 个不再静默丢弃，#1507）· 自定义 stage（形态 3 / YAML）继承全局默认模型（#1531）。
+- **内核生命周期补全（ADR-064 / ADR-066）**：内核自持存活期互斥（rc / 正式各限 1，机器级）+ 可重置空闲回收 + 机器级实例注册表（#1487）· 日志分片与运行期轮转（改用现成轮转库，取代启动期兜底，#1477）· 托盘 `setToolTip` 修复（#1489）· CLI 拉起托盘探测链修正（大小写误命中内核 exe / 自定义安装路径不可见，#1525）。
+- **知识图谱**：筛选语义与布局四改（#1465）· 实体筛选与类别语义统一 + 首字母排序 + 分页（#1529）· 保留全选并另加「全部取消」+ 实体定向三态（彩色 / 灰显保位 / 隐藏）（#1568）· 修正改「显示项」后分页栏整体消失（#1569）。
+- **世界观页首开**：新项目自动建根（不再报 `NoneType` 内部异常，#1481）· 首屏/空态语义与默认根 i18n（#1494）· #1493 自动建根后 e2e-library 回归收口（#1493）。
+- **其余**：自动写作任务清单 LLM 预产出协议（#1439）· 提取结果详情与替换确认（#1532）· 时间线世界序按纪元轴分组（轴名做组头，#1467）。
+
+### 修复
+
+- **`audit batch --resume` 误判未审计章为已完成（#1562）**：断点判据被 F44 草稿生命周期行（`draft_saved` / `draft_confirmed`）与 agentic writer 动作行污染 → 判据收窄为「`run_status=completed` **且** `severity_summary` 符合审计计数格式」，消除退出码 0 的静默漏审。
+- **全新 collection 首调 `vector retrieve` 恒 500（#1563）**：chroma 1.5 中「别的 collection 的写」使本 collection 的 `METADATA.max_seq_id` 领先 VECTOR 段且不再自愈 → 读侧改为空写触发段落 apply 后重试（写次数有界），失败文案改「请重试一次」。
+- **提取遇未注册类别写空（#1570）**：`_merge` 曾对未注册类别静默归空并绕过分类校验（rc2 旅程库出现 82 条「非根且无类别」条目）→ 改为整批预检**拒绝**（422，列出全部缺失分类名）+ 正式表零写入，暂存路径经同一漏斗；新增只读审计命令 `world uncategorized`。
+- **AI 提取弹框**：默认类型不随来源页（#1566）· 「按章」范围块零渲染 + 补删除入口（#1567）。
+- **时间线提取不产出时间表达（#1526）**：98.9% 事件 `time_value` 为空 → 世界序满屏「未知」。
+- **草稿无硬删端点（#1479）**：`DELETE /agent/drafts/{id}` 曾 405；`prune-orphans` 的「孤儿」只认 `project_id` 全零 → 软删项目的草稿永久残留。
+- **DB 会话**：aiosqlite 连接未归还（`non-checked-in connection`）两处（#1530 / #1539）。
+- **测试基建**：持久化资源统一后置处理（内核 / DB 连接 / debug 弹窗，会话级 autouse fixture）—— 跑完套件零孤儿 `inkflow serve`、无自动弹浏览器（#1488 / #1496）。
+
+### 文档
+
+- **skill 契约同步**：`cli-commands.md` 落后 4 个版本（0.17.0 新增命令/参数 12 项，#1553）· 域文档同步 + 过期建议修正（#1554）· `json-contracts.md` 信封同步（audit 202 / `run_status` / `batch_id` / rollback / staging，#1555）· 语义级重写（`kernel.md` 互斥-回收-自登记 + 通用 skill 装配新章节 + `SKILL.md`，#1556）· 外部 skill `audit batch --resume` 判据行随 #1562 修正（#1571）· 外部 skill 补 `INKFLOW_DEBUG_NO_BROWSER` 逃生门 + 契约测试防再漂移（#1572）· 外部 skill 补 `world uncategorized` 与 #1570 拒绝语义。
+
+### 里程碑
+
+- milestone #22 · **60 issues 全关** · rc1 / rc2 / rc3 三轮预发布 + 完整用户旅程（stage0 → 审计）验证 · **v0.17.0 正式发布**。
 
 ## [0.16.0] - 2026-10-04
 

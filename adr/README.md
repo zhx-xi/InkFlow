@@ -160,7 +160,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 
 | 编号 | 标题 | 状态 | 日期 |
 |------|------|------|------|
-| [ADR-019](packaging/ADR-019.md) | 版本里程碑管理 — SemVer + 1.0.0 = 本地可用 | ✅ 已接受（v14 修订） | 2026-08-01 |
+| [ADR-019](packaging/ADR-019.md) | 版本里程碑管理 — SemVer + 1.0.0 = 本地可用 | ✅ 已接受（v15 修订） | 2026-08-01 |
 | [ADR-044](packaging/ADR-044.md) | 打包产物 Debug 模式 — 统一开关 + 日志落点 + GUI DevTools | ✅ 已接受 | 2026-08-27 |
 
 ## 已折叠（被取代，决策并入 v2）
@@ -201,6 +201,6 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **CI 确定性 fake LLM**: OpenAI 兼容 fake server + INKFLOW_LLM_BASE_URL + e2e_llm_mode 开关（ADR-047 [test-ci/](test-ci/ADR-047.md)）
 - **CI 黑盒三面契约**: GUI/CLI/MCP 黑盒断言（元素±/渲染/层级·信封/错误码/退出码·工具调用/错误自愈）+ E2E 不计覆盖（ADR-048 [test-ci/](test-ci/ADR-048.md)）
 - **Python 版本口径**: 运行时面与解析面统一 3.13 —— `requires-python>=3.13` + `[tool.mypy]/[tool.pyright] pythonVersion=3.13` + CI/release `python-version: "3.13"`；`[tool.ruff] target-version` **保持 py311**（UP 现代化另议）（ADR-058 [test-ci/](test-ci/ADR-058.md)）
-- **版本里程碑**: SemVer；1.0.0 = 本地完全可用；2.0.0 = 云端（ADR-019 [packaging/](packaging/ADR-019.md) v11；ADR-024 [architecture/](architecture/ADR-024.md)）
+- **版本里程碑**: SemVer；1.0.0 = 本地完全可用；2.0.0 = 云端（ADR-019 [packaging/](packaging/ADR-019.md) v15；ADR-024 [architecture/](architecture/ADR-024.md)）
 
 *来源：design/architecture-analysis-2026-07-30.md §三（2026-07-31 提取为独立目录）；2026-09-01 域归类重构（ADR 编号保持稳定，仅目录分组 + 折叠 005/006 + 补号 045/046）。*
