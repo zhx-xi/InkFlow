@@ -1,6 +1,6 @@
 {
-  "charset_sha256": "20f72aa981b9e44db0e1b7f93ec1358bbba6840993e592ccedd4652465d68ca7",
-  "charset_size": 1191,
+  "charset_sha256": "2083831aa88cb4bbfb7ffeb2d2daba548db48b7307d6ff6325da1f3cbe6535d0",
+  "charset_size": 1190,
   "fonts": {
     "serif": {
       "family": "InkFlow Serif",
@@ -25,7 +25,6 @@
         "U+25B8",
         "U+25BE",
         "U+2705",
-        "U+2757",
         "U+FE0F",
         "U+1F4CE",
         "U+1F534",
@@ -56,7 +55,6 @@
         "U+25B8",
         "U+25BE",
         "U+2705",
-        "U+2757",
         "U+FE0F",
         "U+1F4CE",
         "U+1F534",
