@@ -62,7 +62,7 @@ InkFlow CLI 全量命令面速查（顶层 26 组 + 3 个压平命令 `serve`/`s
 |---|---|
 | `audit check --project-id <uuid>` | 一致性审计（角色/时间线/世界/伏笔/跨维度；`--include-static`） |
 | `audit chapter chapter <chapter> --project <p> [--include-static/--no-include-static] [--wait/--no-wait] [--confirm <accept\|reject>] [--note] [--history] [--log <log_id>]` | 章节审计/确认/查历史/按记录 ID 取明细。**202 异步语义**：`POST` 返回 `{log_id, status}`，默认 `--wait` 阻塞轮询到终态；`--no-wait` 立即返回 log_id。⚠️ 命令形态为嵌套 `audit chapter chapter`（组名即命令名） |
-| `audit batch --project-id <p> [--chapters <区间>] [--resume] [--concurrency <n>] [--out <path>]` | 批量章节审计（#1484）：`--chapters` 收 1-based 序号区间（如 `1-520`/`1-5,8,10-12`，省略=全部）；`--resume` 跳过已完成章；`--out` 落 Markdown（同主名 .json）。单章失败不中断整批（退出码仍 0） |
+| `audit batch --project-id <p> [--chapters <区间>] [--resume] [--concurrency <n>] [--out <path>]` | 批量章节审计（#1484）：`--chapters` 收 1-based 序号区间（如 `1-520`/`1-5,8,10-12`，省略=全部）；`--resume` 跳过**已有审计记录**的章（F44 草稿生命周期行 `draft_saved`/`draft_confirmed` 不计入断点，#1562）；`--out` 落 Markdown（同主名 .json）。单章失败不中断整批（退出码仍 0） |
 
 ## 5. 资料库（library）
 
