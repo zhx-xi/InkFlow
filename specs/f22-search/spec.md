@@ -398,7 +398,7 @@ mode=semantic:
 
 > **semantic 失败语义**：embedding 模型不可用（未部署/加载失败）→ 200 + 空结果 + loguru（不降级为 keyword——模式显式请求，失败空结果比静默换模式诚实）；测试用 FakeEmbeddings（F14 先例，size=384 + 临时 chroma 目录）。
 >
-> **semantic 健壮性（#823/#468，修改履历 2026-08-31）**：底层向量库（F14 VectorStoreProtocol.retrieve）对 chromadb hnsw 段读取失败（"Nothing found on disk"）现作**自愈降级**——服务层捕获 `VectorStoreError` → 触发一次 `reindex` → 重试一次；成功 → 200 命中（`relevance_score` 降序）；仍失败 → 500 清晰 detail（含「chromadb hnsw」诊断，**不吞空**「内部错误（无详情）」，替代原先吞成空 `INTERNAL_ERROR`）。`vector retrieve` 端点与 `mode=semantic` 都经此路径受益。
+> **semantic 健壮性（#823/#468 初版；#1563 增强）**：底层向量库（F14 VectorStoreProtocol.retrieve）对 chromadb hnsw 段读取失败（"Nothing found on disk" / "Error finding id"）现作**段就绪判定 + 自愈降级**——store 层首次 `InternalError` 后不立刻判终态，先按「与读路径同形的 `where` 过滤探针」轮询到**段就绪**（墙钟预算，就绪优先于固定次数）再重试；仍失败 → 服务层捕获 `VectorStoreError` → 触发一次 `reindex` → 重试一次；成功 → 200 命中（`relevance_score` 降序）；仍失败 → 500 清晰 detail（文案「索引正在落盘……请重试一次」+「chromadb hnsw」诊断，**不吞空**「内部错误（无详情）」、**不再指引重建索引**——重建无效，重试一次即过）。`vector retrieve` 端点与 `mode=semantic` 都经此路径受益。
 
 ### 5.9 索引检索型 vs 既有样板：差异对照表
 
@@ -460,7 +460,7 @@ mode=semantic:
 | E12 | semantic 模式向量库为空 / embedding 不可用 | 200 空结果 + loguru（不降级 keyword，§5.8） |
 | E13 | AI 自动维护设置开启但增量同步失败 | 回退懒重建（_is_stale 兜底——增量失败不阻塞搜索，下次判脏全量重建） |
 | E14 | 跨项目检索其中一项目无索引内容 | 该项目自然无命中（不报错，total 计数其余项目） |
-| E15 | semantic 模式向量库 chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族） | 服务层自愈：捕获 VectorStoreError → reindex 一次 → 重试一次；成功 → 200 命中；仍失败 → 500 清晰 detail（含「chromadb hnsw」诊断），**不吞空**「内部错误（无详情）」——vector retrieve 端点同步受益（新增 2026-08-31） |
+| E15 | semantic 模式向量库 chromadb hnsw 段读取失败（"Nothing found on disk" / "Error finding id"，#468 同族） | **段就绪判定**（#1563：首次 InternalError → 同形 where 探针轮询至就绪 → 重试；墙钟预算，就绪优先于固定次数）→ 仍失败 → 服务层自愈（捕获 VectorStoreError → reindex 一次 → 重试一次）；成功 → 200 命中；仍失败 → 500 清晰 detail（「索引正在落盘……请重试一次」+「chromadb hnsw」诊断），**不吞空**「内部错误（无详情）」、**不再指引重建索引**——vector retrieve 端点同步受益（2026-08-31 初版；#1563 增强） |
 
 ---
 

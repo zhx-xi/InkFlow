@@ -8,6 +8,7 @@
 > **Spec 变更**: v1.3 — 类型面口径统一（#1408）：`ExtractionType.KNOWLEDGE_RELATION`（F48 知识图谱关系提取）接入统一提取入口——§6.1 注册表补第 7 槽（委托 `RelationExtractionService.extract_for_project(project_id, method="rule")`，与 `knowledge extract --method rule` 殊途同归：项目级、规则集、零 LLM）、§6.3/§6.4/§7 补项目级单源与输入约束（不接受 text/chapter_ids → 显式 422）、§2.1/§3.1/§4.1 类型清单 6 种 → 7 种；CLI 组 help / `--type` help / choices 三者口径一致由 `tests/cli/test_cli_extract_type_contract_1408.py` 契约测试守卫（枚举扩张未同步 → FAIL）
 > **Spec 变更**: v1.4 — 时间线提取补「时间表达」契约（#1526，0.17.0 rc1 数据质量）：`ExtractedTimelineEvent` 新增 `time_display`（**原文时间表达**，如「三月初二」）；提示词（zh/en 同源）要求**每事件必须给 `time_display`**，解析不出累计天数时 `time_value` 仍为 `null` 但**必须保留 `time_display`**；`time_unit` 仅在确实解析出 `time_value` 时写入（未解析出值 → 留空，防「假非空」噪声）；§5.5 schema / 模板 / 合并策略同步。**不推翻** [f12 §2.7](../f12-timeline/spec.md) S10（单位固定 + 项目内累计时基 + 不确定即 null）——本契约只补「原文表达不得丢」的展示面兜底，不改数值语义
 > **Spec 变更**: v1.5 — 暂存过期清理落地（#1551，0.17.0 W8c 收尾）：§5.9「过期清理」从「仅登记语义、不实现」改为「已实现」（内核启动期幂等清理超期未确认暂存行，阈值常量 30 天、失败不阻塞启动、不新增索引）；§5.9 / §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` **公开 compute-only 入口**（原私有 `_extract_rules` 升公开，消除跨模块私有调用）——关系提取算法与语义不变
+> **Spec 变更**: v1.6 — hnsw 段卡死自愈（#1563，0.17.0 rc2 修复）**— ⚠️ 根因已证伪 issue 原诊断，修复改为 A′+C**：新增 §5.6.8。实测根因 = chroma 1.5 中**一次「别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先于 `VECTOR.max_seq_id` 且不再追赶**（需要「对本 collection 再写一次」才 apply），带 `where` 的读 plan 随即抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）总是最后一次写 → reindex 返回后目标 collection 必然不可读，直到服务层自愈再 reindex 一次（= 这才是「第二次调用就好」的真实机制）。**已证伪**：① 不是「flush 窗口太短」（只等待永久不恢复，≥60s）；② 文件系统存在性判据无效（失败时段文件全部在位）；③ 原拍板 A（读侧等待）+ B（写侧同形探针）+ C 实测**不足以修复**。**改为 A′（读侧空写自愈：元数据原样回写触发 pending log apply + 重试，写次数有界）+ C（文案改「请重试一次」）**，并删除读侧固定次数重试与 1.5s 预算（#1011 评审 M2 读侧口径废止；写侧 `_FLUSH_PROBE_*`/`_ensure_hnsw_flushed` 不变）；实证 before 首调 500 → after 首调 200（同 harness，11ms 内自愈）
 > **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
 > **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
@@ -1246,6 +1247,75 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 - LLM 档成本最高（每次重建 token 成本），选择时 GUI/CLI 预估 token（docs §2.3）。
 - `_chunking.py` 通过 `analyzer: Callable[[str], list[int]] | None` 注入，domain 层零 LLM import（ADR-015）；analyzer 装配在 deps/装配层（复用 F5 LLMClient，未配置对话模型 → 降级段落 + warning，§7）。
 
+#### 5.6.8 hnsw 段卡死自愈（#1563，0.17.0 rc2 修复 · 已实施 A′ + C）
+
+**缺陷**：全新 collection（或**任意一次「写 A collection 之后又写 B collection」**）之后，目标 collection 的 `retrieve` 恒 500 ——
+`向量检索失败：chromadb hnsw 段读取失败（<entity_type>）`；**同一进程内对同一 collection 再做一次写**之后即可读。
+
+**实测根因（rc2 真实库上确定性复现，非推断）**：chroma 1.5 每个 collection 有两个 segment —— `METADATA`（sqlite）
+与 `VECTOR`（hnsw-local-persisted）。**一次「别的 collection 的写」会把本 collection 的 `METADATA.max_seq_id`
+推前、而 `VECTOR.max_seq_id` 原地不动**；带 `where` 的读 plan 需要两段一致，于是抛
+`Error executing plan: Internal error: Error finding id`（冷启动未落盘时同族报
+`Error creating hnsw segment reader: Nothing found on disk`）。
+
+实测状态（复刻 `reindex` 的 store 级调用序列，`inkflow_timeline_event`）：
+
+| 时点 | METADATA seq | VECTOR seq | 首读 |
+|------|--------------|-----------|------|
+| 只写 timeline_event（**不写指纹**） | 一致 | 一致 | ✅ OK |
+| 写 timeline_event **+ 写 `inkflow_meta` 指纹** | 104 | **101（落后且不再追赶）** | ❌ `Error finding id` |
+
+**关键否定结论：这不是「flush 窗口 / 多睡几秒就能好」**——实测「只等待不写」**永久不恢复**（≥60s 仍 FAIL），
+因为它需要的是「对**本 collection** 再发生一次写」来触发 pending log 的 apply。`reindex` 的 commit-last
+指纹写（`inkflow_meta`）恰好总是 **最后一次写**，因此 `reindex` 返回后该 collection 必然处于不可读状态，
+直到服务层自愈再跑一次 `reindex`（= 又写一次本 collection）——这正是「第二次调用就好」的真实机制。
+
+**动作矩阵（每项 1 次独立复现，确定性）**：
+
+| 解除卡死的动作 | 结果 |
+|----------------|------|
+| 只等待 / 只读 / 重复读 | ❌ 永久 FAIL |
+| `collection.count()` + 无 where 探针 query | ❌ FAIL（**这正是写侧旧自检失灵的机制**） |
+| 再写一次 `inkflow_meta`（再写指纹） | ❌ FAIL |
+| **对本 collection 再做一次写**（`upsert` 同实体，或**仅元数据的 `update`**） | ✅ **立即 OK** |
+
+**必读的连带结论：原拍板 A+B+C 已按剧本实现并实测，<ins>不足以修复</ins>**（dev 内核同形复现：
+修复版首读仍 FAIL、仍报 `Error finding id`，A 的墙钟等待只把首调从 12.5s 拖到 21.7s）。原因：A 是
+「等待型」、B 的探针在 commit-last 指纹写**之前**执行（写序：实体写 → 自检 → 指纹写），指纹写之后
+才产生卡死。故本单按「停下报告 + 替代方案」条款改为 **A′（读侧空写自愈）+ C（文案）**：
+
+**已证伪的原拍板 A+B+C → 改为已实施的 A′ + C**：
+
+| 项 | 位置 | 实现 |
+|----|------|------|
+| **A′ 读侧空写自愈** | `_retrieve_sync` + 新私有方法 `_heal_stuck_segment` | 首次 `InternalError` 后取该 collection 内本项目的一条现存记录、把 metadata **原样回写**（chroma `update` 只替换传入字段 → document/embedding 不动，数据面语义零变化）触发 pending log apply，再重试真实查询；写次数有界 `_SEGMENT_HEAL_MAX_WRITES`（2）。**不再等待**（等待无效，见动作矩阵） |
+| **C 文案** | `_retrieve_sync` 的 `VectorStoreError` | 「向量检索失败：chromadb hnsw 段未就绪（<entity_type>），请重试一次」——**不再指引重建索引** |
+| **取代** | `_RETRIEVE_RETRY_STEP_S` / `_RETRIEVE_RETRY_BUDGET_S` 与读侧固定次数重试循环 | 删除（#1011 评审 M2 的读侧 1.5s 预算口径随本单废止；`/tests/unit/infrastructure/rag/test_vector_retry_budget_1011.py` 读侧契约改为「失败路径 0 次 sleep」）；写侧 `_FLUSH_PROBE_*`（#1011 m1）与 `_ensure_hnsw_flushed` 保持不变 |
+| **未做（记录理由）** | B′（reindex 末尾探针） | A′ 已在读侧确定性自愈（首调即 200），B′ 需改 `domain/services/_extraction_rag.py` 第二个文件且只换来「reindex 返回时即保证可读」的冗余保证；若后续需要 reindex 自证可读再补 |
+
+**实证（dev 内核同形复现，同一 harness before/after，数据目录 = rc2 真实库 + 新项目）**：
+
+```
+# before（main@d8dae36e）
+retrieve #1 rc=1 12.49s ok=False 向量检索失败：chromadb hnsw 段读取失败（timeline_event），建议重建索引后重试
+retrieve #2 rc=0 11.60s ok=True
+# after（本单）
+retrieve #1 rc=0  6.86s ok=True
+```
+内核日志（after，项目末位 007）：
+```
+16:35:00.639 retrieve_entities started
+16:35:00.906 WARNING _retrieve_sync:421 - chromadb hnsw 段读取失败，空写触发段 apply 后重试: entity_type=timeline_event
+16:35:00.917 retrieve_entities completed      ← 首调 200（11ms 内自愈；无 500、无服务层 reindex）
+```
+
+**回归锁定**：`tests/unit/infrastructure/rag/test_vector_segment_ready_1563.py` 4 条（根因断言 / 空写须为
+元数据 no-op / 文案 / 写次数有界），全部确定性；#823/#873/#1011 既有契约（清晰上抛、恒失败不上抛、
+写侧落盘自检）不回归。
+
+
+
+
 ### 5.7 横切收敛 vs 实体样板：差异对照表
 
 | 维度 | F9/F10 提取（样板） | F11 生成（样板） | F12 检查（样板） | F13 追踪（样板） | F14 门面（本模块） |
@@ -1487,14 +1557,14 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | 手动模式重复提交同一文本 | 200 + status=skipped（source_key="manual" 同 hash） |
 | --force 重跑未变更源 | 200 + status=success（强制执行，run hash 更新） |
 | RAG：vector_store 未装配 / BGE 下载失败 | **503 + Retry-After: "RAG 向量库不可用: ..."**（RAGUnavailableError；#1381 语义升级）；**不影响非 RAG 功能**（修改履历 2026-08-31：retrieve 优雅降级防吞空 INTERNAL_ERROR——chroma hnsw 段读取失败不再吞成「内部错误（无详情）」） |
-| chroma 存储层错误（hnsw 段读取失败等，自愈重试后仍失败） | 500: "向量检索失败：..."（VectorStoreError，清晰可定位，**不吞空**） |
+| chroma 存储层错误（hnsw 段读取失败等，段就绪等待 + 自愈重试后仍失败） | 500: "向量检索失败：索引正在落盘（chromadb hnsw 段未就绪），请重试一次（<entity_type>）"（VectorStoreError，清晰可定位，**不吞空**） |
 | extract 带 index=true 但类型为 outline / timeline（关闭时） | 200 + indexed=false + warning "outline/timeline 类型不支持自动索引"（不报错；timeline 开启时 index 生效） |
 | vector retrieve 无结果 / min_score 过滤全空 | 200 + 空 items（正常路径） |
 | vector retrieve query 空白（空串/纯空格，#929 R4） | store 层确定性降级：`logger.warning` + 返回 `[]`（不调 embed_query、不打 chroma；外部 zhipu 400 1213 家族根治，端点契约不变仍 200 空 items） |
 | 索引实体 content 空白（#929 R4） | store 层逐条跳过：`logger.warning`（含实体 id）+ 不 embed 不 upsert（reindex 继续不中断；批量全空 → 零 embed 调用） |
 | 批量索引单组有效实体数 > 64（#1404） | store 层分片：`embed_documents` 按 `_EMBED_MAX_INPUTS_PER_REQUEST`（64）分批提交后合并，再一次性 upsert（每类型一次）——超限不再触发上游 400 code 1214、重建不中断、指纹可达 `fresh`；单条路径不受影响 |
 | vector retrieve top_k 越界（≤0 或 >50） | 422（Pydantic 校验 top_k 1-50，min_score 0-1） |
-| vector retrieve 遇 chromadb hnsw 段读取失败（"Nothing found on disk"，#468 同族） | 服务层自愈：捕获 VectorStoreError → 触发一次 reindex → 重试一次；成功 → 200 命中（relevance_score 降序）；仍失败 → 500 "向量检索失败：chromadb hnsw 段读取失败(...)"（清晰可定位，**不吞空**「内部错误（无详情）」；新增 2026-08-31） |
+| vector retrieve 遇 chromadb hnsw 段读取失败（"Nothing found on disk" / "Error finding id"，#468 同族） | **段就绪判定（#1563）**：首次 InternalError 后不立刻判终态 → 调 `_hnsw_segment_ready`（与读路径同形的 `where` 过滤探针）轮询至就绪（墙钟预算 `_SEGMENT_READY_READ_BUDGET_S`，就绪优先于固定次数）→ 就绪后重试真实查询；成功 → 200 命中（relevance_score 降序）。仍失败 → 服务层自愈（捕获 VectorStoreError → reindex 一次 → 重试一次）；再失败 → 500 "向量检索失败：索引正在落盘（chromadb hnsw 段未就绪），请重试一次(...)"（清晰可定位、**不吞空**「内部错误（无详情）」、**不再指引重建索引**——重建无效，重试一次即过；#1563 新增 / 2026-08-31 初版） |
 | vector reindex 空项目（无档案） | 200 + indexed=0（正常路径） |
 | vector reindex 未指定 entity_types | 默认全部 5 种（config.vector_store_collections） |
 | extract 非法 type 值（API 层） | 422（Pydantic 枚举校验） |
@@ -1982,3 +2052,4 @@ F14 被依赖:
 | 2026-10-07 | 新增 §5.8「提取写入策略」五条（类别归属归一 / 近义合并 / 粒度控制 / dry-run 预览 / batch_id 整批回滚）；`ExtractionRequest` 增 `granularity`·`dry_run`，`ExtractionResult` 增 `batch_id`，新增 `Granularity`·`RollbackResult`；§3.1 端点 6 → 7（新增 rollback）；§4.1 增 `--granularity`/`--dry-run` 与 `extract rollback` 命令；§6.4 输入约束表增 `granularity`/`dry_run` 两列 | #1485（0.17.0 W5b） |
 | 2026-10-07 | 边界：新列 `world_settings.batch_id` / `characters.batch_id`（可空 TEXT）+ 幂等迁移三件套 | #1485（0.17.0 W5b） |
 | 2026-10-09 | §5.9「过期清理」从「仅登记语义、不实现」改为「已实现」：内核启动期幂等清理超期未确认暂存行（`core/startup_cleanup.py: cleanup_expired_staging` → `SQLExtractStagingRepository.delete_expired`，阈值常量 30 天、失败不阻塞启动、不新增索引/迁移）；§5.9 · §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` 公开 compute-only 入口（私有 `_extract_rules` 升公开，消除跨模块私有调用，算法与语义不变） | #1551（0.17.0 W8c） |
+| 2026-10-10 | 新增 §5.6.8「hnsw 段就绪判定」（#1563）：**实测根因（确定性复现 + 二分）** = chroma 1.5 中「一次别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先 `VECTOR.max_seq_id` 且**不再自动追赶**（需对本 collection 再写一次才 apply）→ 带 `where` 的读 plan 抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）恒为最后一次写 → reindex 返回后目标 collection 必然不可读，「第二次调用就好」的真实机制是服务层自愈又写了一次本 collection。**证伪 issue 原诊断**：非 flush 窗口（只等待 ≥60s 永不恢复）、文件系统判据无效（段文件全部在位）。**证伪原拍板修复**：A（读侧等待）+B（写侧同形探针）+C（文案）实测不足以修复。§5.6.8 固化根因 + 动作矩阵 + 已实施 A′+C（读侧空写自愈 + 文案），删除读侧固定次数重试与 1.5s 预算 | #1563（0.17.0 rc2 修复） |

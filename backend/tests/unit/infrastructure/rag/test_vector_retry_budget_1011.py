@@ -64,18 +64,17 @@ def make_entity(
     )
 
 
-# ── 契约 1（M2）：读侧单次 retrieve 调用（全类型合计）重试预算 ≤1.5s ──
+# ── 契约 1（#1563 取代版）：读侧失败路径不得引入墙钟等待（改走有界空写自愈）──
 
 
-async def test_retrieve_retry_chain_within_873_scale(
+async def test_retrieve_failure_path_has_no_wall_clock_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """M2：hnsw 段持续未就绪 → 单次 retrieve 全部类型累计 sleep ≤1.5s、步长 ≤0.25s。
+    """#1563：段卡死时读侧**不得引入墙钟等待**（自愈改为「有界空写 + 重试」）。
 
-    RED：main 现 0.5s×6×5 类型 = 15s（步长 0.5）→ FAIL。GREEN：重试改**调用级
-    共享 deadline**（全类型合计 ≤1.5s，步长恢复 #873 的 0.25s 口径）——自愈链
-    retrieve1(≤1.5) + reindex(~26s 实测) + retrieve2(≤1.5) ≈ 29s，守在 30s
-    客户端口径内（reindex 走 CLI 300s 轨不受挤压）。
+    ⚠️ 本用例**取代** #1011 评审 M2 的「读侧单次 retrieve 累计 sleep ≤1.5s」口径：
+    #1563 实测 hnsw 段卡死**永不因等待恢复**（只等待 ≥60s 仍 FAIL），等待只是把 500
+    换成客户端超时；新口径 = 失败路径 **0 次 sleep** + 自愈写次数有界。
     """
     store = LangChainVectorStore(persist_dir=tmp_path / "chroma", embeddings=FakeEmbeddings())
     await store.index_batch(
@@ -98,12 +97,8 @@ async def test_retrieve_retry_chain_within_873_scale(
     with pytest.raises(VectorStoreError):
         await store.retrieve("内容", project_id="p1")
 
-    assert sleeps, "未触发任何重试 sleep（契约前提：首查失败必须走重试链）"
-    assert all(s <= 0.25 + 1e-9 for s in sleeps), (
-        f"读侧重试步长出现 >0.25s（现值 {sleeps}）——M2 义务：恢复 #873 原口径"
-    )
-    assert sum(sleeps) <= 1.5 + 1e-9, (
-        f"单类型重试累计 sleep {sum(sleeps):.2f}s >1.5s——M2 义务：自愈链总延迟守在 30s 客户端超时内"
+    assert not sleeps, (
+        f"读侧失败路径出现墙钟等待 {sleeps}——#1563：等待对段卡死无效，须走有界空写自愈"
     )
 
 
