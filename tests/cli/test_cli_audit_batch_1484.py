@@ -5,8 +5,9 @@
   `GET /audit-logs/{log_id}/status` 至终态 → `GET /audit-logs/{log_id}` 取 findings
   → 聚合出报告（Markdown 清单 + JSON），退出 0。
 - `--chapters 1-2`：1-based 序号区间过滤；范围外章节**不派发**（负例守护）。
-- `--resume`：断点依据 = `audit_logs` 中该章存在 `run_status='completed'` 记录 →
-  已完成章节**不重复派发**；`failed` 不算已完成。
+- `--resume`：断点依据 = `audit_logs` 中该章存在**审计记录**（`run_status='completed'`
+  **且** `severity_summary` 为审计计数格式；**F44 草稿生命周期 / agentic 动作行不计入**——
+  #1562）→ 已完成章节**不重复派发**；`failed` 不算已完成。
 - 默认串行（同时最多一章在 running）；`--concurrency 2` 限并发 2。
 - 单章 `run_status='failed'` → **不中断整批**（记入失败清单，批次退出 0）。
 - 报告按**检查项 / 严重度**双视图归类，计数与各章 findings 之和一致（防丢）。
@@ -337,10 +338,27 @@ class TestChaptersRange:
 
 
 class TestResume:
-    """断点依据 = audit_logs 中该章存在 run_status='completed' 记录."""
+    """断点依据 = audit_logs 中该章存在**审计类**记录（#1562 收窄）.
+
+    `audit_logs` 表被多模块共用 `severity_summary` 承载「动作语义」（F44 草稿生命周期
+    `draft_saved`/`draft_confirmed`、agentic writer `auto_saved`/`run_completed` 等）——
+    这些行同样 `run_status='completed'` 且可能带 `chapter_id`，**不是审计记录**。
+    仅 F34 章节审计落库的计数摘要（`N error, M warnings, K info`）计入断点。
+    """
 
     @staticmethod
-    def _log(cid: str, run_status: str) -> dict:
+    def _log(
+        cid: str,
+        run_status: str,
+        *,
+        severity_summary: str = "0 error, 0 warnings, 0 info",
+        summary: str = "",
+    ) -> dict:
+        """构造一条 audit_logs 行（默认 = F34 审计记录形态）.
+
+        默认 `severity_summary` 为 F34 审计计数格式；非审计行（F44 生命周期 / agentic
+        动作语义）由调用方覆盖 `severity_summary`。
+        """
         return {
             "id": _FakeClient._log_id(cid),
             "project_id": str(PID),
@@ -348,14 +366,27 @@ class TestResume:
             "chapter_title": "x",
             "status": "pending",
             "run_status": run_status,
-            "severity_summary": "0 error, 0 warnings, 0 info",
-            "summary": "",
+            "severity_summary": severity_summary,
+            "summary": summary,
             "degraded": False,
             "note": "",
             "created_at": TS,
             "confirmed_at": None,
             "error": "",
         }
+
+    @staticmethod
+    def _lifecycle_log(cid: str | None, marker: str) -> dict:
+        """构造 F44 生命周期 / 动作语义行（写作/转正链写入，非审计记录）.
+
+        形态对齐 issue #1562 实测表：`severity_summary` 承载动作语义（`draft_saved` 行
+        `chapter_id` 可为空，`draft_confirmed` 行带 `chapter_id`），`run_status='completed'`。
+        """
+        row = TestResume._log(cid or _cid(1), "completed", severity_summary=marker)
+        row["chapter_id"] = cid
+        row["summary"] = f"[agent:writer] {marker}"
+        row["degraded"] = True
+        return row
 
     def test_resume_skips_completed_chapters(self, cli_runner) -> None:
         """已完成（completed）章节不重复派发；failed 章节照跑."""
@@ -398,6 +429,83 @@ class TestResume:
 
         assert result.exit_code == 0
         assert fake.posted == [_cid(1), _cid(2)]
+
+
+# ---------------------------------------------------------------------------
+# --resume 断点判据收窄（#1562）——非审计行不得计为「已审计」
+# ---------------------------------------------------------------------------
+
+
+class TestResumeExcludesNonAuditRows:
+    """`audit_logs` 混载 F44 生命周期/动作语义行 → 断点判据只认 F34 审计记录（#1562）."""
+
+    def test_draft_confirmed_row_is_not_an_audit_record(self, cli_runner) -> None:
+        """根因断言：仅存 draft_confirmed 行的章**从未审计** → --resume 必须实际审计.
+
+        缺陷形态下 FAIL：旧判据只看 `run_status=='completed'` + `chapter_id` 非空，
+        把「写作 + 转正」留下的 `draft_confirmed` 行当成已审计 → 该章被静默跳过
+        （`audited=0` / `skipped=1`，`log_id` 为空）。
+        """
+        fake = _FakeClient(
+            _chapters(1),
+            logs=[
+                TestResume._lifecycle_log(None, "draft_saved"),  # 未绑章的保存行
+                TestResume._lifecycle_log(_cid(1), "draft_confirmed"),  # 转正行
+            ],
+        )
+        result = _invoke_install(fake, ["batch", "-p", str(PID), "--resume"], json_output=True)
+
+        assert result.exit_code == 0, result.output
+        assert fake.posted == [_cid(1)]  # 必派发（缺陷形态：被跳过）
+        data = json.loads(result.stdout)["data"]
+        assert data["audited"] == 1
+        assert data["skipped"] == 0
+        assert data["chapters"][0]["log_id"] is not None  # 真审计了（三证之一）
+
+    def test_first_resume_with_only_lifecycle_rows_skips_nothing(self, cli_runner) -> None:
+        """首轮 --resume（只有草稿生命周期行、无任何审计记录）→ skipped=0（缺陷形态 FAIL）."""
+        fake = _FakeClient(
+            _chapters(3),
+            logs=[
+                TestResume._lifecycle_log(_cid(1), "draft_confirmed"),
+                TestResume._lifecycle_log(_cid(2), "draft_confirmed"),
+                TestResume._lifecycle_log(_cid(3), "draft_confirmed"),
+            ],
+        )
+        result = _invoke_install(fake, ["batch", "-p", str(PID), "--resume"], json_output=True)
+
+        assert result.exit_code == 0, result.output
+        assert fake.posted == [_cid(1), _cid(2), _cid(3)]
+        assert json.loads(result.stdout)["data"]["skipped"] == 0
+
+    def test_agentic_writer_rows_are_not_audit_records(self, cli_runner) -> None:
+        """同一根因类（sibling）：agentic writer 动作行（auto_saved/run_completed）亦非审计记录.
+
+        这类行同样带 `chapter_id` + `run_status='completed'`（`severity_summary` 承载
+        动作语义）——只排除 `draft_*` 的窄化过滤会漏掉它们，故判据必须正向认「审计记录」。
+        """
+        fake = _FakeClient(
+            _chapters(2),
+            logs=[
+                TestResume._lifecycle_log(_cid(1), "auto_saved"),
+                TestResume._lifecycle_log(_cid(1), "run_completed"),
+                TestResume._lifecycle_log(_cid(2), "run_failed"),
+            ],
+        )
+        result = _invoke_install(fake, ["batch", "-p", str(PID), "--resume"], json_output=True)
+
+        assert result.exit_code == 0, result.output
+        assert fake.posted == [_cid(1), _cid(2)]
+        assert json.loads(result.stdout)["data"]["skipped"] == 0
+
+    def test_genuine_audit_record_still_skipped(self, cli_runner) -> None:
+        """守护：F34 审计记录（计数摘要格式）仍正确跳过 —— 收窄判据不误伤已完成章."""
+        fake = _FakeClient(_chapters(2), logs=[TestResume._log(_cid(1), "completed")])
+        result = _invoke_install(fake, ["batch", "-p", str(PID), "--resume"], json_output=True)
+
+        assert result.exit_code == 0, result.output
+        assert fake.posted == [_cid(2)]
+        assert json.loads(result.stdout)["data"]["skipped"] == 1
 
 
 # ---------------------------------------------------------------------------

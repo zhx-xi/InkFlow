@@ -25,11 +25,13 @@ agent 使用：触发章节审计并处理 accept/reject。GUI 对应：`/writin
 | 参数 | 语义 |
 |---|---|
 | `--chapters <区间>` | **1-based 序号区间**（如 `1-520` / `1-5,8,10-12`；省略 = 全部章节） |
-| `--resume` | 断点续跑：跳过 audit_logs 中 `run_status=completed` 的章节 |
+| `--resume` | 断点续跑：跳过**已有审计记录**的章节（`audit_logs` 中该章存在 `run_status=completed` **且** `severity_summary` 为审计计数格式（`N error, M warnings, K info`）的记录）。⚠️ **F44 草稿生命周期行**（`severity_summary` = `draft_saved` \| `draft_confirmed` \| `draft_rejected`）与 agentic writer 动作行（`auto_saved` \| `run_completed` …）**不计入** |
 | `--concurrency <n>` | 并发章数（默认 1 = 串行，LLM 限流友好；< 1 → exit 2） |
 | `--out <path>` | 报告落点（Markdown；JSON 写同主名 `.json`；省略 = 只打印 stdout） |
 
 单章失败**不中断整批**（记入报告失败清单，退出码仍 0）；批次级错误退出 1；用法错误退出 2。
+
+> ⚠️ **`--resume` 的断点判据只看「审计记录」，不看 `audit_logs` 全表**（#1562）：该表**同时承载 F44 草稿生命周期行**（写作/转正链写入，`severity_summary` = `draft_saved` / `draft_confirmed` / `draft_rejected`）与 agentic writer 动作行——它们**同样** `run_status='completed'` 且带 `chapter_id`。若只按 `run_status=completed` 判完成，「写作 + 转正」过的章会被判「已审计」而**永久跳过**（`audited=0` 却退出 0 的静默失效）。**判据 = 该章存在审计计数格式（`N error, M warnings, K info`）的已完成记录**。
 
 ## 易错点
 
