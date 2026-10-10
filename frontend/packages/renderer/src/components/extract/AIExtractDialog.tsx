@@ -33,6 +33,8 @@ export interface AIExtractDialogProps {
   open: boolean;
   onClose: () => void;
   projectId: string;
+  /** #1566：来源页默认提取类型（资料库分类页传入；缺省回落 'character'） */
+  initialKind?: ExtractKind;
   /** 写作页默认当前章（保留接口兼容；#1544 起提交走范围面，不再依赖单章 text） */
   defaultChapterId?: string;
   /** 写作页默认当前章正文（保留接口兼容） */
@@ -49,7 +51,7 @@ interface ExtractionRun {
 }
 
 /** 提取类型（单选 6 项；`generic` 走多选面板） */
-type ExtractKind =
+export type ExtractKind =
   | 'character'
   | 'world'
   | 'timeline'
@@ -161,7 +163,7 @@ interface ExtractEnvelope {
   };
 }
 
-export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogProps) {
+export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExtractDialogProps) {
   const { t } = useI18n();
   const pushToast = useToastStore((s) => s.pushToast);
 
@@ -169,7 +171,7 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
   const [volumes, setVolumes] = useState<VolumeListDto[]>([]);
   const [runs, setRuns] = useState<ExtractionRun[]>([]);
   const [runsLoaded, setRunsLoaded] = useState(false);
-  const [extractKind, setExtractKind] = useState<ExtractKind>('character');
+  const [extractKind, setExtractKind] = useState<ExtractKind>(initialKind ?? 'character');
   const [genericSelected, setGenericSelected] = useState<ExtractKind[]>([]);
   const [scope, setScope] = useState<ExtractScope>('all');
   const [selectedVolumeIds, setSelectedVolumeIds] = useState<string[]>([]);
@@ -181,6 +183,12 @@ export function AIExtractDialog({ open, onClose, projectId }: AIExtractDialogPro
   const [minimized, setMinimized] = useState(false);
   /** #1546：暂存结果（非 null = 结果视图：新增/更新清单 + 确认落库/取消） */
   const [staged, setStaged] = useState<StagedResult | null>(null);
+
+  // #1566：来源页默认类型——资料库入口跨分类复用同一实例，故每次打开都要按来源页重置
+  useEffect(() => {
+    if (!open) return;
+    setExtractKind(initialKind ?? 'character');
+  }, [open, initialKind]);
 
   // open 变 true：拉取章节列表（全量翻页，#1407）+ 卷列表（#1544）+ 最近一次运行摘要
   useEffect(() => {

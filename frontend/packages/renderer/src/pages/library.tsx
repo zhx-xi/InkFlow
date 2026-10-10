@@ -606,7 +606,7 @@ export function LibraryPage() {
                     {t('lib.empty.create')}
                   </button>
                 )}
-                <AIExtractEntry />
+                <AIExtractEntry cat={activeCat} />
               </div>
             )}
             {viewSkeleton ? (
