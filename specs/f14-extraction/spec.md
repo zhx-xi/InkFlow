@@ -1342,11 +1342,28 @@ retrieve #1 rc=0  6.86s ok=True
 #### 5.8.1 类别归属（setting）
 
 - 提取前读取项目已有分类清单（`WorldRepositoryProtocol.list_world_categories`）；
-  分类清单不可用（仓储为 Mock / 未实现该方法 / 非列表返回）→ **跳过归类归一**（保持既有语义）。
+  清单**不可判**（仓储为 Mock / 未实现该方法 / 非列表返回）→ **跳过类别校验**
+  （保持既有语义；既有单测替身依赖该守卫）。
 - 渲染模板时把清单以 `{categories}` 变量注入（空清单 →「（无）」），引导 LLM 从既有分类中选择。
-- **落库前归一**：LLM 输出 `category`（strip 后）命中已有分类集合 → 原样落库；否则 → 落空串
-  （未分类）+ warning「类别「X」不在项目分类中，已归为未分类」。
-- 项目**无任何分类**时不做归一（原样落库）——避免在无受控词表的项目上把类别一律清空。
+- **落库前严格校验（#1570 修订，取代 #1485 的「静默归空」）**：LLM 输出 `category`
+  （strip 后）**非空且不在项目已有分类集合中** → **拒绝整批**：
+  - 抛 `WorldCategoryNotRegisteredError`（422），消息**列出全部缺失分类名**
+    （去重、保留首次出现顺序），供 agent / CLI 据此建类；
+  - 该批次**正式表零写入**（批次内已合法的条目同样不落库）；
+  - **禁止**自动建类（不提供 `auto-create`）。
+- **项目无任何分类时同样拒绝**：清单**可判**（真实仓储返回列表）但为空 ⇒ LLM 产出的
+  任何非空类别都属「未注册」→ 拒绝。取代 #1485「无分类 → 不做归一、原样落库」。
+- **空类别（LLM 主动留空）不拒绝**：prompt 明确「无法判断时留空」→ 维持 #722
+  「未分类」语义（落空串）。**拒绝口径仅覆盖「非空但未注册」的类别。**
+- **与 #1482 的语义区分（重要）**：`world copy --auto-create-categories` 是**复制路径**
+  的**用户显式开关**（用户主动要求自动建类），行为**不变**；本节约束的是**提取路径**
+  的**默认行为**（缺类别则拒绝）。二者不冲突，勿混用。
+
+
+> **拒绝的落点 = 两条写回路径的单一漏斗**：直接写（`stage=false`）与两段式暂存
+> （`stage=true`，§5.9）都经 `_world_extractor._merge` 的**同一**预检 —— 暂存路径下
+> 管线以 `dry_run=true` 调用同一函数，故 stage 提取在**落暂存之前**即被拒绝：
+> 暂存区零行、`confirm_staged` 无物可物化（物化侧无后门，无需另设闸门）。
 
 #### 5.8.2 合并而非新建（character / setting）
 
@@ -1376,6 +1393,8 @@ retrieve #1 rc=0  6.86s ok=True
 `dry_run=true`：执行 LLM + 解析 + 合并决策，但**不写实体、不写 run 表**；返回
 `created` / `updated` 计数与 `detail`（含将落库的条目清单），`batch_id=None`。
 **忽略增量 skip**（恒执行，保证预览有效）——预览会真实调用 LLM（成本提示见 §10）。
+**类别严格校验同样生效**（#1570）：预览遇未注册类别同样拒绝（§5.8.1），
+不因「只是预览」而放过 —— 否则预览结果与实际落库行为不一致。
 
 #### 5.8.5 批次标识与整批回滚
 
@@ -1583,7 +1602,7 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | 切片配置变更 | stale（chunking_changed）→ 提示重新向量化；重建前检索继续用旧向量（200 非空，§5.6.5） |
 | 非 character/setting 类型传 granularity != fine / dry_run=true（#1485） | 422: "granularity/dry_run 仅支持 character/setting 类型" |
 | character/setting `dry_run=true`（#1485） | 200 + ExtractionResult（created/updated = 「将写入」计数，`batch_id=null`；**DB 零写入**——实体与 run 表均不落） |
-| setting 提取：LLM 类别不在项目已有分类中（#1485） | 落空串（未分类）+ warning「类别「X」不在项目分类中，已归为未分类」；项目无分类时不做归一 |
+| setting 提取：LLM 类别不在项目已有分类中（#1485，**#1570 修订**） | **拒绝整批**：422 `WorldCategoryNotRegisteredError`，消息列出**全部**缺失分类名（去重、保序）+ 该批次**正式表零写入**；`stage` 路径在落暂存前拒绝（暂存区零行）。项目无分类时同样拒绝。**空类别不拒绝**（LLM 主动留空 → 维持未分类）。由 agent / CLI 建类后重试（禁自动建类；`#1482 --auto-create-categories` 仅复制路径） |
 | 提取条目与已有条目近义（#1485） | 合并到已有条目（content 追加 + warning），**不新建**；条目总数不因重复提取线性增长 |
 | 回滚不存在 / 已回滚的 batch_id（#1485） | 200 + RollbackResult(deleted=0)（幂等，不报错） |
 | 回滚 batch 含此前批次条目（#1485） | 不受影响——batch_id 精确匹配；被更新的条目不携带本批 batch_id |
@@ -2052,4 +2071,5 @@ F14 被依赖:
 | 2026-10-07 | 新增 §5.8「提取写入策略」五条（类别归属归一 / 近义合并 / 粒度控制 / dry-run 预览 / batch_id 整批回滚）；`ExtractionRequest` 增 `granularity`·`dry_run`，`ExtractionResult` 增 `batch_id`，新增 `Granularity`·`RollbackResult`；§3.1 端点 6 → 7（新增 rollback）；§4.1 增 `--granularity`/`--dry-run` 与 `extract rollback` 命令；§6.4 输入约束表增 `granularity`/`dry_run` 两列 | #1485（0.17.0 W5b） |
 | 2026-10-07 | 边界：新列 `world_settings.batch_id` / `characters.batch_id`（可空 TEXT）+ 幂等迁移三件套 | #1485（0.17.0 W5b） |
 | 2026-10-09 | §5.9「过期清理」从「仅登记语义、不实现」改为「已实现」：内核启动期幂等清理超期未确认暂存行（`core/startup_cleanup.py: cleanup_expired_staging` → `SQLExtractStagingRepository.delete_expired`，阈值常量 30 天、失败不阻塞启动、不新增索引/迁移）；§5.9 · §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` 公开 compute-only 入口（私有 `_extract_rules` 升公开，消除跨模块私有调用，算法与语义不变） | #1551（0.17.0 W8c） |
+| 2026-10-10 | **§5.8.1 类别归属改为「拒绝而非写空」**（取代 #1485 的静默归空）：LLM 产出的**非空且未注册**类别 → 抛 `WorldCategoryNotRegisteredError`（422，列出全部缺失分类名）+ 该批次正式表零写入；**项目无分类时同样拒绝**（替代旧「无分类 → 原样落库」）；**空类别不拒绝**（维持未分类）；**与 #1482 复制路径 `--auto-create-categories` 显式区分**（那是用户显式开关，行为不变）。§5.8.4 注明 dry_run 同样受校验；§7 边界表同步；新增错误类属 `WorldServiceError`（F14 router 新增 `WorldCategoryNotRegisteredError → 422` 映射） | #1570（0.17.0 W10b） |
 | 2026-10-10 | 新增 §5.6.8「hnsw 段就绪判定」（#1563）：**实测根因（确定性复现 + 二分）** = chroma 1.5 中「一次别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先 `VECTOR.max_seq_id` 且**不再自动追赶**（需对本 collection 再写一次才 apply）→ 带 `where` 的读 plan 抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）恒为最后一次写 → reindex 返回后目标 collection 必然不可读，「第二次调用就好」的真实机制是服务层自愈又写了一次本 collection。**证伪 issue 原诊断**：非 flush 窗口（只等待 ≥60s 永不恢复）、文件系统判据无效（段文件全部在位）。**证伪原拍板修复**：A（读侧等待）+B（写侧同形探针）+C（文案）实测不足以修复。§5.6.8 固化根因 + 动作矩阵 + 已实施 A′+C（读侧空写自愈 + 文案），删除读侧固定次数重试与 1.5s 预算 | #1563（0.17.0 rc2 修复） |

@@ -4,16 +4,17 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.7 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
+> **Spec 版本**: 1.8 | **日期**: 2026-10-10 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
 > **所属阶段**: 0.9.0 里程碑（世界观分类 CRUD，issue #389，估算 2-4 人天）
-> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）、[#1334](https://github.com/zhx-xi/InkFlow/issues/1334)（v1.4 分类 kind 挂根设计定义 · 已拍板 ①C）、[#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.7 `--content-file`）
+> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）、[#1334](https://github.com/zhx-xi/InkFlow/issues/1334)（v1.4 分类 kind 挂根设计定义 · 已拍板 ①C）、[#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.7 `--content-file`）、[#1570](https://github.com/zhx-xi/InkFlow/issues/1570)（v1.8 提取不得写未注册类别 + 存量审计命令）
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
 > **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 > **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
 
+> **Spec 变更（v1.7 → v1.8，2026-10-10，#1570）**: **提取路径不得写未注册类别**——契约源在 **F14 §5.8.1（已改为「拒绝而非写空」）**，本节登记 F10 侧语义升级：① 0.17.0-rc2 旅程库实测 `world_settings.category` 出现 82 条「非根且无类别」条目，根因 = 提取对「LLM 产出的类别不在项目分类中」**静默归空**并直调 `repo.add` 绕过 `create_setting` 的 #1321 校验（`_world_extractor.py` 类别归一分支）；② 现改为抛 `WorldCategoryNotRegisteredError`（422，列出全部缺失分类名）+ 该批次正式表零写入，由 agent / CLI 显式建类后重试；**禁止**自动建类；③ **空类别不拒绝**（prompt 允许 LLM 留空 → 维持 #722「未分类」），**接口层**「非根必填 + 存在性」校验（#1321）语义**不变**（`PATCH category=""` 显式清除仍合法）；④ 新增只读审计命令 `world uncategorized`（§4.1）作为**存量无类别条目的发现/处置路径**（回填走既有 `world update --category`，本命令零写入）；⑤ **与 #1482 复制路径区分**：`world copy --auto-create-categories` 是复制路径的用户**显式开关**，行为不变。验收断言见 `backend/tests/unit/domain/ports/test_world_extraction_category_1570.py` + `backend/tests/unit/domain/services/test_extract_category_strict_staging_1570.py` + `tests/cli/test_cli_world_uncategorized_1570.py`。
 > **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
 > **Spec 变更（v1.6 → v1.7，2026-10-07，#1483）**: `world create` / `world update` 新增 `--content-file <path>`（从 UTF-8 文件读取条目正文，解决内联 `--content` 受命令行长度限制（Windows ~32KB）且中文经 PowerShell 管道易 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--content` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.1 签名与 §15.2 状态流同步；不传 `--content-file` 时行为不变。
-> **Spec 变更（v1.5 → v1.6，2026-10-07，#1485）**: AI 提取写入策略收敛——**契约源在 F14 §5.8**，本节登记 F10 侧语义升级：① setting 类别归属改为「对项目已有分类做匹配」（LLM 给出项目分类之外的类别 → 落空串 + warning，不再原样落库）；② 条目匹配锚点从「精确同名」扩展为「同名 → 近义（归一化后互为子串且较短者 ≥ 较长者一半长）→ 新建」，近义条目合并进已有条目（`content` 追加）而非新建；③ 新增 `granularity`（fine/coarse 每源条目上限）/ `dry_run`（零写入预览）参数与 `batch_id` 批次标识（整批回滚见 F14 §5.8.5）；④ `WorldSetting` 新增 `batch_id` 字段 + `world_settings.batch_id` 列（可空 VARCHAR(64)，幂等迁移 `ensure_world_settings_batch_id_column`）。验收断言见 `backend/tests/unit/domain/ports/test_extract_dilution_1485.py`。
+> **Spec 变更（v1.5 → v1.6，2026-10-07，#1485）**: AI 提取写入策略收敛——**契约源在 F14 §5.8**，本节登记 F10 侧语义升级：① setting 类别归属改为「对项目已有分类做匹配」（LLM 给出项目分类之外的类别 → 落空串 + warning，不再原样落库）**（⚠️ 该条已被 v1.8 / #1570 取代：现为「拒绝整批 + 零写入」，见上）**；② 条目匹配锚点从「精确同名」扩展为「同名 → 近义（归一化后互为子串且较短者 ≥ 较长者一半长）→ 新建」，近义条目合并进已有条目（`content` 追加）而非新建；③ 新增 `granularity`（fine/coarse 每源条目上限）/ `dry_run`（零写入预览）参数与 `batch_id` 批次标识（整批回滚见 F14 §5.8.5）；④ `WorldSetting` 新增 `batch_id` 字段 + `world_settings.batch_id` 列（可空 VARCHAR(64)，幂等迁移 `ensure_world_settings_batch_id_column`）。验收断言见 `backend/tests/unit/domain/ports/test_extract_dilution_1485.py`。
 > **Spec 变更（v1.4 → v1.5，2026-10-06，#1481）**: 新增 §8.4「建项目自动建根 + 存量兜底（跨模块 MODIFY 清单）」——登记**默认根条目形态**（`name="世界观总纲"` / `parent_id=NULL` / `category=""` / `content=""`，常量 `DEFAULT_WORLD_ROOT_NAME`）+ 跨模块改动落点（`world_service.ensure_root_setting` / `project_service.create_project` 的 `root_initializer` 钩子 / `deps.py` 接线 / `core/database.py` 的 `ensure_world_root_for_projects` 幂等迁移 / `app.py` lifespan）。**根必存在不变量**（建项目即建根 + 存量补根）由本模块与 F35 共同定义——数据模型与端点契约（§2/§3）**无变化**，仅新增默认条目与启动期迁移。**前置核验**：issue 报的 `'NoneType' object is not subscriptable` 系用户脚本自身，服务端现状已是 422 校验提示（无 500 路径）。
 > **Spec 变更（v1.3 → v1.4，2026-10-02，#1334 设计单）**: 新增 §16「分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C）」——登记事实基线（#641 自动挂根 / #699 分类 kind / #721 地图树 kind 分流 / #834 一项目一根 / #1321 非根必填分类）+ ①abstract 条目父级三选项 (a)/(b)/(c) + ②geo 保持现状 + ③kind 判定权与无分类边界 + 迁移影响评估 + 原型 kind 表达自相矛盾收敛规则。**同步对齐 spec 漂移**：§2.6/§2.5 补 `WorldCategory.kind`（#699 已实现、此前未记）、§12 补登记 #699 决策。**本变更为设计定义，无实现**（① 已拍板 ①C，实施另起轨）。
 > **Spec 变更（v1.1 → v1.2，2026-08-16，issue #389）**: 世界观分类从「条目平铺属性」升级为「独立受控词表实体」（反转 v1.0 §2.2「不建独立分组表」决策）。① 新增 `world_categories` 表 + `WorldCategory` 领域实体（§2.2/§2.6）；② 新增分类 CRUD 四端点（§3.1，10→14 端点）；③ 分类重命名/删除反向同步条目 `category` 字符串——删除置空、重命名改名（§6.1/§7，拍板 D2=A）；④ 前端分类 chips 来源改为分类实体（移除 `DEFAULT_WORLD_CATS=['地图']` 硬编码），世界观 tab 导航修正（进分类列表视图非地图工作台）+「地图视图」独立入口（§14）；⑤ 镜像 F9 CharacterGroup 模式（§12）。
@@ -63,7 +64,7 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
 | name | str | NOT NULL, 1-50 字符, 去空白 | 条目名（如「灵气复苏」「宗门等级体系」）；**项目内同层级唯一**（全唯一，见 §2.4） |
 | parent_id | UUID? | FK→world_settings.id (CASCADE), 可空=顶层 | 父地点（F35 树形结构） |
-| category | str | NOT NULL, DEFAULT "", ≤ 50 字符, 去空白 | 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/魔法体系；自由文本，受控词表归 F14）；空串 = 未分类 |
+| category | str | NOT NULL, DEFAULT "", ≤ 50 字符, 去空白 | 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/魔法体系；自由文本，受控词表归 F14）；空串 = 未分类（**根条目常态**，§5.7/#722）。**非根条目**：接口层「必填 + 存在性」校验（#1321，§5.1）；**AI 提取路径不得写未注册类别**（#1570，契约源 F14 §5.8.1） |
 | content | str | NOT NULL, DEFAULT "", ≤ 20000 字符 | 条目内容/详细设定 |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（来源章节、标签、别名等 Phase 2+ 字段预留） |
 | ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
@@ -385,6 +386,8 @@ inkflow world list --project-id <uuid> \
     [--sort <name|category|updated_at|created_at>] [--sort-desc/--no-sort-desc] [--json]
 
 inkflow world categories --project-id <uuid> [--json]   # 类别汇总
+
+inkflow world uncategorized --project-id <uuid> [--json]  # 存量审计：非根且无类别条目（#1570，只读）
 
 inkflow world get --id <uuid> [--json]
 
@@ -1001,6 +1004,7 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 | world create | 项目存在 | 建条目 | ✅ 世界观条目创建成功: [灵气复苏] (设定)；--json 信封 | 422 VALIDATION_ERROR | --content-file <path> 从 UTF-8 文件读正文（与 --content 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | world list | 项目存在 | 列表 | 列表 / --json | — | --search/--category/--parent-id/--sort |
 | world categories | 项目存在 | 类别汇总 | JSON | — | — |
+| world uncategorized | 项目存在 | 只读审计：非根且无类别条目（#1570） | ⚠️ 列表 + 回填指引；--json `{items, total}` | 404 项目不存在 | 空类别过滤分页；**零写入**（不删/不改），回填走 `world update --category` |
 | world get | 条目存在 | 查询 | JSON | NOT_FOUND「世界观条目不存在」退出码 1 | — |
 | world update | 条目存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --category "" 清除类别；--content-file <path> 从 UTF-8 文件读正文（与 --content 互斥 → 退出码 2） |
 | world delete | 条目存在 | 二次确认（--force 跳过）→ 真删 | ✅ 条目已删除: [灵气复苏]；--json data null | 404 NOT_FOUND；422 VALIDATION_ERROR（有子未指定）；--json 无 --force → VALIDATION_ERROR | --cascade 真删子树 / --reparent-to 改挂；无 --permanent（默认真删） |

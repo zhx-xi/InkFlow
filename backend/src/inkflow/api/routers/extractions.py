@@ -70,7 +70,7 @@ from inkflow.domain.ports.provider_config_errors import ProviderConfigServiceErr
 from inkflow.domain.ports.style_errors import StyleValidationError
 from inkflow.domain.ports.timeline_errors import TimelineExtractionError
 from inkflow.domain.ports.vector_store import EntityType
-from inkflow.domain.ports.world_errors import WorldExtractionError
+from inkflow.domain.ports.world_errors import WorldCategoryNotRegisteredError, WorldExtractionError
 from inkflow.domain.services.extraction_service import ExtractionService
 from inkflow.logging import instrument
 
@@ -100,6 +100,10 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
     except ProjectNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except ExtractionServiceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except WorldCategoryNotRegisteredError as e:
+        # #1570：提取遇未注册类别 → 422（消息列出缺失分类名），供 agent / CLI
+        # 显式建类后重试；不得静默落库为未分类。
         raise HTTPException(status_code=422, detail=str(e)) from e
     except StyleValidationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e

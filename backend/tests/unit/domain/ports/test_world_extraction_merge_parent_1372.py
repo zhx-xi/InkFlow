@@ -52,6 +52,7 @@ from inkflow.domain.services._world_extractor import (  # sys.path 注入后才�
     WorldExtractor,
 )
 from inkflow.infrastructure.database.models.world import (  # sys.path 注入后才可导入
+    WorldCategoryORM,
     WorldSettingORM,
 )
 from inkflow.infrastructure.database.repositories.world_repo import (  # sys.path 注入后才可导入
@@ -117,6 +118,10 @@ async def merge_env():
     sf = async_sessionmaker(engine, expire_on_commit=False)
 
     async with sf() as s:
+        # #1570: 提取类别严格校验要求非空类别已在项目分类词表中注册，
+        # 故本夹具注册这两个分类（否则合法载荷会被判为「未注册类别」而拒绝）。
+        s.add(WorldCategoryORM(id=1372021, project_id=PID, name="分类甲"))
+        s.add(WorldCategoryORM(id=1372022, project_id=PID, name="分类乙"))
         s.add(
             WorldSettingORM(
                 id=ROOT_ID,

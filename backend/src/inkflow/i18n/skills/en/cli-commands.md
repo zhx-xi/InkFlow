@@ -72,7 +72,7 @@ subcommand); envelopes and exit codes are described in `json-contracts.md`.
 | Group | Command forms | Purpose |
 |---|---|---|
 | `character` | CRUD + `group` subgroup + `extract` / `relate` / `relations` / `unrelate` | Character management; create requires `--role-rank`; relate uses `--id --to --type` |
-| `world` | CRUD + `categories` / `ancestors <id>` / `descendants <id>` / `copy <src> <tgt> [--root]` / `extract` | Worldbuilding (tree navigation / cross-project copy); extract is text/text-file pick-one |
+| `world` | CRUD + `categories` / `uncategorized` / `ancestors <id>` / `descendants <id>` / `copy <src> <tgt> [--root]` / `extract` | Worldbuilding (tree navigation / cross-project copy); extract is text/text-file pick-one; `uncategorized` = read-only audit of non-root entries with no category (#1570 backlog, zero writes) |
 | `map` | CRUD (create requires `--image`) + `children <map_id>` / `image <map_id> --image` / `pin add/list/update/delete` | Maps & pins (pin requires `--x --y --label`; delete supports `--cascade/--reparent-to`) |
 | `outline` | CRUD + `point` / `arc` subgroups + `generate` | Outline tree; `generate` uses `--prompt/--prompt-file --num-chapters --save --model` |
 | `timeline` | CRUD + `view` + `check [--include-flashbacks]` | Timeline management and consistency check |

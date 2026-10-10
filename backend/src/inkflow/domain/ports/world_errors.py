@@ -160,3 +160,24 @@ class WorldCategoryMissingError(WorldServiceError):
         else:
             msg = "请先创建该分类后再创建条目"
         super().__init__(msg)
+
+
+class WorldCategoryNotRegisteredError(WorldServiceError):
+    """提取产出的类别未在项目已注册分类中 — 422（#1570）.
+
+    与 #1321 `WorldCategoryMissingError` 的语义区分：后者是**接口/用户显式**建条目时
+    缺少分类（单个分类名，提示「先建分类」）；本类是**提取管线**把 LLM 输出的类别
+    归一后落在项目分类词表之外（可多个），必须**拒绝整批**（该批次正式表零写入）
+    并列出**全部**缺失分类名，供 agent / CLI 显式建类后重试（禁止自动建类，#1482
+    `--auto-create-categories` 是**复制路径**的用户显式开关，与本错误无关）。
+
+    空类别（LLM 主动留空，prompt 允许）不属于本错误范围 —— 维持 #722「未分类」语义。
+
+    Attributes:
+        missing: 去重（保留首次出现顺序）后的缺失分类名列表（错误消息即据其生成）。
+    """
+
+    def __init__(self, missing: list[str]) -> None:
+        self.missing: list[str] = list(dict.fromkeys(missing))
+        joined = "、".join(self.missing)
+        super().__init__(f"提取结果的分类未在项目中注册：{joined}。请先创建这些分类后重试提取")

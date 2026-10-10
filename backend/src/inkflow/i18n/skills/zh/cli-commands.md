@@ -67,7 +67,7 @@ InkFlow CLI 全量命令面速查（顶层 26 组 + 2 个压平命令 `serve`/`s
 | 组 | 命令形态 | 说明 |
 |---|---|---|
 | `character` | CRUD + `group` 子组 + `extract` / `relate` / `relations` / `unrelate` | 角色管理；create 必填 `--role-rank`；relate 用 `--id --to --type` |
-| `world` | CRUD + `categories` / `ancestors <id>` / `descendants <id>` / `copy <src> <tgt> [--root]` / `extract` | 世界观管理（世界树层级导航/跨项目复制）；extract 为 text/text-file 二选一 |
+| `world` | CRUD + `categories` / `uncategorized` / `ancestors <id>` / `descendants <id>` / `copy <src> <tgt> [--root]` / `extract` | 世界观管理（世界树层级导航/跨项目复制）；extract 为 text/text-file 二选一；`uncategorized` = 只读审计「非根且无类别」条目（#1570 存量处置，零写入） |
 | `map` | CRUD（create 必填 `--image`）+ `children <map_id>` / `image <map_id> --image` / `pin add/list/update/delete` | 地图与标记（pin 必填 `--x --y --label`；delete 支持 `--cascade/--reparent-to`） |
 | `outline` | CRUD + `point` / `arc` 子组 + `generate` | 大纲树；`generate` 用 `--prompt/--prompt-file --num-chapters --save --model` |
 | `timeline` | CRUD + `view` + `check [--include-flashbacks]` | 时间线与一致性检查 |
