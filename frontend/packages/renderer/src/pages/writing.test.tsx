@@ -43,6 +43,8 @@ import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
 import { useModelsStore, type ProviderConfig } from '../stores/models';
 import { useToastStore } from '../stores/toast';
+import { useExtractStore } from '../stores/extract';
+import { AIExtractDialog } from '../components/extract/AIExtractDialog';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -70,6 +72,8 @@ function renderWritingPage(initialEntries: string[] = ['/writing']) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
       <WritingPage />
+      {/* #1582：提取对话框挂 App 层（App.tsx 同款） */}
+      <AIExtractDialog />
     </MemoryRouter>
   );
 }
@@ -132,6 +136,16 @@ beforeEach(() => {
   // #474 前置校验依赖 models store：默认播种「已配置」+ provider-configs GET 返回同款，
   // 防 GREEN 挂载/发送时 loadProviders 覆盖为未配置
   useModelsStore.setState({ providers: [READY_PROVIDER], loading: false, error: null });
+  useExtractStore.setState({
+    open: false,
+    minimized: false,
+    projectId: null,
+    initialKind: undefined,
+    staged: null,
+    pending: [],
+    pendingLoaded: false,
+    pendingFor: null,
+  });
   useToastStore.setState({ toasts: [] });
   // #642-1：默认 streamPipeline 捕获 callbacks，不自动 emit（用例手动驱动帧）
   streamPipelineMock.mockImplementation((_body, callbacks) => {
@@ -259,6 +273,16 @@ describe('写作页 — 工具栏与快捷键（Q2 拍板 C）', () => {
         expect.any(Object),
       );
     });
+  });
+
+  // #1582：写作页与资料库同源 —— 不再自持页面级 extract state，只调 stores/extract
+  it('（#1582）「AI 提取」入口 → 走全局 store（两宿主页同一缺陷面同源）', async () => {
+    const user = userEvent.setup();
+    renderWritingPage();
+    await user.click(screen.getByTestId('extract-entry-write'));
+    await waitFor(() => expect(useExtractStore.getState().open).toBe(true));
+    expect(useExtractStore.getState().projectId).toBe('p1');
+    expect(await screen.findByTestId('ai-extract-dialog')).toBeInTheDocument();
   });
 
   it('Ctrl+Shift+Enter 生成：触发 streamPipeline（builtin:write_auto）', async () => {

@@ -48,10 +48,11 @@
  * 无多选 / 仍打 /characters/extract 等）；结构性 testid 不存在 = element-missing。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AIExtractDialog } from './AIExtractDialog';
+import { AIExtractDialog, type ExtractKind } from './AIExtractDialog';
 import { apiFetch } from '../../api/client';
+import { useExtractStore } from '../../stores/extract';
 import { useToastStore } from '../../stores/toast';
 import { extractEn, extractZh } from '../../i18n/extract-keys';
 
@@ -129,12 +130,23 @@ function extractBodies(): Array<Record<string, unknown>> {
     .map((c) => (c[1] as { body: Record<string, unknown> }).body);
 }
 
-function renderDialog(props: Partial<React.ComponentProps<typeof AIExtractDialog>> = {}) {
-  return render(<AIExtractDialog open onClose={() => {}} projectId="p1" {...props} />);
+function renderDialog(props: { initialKind?: ExtractKind } = {}) {
+  useExtractStore.getState().openDialog('p1', props.initialKind);
+  return render(<AIExtractDialog />);
 }
 
 beforeEach(() => {
   apiFetchMock.mockReset();
+  useExtractStore.setState({
+    open: false,
+    minimized: false,
+    projectId: null,
+    initialKind: undefined,
+    staged: null,
+    pending: [],
+    pendingLoaded: false,
+    pendingFor: null,
+  });
   useToastStore.setState({ toasts: [] });
   apiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
     if (path === '/api/v1/projects/p1/chapters') return { ...CHAPTERS_RESP };
@@ -423,17 +435,18 @@ describe('「AI 提取」弹窗（#652 / #1528 / #1544）', () => {
     expect(within(group).getByRole('radio', { name: '角色' })).toBeChecked();
   });
 
-  it('契约14（#1566）：同实例换来源页重开 → 按新来源页重置（非仅挂载取初值）', async () => {
-    const { rerender } = render(
-      <AIExtractDialog open onClose={() => {}} projectId="p1" initialKind="timeline" />,
-    );
+  it('契约14（#1566）：换来源页重开 → 按新来源页重置（非仅挂载取初值）', async () => {
+    renderDialog({ initialKind: 'timeline' });
     let group = await screen.findByTestId('ai-extract-type');
     expect(within(group).getByRole('radio', { name: '时间线' })).toBeChecked();
 
-    rerender(
-      <AIExtractDialog open={false} onClose={() => {}} projectId="p1" initialKind="timeline" />,
-    );
-    rerender(<AIExtractDialog open onClose={() => {}} projectId="p1" initialKind="world" />);
+    // 关框 → 从另一来源页重开（同一 store 会话，= 生产路径）
+    act(() => {
+      useExtractStore.getState().closeDialog();
+    });
+    act(() => {
+      useExtractStore.getState().openDialog('p1', 'world');
+    });
     group = await screen.findByTestId('ai-extract-type');
     expect(within(group).getByRole('radio', { name: '世界观' })).toBeChecked();
   });

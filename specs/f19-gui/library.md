@@ -17,7 +17,7 @@
 ├──────────────────────────────────────────────────────────────┤
 │ 分类 tab：角色│世界观│大纲│时间线│伏笔│知识图谱              │
 ├──────────────────────────────────────────────────────────────┤
-│ 工具栏（右缘）：[去创建]  [AI 提取]                          │
+│ 工具栏（右缘）：[去创建] [待确认提取(2)]  [AI 提取]          │
 │ ┌──────────────────────────────────────────────────────────┐ │
 │ │ 内容区卡片（library-list 圆角卡片）按 activeCat 分派视图 │ │
 │ │   角色 → 等级选项卡 + 分组卡片                           │ │
@@ -34,7 +34,7 @@
   - 页面容器：`mx-auto max-w-[1080px] px-12 py-10`；标题 h1「设定库」（font-serif 26px，testid library-page 根节点）
   - 项目上下文行（mt-5，flex-wrap）：项目选择器（w-56 Select，library-project-select，placeholder「当前项目」）+ 面包屑（library-breadcrumb，「设定库 · 项目名 / 分类」，13px ink-2）+ 顶部保存指示（lib-save-indicator，仅编辑保存路径驱动：saving「保存中…」/ saved「已保存」2s 自动隐藏）
   - 六分类 tab（library-tabs，role=tablist，border-b）：角色 / 世界观 / 大纲 / 时间线 / 伏笔 / 知识图谱；激活 = accent 下边框 + accent 文字，闲置 ink-2 hover 加深；点击 handleTabChange → setSearchParams({cat}) 同步 URL
-  - 工具栏（内容区右上，mb-3 justify-end）：「去创建」accent 主按钮（library-create-btn）+「AI 提取」描边按钮（extract-entry-lib）
+  - 工具栏（内容区右上，mb-3 justify-end）：「去创建」accent 主按钮（library-create-btn）+「待确认提取（N）」角标按钮（extract-pending-entry，仅 N>0 渲染；N = 待确认批次数）+「AI 提取」描边按钮（extract-entry-lib）
     - 去创建可见性：仅非 knowledge 且列表非空且非加载/失败；world 需已选中分类且非地图工作台态；outline 不渲染（创建走树内＋入口）
   - 内容区三态：加载骨架（library-list 容器内 3 行 Skeleton）/ 加载失败（library-error + library-retry 重试按钮）/ 按 activeCat 分派视图（knowledge → KnowledgeGraphView；world 工作台 → MapWorkbench；outline → OutlineTree；world → WorldCategoryToolbar+WorldNodeView 树；timeline → TimelineView；其余 → LibraryItemList）
   - 无项目空态（library-empty）：虚线圆角卡片居中，Library 图标 +「选择或新建项目开始构建设定」+ 前往项目页按钮（library-go-projects）
@@ -50,6 +50,7 @@
 | 分类 tab（library-tabs） | 当前分类 accent 下边框 | handleTabChange → URL cat 同步 + 内容重载 | 拉取中 → 内容区骨架 | 新分类视图渲染 | 拉取失败 → 错误态可重试 | 侧边导航 /library?cat=x 直达联动（URL 变化反向同步 tab）；切换时重置角色详情面板 |
 | 前往项目页（library-go-projects） | 空态主按钮 | navigate('/projects') | — | 路由切换 | — | 仅 currentProjectId===null 时渲染 |
 | 去创建（library-create-btn） | accent 主按钮（列表非空时） | 打开 LibraryCreateDialog（cat=activeCat，编辑态空） | 保存中按钮禁用 | 保存成功 → 关框 + reloadKey 刷新列表 | err toast，对话框保持可改重试 | knowledge 不渲染；world 需选中分类（语义=创建子条目）；outline 不渲染；world 工作台态隐藏；空列表由空态 CTA 覆盖 |
+| 待确认提取（extract-pending-entry） | 描边按钮 + 角标「N」（**仅 N>0 渲染**） | 展开批次面板（extract-pending-panel，右对齐下拉） | 面板内行操作进行中 | 确认 / 取消后角标同步下降；「查看」→ 还原该批结果视图 | 无批次 → 入口不渲染；列表拉取失败 → 空面板 + err toast | 计数 = **批次数**（非条目数）；按 currentProjectId 拉取、切项目重算（不串项目）；「查看」走既有 GET .../extractions/staging/{batch_id}（不新增端点） |
 | AI 提取（extract-entry-lib） | 描边按钮 | 打开 AIExtractDialog（类型/范围选择，见 §2.1） | 提取中（extract.running） | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；类型=角色/世界观/时间线/伏笔/知识图谱（单选）+ 通用多选；范围=全文/按卷/按章（多选+区间）；章节下拉**全量加载**（#1407：翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
 | 顶部保存指示（lib-save-indicator） | 不渲染（idle） | 编辑保存发起 → saving | 「保存中…」 | 「已保存」2s 自动隐藏（timer 清理防重叠） | 失败回 idle + err toast | 仅编辑（PATCH）路径驱动；创建/删除保持 toast 语义 |
 | 加载骨架 | 3 行 Skeleton | — | — | 数据到达渲染列表 | — | 骨架保持至请求 settle |
@@ -115,6 +116,42 @@
   `ai-extract-updated` / `ai-extract-updated-item` / `ai-extract-confirm` / `ai-extract-cancel` /
   `ai-extract-min` / `ai-extract-float`
 
+### 2.3 待确认提取入口 + 浮窗生命周期（#1582）
+
+> 原型：`design/GUI/library/library.html`（`extract-pending-panel` / `extract-float-pending` /
+> `extract-close-prompt` 三态）+ `library-extract-pending-panel.png` / `library-extract-float-pending.png`
+> / `library-extract-close-prompt.png`
+
+```text
+工具栏：[去创建]  [待确认提取 (2)]  [AI 提取]      ← N = 0 时不渲染
+                    └─ 下拉面板（右对齐）：
+                       ┌ 待确认提取 (2) ──────────────────────────────┐
+                       │ 确认前不会写入设定库                          │
+                       │ [时间线] 18 项  10-11 14:02 [查看][取消][确认落库] │
+                       │ [角色]    3 项  10-11 13:47 [查看][取消][确认落库] │
+                       │ 批次按时间倒序；过期未确认的批次由内核自动清理（30 天） │
+                       └──────────────────────────────────────────────┘
+关框（×）且有未确认结果 → 底部提示：提取结果尚未确认，已保留在「待确认提取」中
+浮窗（最小化态，右下角）：[● 提取中 · … 62%  还原] / [● 提取完成 · 待确认  还原]
+```
+
+- **会话全局化（B1-a）**：`open` / `minimized` / `staged` / `initialKind` / `projectId` 提升到
+  `stores/extract.ts`（zustand），对话框 + 浮窗**挂 App 层**（`App.tsx`，`ToastHost` 旁）→
+  宿主页重挂载 / 路由切换均不卸载，浮窗与结果视图**存活**；`chapters` / `volumes` / `runs` /
+  范围面等**一次性输入留组件内**（不上提，避免泄漏到下一次提取）。两宿主页（library / writing）
+  只调 `openDialog()`，**不再各自持有页面级 extract state**。
+- **关框 ≠ 丢弃结果（D5）**：`×` 只清当前结果视图 → warn toast `extract.unconfirmedKept` 指向入口；
+  暂存批次仍在库中，入口「查看」用既有 `GET /api/v1/projects/{pid}/extractions/staging/{batch_id}`
+  读回并渲染成结果视图（确认 / 取消语义不变）。
+- **最小化（—，D3/D4）**：浮窗文案随状态变——进行中「提取中 · …」/ 有未确认结果
+  「提取完成 · 待确认」（`extract.floatPending`）；「还原」恢复对话框。浮窗与对话框是同一
+  App 级实例 → **跨页面可见**，即「离开相关页面」的可见提示（不额外弹 toast，避免切页噪音）。
+- **入口（B2-a / D1 / D2）**：仅 `currentProjectId` 非 null 且 N>0 渲染；面板行内三动作
+  查看 / 取消 / 确认落库；N = 待确认**批次数**（非条目数），App 挂载 / 切项目 / confirm / cancel
+  后重算（按 `projectId` 过滤，不串项目）。
+- testid：`extract-pending-entry` / `extract-pending-panel` / `extract-pending-item` /
+  `extract-pending-view` / `extract-pending-confirm` / `extract-pending-cancel`
+
 ## 3. 验收
 
 - N1：无项目 → 空态引导 +「前往项目页」跳 /projects
@@ -130,10 +167,16 @@
 - N11（#1546）：「确认落库」→ 调 confirm 端点（带 `batch_id`）→ 关框 + ok toast；「取消」→ 调 cancel 端点 → 关框
 - N12（#1546）：提取进行中可最小化 → 对话框收起 + 右下角 `ai-extract-float` 浮窗；点浮窗「还原」恢复对话框
 - N13（#1566）：弹框默认类型**随来源页**——从时间线页打开 → 「时间线」单选即选中；角色 / 世界观 / 伏笔 / 知识图谱页各自对应；无来源页上下文 → 回落「角色」且不报错；「通用」多选默认不预选（与 #1544 类型面不冲突）
+- N15（#1582）：提取最小化后**跨路由 / 宿主页重挂载**，浮窗仍在；点「还原」可见结果视图（新增/更新清单）
+- N16（#1582）：存在「待确认提取（N）」入口；重开 App / 刷新后仍能列出未确认批次并可 查看 / 确认落库 / 取消；
+  N = 批次数（非条目数），confirm / cancel 后同步下降
+- N17（#1582）：有未确认结果时关闭对话框有可见提示（`extract.unconfirmedKept`）；library 与 writing
+  两宿主页同走 `stores/extract.ts`（无页面级 extract state）
 - N14（#1567）：「按章」添加范围 → 输入区下方**立即出现范围块 chip**（`第 {from}–{to} 章` + `×`）；每块可**单独删除**，删除后 chips 与提交集合同步；非法输入（空 / 0 / 起 > 止）有**可见提示**、不静默丢弃；重叠**只提示不合并**（保留两段）；提交时 `resolveChapterIds` 产出的章节集合 = 界面所见范围块之并集；zh/en i18n 键对齐
 
 ## 4. 修改履历
 
 | 项 | 内容 | 修改履历 |
 |----|------|----------|
+| 提取入口 / 浮窗生命周期 | #1582：浮窗与结果视图绑宿主页局部 state → 会话（`open`/`minimized`/`staged`/`initialKind`/`projectId`）提升到 `stores/extract.ts` + 挂 App 层（跨路由 / 重挂载存活，两宿主页同源）；新增「待确认提取（N）」工具栏入口（N = 批次数，查看 / 确认 / 取消）；关框改「清视图不清批次」+ warn 提示；浮窗文案随状态变。原型增补 `extract-pending-panel` / `extract-float-pending` / `extract-close-prompt` 三态 + PNG。 | 2026-10-11（#1582，0.17.0 rc3 反馈修复批 W11a 轨 2） |
 | 弹框默认类型随来源页 + 按章范围块 | #1566：弹框默认类型写死 `character` → 加 `initialKind` prop，由资料库 5 分类页传入（每次打开按来源页重置，缺省回落 `character`）。#1567：`ranges` state 零 JSX 渲染 + `addRange` 静默 return → 范围块 chip（`第 {from}–{to} 章` + `×` 删除）+ 非法输入就地提示；拍板：重叠**只提示不合并**、默认类型为各页**直接单选**自身类型（不预选「通用」）。原型增补 `extract-timeline` / `extract-chapter` / `extract-chapter-overlap` 三态 + PNG。 | 2026-10-10（#1566 / #1567，0.17.0 rc2 修复批 W10a 轨 4） |

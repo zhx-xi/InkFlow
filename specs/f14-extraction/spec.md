@@ -1441,6 +1441,17 @@ would-be 关系、置于信封 `detail.created` 后落暂存（不写 knowledge_
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/confirm` | `ConfirmStagedResult{batch_id, created, updated}` |
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/cancel` | `CancelStagedResult{batch_id, deleted}` |
 
+**列表端点（#1581 交付，供 GUI「待确认提取（N）」入口消费）**：
+`GET /api/v1/projects/{pid}/extractions/staging` → `{batches: [{batch_id, type, created_at, item_count}]}`
+（新→旧；「未确认」由存在性表达）。计数口径 = **批次数**（非条目数）。
+
+**前端生命周期（#1582，GUI 侧；本层语义不变）**：暂存批次**不随宿主页卸载而失效**——GUI 把提取会话
+（`open` / `minimized` / `staged`）提升到全局 store 并挂 App 层，宿主重挂载 / 路由切换后浮窗与结果视图
+仍在；关闭对话框只清结果视图（暂存行仍在库中，经「待确认提取」入口的
+`GET .../staging/{batch_id}` 读回后再 confirm / cancel）。`stage` → `confirm` 物化 / `cancel` 清空 /
+过期清理三条语义**均不变**。
+
+
 **物化纪律**：confirm 逐行按 `entity_type` 反序列化（Character / WorldSetting /
 Foreshadowing / TimelineEvent / KnowledgeRelation 各自 `model_validate(payload)`），再按
 `action` 走**该类型对应**仓储（`create` → `repo.add(entity)`；`update` →
@@ -2073,3 +2084,4 @@ F14 被依赖:
 | 2026-10-09 | §5.9「过期清理」从「仅登记语义、不实现」改为「已实现」：内核启动期幂等清理超期未确认暂存行（`core/startup_cleanup.py: cleanup_expired_staging` → `SQLExtractStagingRepository.delete_expired`，阈值常量 30 天、失败不阻塞启动、不新增索引/迁移）；§5.9 · §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` 公开 compute-only 入口（私有 `_extract_rules` 升公开，消除跨模块私有调用，算法与语义不变） | #1551（0.17.0 W8c） |
 | 2026-10-10 | **§5.8.1 类别归属改为「拒绝而非写空」**（取代 #1485 的静默归空）：LLM 产出的**非空且未注册**类别 → 抛 `WorldCategoryNotRegisteredError`（422，列出全部缺失分类名）+ 该批次正式表零写入；**项目无分类时同样拒绝**（替代旧「无分类 → 原样落库」）；**空类别不拒绝**（维持未分类）；**与 #1482 复制路径 `--auto-create-categories` 显式区分**（那是用户显式开关，行为不变）。§5.8.4 注明 dry_run 同样受校验；§7 边界表同步；新增错误类属 `WorldServiceError`（F14 router 新增 `WorldCategoryNotRegisteredError → 422` 映射） | #1570（0.17.0 W10b） |
 | 2026-10-10 | 新增 §5.6.8「hnsw 段就绪判定」（#1563）：**实测根因（确定性复现 + 二分）** = chroma 1.5 中「一次别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先 `VECTOR.max_seq_id` 且**不再自动追赶**（需对本 collection 再写一次才 apply）→ 带 `where` 的读 plan 抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）恒为最后一次写 → reindex 返回后目标 collection 必然不可读，「第二次调用就好」的真实机制是服务层自愈又写了一次本 collection。**证伪 issue 原诊断**：非 flush 窗口（只等待 ≥60s 永不恢复）、文件系统判据无效（段文件全部在位）。**证伪原拍板修复**：A（读侧等待）+B（写侧同形探针）+C（文案）实测不足以修复。§5.6.8 固化根因 + 动作矩阵 + 已实施 A′+C（读侧空写自愈 + 文案），删除读侧固定次数重试与 1.5s 预算 | #1563（0.17.0 rc2 修复） |
+| 2026-10-11 | §5.9 补「列表端点（#1581）」与「前端生命周期（#1582）」两段：列表端点形状冻结（批次数口径）；GUI 会话提升到全局 store + 挂 App 层 → 宿主卸载后批次仍可恢复（关框只清结果视图），`stage`/`confirm`/`cancel`/过期清理四条语义不变 | #1581 / #1582（0.17.0 rc3 反馈修复批 W11a） |

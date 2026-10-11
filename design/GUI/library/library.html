@@ -271,7 +271,7 @@ body[data-state="extract-result"] .ext-result-only{display:block}
 .ext-actions .spacer{margin-left:auto}
 /* 最小化浮窗（右下角） */
 .ext-float{display:none;position:fixed;right:16px;bottom:16px;z-index:160;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-hover);padding:10px 14px;font-size:12px;color:var(--ink)}
-body[data-state="extract-min"] .ext-float{display:flex}
+body[data-state="extract-min"] .ext-float,body[data-state="extract-float-pending"] .ext-float{display:flex}
 .ext-float .dot{width:8px;height:8px;border-radius:999px;background:var(--warn)}
 .ext-float .pct{color:var(--ink-2)}
 .ext-float .up{color:var(--accent);cursor:pointer;border-left:1px solid var(--line);padding-left:10px}
@@ -291,6 +291,30 @@ body[data-state="extract-chapter-overlap"] .ext-overlay{display:flex}
 .ext-form-chapter-overlap{display:none}
 body[data-state="extract-chapter-overlap"] .ext-form-chapter-overlap{display:block}
 .ext-warn{font-size:11px;color:var(--warn)}
+/* ═══ #1582 待确认提取入口（工具栏角标 + 批次面板）+ 浮窗待确认态 + 关框提示 ═══ */
+.lib-toolbar{position:relative}
+.pend-entry{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;background:none;font-size:13px;color:var(--ink-2);padding:6px 12px}
+.pend-entry svg{width:13px;height:13px}
+.pend-n{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;border-radius:999px;background:var(--warn);color:var(--surface);font-size:11px;line-height:1;padding:0 5px}
+.pend-panel{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:120;width:430px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);padding:12px}
+body[data-state="extract-pending-panel"] .pend-panel{display:block}
+.pend-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink)}
+.pend-sub{margin-top:4px;font-size:11px;color:var(--ink-3)}
+.pend-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.pend-row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:8px 10px;font-size:12px;color:var(--ink)}
+.pend-row .kind{border-radius:999px;background:var(--surface-3);color:var(--ink-2);padding:1px 8px;font-size:11px}
+.pend-row .meta{color:var(--ink-3);font-size:11px}
+.pend-row .acts{margin-left:auto;display:flex;align-items:center;gap:6px}
+.pend-row .acts button{border:1px solid var(--line);border-radius:6px;background:none;font-size:12px;color:var(--ink-2);padding:3px 10px}
+.pend-row .acts button.go{border-color:var(--accent);color:var(--accent)}
+.pend-foot{margin-top:8px;font-size:11px;color:var(--ink-3)}
+.fl-run{display:inline}
+.fl-pend{display:none}
+body[data-state="extract-float-pending"] .fl-run{display:none}
+body[data-state="extract-float-pending"] .fl-pend{display:inline}
+.toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%) translateY(8px);z-index:300;border:1px solid var(--warn);border-radius:8px;background:var(--surface);box-shadow:var(--shadow-hover);color:var(--warn);font-size:12px;padding:8px 14px;opacity:0;pointer-events:none;transition:opacity var(--dur),transform var(--dur)}
+body[data-state="extract-close-prompt"] .toast{opacity:1;transform:translateX(-50%)}
+
 </style>
 </head>
 <body data-state="main" data-cat="characters">
@@ -384,7 +408,37 @@ body[data-state="extract-chapter-overlap"] .ext-form-chapter-overlap{display:blo
         <!-- 工具栏：去创建 + AI 提取（列表非空时渲染） -->
         <div class="lib-toolbar">
           <button class="btn-primary" data-testid="library-create-btn">去创建</button>
-          <button class="btn-ghost" data-testid="extract-entry-lib"><span data-ic="filesearch"></span>AI 提取</button>
+          <button class="pend-entry" data-testid="extract-pending-entry"><span data-ic="history"></span>待确认提取<span class="pend-n">2</span></button>
+        <button class="btn-ghost" data-testid="extract-entry-lib"><span data-ic="filesearch"></span>AI 提取</button>
+        <div class="pend-panel" data-testid="extract-pending-panel">
+          <div class="pend-head">待确认提取<span class="pend-n">2</span></div>
+          <div class="pend-sub">确认前不会写入设定库</div>
+          <div class="pend-list">
+            <div class="pend-row" data-testid="extract-pending-item">
+              <span class="kind">时间线</span><span>18 项</span><span class="meta">10-11 14:02</span>
+              <span class="acts">
+                <button data-testid="extract-pending-view">查看</button>
+                <button data-testid="extract-pending-cancel">取消</button>
+                <button class="go" data-testid="extract-pending-confirm">确认落库</button>
+              </span>
+            </div>
+            <div class="pend-row" data-testid="extract-pending-item">
+              <span class="kind">角色</span><span>3 项</span><span class="meta">10-11 13:47</span>
+              <span class="acts">
+                <button data-testid="extract-pending-view">查看</button>
+                <button data-testid="extract-pending-cancel">取消</button>
+                <button class="go" data-testid="extract-pending-confirm">确认落库</button>
+              </span>
+            </div>
+          </div>
+          <div class="pend-foot">批次按时间倒序；过期未确认的批次由内核自动清理（30 天）</div>
+          <div class="ext-annotation" data-design-annotation="1">
+            <b>待确认提取（入口）</b>
+            <div>位置：资料库工具栏；计数为批次数（非条目数）；N = 0 时不渲染</div>
+            <div>行内动作：查看（还原结果视图）· 确认落库 · 取消（丢弃，零物化）</div>
+            <div>本入口列出全部未确认批次；计数为批次数（非条目数）。本节为评审注解，实现时不做进产品 UI。</div>
+          </div>
+        </div>
         </div>
 
         <!-- characters 面板 -->
@@ -850,10 +904,13 @@ body[data-state="extract-chapter-overlap"] .ext-form-chapter-overlap{display:blo
 <!-- 最小化后的右下角浮窗（extract-min 状态） -->
 <div class="ext-float" data-testid="ai-extract-float">
   <span class="dot"></span>
-  <span>提取中 · 全文 · 角色/世界观/伏笔</span>
-  <span class="pct">62%</span>
-  <span class="up">还原</span>
+  <span class="fl-run">提取中 · 全文 · 角色/世界观/伏笔</span>
+  <span class="pct fl-run">62%</span>
+  <span class="fl-pend">提取完成 · 待确认</span><span class="up">还原</span>
 </div>
+
+<!-- #1582：关框提示（未确认结果已保留） -->
+<div class="toast" role="status" aria-live="polite">提取结果尚未确认，已保留在「待确认提取」中</div>
 
 <!-- ═══ 演示切换条 ═══ -->
 <div class="demo-bar">
@@ -869,6 +926,9 @@ body[data-state="extract-chapter-overlap"] .ext-form-chapter-overlap{display:blo
       <option value="extract-timeline">AI 提取对话框（来源页默认类型 · 时间线页）</option>
       <option value="extract-chapter">AI 提取对话框（按章范围块 + 非法提示）</option>
       <option value="extract-chapter-overlap">AI 提取对话框（按章范围块 · 重叠提示）</option>
+      <option value="extract-pending-panel">待确认提取入口（批次列表）</option>
+      <option value="extract-float-pending">AI 提取浮窗（结果待确认）</option>
+      <option value="extract-close-prompt">关框提示（结果已保留）</option>
     </select>
   </label>
   <span class="sep"></span>
@@ -969,7 +1029,7 @@ function applyHash(){
   const h = location.hash.replace('#','');
   const m = h.match(/^cat=([a-z]+)$/);
   if (m && CAT_LABELS[m[1]]) setCat(m[1]);
-  else if (['main','noproject','tab-empty','extract-single','extract-generic','extract-result','extract-min','extract-timeline','extract-chapter','extract-chapter-overlap'].includes(h)) setState(h);
+  else if (['main','noproject','tab-empty','extract-single','extract-generic','extract-result','extract-min','extract-timeline','extract-chapter','extract-chapter-overlap','extract-pending-panel','extract-float-pending','extract-close-prompt'].includes(h)) setState(h);
 }
 applyHash();
 window.addEventListener('hashchange', applyHash);

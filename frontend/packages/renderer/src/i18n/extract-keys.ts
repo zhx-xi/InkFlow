@@ -35,6 +35,13 @@ export const extractZh: Record<string, string> = {
   'extract.cancel': '取消',
   'extract.willOverwrite': '将覆盖',
   'extract.floatRestore': '还原',
+  'extract.floatPending': '提取完成 · 待确认',
+  'extract.unconfirmedKept': '提取结果尚未确认，已保留在「待确认提取」中',
+  'extract.pending': '待确认提取',
+  'extract.pendingNote': '确认前不会写入设定库',
+  'extract.pendingFoot': '批次按时间倒序；过期未确认的批次由内核自动清理（30 天）',
+  'extract.pendingView': '查看',
+  'extract.pendingCount': '{count} 项',
   'write.toolbar.extract': 'AI 提取',
 };
 
@@ -72,5 +79,22 @@ export const extractEn: Record<string, string> = {
   'extract.cancel': 'Cancel',
   'extract.willOverwrite': 'Will overwrite',
   'extract.floatRestore': 'Restore',
+  'extract.floatPending': 'Staged · pending confirm',
+  'extract.unconfirmedKept': 'Extraction not confirmed — kept under Pending extractions',
+  'extract.pending': 'Pending extractions',
+  'extract.pendingNote': 'Nothing is saved until you confirm',
+  'extract.pendingFoot': 'Newest first; unconfirmed batches are purged after 30 days',
+  'extract.pendingView': 'View',
+  'extract.pendingCount': '{count} items',
   'write.toolbar.extract': 'AI Extract',
+};
+
+/** 提取类型（后端 `type`）→ 中文显示名（#652 口径；后端未登记的原值兜底）。
+ *  非 zh/en 键对——历史遗留的硬编码中文标签（最近运行摘要卡 + 待确认提取入口共用）。 */
+export const EXTRACT_RUN_TYPE_LABELS: Record<string, string> = {
+  character: '角色',
+  setting: '世界观',
+  timeline: '时间线',
+  foreshadowing: '伏笔',
+  knowledge_relation: '知识关系',
 };

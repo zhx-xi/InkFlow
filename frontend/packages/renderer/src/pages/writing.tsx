@@ -24,7 +24,7 @@ import { ContextPanel } from '../components/ContextPanel';
 import { DraftApprovalDrawer } from '../components/DraftApprovalDrawer';
 import { EditorToolbar } from '../components/EditorToolbar';
 import { ExecutionDetailPanel } from '../components/ExecutionDetailPanel';
-import { AIExtractDialog } from '../components/extract/AIExtractDialog';
+import { useExtractStore } from '../stores/extract';
 import { ProjectTree } from '../components/ProjectTree';
 import { StatusBar } from '../components/StatusBar';
 import { StyleAnalyzeDialog } from '../components/StyleAnalyzeDialog';
@@ -258,8 +258,8 @@ export function WritingPage() {
   const [styleReport, setStyleReport] = useState<StyleReportDto | null>(null);
   const [styleLoading, setStyleLoading] = useState(false);
   const [styleError, setStyleError] = useState<string | null>(null);
-  // #652：AI 提取弹窗开关
-  const [extractOpen, setExtractOpen] = useState(false);
+  // #1582：AI 提取会话走全局 store（对话框挂 App 层，宿主重挂载不丢）
+  const openExtract = useExtractStore((s) => s.openDialog);
   // #976：草稿审批弹层开关（树双击草稿走 approvalRequest 全局态，不经本组件）
   const [draftsOpen, setDraftsOpen] = useState(false);
 
@@ -494,7 +494,9 @@ export function WritingPage() {
                     });
                   }
                 }}
-                onExtract={() => setExtractOpen(true)}
+                onExtract={() => {
+                  if (effectiveProjectId !== '') openExtract(effectiveProjectId);
+                }}
                 pendingDraftsCount={pendingDrafts.length}
                 onOpenDrafts={() => setDraftsOpen(true)}
               />
@@ -619,14 +621,6 @@ export function WritingPage() {
         projectId={effectiveProjectId}
         open={autoAuthOpen}
         onClose={() => setAutoAuthOpen(false)}
-      />
-      {/* #652：AI 提取弹窗（默认写作页当前章 + 当前正文，避免重复拉取） */}
-      <AIExtractDialog
-        open={extractOpen}
-        onClose={() => setExtractOpen(false)}
-        projectId={effectiveProjectId}
-        defaultChapterId={currentChapterId ?? undefined}
-        defaultText={content}
       />
       {/* #976 草稿审批弹层：open = 顶栏按钮 || 树双击草稿（approvalRequest）；关时清请求态 */}
       <DraftApprovalDrawer

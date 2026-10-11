@@ -16,6 +16,10 @@
  *   「取消」→ `POST .../staging/{batch_id}/cancel` → onClose（丢弃本次结果，零物化）
  * - 最小化（#1546）：头部 `ai-extract-min` 收起对话框 → 右下角 `ai-extract-float` 浮窗；
  *   点浮窗「还原」恢复对话框
+ * - #1582（本组件**无 props**）：会话状态（open / minimized / staged / projectId / initialKind）
+ *   读 `stores/extract.ts`，组件自身挂 App 层（`App.tsx`）→ 宿主页重挂载 / 路由切换后浮窗与结果视图
+ *   **存活**；关框（×）只清结果视图并提示结果保留位置（暂存批次仍在服务端，由
+ *   `extract-pending-entry` 入口列出）。两宿主页（library / writing）只调 `openDialog()`。
  */
 import { useEffect, useState } from 'react';
 import { LoaderCircle, Minus } from 'lucide-react';
@@ -26,20 +30,10 @@ import {
   type VolumeListDto,
 } from '../../api/chapters';
 import { apiFetch, errorMessage } from '../../api/client';
+import { EXTRACT_RUN_TYPE_LABELS } from '../../i18n/extract-keys';
 import { useI18n } from '../../i18n/useI18n';
+import { useExtractStore, type StagedEntry } from '../../stores/extract';
 import { useToastStore } from '../../stores/toast';
-
-export interface AIExtractDialogProps {
-  open: boolean;
-  onClose: () => void;
-  projectId: string;
-  /** #1566：来源页默认提取类型（资料库分类页传入；缺省回落 'character'） */
-  initialKind?: ExtractKind;
-  /** 写作页默认当前章（保留接口兼容；#1544 起提交走范围面，不再依赖单章 text） */
-  defaultChapterId?: string;
-  /** 写作页默认当前章正文（保留接口兼容） */
-  defaultText?: string;
-}
 
 /** 最近一次运行摘要（GET /projects/{pid}/extractions/runs 响应项） */
 interface ExtractionRun {
@@ -84,15 +78,6 @@ const SCOPE_OPTIONS: Array<{ value: ExtractScope; labelKey: string }> = [
 
 /** 单次请求 `chapter_ids` 上限（后端 ExtractionRequest validator：≤ 100） */
 const CHAPTER_BATCH_LIMIT = 100;
-
-/** 运行摘要类型标签（timeline → 时间线；其余键保留 #652 口径，未登记原值兜底） */
-const RUN_TYPE_LABELS: Record<string, string> = {
-  character: '角色',
-  setting: '世界观',
-  timeline: '时间线',
-  foreshadowing: '伏笔',
-  knowledge_relation: '知识关系',
-};
 
 /** 章节区间（1-based，含端点） */
 interface ChapterRange {
@@ -139,19 +124,6 @@ function resolveChapterIds(
   return ordered.map((ch) => ch.id);
 }
 
-/** #1546：暂存条目（信封 detail.created / detail.updated 元素；GUI 只读 name） */
-interface StagedEntry {
-  id?: string;
-  name?: string;
-}
-
-/** #1546：两段式暂存结果（结果视图展示新增/更新清单，确认/取消按批次调暂存端点） */
-interface StagedResult {
-  batchIds: string[];
-  created: StagedEntry[];
-  updated: StagedEntry[];
-}
-
 /** 单个提取结果信封（POST /api/v1/extract 响应；#1546 stage=true 时带批次 + would-be 清单） */
 interface ExtractEnvelope {
   created?: number;
@@ -163,9 +135,26 @@ interface ExtractEnvelope {
   };
 }
 
-export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExtractDialogProps) {
+export function AIExtractDialog() {
   const { t } = useI18n();
   const pushToast = useToastStore((s) => s.pushToast);
+  // #1582：会话状态来自全局 store（组件挂 App 层 → 宿主重挂载 / 路由切换不丢）
+  const open = useExtractStore((s) => s.open);
+  const minimized = useExtractStore((s) => s.minimized);
+  const projectId = useExtractStore((s) => s.projectId);
+  const initialKind = useExtractStore((s) => s.initialKind);
+  const staged = useExtractStore((s) => s.staged);
+  const setStaged = useExtractStore((s) => s.setStaged);
+  const closeDialog = useExtractStore((s) => s.closeDialog);
+  const minimize = useExtractStore((s) => s.minimize);
+  const restore = useExtractStore((s) => s.restore);
+  const refreshPending = useExtractStore((s) => s.refreshPending);
+
+  /** #1582：关框只清结果视图；有未确认结果时提示「已保留在待确认提取入口」 */
+  const handleClose = () => {
+    if (staged !== null) pushToast('warn', t('extract.unconfirmedKept'));
+    closeDialog();
+  };
 
   const [chapters, setChapters] = useState<ChapterListDto[]>([]);
   const [volumes, setVolumes] = useState<VolumeListDto[]>([]);
@@ -181,10 +170,6 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
   const [rangeError, setRangeError] = useState('');
   const [rangeWarn, setRangeWarn] = useState('');
   const [running, setRunning] = useState(false);
-  /** #1546：最小化 → 收起对话框，只留右下角浮窗 */
-  const [minimized, setMinimized] = useState(false);
-  /** #1546：暂存结果（非 null = 结果视图：新增/更新清单 + 确认落库/取消） */
-  const [staged, setStaged] = useState<StagedResult | null>(null);
 
   // #1566：来源页默认类型——资料库入口跨分类复用同一实例，故每次打开都要按来源页重置
   useEffect(() => {
@@ -194,7 +179,7 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
 
   // open 变 true：拉取章节列表（全量翻页，#1407）+ 卷列表（#1544）+ 最近一次运行摘要
   useEffect(() => {
-    if (!open) return;
+    if (!open || projectId === null) return;
     let cancelled = false;
     setRunsLoaded(false);
     void (async () => {
@@ -275,7 +260,7 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
    * → 成功切结果视图（暂存清单）；失败 err toast（errorMessage）+ 按钮恢复 enabled。
    */
   const handleRun = async () => {
-    if (running) return;
+    if (running || projectId === null) return;
     const backendTypes =
       extractKind === 'generic'
         ? GENERIC_OPTIONS.filter((opt) => genericSelected.includes(opt.value)).map(
@@ -313,6 +298,8 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
         }
       }
       setStaged({ batchIds, created, updated });
+      // 本批已落暂存 → 「待确认提取（N）」计数同步（服务端为准）
+      void refreshPending(projectId);
     } catch (err) {
       pushToast('err', errorMessage(err));
     } finally {
@@ -322,7 +309,7 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
 
   /** #1546：确认落库——逐批次物化进正式表后 onClose + ok toast */
   const confirmStaged = async () => {
-    if (!staged) return;
+    if (!staged || projectId === null) return;
     try {
       for (const batchId of staged.batchIds) {
         await apiFetch(`/api/v1/projects/${projectId}/extractions/staging/${batchId}/confirm`, {
@@ -334,12 +321,13 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
       pushToast('err', errorMessage(err));
       return;
     }
-    onClose();
+    await refreshPending(projectId);
+    closeDialog();
   };
 
   /** #1546：取消——逐批次清空暂存（零物化）后 onClose */
   const cancelStaged = async () => {
-    if (!staged) return;
+    if (!staged || projectId === null) return;
     try {
       for (const batchId of staged.batchIds) {
         await apiFetch(`/api/v1/projects/${projectId}/extractions/staging/${batchId}/cancel`, {
@@ -350,10 +338,11 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
       pushToast('err', errorMessage(err));
       return;
     }
-    onClose();
+    await refreshPending(projectId);
+    closeDialog();
   };
 
-  if (!open) return null;
+  if (!open || projectId === null) return null;
 
   // #1546：最小化 → 对话框收起到右下角浮窗（点「还原」恢复对话框）
   if (minimized) {
@@ -362,11 +351,17 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
         <button
           type="button"
           data-testid="ai-extract-float"
-          onClick={() => setMinimized(false)}
+          onClick={restore}
           className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-[12px] text-ink shadow-card transition duration-180 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         >
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
+          <span
+            aria-hidden="true"
+            className={`size-1.5 rounded-full ${staged !== null ? 'bg-warn' : 'bg-accent'}`}
+          />
           <span>{t('extract.title')}</span>
+          <span className="text-ink-2">
+            {staged !== null ? t('extract.floatPending') : t('extract.running')}
+          </span>
           <span className="text-accent">{t('extract.floatRestore')}</span>
         </button>
       </div>
@@ -392,7 +387,7 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
               data-testid="ai-extract-min"
               aria-label="最小化"
               className="rounded p-1 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              onClick={() => setMinimized(true)}
+              onClick={minimize}
             >
               <Minus className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -400,7 +395,7 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
               type="button"
               aria-label={t('audit.close')}
               className="rounded p-1 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              onClick={onClose}
+              onClick={handleClose}
             >
               <span aria-hidden="true">×</span>
             </button>
@@ -684,7 +679,7 @@ export function AIExtractDialog({ open, onClose, projectId, initialKind }: AIExt
                     data-testid="ai-extract-last-run"
                     className="rounded-md border border-line bg-surface-2 px-3 py-2 text-[12px] text-ink"
                   >
-                    {RUN_TYPE_LABELS[run.type] ?? run.type} · {run.status} · 新增 {run.created_count} · 更新{' '}
+                    {EXTRACT_RUN_TYPE_LABELS[run.type] ?? run.type} · {run.status} · 新增 {run.created_count} · 更新{' '}
                     {run.updated_count}
                   </div>
                 ))}
