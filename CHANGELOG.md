@@ -35,14 +35,18 @@
 - **草稿无硬删端点（#1479）**：`DELETE /agent/drafts/{id}` 曾 405；`prune-orphans` 的「孤儿」只认 `project_id` 全零 → 软删项目的草稿永久残留。
 - **DB 会话**：aiosqlite 连接未归还（`non-checked-in connection`）两处（#1530 / #1539）。
 - **测试基建**：持久化资源统一后置处理（内核 / DB 连接 / debug 弹窗，会话级 autouse fixture）—— 跑完套件零孤儿 `inkflow serve`、无自动弹浏览器（#1488 / #1496）。
+- **时间线未定事件直进时间轴（#1581）**：`time_value` 为空的事件经确定性后置归一仍无值 → 不再写 `timeline_events`，改落暂存（`entity_type=timeline_event` + `parse_reason`）；新增暂存区**可达面**——`GET .../extractions/staging` 批次列表（新→旧，契约冻结）+ 条目级 `items/{item_id}/confirm`（`time_value` 必填，缺 → 422）/ `DELETE`（逐条定夺，ADR-067）。
+- **提取浮窗随宿主重挂载消失（#1582）**：提取会话（`open` / `minimized` / `staged`）提升到全局 store 并挂 App 层，路由切换 / 宿主重挂载后浮窗与结果视图仍在；补「待确认提取（N）」可见入口（未确认暂存批次不再无入口）。
+- **条目级暂存确认回传不可寻址身份（#1586）**：条目级 `confirm` 曾回传**物化前 payload 的随机 UUID**（不可 `GET /timeline/events/{id}` 回读）→ 改为回传 `repo.add` 返回值（`uuid.UUID(int=主键)` = 数据库真身份）。
+- **暂存批次取消误触（#1590）**：暂存批次取消补**二次确认** + 暂存条目**详情抽屉**（防误取消后逐条丢失）。
 
 ### 文档
 
-- **skill 契约同步**：`cli-commands.md` 落后 4 个版本（0.17.0 新增命令/参数 12 项，#1553）· 域文档同步 + 过期建议修正（#1554）· `json-contracts.md` 信封同步（audit 202 / `run_status` / `batch_id` / rollback / staging，#1555）· 语义级重写（`kernel.md` 互斥-回收-自登记 + 通用 skill 装配新章节 + `SKILL.md`，#1556）· 外部 skill `audit batch --resume` 判据行随 #1562 修正（#1571）· 外部 skill 补 `INKFLOW_DEBUG_NO_BROWSER` 逃生门 + 契约测试防再漂移（#1572）· 外部 skill 补 `world uncategorized` 与 #1570 拒绝语义。
+- **skill 契约同步**：`cli-commands.md` 落后 4 个版本（0.17.0 新增命令/参数 12 项，#1553）· 域文档同步 + 过期建议修正（#1554）· `json-contracts.md` 信封同步（audit 202 / `run_status` / `batch_id` / rollback / staging，#1555）· 语义级重写（`kernel.md` 互斥-回收-自登记 + 通用 skill 装配新章节 + `SKILL.md`，#1556）· 外部 skill `audit batch --resume` 判据行随 #1562 修正（#1571）· 外部 skill 补 `INKFLOW_DEBUG_NO_BROWSER` 逃生门 + 契约测试防再漂移（#1572）· 外部 skill 补 `world uncategorized` 与 #1570 拒绝语义 · `json-contracts.md` 暂存节补 #1581 三端点（批次列表 / 条目级 confirm / delete）+ 标题计数改正 + `extract.md` 指引行（#1588）。
 
 ### 里程碑
 
-- milestone #22 · **60 issues 全关** · rc1 / rc2 / rc3 三轮预发布 + 完整用户旅程（stage0 → 审计）验证 · **v0.17.0 正式发布**。
+- milestone #22 · **65 issues 全关** · rc1 / rc2 / rc3 / rc4 四轮预发布 + 完整用户旅程（stage0 → 审计）验证 · **v0.17.0 正式发布**。
 
 ## [0.16.0] - 2026-10-04
 
