@@ -146,17 +146,34 @@ data: {"event": "done", "chapter_id": 5, "word_count": 3400}
 
 被**更新**的条目未存快照 → 结果 `warnings` 明示不可回滚；项目不存在 → 404。CLI：`extract rollback --project-id <uuid> --batch-id <id>`。
 
-### 暂存（staging）三端点 —— **API / GUI 载体**
+### 暂存（staging）六端点 —— **API / GUI 载体**
 
-> ⚠️ **归属说明**：两段式暂存由 **GUI / HTTP API 驱动**——CLI / MCP **无入口**（`cli/commands/*.py` 无 `stage` 命令，已实证）。§ 以下三端点供 GUI / 直调 HTTP 使用；agent 若在响应里遇到 `staging/{batch_id}` 端点，应知它**不是 CLI 命令**。
+> ⚠️ **归属说明**：两段式暂存由 **GUI / HTTP API 驱动**——CLI / MCP **无入口**（`cli/commands/*.py` 无 `stage` 命令，已实证）。§ 以下六端点供 GUI / 直调 HTTP 使用；agent 若在响应里遇到 `staging/{batch_id}` 端点，应知它**不是 CLI 命令**。
+
+**批次级（#1545）**：
 
 | 端点 | 语义 | 返回 |
 |---|---|---|
-| `GET /api/v1/projects/{pid}/extractions/staging/{batch_id}` | 读取本批暂存条目（空批 → items 空列表，幂等） | `{batch_id, items[]}`，元素含 `entity_type` / `action` / `name` / `payload` |
+| `GET /api/v1/projects/{pid}/extractions/staging/{batch_id}` | 读取本批暂存条目（空批 → items 空列表，幂等） | `{batch_id, items[]}`，元素含 `id` / `entity_type` / `action` / `name` / `payload` |
 | `POST /api/v1/projects/{pid}/extractions/staging/{batch_id}/confirm` | 逐行物化进正式表后清空本批暂存（幂等） | `{batch_id, created, updated}` |
 | `POST /api/v1/projects/{pid}/extractions/staging/{batch_id}/cancel` | 仅清空暂存行，零物化（幂等） | `{batch_id, deleted}` |
 
-以上三者：项目不存在 → 404（同 rollback 口径）。
+**批次列表 + 条目级动作（#1581，契约冻结）**：
+
+| 端点 | 语义 | 返回 |
+|---|---|---|
+| `GET /api/v1/projects/{pid}/extractions/staging` | 本项目暂存批次聚合（**新→旧**，`created_at DESC`） | `{batches: [{batch_id, type, created_at, item_count}]}`；`type` = `ExtractionType.value`；无批次 → `{batches: []}` |
+| `POST /api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}/confirm` | 确认**单条**：以 body 覆盖时间字段后物化该行并删除该行，同批其余行保留 | `{item_id, event_id}`（body `{time_value, time_unit}`；缺 `time_value` → 422） |
+| `DELETE /api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}` | 丢弃**单条**：只删该行、零物化（幂等） | `{deleted}`（`1` 删除 / `0` 不存在） |
+
+**语义要点**：
+
+- `item_id` = 暂存行 `id`（`StagedEntry.id`，**整数**，非 UUID）——条目级动作的寻址键。
+- 条目 `confirm` 的 `time_value` **必填有限数值**（缺 → **422**）；写入前以 body 覆盖 payload 的时间字段（`time_display` 原样保留）。
+- `event_id` = 物化后**可寻址的事件真身份**（`repo.add` 返回值 = 数据库主键映射的领域 UUID），可直接 `GET /timeline/events/{id}` 回读——**非**物化前 payload 的随机 UUID（#1586 修正）。
+- **「未确认」由存在性表达**：暂存表**无 status 列**（行在 = 未确认）；列表端点不引入状态字段、不新增迁移。
+- **计数口径 = 批次数**（`batches` 数组长度，即 GUI「待确认提取（N）」的 N）；`item_count` 是**批内条目数**，勿混用。
+- 以上全部端点：项目不存在 → 404（同 rollback 口径）。
 
 ### 错误形态示例
 

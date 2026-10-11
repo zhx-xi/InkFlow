@@ -10,6 +10,7 @@ agent 使用：世界观条目 + 分类 + 树形结构 + 跨项目复制。GUI �
 | `world list` | `--project-id` | `--search` `--category` `--sort` `--offset` `--limit` | 列条目 |
 | `world categories` | `--project-id` | — | 类别聚合（JSON 输出 `[{category, count}]`） |
 | `world category add` | `--project-id` + 分类名 | — | 新建分类 |
+| `world uncategorized` | `--project-id` | — | 列出**非根且无类别**条目（#1570 存量审计；**只读零写入**，回填走 `world update --id <id> --category <已注册分类名>`） |
 | `world get` | `--id` | — | 详情 |
 | `world ancestors` | `--id` | — | 祖先链 |
 | `world descendants` | `--id`（位置参数） | — | 子孙树 |
