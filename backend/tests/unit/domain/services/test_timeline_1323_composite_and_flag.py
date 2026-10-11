@@ -128,9 +128,25 @@ class TestCompositeNarrativePosition:
         mock_llm.chat.return_value = _ok_response(
             _payload(
                 [
-                    {"title": "丙", "narrative_position": 3, "timeline_flag": ""},
-                    {"title": "甲", "narrative_position": 1, "timeline_flag": ""},
-                    {"title": "乙", "narrative_position": 2, "timeline_flag": ""},
+                    # #1581：未定时间的条目不进正式表 → 本组测试聚焦合成序，故给可解析时间
+                    {
+                        "title": "丙",
+                        "narrative_position": 3,
+                        "timeline_flag": "",
+                        "time_display": "第 3 天",
+                    },
+                    {
+                        "title": "甲",
+                        "narrative_position": 1,
+                        "timeline_flag": "",
+                        "time_display": "第 1 天",
+                    },
+                    {
+                        "title": "乙",
+                        "narrative_position": 2,
+                        "timeline_flag": "",
+                        "time_display": "第 2 天",
+                    },
                 ]
             )
         )
@@ -147,7 +163,16 @@ class TestCompositeNarrativePosition:
     async def test_cross_chapter_no_collision(self, extractor, mock_llm, mock_repo) -> None:
         """跨章不碰撞：两章各自从 1 编号，落库后合成序必须互不相同。"""
         mock_llm.chat.return_value = _ok_response(
-            _payload([{"title": "章A事件", "narrative_position": 1, "timeline_flag": ""}])
+            _payload(
+                [
+                    {
+                        "title": "章A事件",
+                        "narrative_position": 1,
+                        "timeline_flag": "",
+                        "time_display": "第 1 天",
+                    }
+                ]
+            )
         )
         await extractor.extract(
             TimelineExtractRequest(project_id=PID, chapter_id=CID_A, text="t"),
@@ -156,7 +181,16 @@ class TestCompositeNarrativePosition:
         first = mock_repo.add.await_args_list[0].args[0]
 
         mock_llm.chat.return_value = _ok_response(
-            _payload([{"title": "章B事件", "narrative_position": 1, "timeline_flag": ""}])
+            _payload(
+                [
+                    {
+                        "title": "章B事件",
+                        "narrative_position": 1,
+                        "timeline_flag": "",
+                        "time_display": "第 1 天",
+                    }
+                ]
+            )
         )
         await extractor.extract(
             TimelineExtractRequest(project_id=PID, chapter_id=CID_B, text="t"),
@@ -170,7 +204,16 @@ class TestCompositeNarrativePosition:
     async def test_position_not_none_when_llm_gave_value(self, extractor, mock_llm) -> None:
         """合成序永不落 None（None 会让排序退化）。"""
         mock_llm.chat.return_value = _ok_response(
-            _payload([{"title": "甲", "narrative_position": 2, "timeline_flag": ""}])
+            _payload(
+                [
+                    {
+                        "title": "甲",
+                        "narrative_position": 2,
+                        "timeline_flag": "",
+                        "time_display": "第 2 天",
+                    }
+                ]
+            )
         )
         result = await extractor.extract(
             TimelineExtractRequest(project_id=PID, chapter_id=CID_A, text="t"),

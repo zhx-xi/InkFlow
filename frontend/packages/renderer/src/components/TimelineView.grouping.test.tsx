@@ -176,9 +176,12 @@ describe('#1323 + #1374 时间线章刻度（去重 + 真实章名 + 未分章 +
     await user.click(screen.getByTestId('tl-view-world'));
     await waitFor(() => {
       expect(screen.queryAllByTestId(/^tl-chgroup-/)).toHaveLength(0);
-      expect(screen.getAllByTestId(/^tl-axis-node-/)).toHaveLength(4);
+      // #1581：刻度带只含**已定时间**事件（evB 未定 → 待确认区）
+      expect(screen.getAllByTestId(/^tl-axis-node-/)).toHaveLength(3);
     });
     expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 事件乙');
+    // 未定事件在待确认区呈现（不消失、不丢原文）
+    expect(screen.getByTestId('tl-pend-row-ev-evB')).toBeInTheDocument();
   });
 
   it('B6 无 chapterTitles（映射缺失）时刻度退化为「未知章节」占位，不崩溃、事件不消失', async () => {

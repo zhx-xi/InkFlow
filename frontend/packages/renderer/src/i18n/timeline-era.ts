@@ -13,6 +13,24 @@ export const timelineEraZh: Record<string, string> = {
   /* #1564 世界序刻度带 v2（不定高 + 时间主轴 + 按刻度分页）—— 上/下页文案复用 pagination.page.prev/next */
   'lib.tlBandMainAxis': '时间主轴',
   'lib.tlBandPageInfo': '第 {page} / {pages} 页 · 每页 {size} 刻度 · 共 {total} 刻度',
+  /* #1581 待确认区（原「未知区」退役） */
+  'lib.tlPendTitle': '待确认时间',
+  'lib.tlPendCount': '{n} 条',
+  'lib.tlPendHint': '机器未定时间 → 不进时间轴；补时间后确认转正，或丢弃（原文永不留失）',
+  'lib.tlPendColRaw': '原文时间',
+  'lib.tlPendColEvent': '事件',
+  'lib.tlPendColSource': '来源',
+  'lib.tlPendColTime': '时间（可填）',
+  'lib.tlPendColReason': '未定原因',
+  'lib.tlPendColActions': '操作',
+  'lib.tlPendNoRaw': '（原文无时间线索）',
+  'lib.tlPendPlaceholder': '补时间',
+  'lib.tlPendConfirm': '确认',
+  'lib.tlPendDiscard': '丢弃',
+  'lib.tlPendReasonFallback': '存量未定时间（未记录原因）',
+  'lib.tlPendUnit.day': '日',
+  'lib.tlPendUnit.year': '年',
+  'lib.tlPendUnit.month': '月',
 };
 
 export const timelineEraEn: Record<string, string> = {
@@ -23,4 +41,22 @@ export const timelineEraEn: Record<string, string> = {
   'lib.create.eraValue': 'Value in era',
   'lib.tlBandMainAxis': 'Main axis',
   'lib.tlBandPageInfo': 'Page {page} / {pages} · {size} ticks/page · {total} ticks',
+  'lib.tlPendTitle': 'Pending confirmation',
+  'lib.tlPendCount': '{n} items',
+  'lib.tlPendHint':
+    'Time not resolved by machine → kept off the timeline; fill a time then confirm, or discard (original text is never lost)',
+  'lib.tlPendColRaw': 'Original',
+  'lib.tlPendColEvent': 'Event',
+  'lib.tlPendColSource': 'Source',
+  'lib.tlPendColTime': 'Time',
+  'lib.tlPendColReason': 'Why undetermined',
+  'lib.tlPendColActions': 'Actions',
+  'lib.tlPendNoRaw': '(no time cue in source)',
+  'lib.tlPendPlaceholder': 'fill in',
+  'lib.tlPendConfirm': 'Confirm',
+  'lib.tlPendDiscard': 'Discard',
+  'lib.tlPendReasonFallback': 'Legacy undetermined time (no reason recorded)',
+  'lib.tlPendUnit.day': 'day',
+  'lib.tlPendUnit.year': 'year',
+  'lib.tlPendUnit.month': 'month',
 };

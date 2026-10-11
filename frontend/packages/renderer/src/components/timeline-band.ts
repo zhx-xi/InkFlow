@@ -25,12 +25,8 @@ export const BAND_ROW_H = 24;
 export const BAND_ROW_PAD = 4;
 /** #1564：分页单位 = **时间刻度**（不是事件条数） */
 export const BAND_TICKS_PER_PAGE = 8;
-/** #1564：未知区列表高度上限（px）——画布高度不随未知事件数线性增长 */
-export const BAND_UNK_MAX = 60;
 /** #1564：刻度带内部几何（与 design/GUI/timeline/timeline.html 保持同值） */
 const SPINE_TOP = 12;
-const RULE_GAP = 10;
-const UNK_HEAD_H = 24;
 const BOT_PAD = 6;
 
 /** 事件 → 全局时间标量（`to_global`；`null` = 时间未知）。 */
@@ -178,12 +174,7 @@ export interface BandSpineLayout {
   /** 主轴 / 竖轴顶端 y 与高度 */
   spineTop: number;
   spineHeight: number;
-  /** 未知区：虚线位置 / 列表顶端 / 列表高度 */
-  unknownTop: number;
-  unknownListTop: number;
-  unknownListHeight: number;
-  unknownHeight: number;
-  /** 画布总高（unknown 只计一次） */
+  /** 画布总高（#1581：不再含「未知区」—— 未定事件不出现在刻度带） */
   height: number;
 }
 
@@ -224,11 +215,10 @@ export function bandTickRows(layout: BandLayout): BandTickRow[] {
  * - **不定高**：`height = BAND_ROW_PAD * 2 + max(1, count) * BAND_ROW_H`
  * - **纵向位置 = 刻度序号**（等距堆叠）→ 离群值只多占一行，不改动其它行
  * - **分页**：每页 `BAND_TICKS_PER_PAGE` 个刻度（`page` 越界收敛到有效范围）
- * - **未知区**：独立于刻度区；高度上限 `BAND_UNK_MAX` 且截到整行 → 不随未知事件数线性增长
+ * - **无「未知区」**（#1581）：未定事件不进正式表 ⇒ 不进刻度带 ⇒ 画布高度只由刻度区决定
  */
 export function layoutBandSpine(
   tickRows: BandTickRow[],
-  unknownCount: number,
   opts?: { page?: number; pageSize?: number },
 ): BandSpineLayout {
   const pageSize = opts?.pageSize ?? BAND_TICKS_PER_PAGE;
@@ -246,13 +236,6 @@ export function layoutBandSpine(
   });
   const timelineBottom = cursor;
 
-  const rawListHeight = Math.min(unknownCount * BAND_ROW_H, BAND_UNK_MAX);
-  const unknownListHeight =
-    unknownCount > 0 ? Math.max(BAND_ROW_H, Math.floor(rawListHeight / BAND_ROW_H) * BAND_ROW_H) : 0;
-  const unknownTop = timelineBottom + RULE_GAP;
-  const unknownListTop = unknownTop + UNK_HEAD_H;
-  const unknownHeight = unknownCount > 0 ? RULE_GAP + UNK_HEAD_H + unknownListHeight + 8 : 0;
-
   return {
     page,
     pageCount,
@@ -260,10 +243,6 @@ export function layoutBandSpine(
     placed,
     spineTop: SPINE_TOP,
     spineHeight: Math.max(0, timelineBottom - SPINE_TOP),
-    unknownTop,
-    unknownListTop,
-    unknownListHeight,
-    unknownHeight,
-    height: timelineBottom + unknownHeight + BOT_PAD,
+    height: timelineBottom + BOT_PAD,
   };
 }

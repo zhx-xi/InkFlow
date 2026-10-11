@@ -4924,6 +4924,25 @@
         "title": "SkillUploadUrlRequest",
         "type": "object"
       },
+      "StagedItemConfirmBody": {
+        "description": "条目级确认请求体（#1581）— 时间必填（f12 §2.9 D3：确认强制带时间）.",
+        "properties": {
+          "time_unit": {
+            "default": "",
+            "title": "Time Unit",
+            "type": "string"
+          },
+          "time_value": {
+            "title": "Time Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time_value"
+        ],
+        "title": "StagedItemConfirmBody",
+        "type": "object"
+      },
       "StoryArcCreateBody": {
         "description": "创建弧线请求体 — project_id 取自路径参数，不在 body（spec §3.3）。",
         "properties": {
@@ -13173,6 +13192,47 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/extractions/staging": {
+      "get": {
+        "description": "本项目暂存批次聚合（#1581，**契约冻结**）——项目不存在 → 404。\n\n返回 ``{\"batches\": [{batch_id, type, created_at, item_count}]}``（**新→旧**）；\n「未确认」由存在性表达（暂存表无 status 列）；无批次 → ``{\"batches\": []}``。",
+        "operationId": "list_staging_batches_api_v1_projects__project_id__extractions_staging_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Staging Batches",
+        "tags": [
+          "提取"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/extractions/staging/{batch_id}": {
       "get": {
         "description": "读取本批暂存条目（spec §5.9，GET 暂存端点）——项目不存在 → 404。\n\n返回 ``StagedListResult{batch_id, items[]}``（元素 ``StagedEntry`` 含\nentity_type / action / name / payload）；空批 → items 空列表（幂等）。",
@@ -13318,6 +13378,134 @@
           }
         },
         "summary": "Confirm Staged Extraction",
+        "tags": [
+          "提取"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/items/{item_id}": {
+      "delete": {
+        "description": "丢弃**单条**暂存条目（#1581）→ ``{deleted}``（零物化、幂等）；项目不存在 → 404。",
+        "operationId": "discard_staged_item_api_v1_projects__project_id__extractions_staging__batch_id__items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Staged Item",
+        "tags": [
+          "提取"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/items/{item_id}/confirm": {
+      "post": {
+        "description": "确认**单条**暂存条目（#1581）→ ``{item_id, event_id}``。\n\nbody ``{time_value, time_unit}``；**缺 time_value → 422**（f12 §2.9 D3）。\n只物化该行并删除该行，同批其余行保留；项目不存在 → 404。",
+        "operationId": "confirm_staged_item_api_v1_projects__project_id__extractions_staging__batch_id__items__item_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StagedItemConfirmBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Staged Item",
         "tags": [
           "提取"
         ]

@@ -260,6 +260,7 @@ class StagedEntry(BaseModel):
     """暂存批次条目（§5.9）— 实体类型 / 动作 / 名称 / 原始 payload.
 
     Attributes:
+        id: 暂存行主键（#1581 条目级 confirm / DELETE 的寻址键；旧快照/手写无 id → None）.
         entity_type: 实体类型（``character`` / ``world_setting``，confirm 时
             决定反序列化目标与物化仓储）.
         action: 动作（``create`` / ``update``，决定 confirm 时走 add 还是 update）.
@@ -267,10 +268,26 @@ class StagedEntry(BaseModel):
         payload: 条目原始 model_dump（mode="json"），confirm 时反序列化回领域实体.
     """
 
+    id: int | None = None
     entity_type: str
     action: str
     name: str
     payload: dict[str, Any]
+
+
+class StagingBatch(BaseModel):
+    """暂存批次聚合（#1581，批次列表端点元素；契约冻结）."""
+
+    batch_id: str
+    type: str
+    created_at: datetime
+    item_count: int
+
+
+class StagingBatchList(BaseModel):
+    """本项目暂存批次列表（#1581）— 新→旧."""
+
+    batches: list[StagingBatch] = Field(default_factory=list)
 
 
 class StagedListResult(BaseModel):

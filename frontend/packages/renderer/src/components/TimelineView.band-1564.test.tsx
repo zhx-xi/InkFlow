@@ -7,7 +7,7 @@
  * - `tl-band` 容器：**底色 = 页面底色 token**（`bg-bg`，**不是** `bg-surface`）+ 保留 `rounded-lg` / `border-line`
  *   （#1565；两主题目视证据见 design/GUI/timeline/timeline-world-band{,-night}.png）
  * - **unknown 只计一次**：252 事件（12 有值 + 240 未知）下画布高度受限（#1541 旧公式 = 13,924px）；
- *   未知区表头 `tl-band-unknown-head` 显示总数，列表限高（`BAND_UNK_MAX`）
+ *   未定事件**不进刻度带**（#1581 未知区退役 → 待确认区），画布高度只由刻度区决定
  * - **不定高**：每刻度一行，行高 ∝ 该刻度事件数 → 行参考线 `tl-band-rowguide` 间距异构
  * - **分页按刻度**：`tl-band-pager` / `tl-band-pageinfo`（第 x / y 页 · 每页 N 刻度 · 共 M 刻度）；
  *   `tl-band-page-prev` / `tl-band-page-next` 首末页禁用；翻页后**刻度集合变化**
@@ -131,7 +131,9 @@ describe('#1564 世界序刻度带 v2（组件级）', () => {
 
     expect(bandHeight()).toBeGreaterThan(200);
     expect(bandHeight()).toBeLessThan(900);
-    expect(screen.getByTestId('tl-band-unknown-head')).toHaveTextContent('240');
+    // #1581：未定事件不进刻度带（原「未知区」退役）→ 画布高度只由刻度区决定
+    expect(screen.queryByTestId('tl-band-unknown-head')).toBeNull();
+    expect(screen.getByTestId('tl-pend-count')).toHaveTextContent('240');
   });
 
   it('C2 不定高：同一轴内不同刻度行高不同（行参考线间距异构）', async () => {

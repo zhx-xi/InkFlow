@@ -35,6 +35,7 @@ from pydantic import ValidationError
 
 from inkflow.domain.models.timeline import (
     ExtractedTimelineEvent,
+    PendingTimelineEvent,
     TimelineEvent,
     TimelineExtractionResult,
     TimelineExtractRequest,
@@ -43,6 +44,7 @@ from inkflow.domain.ports.llm_client import ChatMessage, LLMClientProtocol
 from inkflow.domain.ports.prompt_template import PromptTemplateProtocol
 from inkflow.domain.ports.timeline_errors import TimelineExtractionError
 from inkflow.domain.ports.timeline_repository import TimelineRepositoryProtocol
+from inkflow.domain.services._timeline_text_time import parse_time_display
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +292,8 @@ class TimelineExtractor:
 
         created: list[TimelineEvent] = []
         updated: list[TimelineEvent] = []
+        # #1581：解析不出时间的条目（**不写正式表**，交暂存区待作者确认）
+        pending: list[PendingTimelineEvent] = []
         # #1323 G4：LLM 的 narrative_position 是**章内序**（每章从 1 重数）→ 原样落库
         # 必然跨章碰撞（DB 实测 215 条仅 34 个不同位置值，1 个位置值对应 10 条）。
         # 改为合成序（章基址 + 章内序）：章内相对先后完整保留，跨章严格递增不碰撞。
@@ -312,25 +316,31 @@ class TimelineExtractor:
             positions = _composite_positions(pending_creates, chapter_base=chapter_base)
             for slot, ee in enumerate(pending_creates):
                 now = _utcnow()
+                # #1581：写前分流 —— 先用确定性解析器做**后置归一**（f12 §2.9 Z2）
+                time_value, time_unit, era, reason = _resolve_time(ee)
                 # #1526：time_unit 是 time_value 的**尺度标签**——未解析出累计天数时留空
                 # （rc1 实测 `'日' ×182` 是「无信息的假非空」，会掩盖真实缺口，见 f14 §5.5 T3）。
                 # time_display 是**原文时间表达**，必须原样保留（此前硬编码 "" → 空 182/183，
                 # 世界序满屏「未知」，见 f14 §5.5 T1/T2）。
-                time_unit = (ee.time_unit or "") if ee.time_value is not None else ""
                 new_event = TimelineEvent(
                     id=uuid.uuid4(),
                     project_id=request.project_id,
                     title=ee.title,
                     description=ee.description or "",
-                    time_value=ee.time_value,
+                    time_value=time_value,
                     time_unit=time_unit,
                     time_display=ee.time_display or "",
                     narrative_position=positions[slot],
                     timeline_flag=ee.timeline_flag or "",
+                    era=era,
                     source_chapter_id=request.chapter_id,
                     created_at=now,
                     updated_at=now,
                 )
+                if time_value is None and not dry_run:
+                    # 未定 → 正式表零变更（Z1），连 reason 交门面落暂存（Z3）
+                    pending.append(PendingTimelineEvent(event=new_event, reason=reason))
+                    continue
                 created.append(new_event if dry_run else await self._repo.add(new_event))
 
         for w in warnings:
@@ -341,6 +351,7 @@ class TimelineExtractor:
             updated=updated,
             warnings=warnings,
             model=model,
+            pending=pending,
         )
 
     # ── 私有辅助 ────────────────────────────────────────────────
@@ -386,6 +397,25 @@ def _composite_positions(
     # 章内序可能超出步长（异常/脏数据）→ 退化为接续递增，仍保证严格递增不碰撞
     step = _COMPOSITE_STRIDE if len(ordered) <= _COMPOSITE_STRIDE else 1
     return {idx: chapter_base + n * step for n, idx in enumerate(ordered, start=1)}
+
+
+def _resolve_time(ee: ExtractedTimelineEvent) -> tuple[float | None, str, str, str]:
+    """#1581 后置时间归一：``time_value`` 缺失时用确定性解析器从 ``time_display`` 补.
+
+    Args:
+        ee: LLM 提取出的事件（含 ``time_display`` 原文）.
+
+    Returns:
+        ``(time_value, time_unit, era, reason)`` —— 解析成功时 reason 为空；
+        失败时 ``time_value`` 为 None 且 reason 非空（交暂存区展示）。
+        **LLM 已给出的 ``time_value`` 不被覆盖**（解析器只在缺失时补）。
+    """
+    if ee.time_value is not None:
+        return ee.time_value, (ee.time_unit or ""), "", ""
+    parsed, reason = parse_time_display(ee.time_display)
+    if parsed is None:
+        return None, "", "", reason
+    return parsed.value, parsed.unit, parsed.era, ""
 
 
 def _merge_event_fields(

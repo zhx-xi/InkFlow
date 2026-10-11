@@ -2313,6 +2313,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/extractions/staging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staging Batches
+         * @description 本项目暂存批次聚合（#1581，**契约冻结**）——项目不存在 → 404。
+         *
+         *     返回 ``{"batches": [{batch_id, type, created_at, item_count}]}``（**新→旧**）；
+         *     「未确认」由存在性表达（暂存表无 status 列）；无批次 → ``{"batches": []}``。
+         */
+        get: operations["list_staging_batches_api_v1_projects__project_id__extractions_staging_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extractions/staging/{batch_id}": {
         parameters: {
             query?: never;
@@ -2375,6 +2398,49 @@ export interface paths {
          *     404「项目不存在」（同 rollback 口径）。
          */
         post: operations["confirm_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Discard Staged Item
+         * @description 丢弃**单条**暂存条目（#1581）→ ``{deleted}``（零物化、幂等）；项目不存在 → 404。
+         */
+        delete: operations["discard_staged_item_api_v1_projects__project_id__extractions_staging__batch_id__items__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/extractions/staging/{batch_id}/items/{item_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Staged Item
+         * @description 确认**单条**暂存条目（#1581）→ ``{item_id, event_id}``。
+         *
+         *     body ``{time_value, time_unit}``；**缺 time_value → 422**（f12 §2.9 D3）。
+         *     只物化该行并删除该行，同批其余行保留；项目不存在 → 404。
+         */
+        post: operations["confirm_staged_item_api_v1_projects__project_id__extractions_staging__batch_id__items__item_id__confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6082,6 +6148,19 @@ export interface components {
         SkillUploadUrlRequest: {
             /** Url */
             url: string;
+        };
+        /**
+         * StagedItemConfirmBody
+         * @description 条目级确认请求体（#1581）— 时间必填（f12 §2.9 D3：确认强制带时间）.
+         */
+        StagedItemConfirmBody: {
+            /**
+             * Time Unit
+             * @default
+             */
+            time_unit: string;
+            /** Time Value */
+            time_value: number;
         };
         /**
          * StoryArcCreateBody
@@ -11489,6 +11568,37 @@ export interface operations {
             };
         };
     };
+    list_staging_batches_api_v1_projects__project_id__extractions_staging_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_staged_extraction_api_v1_projects__project_id__extractions_staging__batch_id__get: {
         parameters: {
             query?: never;
@@ -11564,6 +11674,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_staged_item_api_v1_projects__project_id__extractions_staging__batch_id__items__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_staged_item_api_v1_projects__project_id__extractions_staging__batch_id__items__item_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StagedItemConfirmBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

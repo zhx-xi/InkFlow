@@ -652,17 +652,32 @@ class TimelineExtractRequest(BaseModel):
         return _validate_text(v)
 
 
+class PendingTimelineEvent(BaseModel):
+    """#1581：解析不出可用时间的事件（**不写正式表**，交暂存区待作者确认）.
+
+    Attributes:
+        event: 该事件的完整实体（`time_value` 为 None；`time_display` 原文原样保留；
+            `narrative_position` 已按 #1323 合成序算好，确认时直接物化）.
+        reason: 未定原因（确定性解析器返回，供待确认区展示；禁止静默丢弃）.
+    """
+
+    event: TimelineEvent
+    reason: str
+
+
 class TimelineExtractionResult(BaseModel):
     """时间线提取结果 — 合并落库后的报告（F14 §5.5 步骤 ⑦）.
 
     Attributes:
-        created: 本次新建的事件列表.
+        created: 本次新建的事件列表（**只含已定时间者** —— #1581 写前分流）.
         updated: 本次更新（同名同章合并）的事件列表.
         warnings: 提取/合并过程中的警告信息（跳过条目等）.
         model: 实际使用的模型.
+        pending: #1581：解析不出时间的条目（**未落库**，交暂存区；reason 供展示）.
     """
 
     created: list[TimelineEvent]
     updated: list[TimelineEvent]
     warnings: list[str]
     model: str
+    pending: list[PendingTimelineEvent] = Field(default_factory=list)

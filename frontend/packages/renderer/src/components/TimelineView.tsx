@@ -39,8 +39,9 @@ import { Check, ChevronDown, Filter, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
 import { deriveEraAxes, eraKeyOf, primaryEraKey } from './timeline-era-axes';
-import { buildBandLayout } from './timeline-band';
+import { buildBandLayout, bandGlobal } from './timeline-band';
 import { TimelineBand } from './TimelineBand';
+import { TimelinePending } from './TimelinePending';
 import { useI18n } from '../i18n/useI18n';
 import { cn } from '../lib/cn';
 import { useToastStore } from '../stores/toast';
@@ -274,6 +275,13 @@ export function TimelineView({
         axes.filter((axis) => activeAxisKeys.includes(axis.key)),
       ),
     [filtered, axes, activeAxisKeys],
+  );
+
+  // #1581：未定事件（`bandGlobal` 为 null → 不进刻度带）→ 待确认区
+  //（正式表中**存量**未定事件同样在此呈现 —— 不迁移、不丢弃）
+  const undetermined = useMemo(
+    () => filtered.filter((ev) => bandGlobal(ev) === null),
+    [filtered],
   );
 
   // #1323：章分组（仅叙事序；一章一个刻度；组内顺序 = 章内叙事序）
@@ -661,16 +669,24 @@ export function TimelineView({
                 </div>
               ))
             ) : (
-              <TimelineBand
-                band={band}
-                page={bandPage}
-                onPageChange={setBandPage}
-                t={t}
-                chapterLabelOf={(ev) => chapterLabel(chapterKeyOf(ev))}
-                onCheckOne={(id) => void handleCheckOne(id)}
-                onEdit={onEdit}
-                onDelete={onDelete}
-              />
+              <>
+                <TimelineBand
+                  band={band}
+                  page={bandPage}
+                  onPageChange={setBandPage}
+                  t={t}
+                  chapterLabelOf={(ev) => chapterLabel(chapterKeyOf(ev))}
+                  onCheckOne={(id) => void handleCheckOne(id)}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+                {/* #1581：原「未知区」退役 → 待确认区（补时间后确认转正 / 丢弃） */}
+                <TimelinePending
+                  projectId={projectId}
+                  undeterminedEvents={undetermined}
+                  chapterLabelOf={(ev) => chapterLabel(chapterKeyOf(ev))}
+                />
+              </>
             )}
           </div>
         </div>

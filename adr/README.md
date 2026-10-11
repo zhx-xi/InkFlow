@@ -59,6 +59,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-054](database/ADR-054.md) | SQLite schema 迁移 — 引入 Alembic（混合方案 C：骨架 + 版本权威 + ensure_* 平移复用） | ✅ 已接受 | 2026-09-08 |
 | [ADR-063](database/ADR-063.md) | 无 FK 的 `String(36) project_id` 子表根治 — 归一为 `INTEGER + FK(projects.id) ON DELETE CASCADE` | ✅ 已接受 | 2026-10-02 |
 | [ADR-065](database/ADR-065.md) | 多纪元正式化 — `timeline_events` 三列（`era` / `era_value` / `era_scale`）+ `time_value` 全局标量 | ✅ 已接受 | 2026-10-06 |
+| [ADR-067](database/ADR-067.md) | 时间线正式表零未定事件 + 后置时间归一（确定性，零 LLM）+ 未定入暂存（待确认区）；「未知」退役 | ✅ 已接受 | 2026-10-11 |
 
 ### service 层（service）
 
