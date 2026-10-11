@@ -32,11 +32,13 @@ from inkflow.domain.models.character import Character
 from inkflow.domain.models.extraction import (
     CancelStagedResult,
     ConfirmStagedResult,
+    ExtractionRequest,
     ExtractionResult,
     ExtractionStatus,
     ExtractionType,
     StagedEntry,
     StagedListResult,
+    StagingBatchList,
 )
 from inkflow.domain.models.foreshadowing import Foreshadowing
 from inkflow.domain.models.knowledge_graph import (
@@ -199,3 +201,113 @@ class _ExtractionStagingMixin:
             raise ProjectNotFoundError()
         items = await self._staging().list_by_batch(project_id, batch_id)
         return StagedListResult(batch_id=batch_id, items=items)
+
+    # ── #1581 批次列表 + 条目级确认 / 丢弃 ──────────────────────
+
+    async def _staging_after_extract(
+        self,
+        request: ExtractionRequest,
+        batch_id: str | None,
+        result: ExtractionResult,
+    ) -> None:
+        """提取收尾的暂存编排（#1545 §5.9 / #1581）.
+
+        - `stage=true`：整批产物落暂存区（零写入；不写实体 / 不写 run 表）
+        - 非 `stage`：把时间线管线返回的「未定」条目（后置归一解析失败）落暂存区
+          —— 正式表零变更已由管线保证（f12 §2.9 Z1/Z3）
+        - 无批次（dry_run 预览）→ 不落暂存
+        """
+        if batch_id is None:
+            return
+        if request.stage:
+            entries = _staged_entries(request.type, result.detail)
+            await self._staging().add_many(
+                request.project_id, batch_id, request.type.value, entries
+            )
+            return
+        await self._stage_pending_timeline(request.project_id, batch_id, result)
+
+    async def _stage_pending_timeline(
+        self, project_id: uuid.UUID, batch_id: str, result: ExtractionResult
+    ) -> None:
+        """把时间线管线返回的 `pending`（未定时间）条目落暂存区（#1581 §5.9 / f12 §2.9 Z3）.
+
+        管线已保证这些条目**未写正式表**；此处只把它们交给暂存平面（待确认区数据源）。
+        `payload` 附 `name`（列表展示）与 `parse_reason`（未定原因；物化时被 Pydantic 忽略）。
+        暂存仓储未装配 → 记 warning 不静默（宁可可见也不静默丢弃）。
+        """
+        pending = (result.detail or {}).get("pending") or []
+        if not pending:
+            return
+        entries = _staged_entries(
+            ExtractionType.TIMELINE,
+            {
+                "created": [
+                    {
+                        **item["event"],
+                        "name": item["event"].get("title", ""),
+                        "parse_reason": item.get("reason", ""),
+                    }
+                    for item in pending
+                ],
+                "updated": [],
+            },
+        )
+        if self._staging_repo is None:  # type: ignore[attr-defined]  # 混入类：属性由 Service 提供
+            result.warnings.append(f"暂存仓储未装配：{len(entries)} 条未定时间事件未落待确认区")
+            return
+        await self._staging().add_many(project_id, batch_id, ExtractionType.TIMELINE.value, entries)
+
+    async def list_staging_batches(self, project_id: uuid.UUID) -> StagingBatchList:
+        """本项目暂存批次聚合（#1581，**契约冻结**形状；新→旧）."""
+        if await self._project_repo.get(project_id) is None:  # type: ignore[attr-defined]  # 混入类：属性由 Service 提供
+            raise ProjectNotFoundError()
+        batches = await self._staging().list_batches(project_id)
+        return StagingBatchList(batches=batches)
+
+    async def confirm_staged_item(
+        self,
+        project_id: uuid.UUID,
+        batch_id: str,
+        item_id: int,
+        *,
+        time_value: float,
+        time_unit: str = "",
+    ) -> dict[str, Any]:
+        """确认**单条**暂存条目（#1581）：以给定时间覆盖 payload 后走既有物化路径，再删该行.
+
+        `time_value` 必填（f12 §2.9 D3「确认强制带时间」）—— 保证上轴事件必有时间。
+        `time_display` 等其余字段原样保留（只覆盖时间键）；同批其余行不动。
+        """
+        if await self._project_repo.get(project_id) is None:  # type: ignore[attr-defined]  # 混入类：属性由 Service 提供
+            raise ProjectNotFoundError()
+        row = next(
+            (
+                entry
+                for entry in await self._staging().list_by_batch(project_id, batch_id)
+                if entry.id == item_id
+            ),
+            None,
+        )
+        if row is None:
+            raise ExtractionRunError(f"暂存条目不存在（{batch_id}#{item_id}）")
+        target = _ENTITY_TARGETS.get(row.entity_type)
+        repo: Any = None if target is None else getattr(self, target[2], None)
+        if target is None or repo is None:  # pragma: no cover - 分派表与 DI 装配一致
+            raise ExtractionRunError(f"暂存目标仓储未装配，无法确认暂存（{row.entity_type}）")
+        entity = target[1].model_validate(
+            {**row.payload, "time_value": time_value, "time_unit": time_unit}
+        )
+        write = repo.add if row.action == "create" else repo.update
+        await write(entity)
+        await self._staging().delete_by_id(project_id, batch_id, item_id)
+        return {"item_id": item_id, "event_id": str(entity.id)}
+
+    async def discard_staged_item(
+        self, project_id: uuid.UUID, batch_id: str, item_id: int
+    ) -> dict[str, int]:
+        """丢弃**单条**暂存条目（#1581）：只删该行，零物化（幂等）."""
+        if await self._project_repo.get(project_id) is None:  # type: ignore[attr-defined]  # 混入类：属性由 Service 提供
+            raise ProjectNotFoundError()
+        deleted = await self._staging().delete_by_id(project_id, batch_id, item_id)
+        return {"deleted": deleted}

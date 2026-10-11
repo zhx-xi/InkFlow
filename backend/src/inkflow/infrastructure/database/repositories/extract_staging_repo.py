@@ -22,10 +22,10 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from inkflow.domain.models.extraction import StagedEntry
+from inkflow.domain.models.extraction import StagedEntry, StagingBatch
 from inkflow.infrastructure.database.models.extract_staging import ExtractStagingORM
 from inkflow.infrastructure.database.repositories._id_guard import (
     int_pk_for_filter,
@@ -42,6 +42,7 @@ def _orm_to_domain(orm: ExtractStagingORM) -> StagedEntry:
     """暂存 ORM 行 → 领域条目（payload JSON 文本 → dict；name 取自 payload）."""
     payload = json.loads(orm.payload)
     return StagedEntry(
+        id=orm.id,
         entity_type=orm.entity_type,
         action=orm.action,
         name=payload.get("name", ""),
@@ -124,6 +125,44 @@ class SQLExtractStagingRepository:
         stmt = delete(ExtractStagingORM).where(
             ExtractStagingORM.project_id == int_pk_for_filter(project_id),
             ExtractStagingORM.batch_id == batch_id,
+        )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]  # SQLAlchemy Result 未声明 rowcount（属性在底层 cursor）
+
+    async def list_batches(self, project_id: uuid.UUID) -> list[StagingBatch]:
+        """列出本项目暂存批次聚合（#1581，新→旧；无批次 → 空列表）."""
+        stmt = (
+            select(
+                ExtractStagingORM.batch_id,
+                ExtractStagingORM.type,
+                func.min(ExtractStagingORM.created_at).label("created_at"),
+                func.count().label("item_count"),
+            )
+            .where(ExtractStagingORM.project_id == int_pk_for_filter(project_id))
+            .group_by(ExtractStagingORM.batch_id, ExtractStagingORM.type)
+            .order_by(
+                func.min(ExtractStagingORM.created_at).desc(),
+                ExtractStagingORM.batch_id.desc(),
+            )
+        )
+        result = await self._session.execute(stmt)
+        return [
+            StagingBatch(
+                batch_id=row.batch_id,
+                type=row.type,
+                created_at=row.created_at,
+                item_count=int(row.item_count),
+            )
+            for row in result.all()
+        ]
+
+    async def delete_by_id(self, project_id: uuid.UUID, batch_id: str, item_id: int) -> int:
+        """按 (project_id, batch_id, item_id) 删除单条暂存行（#1581；幂等）."""
+        stmt = delete(ExtractStagingORM).where(
+            ExtractStagingORM.project_id == int_pk_for_filter(project_id),
+            ExtractStagingORM.batch_id == batch_id,
+            ExtractStagingORM.id == item_id,
         )
         result = await self._session.execute(stmt)
         await self._session.commit()

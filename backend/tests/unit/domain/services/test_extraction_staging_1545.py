@@ -32,9 +32,11 @@ from inkflow.domain.models.extraction import (
     ExtractionType,
     StagedEntry,
     StagedListResult,
+    StagingBatch,
 )
 from inkflow.domain.models.world import WorldExtractionResult, WorldSetting
-from inkflow.domain.ports.extraction_errors import ExtractionValidationError
+from inkflow.domain.ports.character_errors import ProjectNotFoundError
+from inkflow.domain.ports.extraction_errors import ExtractionRunError, ExtractionValidationError
 from inkflow.domain.services.extraction_service import ExtractionService
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
@@ -100,6 +102,13 @@ def svc() -> ExtractionService:
     staging_repo.add_many = AsyncMock(return_value=2)
     staging_repo.list_by_batch = AsyncMock(return_value=[])
     staging_repo.delete_by_batch = AsyncMock(return_value=2)
+    # #1581：批次列表 + 条目级丢弃
+    staging_repo.list_batches = AsyncMock(return_value=[])
+    staging_repo.delete_by_id = AsyncMock(return_value=1)
+    # #1581：条目级确认的物化目标（timeline_event → 时间线仓储）
+    timeline_repo = MagicMock()
+    timeline_repo.add = AsyncMock(side_effect=lambda e: e)
+    timeline_repo.update = AsyncMock(side_effect=lambda e: e)
     return ExtractionService(
         project_repo=project_repo,
         chapter_repo=chapter_repo,
@@ -113,6 +122,7 @@ def svc() -> ExtractionService:
         style_service=MagicMock(),
         character_repo=character_repo,
         world_repo=world_repo,
+        timeline_repo=timeline_repo,
         staging_repo=staging_repo,
     )
 
@@ -222,3 +232,82 @@ class TestListStaged:
         assert out.batch_id == "ext-1"
         assert out.items[0].name == "角色甲"
         svc._staging_repo.list_by_batch.assert_awaited_once()
+
+
+class TestStagingItemOps1581:
+    """#1581：暂存批次列表 + 条目级确认 / 丢弃（待确认区数据面与动作面）。"""
+
+    @staticmethod
+    def _timeline_payload() -> dict[str, object]:
+        """未定时间的时间线事件 payload（含 `parse_reason`；物化时被 Pydantic 忽略）。"""
+        return {
+            "id": str(uuid.uuid4()),
+            "project_id": str(PID),
+            "title": "未定事件",
+            "description": "",
+            "time_value": None,
+            "time_unit": "",
+            "time_display": "那年冬天",
+            "narrative_position": 1,
+            "timeline_flag": "",
+            "parse_reason": "无绝对时间量（相对 / 模糊表达）",
+            "created_at": NOW.isoformat(),
+            "updated_at": NOW.isoformat(),
+        }
+
+    async def test_list_staging_batches_returns_aggregate(self, svc) -> None:
+        """批次列表 → StagingBatchList（契约冻结形状的数据面）。"""
+        svc._staging_repo.list_batches.return_value = [
+            StagingBatch(batch_id="ext-1", type="timeline", created_at=NOW, item_count=3)
+        ]
+
+        out = await svc.list_staging_batches(PID)
+
+        assert [b.batch_id for b in out.batches] == ["ext-1"]
+        assert out.batches[0].item_count == 3
+        svc._staging_repo.list_batches.assert_awaited_once_with(PID)
+
+    async def test_list_staging_batches_project_not_found(self, svc) -> None:
+        """项目不存在 → ProjectNotFoundError（同 rollback 口径）。"""
+        svc._project_repo.get.return_value = None
+
+        with pytest.raises(ProjectNotFoundError):
+            await svc.list_staging_batches(PID)
+
+    async def test_confirm_item_overrides_time_then_deletes_row(self, svc) -> None:
+        """条目确认：以给定时间覆盖 payload → 走既有物化路径 → 删该行（其余行不动）。"""
+        svc._staging_repo.list_by_batch.return_value = [
+            StagedEntry(
+                id=7,
+                entity_type="timeline_event",
+                action="create",
+                name="未定事件",
+                payload=self._timeline_payload(),
+            )
+        ]
+
+        out = await svc.confirm_staged_item(PID, "ext-1", 7, time_value=5.0, time_unit="日")
+
+        assert out["item_id"] == 7
+        added = svc._timeline_repo.add.await_args.args[0]
+        assert added.title == "未定事件"
+        assert (added.time_value, added.time_unit) == (5.0, "日")
+        assert added.time_display == "那年冬天"  # 原文保留
+        svc._staging_repo.delete_by_id.assert_awaited_once_with(PID, "ext-1", 7)
+
+    async def test_confirm_item_missing_raises(self, svc) -> None:
+        """条目不存在 → ExtractionRunError（不静默）。"""
+        svc._staging_repo.list_by_batch.return_value = []
+
+        with pytest.raises(ExtractionRunError):
+            await svc.confirm_staged_item(PID, "ext-1", 404, time_value=1.0)
+
+    async def test_discard_item_deletes_row_without_materializing(self, svc) -> None:
+        """条目丢弃：只删该行，零物化（幂等：不存在 → deleted=0）。"""
+        svc._staging_repo.delete_by_id.return_value = 0
+
+        out = await svc.discard_staged_item(PID, "ext-1", 9)
+
+        assert out == {"deleted": 0}
+        svc._timeline_repo.add.assert_not_awaited()
+        svc._staging_repo.delete_by_id.assert_awaited_once_with(PID, "ext-1", 9)

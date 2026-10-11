@@ -262,6 +262,76 @@ class TestExtractStagingRepository:
         assert await _count_rows(db_session, project.id) == 0
         assert await _count_rows(db_session, other.id) == 1
 
+    # ── #1581 list_batches / delete_by_id ──
+
+    async def test_list_by_batch_exposes_row_id(self, db_session, project):
+        """#1581：`StagedEntry.id` = 暂存行主键（条目级动作的寻址键），写入序升序。"""
+        repo = SQLExtractStagingRepository(db_session)
+        await repo.add_many(
+            _pid(project),
+            BATCH,
+            "timeline",
+            [
+                _entry("timeline_event", "create", {"name": "未定一"}),
+                _entry("timeline_event", "create", {"name": "未定二"}),
+            ],
+        )
+
+        items = await repo.list_by_batch(_pid(project), BATCH)
+
+        assert all(item.id is not None for item in items)
+        assert [item.name for item in items] == ["未定一", "未定二"]
+        assert items[0].id is not None and items[1].id is not None
+        assert items[0].id < items[1].id
+
+    async def test_list_batches_aggregates_newest_first(self, db_session, project):
+        """#1581：批次聚合（batch_id / type / created_at / item_count），新→旧。"""
+        repo = SQLExtractStagingRepository(db_session)
+        await _insert_with_age(db_session, project.id, 5, "old-batch")
+        await _insert_with_age(db_session, project.id, 5, "old-batch")
+        await _insert_with_age(db_session, project.id, 1, "new-batch")
+
+        batches = await repo.list_batches(_pid(project))
+
+        assert [b.batch_id for b in batches] == ["new-batch", "old-batch"]
+        assert [b.item_count for b in batches] == [1, 2]
+        assert batches[0].type == "character"
+        assert batches[0].created_at > batches[1].created_at
+
+    async def test_list_batches_empty_and_project_isolated(self, db_session, project):
+        """无批次 → 空列表；他项目批次不可见。"""
+        other = ProjectORM(name="其他项目")
+        db_session.add(other)
+        await db_session.commit()
+        await db_session.refresh(other)
+        repo = SQLExtractStagingRepository(db_session)
+        await _insert_with_age(db_session, other.id, 1, "other-batch")
+
+        assert await repo.list_batches(_pid(project)) == []
+        assert [b.batch_id for b in await repo.list_batches(_pid(other))] == ["other-batch"]
+
+    async def test_delete_by_id_removes_only_target_and_is_idempotent(self, db_session, project):
+        """#1581：只删目标行（同批其余保留）；重复删除 → 0，不报错。"""
+        repo = SQLExtractStagingRepository(db_session)
+        await repo.add_many(
+            _pid(project),
+            BATCH,
+            "timeline",
+            [
+                _entry("timeline_event", "create", {"name": "A"}),
+                _entry("timeline_event", "create", {"name": "B"}),
+            ],
+        )
+        items = await repo.list_by_batch(_pid(project), BATCH)
+        target = items[0].id
+        assert target is not None
+
+        assert await repo.delete_by_id(_pid(project), BATCH, target) == 1
+        remain = await repo.list_by_batch(_pid(project), BATCH)
+        assert [i.name for i in remain] == ["B"]
+        # 幂等：再删同一行 → 0
+        assert await repo.delete_by_id(_pid(project), BATCH, target) == 0
+
 
 def test_orm_utcnow_is_timezone_aware() -> None:
     """ORM 模块的 ``_utcnow``（created_at 默认工厂）返回 tz-aware UTC。"""

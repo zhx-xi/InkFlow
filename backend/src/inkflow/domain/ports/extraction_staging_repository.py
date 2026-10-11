@@ -16,7 +16,7 @@ import builtins
 import uuid
 from typing import Protocol
 
-from inkflow.domain.models.extraction import StagedEntry
+from inkflow.domain.models.extraction import StagedEntry, StagingBatch
 
 
 class ExtractionStagingRepositoryProtocol(Protocol):
@@ -70,5 +70,29 @@ class ExtractionStagingRepositoryProtocol(Protocol):
 
         Returns:
             实际删除的行数（重复删除 → 0，不报错）.
+        """
+        ...
+
+    async def list_batches(self, project_id: uuid.UUID) -> builtins.list[StagingBatch]:
+        """列出本项目的暂存批次聚合（#1581，批次列表端点；新→旧）.
+
+        Args:
+            project_id: 项目主键（领域 UUID）.
+
+        Returns:
+            批次聚合列表（每批一项；无批次 → 空列表）.
+        """
+        ...
+
+    async def delete_by_id(self, project_id: uuid.UUID, batch_id: str, item_id: int) -> int:
+        """按 (project_id, batch_id, item_id) 删除**单条**暂存行（#1581，条目级丢弃）.
+
+        Args:
+            project_id: 项目主键（领域 UUID）.
+            batch_id: 批次标识.
+            item_id: 暂存行主键（``StagedEntry.id``）.
+
+        Returns:
+            实际删除的行数（1 = 删除；0 = 不存在，幂等不报错）.
         """
         ...

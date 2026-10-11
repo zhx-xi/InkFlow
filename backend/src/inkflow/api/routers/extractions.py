@@ -126,6 +126,13 @@ async def _run_service(coro: Awaitable[Any]) -> Any:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+class StagedItemConfirmBody(BaseModel):
+    """条目级确认请求体（#1581）— 时间必填（f12 §2.9 D3：确认强制带时间）."""
+
+    time_value: float
+    time_unit: str = ""
+
+
 class ReindexBody(BaseModel):
     """全量重建索引请求体 — entity_types 缺省 = 全部 5 种（spec §3.3）。"""
 
@@ -297,6 +304,23 @@ async def rollback_extraction_batch(
     return result.model_dump(mode="json")
 
 
+@router.get("/projects/{project_id}/extractions/staging")
+@instrument(caller_type="api")
+async def list_staging_batches(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """本项目暂存批次聚合（#1581，**契约冻结**）——项目不存在 → 404。
+
+    返回 ``{"batches": [{batch_id, type, created_at, item_count}]}``（**新→旧**）；
+    「未确认」由存在性表达（暂存表无 status 列）；无批次 → ``{"batches": []}``。
+    """
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    result = await _run_service(svc.list_staging_batches(pid))
+    return result.model_dump(mode="json")
+
+
 @router.get("/projects/{project_id}/extractions/staging/{batch_id}")
 @instrument(caller_type="api")
 async def list_staged_extraction(
@@ -348,6 +372,43 @@ async def cancel_staged_extraction(
     svc = await _get_svc(db)
     result = await _run_service(svc.cancel_staged(pid, batch_id))
     return result.model_dump(mode="json")
+
+
+@router.post("/projects/{project_id}/extractions/staging/{batch_id}/items/{item_id}/confirm")
+@instrument(caller_type="api")
+async def confirm_staged_item(
+    project_id: str,
+    batch_id: str,
+    item_id: int,
+    data: StagedItemConfirmBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """确认**单条**暂存条目（#1581）→ ``{item_id, event_id}``。
+
+    body ``{time_value, time_unit}``；**缺 time_value → 422**（f12 §2.9 D3）。
+    只物化该行并删除该行，同批其余行保留；项目不存在 → 404。
+    """
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    return await _run_service(
+        svc.confirm_staged_item(
+            pid, batch_id, item_id, time_value=data.time_value, time_unit=data.time_unit
+        )
+    )
+
+
+@router.delete("/projects/{project_id}/extractions/staging/{batch_id}/items/{item_id}")
+@instrument(caller_type="api")
+async def discard_staged_item(
+    project_id: str,
+    batch_id: str,
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """丢弃**单条**暂存条目（#1581）→ ``{deleted}``（零物化、幂等）；项目不存在 → 404。"""
+    pid = _parse_id(project_id)
+    svc = await _get_svc(db)
+    return await _run_service(svc.discard_staged_item(pid, batch_id, item_id))
 
 
 @router.post("/projects/{project_id}/vector/reindex")

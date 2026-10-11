@@ -115,7 +115,6 @@ from inkflow.domain.services._extraction_rag import (
 )
 from inkflow.domain.services._extraction_staging import (
     _ExtractionStagingMixin,
-    _staged_entries,
 )
 from inkflow.domain.services._foreshadowing_extractor import ForeshadowingExtractor
 from inkflow.domain.services._timeline_extractor import TimelineExtractor
@@ -360,12 +359,8 @@ class ExtractionService(_ExtractionRAGMixin, _ExtractionStagingMixin):
         # ④⑤ 逐源执行 + 每源成功后立即 upsert run（断点续跑基础，§6.2）
         result, executed = await self._run_sources(request, sources, project, batch_id)
 
-        # ⑤' #1545 §5.9: stage=true → 产物落暂存区（零写入：不写实体 / 不写 run 表）
-        if request.stage and batch_id is not None:
-            entries = _staged_entries(request.type, result.detail)
-            await self._staging().add_many(
-                request.project_id, batch_id, request.type.value, entries
-            )
+        # ⑤' #1545 §5.9 / #1581: 产物落暂存区（stage=true 整批；否则时间线「未定」条目）
+        await self._staging_after_extract(request, batch_id, result)
 
         # ⑥ index=true → 索引本次产物（§5.6；outline/timeline 关闭时与 STYLE
         # 恒 False——忽略 + warning，§8.2 表 #7）
