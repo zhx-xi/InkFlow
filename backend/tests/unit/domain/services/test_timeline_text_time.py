@@ -56,6 +56,16 @@ def test_parse_month_day_folds_to_days() -> None:
     assert parsed.value == 62.0  # (3-1)*30 + 2
     assert parsed.unit == "日"
     assert parse_time_display("十二月初五")[0].value == 335.0  # (12-1)*30 + 5
+    # 「廿 N」= 20 + N（下旬写法）
+    assert parse_time_display("三月廿五")[0].value == 85.0  # (3-1)*30 + 25
+
+
+def test_month_out_of_range_falls_through_to_failure() -> None:
+    """月超出 1-12 → 不产假值，走失败分支（带 reason）。"""
+    parsed, reason = parse_time_display("十三月初一")
+
+    assert parsed is None
+    assert reason.strip() != ""
 
 
 # ── 不覆盖形态（spec §2.9「不覆盖」清单）→ 失败 + reason ──────────

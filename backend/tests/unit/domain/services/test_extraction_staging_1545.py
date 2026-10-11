@@ -34,12 +34,18 @@ from inkflow.domain.models.extraction import (
     StagedListResult,
     StagingBatch,
 )
+from inkflow.domain.models.timeline import (
+    PendingTimelineEvent,
+    TimelineEvent,
+    TimelineExtractionResult,
+)
 from inkflow.domain.models.world import WorldExtractionResult, WorldSetting
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ExtractionRunError, ExtractionValidationError
 from inkflow.domain.services.extraction_service import ExtractionService
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
+CID = uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001")
 NOW = datetime(2026, 10, 9, tzinfo=UTC)
 
 
@@ -311,3 +317,66 @@ class TestStagingItemOps1581:
         assert out == {"deleted": 0}
         svc._timeline_repo.add.assert_not_awaited()
         svc._staging_repo.delete_by_id.assert_awaited_once_with(PID, "ext-1", 9)
+
+
+def _pending_result(reason: str = "相对时间，需作者锚定") -> TimelineExtractionResult:
+    """构造「1 条未定条目」的时间线管线结果（门面分流用）。"""
+    event = TimelineEvent(
+        id=uuid.uuid4(),
+        project_id=PID,
+        title="未定事件",
+        time_display="过了两天",
+        time_value=None,
+        narrative_position=1,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    return TimelineExtractionResult(
+        created=[],
+        updated=[],
+        warnings=[],
+        model="openai/gpt-4o",
+        pending=[PendingTimelineEvent(event=event, reason=reason)],
+    )
+
+
+class TestPendingTimelineStaging1581:
+    """#1581：非 stage 路径下，时间线「未定」条目由门面落暂存（待确认区数据源）。"""
+
+    async def test_non_stage_pending_is_staged_with_reason(self, svc) -> None:
+        """pending → 落暂存（entity_type=timeline_event，payload 含 parse_reason）。"""
+        svc._timeline_extractor.extract = AsyncMock(return_value=_pending_result())
+        svc._staging_repo.add_many.reset_mock()
+
+        await svc.extract(
+            ExtractionRequest(
+                project_id=PID,
+                type=ExtractionType.TIMELINE,
+                chapter_ids=[CID],
+                auto_extract=True,
+            )
+        )
+
+        entries = svc._staging_repo.add_many.await_args.args[-1]
+        assert len(entries) == 1
+        assert entries[0].entity_type == "timeline_event"
+        assert entries[0].action == "create"
+        assert entries[0].name == "未定事件"
+        assert entries[0].payload["parse_reason"] == "相对时间，需作者锚定"
+        assert entries[0].payload["time_display"] == "过了两天"
+
+    async def test_non_stage_pending_without_staging_repo_is_visible(self, svc) -> None:
+        """暂存仓储未装配 → 记 warning（不静默丢弃）。"""
+        svc._timeline_extractor.extract = AsyncMock(return_value=_pending_result())
+        svc._staging_repo = None
+
+        result = await svc.extract(
+            ExtractionRequest(
+                project_id=PID,
+                type=ExtractionType.TIMELINE,
+                chapter_ids=[CID],
+                auto_extract=True,
+            )
+        )
+
+        assert any("暂存仓储未装配" in w for w in result.warnings)
