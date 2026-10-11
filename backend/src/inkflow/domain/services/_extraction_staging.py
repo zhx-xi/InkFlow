@@ -299,9 +299,9 @@ class _ExtractionStagingMixin:
             {**row.payload, "time_value": time_value, "time_unit": time_unit}
         )
         write = repo.add if row.action == "create" else repo.update
-        await write(entity)
+        saved = await write(entity)
         await self._staging().delete_by_id(project_id, batch_id, item_id)
-        return {"item_id": item_id, "event_id": str(entity.id)}
+        return {"item_id": item_id, "event_id": str(saved.id)}
 
     async def discard_staged_item(
         self, project_id: uuid.UUID, batch_id: str, item_id: int

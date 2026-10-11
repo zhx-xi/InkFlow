@@ -23,7 +23,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from inkflow.core.database import Base
 from inkflow.domain.models.character import Character, CharacterExtractionResult
 from inkflow.domain.models.extraction import (
     CancelStagedResult,
@@ -43,6 +46,9 @@ from inkflow.domain.models.world import WorldExtractionResult, WorldSetting
 from inkflow.domain.ports.character_errors import ProjectNotFoundError
 from inkflow.domain.ports.extraction_errors import ExtractionRunError, ExtractionValidationError
 from inkflow.domain.services.extraction_service import ExtractionService
+from inkflow.infrastructure.database.models.project import ProjectORM
+from inkflow.infrastructure.database.repositories.character_repo import SQLiteCharacterRepository
+from inkflow.infrastructure.database.repositories.timeline_repo import SQLiteTimelineRepository
 
 PID = uuid.UUID("3f2e1d4a-0000-4000-8000-000000000001")
 CID = uuid.UUID("9b1c2d3e-0000-4000-8000-000000000001")
@@ -380,3 +386,136 @@ class TestPendingTimelineStaging1581:
         )
 
         assert any("暂存仓储未装配" in w for w in result.warnings)
+
+
+# ── #1586：条目级确认返回的 event_id 必须能回读 ─────────────────────────
+
+
+@pytest.fixture
+async def sqlite_session():
+    """独立 in-memory SQLite（真仓储用；同 test_extract_rollback_service_1485 fixture 惯例）."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+@pytest.fixture
+async def staged_env(sqlite_session):
+    """真仓储（timeline / character）+ 桩暂存仓储的确认环境（#1586）.
+
+    物化目标必须是**真仓储** —— 各实体仓储 `add()` 的主键由 DB 自增分配，
+    读回时映射为 `uuid.UUID(int=orm.id)`；桩对象直接回传入参实体会掩盖真身份。
+    """
+    project = ProjectORM(name="条目确认回读项目")
+    sqlite_session.add(project)
+    await sqlite_session.commit()
+    await sqlite_session.refresh(project)
+
+    project_repo = MagicMock()
+    project_repo.get = AsyncMock(return_value=_project())
+    staging_repo = MagicMock()
+    staging_repo.list_by_batch = AsyncMock(return_value=[])
+    staging_repo.delete_by_id = AsyncMock(return_value=1)
+    timeline_repo = SQLiteTimelineRepository(sqlite_session)
+    character_repo = SQLiteCharacterRepository(sqlite_session)
+    svc = ExtractionService(
+        project_repo=project_repo,
+        chapter_repo=MagicMock(),
+        run_repo=MagicMock(),
+        character_service=MagicMock(),
+        world_service=MagicMock(),
+        outline_service=MagicMock(),
+        timeline_service=MagicMock(),
+        foreshadowing_extractor=MagicMock(),
+        timeline_extractor=MagicMock(),
+        style_service=MagicMock(),
+        character_repo=character_repo,
+        timeline_repo=timeline_repo,
+        staging_repo=staging_repo,
+    )
+    return SimpleNamespace(
+        svc=svc,
+        pid=uuid.UUID(int=project.id),
+        staging_repo=staging_repo,
+        timeline_repo=timeline_repo,
+        character_repo=character_repo,
+    )
+
+
+class TestConfirmStagedItemEventIdReadback1586:
+    """#1586：确认单条暂存返回的 `event_id` 必须是**物化后**可回读的真身份。"""
+
+    async def test_timeline_item_confirm_returns_readable_event_id(self, staged_env) -> None:
+        """时间线条目：payload 里的 `id` 与主键无关 → 返回物化后真身份才可回读."""
+        payload_id = "6fae87cb-d68d-46c4-bf4c-7b437c28c4f5"
+        staged_env.staging_repo.list_by_batch.return_value = [
+            StagedEntry(
+                id=7,
+                entity_type="timeline_event",
+                action="create",
+                name="未定事件",
+                payload={
+                    "id": payload_id,
+                    "project_id": str(staged_env.pid),
+                    "title": "未定事件",
+                    "description": "",
+                    "time_value": None,
+                    "time_unit": "",
+                    "time_display": "那年冬天",
+                    "narrative_position": 1,
+                    "timeline_flag": "",
+                    "parse_reason": "无绝对时间量（相对 / 模糊表达）",
+                    "created_at": NOW.isoformat(),
+                    "updated_at": NOW.isoformat(),
+                },
+            )
+        ]
+
+        out = await staged_env.svc.confirm_staged_item(
+            staged_env.pid, "ext-1", 7, time_value=9.0, time_unit="日"
+        )
+
+        assert out["item_id"] == 7
+        event = await staged_env.timeline_repo.get(uuid.UUID(out["event_id"]))
+        assert event is not None, "返回的 event_id 必须能在正式表回读（#1586）"
+        assert event.time_value == 9.0
+        assert event.time_unit == "日"
+        assert event.time_display == "那年冬天"
+
+    async def test_character_item_confirm_returns_readable_event_id(self, staged_env) -> None:
+        """角色条目：修法对全部分派类型生效（不是只修时间线）."""
+        staged_env.staging_repo.list_by_batch.return_value = [
+            StagedEntry(
+                id=3,
+                entity_type="character",
+                action="create",
+                name="角色甲",
+                payload={
+                    "id": str(uuid.uuid4()),
+                    "project_id": str(staged_env.pid),
+                    "name": "角色甲",
+                    "created_at": NOW.isoformat(),
+                    "updated_at": NOW.isoformat(),
+                },
+            )
+        ]
+
+        out = await staged_env.svc.confirm_staged_item(
+            staged_env.pid, "ext-2", 3, time_value=1.0, time_unit="日"
+        )
+
+        assert out["item_id"] == 3
+        character = await staged_env.character_repo.get(uuid.UUID(out["event_id"]))
+        assert character is not None, "返回的 event_id 必须能在正式表回读（#1586）"
+        assert character.name == "角色甲"
