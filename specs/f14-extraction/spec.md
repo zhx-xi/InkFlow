@@ -9,7 +9,7 @@
 > **Spec 变更**: v1.4 — 时间线提取补「时间表达」契约（#1526，0.17.0 rc1 数据质量）：`ExtractedTimelineEvent` 新增 `time_display`（**原文时间表达**，如「三月初二」）；提示词（zh/en 同源）要求**每事件必须给 `time_display`**，解析不出累计天数时 `time_value` 仍为 `null` 但**必须保留 `time_display`**；`time_unit` 仅在确实解析出 `time_value` 时写入（未解析出值 → 留空，防「假非空」噪声）；§5.5 schema / 模板 / 合并策略同步。**不推翻** [f12 §2.7](../f12-timeline/spec.md) S10（单位固定 + 项目内累计时基 + 不确定即 null）——本契约只补「原文表达不得丢」的展示面兜底，不改数值语义
 > **Spec 变更**: v1.5 — 暂存过期清理落地（#1551，0.17.0 W8c 收尾）：§5.9「过期清理」从「仅登记语义、不实现」改为「已实现」（内核启动期幂等清理超期未确认暂存行，阈值常量 30 天、失败不阻塞启动、不新增索引）；§5.9 / §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` **公开 compute-only 入口**（原私有 `_extract_rules` 升公开，消除跨模块私有调用）——关系提取算法与语义不变
 > **Spec 变更**: v1.6 — hnsw 段卡死自愈（#1563，0.17.0 rc2 修复）**— ⚠️ 根因已证伪 issue 原诊断，修复改为 A′+C**：新增 §5.6.8。实测根因 = chroma 1.5 中**一次「别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先于 `VECTOR.max_seq_id` 且不再追赶**（需要「对本 collection 再写一次」才 apply），带 `where` 的读 plan 随即抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）总是最后一次写 → reindex 返回后目标 collection 必然不可读，直到服务层自愈再 reindex 一次（= 这才是「第二次调用就好」的真实机制）。**已证伪**：① 不是「flush 窗口太短」（只等待永久不恢复，≥60s）；② 文件系统存在性判据无效（失败时段文件全部在位）；③ 原拍板 A（读侧等待）+ B（写侧同形探针）+ C 实测**不足以修复**。**改为 A′（读侧空写自愈：元数据原样回写触发 pending log apply + 重试，写次数有界）+ C（文案改「请重试一次」）**，并删除读侧固定次数重试与 1.5s 预算（#1011 评审 M2 读侧口径废止；写侧 `_FLUSH_PROBE_*`/`_ensure_hnsw_flushed` 不变）；实证 before 首调 500 → after 首调 200（同 harness，11ms 内自愈）
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第六个**模块，估算 5.5-7.5 人天（Q2 时间线提取管线 +1.5 人天））
+> **Spec 变更**: v1.7 — 时间线未定事件入暂存 + 暂存批次列表端点 + 条目级确认/丢弃（#1581，0.17.0 rc3 修复；依据 [f12 §2.9](../f12-timeline/spec.md) / [ADR-067](../../adr/database/ADR-067.md)）：① §5.5 时间线管线新增**写前分流**——`time_value` 为空的事件经**后置归一**（确定性文本解析器）仍无值 → **不写 `timeline_events`**，改由门面落暂存（`entity_type=timeline_event`，连 `parse_reason`）；② §5.9 新增 **`GET /projects/{pid}/extractions/staging`（批次列表）** + **条目级 `confirm` / `DELETE`** 三端点（暂存区**可达 100%**、逐条定夺）；③ `StagedEntry` 增 `id`（条目级动作寻址）；**#1545/#1546/#1548/#1551 既有面零变更**（批次级 stage/confirm/cancel 语义不变）
 > **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-013](../../adr/llm/ADR-013.md) (RAG: LangChain Chroma + BGE), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
@@ -1036,6 +1036,20 @@ variables:
 
 > **匹配逻辑在服务层**: F12 事件表**无任何唯一约束**（事件是实例而非档案，F12 spec §2.4）——同名同章匹配由 TimelineExtractor 经 `TimelineRepositoryProtocol.list_by_chapter` 拉取该章事件后按 title 比对完成，**表结构不引入唯一索引**（跨模块 MODIFY F12 仅加列 + FK + 索引，§8）。
 
+**写前分流 + 后置时间归一（#1581，0.17.0 rc3 修复）**：合并阶段的**新建**分支前追加一步：
+
+1. 若 `ee.time_value is None` 且 `ee.time_display` 非空 → 调 `parse_time_display(ee.time_display)`
+   （`domain/services/_timeline_text_time.py`，**确定性、零 LLM**，[f12 §2.9](../f12-timeline/spec.md) Z2）；
+2. 解析成功 → 用解析出的 `value` / `unit` / `era` 填该事件的 `time_value` / `time_unit`（`era` 非空时一并写入；
+   `time_display` **原样保留**）；
+3. 解析失败 / 仍无值 → **不调用 `repo.add`**（正式表零变更，Z1），该事件进 `TimelineExtractionResult.pending`
+   并记 `reason`（门面据此落暂存，Z3）；
+4. `time_unit` 仅在 `time_value` 非 None 时落值（#1526 不变量保持）。
+
+**干跑（`dry_run=True`，含 `stage=True`）行为不变**：`pending` 为空、全部 would-be 新建照旧进 `created`
+（暂存批次级路径依赖该口径，#1545/#1546 零回归）。**存量已落库的未定事件不回溯改写**（Z5）。
+
+
 **事件-章节联动语义（Q3 综合方案 — 精确提取 + 事件和章节联动）**:
 
 | 场景 | 行为 |
@@ -1437,9 +1451,30 @@ would-be 关系、置于信封 `detail.created` 后落暂存（不写 knowledge_
 
 | 方法 | 路径 | 返回 |
 |---|---|---|
-| GET | `/api/v1/projects/{pid}/extractions/staging/{batch_id}` | `StagedListResult{batch_id, items[]}`（元素 `StagedEntry{entity_type, action, name, payload}`） |
+| GET | `/api/v1/projects/{pid}/extractions/staging/{batch_id}` | `StagedListResult{batch_id, items[]}`（元素 `StagedEntry{id, entity_type, action, name, payload}`） |
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/confirm` | `ConfirmStagedResult{batch_id, created, updated}` |
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/cancel` | `CancelStagedResult{batch_id, deleted}` |
+| **GET** | **`/api/v1/projects/{pid}/extractions/staging`** | **`{batches: [{batch_id, type, created_at, item_count}]}`**（**新→旧**，`created_at DESC`；#1581） |
+| **POST** | **`/api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}/confirm`** | **`{item_id, event_id}`**（body `{time_value, time_unit}`；#1581） |
+| **DELETE** | **`/api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}`** | **`{deleted}`**（`1` 删除 / `0` 不存在，幂等；#1581） |
+
+**批次列表端点（#1581，契约冻结）**：`GET .../extractions/staging` 返回**本项目的暂存批次聚合**（新→旧），
+以供「待确认提取（N）」入口与待确认区消费。
+- **形状冻结**：`{batches: [{batch_id: str, type: str, created_at: iso8601, item_count: int}]}`——`type` = `ExtractionType.value`；**新→旧**排序。
+- **「未确认」由存在性表达**：暂存表**无 status 列**（行在 = 未确认），本端点**不引入**状态字段、**不新增迁移**。
+- 无批次 → `{"batches": []}`（幂等）；项目不存在 → 404（同 rollback 口径）。
+
+**条目级动作（#1581）**：`item_id` = 暂存行 `id`（`StagedEntry.id`）。
+- **条目 confirm**：按 `(project_id, batch_id, item_id)` 取该行 → 复用该行既有物化路径（`entity_type` → 仓储 `add`），
+  **写入前以 body 的 `time_value`/`time_unit` 覆盖 payload 的时间字段**（`time_display` 原样保留）→ 删除该行
+  （**只删本行**，同批其余行保留）。`time_value` 为**必填有限数值**（未给 → 422，[f12 §2.9](../f12-timeline/spec.md) D3「确认强制带时间」）。
+- **条目 DELETE**：只删该行，零物化（同 cancel 语义，粒度到行）；重复删除 → `deleted=0`，不报错。
+- **与批次级的关系**：#1545 的批次级 `confirm` / `cancel` **语义与行为逐条不变**（前端「AI 提取结果」对话框仍用它）；条目级是**增量能力**，两者共用同一物化分派表（`_STAGE_TARGETS` / `_ENTITY_TARGETS`）。
+
+**写前分流（#1581，时间线专用）**：TIMELINE 管线的 `_merge` 在**写库前**对每条新建事件做**后置归一**（[f12 §2.9](../f12-timeline/spec.md) Z2）——
+解析失败/无 `time_value` 者**不调用仓储**，作为 `TimelineExtractionResult.pending` 返回；门面在非 `stage` 路径下把
+`pending` 落暂存（`entity_type=timeline_event`、`action=create`；`payload` 为该事件的 `model_dump` 并附
+`parse_reason`（失败原因，物化时被 Pydantic 忽略））。`stage=true` 路径**行为不变**（全部条目本就落暂存）。
 
 **列表端点（#1581 交付，供 GUI「待确认提取（N）」入口消费）**：
 `GET /api/v1/projects/{pid}/extractions/staging` → `{batches: [{batch_id, type, created_at, item_count}]}`
