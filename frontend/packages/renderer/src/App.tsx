@@ -15,6 +15,7 @@ import { SetupGuide } from './components/SetupGuide';
 import { WindowControls } from './components/WindowControls';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { ToastHost } from './components/ui/toast';
+import { AIExtractDialog } from './components/extract/AIExtractDialog';
 import { WritingPage } from './pages/writing';
 import { ProjectsPage } from './pages/projects';
 import { LibraryPage } from './pages/library';
@@ -181,6 +182,8 @@ function AppLayout() {
 
       {/* Toast 挂载点（布局根部，fixed 定位） */}
       <ToastHost />
+      {/* #1582：提取会话（对话框 + 最小化浮窗）挂 App 层 —— 跨路由 / 宿主重挂载存活 */}
+      <AIExtractDialog />
     </div>
   );
 }

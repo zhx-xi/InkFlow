@@ -18,7 +18,9 @@ import { LibraryPage } from './library';
 import { apiFetch } from '../api/client';
 import { useProjectStore } from '../stores/project';
 import { useThemeStore } from '../stores/theme';
+import { useExtractStore } from '../stores/extract';
 import { useToastStore } from '../stores/toast';
+import { AIExtractDialog } from '../components/extract/AIExtractDialog';
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
@@ -41,6 +43,8 @@ function renderLibrary() {
   return render(
     <MemoryRouter initialEntries={['/library']}>
       <LibraryPage />
+      {/* #1582：提取对话框挂 App 层（App.tsx 同款） */}
+      <AIExtractDialog />
       <Routes>
         <Route path="/projects" element={<LocationProbe />} />
         <Route path="/writing" element={<LocationProbe />} />
@@ -53,6 +57,16 @@ beforeEach(() => {
   apiFetchMock.mockReset();
   localStorage.clear();
   useThemeStore.setState({ theme: 'paper', bg: 'default', lang: 'zh' });
+  useExtractStore.setState({
+    open: false,
+    minimized: false,
+    projectId: null,
+    initialKind: undefined,
+    staged: null,
+    pending: [],
+    pendingLoaded: false,
+    pendingFor: null,
+  });
   useToastStore.setState({ toasts: [] });
   useProjectStore.setState({ projects: [projectP1], currentProjectId: 'p1', loading: false, error: null });
   // 镜像 library 页分类数据 + AIExtractDialog 的章节/运行记录
@@ -115,6 +129,18 @@ describe('设定库页 — 「AI 提取」入口（#652）', () => {
     expect(
       within(within(dlg).getByTestId('ai-extract-type')).getByRole('radio', { name: '时间线' }),
     ).toBeChecked();
+  });
+
+  // #1582：对话框挂 App 层 —— 页面只调全局 store，不自持页面级 extract state
+  it('契约5（#1582）：点「AI 提取」只改全局 store；LibraryPage 自身不渲染对话框', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/library']}><LibraryPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('library-list')).toBeInTheDocument());
+
+    await user.click(screen.getByTestId('extract-entry-lib'));
+    await waitFor(() => expect(useExtractStore.getState().open).toBe(true));
+    expect(useExtractStore.getState().projectId).toBe('p1');
+    expect(screen.queryByTestId('ai-extract-dialog')).not.toBeInTheDocument();
   });
 
   it('契约4（#1566）：5 个分类页各自打开 → 默认选中对应类型', async () => {

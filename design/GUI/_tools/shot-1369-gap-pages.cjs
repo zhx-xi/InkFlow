@@ -81,6 +81,10 @@ const PAGES = [
       ['extract-chapter', 'library-extract-chapter.png'],
       // #1567（拍板 2=B）：重叠只就地提示、保留两段
       ['extract-chapter-overlap', 'library-extract-chapter-overlap.png'],
+      // #1582：待确认提取入口（工具栏角标 + 批次面板）/ 浮窗待确认态 / 关框提示
+      ['extract-pending-panel', 'library-extract-pending-panel.png'],
+      ['extract-float-pending', 'library-extract-float-pending.png'],
+      ['extract-close-prompt', 'library-extract-close-prompt.png'],
     ],
   },
   {
