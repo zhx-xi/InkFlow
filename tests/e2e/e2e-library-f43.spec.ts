@@ -600,7 +600,8 @@ test('设定库：时间线双序切换（E2E-A8）——默认叙事序 → 世
     const name = `E2E-时间线-${Date.now()}`;
     await createProjectViaUi(window, name);
     const pid = await findProjectId(kernel, name);
-    // 可区分双序：世界序 evC(100)→evA(300)→evB(None 末尾)；叙事序 evB(1)→evC(2)→evA(3)
+    // 可区分双序：世界序 evC(100)→evA(300)；evB(time_value=null，#1581 未定) → **不进刻度带** → 待确认区
+    //                   叙事序 evB(1)→evC(2)→evA(3)
     const evA = await presetTimelineEvent(kernel, pid, {
       title: '甲 登基', time_value: 300, time_unit: 'year', time_display: '300 年', narrative_position: 3,
     });
@@ -621,11 +622,17 @@ test('设定库：时间线双序切换（E2E-A8）——默认叙事序 → 世
     await expect(window.getByTestId('tl-legend')).toHaveText('轴=章 · 事件按章推进排列；行内小字=世界内时间');
     // 默认叙事序：narrative_position 升序（T1）
     await expect.poll(async () => timelineRowIds(window), { timeout: 15_000 }).toEqual([evB, evC, evA]);
-    // 切世界序：time_value 升序、None 末尾（T2；本地切换零请求由单测 T2/T3 覆盖）
+    // 切世界序：time_value 升序；**未定事件不进刻度带**（#1581）→ 落待确认区
     await window.getByTestId('tl-view-world').click();
-    await expect.poll(async () => timelineRowIds(window), { timeout: 15_000 }).toEqual([evC, evA, evB]);
+    await expect.poll(async () => timelineRowIds(window), { timeout: 15_000 }).toEqual([evC, evA]);
     await expect(window.getByTestId('tl-view-world')).toHaveAttribute('aria-pressed', 'true');
     await expect(window.getByTestId('tl-view-narrative')).toHaveAttribute('aria-pressed', 'false');
+    // #1581：零未知（原「未知区」退役）+ 待确认区呈现未定事件（原文可读）
+    await expect(window.getByTestId('tl-band-unknown-head')).toHaveCount(0);
+    await expect(window.getByTestId('tl-pend')).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId(`tl-pend-row-ev-${evB}`)).toBeVisible();
+    await expect(window.getByTestId(`tl-pend-raw-ev-${evB}`)).toHaveText('未知');
+    await expect(window.getByTestId(`tl-pend-confirm-ev-${evB}`)).toBeDisabled();  // 强制先补时间
     // 切回叙事序（T3）
     await window.getByTestId('tl-view-narrative').click();
     await expect.poll(async () => timelineRowIds(window), { timeout: 15_000 }).toEqual([evB, evC, evA]);
