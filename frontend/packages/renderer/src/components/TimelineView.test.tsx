@@ -114,13 +114,14 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
     expect(mains).not.toMatch(/第\s*[0-9]+\s*章/);
   });
 
-  it('A4 世界序（#1541）：时间未知事件归轴底「未知」区，不消失、不破坏结构', async () => {
+  it('A4 世界序（#1581）：时间未知事件**不进刻度带** → 落待确认区（不消失、不产生刻度）', async () => {
     renderView();
     const user = userEvent.setup();
     await user.click(screen.getByTestId('tl-view-world'));
-    const node = await screen.findByTestId('tl-axis-node-evB');
-    expect(node).toBeInTheDocument();
-    expect(screen.getByTestId('tl-band-unknown')).toBeInTheDocument();
+    // 原「未知区」已退役（#1581：未定事件不进正式表 ⇒ 不进刻度带）
+    expect(screen.queryByTestId('tl-band-unknown')).toBeNull();
+    // 改由刻度带下方的待确认区承载（原文可读、可确认 / 丢弃）
+    expect(await screen.findByTestId('tl-pend-row-ev-evB')).toBeInTheDocument();
     // 未知事件不产生刻度（不污染刻度带比例）
     expect(screen.queryAllByTestId(/^tl-band-tick-__none__-/)).toHaveLength(2); // 100 / 300
   });
@@ -139,12 +140,12 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
     expect(screen.getAllByTestId(/^tl-axis-node-/)).toHaveLength(3);
     const user = userEvent.setup();
     await user.click(screen.getByTestId('tl-view-world'));
-    // 轴节点顺序随序切换（世界序：evC → evA → evB）
+    // 轴节点顺序随序切换（世界序：evC → evA；**evB 未定 → 待确认区**，#1581）
     await waitFor(() => {
       const ids = screen
         .getAllByTestId(/^tl-axis-node-/)
         .map((el) => el.getAttribute('data-testid')!.replace('tl-axis-node-', ''));
-      expect(ids).toEqual(['evC', 'evA', 'evB']);
+      expect(ids).toEqual(['evC', 'evA']);
     });
     expect(screen.getByTestId('tl-legend')).toHaveTextContent('轴=世界内时间');
   });
@@ -159,6 +160,8 @@ describe('#1301 + #1374 时间线双序轴向渲染', () => {
     // 行尾来源章胶囊：已归章 = 章节标题；未归章 = 「未分章」
     expect(screen.getByTestId('tl-src-evC')).toHaveTextContent('第十二章 夜访地点乙');
     expect(screen.getByTestId('tl-src-evA')).toHaveTextContent('第十一章 事件乙');
-    expect(screen.getByTestId('tl-src-evB')).toHaveTextContent('未分章');
+    // #1581：未定事件（evB）**不进刻度带** → 在待确认区呈现
+    expect(screen.queryByTestId('tl-src-evB')).toBeNull();
+    expect(await screen.findByTestId('tl-pend-row-ev-evB')).toBeInTheDocument();
   });
 });

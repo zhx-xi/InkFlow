@@ -10,7 +10,7 @@
  *   + 刻度点 `tl-band-node-<key>-<i>` + 刻度标签 `tl-band-tick-<key>-<i>`（本地值）
  * - 事件行 `tl-axis-node-<id>` 以**历色连线** `tl-band-link-<id>` 指回本历竖轴
  * - 刻度纵向位置 = `to_global`（流速不同 ⇒ 疏密不同）；**同刻度只出现一次**
- * - 时间未知事件归轴底「未知」区（`tl-band-unknown`），不破坏结构
+ * - #1581：时间未知（未定）事件**不进刻度带** → 落待确认区（`tl-pend-row-*`），不破坏刻度带结构
  * - 单轴（`era` 全空）= **1 条竖轴**（#1527 目标：不再平铺）；事件行**不渲染** `tl-axis-main-<id>`
  * - 既有行为不回归：轴选择器（轴族 ≥2）/ 来源章胶囊 / 单事件检查 / 一致性检查 / 筛选
  *
@@ -156,13 +156,13 @@ describe('#1541 世界序「单块刻度带」', () => {
     expect(screen.queryByTestId('tl-axis-picker')).toBeNull();
   });
 
-  it('B7 时间未知事件归轴底「未知」区，不破坏结构、不丢失', async () => {
+  it('B7 #1581 时间未知事件落待确认区（不进刻度带、不产生刻度、不丢失）', async () => {
     renderView();
     await switchToWorld();
     await userEvent.setup().click(screen.getByTestId(`tl-axis-chip-${DK}`)); // 展开默认轴（e6 在此）
 
-    expect(screen.getByTestId('tl-band-unknown')).toBeInTheDocument();
-    expect(screen.getByTestId('tl-axis-node-e6')).toBeInTheDocument();
+    expect(screen.queryByTestId('tl-band-unknown')).toBeNull();
+    expect(await screen.findByTestId('tl-pend-row-ev-e6')).toBeInTheDocument();
     // 未知事件不产生刻度
     expect(screen.queryAllByTestId(new RegExp(`^tl-band-tick-${DK}-`))).toHaveLength(0);
   });

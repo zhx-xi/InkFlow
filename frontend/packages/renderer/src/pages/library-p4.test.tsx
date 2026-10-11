@@ -237,15 +237,16 @@ describe('设定库页 — F43 P4 时间线双序 + 两级检查（spec §5.16-5
     expect(within(list).getByText('未知')).toBeInTheDocument(); // evB
   });
 
-  it('T2 世界序切换：点 tl-view-world → 列表按 time_value 升序（None 排末尾）+ 零额外请求', async () => {
+  it('T2 世界序切换：点 tl-view-world → 列表按 time_value 升序 + 零额外请求（未定事件落待确认区，#1581）', async () => {
     mockTimelineP4(timelineView);
     renderLibrary();
     const user = userEvent.setup();
     await openTimelineTab(user);
     const getsBefore = timelineGetCount();
     await user.click(screen.getByTestId('tl-view-world'));
-    // 世界序：evC(100) → evA(300) → evB(None 末尾)
-    await waitFor(() => expect(rowIds()).toEqual(['evC', 'evA', 'evB']));
+    // 世界序：evC(100) → evA(300)；evB(未定) 不进刻度带 → 待确认区
+    await waitFor(() => expect(rowIds()).toEqual(['evC', 'evA']));
+    expect(screen.getByTestId('tl-pend-row-ev-evB')).toBeInTheDocument();
     // 激活态迁移 + 本地切换零请求（§5.16）
     expect(screen.getByTestId('tl-view-world')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('tl-view-narrative')).toHaveAttribute('aria-pressed', 'false');
@@ -259,7 +260,7 @@ describe('设定库页 — F43 P4 时间线双序 + 两级检查（spec §5.16-5
     await openTimelineTab(user);
     // 先切世界序（确认切换生效）再切回叙事序
     await user.click(screen.getByTestId('tl-view-world'));
-    await waitFor(() => expect(rowIds()).toEqual(['evC', 'evA', 'evB']));
+    await waitFor(() => expect(rowIds()).toEqual(['evC', 'evA']));
     const getsBefore = timelineGetCount();
     await user.click(screen.getByTestId('tl-view-narrative'));
     // 叙事序：evB(1) → evC(2) → evA(3)

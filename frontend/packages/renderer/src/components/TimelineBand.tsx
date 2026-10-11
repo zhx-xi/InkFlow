@@ -9,7 +9,8 @@
  * - **不定高**：每刻度一行，行高 = `BAND_ROW_PAD * 2 + 该刻度事件数 * BAND_ROW_H`（`layoutBandSpine`）
  * - **时间主轴**（`tl-band-main`）：刻度序 = 跨选中历 `to_global` 去重升序，作为定位 / 分页依据
  * - **按刻度分页**：`tl-band-pager`（`BAND_TICKS_PER_PAGE` 个刻度/页）
- * - **未知区**（`tl-band-unknown`）：块底独立区 + 限高内滚动（全部事件仍在 DOM；画布高度不随其增长）
+ * - **待确认区**（#1581）：原「未知区」退役 —— 未定事件不进正式表（故不在刻度带内），
+ *   改由刻度带下方的 `TimelinePending` 承载（原文可读、可确认 / 丢弃、分页可达 100%）
  * - **底色**（#1565）：容器 = **页面底色 token**（`bg-bg`），保留边框 / 圆角 / `shadow-card`
  */
 import { Fragment } from 'react';
@@ -55,7 +56,7 @@ export function TimelineBand({
   const AXDX = 104;
   const EVX = 352;
   const MAINX = 88;
-  const geo = layoutBandSpine(bandTickRows(band), band.unknown.length, { page });
+  const geo = layoutBandSpine(bandTickRows(band), { page });
   const xOf = (key: string): number => AX0 + band.axes.findIndex((axis) => axis.key === key) * AXDX;
   const colorOf = (key: string): string =>
     band.axes.find((axis) => axis.key === key)?.color ?? BAND_DEFAULT_COLOR;
@@ -226,32 +227,8 @@ export function TimelineBand({
             );
           }),
         )}
-        {/* 时间未知：块底独立区（限高内滚动；全部事件仍在 DOM，画布高度不随其增长） */}
-        {band.unknown.length > 0 ? (
-          <>
-            <span
-              aria-hidden="true"
-              data-testid="tl-band-unknown"
-              className="absolute left-0 right-0 border-t border-dashed border-line"
-              style={{ top: geo.unknownTop }}
-            />
-            <span
-              data-testid="tl-band-unknown-head"
-              className="absolute flex items-center gap-1 text-[11.5px] text-ink-2"
-              style={{ left: MAINX + 4, top: geo.unknownTop + 4 }}
-            >
-              {t('lib.tlTimeUnknown')}
-              <span className="tabular-nums text-ink-3">{band.unknown.length}</span>
-            </span>
-            <div
-              data-testid="tl-band-unknown-list"
-              className="absolute overflow-y-auto"
-              style={{ left: EVX, right: 18, top: geo.unknownListTop, height: geo.unknownListHeight }}
-            >
-              {band.unknown.map((ev) => row(ev))}
-            </div>
-          </>
-        ) : null}
+        {/* #1581：「未知区」退役 —— 未定事件不进正式表（故不在刻度带内），
+            改由刻度带下方的待确认区（TimelinePending）承载。 */}
       </div>
       {/* #1564：分页单位 = 时间刻度（拍板 ②） */}
       <div

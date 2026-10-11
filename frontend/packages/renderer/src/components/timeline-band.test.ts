@@ -19,7 +19,6 @@ import {
   BAND_ROW_H,
   BAND_ROW_PAD,
   BAND_TICKS_PER_PAGE,
-  BAND_UNK_MAX,
   bandGlobal,
   bandTickRows,
   buildBandLayout,
@@ -131,11 +130,11 @@ describe('#1541 刻度带布局（buildBandLayout）', () => {
    契约：
    - `bandTickRows(layout)`：主轴刻度行 = layout.rows 按 `g` 去重升序；`count` = 跨选中历事件数；
      `perAxis[axisKey]` = 该历在本刻度的本地刻度；`label` = 轴族顺序里首个有本刻度的历。
-   - `layoutBandSpine(rows, unknownCount, { page })`：
-     · 不定高：`height = BAND_ROW_PAD * 2 + 该刻度事件数 * BAND_ROW_H`
-     · 分页单位 = 刻度：`pageCount = ceil(totalTicks / BAND_TICKS_PER_PAGE)`
-     · unknown 只计一次：未知区高度上限 `BAND_UNK_MAX`（截到整行），画布高度不随未知数线性增长
-     · 离群免疫：纵向位置 = 刻度序号（等距），加入极大值不改动其它行的 `top` */
+   - `layoutBandSpine(rows, { page })`：
+   · 不定高：`height = BAND_ROW_PAD * 2 + 该刻度事件数 * BAND_ROW_H`
+   · 分页单位 = 刻度：`pageCount = ceil(totalTicks / BAND_TICKS_PER_PAGE)`
+   · #1581：**无「未知区」**（未定事件不进正式表 ⇒ 不进刻度带）→ 画布高度只由刻度区决定
+   · 离群免疫：纵向位置 = 刻度序号（等距），加入极大值不改动其它行的 `top` */
 
 describe('#1564 时间主轴刻度行（bandTickRows）', () => {
   const A = '示例历';
@@ -176,7 +175,7 @@ describe('#1564 刻度带几何（layoutBandSpine）', () => {
 
   it('T9a 不定高：行高 = BAND_ROW_PAD*2 + 该刻度事件数 * BAND_ROW_H（同轴内不同刻度高度不同）', () => {
     const rows = bandTickRows(buildBandLayout(twelveTicks(), [axis(A, A, 14)]));
-    const g = layoutBandSpine(rows, 0, { page: 0 });
+    const g = layoutBandSpine(rows, { page: 0 });
 
     expect(rows).toHaveLength(12);
     expect(g.placed[0].height).toBe(BAND_ROW_PAD * 2 + 3 * BAND_ROW_H);
@@ -186,8 +185,8 @@ describe('#1564 刻度带几何（layoutBandSpine）', () => {
 
   it('T9b 分页单位 = 刻度：pageCount = ceil(12 / BAND_TICKS_PER_PAGE)；翻页后刻度集合变化', () => {
     const rows = bandTickRows(buildBandLayout(twelveTicks(), [axis(A, A, 14)]));
-    const p0 = layoutBandSpine(rows, 0, { page: 0 });
-    const p1 = layoutBandSpine(rows, 0, { page: 1 });
+    const p0 = layoutBandSpine(rows, { page: 0 });
+    const p1 = layoutBandSpine(rows, { page: 1 });
 
     expect(BAND_TICKS_PER_PAGE).toBe(8);
     expect(p0.pageCount).toBe(2);
@@ -195,27 +194,25 @@ describe('#1564 刻度带几何（layoutBandSpine）', () => {
     expect(p0.placed).toHaveLength(8);
     expect(p1.placed).toHaveLength(4);
     expect(p1.placed[0].row.g).not.toBe(p0.placed[0].row.g);
-    expect(layoutBandSpine(rows, 0, { page: 99 }).page).toBe(1);
+    expect(layoutBandSpine(rows, { page: 99 }).page).toBe(1);
   });
 
-  it('T9c unknown 只计一次：未知区限高 BAND_UNK_MAX，画布不随未知事件数线性增长', () => {
+  it('T9c #1581 未知区退役：几何不含 unknown 字段，画布高度只由刻度区决定', () => {
     const rows = bandTickRows(buildBandLayout(twelveTicks(), [axis(A, A, 14)]));
-    const none = layoutBandSpine(rows, 0, { page: 0 });
-    const few = layoutBandSpine(rows, 3, { page: 0 });
-    const many = layoutBandSpine(rows, 240, { page: 0 });
+    const g = layoutBandSpine(rows, { page: 0 });
 
-    expect(none.unknownHeight).toBe(0);
-    expect(many.unknownHeight).toBe(few.unknownHeight);
-    expect(many.unknownHeight).toBeLessThanOrEqual(BAND_UNK_MAX + 64);
-    expect(many.height - none.height).toBe(few.height - none.height);
-    expect(many.height).toBeLessThan(900);
+    expect(Object.keys(g)).not.toContain('unknownHeight');
+    expect(Object.keys(g)).not.toContain('unknownTop');
+    // 画布高度 = 本页末行底 + BOT_PAD（无任何未知区增量）
+    const last = g.placed[g.placed.length - 1];
+    expect(g.height).toBe(last.top + last.height + 6);
   });
 
   it('T10 离群值不压扁其余刻度：加入 1 个极大值后，其它行的 top 逐行不变', () => {
     const base = [10, 20, 30, 40, 50].map((v, i) => ev({ id: `n${i}`, era: A, era_value: v, era_scale: 1 }));
     const withOutlier = [...base, ev({ id: 'big', era: A, era_value: 1000000, era_scale: 1 })];
     const geom = (events: TimelineEventDTO[]) =>
-      layoutBandSpine(bandTickRows(buildBandLayout(events, [axis(A, A, events.length)])), 0, { page: 0 });
+      layoutBandSpine(bandTickRows(buildBandLayout(events, [axis(A, A, events.length)])), { page: 0 });
 
     const normal = geom(base);
     const outlier = geom(withOutlier);
