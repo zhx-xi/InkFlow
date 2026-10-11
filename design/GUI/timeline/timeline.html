@@ -229,6 +229,34 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 .mvs-pg-btn:disabled{opacity:.45;cursor:default}
 .mvs-pg-info{font-variant-numeric:tabular-nums}
 .mvs-badge{position:absolute;top:4px;right:16px;font-size:11px;color:var(--ink-3)}
+/* #1581 世界序·待确认区（原「未知区」退役 → 待确认暂存区，须可达 100%） */
+.tl-pend{margin-top:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
+.tl-pend-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tl-pend-title{font-size:12.5px;font-weight:500;color:var(--ink)}
+.tl-pend-count{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.tl-pend-hint{margin-left:auto;font-size:11px;color:var(--ink-3)}
+.tl-pend-cols{display:flex;align-items:center;gap:10px;padding:5px 14px;font-size:11px;color:var(--ink-3);border-bottom:1px dashed var(--line);background:var(--surface-2)}
+.tl-pend-row{display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:12px;border-bottom:1px solid var(--surface-2)}
+.tl-pend-row:last-child{border-bottom:none}
+.tl-pend-row:hover{background:var(--surface-2)}
+.tl-pend-raw{flex:none;width:132px;color:var(--ink);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-pend-raw--none{color:var(--ink-3)}
+.tl-pend-name{flex:1;min-width:0;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-pend-ch{flex:none;border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--ink-3);white-space:nowrap}
+.tl-pend-time{flex:none;display:flex;align-items:center;gap:4px}
+.tl-pend-time input{width:66px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:11.5px;padding:3px 6px;font-variant-numeric:tabular-nums}
+.tl-pend-time input::placeholder{color:var(--ink-3)}
+.tl-pend-time select{border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink-2);font-size:11.5px;padding:3px 4px}
+.tl-pend-acts{flex:none;display:flex;align-items:center;gap:6px}
+.tl-pend-btn{border:1px solid var(--line);border-radius:6px;background:none;font-size:11px;padding:3px 10px;cursor:pointer;color:var(--ink-2);transition:border-color 150ms,color 150ms}
+.tl-pend-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.tl-pend-btn--ok{border-color:var(--accent-weak);color:var(--accent)}
+.tl-pend-btn--del:hover:not(:disabled){border-color:#b3462f;color:#b3462f}
+.tl-pend-btn:disabled{opacity:.4;cursor:default}
+.tl-pend-reason{flex:none;width:150px;font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-pend-pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;font-size:12px;color:var(--ink-2)}
+.tl-pend-pager .size select{border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink-2);font-size:11.5px;padding:2px 4px}
+
 /* 空态 */
 .lib-empty{display:none;flex-direction:column;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:8px;background:var(--surface);padding:56px 24px;text-align:center}
 body[data-state="empty"] .tl-toolbar,body[data-state="empty"] [data-testid="tl-axis"]{display:none}
@@ -390,6 +418,7 @@ body[data-shot="1"],body[data-shot="1"] *,body[data-shot="1"] *::before,body[dat
       <option value="world-band-metric">世界序 · 刻度带 v2（B：分位数截断）</option>
       <option value="world-band-dense">世界序 · 刻度带 v2（252 事件量级）</option>
       <option value="world-band-dense-legacy">世界序 · #1541 旧形态（252 事件·改前对照）</option>
+      <option value="world-band-pending">世界序 · 待确认区（#1581 未知区退役 + 后置归一）</option>
       <option value="empty">空态</option>
     </select>
   </label>
@@ -531,7 +560,7 @@ const PRIMARY_AXIS = AXIS_KEYS.slice().sort((a, b) => {
 })[0];
 const KIND_LABEL = { none: '（默认轴）' };
 
-const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','world-single','world-band','world-band-p2','world-band-metric','world-band-dense','world-band-dense-legacy','empty'];
+const STATES = ['narrative','narrative-filter','world','world-eras','world-eras-multi','world-eras-b','world-single','world-band','world-band-p2','world-band-metric','world-band-dense','world-band-dense-legacy','world-band-pending','empty'];
 const LEGENDS = {
   'narrative':        '轴=章 · 事件按章推进排列；行内小字=世界内时间',
   'narrative-filter': '轴=章 · 已筛选：第十二章（筛选对两序共用）',
@@ -545,6 +574,7 @@ const LEGENDS = {
   'world-band-metric':'轴=世界内时间 · B 方案：纵向等比 + p10–p90 截断（越界夹端点·需 ≥10 刻度才有意义）',
   'world-band-dense': '轴=世界内时间 · 真实量级（252 事件 = 12 有值 + 240 未知）仍紧凑可翻页',
   'world-band-dense-legacy': '#1541 旧形态复现（同 252 事件）：高度 ∝ 事件总数 → 大面空白',
+  'world-band-pending': '轴=世界内时间（只含已定时间事件）· 原「未知区」退役 → 待确认区（分页可达 100%），逐条确认/丢弃',
 };
 const NOTES = {
   'narrative':
@@ -573,6 +603,8 @@ const NOTES = {
     '<b>改前对照（#1541 旧公式复现）</b>：<code>height = max(400, 120 + (rows+unknown)×28 + unknownBlock)</code> = <b>13,924px</b>。截图为该画布<b>顶部 800px</b>——刻度被拉散在 1.4 万像素高、近乎全空白的画布上（即用户截图实录）。<code>unknown</code> 在公式里被计两次。',
   'empty':
     '<b>空态</b>：无变化（「还没有时间线，去创建」+ CTA）。',
+  'world-band-pending':
+    '<b>世界序 · 待确认区（#1581）</b>：「不允许有未知」——时间轴内<b>不再有「未知」区块</b>（原未知区退役）。机器无法把 <code>time_display</code> 原文换算为累计天数的事件，<b>一律不进正式表</b>（正式表零未定事件不变量），而是落在<b>待确认区</b>：作者逐条<b>补时间后确认</b>（转正为正式事件、上刻度带）或<b>丢弃</b>。待确认区<b>分页可达 100%</b>（不再受 <code>BAND_UNK_MAX=60</code> ≈ 2 行截断）。<br>⚠️ **实测数据形态**：rc3 隔离库 157 条非空 `time_display` 中，绝大多数是<b>叙述式相对表达</b>（「过了两天」「那年冬天」「卯时三刻」「三十二岁」），确定性解析器实测**仅解出 4/157（2.5%）**（该语料几乎不含纪年式/阿拉伯序号）→ 其余 153 条进待确认区（带未定原因）。**低覆盖是语料性质，非缺陷**：机器不猜，全交作者（真实补全归 0.18.0 #1583）。',
 };
 
 function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -902,6 +934,70 @@ function renderBandLegacy() {
   return '<div class="mvs" data-testid="tl-band" style="height:' + height + 'px">' + html + '</div>';
 }
 
+/* #1581 待确认区演示数据（= 提取出但机器无法换算为累计天数的时间表达；演示为假想结构，非真实素材） */
+const PEND_TEMPLATES = [
+  { title:'示例事件甲', ch:'c11', raw:'过了两天',        reason:'相对时间，需作者锚定' },
+  { title:'示例事件乙', ch:'c11', raw:'那年冬天',        reason:'无绝对时间量' },
+  { title:'示例事件丙', ch:'c12', raw:'卯时三刻',        reason:'当天时刻，无日锚点' },
+  { title:'示例事件丁', ch:'c12', raw:'三十二岁',        reason:'人物年龄，非世界内时间' },
+  { title:'示例事件戊', ch:'c12', raw:'初五',            reason:'缺年月，无法定位' },
+  { title:'示例事件己', ch:'c13', raw:'有一年夏天',      reason:'无绝对时间量' },
+  { title:'示例事件庚', ch:'c13', raw:'走了三年',        reason:'相对时长，需作者锚定' },
+  { title:'示例事件辛', ch:null,  raw:'又过几年',        reason:'数量模糊（「几年」）' },
+  { title:'示例事件壬', ch:null,  raw:'',                reason:'原文未给出时间线索' },
+  { title:'示例事件癸', ch:'c11', raw:'当年秋末，地点丙', reason:'无绝对时间量' },
+];
+const PEND_TOTAL = 137;
+const PEND_ITEMS = (function () {
+  const out = [];
+  for (let i = 0; i < PEND_TOTAL; i++) {
+    const t = PEND_TEMPLATES[i % PEND_TEMPLATES.length];
+    out.push(Object.assign({}, t, { id: 'p' + (i + 1), title: t.title + ' #' + (i + 1) }));
+  }
+  return out;
+})();
+let pendCur = { page: 0, per: 20 };
+
+/* 待确认区（#1581）：原文可读 + 逐条「补时间→确认」/「丢弃」；分页可达 100%（不受 BAND_UNK_MAX 截断） */
+function renderPending() {
+  const total = PEND_ITEMS.length;
+  const per = pendCur.per;
+  const pages = Math.max(1, Math.ceil(total / per));
+  const page = Math.min(pendCur.page, pages - 1);
+  const rows = PEND_ITEMS.slice(page * per, page * per + per).map(function (it) {
+    const ch = it.ch === null ? DEMO.noneTitle : chTitle(it.ch);
+    return '<div class="tl-pend-row" data-testid="tl-pend-row-' + it.id + '">'
+      + '<span class="tl-pend-raw' + (it.raw ? '' : ' tl-pend-raw--none') + '" data-testid="tl-pend-raw-' + it.id + '">' + esc(it.raw || '（原文无时间线索）') + '</span>'
+      + '<span class="tl-pend-name" data-testid="tl-pend-name-' + it.id + '">' + esc(it.title) + '</span>'
+      + '<span class="tl-pend-ch" data-testid="tl-pend-ch-' + it.id + '">' + esc(ch) + '</span>'
+      + '<span class="tl-pend-time">'
+      + '<input data-testid="tl-pend-time-' + it.id + '" placeholder="补时间" />'
+      + '<select data-testid="tl-pend-unit-' + it.id + '"><option>日</option><option>年</option><option>月</option><option>岁</option></select>'
+      + '</span>'
+      + '<span class="tl-pend-reason" data-testid="tl-pend-reason-' + it.id + '" title="' + esc(it.reason) + '">' + esc(it.reason) + '</span>'
+      + '<span class="tl-pend-acts">'
+      + '<button class="tl-pend-btn tl-pend-btn--ok" data-testid="tl-pend-confirm-' + it.id + '" disabled title="先补时间再确认">确认</button>'
+      + '<button class="tl-pend-btn tl-pend-btn--del" data-testid="tl-pend-discard-' + it.id + '">丢弃</button>'
+      + '</span>'
+      + '</div>';
+  }).join('');
+  return '<section class="tl-pend" data-testid="tl-pend">'
+    + '<div class="tl-pend-head">'
+    + '<span class="tl-pend-title">待确认时间</span>'
+    + '<span class="tl-pend-count" data-testid="tl-pend-count">' + total + ' 条</span>'
+    + '<span class="tl-pend-hint">机器未定时间 → 不进时间轴；补时间后确认转正，或丢弃（原文永不留失）</span>'
+    + '</div>'
+    + '<div class="tl-pend-cols"><span style="flex:none;width:132px">原文时间</span><span style="flex:1">事件</span><span style="flex:none;width:74px">来源</span><span style="flex:none;width:152px">时间（可填）</span><span style="flex:none;width:150px">未定原因</span><span style="flex:none;width:112px">操作</span></div>'
+    + rows
+    + '<div class="tl-pend-pager" data-testid="tl-pend-pager">'
+    + '<button class="mvs-pg-btn" data-testid="tl-pend-prev"' + (page === 0 ? ' disabled' : '') + '>‹ 上一页</button>'
+    + '<span class="mvs-pg-info" data-testid="tl-pend-pageinfo">第 ' + (page + 1) + ' / ' + pages + ' 页 · 每页 ' + per + ' 条 · 共 ' + total + ' 条</span>'
+    + '<span class="size">每页 <select data-testid="tl-pend-pagesize"><option>20</option><option>50</option><option>100</option></select> 条</span>'
+    + '<button class="mvs-pg-btn" data-testid="tl-pend-next"' + (page >= pages - 1 ? ' disabled' : '') + '>下一页 ›</button>'
+    + '</div>'
+    + '</section>';
+}
+
 /* 状态 → 刻度带 HTML（分页管理） */
 let bandCur = { state:'world-band', page:0 };
 function renderBandStateHTML(state, page) {
@@ -910,6 +1006,10 @@ function renderBandStateHTML(state, page) {
   if (state === 'world-band-metric') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'metric', page);
   if (state === 'world-band-dense') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'ordinal', page);
   if (state === 'world-band-dense-legacy') return renderBandLegacy();
+  if (state === 'world-band-pending') {
+    const timed = BAND_EVENTS.filter(function (e) { return e.time !== null && e.time !== undefined; });
+    return renderBandV2(BAND_ERAS, timed, 'ordinal', page) + renderPending();
+  }
   return '';
 }
 window.bandGo = function (d) {
@@ -950,6 +1050,7 @@ function renderBody(state){
   if (state === 'world-band-metric') { bandCur = { state:'world-band-metric', page:0 }; return renderBandStateHTML('world-band-metric', 0); }
   if (state === 'world-band-dense') { bandCur = { state:'world-band-dense', page:0 }; return renderBandStateHTML('world-band-dense', 0); }
   if (state === 'world-band-dense-legacy') { bandCur = { state:'world-band-dense-legacy', page:0 }; return renderBandStateHTML('world-band-dense-legacy', 0); }
+  if (state === 'world-band-pending') { bandCur = { state:'world-band-pending', page:0 }; return renderBandStateHTML('world-band-pending', 0); }
   return '';
 }
 

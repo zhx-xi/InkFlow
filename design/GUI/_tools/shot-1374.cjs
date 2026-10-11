@@ -40,6 +40,7 @@ const SHOTS = [
   { state: 'world-band-metric', out: 'timeline-world-band-metric.png' },
   { state: 'world-band-dense', out: 'timeline-world-band-dense.png' },
   { state: 'world-band-dense-legacy', out: 'timeline-world-band-dense-legacy.png' },
+  { state: 'world-band-pending', out: 'timeline-world-band-pending.png' },
   { state: 'world-eras', out: 'timeline-world-eras.png' },
   { state: 'world-eras-multi', out: 'timeline-world-eras-multi.png' },
   { state: 'world-eras-b', out: 'timeline-world-eras-b.png' },
@@ -163,6 +164,12 @@ async function probe(page) {
       bandUnkListH: q('.mvs-unklist') ? Math.round(q('.mvs-unklist').getBoundingClientRect().height) : 0,
       bandBadge: txt(q('.mvs-badge')),
       bandEvents: qa('[data-testid^="tl-axis-node-"]').length,
+      /* #1581：待确认区（原未知区退役）——存在性 / 条数 / 分页可达 100% */
+      pend: !!q('[data-testid="tl-pend"]'),
+      pendCount: txt(q('[data-testid="tl-pend-count"]')),
+      pendRows: qa('[data-testid^="tl-pend-row-"]').length,
+      pendPageInfo: txt(q('[data-testid="tl-pend-pageinfo"]')),
+      pendReasons: qa('[data-testid^="tl-pend-reason-"]').length,
       /* #1565：刻度带容器底色 vs 页面底色 vs 卡片面（--surface）——计算样式 */
       theme: document.body.dataset.theme,
       bandBg: q('[data-testid="tl-band"]') ? getComputedStyle(q('[data-testid="tl-band"]')).backgroundColor : 'MISSING',
@@ -404,6 +411,15 @@ function checkAll(d, state, sh) {
     chk(`行内时间刻度 tl-axis-main-1=示例历 17 年（实际 ${d.main1}）`, d.main1 === '示例历 17 年');
     chk(`主力轴泳道序=['1','2','3','4']（实际 ${JSON.stringify(d.laneQyIds)}）`,
       JSON.stringify(d.laneQyIds) === JSON.stringify(['1', '2', '3', '4']));
+  }
+
+  if (state === 'world-band-pending') {
+    chk('待确认区存在', d.pend === true);
+    chk(`刻度带内无「未知」区块（mvs-rule 数=${d.bandUnknown}）`, d.bandUnknown === 0);
+    chk(`待确认条数=137（实际 ${d.pendCount}）`, d.pendCount === '137 条');
+    chk(`本页渲染 20 行（实际 ${d.pendRows}）`, d.pendRows === 20);
+    chk(`每行带未定原因（实际 ${d.pendReasons}）`, d.pendReasons === 20);
+    chk(`分页信息含「共 137 条」（实际 ${d.pendPageInfo}）`, (d.pendPageInfo || '').indexOf('共 137 条') >= 0);
   }
 
   if (state === 'empty') {
