@@ -277,7 +277,12 @@ class TestTimelineExtractor:
         """
         mock_repo.next_position.return_value = 7
         mock_llm.chat.return_value = _ok_response(
-            _payload(events=[{"title": "新事件", "narrative_position": None}])
+            _payload(
+                events=[
+                    # #1581：未定时间的条目不再进正式表 → 本测试聚焦合成序，故给可解析时间
+                    {"title": "新事件", "narrative_position": None, "time_display": "第 3 天"}
+                ]
+            )
         )
         result = await extractor.extract(
             TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
@@ -354,7 +359,7 @@ class TestTimelineExtractor:
 
     async def test_fenced_output_extracts_json_fragment(self, extractor, mock_llm) -> None:
         """输出带围栏/前后缀文字 → _extract_json_fragment 提取成功。"""
-        payload = _payload(events=[{"title": "林晚入宫"}])
+        payload = _payload(events=[{"title": "林晚入宫", "time_display": "第 3 天"}])
         fenced = f"好的，以下是提取结果：\n```json\n{payload}\n```\n希望有帮助"
         mock_llm.chat.return_value = _ok_response(fenced)
         result = await extractor.extract(
@@ -574,7 +579,11 @@ class TestTimelineTimeDisplayContract1526:
     async def test_time_display_persisted_when_value_unparsed(
         self, extractor, mock_llm, mock_repo
     ) -> None:
-        """time_display 非空 + time_value=null → 原文表达必须落库（不被丢弃）。"""
+        """time_display 非空但**解析不出**时间 → 原文仍在（#1581：转向待确认区管道）。
+
+        #1581 契约变更：解析失败者**不写正式表**，改由 `pending` 承载（→ 暂存区）。
+        「原文表达不得丢」这一 #1526 判据在新管道下由 `pending[].event.time_display` 承担。
+        """
         mock_llm.chat.return_value = _ok_response(
             _payload(
                 events=[
@@ -583,7 +592,7 @@ class TestTimelineTimeDisplayContract1526:
                         "description": "少年初见",
                         "time_value": None,
                         "time_unit": "",
-                        "time_display": "三月初二",
+                        "time_display": "那年冬天",
                         "narrative_position": 1,
                         "timeline_flag": "",
                     }
@@ -594,9 +603,11 @@ class TestTimelineTimeDisplayContract1526:
             TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
             default_model=DEFAULT_MODEL,
         )
-        assert len(result.created) == 1
-        created = result.created[0]
-        assert created.time_display == "三月初二"  # 修复前硬编码 "" → FAIL
+        assert result.created == []
+        assert mock_repo.add.await_count == 0
+        assert len(result.pending) == 1
+        created = result.pending[0].event
+        assert created.time_display == "那年冬天"  # 原文不得丢（#1526 判据在新管道）
         assert created.time_value is None
         assert created.time_unit == ""  # 无值 → 单位留空
 
@@ -633,6 +644,8 @@ class TestTimelineTimeDisplayContract1526:
 
         不得因提示词「单位恒为日」而无条件写 `'日'` —— rc1 实测 `'日' ×182`
         正是这种「看起来有值、实际毫无信息」的噪声，会掩盖真实缺口。
+
+        #1581：该条目解析不出时间 → 不写正式表，落 `pending`（不变量在此仍成立）。
         """
         mock_llm.chat.return_value = _ok_response(
             _payload(events=[{"title": "无时间事件", "time_value": None, "time_unit": "日"}])
@@ -641,12 +654,17 @@ class TestTimelineTimeDisplayContract1526:
             TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
             default_model=DEFAULT_MODEL,
         )
-        assert result.created[0].time_unit == ""  # 修复前 '日' → FAIL
+        assert result.created == []
+        assert result.pending[0].event.time_unit == ""  # 修复前 '日' → FAIL
 
     async def test_time_display_nonempty_ratio_over_80pct(
         self, extractor, mock_llm, mock_repo
     ) -> None:
-        """回归锁定（#1526 验收判据）：含明确时间线索的样本 → 非空率 > 80%。"""
+        """回归锁定（#1526 验收判据）：含明确时间线索的样本 → 非空率 > 80%。
+
+        #1581：解析失败者转 `pending`（不写正式表）→ 非空率在 **created ∪ pending** 上度量
+        （原文表达仍逐条保留，只是去向不同）。
+        """
         events = [
             {"title": f"事件{i}", "time_display": display, "narrative_position": i}
             for i, display in enumerate(
@@ -658,8 +676,9 @@ class TestTimelineTimeDisplayContract1526:
             TimelineExtractRequest(project_id=PID, chapter_id=CID, text="t"),
             default_model=DEFAULT_MODEL,
         )
-        nonempty = sum(1 for e in result.created if e.time_display)
-        assert nonempty / len(result.created) > 0.8  # 修复前 0/5 → FAIL
+        all_events = [*result.created, *[p.event for p in result.pending]]
+        nonempty = sum(1 for e in all_events if e.time_display)
+        assert nonempty / len(all_events) > 0.8  # 修复前 0/5 → FAIL
 
     async def test_time_display_merged_on_update(self, extractor, mock_llm, mock_repo) -> None:
         """更新路径：time_display 非空 → 覆盖库中原值（None = 不覆盖）。"""
