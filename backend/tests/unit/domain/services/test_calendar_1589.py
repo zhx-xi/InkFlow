@@ -157,6 +157,9 @@ class TestLeapExpression:
             "# % 4 == 0",
             "# % 100 == 0 || (# % 4 == 0 && # % 400 != 0)",
             "# * 2 > 3",
+            "!(# % 4 == 0)",  # 一元 `!`
+            "# - 1 > 0",  # 一元 `-`
+            "(-#) % 4 == 0",  # 括号 + 一元负号
         ],
     )
     def test_simple_arithmetic_allowed(self, rule: str) -> None:

@@ -344,14 +344,6 @@ class CalendarConfig(BaseModel):
             raise ValueError("calendars 中同一 axis 不得重复")
         return self
 
-    def spec_for(self, axis: str) -> CalendarSpec | None:
-        """取某轴的历法；未配置 → None（调用方据此回落「N 日」，D3）."""
-        key = axis.strip()
-        for spec in self.calendars:
-            if spec.axis == key:
-                return spec
-        return None
-
 
 class CalendarDate(BaseModel):
     """换算结果（1 基）+ **轴显示数据**（年号 / 纪元名 —— 纯数据，前端不硬编码文案）."""
