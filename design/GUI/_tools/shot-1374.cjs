@@ -158,7 +158,14 @@ async function probe(page) {
       bandMainNodes: qa('.mvs-mainnode').length,
       bandRowGuides: qa('.mvs-rowguide').length,
       bandRowTops: qa('.mvs-rowguide').map((n) => Math.round(n.getBoundingClientRect().top)),
-      bandPager: txt(q('[data-testid="tl-band-pageinfo"]')),
+      bandPager: txt(q('[data-testid="tl-band-page-info"]')),
+      /* #1599：每页刻度数选择器（null = 该态不渲染：度量态单页全量 / 旧形态无分页） */
+      bandPageSize: (() => {
+        const sel = q('[data-testid="tl-band-page-size-select"]');
+        return sel
+          ? { value: sel.value, options: Array.from(sel.options).map((o) => o.value) }
+          : null;
+      })(),
       bandTickTexts: qa('.mvs-tick').map((n) => n.textContent.trim()),
       bandUnkHead: txt(q('.mvs-unkhead')),
       bandUnkListH: q('.mvs-unklist') ? Math.round(q('.mvs-unklist').getBoundingClientRect().height) : 0,
@@ -301,9 +308,11 @@ function checkAll(d, state, sh) {
     /* 拍板 ③：时间主轴 = 定位 / 分页依据（刻度点 + 每行参考线） */
     chk(`时间主轴刻度点=${isP2 ? 7 : 8}（实际 ${d.bandMainNodes}）`, d.bandMainNodes === (isP2 ? 7 : 8));
     chk(`主轴参考线行数=${isP2 ? 7 : 8}（实际 ${d.bandRowGuides}）`, d.bandRowGuides === (isP2 ? 7 : 8));
-    /* 拍板 ②：分页单位 = 时间刻度 */
-    const expPager = `第 ${isP2 ? 2 : 1} / 2 页 · 每页 8 刻度 · 共 15 刻度`;
+    /* 拍板 ②：分页单位 = 时间刻度；#1599：页脚 = 公共分页组件（每页刻度数可选） */
+    const expPager = `第 ${isP2 ? 2 : 1} / 2 页 · 共 15 条`;
     chk(`分页信息=「${expPager}」（实际 ${d.bandPager}）`, d.bandPager === expPager);
+    chk(`每页刻度数可选 8/16/32/64 且默认 8（实际 ${JSON.stringify(d.bandPageSize)}）`,
+      !!d.bandPageSize && d.bandPageSize.value === '8' && d.bandPageSize.options.join(',') === '8,16,32,64');
     const has17 = d.bandTickTexts.includes('示例历 17 年');
     const has517 = d.bandTickTexts.includes('示例历 517 年');
     chk(`翻页后刻度集合变化（17年=${has17} 517年=${has517}）`, isP2 ? (!has17 && has517) : (has17 && !has517));
@@ -322,6 +331,7 @@ function checkAll(d, state, sh) {
     chk(`历竖轴=1（实际 ${d.bandSpines}）`, d.bandSpines === 1);
     chk(`事件数=252（实际 ${d.bandEvents}）`, d.bandEvents === 252);
     chk(`单页全量（实际 ${d.bandPager}）`, /第 1 \/ 1 页/.test(String(d.bandPager)));
+    chk(`度量态不渲染每页刻度数选择器（实际 ${JSON.stringify(d.bandPageSize)}）`, d.bandPageSize === null);
     chk(`badge 标注 p10–p90（实际 ${d.bandBadge}）`, String(d.bandBadge).includes('p10–p90'));
     const dm = d.bandRowTops.slice(1).map((t, i) => t - d.bandRowTops[i]).filter((v) => v > 0);
     chk(`等比间距（最大行距>=2×最小，实际 ${JSON.stringify(dm)}）`,
@@ -338,7 +348,9 @@ function checkAll(d, state, sh) {
     chk(`未知区表头含 240（实际 ${d.bandUnkHead}）`, String(d.bandUnkHead).includes('240'));
     chk(`未知区限高（列表高 ${d.bandUnkListH} <= 240）`, d.bandUnkListH > 0 && d.bandUnkListH <= 240);
     chk(`画布高度紧凑 <900px（实际 ${d.bandH}px）`, d.bandH < 900);
-    chk(`分页覆盖全部刻度（实际 ${d.bandPager}）`, /共 11 刻度/.test(String(d.bandPager)));
+    chk(`分页覆盖全部刻度（实际 ${d.bandPager}）`, /共 11 条/.test(String(d.bandPager)));
+    chk(`每页刻度数可选 8/16/32/64 且默认 8（实际 ${JSON.stringify(d.bandPageSize)}）`,
+      !!d.bandPageSize && d.bandPageSize.value === '8' && d.bandPageSize.options.join(',') === '8,16,32,64');
   }
 
   if (state === 'world-band-dense-legacy') {
@@ -349,6 +361,7 @@ function checkAll(d, state, sh) {
     chk(`badge 标注旧公式高度（实际 ${d.bandBadge}）`, String(d.bandBadge).includes('13924'));
     chk(`旧形态无时间主轴（实际 ${d.bandMainNodes}）`, d.bandMainNodes === 0);
     chk(`旧形态无分页（实际 ${d.bandPager}）`, d.bandPager === null);
+    chk(`旧形态无每页刻度数选择器（实际 ${JSON.stringify(d.bandPageSize)}）`, d.bandPageSize === null);
   }
 
   if (state === 'world-eras' || state === 'world-eras-multi') {

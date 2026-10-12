@@ -8,7 +8,8 @@
  * 形态要点（拍板 2026-10-10 / issue #1564）：
  * - **不定高**：每刻度一行，行高 = `BAND_ROW_PAD * 2 + 该刻度事件数 * BAND_ROW_H`（`layoutBandSpine`）
  * - **时间主轴**（`tl-band-main`）：刻度序 = 跨选中历 `to_global` 去重升序，作为定位 / 分页依据
- * - **按刻度分页**：`tl-band-pager`（`BAND_TICKS_PER_PAGE` 个刻度/页）
+ * - **按刻度分页**（#1599）：复用共享 `Pagination`（`testIdPrefix='tl-band-page'`）——
+ *   分页单位仍是**时间刻度**，每页刻度数可选（档位 8 / 16 / 32 / 64，默认 8）
  * - **待确认区**（#1581）：原「未知区」退役 —— 未定事件不进正式表（故不在刻度带内），
  *   改由刻度带下方的 `TimelinePending` 承载（原文可读、可确认 / 丢弃、分页可达 100%）
  * - **底色**（#1565）：容器 = **页面底色 token**（`bg-bg`），保留边框 / 圆角 / `shadow-card`
@@ -20,11 +21,12 @@ import {
   BAND_DEFAULT_COLOR,
   BAND_ROW_H,
   BAND_ROW_PAD,
-  BAND_TICKS_PER_PAGE,
+  BAND_TICK_PAGE_SIZES,
   bandTickRows,
   layoutBandSpine,
   type BandLayout,
 } from './timeline-band';
+import { Pagination } from './Pagination';
 import type { TimelineEventDTO, TimelineRowRef } from './TimelineView';
 
 export interface TimelineBandProps {
@@ -32,7 +34,11 @@ export interface TimelineBandProps {
   band: BandLayout;
   /** 当前页码（0 基；越界由 `layoutBandSpine` 收敛） */
   page: number;
+  /** 每页刻度数（#1599：受控；档位见 `BAND_TICK_PAGE_SIZES`，默认 `BAND_TICKS_PER_PAGE`） */
+  pageSize: number;
   onPageChange: (page: number) => void;
+  /** 每页刻度数变更（#1599；由父级同步重置到第 1 页） */
+  onPageSizeChange: (pageSize: number) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
   /** 事件 → 来源章胶囊文案（未分章 / 未知章节占位由调用方兜底） */
   chapterLabelOf: (ev: TimelineEventDTO) => string;
@@ -45,7 +51,9 @@ export interface TimelineBandProps {
 export function TimelineBand({
   band,
   page,
+  pageSize,
   onPageChange,
+  onPageSizeChange,
   t,
   chapterLabelOf,
   onCheckOne,
@@ -56,7 +64,7 @@ export function TimelineBand({
   const AXDX = 104;
   const EVX = 352;
   const MAINX = 88;
-  const geo = layoutBandSpine(bandTickRows(band), { page });
+  const geo = layoutBandSpine(bandTickRows(band), { page, pageSize });
   const xOf = (key: string): number => AX0 + band.axes.findIndex((axis) => axis.key === key) * AXDX;
   const colorOf = (key: string): string =>
     band.axes.find((axis) => axis.key === key)?.color ?? BAND_DEFAULT_COLOR;
@@ -230,37 +238,19 @@ export function TimelineBand({
         {/* #1581：「未知区」退役 —— 未定事件不进正式表（故不在刻度带内），
             改由刻度带下方的待确认区（TimelinePending）承载。 */}
       </div>
-      {/* #1564：分页单位 = 时间刻度（拍板 ②） */}
-      <div
-        data-testid="tl-band-pager"
-        className="mt-2 flex items-center justify-center gap-3 text-[12px] text-ink-2"
-      >
-        <button
-          type="button"
-          data-testid="tl-band-page-prev"
-          disabled={geo.page === 0}
-          className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40 disabled:hover:border-line disabled:hover:text-ink-2"
-          onClick={() => onPageChange(Math.max(0, geo.page - 1))}
-        >
-          {t('pagination.page.prev')}
-        </button>
-        <span data-testid="tl-band-pageinfo" className="tabular-nums">
-          {t('lib.tlBandPageInfo', {
-            page: geo.page + 1,
-            pages: geo.pageCount,
-            size: BAND_TICKS_PER_PAGE,
-            total: geo.totalTicks,
-          })}
-        </span>
-        <button
-          type="button"
-          data-testid="tl-band-page-next"
-          disabled={geo.page >= geo.pageCount - 1}
-          className="rounded-md border border-line px-3 py-1 text-[12px] text-ink-2 transition duration-150 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40 disabled:hover:border-line disabled:hover:text-ink-2"
-          onClick={() => onPageChange(Math.min(geo.pageCount - 1, geo.page + 1))}
-        >
-          {t('pagination.page.next')}
-        </button>
+      {/* #1564：分页单位 = 时间刻度（拍板 ②）；#1599：改用共享 `Pagination`（形态同页内「待确认区」）
+          —— 页 / 总页 / 总刻度四要素由组件呈现（「共 N 条」的 N = 总刻度数），每页刻度数可选 */}
+      <div data-testid="tl-band-pager" className="mt-2">
+        <Pagination
+          className="justify-center"
+          page={geo.page}
+          pageSize={pageSize}
+          total={geo.totalTicks}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+          pageSizeOptions={BAND_TICK_PAGE_SIZES}
+          testIdPrefix="tl-band-page"
+        />
       </div>
     </>
   );

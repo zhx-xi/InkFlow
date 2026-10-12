@@ -23,8 +23,10 @@ export const BAND_DEFAULT_COLOR = '#7a7a7a';
 /** #1564：刻度带单位事件行高（px；= 事件行高）与行内上下留白 */
 export const BAND_ROW_H = 24;
 export const BAND_ROW_PAD = 4;
-/** #1564：分页单位 = **时间刻度**（不是事件条数） */
+/** #1564：分页单位 = **时间刻度**（不是事件条数）；默认每页刻度数（#1599 起档位可选） */
 export const BAND_TICKS_PER_PAGE = 8;
+/** #1599：刻度带「每页刻度数」档位（默认档仍为 `BAND_TICKS_PER_PAGE` = 8 → 零回归 #1564 的分页节奏） */
+export const BAND_TICK_PAGE_SIZES = [8, 16, 32, 64];
 /** #1564：刻度带内部几何（与 design/GUI/timeline/timeline.html 保持同值） */
 const SPINE_TOP = 12;
 const BOT_PAD = 6;
@@ -214,7 +216,7 @@ export function bandTickRows(layout: BandLayout): BandTickRow[] {
  *
  * - **不定高**：`height = BAND_ROW_PAD * 2 + max(1, count) * BAND_ROW_H`
  * - **纵向位置 = 刻度序号**（等距堆叠）→ 离群值只多占一行，不改动其它行
- * - **分页**：每页 `BAND_TICKS_PER_PAGE` 个刻度（`page` 越界收敛到有效范围）
+ * - **分页**：每页 `opts.pageSize`（缺省 `BAND_TICKS_PER_PAGE`）个刻度（`page` 越界收敛到有效范围）
  * - **无「未知区」**（#1581）：未定事件不进正式表 ⇒ 不进刻度带 ⇒ 画布高度只由刻度区决定
  */
 export function layoutBandSpine(
