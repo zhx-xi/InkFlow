@@ -324,6 +324,40 @@ class TestTimelineRepository:
         assert got.title == "觉醒·改"
         assert got.time_value is None
 
+    async def test_update_persists_era_columns_1592(self, db_session, project):
+        """update 必须落库 era / era_value / era_scale 三列（#1592）.
+
+        回归守护：仓储 update 的显式 ``.values(...)`` 白名单曾漏纪元三列 →
+        PATCH / ``timeline update`` 对纪元字段静默 no-op（200 但零变更）。
+        断言同时覆盖「返回对象」与「直接查表」两条读径。
+        """
+        repo = SQLiteTimelineRepository(db_session)
+        e = await repo.add(
+            _event(project, "纪元事件", time_value=100.0, era="开元", era_value=3.0, era_scale=1.0)
+        )
+
+        updated = await repo.update(
+            e.model_copy(update={"era": "天宝", "era_value": 8.0, "era_scale": 1.5})
+        )
+        assert updated.era == "天宝"
+        assert updated.era_value == 8.0
+        assert updated.era_scale == 1.5
+
+        # 持久化验证：直接查表（绕过返回对象）
+        row = await db_session.execute(
+            select(TimelineEventORM).where(TimelineEventORM.id == e.id.int)
+        )
+        orm = row.scalar_one()
+        assert orm.era == "天宝"
+        assert orm.era_value == 8.0
+        assert orm.era_scale == 1.5
+
+        got = await repo.get(e.id)
+        assert got is not None
+        assert got.era == "天宝"
+        assert got.era_value == 8.0
+        assert got.era_scale == 1.5
+
     async def test_update_missing_event_raises_value_error(self, db_session, project):
         """update 不存在的 id → ValueError."""
         repo = SQLiteTimelineRepository(db_session)
