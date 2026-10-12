@@ -60,6 +60,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 | [ADR-063](database/ADR-063.md) | 无 FK 的 `String(36) project_id` 子表根治 — 归一为 `INTEGER + FK(projects.id) ON DELETE CASCADE` | ✅ 已接受 | 2026-10-02 |
 | [ADR-065](database/ADR-065.md) | 多纪元正式化 — `timeline_events` 三列（`era` / `era_value` / `era_scale`）+ `time_value` 全局标量 | ✅ 已接受 | 2026-10-06 |
 | [ADR-067](database/ADR-067.md) | 时间线正式表零未定事件 + 后置时间归一（确定性，零 LLM）+ 未定入暂存（待确认区）；「未知」退役 | ✅ 已接受 | 2026-10-11 |
+| [ADR-068](database/ADR-068.md) | 历法换算显示 — 声明式历法 spec（项目级 `ProjectConfig.calendars`）+ 受限表达式闰年规则 + `day_count_to_date` 纯函数（只管标签文本，不回写） | ✅ 已接受 | 2026-10-12 |
 
 ### service 层（service）
 
@@ -180,6 +181,7 @@ ADR 自 2026-09-01 起按**领域**归入子目录（保留 ADR 编号稳定，�
 - **schema 迁移**: Alembic 骨架 + 版本权威（ADR-054 [database/](database/ADR-054.md)）；现有 ensure_* 平移复用为 migration body，lifespan 程序化 `command.upgrade`，CI `alembic check` drift 门禁；生产移除 create_all（0 新增依赖）
 - **多纪元数据面**: `timeline_events` 三列 `era` / `era_value` / `era_scale`（`time_value` 保持**跨轴唯一全局标量**；`era`=轴名 / `era_value`=轴内值 / `era_scale`=流速比默认 1.0；跨纪元比较**须经换算**——**T2 #1411 已落地**（ADR-065 §2.1）：检查按 `era` 分桶 + `to_global` 换算后全局标量比较；`extra.era` / `extra.era_value` 降为 v1.3 遗留快照）（ADR-065 [database/](database/ADR-065.md)）
 - **数据契约**: Pydantic v2 全栈（ADR-004 [database/](database/ADR-004.md)）
+- **历法换算显示**: 声明式历法 spec 挂**项目配置**（`ProjectConfig.calendars`，零 DDL；轴身份 = `era` 值，**无该轴条目 = 不换算**）；闰年 / 纪元周期用**受限表达式字符串**（`#` = 年序号，白名单词法求值、**永不 eval**）；换算 = **纯函数** `day_count_to_date`（唯一实现点 `domain/services/calendar.py`，**只管标签文本、不回写库**，亚日小数**同日归整**）（ADR-068 [database/](database/ADR-068.md)）
 - **时间口径**: 存储/传输（DB/API/MCP/--json）一律 UTC；GUI/CLI 人类显示一律系统本地时区（ADR-055 [architecture/](architecture/ADR-055.md)；GUI=formatTimestamp/formatClock 本地访问器手拼，CLI=`cli/_time.format_local`，naive 串=UTC 口径先补 tzinfo 再转换；硬约束非配置项）
 - **LLM**: LiteLLM 统一出口 `ChatLiteLLM`/`LitellmEmbeddings` + 思考模式七档（ADR-051 [llm/](llm/ADR-051.md)，取代 ADR-005v2 [llm/](llm/ADR-005v2.md) 的 ChatOpenAI 路线）；模型装配 fail-fast——删除注册表静默回退，`project>global` 无解即 422+诊断日志，model_routing=provider 键内置默认（ADR-049 [llm/](llm/ADR-049.md)）
 - **Agent 编排**: LangGraph StateGraph → deepagents 0.7.5 harness（ADR-006v2 / ADR-035 [agent/](agent/ADR-035.md)）

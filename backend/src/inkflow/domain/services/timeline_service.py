@@ -34,6 +34,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 
+from inkflow.domain.models.project import Project
 from inkflow.domain.models.timeline import (
     ConsistencyReport,
     EventCheckReport,
@@ -59,6 +60,7 @@ from inkflow.domain.services._timeline_timebase import (
     normalized_days,
     to_days,
 )
+from inkflow.domain.services.calendar import resolve_calendar_date
 from inkflow.domain.services.era_conversion import to_global
 
 logger = logging.getLogger(__name__)
@@ -239,11 +241,14 @@ class TimelineService:
         self._project_repo = project_repo
         self._map_cleanup = map_cleanup
 
-    async def _ensure_project(self, project_id: uuid.UUID) -> None:
-        """校验项目存在（spec §3.4: 项目不存在 → 404 语义）.
+    async def _ensure_project(self, project_id: uuid.UUID) -> Project:
+        """校验项目存在并返回项目（spec §3.4: 项目不存在 → 404 语义）.
 
         Args:
             project_id: 所属项目 UUID.
+
+        Returns:
+            项目实体（调用方复用，如读 `config.calendars` —— #1589）。
 
         Raises:
             TimelineServiceError: project_repo 未注入（配置错误，防静默降级）.
@@ -254,6 +259,7 @@ class TimelineService:
         project = await self._project_repo.get(project_id)
         if project is None:
             raise ProjectNotFoundError()
+        return project
 
     # ── TimelineEvent ─────────────────────────────────────────────
 
@@ -436,6 +442,10 @@ class TimelineService:
     async def get_timeline_view(self, project_id: uuid.UUID) -> TimelineView | None:
         """双线总览（spec §3.3/§5.2）— 同一批活动事件的两种投影.
 
+        按项目历法清单（`config.calendars`）为每个事件填 `calendar_date`
+        （#1589 / ADR-068 §2.1 S1）：**未配历法的轴 → None**（前端回落「N 日」，D3）；
+        两条投影共用同一批对象，故都带上该字段。
+
         Args:
             project_id: 所属项目 UUID.
 
@@ -446,8 +456,16 @@ class TimelineService:
             ProjectNotFoundError: 项目不存在（router 层转 404）.
             TimelineServiceError: project_repo 未注入（配置错误）.
         """
-        await self._ensure_project(project_id)
+        project = await self._ensure_project(project_id)
         events = await self._repo.list_all(project_id)
+        for event in events:
+            event.calendar_date = resolve_calendar_date(
+                project.config.calendars,
+                event.era,
+                event.era_value,
+                event.time_value,
+                event.time_unit,
+            )
         return TimelineView(
             project_id=project_id,
             total=len(events),
