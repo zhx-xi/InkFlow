@@ -273,6 +273,9 @@ class SQLiteTimelineRepository:
                 time_display=event.time_display,
                 narrative_position=event.narrative_position,
                 timeline_flag=event.timeline_flag,
+                era=event.era,
+                era_value=event.era_value,
+                era_scale=event.era_scale,
                 source_chapter_id=(
                     _uuid_to_int(event.source_chapter_id)
                     if event.source_chapter_id is not None
