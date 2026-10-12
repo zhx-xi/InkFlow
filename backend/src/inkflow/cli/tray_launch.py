@@ -35,6 +35,10 @@ GUI_EXE_NAME = "InkFlow.exe"
 _UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
 #: 上述子键下的安装目录值名
 _INSTALL_LOCATION_VALUE = "InstallLocation"
+#: 上述子键下的 GUI 可执行路径值名（形如 `"<dir>\InkFlow.exe",0`）——#1594：
+#: electron-builder per-user NSIS **不写** `InstallLocation`（其值落在
+#: `HKCU\Software\<APP_GUID>`，与 Uninstall 键同 GUID 不同路径），卸载键下只剩此值。
+_DISPLAY_ICON_VALUE = "DisplayIcon"
 
 _DISABLE_TRUTHY = frozenset({"1", "true", "on", "yes"})
 
@@ -83,10 +87,17 @@ def _self_registered_gui_exe() -> Path | None:
 
 
 def _registry_gui_exe() -> Path | None:
-    """从 `HKCU\\...\\Uninstall\\*` 的 `InstallLocation` 探测 GUI（#1525 根因 1b）。
+    """从 `HKCU\\...\\Uninstall\\*` 探测 GUI（#1525 根因 1b / #1594 扩展）。
 
-    NSIS 安装会写该键，据此覆盖 `%LOCALAPPDATA%\\Programs\\` / `%PROGRAMFILES%\\` 之外的
-    **自定义安装路径**。注册表不可用 / 键缺失 / 权限异常 / 值非法 → **静默跳过**（返回 None，
+    按序尝试子键的两个值：
+      ① `InstallLocation` —— 部分安装器（非 electron-builder）写该值；
+      ② `DisplayIcon` —— **electron-builder per-user NSIS 只写这个**
+     （#1594 实测：rc5 装机卸载键值全集 = DisplayName / UninstallString /
+      QuietUninstallString / DisplayVersion / **DisplayIcon** / Comments / ...，
+      **无** `InstallLocation`）。据此覆盖 `%LOCALAPPDATA%\\Programs\\` /
+    `%PROGRAMFILES%\\` 之外的**自定义安装路径**。
+
+    注册表不可用 / 键缺失 / 权限异常 / 值非法 → **静默跳过**（返回 None，
     绝不抛）；非 Windows（`sys.platform != "win32"`）→ 直接跳过（不 import `winreg`）。
     """
     if sys.platform != "win32":
@@ -108,12 +119,53 @@ def _registry_gui_exe() -> Path | None:
                 break
             index += 1
             location = _query_install_location(winreg, root, subkey)
-            if not location:
-                continue
-            exe = _exact_exe_in_dir(Path(location))
+            if location:
+                exe = _exact_exe_in_dir(Path(location))
+                if exe is not None:
+                    return exe
+            # #1594：InstallLocation 缺失/无效 → 退回 DisplayIcon
+            exe = _gui_from_display_icon(winreg, root, subkey)
             if exe is not None:
                 return exe
     return None
+
+
+def _gui_from_display_icon(winreg_mod: Any, root: Any, subkey: str) -> Path | None:
+    """从子键 `DisplayIcon` 解出 GUI 可执行路径（#1594）。
+
+    实测值形如 ``D:\\...\\install\\InkFlow.exe,0``（可带引号、可无 `,<icon-index>`）。
+    解析后仍按 **#1525 的精确名纪律**复验：必须是**磁盘上真实**的 `InkFlow.exe`
+    （逐 entry 大小写精确比对）——绝不把内核 `inkflow.exe` 之类的 exe 送进 `--tray-only`。
+    子键打不开 / 值缺失 / 非字符串 / 解析后非 GUI → None（静默，不抛）。
+    """
+    try:
+        sub = winreg_mod.OpenKey(root, subkey)
+    except OSError:
+        return None
+    with sub:
+        try:
+            value, _ = winreg_mod.QueryValueEx(sub, _DISPLAY_ICON_VALUE)
+        except OSError:
+            return None
+    if not isinstance(value, str):
+        return None
+    raw = value.strip().strip('"').strip()
+    if not raw:
+        return None
+    # 去图标索引后缀（`,0` / `,-12`）；路径本身很少含逗号，按最后一个逗号切
+    head = raw.rsplit(",", 1)[0].strip().strip('"').strip() if "," in raw else raw
+    if not head:
+        return None
+    candidate = Path(head)
+    try:
+        if not candidate.is_file():
+            return None
+    except OSError:
+        return None
+    if candidate.name != GUI_EXE_NAME:
+        return None
+    # 磁盘真实名精确比对（`is_file()` 在 Windows 大小写不敏感 → 不可单独采信）
+    return _exact_exe_in_dir(candidate.parent)
 
 
 def _query_install_location(winreg_mod: Any, root: Any, subkey: str) -> str | None:
