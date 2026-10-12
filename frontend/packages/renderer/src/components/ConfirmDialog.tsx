@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { Minus, X } from 'lucide-react';
 import { useI18n } from '../i18n/useI18n';
 
 /** S3e F3：框内可聚焦元素（初始焦点 + Tab 焦点陷阱共用；过滤 disabled / aria-hidden 元素） */
@@ -25,6 +26,16 @@ export interface ConfirmDialogProps {
   testidPrefix: string; // 例如 'lib-confirm' / 'project-delete'
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
+  /** #1590：底部左侧按钮文案（缺省「取消」，关框） */
+  cancelText?: string;
+  /** #1590：隐藏底部左侧按钮（出路改挂右上角图标时，避免重复入口） */
+  hideCancel?: boolean;
+  /** #1590：右上角「—」次要出路（未给则不渲染） */
+  minimizeLabel?: string;
+  onMinimize?: () => void;
+  /** #1590：右上角「×」破坏性确认（未给则不渲染） */
+  destructiveLabel?: string;
+  onDestructive?: () => void;
 }
 
 export function ConfirmDialog({
@@ -36,6 +47,12 @@ export function ConfirmDialog({
   testidPrefix,
   onConfirm,
   onOpenChange,
+  cancelText,
+  hideCancel = false,
+  minimizeLabel,
+  onMinimize,
+  destructiveLabel,
+  onDestructive,
 }: ConfirmDialogProps) {
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -95,17 +112,47 @@ export function ConfirmDialog({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleDialogKeyDown}
       >
-        <h2 className="font-serif text-[18px] font-semibold">{title}</h2>
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-serif text-[18px] font-semibold">{title}</h2>
+          {(onMinimize !== undefined || onDestructive !== undefined) && (
+            <div className="flex shrink-0 items-center gap-1">
+              {onMinimize !== undefined && (
+                <button
+                  type="button"
+                  data-testid={`${testidPrefix}-minimize`}
+                  aria-label={minimizeLabel}
+                  className="rounded p-1 text-ink-2 transition duration-180 hover:bg-surface-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={onMinimize}
+                >
+                  <Minus className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+              {onDestructive !== undefined && (
+                <button
+                  type="button"
+                  data-testid={`${testidPrefix}-dismiss`}
+                  aria-label={destructiveLabel}
+                  className="rounded p-1 text-ink-2 transition duration-180 hover:bg-err/10 hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  onClick={onDestructive}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <div className="mt-3 space-y-1.5 text-[13px] text-ink-2">{message}</div>
         <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid={`${testidPrefix}-cancel`}
-            className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3"
-            onClick={() => onOpenChange(false)}
-          >
-            {t('dlg.cancel')}
-          </button>
+          {!hideCancel && (
+            <button
+              type="button"
+              data-testid={`${testidPrefix}-cancel`}
+              className="rounded-md border border-line px-4 py-1.5 text-sm text-ink-2 transition duration-180 hover:bg-surface-3"
+              onClick={() => onOpenChange(false)}
+            >
+              {cancelText ?? t('dlg.cancel')}
+            </button>
+          )}
           <button
             type="button"
             data-testid={`${testidPrefix}-ok`}
