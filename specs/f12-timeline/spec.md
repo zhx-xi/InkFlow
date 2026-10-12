@@ -472,7 +472,8 @@ class TimelineView(BaseModel):
 
 > **命名 = `snake_case`**（与 `ProjectConfig` 既有字段一致，见 ADR-068 §1）。
 
-**换算口径（规范文本；唯一实现点 `domain/services/calendar.py`，纪律同 §2.8 E11）**：
+**换算口径（规范文本；数据契约在 `domain/models/calendar.py`、**换算唯一实现点** `domain/services/calendar.py`，
+纪律同 §2.8 E11；models 层不得引 services —— 实测会触发服务包全量导入的循环 ImportError）**：
 
 | # | 规则 |
 |---|---|

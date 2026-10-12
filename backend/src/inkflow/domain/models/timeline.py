@@ -20,6 +20,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from inkflow.domain.models.calendar import CalendarDate
+
 TIME_VALUE_LIMIT = 1e12
 
 
@@ -273,6 +275,9 @@ class TimelineEvent(BaseModel):
     era: str = ""  # 纪元轴名（"" = 默认轴；v1.4 正式列，ADR-065 / §2.8）
     era_value: float | None = None  # 纪元轴内值（None = 未知；仅 era 非空时有意义）
     era_scale: float = 1.0  # 流速比（默认 1.0；换算归 T2 #1411）
+    calendar_date: CalendarDate | None = None
+    """历法显示日期（#1589 / ADR-068 §2.1 S1）：**后端换算、随事件下发**（纯数据，不含文案）；
+    None = 该轴未配历法（前端回落「N 日」）."""
     source_chapter_id: uuid.UUID | None = None  # F14 提取来源章节（Q3 联动）; None = 手工事件
     extra: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime

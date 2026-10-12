@@ -23,11 +23,15 @@ import inspect
 import pytest
 from pydantic import ValidationError
 
-from inkflow.domain.services.calendar import (
+from inkflow.domain.models.calendar import (
     CalendarConfig,
+    CalendarDate,
     CalendarSpec,
-    day_count_to_date,
     evaluate_leap_rule,
+)
+from inkflow.domain.services.calendar import (
+    day_count_to_date,
+    resolve_calendar_date,
     resolve_day_count,
 )
 
@@ -187,14 +191,17 @@ class TestLeapExpression:
         assert evaluate_leap_rule("# % 4 == 0 && 1 / (# - #) > 0", 4) is False
 
     def test_evaluator_never_calls_eval(self) -> None:
-        """结构化守护：模块源码不得调用內建 eval/exec/compile（`re.compile(` 不算）。"""
+        """结构化守护：历法两模块（models 契约 + services 换算）源码均不得调用内建
+        eval/exec/compile（`re.compile(` 不算）。"""
         import re
 
-        from inkflow.domain.services import calendar as mod
+        from inkflow.domain.models import calendar as models_mod
+        from inkflow.domain.services import calendar as services_mod
 
-        src = inspect.getsource(mod)
-        for banned in (r"(?<![\w.])eval\(", r"(?<![\w.])exec\(", r"(?<![\w.])compile\("):
-            assert re.search(banned, src) is None, f"禁用内建 {banned}"
+        for mod in (models_mod, services_mod):
+            src = inspect.getsource(mod)
+            for banned in (r"(?<![\w.])eval\(", r"(?<![\w.])exec\(", r"(?<![\w.])compile\("):
+                assert re.search(banned, src) is None, f"{mod.__name__} 禁用内建 {banned}"
 
 
 # ══════════════════════════ 3. 换算（oracle 字面量） ══════════════════════════
@@ -310,3 +317,46 @@ class TestResolveDayCount:
             assert "era_scale" not in params, f"{fn.__name__} 不得消费 era_scale"
         # 同一日数、不同「流速比」在调用面上无法表达差异 → 标签必然不变
         assert ymd(2920, make_spec()) == ymd(2920, make_spec(axis="武侠界"))
+
+
+# ══════════════════════════ 5. 按轴取历法（N1/N6/N8，读路径唯一入口） ══════════════════════════
+
+
+class TestResolveCalendarDate:
+    def test_n1_n8_no_spec_for_axis_returns_none(self) -> None:
+        """D3/N1/N8：未配历法的轴 → None（不报错、不套默认历法）。"""
+        assert resolve_calendar_date([make_spec(axis="武侠界")], "仙界", 100.0, None, None) is None
+        assert resolve_calendar_date([], "", None, 100.0, "年") is None
+        assert resolve_calendar_date([make_spec(axis="武侠界")], "", None, 100.0, "年") is None
+
+    def test_default_axis_uses_time_value_and_unit_factor(self) -> None:
+        """默认轴：`time_value × factor(time_unit)` → 3 年 = 1095 日 → 第 4 年 1 月 1 日
+        （oracle 值）。"""
+        default = make_spec(axis="", month_days=GLD)
+        got = resolve_calendar_date([default], "", None, 3.0, "年")
+        assert got == CalendarDate(year=4, month=1, day=1)
+
+    def test_era_axis_uses_era_value(self) -> None:
+        got = resolve_calendar_date([make_spec(axis="武侠界")], "武侠界", 2920.0, 9.0, "年")
+        assert got is not None
+        assert (got.year, got.month, got.day) == (9, 2, 9)
+
+    def test_n6_two_axes_each_with_own_calendar(self) -> None:
+        """N6/D1：同一日数在两套历法下各按自己历法显示（结果不同、各等于本轴换算）。"""
+        wuxia = make_spec(axis="武侠界")
+        xianxia = make_spec(axis="仙界", month_days=GLD)
+        cals = [wuxia, xianxia]
+        a = resolve_calendar_date(cals, "武侠界", 2920.0, None, None)
+        b = resolve_calendar_date(cals, "仙界", 2920.0, None, None)
+        assert a == day_count_to_date(2920, wuxia)
+        assert b == day_count_to_date(2920, xianxia)
+        assert a != b
+
+    def test_axis_name_whitespace_tolerated(self) -> None:
+        assert (
+            resolve_calendar_date([make_spec(axis="武侠界")], "  武侠界  ", 0.0, None, None)
+            is not None
+        )
+
+    def test_unknown_time_returns_none(self) -> None:
+        assert resolve_calendar_date([make_spec(axis="武侠界")], "武侠界", None, None, None) is None

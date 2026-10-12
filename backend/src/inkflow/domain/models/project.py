@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from inkflow.domain.models.calendar import CalendarConfig, CalendarSpec
 from inkflow.domain.models.reasoning import ReasoningEffort
 
 # 225 拍板——字符串 "__default__" = 跟随默认（预留 sentinel，前端本期不暴露中间态 UI）。
@@ -144,8 +145,19 @@ class ProjectConfig(BaseModel):
     template_id: str | None = None
     chapter_title_format: str = "arabic"
     """章节标题序号格式（#999 契约 §3）：'arabic'=第N章 / 'chinese'=第X章。"""
+    calendars: list[CalendarSpec] = Field(default_factory=list)
+    """历法 spec（#1589 / ADR-068 §1）：轴身份 = 事件 `era` 值；
+    空列表 = 该轴**不换算**（D3 无默认值）."""
     writing_style: str = ""
     default_words: int = Field(default=800000, ge=1000, le=10_000_000, description="新章节默认字数")
+
+    @field_validator("calendars")
+    @classmethod
+    def validate_calendars(cls, v: list[CalendarSpec]) -> list[CalendarSpec]:
+        """轴名不得重复（复用 `CalendarConfig` 唯一性校验；ADR-068 §1 契约）."""
+        CalendarConfig(calendars=v)
+        return v
+
     extra: dict[str, Any] = Field(default_factory=dict)
     agent_order: list[list[str]] = Field(default_factory=list)
     """Agent 链执行拓扑 — 层级嵌套数组（v1.1 拍板：同层并行；v1.2 拍板：槽位编号 0-9）。
