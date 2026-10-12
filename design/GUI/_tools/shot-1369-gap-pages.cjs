@@ -85,6 +85,9 @@ const PAGES = [
       ['extract-pending-panel', 'library-extract-pending-panel.png'],
       ['extract-float-pending', 'library-extract-float-pending.png'],
       ['extract-close-prompt', 'library-extract-close-prompt.png'],
+      // #1590：取消批次二次确认（三出路）+ 条目详情右侧面板
+      ['extract-pending-cancel-prompt', 'library-extract-pending-cancel-prompt.png'],
+      ['extract-pending-detail', 'library-extract-pending-detail.png'],
     ],
   },
   {
