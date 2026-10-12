@@ -39,6 +39,8 @@
 - **提取浮窗随宿主重挂载消失（#1582）**：提取会话（`open` / `minimized` / `staged`）提升到全局 store 并挂 App 层，路由切换 / 宿主重挂载后浮窗与结果视图仍在；补「待确认提取（N）」可见入口（未确认暂存批次不再无入口）。
 - **条目级暂存确认回传不可寻址身份（#1586）**：条目级 `confirm` 曾回传**物化前 payload 的随机 UUID**（不可 `GET /timeline/events/{id}` 回读）→ 改为回传 `repo.add` 返回值（`uuid.UUID(int=主键)` = 数据库真身份）。
 - **暂存批次取消误触（#1590）**：暂存批次取消补**二次确认** + 暂存条目**详情抽屉**（防误取消后逐条丢失）。
+- **时间线事件 PATCH 静默丢弃纪元列（#1592，rc5 产物验证发现）**：仓储 `update()` 的显式 `.values(...)` 白名单只列既有列，漏了 #1410/#1411 新增的 `era` / `era_value` / `era_scale` → `PATCH /timeline/events/{id}` 与 CLI `timeline update --era/--era-value/--era-scale` 均返回 200/`ok:true` 却**零落库**（create/read 映射器都有三列，唯 update 无）。白名单补三列 + RED 契约（改前 `'开元' != '天宝'` FAIL）。同类审计：仓储层 10 处「全字段 update」白名单中唯此一处真缺口。
+- **自定义安装路径探测读错注册表键（#1594，rc5 产物验证发现）**：`_registry_gui_exe()` 扫 `HKCU\...\Uninstall\*` 的 `InstallLocation`，而 electron-builder per-user NSIS 把该值写在 `HKCU\Software\<APP_GUID>`（同 GUID 不同路径）→ 该候选恒 `None` → 自定义路径装机 + GUI 从未启动时 CLI 探测不到 GUI、不拉起托盘（#1525 验收判据 2 未达成）。子键枚举增加 `DisplayIcon` 候选（去 `,<icon-index>` 后缀 → 目录 → 精确名复验）。顺带修掉同文件 4 个用例漏桩 `_self_registered_gui_exe` 的环境耦合假红。
 
 ### 文档
 
@@ -46,7 +48,7 @@
 
 ### 里程碑
 
-- milestone #22 · **65 issues 全关** · rc1 / rc2 / rc3 / rc4 四轮预发布 + 完整用户旅程（stage0 → 审计）验证 · **v0.17.0 正式发布**。
+- milestone #22 · **67 issues 全关** · rc1 / rc2 / rc3 / rc4 / **rc5** 五轮预发布 + 完整用户旅程（stage0 → 审计）验证 · **v0.17.0 正式发布**。
 
 ## [0.16.0] - 2026-10-04
 
