@@ -179,6 +179,9 @@ def test_resolve_gui_exe_env_points_to_missing_file_falls_through(tmp_path, monk
     monkeypatch.setenv(tray_launch.GUI_EXE_ENV, str(tmp_path / "nope.exe"))
     monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
     monkeypatch.setattr(tray_launch, "_registry_gui_exe", lambda: None)  # #1525 新增候选：桩掉
+    monkeypatch.setattr(
+        tray_launch, "_self_registered_gui_exe", lambda: None
+    )  # #1537 新增候选：桩掉
     monkeypatch.setattr(tray_launch, "_standard_gui_exe", lambda: None)
     assert tray_launch.resolve_gui_exe() is None
 
@@ -219,6 +222,9 @@ def test_maybe_launch_skips_when_no_gui(tmp_path, monkeypatch):
     monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
     monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
     monkeypatch.setattr(tray_launch, "_registry_gui_exe", lambda: None)  # #1525 新增候选：桩掉
+    monkeypatch.setattr(
+        tray_launch, "_self_registered_gui_exe", lambda: None
+    )  # #1537 新增候选：桩掉
     monkeypatch.setattr(tray_launch, "_standard_gui_exe", lambda: None)
     with patch("inkflow.cli.tray_launch.subprocess.Popen") as popen:
         assert tray_launch.maybe_launch_tray_gui(reused=False) is None
@@ -367,6 +373,7 @@ def test_cli_zip_layout_never_launches_kernel_as_gui(tmp_path, monkeypatch):
     monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
     monkeypatch.delenv(tray_launch.DISABLE_ENV, raising=False)
     _install_fake_winreg(monkeypatch, {})  # 注册表无 InkFlow 安装项
+    monkeypatch.setattr(tray_launch, "_self_registered_gui_exe", lambda: None)  # 本机 gui.json 不计
     monkeypatch.setattr(tray_launch, "_standard_gui_exe", lambda: None)
     with patch("inkflow.cli.tray_launch.subprocess.Popen") as popen:
         assert tray_launch.maybe_launch_tray_gui(reused=False) is None
@@ -451,10 +458,68 @@ def test_registry_gui_exe_finds_custom_install_location(tmp_path, monkeypatch):
     assert tray_launch._registry_gui_exe() == gui
 
 
+def test_registry_gui_exe_reads_display_icon_when_install_location_absent(tmp_path, monkeypatch):
+    """🔴 #1594：electron-builder per-user NSIS **不写** `InstallLocation`，只写 `DisplayIcon`。
+
+    实测（v0.17.0-rc5 静默装机，卸载键值全集）= `DisplayName` / `UninstallString` /
+    `QuietUninstallString` / `DisplayVersion` / `DisplayIcon` / `Comments` / ...
+    —— **没有** `InstallLocation`（该值被 electron-builder 写到
+    `HKCU\\Software\\<APP_GUID>`，与 Uninstall 键**同 GUID、不同路径**）。
+    故 `_registry_gui_exe()` 必须能从 `DisplayIcon` 解出 GUI，否则自定义路径装机的
+    CLI 拉起 tray 恒失效（#1525 验收判据 2 未达成）。
+    """
+    install_dir = tmp_path / "custom" / "InkFlow"
+    install_dir.mkdir(parents=True)
+    gui = install_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+    _install_fake_winreg(
+        monkeypatch,
+        {
+            "d8a9508a-bef2-5063-89b3-46d4cf85c5e2": {
+                "DisplayName": "InkFlow 0.17.0-rc5",
+                "DisplayIcon": f"{gui},0",  # 真实形态：无引号 + ",<icon-index>"
+                "UninstallString": f'"{install_dir}{os.sep}Uninstall InkFlow.exe" /currentuser',
+            },
+        },
+    )
+    assert tray_launch._registry_gui_exe() == gui
+
+
+def test_registry_gui_exe_display_icon_quoted_and_no_index(tmp_path, monkeypatch):
+    """`DisplayIcon` 带引号 / 无 `,<idx>` 后缀 / 带尾分隔符 → 仍能解出 GUI。"""
+    install_dir = tmp_path / "quoted"
+    install_dir.mkdir()
+    gui = install_dir / "InkFlow.exe"
+    gui.write_bytes(b"g")
+    _install_fake_winreg(
+        monkeypatch,
+        {"SomeApp": {"DisplayIcon": f'"{gui}"'}},
+    )
+    assert tray_launch._registry_gui_exe() == gui
+
+
+def test_registry_gui_exe_display_icon_rejects_non_gui_exe(tmp_path, monkeypatch):
+    """负例（#1525 精确名纪律）：`DisplayIcon` 指向**内核** `inkflow.exe` → 必须拒绝。
+
+    绝不把非 GUI 的 exe 送进 `--tray-only`（否则拉起必然报 `No such option`）。
+    """
+    install_dir = tmp_path / "kerneldir"
+    install_dir.mkdir()
+    (install_dir / "inkflow.exe").write_bytes(b"k")  # 小写内核 exe
+    _install_fake_winreg(
+        monkeypatch,
+        {"SomeApp": {"DisplayIcon": f"{install_dir}{os.sep}inkflow.exe,0"}},
+    )
+    assert tray_launch._registry_gui_exe() is None
+
+
 def test_resolve_gui_exe_falls_through_to_registry(tmp_path, monkeypatch):
     """端到端探测链：env 未设 + 同目录无 GUI → 注册表自定义路径命中。"""
     monkeypatch.delenv(tray_launch.GUI_EXE_ENV, raising=False)
     monkeypatch.setattr(tray_launch, "_sibling_gui_exe", lambda: None)
+    monkeypatch.setattr(
+        tray_launch, "_self_registered_gui_exe", lambda: None
+    )  # #1537 候选：本机 gui.json 不计
     install_dir = tmp_path / "custom" / "InkFlow"
     install_dir.mkdir(parents=True)
     gui = install_dir / "InkFlow.exe"
