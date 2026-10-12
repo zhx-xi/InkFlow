@@ -463,21 +463,23 @@ class TimelineView(BaseModel):
 | 字段 | 类型 | 约束 | 语义 |
 |---|---|---|---|
 | `axis` | str | ≤ 50 字符，去空白；数组内**不得重复** | = 事件 `era` 值；`""` = 默认轴 |
-| `epochLabel` | str \| null | ≤ 20 字符 | 第 1 年年号（非空 ⇒ 显示 `{epochLabel} {year} 年`） |
-| `monthNames` | list[str] \| null | 非空时长度**必须 ==** `monthDays` 长度 | 可空 ⇒ 显示数字月 |
-| `monthDays` | list[int] | **非空**；每项 ≥ 1；长度 1–24 | 不等月长（D2） |
-| `leap` | object \| null | `rule` ≤ 200 字符且可解析；`addDays` ∈ 1–10；`month` ∈ [1, len(monthDays)] | 闰年规则（表达式，`#` = 年序号） |
+| `epoch_label` | str \| null | ≤ 20 字符 | 第 1 年年号（非空 ⇒ 显示 `{epoch_label} {year} 年`） |
+| `month_names` | list[str] \| null | 非空时长度**必须 ==** `month_days` 长度；项非空 | 可空 ⇒ 显示数字月 |
+| `month_days` | list[int] | **非空**；每项 ≥ 1；长度 1–24 | 不等月长（D2） |
+| `leap` | object \| null | `rule` ≤ 200 字符且可解析；`add_days` ∈ 1–10；`month` ∈ [1, len(month_days)] | 闰年规则（表达式，`#` = 年序号） |
 | `intercalary` | list | **0.18.0 保留字段、不参与换算**（接受存储，换算忽略） | 无名日 / 独立节日 |
-| `eraCycle` | object \| null | `years` ∈ 2–10000；`label` ≤ 10 字符 | 「N 年一纪元」 |
+| `era_cycle` | object \| null | `years` ∈ 2–10000；`label` 长度 1–10 | 「N 年一纪元」 |
+
+> **命名 = `snake_case`**（与 `ProjectConfig` 既有字段一致，见 ADR-068 §1）。
 
 **换算口径（规范文本；唯一实现点 `domain/services/calendar.py`，纪律同 §2.8 E11）**：
 
 | # | 规则 |
 |---|---|
 | L1 | **同日归整**：输入 = **归一日数**（口径见下方「分层与输入口径」）→ `floor(days)`（亚日小数向下归整到「第 N 日」）—— 同一日内的多个刻度**显示同一标签**，不再出现 `0.79 日`；`days ∈ [0,1)` = 第 1 天 |
-| L2 | **年长** = `sum(monthDays)` + （`leap.rule` 命中年序号 ? `leap.addDays` : 0）；闰日计入 `leap.month`（1 基） |
+| L2 | **年长** = `sum(month_days)` + （`leap.rule` 命中年序号 ? `leap.add_days` : 0）；闰日计入 `leap.month`（1 基） |
 | L3 | **逐年 / 逐月累加**定位 `{year, month, day}`（均 1 基）；表达式里的年序号 `#` **从 1 起** |
-| L4 | **纪元周期**：`eraCycle` 生效 ⇒ 标签前插「`floor((year-1)/years)+1` `label`」（如「3 劫 12 年」） |
+| L4 | **纪元周期**：`era_cycle` 生效 ⇒ 标签前插「`floor((year-1)/years)+1` `label`」（如「3 劫 12 年」） |
 | L5 | **显示粒度（D4）**：按本页相邻刻度的日数差（中位数）自适应 —— `< 1 月` → `X 年 Y 月 Z 日`；`< 1 年` → `X 年 Y 月`；`≥ 1 年` → `X 年`。「1 月 / 1 年」的长度**由 spec 自身导出**，不硬编码 30 / 365 |
 | L6 | **无 spec / spec 非法 ⇒ 回落「N 日」**（整数，L1 归整后）；**不报错、不静默套默认历法**（零回归） |
 | L7 | **不回写**：`time_value` / `time_unit` / `era_value` / `era_scale` / `to_global` / 排序 / 一致性检查**全部不变**（D6：换算只管标签文本） |
