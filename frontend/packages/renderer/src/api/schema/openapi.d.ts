@@ -4366,6 +4366,38 @@ export interface components {
             writing_plan_id: string;
         };
         /**
+         * CalendarSpec
+         * @description 一条轴的历法（轴身份 = 事件 ``era`` 值；``""`` = 默认轴）.
+         *
+         *     Attributes:
+         *         axis: 轴名（= 事件 ``era`` 值；``""`` = 默认轴）；去空白、≤ 50 字符.
+         *         epoch_label: 第 1 年年号（可空 ⇒ 只显示数字）.
+         *         month_names: 月名（可空；非空时必须与 ``month_days`` 等长）.
+         *         month_days: 每月天数（不等月长；非空、每项 ≥ 1、上限 24 个月）.
+         *         leap: 闰年规则（可空 ⇒ 无闰）.
+         *         intercalary: **0.18.0 保留字段、不参与换算**（无名日 / 独立节日）.
+         *         era_cycle: 纪元周期（可空）.
+         */
+        CalendarSpec: {
+            /**
+             * Axis
+             * @default
+             */
+            axis: string;
+            /** Epoch Label */
+            epoch_label?: string | null;
+            era_cycle?: components["schemas"]["EraCycle"] | null;
+            /** Intercalary */
+            intercalary?: {
+                [key: string]: unknown;
+            }[];
+            leap?: components["schemas"]["LeapRule"] | null;
+            /** Month Days */
+            month_days: number[];
+            /** Month Names */
+            month_names?: string[] | null;
+        };
+        /**
          * ChapterCreate
          * @description 创建章节请求 DTO.
          */
@@ -4799,6 +4831,16 @@ export interface components {
             provider: string;
         };
         /**
+         * EraCycle
+         * @description 「N 年一纪元」：``cycle = floor((year - 1) / years) + 1``，标签前插「{cycle} {label}」.
+         */
+        EraCycle: {
+            /** Label */
+            label: string;
+            /** Years */
+            years: number;
+        };
+        /**
          * ExtractionRequest
          * @description 统一提取请求（§2.2）— 类型相关参数约束见 §6.4 输入约束表.
          *
@@ -5115,6 +5157,24 @@ export interface components {
             model?: string | null;
             /** Provider */
             provider: string;
+        };
+        /**
+         * LeapRule
+         * @description 闰年规则：``rule`` 表达式命中 ⇒ 该年**多出** ``add_days`` 天，计入第 ``month`` 月.
+         */
+        LeapRule: {
+            /**
+             * Add Days
+             * @default 1
+             */
+            add_days: number;
+            /**
+             * Month
+             * @default 1
+             */
+            month: number;
+            /** Rule */
+            rule: string;
         };
         /**
          * LogLevel
@@ -5635,6 +5695,8 @@ export interface components {
              * @default false
              */
             auto_write_enabled: boolean;
+            /** Calendars */
+            calendars?: components["schemas"]["CalendarSpec"][];
             /**
              * Chapter Title Format
              * @default arabic
