@@ -262,6 +262,12 @@ class TestConversion:
         assert (got101.year, got101.cycle) == (101, 2)
         got250 = day_count_to_date(89700, spec)  # 第 250 年起始
         assert (got250.year, got250.cycle) == (250, 3)
+        assert got250.era_cycle_label == "劫"  # 纪元名 = 轴数据（前端拼「N 劫」）
+
+    def test_epoch_label_carried_as_data(self) -> None:
+        """G5：年号随换算结果下发（纯数据；前端拼「{epoch_label} {year} 年」）。"""
+        assert day_count_to_date(360, make_spec(epoch_label="开元")).epoch_label == "开元"
+        assert day_count_to_date(360, make_spec()).epoch_label is None
 
     def test_c1_same_day_rounding(self) -> None:
         """C1 同日归整：亚日小数向下归整（0.79 日不再单独成刻度）。"""

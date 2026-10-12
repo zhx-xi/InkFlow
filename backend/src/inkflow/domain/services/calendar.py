@@ -80,9 +80,18 @@ def day_count_to_date(day_count: float, spec: CalendarSpec) -> CalendarDate:
         if remaining < length:
             day = remaining + 1
             cycle = None
+            cycle_label = None
             if spec.era_cycle is not None:
                 cycle = (year - 1) // spec.era_cycle.years + 1
-            return CalendarDate(year=year, month=index + 1, day=day, cycle=cycle)
+                cycle_label = spec.era_cycle.label
+            return CalendarDate(
+                year=year,
+                month=index + 1,
+                day=day,
+                cycle=cycle,
+                era_cycle_label=cycle_label,
+                epoch_label=spec.epoch_label,
+            )
         remaining -= length
 
     # 不可达（循环内必然返回）；保留以防 month_days 为空（已被校验拒绝）

@@ -40,6 +40,7 @@ import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
 import { deriveEraAxes, eraKeyOf, primaryEraKey } from './timeline-era-axes';
 import { buildBandLayout, bandGlobal, BAND_TICKS_PER_PAGE } from './timeline-band';
+import type { CalendarDateDTO } from './timeline-calendar-label';
 import { TimelineBand } from './TimelineBand';
 import { TimelinePending } from './TimelinePending';
 import { useI18n } from '../i18n/useI18n';
@@ -67,6 +68,8 @@ export interface TimelineEventDTO {
   era?: string | null;
   era_value?: number | null;
   era_scale?: number | null;
+  /** #1589 / ADR-068：后端换算的历法日期（纯数据；缺省或 null = 该轴未配历法 → 标签回落「N 日」） */
+  calendar_date?: CalendarDateDTO | null;
   /** 扩展字典（其他业务键；v1.4 起不再承载纪元） */
   extra?: Record<string, unknown> | null;
 }

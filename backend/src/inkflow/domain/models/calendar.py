@@ -354,9 +354,14 @@ class CalendarConfig(BaseModel):
 
 
 class CalendarDate(BaseModel):
-    """换算结果（1 基；``cycle`` = 纪元周期序号，None = 无纪元周期）."""
+    """换算结果（1 基）+ **轴显示数据**（年号 / 纪元名 —— 纯数据，前端不硬编码文案）."""
 
     year: int
     month: int
     day: int
     cycle: int | None = None
+    """纪元周期序号（`era_cycle` 生效时；None = 无纪元周期）."""
+    era_cycle_label: str | None = None
+    """纪元名（如「劫」；仅 `cycle` 非空时有意义）—— 前端拼「{cycle} {era_cycle_label}」."""
+    epoch_label: str | None = None
+    """第 1 年年号（可空）—— 前端拼「{epoch_label} {year} 年」，无则「{year} 年」."""

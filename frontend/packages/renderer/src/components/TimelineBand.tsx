@@ -25,9 +25,15 @@ import {
   bandTickRows,
   layoutBandSpine,
   type BandLayout,
+  type BandTickRow,
 } from './timeline-band';
 import { Pagination } from './Pagination';
 import type { TimelineEventDTO, TimelineRowRef } from './TimelineView';
+import { formatTickLabel, pickGranularity, type CalendarDateDTO } from './timeline-calendar-label';
+
+/** 刻度行 → 该轴在该行的**后端换算结果**（#1589；null = 该轴未配历法 → 前端回落「N 日」） */
+const calendarDateOf = (row: BandTickRow, axisKey: string): CalendarDateDTO | null =>
+  row.events.find((item) => item.axisKey === axisKey)?.ev.calendar_date ?? null;
 
 export interface TimelineBandProps {
   /** 世界序刻度带布局（`buildBandLayout` 产物） */
@@ -173,6 +179,10 @@ export function TimelineBand({
         {/* 各历竖轴 + 本历刻度（同刻度只出现一次；`<i>` = 本历页内刻度序号） */}
         {band.axes.map((axis) => {
           const ticks = geo.placed.filter((item) => item.row.perAxis[axis.key] !== undefined);
+          // #1589 / ADR-068 D4：粒度按**本页**相邻刻度自适应（相邻标签互不相同的最粗粒度）
+          const granularity = pickGranularity(
+            ticks.map((item) => calendarDateOf(item.row, axis.key)),
+          );
           return (
             <Fragment key={`axis-${axis.key}`}>
               <span
@@ -203,7 +213,14 @@ export function TimelineBand({
                       className="absolute -translate-y-1/2 whitespace-nowrap bg-bg px-1 text-[11px] tabular-nums text-ink-3"
                       style={{ left: xOf(axis.key) + 9, top: cy }}
                     >
-                      {tick.unit ? `${tick.value} ${tick.unit}` : tick.value}
+                      {formatTickLabel(
+                        {
+                          value: tick.value,
+                          unit: tick.unit,
+                          calendarDate: calendarDateOf(item.row, axis.key),
+                        },
+                        granularity,
+                      )}
                     </span>
                   </Fragment>
                 );
