@@ -228,6 +228,8 @@ body[data-state="world-eras"] .tl-axis-picker,body[data-state="world-eras-multi"
 .mvs-pg-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .mvs-pg-btn:disabled{opacity:.45;cursor:default}
 .mvs-pg-info{font-variant-numeric:tabular-nums}
+/* #1599：每页刻度数选择器（对齐公共分页组件的 Select 形态，8/16/32/64，默认 8） */
+.mvs-pg-size{border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink-2);font-size:12px;padding:3px 6px;font-variant-numeric:tabular-nums}
 .mvs-badge{position:absolute;top:4px;right:16px;font-size:11px;color:var(--ink-3)}
 /* #1581 世界序·待确认区（原「未知区」退役 → 待确认暂存区，须可达 100%） */
 .tl-pend{margin-top:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
@@ -592,9 +594,9 @@ const NOTES = {
   'world-single':
     '<b>世界序 · 单轴（#1527 / 方案 A 泛化）</b>：项目<b>无纪元数据</b>（<code>era</code> 全空 → 单一默认轴）时，把 #1467 的「组头 + 树状」<b>泛化为「（era，时间刻度段）两级」</b>——第一级 = <b>时间刻度段</b>（<code>time_display</code> 原样，如「示例历 217 年」；同刻度事件收进同一节点并计数），组内事件行<b>缩进一级</b>、不再逐行重复时间。<b>无轴名组头</b>（单轴无歧义）。时间缺失事件归末尾「未知」节点，不破坏分组。分桶口径与 #1411 不冲突：本轨是<b>显示文本分段</b>（同轴内视觉层级），#1411 是<b>跨轴数值比较键</b>（<code>to_global</code>，判定层）。',
   'world-band':
-    '<b>世界序 · 刻度带 v2（#1564）</b>：① 每个刻度的高度 = <b>该刻度实际事件数</b>（不定高）；② 分页单位 = <b>时间刻度</b>；③ <b>时间主轴</b>（最左）= 定位 / 分页依据；④ 离群值不压扁其余刻度。<br><b>旧形态（#1541）的缺陷</b>：高度公式把 <code>unknown</code> <b>计两次</b>（<code>(rows+unknown)×28</code> 又加一个含 <code>unknown×28</code> 的 <code>unknownBlock</code>）；高度 ∝ <b>事件总数</b>而坐标按 <code>to_global</code> 线性铺满 → 252 事件（仅 12 有值）时画布 ≈ <b>13,924px</b>；每个刻度同高；无分页。<br><b>离群策略二选一</b>：<b>A（推荐）序号行</b> = 纵向位置取刻度序号、行高取事件数 → 结构性免疫离群（本态）；<b>B 等比 + p10–p90 截断</b> = 保留时间间隔比例感，越界刻度夹到端点（见 B 态）。',
+    '<b>世界序 · 刻度带 v2（#1564）</b>：① 每个刻度的高度 = <b>该刻度实际事件数</b>（不定高）；② 分页单位 = <b>时间刻度</b>；③ <b>时间主轴</b>（最左）= 定位 / 分页依据；④ 离群值不压扁其余刻度。<br><b>旧形态（#1541）的缺陷</b>：高度公式把 <code>unknown</code> <b>计两次</b>（<code>(rows+unknown)×28</code> 又加一个含 <code>unknown×28</code> 的 <code>unknownBlock</code>）；高度 ∝ <b>事件总数</b>而坐标按 <code>to_global</code> 线性铺满 → 252 事件（仅 12 有值）时画布 ≈ <b>13,924px</b>；每个刻度同高；无分页。<br><b>离群策略二选一</b>：<b>A（推荐）序号行</b> = 纵向位置取刻度序号、行高取事件数 → 结构性免疫离群（本态）；<b>B 等比 + p10–p90 截断</b> = 保留时间间隔比例感，越界刻度夹到端点（见 B 态）。<br><b>分页（#1599）</b>：页脚复用<b>公共分页组件</b>——每页刻度数可选 <b>8 / 16 / 32 / 64</b>（默认 8），切档<b>回第 1 页</b>。',
   'world-band-p2':
-    '<b>按刻度分页</b>：分页推进单位 = <b>时间刻度</b>（不是事件条数）。翻页后<b>刻度集合</b>变化（本页 = 第 9–15 个刻度），事件随之切片；页码器显示「第 x / y 页 · 每页 8 刻度 · 共 N 刻度」。',
+    '<b>按刻度分页</b>：分页推进单位 = <b>时间刻度</b>（不是事件条数）。翻页后<b>刻度集合</b>变化（本页 = 第 9–15 个刻度），事件随之切片；页码器 = <b>公共分页组件</b>（#1599）——「每页刻度数」可选 <b>8 / 16 / 32 / 64</b>（默认 8 → 零回归 #1564 的分页节奏），<b>切档回第 1 页</b>；页码信息 = 「第 x / y 页 · 共 N 条」（N = 总刻度数）。',
   'world-band-metric':
     '<b>离群策略 B（对照）</b>：纵向位置仍按 <code>to_global</code> 等比，但范围取 <b>p10–p90 分位截断</b>（越界刻度夹到端点、聚在顶端/底端）。保留时间间距比例感，但离群刻度会与其他刻度重叠 → 需再叠加「碰撞下推」。',
   'world-band-dense':
@@ -740,6 +742,8 @@ function renderWorldSingle(){
 const B2 = {
   PAD_T: 12, MAINX: 92, AX0: 196, AXDX: 104, EVX: 436,
   ROW_PAD: 4, ROW_H: 24, PER_PAGE: 8, RULE_GAP: 10, BOT_PAD: 6, UNK_MAX: 60,
+  /* #1599：每页刻度数档位（默认档 = PER_PAGE = 8，零回归 #1564 的分页节奏） */
+  PAGE_SIZES: [8, 16, 32, 64],
 };
 /* 刻度带样本数据集（独立于 DEMO.events，避免影响其他演示态）：16 有值 + 3 未知 */
 const BAND_ERAS = [
@@ -799,10 +803,10 @@ function bandEventRow(ev, mode, top) {
 }
 
 /* 刻度带 v2：不定高刻度 + 时间主轴 + 按刻度分页。mode = 'ordinal' | 'metric' */
-function renderBandV2(eras, evs, mode, page) {
+function renderBandV2(eras, evs, mode, page, size) {
   const rows = bandRowsV2(eras, evs);
-  /* 度量态（B）单页全量展示（分位数需全量计算）*/
-  const per = mode === 'metric' ? Math.max(1, rows.length) : B2.PER_PAGE;
+  /* 度量态（B）单页全量展示（分位数需全量计算）；序数态 = 每页刻度数（#1599 可选，默认 B2.PER_PAGE） */
+  const per = mode === 'metric' ? Math.max(1, rows.length) : (size || B2.PER_PAGE);
   const pageCount = Math.max(1, Math.ceil(rows.length / per));
   const p = Math.min(Math.max(page || 0, 0), pageCount - 1);
   const pageRows = rows.slice(p * per, p * per + per);
@@ -881,9 +885,19 @@ function renderBandV2(eras, evs, mode, page) {
       + '</div></div>';
   }
   if (mode === 'metric') html += '<span class="mvs-badge">离群压缩：p10–p90 截断（越界夹端点）· 单页全量</span>';
+  /* #1599：分页条 = 公共分页组件形态（每页刻度数 Select + 上/下页 + 页码信息）；
+     度量态单页全量 → 不渲染选择器（该态不参与分页） */
+  const sizeSel = mode === 'metric'
+    ? ''
+    : '<select class="mvs-pg-size" data-testid="tl-band-page-size-select" onchange="bandSetSize(this.value)">'
+      + B2.PAGE_SIZES.map(function (s) {
+        return '<option value="' + s + '"' + (s === per ? ' selected' : '') + '>' + s + '</option>';
+      }).join('')
+      + '</select>';
   const pager = '<div class="mvs-pager" data-testid="tl-band-pager">'
+    + sizeSel
     + '<button class="mvs-pg-btn" data-testid="tl-band-page-prev"' + (p === 0 ? ' disabled' : '') + ' onclick="bandGo(-1)">‹ 上一页</button>'
-    + '<span class="mvs-pg-info" data-testid="tl-band-pageinfo">第 ' + (p + 1) + ' / ' + pageCount + ' 页 · 每页 ' + per + ' 刻度 · 共 ' + rows.length + ' 刻度</span>'
+    + '<span class="mvs-pg-info" data-testid="tl-band-page-info">第 ' + (p + 1) + ' / ' + pageCount + ' 页 · 共 ' + rows.length + ' 条</span>'
     + '<button class="mvs-pg-btn" data-testid="tl-band-page-next"' + (p >= pageCount - 1 ? ' disabled' : '') + ' onclick="bandGo(1)">下一页 ›</button>'
     + '</div>';
   return '<div class="mvs" data-testid="tl-band" style="height:' + H + 'px">' + html + '</div>' + pager;
@@ -998,23 +1012,31 @@ function renderPending() {
     + '</section>';
 }
 
-/* 状态 → 刻度带 HTML（分页管理） */
-let bandCur = { state:'world-band', page:0 };
-function renderBandStateHTML(state, page) {
-  if (state === 'world-band') return renderBandV2(BAND_ERAS, BAND_EVENTS, 'ordinal', page);
-  if (state === 'world-band-p2') return renderBandV2(BAND_ERAS, BAND_EVENTS, 'ordinal', page);
-  if (state === 'world-band-metric') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'metric', page);
-  if (state === 'world-band-dense') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'ordinal', page);
+/* 状态 → 刻度带 HTML（分页管理；#1599：页大小入 bandCur，切档回第 1 页） */
+let bandCur = { state:'world-band', page:0, size:B2.PER_PAGE };
+function renderBandStateHTML(state, page, size) {
+  const sz = size || bandCur.size;
+  if (state === 'world-band') return renderBandV2(BAND_ERAS, BAND_EVENTS, 'ordinal', page, sz);
+  if (state === 'world-band-p2') return renderBandV2(BAND_ERAS, BAND_EVENTS, 'ordinal', page, sz);
+  if (state === 'world-band-metric') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'metric', page, sz);
+  if (state === 'world-band-dense') return renderBandV2(DENSE_ERAS, DENSE_EVENTS, 'ordinal', page, sz);
   if (state === 'world-band-dense-legacy') return renderBandLegacy();
   if (state === 'world-band-pending') {
     const timed = BAND_EVENTS.filter(function (e) { return e.time !== null && e.time !== undefined; });
-    return renderBandV2(BAND_ERAS, timed, 'ordinal', page) + renderPending();
+    return renderBandV2(BAND_ERAS, timed, 'ordinal', page, sz) + renderPending();
   }
   return '';
 }
 window.bandGo = function (d) {
   bandCur.page = Math.max(0, bandCur.page + d);
   document.getElementById('tlBody').innerHTML = renderBandStateHTML(bandCur.state, bandCur.page);
+  mountDynIcons();
+};
+/* #1599：切每页刻度数 → 回第 1 页（与公共分页组件语义一致） */
+window.bandSetSize = function (size) {
+  bandCur.size = Number(size) || B2.PER_PAGE;
+  bandCur.page = 0;
+  document.getElementById('tlBody').innerHTML = renderBandStateHTML(bandCur.state, 0, bandCur.size);
   mountDynIcons();
 };
 
@@ -1045,12 +1067,13 @@ function renderBody(state){
   if (state === 'world-eras-b') return renderWorldErasB(['qingyuan']);
   if (state === 'world-eras-multi') return renderWorldEras(AXIS_KEYS);
   if (state === 'world-single') return renderWorldSingle();
-  if (state === 'world-band') { bandCur = { state:'world-band', page:0 }; return renderBandStateHTML('world-band', 0); }
-  if (state === 'world-band-p2') { bandCur = { state:'world-band-p2', page:1 }; return renderBandStateHTML('world-band-p2', 1); }
-  if (state === 'world-band-metric') { bandCur = { state:'world-band-metric', page:0 }; return renderBandStateHTML('world-band-metric', 0); }
-  if (state === 'world-band-dense') { bandCur = { state:'world-band-dense', page:0 }; return renderBandStateHTML('world-band-dense', 0); }
-  if (state === 'world-band-dense-legacy') { bandCur = { state:'world-band-dense-legacy', page:0 }; return renderBandStateHTML('world-band-dense-legacy', 0); }
-  if (state === 'world-band-pending') { bandCur = { state:'world-band-pending', page:0 }; return renderBandStateHTML('world-band-pending', 0); }
+  /* #1599：刻度带各态重置为默认每页刻度数（8）——切态不继承上态的档位 */
+  if (state === 'world-band') { bandCur = { state:'world-band', page:0, size:B2.PER_PAGE }; return renderBandStateHTML('world-band', 0); }
+  if (state === 'world-band-p2') { bandCur = { state:'world-band-p2', page:1, size:B2.PER_PAGE }; return renderBandStateHTML('world-band-p2', 1); }
+  if (state === 'world-band-metric') { bandCur = { state:'world-band-metric', page:0, size:B2.PER_PAGE }; return renderBandStateHTML('world-band-metric', 0); }
+  if (state === 'world-band-dense') { bandCur = { state:'world-band-dense', page:0, size:B2.PER_PAGE }; return renderBandStateHTML('world-band-dense', 0); }
+  if (state === 'world-band-dense-legacy') { bandCur = { state:'world-band-dense-legacy', page:0, size:B2.PER_PAGE }; return renderBandStateHTML('world-band-dense-legacy', 0); }
+  if (state === 'world-band-pending') { bandCur = { state:'world-band-pending', page:0, size:B2.PER_PAGE }; return renderBandStateHTML('world-band-pending', 0); }
   return '';
 }
 

@@ -39,7 +39,7 @@ import { Check, ChevronDown, Filter, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch, errorMessage } from '../api/client';
 import { axisLabels } from './timeline-axis-labels';
 import { deriveEraAxes, eraKeyOf, primaryEraKey } from './timeline-era-axes';
-import { buildBandLayout, bandGlobal } from './timeline-band';
+import { buildBandLayout, bandGlobal, BAND_TICKS_PER_PAGE } from './timeline-band';
 import { TimelineBand } from './TimelineBand';
 import { TimelinePending } from './TimelinePending';
 import { useI18n } from '../i18n/useI18n';
@@ -234,6 +234,8 @@ export function TimelineView({
   const [selectedAxes, setSelectedAxes] = useState<string[] | null>(null);
   // #1564：世界序刻度带分页（分页单位 = 时间刻度）
   const [bandPage, setBandPage] = useState(0);
+  // #1599：刻度带每页刻度数（受控；档位 = BAND_TICK_PAGE_SIZES，默认 8 → 零回归 #1564 的分页节奏）
+  const [bandPageSize, setBandPageSize] = useState<number>(BAND_TICKS_PER_PAGE);
 
   // 双序切换 = 本地切换显示数组（零额外请求，T2/T3 契约）；narrative_order 空 → 回退 event_timeline（旧数据兜底）
   const base = useMemo(
@@ -673,7 +675,12 @@ export function TimelineView({
                 <TimelineBand
                   band={band}
                   page={bandPage}
+                  pageSize={bandPageSize}
                   onPageChange={setBandPage}
+                  onPageSizeChange={(size) => {
+                    setBandPageSize(size);
+                    setBandPage(0);
+                  }}
                   t={t}
                   chapterLabelOf={(ev) => chapterLabel(chapterKeyOf(ev))}
                   onCheckOne={(id) => void handleCheckOne(id)}
