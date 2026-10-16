@@ -1,27 +1,16 @@
 # F10: 世界观管理 (world_service) — 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: cross
-
 > **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
-> **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F6 上下文](../f6-context/spec.md) · [F9 角色](../f9-character/spec.md) · [F11 大纲](../f11-outline/spec.md) · [F12 时间线](../f12-timeline/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F14 统一提取](../f14-extraction/spec.md) · [F15 一致性审计](../f15-consistency-audit/spec.md)
+> **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 > **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 
-> **Spec 变更（v1.7 → v1.8，2026-10-10，#1570）**: **提取路径不得写未注册类别**——契约源在 **F14 §5.8.1（已改为「拒绝而非写空」）**，本节登记 F10 侧语义升级：① 0.17.0-rc2 旅程库实测 `world_settings.category` 出现 82 条「非根且无类别」条目，根因 = 提取对「LLM 产出的类别不在项目分类中」**静默归空**并直调 `repo.add` 绕过 `create_setting` 的 #1321 校验（`_world_extractor.py` 类别归一分支）；② 现改为抛 `WorldCategoryNotRegisteredError`（422，列出全部缺失分类名）+ 该批次正式表零写入，由 agent / CLI 显式建类后重试；**禁止**自动建类；③ **空类别不拒绝**（prompt 允许 LLM 留空 → 维持 #722「未分类」），**接口层**「非根必填 + 存在性」校验（#1321）语义**不变**（`PATCH category=""` 显式清除仍合法）；④ 新增只读审计命令 `world uncategorized`（§4.1）作为**存量无类别条目的发现/处置路径**（回填走既有 `world update --category`，本命令零写入）；⑤ **与 #1482 复制路径区分**：`world copy --auto-create-categories` 是复制路径的用户**显式开关**，行为不变。验收断言见 `backend/tests/unit/domain/ports/test_world_extraction_category_1570.py` + `backend/tests/unit/domain/services/test_extract_category_strict_staging_1570.py` + `tests/cli/test_cli_world_uncategorized_1570.py`。
-> **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
-> **Spec 变更（v1.6 → v1.7，2026-10-07，#1483）**: `world create` / `world update` 新增 `--content-file <path>`（从 UTF-8 文件读取条目正文，解决内联 `--content` 受命令行长度限制（Windows ~32KB）且中文经 PowerShell 管道易 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--content` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.1 签名与 §15.2 状态流同步；不传 `--content-file` 时行为不变。
-> **Spec 变更（v1.5 → v1.6，2026-10-07，#1485）**: AI 提取写入策略收敛——**契约源在 F14 §5.8**，本节登记 F10 侧语义升级：① setting 类别归属改为「对项目已有分类做匹配」（LLM 给出项目分类之外的类别 → 落空串 + warning，不再原样落库）**（⚠️ 该条已被 v1.8 / #1570 取代：现为「拒绝整批 + 零写入」，见上）**；② 条目匹配锚点从「精确同名」扩展为「同名 → 近义（归一化后互为子串且较短者 ≥ 较长者一半长）→ 新建」，近义条目合并进已有条目（`content` 追加）而非新建；③ 新增 `granularity`（fine/coarse 每源条目上限）/ `dry_run`（零写入预览）参数与 `batch_id` 批次标识（整批回滚见 F14 §5.8.5）；④ `WorldSetting` 新增 `batch_id` 字段 + `world_settings.batch_id` 列（可空 VARCHAR(64)，幂等迁移 `ensure_world_settings_batch_id_column`）。验收断言见 `backend/tests/unit/domain/ports/test_extract_dilution_1485.py`。
-> **Spec 变更（v1.4 → v1.5，2026-10-06，#1481）**: 新增 §8.4「建项目自动建根 + 存量兜底（跨模块 MODIFY 清单）」——登记**默认根条目形态**（`name="世界观总纲"` / `parent_id=NULL` / `category=""` / `content=""`，常量 `DEFAULT_WORLD_ROOT_NAME`）+ 跨模块改动落点（`world_service.ensure_root_setting` / `project_service.create_project` 的 `root_initializer` 钩子 / `deps.py` 接线 / `core/database.py` 的 `ensure_world_root_for_projects` 幂等迁移 / `app.py` lifespan）。**根必存在不变量**（建项目即建根 + 存量补根）由本模块与 F35 共同定义——数据模型与端点契约（§2/§3）**无变化**，仅新增默认条目与启动期迁移。**前置核验**：issue 报的 `'NoneType' object is not subscriptable` 系用户脚本自身，服务端现状已是 422 校验提示（无 500 路径）。
-> **Spec 变更（v1.3 → v1.4，2026-10-02，#1334 设计单）**: 新增 §16「分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C）」——登记事实基线（#641 自动挂根 / #699 分类 kind / #721 地图树 kind 分流 / #834 一项目一根 / #1321 非根必填分类）+ ①abstract 条目父级三选项 (a)/(b)/(c) + ②geo 保持现状 + ③kind 判定权与无分类边界 + 迁移影响评估 + 原型 kind 表达自相矛盾收敛规则。**同步对齐 spec 漂移**：§2.6/§2.5 补 `WorldCategory.kind`（#699 已实现、此前未记）、§12 补登记 #699 决策。**本变更为设计定义，无实现**（① 已拍板 ①C，实施另起轨）。
-> **Spec 变更（v1.1 → v1.2，2026-08-16，issue #389）**: 世界观分类从「条目平铺属性」升级为「独立受控词表实体」（反转 v1.0 §2.2「不建独立分组表」决策）。① 新增 `world_categories` 表 + `WorldCategory` 领域实体（§2.2/§2.6）；② 新增分类 CRUD 四端点（§3.1，10→14 端点）；③ 分类重命名/删除反向同步条目 `category` 字符串——删除置空、重命名改名（§6.1/§7，拍板 D2=A）；④ 前端分类 chips 来源改为分类实体（移除 `DEFAULT_WORLD_CATS=['地图']` 硬编码），世界观 tab 导航修正（进分类列表视图非地图工作台）+「地图视图」独立入口（§14）；⑤ 镜像 F9 CharacterGroup 模式（§12）。
-
-> **Spec 变更（v1.0 → v1.1，2026-08-13，issue #211）**: 删除语义统一——普通实体软删→真删。① WorldSetting 移除 `is_deleted` 字段（§2.1/§2.5）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径），restore 端点/命令移除（§3/§4）；④ 提取合并移除「软删同名→新建+warning」分支（§5.4）；⑤ 跨模块 F9/F11/F12/F13/F14/F15 同步适配（§8.2 全量 MODIFY 清单）；⑥ `is_deleted` 列移除 + 存量软删数据迁移（§8.3）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**（§10）。
-
->
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 管理小说的**世界观条目**（创建/查询/更新/真删除），以**类别（category）**承载世界观层级设定（规则/设定/约束/组织/地理等），并支持**从章节文本用 LLM 自动提取世界观信息**（条目名/类别/内容）。
 

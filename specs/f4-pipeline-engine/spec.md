@@ -1,10 +1,9 @@
 # F4: Agent 编排 (agent_service) — 功能规格
+
 > **端**: backend
-
 > **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
-> **依赖**: F1 (project_service) ✅, F3 (writing_service), F5 (llm_service)
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F3 写作](../f3-writing/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md)
 
->
 ---
 
 ## 1. 概述

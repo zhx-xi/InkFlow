@@ -1,7 +1,8 @@
 # F496 统一日志页（内核/GUI/AI 日志分类展示与查询）— 功能规格
 
-> **上游 spec**: `specs/f57-logging-i18n/spec.md`（§2.2 结构 / §3 API / §12「#496 日志页 UI 页面另 issue」）
-> **类型定位**: 消费型前端页面 + 数据侧最小补强（不新增业务实体）
+> **端**: frontend
+> **依据**: [F57 日志与 i18n](../f57-logging-i18n/spec.md)
+> **依赖**: [F57 日志与 i18n](../f57-logging-i18n/spec.md)
 
 ---
 

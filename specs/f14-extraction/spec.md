@@ -1,15 +1,15 @@
 # F14: 统一提取服务 (extraction_service) — 功能规格
-> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块时间字段（run_at 等）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
-> **端**: backend
 
-> **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
-> **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
+> **端**: backend
+> **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013, ADR-019
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F9 角色](../f9-character/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F11 大纲](../f11-outline/spec.md) · [F12 时间线](../f12-timeline/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F16 风格分析](../f16-style-analysis/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-013](../../adr/llm/ADR-013.md) (RAG: LangChain Chroma + BGE), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 
->
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 把 F9-F13 已存在的**提取 / 生成 / 检查**能力收敛到一个**统一接口**（`ExtractionType` 7 种 + 增量提取），并落地 **ADR-013 RAG**（实现 `domain/ports/vector_store.py` 已定义的 `VectorStoreProtocol`：LangChain Chroma + BGE 本地 Embedding）。
 

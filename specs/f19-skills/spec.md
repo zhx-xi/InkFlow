@@ -1,14 +1,11 @@
 # F19-skills: skills 包（ADR-022）— 功能规格
-> **端**: cross
 
-> **依据**: ADR-022（skills 包形态）、ADR-019 v6（版本里程碑：0.8.0 = 后续语义统一与技术债，2026-08-09 建）、Issue #65 决策 D4、Constitution P1-P6
->
->
->
-> **依赖**: ✅ ADR-022（skills 包形态决策）· ✅ F7 CLI 全局约定（`--json` 信封/退出码 0/1/2/130，f7-cli spec §5/§7）· ✅ f19-packaging（PyInstaller 打包链 + release.yml，0.4.0 已交付）· ✅ f33-cli-dist（CLI zip 产物，0.5.0 已交付）· ⚡ #251（CLI 域并行，无代码依赖，merge 错开——roadmap 2026-08-12 拍板）
->
-> **参考 ADR**: [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包：源码单一真相 + 三通道分发）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v6：skills 后移至 1.0.0 后于 0.8.0 提前）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：CLI/skills/agent 共享同一内核）· [ADR-023](../../adr/mcp/ADR-023.md)（MCP Server：发布后补 mcp-setup.md）
->
+> **端**: cross
+> **依据**: ADR-019, ADR-022, Constitution P1-P6
+> **依赖**: [F7 CLI](../f7-cli/spec.md) · [F19 打包](../f19-packaging/spec.md) · [F33 CLI 产物](../f33-cli-dist/spec.md)
+> **参考 ADR**: [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包：源码单一真相 + 三通道分发）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：CLI/skills/agent 共享同一内核）· [ADR-023](../../adr/mcp/ADR-023.md)（MCP Server）
+
+---
 
 ## 1. 概述
 

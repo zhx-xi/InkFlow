@@ -1,56 +1,15 @@
 # F34: 章节审计（chapter_audit）— 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/confirmed_at（--confirm 确认输出 + --history 列表））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: cross
-
-> **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）；v1.4 增量依据 Issue #1420（客户端超时后审计明细不可恢复——findings 落库 + 读口 + 超时文案对齐）；v1.5 增量依据 Issue #1425（审计异步语义——触发即返回 `log_id`（202）+ 后台执行 + 按 id 轮询状态；用户 2026-10-06 拍板**方案 B**）；v1.6 增量依据 Issue #1484（批量章节审计入口——批量编排 + 断点续跑 + 结果聚合；在 v1.5 异步语义之上加**编排薄层**，不新造审计执行机制）；v1.7 增量依据 Issue #1562（`--resume` 断点判据被 `audit_logs` 的非审计行污染——收窄为**正向认「审计记录」**；缺陷修复，端点/表零变化）；v1.7 连带文档面 Issue #1571（外部 skill `references/audit.md` 的 `--resume` 判据行同批改写）
->
-> **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=C **轻量审计记录**（audit_logs 表：时间/章节/结果/确认状态/备注，不含 findings 明细；可追溯性落地且避免全量持久化膨胀）；Q2=B **CLI 支持确认**（`--confirm accept|reject`——单 CLI 用户不应被迫下载 GUI，双入口确认状态统一落 audit_logs）；Q3=C **GUI 最小版一并做**（章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知——确认闭环是功能定义）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 同步修订；Issue #208 验收标准已更新（gh comment 留痕 2026-08-09）。
->
-> **Spec 变更（v1.3 → v1.4）——Q1=C 演进（非推翻）**: 客户端 300s 超时（响应被丢弃）后审计明细永久不可达，实测 352 章批审计命中 9 章（2.6%），只能重跑（约 200–300 秒 LLM 调用）且新增重复记录（Issue #1420）。
-> ① **方案 2（推荐·本版本采用）**：`audit_logs` 增 `findings` JSON 快照列（`TEXT NOT NULL DEFAULT '[]'`，`LenientJSON` 读回空串/旧行安全）——**触发审计出参（POST /audit 响应体）零变化**，仅落库多一份快照；新增读口 `GET /api/v1/audit-logs/{log_id}` + CLI `audit chapter --log <id>` 按记录 ID 取回明细（轻量记录元信息 + findings）。列表端点 `GET /projects/{pid}/audit-logs` **仍返回轻量 `AuditLog`**（响应形态零变化，Q1=C 摘要级口径不变）。
-> ② **方案 1（无论如何都做，同 PR 落地）**：传输层 TIMEOUT 文案不再承诺不存在的 `list/get` 能力（原「请稍后用 list/get 查询结果」→「请稍后查看结果」）——文案不得指向不存在的读口。
-> ③ **方案 3（异步语义：触发即返回 log_id + 按 id 轮询）** 本版本不做，归后续演进（§10）。
-> 连带修订：§2.3 / §3.1 / §3.2 / §3.3 / §4 / §5.1 / §5.7 / §7 / §8.1 / §9 / §10 / §12 / §13。
->
-> **Spec 变更（v1.4 → v1.5）——异步语义（#1425，用户 2026-10-06 拍板方案 B，**破坏性端点变更**）**: v1.4 读口让「超时后的明细」可恢复，但**触发仍是阻塞式**（65–305s/章）——客户端 300s 超时后既不知道任务是否在跑，重试还会再落一条无法区分的新记录（#1420 实测 9/352 章超时后重跑）。
-> ① **`POST /projects/{pid}/chapters/{cid}/audit` 由阻塞 200 改为 202 + `{log_id, status}`**：请求只做「校验 + 受理」，**立即返回**（< 1s）；实际检查在**后台任务**中执行（`asyncio` fire-and-forget，先例 F44 #456 `POST /books/runs`）。
-> ② **任务状态承载 = 复用 `audit_logs` 本表**（不新建表、不复用 `agent_executions`——后者是 agent 管线运行记录，语义不匹配，见 issue 方案矩阵 D）：增 `run_status`（`running` / `completed` / `failed`，历史行/同步路径默认 `completed`）+ `error`（失败原因）+ `content_hash`（章节内容指纹，幂等去重用，**不出现在 API 响应**）。
-> ③ **新增轻量轮询端点 `GET /api/v1/audit-logs/{log_id}/status`**；findings 仍由 v1.4 读口 `GET /api/v1/audit-logs/{log_id}` 取回（**复用**，不新增明细面）。列表/明细响应**增补字段** `run_status` / `error`（加法式，向后兼容）。
-> ④ **重跑幂等**：同章同内容重复触发 → 复用「运行中（窗口内）/ 最近完成且待确认未降级」的记录，**不产生新记录**；确认后（accepted/rejected）或内容变更 → 新记录（`--history` 可见 `run_status`，据此区分「哪条对应哪次尝试」）。
-> ⑤ **CLI 默认保 UX**：`audit chapter <章> -p <项目>` 默认 `--wait`（内部轮询至终态后输出报告，人类输出与今天一致），`--no-wait` 立即返回 `log_id`。
-> ⑥ **审计域 TIMEOUT hint 收敛**（#1425 顺带项）：MCP `_hint_for("TIMEOUT")` 文案原为「请先用对应 list/get 工具查询结果」——审计域**没有 list/get action**，恢复路径是「按 `log_id` 查询」；审计工具改用域专属 hint（`audit` action=`result`），并同步升级 `backend/tests/unit/mcp/test_mcp_llm_timeout_926.py`（属契约演进）。
-> 连带修订：§1 / §2.3 / §2.4 / §3.1 / §3.2 / §3.3 / §4 / §5.1 / §5.7 / §7 / §8.1 / §8.2 / §9 / §10 / §12 / §13。
->
-> **Spec 变更（v1.5 → v1.6）——批量编排（#1484，加法式，端点零变化）**: `audit chapter` 实测
-> 65–305 秒/章（均值 ~150-170），520 章全量约 **16 小时**；此前**无官方批量入口**，只能外部脚本
-> 循环调用（断点续跑 + 报告全自建）。
-> ① **新增 CLI 命令 `inkflow audit batch`**（§4 / §5.8）：`--project-id` + `--chapters 区间` +
-> `--resume` + `--concurrency` + `--out` + `--json`；**纯编排薄层**——单章执行仍走 §5.1 v1.5 的
-> 「202 受理 + 后台执行 + 轮询」，本层**不新增端点、不新增表、不改 `audit chapter` 行为**。
-> ② **断点续跑依据 = `audit_logs` 既有记录**（该章存在 `run_status='completed'` 记录即视为已完成，
-> §5.8；**v1.7 #1562 收窄**：还须为**审计记录**（`severity_summary` 为审计计数格式）——非审计行不计入，见下方 v1.7 变更块）；**不新建进度表**（issue 拍板：复用既有记录）。
-> ③ **默认串行**（`--concurrency` 默认 1，LLM 限流友好）；**聚合报告** = Markdown 清单 + JSON，
-> 按**检查项 / 严重度**双视图归类，双视图计数与各章 findings 之和一致（§13 M21 计数断言防丢）。
-> ④ 报告落点 `--out PATH`（Markdown + 同主名 `.json`）；**省略 `--out` 只打印到 stdout，不落盘**
-> （默认值刻意不写文件，避免污染仓库）。
-> 连带修订：§1 / §4 / §5.8（新增）/ §7 / §8.1 / §9.1 / §9.2 / §10 / §11 / §12 / §13。
->
-> **Spec 变更（v1.6 → v1.7）——断点判据收窄（#1562，缺陷修复，端点/表零变化）**: `audit batch --resume` 的断点判据原写「该章存在 `run_status='completed'` 记录」——但 `audit_logs` 表**混载非审计行**：`severity_summary` 被多模块借用承载「动作语义」（F44 草稿生命周期 `draft_saved`/`draft_confirmed`/`draft_rejected`、agentic writer `auto_saved`/`run_completed`/`run_failed`/`guardrail_terminated`、F27 记忆动作），这些行同样 `run_status='completed'`（表默认值）且可能带 `chapter_id`。
-> ① **现象**：任何走过「写作 + 转正」（book 轨主路径）的章都带 `draft_confirmed` 行 → 被 `--resume` 判「已审计」→ **永久跳过**（`selected=N / audited=0 / skipped=N`，退出码 0、无失败标记 = **静默门禁失效**；0.17.0-rc2 受控复现，唯一变量 = `--resume`）。
-> ② **判据正向认「审计记录」**（`_is_audit_record`）：只收 `run_status='completed'` **且** `severity_summary` 符合 F34 审计计数格式（`^\d+ error, \d+ warnings, \d+ info$`）的行。**不新建进度表 / 不新增列 / 不前移迁移**（延续 §14 D13 拍板）。
-> ③ **为何不采用「排除已知草稿标记」的窄化过滤**：agentic writer 同样写 `chapter_id` 非空 + `run_status='completed'` 的动作行——窄化过滤挡不住**同一根因类**（该类章节仍被静默跳过），故须正向认。
-> ④ **失败方向安全**：审计计数格式漂移 → 判不出 → 视为未审计 → **重审**（多花 LLM 时间），而非静默漏审。
-> 连带修订：§4（`--resume` 参数说明）/ §5.8（流程 ④ + 断点续跑语义）/ §7 E25 / §9.2（验收 16-17）/ §14 D13 / §15 M22。文档面连带 Issue #1571（skill `references/audit.md` / `cli-commands.md`）。
-
->
-> **依赖**: ✅ F2（章节 + ChapterStatus 四态：REVIEW/FINAL 为「写完一章」天然钩子）· ✅ F5（LLM 管线，ChatOpenAI 既有）· ✅ F9（角色档案读取）· ✅ F10（世界观条目读取）· ✅ F15（静态一致性审计可委托，API 已存在）· ✅ F19（GUI 渲染层，确认流程 UI 接线）· ⏳ F22（#54，被依赖方，非前置）
+> **依据**: PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **依赖**: [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F9 角色](../f9-character/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F15 一致性审计](../f15-consistency-audit/spec.md) · [F19 GUI](../f19-gui/spec.md) · [F22 全文搜索](../f22-search/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-014](../../adr/llm/ADR-014.md)（ChatPromptTemplate）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）· [ADR-026](../../adr/test-ci/ADR-026.md)（真实 AI CI：LLM 测试 Fake 注入 + label 触发验证）
 
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 提供**章节级审计**能力：当一章**写完**（章节状态进入 REVIEW/FINAL）或用户手动触发时，对该章内容执行四项检查——**字数**（F2 既有计数）、**人设漂移**（章节文本 vs 角色档案）、**设定漂移**（章节文本 vs 世界观条目）、**静态一致性**（委托 F15）——产出**审计报告**，**落轻量审计记录（audit_logs）**，并由**用户在 GUI 或 CLI 中确认**（接受 / 拒绝后修改重审）。
 

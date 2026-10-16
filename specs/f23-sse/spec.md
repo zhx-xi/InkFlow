@@ -1,11 +1,10 @@
 # F23: SSE 流式输出 (sse_stream) — 功能规格
+
 > **端**: cross
+> **依据**: PRD v2.1 §6.3 P1-12, Constitution P1-P6, ADR-012/015/018/019/021、ADR-053
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F3 写作](../f3-writing/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F19 GUI](../f19-gui/spec.md)
+> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化——SSE 一条代码路径两用：GUI 与云端）
 
-> **依据**: PRD v2.1 §6.3 P1-12, Constitution P1-P6, ADR-012/015/018/019(v2)/021、**ADR-053（数据面变更统一推送）**
-> **依赖**: F3 ✅（WritingService 三原语 + DTO）；F5 ✅（**LLMClientProtocol.chat_stream 已实现**——`AsyncGenerator[StreamEvent]` 逐 token，基础设施层 LangChain astream 就绪）；F1 ✅（项目校验）；F2 ✅（章节校验）；F19（GUI 消费方，**反向依赖**——F23 端点先行，GUI 侧待 F19 落地后消费）
-> **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑 v2——F23 提前 0.3.0), [ADR-021](../../adr/kernel/ADR-021.md) (本地内核进程化——SSE 一条代码路径两用：GUI 与云端)
-
->
 ---
 
 ## 1. 概述

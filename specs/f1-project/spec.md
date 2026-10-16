@@ -1,19 +1,13 @@
 # F1: 项目/书籍管理 (project_service) — 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: backend
-
 > **依据**: PRD v2.1 §6.1 F1, Constitution P1-P6
->
-> - 删除 `Genre` 枚举；`Project` 增加 `tags: list[str]`（多值标签）
-> - 旧项目 `genre` 值迁移为 `tags` 的**初始数据**（`{genre_value}` → `tags=["{genre_value}"]`）
-> - write_auto 题材变量 = `tags` 全拼串（不再读 `genre`）；输出/大纲的「类型」字段改从 `tags` 派生
-> - tags 三处 GUI 入口：新建（多选+自定义新增）/ 项目设置页（编辑）/ 项目卡（展示）+ 轻量注册表（跨项目聚合已用 tags）
 
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 创建和管理小说项目，每个项目独立配置（AI 模型、Agent 角色、写作风格）。项目是 InkFlow 的顶级组织单元——卷、章节、写作配置均隶属于项目。
 

@@ -1,13 +1,7 @@
 # F61: LLM 配置域一致性治理 — 功能规格
 
 > **端**: backend（+ CLI 补全）
-
-> **依据**: Issue #936（0.14.0 milestone）
-
-
-
 > **参考 ADR**: [ADR-049](../../adr/llm/ADR-049.md)（LLM 装配 fail-fast）· [ADR-051](../../adr/llm/ADR-051.md)（litellm 统一出口）· [ADR-015](../../adr/core/ADR-015.md)（依赖注入）· [ADR-012](../../adr/api/ADR-012.md)（错误不泄漏内部细节）
-
 
 ---
 

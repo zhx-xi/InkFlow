@@ -1,14 +1,8 @@
 # F61: 密钥自举与告警收敛（secret_key_bootstrap）— 功能规格
 
 > **端**: backend（config 启动源 + key_manager 存储层）
-
-> **依据**: Issue #1096（0.15.0 milestone）
-
-
-> **依赖**: ✅ `core/config.py` 多源配置链（#977/#987）· ✅ `APIKeyManager` AES-256-GCM（F5）· ✅ `provider_config._load_stored_key` 三级回退链（#821）
-
+> **依赖**: [F5 LLM Provider](../f5-llm-provider/spec.md)
 > **参考 ADR**: ADR-008（配置管理，config.py 单一出口）
-
 
 ---
 

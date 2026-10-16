@@ -1,16 +1,9 @@
 # F37: 世界观跨书复制（world-copy）— 功能规格
-> **端**: backend
 
-> **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6、#1482（分类过滤 + 缺失分类自动创建）
->
->
->
->
->
-> **依赖**: ✅ F10（world_settings 表）· ✅ F35（#173 地点树：list_descendants 子树查询）· ✅ F36（#174 地图：maps/map_pins 表 + MapAssetStoreProtocol + list_by_root_locations）· ✅ F1（项目 FK）
->
+> **端**: backend
+> **依据**: `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、[F35 地点层级](../f35-world-tree/spec.md)、[F36 地图视图](../f36-world-map/spec.md)、Constitution P1-P6
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F35 地点层级](../f35-world-tree/spec.md) · [F36 地图视图](../f36-world-map/spec.md)
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
->
 
 ---
 

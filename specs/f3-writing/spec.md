@@ -1,11 +1,10 @@
 # F3: AI 写作管道 (writing_service) — 功能规格
-> **端**: backend
 
+> **端**: backend
 > **依据**: PRD v2.1 §6.1 F3, Constitution P1-P6
-> **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（上下文注入）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F6 上下文](../f6-context/spec.md)
 > **参考 ADR**: [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-005v2](../../adr/llm/ADR-005v2.md) (ChatOpenAI 兼容路由), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离规则)
 
->
 ---
 
 ## 1. 概述

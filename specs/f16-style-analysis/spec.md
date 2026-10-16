@@ -1,11 +1,10 @@
 # F16: 风格检测服务 (style_service) — 功能规格
-> **端**: backend
 
+> **端**: backend
 > **依据**: PRD v2.1 §6.2 P1-08, Constitution P1-P6, ADR-012/015/018/019/025
-> **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——chapter_ids 模式）；F14 ✅（**STYLE 槽位注册 handler**：接口零变更，F14 §12 已承诺「F16 落地后仅需注册 handler」——本 spec 兑现该承诺并同步修订 F14 spec 的 STYLE 占位表述，见 §8.2）；F5 ✅（LLM 深度分析装配——**可选依赖**：LLMClientProtocol + PromptManager 构造注入，仅 llm_analysis=true 时调用；主体确定性分析不依赖 F5）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F14 统一提取](../f14-extraction/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑), [ADR-025](../../adr/architecture/ADR-025.md) (依赖锁定)
 
->
 ---
 
 ## 1. 概述

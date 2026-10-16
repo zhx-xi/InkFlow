@@ -1,16 +1,9 @@
 # F35: 世界观地点层级（world-location-tree）— 功能规格
-> **端**: backend
 
-> **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、F10 spec（世界观既有模块）、Constitution P1-P6
->
->
->
->
->
-> **依赖**: ✅ F10（world_settings 表 + WorldService + WorldRepositoryProtocol）· ✅ F1（项目 FK 校验）· ⏳ F24 语义（仅会话保留归档；本模块不沿用两级删除——见 §1.2）
->
+> **端**: backend
+> **依据**: `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、[F10 世界观](../f10-world-settings/spec.md)、Constitution P1-P6
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F24 会话](../f24-session/spec.md)
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
->
 
 ---
 

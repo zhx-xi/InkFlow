@@ -1,31 +1,9 @@
 # F44: 长任务编排器（long-task-orchestrator）功能规格
+
 > **端**: cross
-
-**依据**: 设计定稿 `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）+ Issue #335（阶段 1）/ #336（阶段 2）/ #337（阶段 3）/ #338（阶段 4）+ Spike 验证报告 `docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁，workspace docs）+ 已合入源码核查（F27/F42/F29/F39/F6）+ Issue #475（访谈 LLM 动态提问，D1 拍板 2026-08-19）+ #486（会话/记忆 UI，D9，下游消费方）
-**依赖**: ✅ F39 Agent 实体 + 能力白名单（0.9.0 #258）· ✅ F27 writer-agent（已交付）· ✅ F42 管线 write_auto/write_continue（已交付）· ✅ F29 Supervisor（已交付）· ✅ F6 context（已交付）· ✅ outline 三级结构（F43 P3+P4 已交付）· ⏳ `langgraph-checkpoint-sqlite`（阶段 4 新增依赖，Spike ⑤ 实证缺）
-**参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
-
-> - **#1462（项目级模型永不生效）**：`PlannerService._generate_questions` 用 `session.project_id.int` 调 `project_repo.get`——ADR-060 D9 / #1291 之后仓储入口只认 `uuid.UUID`（`require_uuid_pk` 对裸 int 抛 `TypeError`），该异常被 `except Exception: project_model = None` 静默吞成「未配模型」→ `resolve_model` 的「项目」一级恒空 → 访谈降级模板题库 + `confirming` 永不置位 + `confirm` 恒 422。修订：入参改传领域 UUID；`except TypeError` 记 ERROR 后**原样抛出**（契约违规不得静默降级），其余可预期失败仍回退全局默认（#977 语义保持）。同族漏网（`memory_service` 2 处 · `agent_service_context` 1 处）一并收口。
-> - **#1463（完成路径无幂等）**：`_complete` 对两个养成实体各做一次**确定性命名**的 create（总纲名 = `one_liner[:30]` 派生；主角名 = `confirmed_items` 派生、无信息时回退字面量「主角」）→ 同项目第二次完成必撞同名唯一约束 → `OutlineNameConflictError` / `CharacterNameConflictError` 未在 API 层映射 → 500「内部错误（无详情）」→ 用户永久无法完成访谈。修订：建前**按名查重复用**既有实体（并发窗口：创建撞名后二次查名复用；无从复用则原样抛出，不静默吞）；两个领域异常家族（`OutlineServiceError` / `CharacterServiceError`）在 `POST /planner/{session_id}/respond` 映射 **422 + 消息即 detail**（与 `extractions.py` / `characters.py` 既有惯例一致）。
-> - **正文修订位置**：§3.5（异常映射表 +2 行）+ §5.1（完成路径幂等 + 模型解析链）+ §7（场景 18/19）+ §8.2（MODIFY +3 行）+ §9.1（测试文件 +2 行）+ §12（D14）+ §13.7（M18-M19）+ §14.4（A12/A13）+ 本节版本行。
-
-> - **背景**：#1439 原设想「bootstrap 阶段让 LLM 预产出任务清单」与 book-level supervisor（`BookAgenticPipeline`）的逐步决策**职责重叠** → 会形成**两套「下一步」来源**（需额外冲突仲裁）。2026-10-06 拍板：**取消第二套来源**，清单**就是 supervisor 的产出**。
-> - **三点实现结论（本轨定，见 §12 D15）**：① **落点** = `writing_plans` 新增 `tasklist` JSON 列（**不新造独立表、不进记忆域**）；② **粒度** = 混合（章级锚点 + op 级步骤，对齐 #1333 段 2 Q2=C）；③ **输出协议** = **复用既有结构化 JSON 决策协议**（`{action, op, outline_id}`），**不引入工具调用**。
-> - **产消链路**：supervisor 每条**被接受**的决策 → 追加一条 task 条目（`{op, outline_id, title}`；`op ∈ _OPERATION_POOL`）；决策 4 次重试耗尽 → 追加一条降级标记条目（`op="__degraded__"`）后走既有 fallback/abort（**不崩、可继续**）；运行收尾（含 HITL 中断前）把 checkpoint state 的 `tasklist` 写回 `plan.tasklist`；`execute` 启动时从 `plan.tasklist` **播种**（供下次决策读回）。
-> - **非约束**：`_guarded_route` 与决策消息的既有语义**零改动**——清单不强制按序（supervisor 仍可跳过 / 改序）；清单仅作**决策输入（提示上下文）+ 记录面**。
-> - **权威源**：`progress` 仍是「实际执行态」唯一权威源；`tasklist` 是「supervisor 计划 / 决策记录」，**单向**（tasklist 永不写 progress，progress 只由操作节点写）→ 每个字段单一 writer，构造上零双写漂移。
-> - **GUI 复用**：`get_summary.steps` 契约**逐字不变**；新增**附加键** `tasklist`（向后兼容、`steps` 不受影响）供「计划 vs 实际」对照——沿用 #1333 段 2 的 `steps` 契约族（同 op 词表 + 同 outline_id 锚点），**不另造任务实体/表/模型类**。
-> - **正文修订位置**：§2.1（WritingPlan 加 `tasklist`）+ §5.9（新增链路节）+ §8.1/§8.2 + §9.1/§9.2 + §12（D15）+ §13.8（M20-M22）+ §14.4（A14）+ 本节版本行。
-
-> - **B 阶段（写前定「承接点 + 章末钩子」）**：新增 `prepare_continuity` 节点，位于 `volume_fan_out` **之前**——**一次 LLM 调用生成整卷承接表**（输入 = 卷纲 + 各章章纲 + 前一章章纲，**不依赖任何正文**，因扇出前无正文），产出落 `VolumeState["continuity"]`（`{str(outline_id): {"carry": str, "hook": str}}`），经 `Send` payload 带进各章分支并注入章 brief（**复用既有 `_build_chapter_brief` / `resolve_brief_setting` 通道，不新造注入路径**）。LLM 失败/解析失败 → 降级空承接表（不阻断写作）。
-> - **C 阶段（写后卷级审计）**：新增 `volume_audit` 节点，位于 `join` **之后**、`volume_boundary` **之前**（`write_chapter → join` 直连保持不动）；逐章调 **F34 `ChapterAuditService.audit`**（不新造审计实现）→ `_audit_bridge.report_to_audit_dict` 扁平化 → `blocking_update` 判定阻断（**复用 #1267 语义**：`severity == error` 且非 `degraded`）。阻断 → 不进入 `volume_boundary`，`status="blocked"`（复用 v1.5 已登记的阻断终态）。未装配 `audit_service` → 节点透传（行为与改造前一致，向后兼容）。
-> - **不取消并行**：本修订是「并行下保证承接」，非「取消并行」（方案 A 未采纳）。
-> - 正文修订位置：§5.3（新增承接两阶段机制段）+ 本节版本行。
->
-
-
-
-> **模块类型声明**: 本模块为「**长任务编排型**」变体——新建 WritingPlan 编排元数据表 + 访谈式 Planner + 逐卷/逐章 Orchestrator Loop + 复用 F42 管线/F27 writer agent 的 Executor + 多维护栏 + 恢复策略树。与既有编排域差异：F42/F46 是**配置驱动静态/半静态拓扑**（角色链/DAG），F29 是**运行时动态路由**（supervisor 图），本模块是**长任务分层推进**（计划树 + 进度状态机 + 卷级 HITL 锚点 + 跨运行持久化）——三者共用 LangGraph StateGraph 引擎但目标不同（§1.3 边界）。编号依据：按「最新无冲突基线」接续——F38=第 18 变体为最新无冲突基线，本模块声明**第 20 变体**（F20/F46 均已占第 19，双占用冲突以 ADR-019 v6+ 重排为准，F46 spec 笔记 2026-08-16 实录）。
+> **依据**: `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §2 全文（唯一真相）、`docs/f44-orchestrator-spike-2026-08-17.md`（M1 门禁）
+> **依赖**: [F6 上下文](../f6-context/spec.md) · [F27 Writer Agent](../f27-writer-agent/spec.md) · [F29 Supervisor](../f29-supervisor/spec.md) · [F39 多 Agent](../f39-multi-agent/spec.md) · [F42 Agent 链](../f42-agent-chain/spec.md) · [F43 设定库 GUI](../f43-setting-library-gui/spec.md)
+> **参考 ADR**: [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 
 ---
 

@@ -1,11 +1,10 @@
 # F19: 打包分发（packaging）— 功能规格
+
 > **端**: cross
+> **依据**: PRD v2.1 P1-10, Constitution P1-P6, ADR-013/019/020/021/025
+> **依赖**: [F19 GUI](../f19-gui/spec.md) · [F19 Skills](../f19-skills/spec.md) · [F23 SSE](../f23-sse/spec.md)
+> **参考 ADR**: [ADR-013](../../adr/llm/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
 
-> **依据**: PRD v2.1 P1-10, Constitution P1-P6, ADR-013/019(v2)/020/021/025
-> **依赖**: #69 ✅（F19-GUI 已合入——内核进程化 #77 PR #85 / Electron 壳 #78 PR #95 / 渲染层 #79 PR #97 及其后子任务 #105/#106/#107）；#50 ✅（F23 SSE，PR #83）；#70 ⏳（skills 包，并行 worktree 无代码依赖）
-> **参考 ADR**: [ADR-013](../../adr/llm/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v2：0.4.0 = 打包；skills 后移至 1.0.0，2026-08-06 拍板 #70）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
-
->
 ---
 
 ## 1. 概述

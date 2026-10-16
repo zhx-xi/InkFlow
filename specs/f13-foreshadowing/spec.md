@@ -1,17 +1,15 @@
 # F13: 伏笔管理 (foreshadowing_service) — 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at/resolved_at（get 详情 + 列表「回收于 <本地日期>」标签））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: backend
-
 > **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
-> **依赖**: F1 ✅（前置）；F6 ✅（上下文注入契约，ForeshadowingSource 替换，见 §5/§11）；F12 ✅（硬依赖：event_id 事件锚点，timeline_events 表 + TimelineRepositoryProtocol 事件校验，**F12 须先合入 main**，见 §11）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F13 无 LLM，见 §1/§5）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F6 上下文](../f6-context/spec.md) · [F12 时间线](../f12-timeline/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 
->
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 管理小说的**伏笔档案**（创建/查询/更新/真删），跟踪每条伏笔的**生命周期状态**（open 已埋设未回收 → resolved 已回收），并作为 **F6 上下文注入的真实数据源**：写作时把「未回收伏笔」按优先级注入写作 Prompt，提醒作者不要忘记兑现埋下的伏笔（验收标准 2「写作时注入伏笔提示」）。
 

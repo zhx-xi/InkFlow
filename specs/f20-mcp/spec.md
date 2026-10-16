@@ -1,27 +1,9 @@
 # F20: MCP Server（mcp_service）— 功能规格
+
 > **端**: backend
-
-**依据**: PRD §6.4 F20（≥15 工具）· ADR-023 v2（薄客户端经 HTTP，2026-08-07 D3=A 拍板）· ADR-030（本地内核服务化 ④）· Constitution P1-P6
-**依赖**: ✅ F30（ensure_kernel + kernel.json 冷启动）· ✅ F38（`infrastructure/http/` 传输层 + 零 cli 依赖）· ✅ F26（ToolSpec 契约 + 工具注册表机制）· ✅ F7（JSON 信封/错误码契约）
-**参考 ADR**: [ADR-023](../../adr/mcp/ADR-023.md)（MCP 设计 v2）· [ADR-030](../../adr/kernel/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/kernel/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
-
-
-
-
-> ① `write` 增 `mode`（`deterministic`/`agentic`）与 `show_context`（写作链可触发/可观测，0.15.0 修复落点在 MCP 面缺失）；
-> ② `manage_project` 增 `config`（create/update 写路径透传，消「传了但静默无效」）；
-> ③ **通用加固**：19 个参数模型全部 `extra="forbid"` —— 未声明字段由「静默丢弃 + `ok=True` 无变更」改为 `INVALID_ARGS`（违反「显式失败优于静默错误」，issue #1233 通用要求）。
-> `mode="agentic"` / `show_context=true` 与 `action` 的组合性约束（仅 `generate`）在工具层显式校验，非静默忽略。**仍零新增 REST 端点**。
-
-> ① `run` action 增 `force` / `confirm_overwrite`（`method="mcp"` 的二次确认对：只给其一 → 服务端 422）；
-> ② 随 F44 §5.8（v1.11）「`book run --force` 覆盖正文 + A2 旧稿备份落点」同步 —— **A8 护栏（inputSchema ⊇ DTO 字段面）把 MCP 面与新增的 `BookRunRequest.force/confirm_overwrite` 绑在一起**，本增量即该护栏的联保修订；
-> ③ 未传时 `_compact` 剔除 None → body 不含两位（既有调用面逐字不变）。**仍零新增 REST 端点**。
-
-> ① `write` 的 `instruction`（仅 `revise`）：作为内核 `feedback` 的**回退别名**映射（镜像 CLI `write revise --instruction` → body `"feedback"`），`feedback` 存在时仍以 `feedback` 为准 —— 修复前该字段从不被读取，传了也不生效（静默）；
-> ② `export` 的 `output_path`：内核**无**落盘能力（端点直接回文本，无路径参数）→ 传入即**显式 `INVALID_ARGS`（零 HTTP）**，不再被静默接受（与同函数既有 `format != "txt"` 护栏同形）；
-> ③ `#1436` 引入的「声明即消费」自检豁免表随之**清空**（`_KNOWN_UNWIRED = {}`，双向断言仍生效）。**仍零新增 REST 端点。**
-
-> **模块类型声明**: 本模块为 **第 19 变体「MCP 表现层（薄客户端经 HTTP）型」**——InkFlow 第三表现层（与 `api/` REST、`cli/` 并列），对外部 agent 提供 MCP 行业标准 stdio 接口。编号依据 AGENTS.md 模块类型谱系（**F38=第 18 变体为最新无冲突基线**，接续编号）；⚠️ 历史变体编号存在漂移（f24/f27 均自述第 11、f30/f29 均自述第 13、f21/f36 均自述第 15），本 spec 以 F38=18 为基线声明第 19，冲突以 ADR-019 v5+ 为准。
+> **依据**: PRD §6.4 F20, ADR-023, ADR-030, Constitution P1-P6
+> **依赖**: [F7 CLI](../f7-cli/spec.md) · [F26 Agent 工具](../f26-agent-tools/spec.md) · [F30 内核冷启动](../f30-kernel/spec.md) · [F38 CLI HTTP](../f38-cli-http/spec.md)
+> **参考 ADR**: [ADR-023](../../adr/mcp/ADR-023.md)（MCP 设计）· [ADR-030](../../adr/kernel/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/kernel/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
 
 ---
 

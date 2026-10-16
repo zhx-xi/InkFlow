@@ -2,8 +2,6 @@
 
 > 页面: book | 路由: /book | 组件: pages/book.tsx（BookPage）+ components/BookPlannerPanel + components/BookRunPanel
 > 对应 design/GUI/book/（官方简图 book-run.html + book-run-<state>.png）
-> **Spec 变更**（2026-10-02 · #1333 段 2）：§1 补任务列表三方案线框 + 原型引用；§2 新增控件行；§3 由「待定义」升级为完整设计定义（6 问结论 + 状态语义 + 漂移登记 + 待拍板）；§4 追加 N14-N21。设计轨产出见同 PR 的 `design/GUI/book/`。
-> **实现轨回写**（同 PR · #1333 段 2）：§1 的「无侧边栏入口 / `book.run.noRun` 分支」已按拍板与实测结论改写；§3.4 D-1/D-2/D-3 已修复（D-3 含后端同族门控）；§4 N11/N18 口径按落地形态校正。
 
 ## 1. 画面样式
 

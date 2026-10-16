@@ -1,18 +1,15 @@
 # F27: Writer Agent 闭环（writer-agent）功能规格
+
 > **端**: backend
-
-**依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 1 + F26 spec v1.1（specs/f26-agent-tools/spec.md §5.7）+ Spike 0 报告（docs/deepagents-evaluation-2026-08-10.md ② 空 content）+ 0.7.0 路线图拍板记录（2026-08-10）
-**依赖**: ✅ F26 agent-tools（deepagents 集成 + 5 只读工具，PR #236）· ✅ F5 LLM Provider · ✅ F4 Agent 管线 · ✅ #87 LangGraph 重构 · ✅ F34 单章审计 · ✅ F3 writing_service · ⏳ F28 agent-memory（F27 是事件源，反向依赖）
-**参考 ADR**: adr/agent/ADR-034.md（护栏触发语义）、adr/agent/ADR-035.md（编排引擎=deepagents 0.7.5）、adr/agent/ADR-036.md（写工具形态）、adr/agent/ADR-033.md（预算护栏数值——本 spec 定稿）、ADR-015（LangChain 隔离）、ADR-027（覆盖率门禁）
-
-
-
-
-> **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
+> **依据**: PRD §6.1 F3/F4/F5, `design/agent-upgrade-path-2026-08-03.md`, `docs/deepagents-evaluation-2026-08-10.md`, [F26 Agent 工具](../f26-agent-tools/spec.md)
+> **依赖**: [F3 写作](../f3-writing/spec.md) · [F4 Agent 编排](../f4-pipeline-engine/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F26 Agent 工具](../f26-agent-tools/spec.md) · [F28 Agent 记忆](../f28-memory-learning/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md)
+> **参考 ADR**: [ADR-033](../../adr/agent/ADR-033.md)（预算护栏数值）· [ADR-034](../../adr/agent/ADR-034.md)（护栏触发语义）· [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）· [ADR-036](../../adr/agent/ADR-036.md)（写工具形态）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 
 ---
 
 ## 1. 概述
+
+**模块类型声明**：本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体；编号依据：AGENTS.md 模块类型谱系，F26 = 第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表。
 
 F27 交付判据 B+C（升级路径 v1.1 §1）：**writer_node 升级为 ReAct 工具循环 + save_draft 草稿写工具 + 修改率指标**——「LLM 与工具循环（调用→观察→再决策）+ LLM 自主终止（受安全上限约束）」。
 

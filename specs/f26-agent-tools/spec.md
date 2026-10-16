@@ -1,16 +1,15 @@
 # F26: Agent 工具基础设施（agent-tools）功能规格
+
 > **端**: backend
-
-**依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 0 + Spike 0 报告（docs/deepagents-evaluation-2026-08-10.md）+ 0.7.0 路线图拍板记录 4（2026-08-10）
-**依赖**: ✅ F5 LLM Provider（已合入）· ✅ F4 Agent 管线（已合入）· ✅ #87 LangGraph 重构（已合入 0.3.1）· ✅ F34 单章审计（0.6.0 已合入，audit_chapter 包装对象）
-**参考 ADR**: ADR-015（LangChain 隔离）、ADR-018（测试分层）、ADR-019（编号口径）、adr/agent/ADR-035.md（编排引擎=Deep Agents harness 0.7.5，v6 修订）
-
-
-> **模块类型声明**: 本模块为 Agent 化升级新增变体——「**deepagents 集成 + 工具定义型**」（v1.0 称「端口扩展 + 工具适配型」，随 deepagents 方案更名）。编号依据：AGENTS.md 模块类型谱系（F15=6/F16=7/F23=8/F19=9 口径下 F26 为第 10 个模块变体，声明编号依据见 §1）。不新建实体表、不新增业务端点；为既有 LLM 客户端增加 deepagents 编排集成，并将既有服务包装为只读工具集。
+> **依据**: PRD §6.1 F3/F4/F5, `design/agent-upgrade-path-2026-08-03.md`, `docs/deepagents-evaluation-2026-08-10.md`
+> **依赖**: [F4 Agent 编排](../f4-pipeline-engine/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md)
+> **参考 ADR**: ADR-015（LangChain 隔离）、ADR-018（测试分层）、ADR-019（编号口径）、[ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）
 
 ---
 
 ## 1. 概述
+
+**模块类型声明**：本模块为 Agent 化升级新增变体——「**deepagents 集成 + 工具定义型**」。编号依据：AGENTS.md 模块类型谱系（F15 = 6 / F16 = 7 / F23 = 8 / F19 = 9 口径下，F26 为第 10 个模块变体）。不新建实体表、不新增业务端点；为既有 LLM 客户端增加 deepagents 编排集成，并将既有服务包装为只读工具集。
 
 F26 为 Agent 化升级（F27 Writer Agent ReAct 闭环）提供前置基础设施：**deepagents 集成层 + 首批 5 个只读领域工具**。
 

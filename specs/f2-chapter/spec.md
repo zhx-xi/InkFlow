@@ -1,7 +1,7 @@
 # F2: 章节管理 (chapter_service) — 功能规格
-> **端**: backend
 
-> **依赖**: F1 (project_service) 已完成 ✅
+> **端**: backend
+> **依赖**: [F1 项目](../f1-project/spec.md)
 
 ---
 

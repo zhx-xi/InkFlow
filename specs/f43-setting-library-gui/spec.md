@@ -1,9 +1,7 @@
 # F43 设定库 GUI 升级（P0+P1+P2+P3+P4+P5 批次）— 功能规格
-> **端**: cross
 
-> **阶段**: 0.8.0（issue #284 的 P5 最后一批；全部批次完成后关闭 issue）
-> **估算**: 2-3 人天（后端清理 ~1.5-2 + 前端文案对齐 ~0.5 + 测试）
-> **设计依据**: `design/setting-library-v2-decisions-2026-08-12.md`（D11 删除语义 + §4「删除 30 天清理」+ §5 P5 批次）+ `design/setting-library-p5-facts-2026-08-13.md`（P5 事实核查：foreign_keys=OFF 残留实测 + 逐删除路径残留清单）+ `specs/f10-world-settings/spec.md` v1.1（#211 真删语义）
+> **端**: cross
+> **依据**: `design/setting-library-v2-decisions-2026-08-12.md`、`design/setting-library-p5-facts-2026-08-13.md`、[F10 世界观](../f10-world-settings/spec.md)
 
 ---
 
