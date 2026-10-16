@@ -116,7 +116,7 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
 
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - **spec 是开发的唯一真相来源**。如果发现 spec 与实现矛盾，先更新 spec，再改代码
-- **Spec 篇幅纪律（2026-08-08 #201 立规）**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录，但 spec.md 头部必须显式声明 references/ 清单；已实现 spec 只加「快速导航」块
+- **Spec 篇幅纪律**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录，但 spec.md 头部必须显式声明 references/ 清单
 
 ### 5.2 开始新功能
 流程细节（git worktree + PR）见 `design/workflow.md`；依赖锁定见 ADR-025（`backend/uv.lock` 唯一真相，日常一律 `uv sync --frozen`）。**环境创建/重建一律 uv，禁止 `python -m venv` / `virtualenv`。**
@@ -240,7 +240,7 @@ git log -p --follow -- specs/fX-<name>/spec.md   # 每次改动一个 commit（s
 git log -S"<被删的原文>" -- specs/                # 反查某段文字何时消失
 ```
 
-**豁免面**（标记即文件用途；完整表见 `ci_cd/marker-discipline.md`）：`CHANGELOG.md` 版本+发布日期 · `FEATURES.md`/`README.md` 版本映射 · `adr/README.md` 决策日期列 · ADR 头部 `> **日期**`/`> **状态**` · spec 头部 `**Spec 版本**`/`**依据**` · 生成物 · **文档标识**（`ADR-0NN`、`PRD vX.Y`、`spec §N`、`python 3.13`、`ruff vX.Y.Z`）。
+**豁免面**（标记即文件用途；完整表见 `ci_cd/marker-discipline.md`）：`CHANGELOG.md` 版本+发布日期 · `FEATURES.md`/`README.md` 版本映射 · `adr/README.md` 决策日期列 · ADR 头部 `> **日期**`/`> **状态**` · spec 头部 `**依据**`/`**依赖**`/`**参考 ADR**` · 生成物 · **文档标识**（`ADR-0NN`、`PRD vX.Y`、`spec §N`、`python 3.13`、`ruff vX.Y.Z`）。
 
 **检查**（本地或由 agent 跑，**不挂 CI**）：
 
@@ -251,7 +251,8 @@ python ci_cd/check_marker_discipline.py --all    # 全仓（收尾/验收）
 
 **spec 定位 = 规范**（「是什么」），不是决策记录、不是实现文档：
 
-- 不写决策元叙述（`用户拍板：选项 X`、`已合入`、`已实现`）；细粒度决策集中在 spec 的**独立决策表**（全 spec 唯一决策落点，含备选列）
+- spec 头部只留 `**端**` / `**依据**` / `**依赖**`（依赖只写其他 spec 的**相对链接**，不列具体依赖项与 issue 号）/ `**参考 ADR**`；**不写** `Spec 版本` / `日期` / `所属阶段` / `关联 Issues` / `状态` / `快速导航`
+- 不写任何**进展状态**（`✅ 已合入`、`已实现`、`待实现`、`已落地`）与决策元叙述（`用户拍板：选项 X`）；细粒度决策集中在 spec 的**独立决策表**（全 spec 唯一决策落点，含备选列）
 - 不贴**实现代码**（函数体/算法/迁移 SQL）；数据模型 / API 契约 / CLI 签名 / json 示例属规范，保留
 - 不写「修改履历」列与「Spec 变更」块 —— 查历史走上面的 git 命令
 
