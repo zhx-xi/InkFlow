@@ -221,7 +221,7 @@
 | F54 `f54-trace-replay` | 0.12.0 | AI 执行链路可重放：chat 流式落 `run_id` + steps（复用 F27 `agent_runs` 表，`mode="chat"`，零迁移） | [`specs/f54-trace-replay/`](specs/f54-trace-replay/spec.md) | ✅ PR #623 |
 | F55 `f55-unified-exec-view` | 0.12.0 | 统一 AI 执行工作流视图：链式静态 stage + agentic 动态 tool_call 双时间线走同一执行详情入口（视图层统一，存储不合并） | [`specs/f55-unified-exec-view/`](specs/f55-unified-exec-view/spec.md) | ✅ PR #610 |
 | F57 `f57-logging-i18n` | 0.13.0 | 日志埋点 + 全链路 i18n：后端结构化日志 schema + `/api/v1/logs`·`/api/v1/i18n/messages` + 前端 logger 桥接 + 提示词/工具/skill 全译（zh/en，per-call 准实时切换） | [`specs/f57-logging-i18n/`](specs/f57-logging-i18n/spec.md) | ✅ PR #891/#894 |
-| F496 `f496-log-page` | 0.13.0 | 统一日志页：内核（api/agent/tool/cli/mcp）/ GUI（frontend）/ AI（llm）三类日志分类展示 + 时间/级别/关键字过滤 + 消息键 i18n 渲染（spec 头部状态行待同步） | [`specs/f496-log-page/`](specs/f496-log-page/spec.md) | ✅ PR #916 |
+| F496 `f496-log-page` | 0.13.0 | 统一日志页：内核（api/agent/tool/cli/mcp）/ GUI（frontend）/ AI（llm）三类日志分类展示 + 时间/级别/关键字过滤 + 消息键 i18n 渲染 | [`specs/f496-log-page/`](specs/f496-log-page/spec.md) | ✅ PR #916 |
 | F61a `f61-secret-bootstrap` | 0.15.0 | 密钥自举与告警收敛：`INKFLOW_SECRET_KEY` 首启自动生成（G3）+ 明文存储告警去重（G1）+ GUI 可见告警（G2） | [`specs/f61-secret-bootstrap/`](specs/f61-secret-bootstrap/spec.md) | 🔄 PR #1105（G1/G3 已合入 v0.14.0，G2 随 #1096 收口） |
 | F61b `f61-llm-config-consistency` | 0.14.0 | LLM 配置域一致性治理：chat 装配旁路收敛（30+ 处直读 `llm_default_model` 收敛到 resolver）+ 显式 embedding 误配类型校验 + 保存前连通探测门禁 | [`specs/f61-llm-config-consistency/`](specs/f61-llm-config-consistency/spec.md) | ✅ PR #1085 |
 
@@ -338,7 +338,7 @@
 
 ## 五、功能清单维护纪律
 
-1. **feature 合入后**（无论实现/文档）：同步更新 ① 本文件对应行（✅ + PR 编号）② [AGENTS.md](AGENTS.md) 功能表 ③ [ADR-019](adr/packaging/ADR-019.md) 版本表 ④ spec 头部状态行 ⑤ [README.md](README.md) 里程碑表/功能列表——五项缺一即视为收尾不完整。
+1. **feature 合入后**（无论实现/文档）：同步更新 ① 本文件对应行（✅ + PR 编号）② [AGENTS.md](AGENTS.md) 功能表 ③ [ADR-019](adr/packaging/ADR-019.md) 版本表 ④ [README.md](README.md) 里程碑表/功能列表——四项缺一即视为收尾不完整。
 2. **新拆 issue**：本文件「规划中功能」表回填 issue 编号与依赖。
 3. **范围变更**：里程碑内容变更必须用户拍板后才更新本文件（先例：2026-08-02 打包提前提案被否决，维持 ADR-019 v2）。
 4. **实施前必读**：agent 开始任何 feature 前先读本文件（+ AGENTS.md + 对应 spec），确认边界、状态与依赖。

@@ -2,7 +2,7 @@
 
 > SDD（Spec-Driven Development）真相来源：每 feature 一个目录 `specs/f<编号>-<短名>/spec.md`。
 > 版本归属以 [ADR-019 v7](../adr/packaging/ADR-019.md) 为准；完整功能清单见 [FEATURES.md](../FEATURES.md)。
-> 篇幅纪律（2026-08-08 #201 立规）：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时允许 `references/` 子目录（spec.md 头部必须声明清单）；已实现 spec 只加「快速导航」块不物理拆分。
+> 篇幅纪律：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时允许 `references/` 子目录（spec.md 头部必须声明清单）。
 
 ## 分类索引
 

@@ -20,7 +20,7 @@
 | `FEATURES.md` / `README.md` | 版本→功能映射表、版本进度表 |
 | `adr/README.md` | 决策日期列 |
 | ADR 头部 | `> **日期**` / `> **状态**` / `> **依据**`（Nygard 格式） |
-| spec 头部 | `**Spec 版本**` / `**依据**` |
+| spec 头部 | `**依据**` / `**依赖**` / `**参考 ADR**` |
 | 生成物 | `ci_cd/openapi_snapshot.json`、`frontend/packages/renderer/src/api/schema/openapi.d.ts` |
 | 检出器自身的契约测试 | `ci_cd/tests/test_check_marker_discipline.py`（**测试样本即该文件的用途**；精确单文件，不豁免整个 `ci_cd/` 或 `ci_cd/tests/`） |
 | **文档标识** | `ADR-0NN`、`PRD vX.Y`、`Constitution P1-P6`、`spec §N`、`python 3.13`、`ruff vX.Y.Z` |
