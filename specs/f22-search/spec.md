@@ -1,7 +1,7 @@
 # F22: 全文搜索（search_service）— 功能规格
 > **端**: cross
 
-> **依据**: PRD v2.2 §6.4 P1-16, Issue #54, Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **依据**: PRD v2.2 §6.4 P1-16、Constitution P1-P6（P2 解耦 / P5 YAGNI）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=A FTS5+jieba（词法主检索）+ **AI 语义检索增强**（接入既有 RAG VectorStoreProtocol，`mode=semantic`）；Q2=用户自定义方案（默认用户自维护 + 设置项开启 AI 自动维护 + 写完一章审计确认后增量同步 + 手动全量重建——**章节审计拆出单独立项 #208/F34**，F22 不阻塞等待；同步触发用内容变更 + REVIEW/FINAL 状态，审计确认作为 F34 落地后的增强触发点）；Q3=默认单项目 + **同世界观项目选择器跨项目检索**（`project_ids` 数组，会话级选择不持久化）。§2/§3/§5/§6/§7/§8/§11/§12/§13 同步修订；Issue #54 验收标准 + #208 立项已 gh comment 留痕。
 > **Spec 变更（v1.1 → v1.2）**: **用户拍板（2026-08-09，方案 A）**——CLI 恒经 HTTP（ADR-030/F38 对齐，Issue #169）：`inkflow search` 查询经 `GET /api/v1/search`、`--rebuild` 经**新增 `POST /api/v1/search/rebuild` 端点**（v1.1 的「直接消费 service，不经 HTTP」废弃——F23/F21 直连先例已被 F38 推翻）。§3/§4/§5/§8/§9/§12/§13 同步修订。

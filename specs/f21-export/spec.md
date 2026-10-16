@@ -1,7 +1,7 @@
 # F21: 导出服务（output_service）— 功能规格
 > **端**: cross
 
-> **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **依据**: PRD v2.2 §6.4 P1-15、Constitution P1-P6（P2 解耦 / P5 YAGNI）
 >
 > **Spec 变更（v1.2 → v1.3）**: **评审修复吸收（2026-08-09，评审 PASS with minor 后父侧修订）**——① §3.3 异常映射表措辞漂移修正（404「项目不存在」/500「内部错误: <e>」，与实现/F15 audit 先例/ADR-012 中文文案一致）；② §6.1 卷排序键修正（`order_index ASC` 仅——`Volume` 实体无 `created_at` 字段）；③ §5.1 要点 2「asyncio.gather 并行拉取」在实现中落实（B4 修复批），正文与设定聚合并行、设定 5 源并行，include_settings=False 零调用契约不变。
 > **Spec 变更（v1.1 → v1.2）**: **实现期父侧裁定（2026-08-09）**——CLI 传输路径改为**恒经 HTTP**（`ensure_kernel()` + `InkFlowHTTPClient.get_raw` 下载，F38 #169 全仓改造后的一致模式；v1.1 的「直接消费 service 不经 HTTP」是未同步 F38 的陈旧措辞，§4/§8.1/§12 D 表修订）；CLI 信封按 F7 实际契约 `{"ok": ...}`（v1.1 示例 success 键为过时措辞，§4 修订）；人类模式成功文案码点锁定为 `✅ 导出成功: {name} → {path} ({bytes:,} bytes)`（§4 修订）。

@@ -1,6 +1,6 @@
 # F6 上下文面板 GUI（ContextPanel 接 API）— 交互规格（#594 / #1017）
 
-> **依据**: PRD v2.1 §6.1 F6, f6-context/spec.md v1.1 (issue #593), f19-gui/spec.md §4.2.1, issue #594, issue #1017
+> **依据**: PRD v2.1 §6.1 F6、f6-context/spec.md v1.1 (issue #593)、f19-gui/spec.md §4.2.1
 > **所属范围**: 上下文面板由**静态占位**改造为**接 assemble API 渲染真实上下文条目**（F6 调试/P2 Web UI 的前置一步，#594）；**v1.1（#1017）**：入口常驻化 + 写作要求三层（项目级 / 章级 / 面板栏）
 > **依赖**: F6 v1.1（#593：override 通道 + Character.brief 已合入 main）、#592（角色档案 brief）、F2 v1.1（#1017 章级 `writing_requirements` 字段）
 
