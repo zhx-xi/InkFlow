@@ -89,8 +89,9 @@ DATE_RE = re.compile(r"(?<![\d-])20\d{2}-\d{2}-\d{2}(?![\dT-])")
 VERSION_RE = re.compile(r"(?<![\w.])v?(?:0\.\d{1,2}\.\d{1,2}|1\.\d{1,2}\.\d{1,2}|2\.0\.0)(?![\d.])")
 
 URL_RE = re.compile(r"https?://\S+")
-# 版本**键值**形态（`version: "X.Y.Z"` / `"version" = "X.Y.Z"`）= 配置数据，非历史标记
-VERSION_KV_RE = re.compile(r"""\bversion\b\s*[:=]""")
+# 版本**键值**形态（`version: "X.Y.Z"` / `"version": "X.Y.Z"` / `"version" = "X.Y.Z"`）
+# = 配置或契约示例数据，非历史标记
+VERSION_KV_RE = re.compile(r"""["']?version["']?\s*[:=]""")
 # ADR / spec 头部元数据行（Nygard 格式与头部字段是文件用途本身）
 LINE_EXEMPT_RE = re.compile(
     r">\s*\*\*(日期|状态|来源|依据|决策)\*\*|\*\*Spec 版本\*\*|\*\*依据\*\*|^\s*Spec 版本"

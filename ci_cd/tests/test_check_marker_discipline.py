@@ -80,6 +80,10 @@ def test_false_positive_family_is_not_reported() -> None:
             "内核监听 127.0.0.1 与 0.0.0.0。",  # IPv4
             "格式见 https://www.conventionalcommits.org/en/v1.0.0/",  # URL
             "created_at: '2026-08-01T10:00:00Z',",  # 测试 mock 时间戳
+            # JSON 契约示例（INKFLOW_READY 交付行）
+            'INKFLOW_READY {"port": 38291, "token": "aB3x", "pid": 4821, "version": "0.3.0"}',
+            # 响应契约示例（/health）
+            'GET /health → 200 {"status": "ok", "version": "0.3.0", "mode": "local"}',
             "brain:'<path d=\"M12 5a3 3 0 1 0-5.997.125 4 4\"/>',",  # SVG path
         ]
     )
