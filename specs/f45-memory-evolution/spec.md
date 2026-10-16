@@ -1,18 +1,15 @@
 # F45: 记忆系统 AI 总结演进（memory-evolution）功能规格
-> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
+
 > **端**: backend
-
-**依据**: 设计定稿（design/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #339（M1 用户级偏好层）+ Issue #340（M2 语义风格提取）+ F28 spec v1.0（specs/f28-memory-learning/spec.md，演进基线）+ 用户拍板（2026-08-14 两段式架构 / 记忆演进独立排期）+ LLM 配置拍板（#415，2026-08-16）
-**依赖**: ✅ F28 agent-memory（演进基线：project_preferences/memory_events/learner/memory_service/PreferenceSource，PR #242）· ✅ F6 context-service（注入端口 ContextSourceType/SOURCE_LAYER）· ✅ F16 style-service（LLM 模板管线样板 _style_llm_analyzer）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型 deepseek/deepseek-v4-flash，配置唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ M2 依赖 M1（#339 → #340）
-**参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取方式：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
-
-
-
-> **模块类型声明**: 本模块为「**偏好学习闭环型（AI 语义总结演进）**」变体——F28（第 12 变体）的演进升级，补齐两段式架构的 LLM 后半截。与 F28 纯函数 difflib 不同：F45 新增**用户级偏好层**（user_preferences 全局表 + 归属分层 + 跨项目聚合）+ **语义风格提取**（difflib 锚点 → LLM 抽象偏好，替代字面片段注入）。编号依据：按「最新无冲突基线」接续——F46=第 19 变体为当前最新无冲突基线，本模块声明**第 20 变体**（冲突以 ADR-019 v5+ 为准；F44 编排器为并行轨独立声明）。
+> **依据**: `design/agentic-orchestrator-and-memory-design-2026-08-14.md` §3 记忆系统演进（唯一真相）、[F28 Agent 记忆](../f28-memory-learning/spec.md)
+> **依赖**: [F6 上下文](../f6-context/spec.md) · [F16 风格分析](../f16-style-analysis/spec.md) · [F28 Agent 记忆](../f28-memory-learning/spec.md) · [F32 设置持久化](../f32-settings/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md) · [F38 CLI HTTP](../f38-cli-http/spec.md)
+> **参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取方式：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
 
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块 GUI 显示的时间戳来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值 = UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（本地访问器手拼，禁 `toLocaleString`）。数据层（API / `--json` / MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
 
 F45 交付设计定稿 §3 的记忆系统演进：把 F28 的「纯函数 difflib 字面片段记忆」升级为「difflib 证据收集 + LLM 语义总结」的两段式架构，并引入用户级（跨项目）偏好层。**架构论断（设计定稿 §3.2）**：规则化 difflib 字面片段无法安全跨项目——不理解语义，会把「她→林晚」这类项目特有设定原样搬到别的项目 = 幻觉；AI 总结是安全跨项目的前提（LLM 能分离「项目特有设定」与「用户通用风格」）。
 

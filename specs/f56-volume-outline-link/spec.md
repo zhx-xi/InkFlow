@@ -1,8 +1,8 @@
 # 卷数据模型统一 — Volume 分组与卷纲(level=volume)显式关联
-> **端**: backend
 
-> **依据**: 0.12.0 多需求分析 D2=A（用户拍板 2026-08-23），PRD §6.1 F2/F11
-> **依赖**: F2 (chapter_service，Volume CRUD) ✅；F11 (outline_service，Outline level=volume) ✅；F43 P3（大纲三级 structure）✅
+> **端**: backend
+> **依据**: PRD §6.1 F2/F11
+> **依赖**: [F2 章节](../f2-chapter/spec.md) · [F11 大纲](../f11-outline/spec.md) · [F43 设定库 GUI](../f43-setting-library-gui/spec.md)
 
 ---
 

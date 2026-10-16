@@ -1,16 +1,9 @@
 # F38: CLI 恒经 HTTP 路由改造（cli_http）— 功能规格
+
 > **端**: backend
-
-> **依据**: ADR-030 ② D1=A（CLI 恒经 HTTP）、ADR-021（内核并发契约）、F30 spec（ensure_kernel 消费方）、Constitution P1-P6
->
->
->
->
-> **依赖**: ✅ F30（ensure_kernel + kernel.json 契约）· ✅ F33（CLI 独立产物，spawn 定位复用）· ✅ F7（CLI 全局约定：JSON 信封/退出码/错误码）
->
+> **依据**: ADR-030 ② D1=A（CLI 恒经 HTTP）、ADR-021（内核并发契约）、[F30 内核冷启动](../f30-kernel/spec.md)、Constitution P1-P6
+> **依赖**: [F7 CLI](../f7-cli/spec.md) · [F30 内核冷启动](../f30-kernel/spec.md) · [F33 CLI 产物](../f33-cli-dist/spec.md)
 > **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（② D1=A 恒经 HTTP）· [ADR-021](../../adr/kernel/ADR-021.md)（内核交付契约）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
->
-
 
 ---
 

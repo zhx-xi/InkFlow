@@ -1,16 +1,15 @@
 # F46: Agent 关联关系编辑——DAG 编排（dag-orchestration）功能规格
+
 > **端**: cross
-
-**依据**: Issue #270（Agent 关联关系编辑——DAG 编排，编排完全体第 3 步）+ 2026-08-12 用户拍板「Agent 链编排完全体规划：#268 模型选择 → #269 执行顺序 → #270 关联关系（本模块，最终步）」+ F42 spec v1.3（§5.4 DAG 预留 + §5.3 层级拓扑 + §5.5 deepagents 兼容）+ F29 spec v1.0（supervisor 动态路由边界）+ Spike 验证报告 `docs/f46-dag-spike-2026-08-16.md`（M1 结论：自研 LangGraph 编排层 + `add_conditional_edges` 条件分支）
-**依赖**: ✅ #269 agent_order 层级拓扑（PR #305，F42 §5.3.1 通用节点 + 多入口/终点引擎）· ✅ F42 配置驱动编排（已实现，#299/#305/#308/#309/#315/#314）· ✅ F29 supervisor 动态路由（PR #323，边界 §5.5）· ✅ F26 deepagents 集成层（PR #236）· ✅ F42 #295 自定义 Agent 数据面（RoleTemplate prompt/name + agent_roles 三态字段，agent_relations 引用面复用）· LangGraph 1.2.10（venv 已锁）
-**参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原 ADR-E）、ADR-006v2（Agent 编排 LangGraph StateGraph）、ADR-015（LangChain 隔离）、ADR-019（编号口径）
-
-
-> **模块类型声明**: 本模块为「**配置驱动编排型（DAG 增强）**」变体——无新实体表、无新业务端点；在既有 Agent 管线（LangGraphAgentPipeline 分层全连接 DAG）上增加**角色间显式有向边**（`agent_relations`）能力：① 依赖类型语义（顺序依赖 / 数据传递 / 条件分支，产品设计 §1.2）；② 执行拓扑从「分层全连接」升级为「基线 + 显式边叠加」（§5.3）；③ 条件分支经 `add_conditional_edges` gate 语义落地（Spike ②）；④ 前端 DAG 可视化编辑器（§5.2）。编号依据：F46 为 Agent 化升级链（F26-F29）+ 配置面（F42）之后的 DAG 编排模块；按「最新无冲突基线」接续——F29=第 13 变体、F38=第 18 变体为当前最新无冲突基线，本模块声明**第 19 变体**（冲突以 ADR-019 v5+ 为准）。
+> **依据**: `docs/f46-dag-spike-2026-08-16.md`、[F42 Agent 链](../f42-agent-chain/spec.md)、[F29 Supervisor](../f29-supervisor/spec.md)
+> **依赖**: [F26 Agent 工具](../f26-agent-tools/spec.md) · [F29 Supervisor](../f29-supervisor/spec.md) · [F42 Agent 链](../f42-agent-chain/spec.md)
+> **参考 ADR**: [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）
 
 ---
 
 ## 1. 概述
+
+**模块类型声明**：本模块为「**配置驱动编排型（DAG 增强）**」变体——无新实体表、无新业务端点；在既有 Agent 管线（LangGraphAgentPipeline 分层全连接 DAG）上增加**角色间显式有向边**（`agent_relations`）能力：① 依赖类型语义（顺序依赖 / 数据传递 / 条件分支，产品设计 §1.2）；② 执行拓扑从「分层全连接」升级为「基线 + 显式边叠加」（§5.3）；③ 条件分支经 `add_conditional_edges` gate 语义落地；④ 前端 DAG 可视化编辑器（§5.2）。编号依据：F46 为 Agent 化升级链（F26-F29）+ 配置面（F42）之后的 DAG 编排模块；按「最新无冲突基线」接续——F29 = 第 13 变体、F38 = 第 18 变体为当前最新无冲突基线，本模块声明**第 19 变体**（冲突以 ADR-019 v5+ 为准）。
 
 F46 实现 **#270（Agent 关联关系编辑——DAG 编排）**，是「Agent 链编排完全体」的最终步（#268 模型选择 → #269 执行顺序 → #270 关联关系）。在 F42 已交付的**分层全连接 DAG**（`agent_order` 层级拓扑）之上，新增**角色间显式关联关系**（`agent_relations`），把「线性/分层流水线」升级为「可显式定义依赖/数据流/条件分支的 DAG」。
 
@@ -421,7 +420,7 @@ def _make_gate(from_id: str, to_id: str):
 
 - **依赖**：#269 agent_order（✅ PR #305：通用节点 + 多入口/终点引擎，`_apply_agent_relations` 在其输出上叠加）、F42 配置驱动编排（✅ 已实现）、F29 supervisor（✅ PR #323，mode 分派边界 §5.5）、F26 deepagents（✅，模型名剥离复用）、F42 #295 自定义 Agent 数据面（✅，`agent_roles` 是 agent_relations 引用面）、LangGraph 1.2.10（✅ venv 锁定，`add_conditional_edges` Spike ② 实证）、#251 CLI project update（✅ 0.8.0 已合入，agent_relations 读写 §4）。
 - **被依赖**：DAG 执行轨迹可视化（后续 issue，依赖本模块 relations 数据面 §5.4）；0.10.0 写作管线/记忆（若引用显式 DAG 语义，另行评估）。
-- **编号口径声明**：F46 为 Agent 化升级链（F26-F29）+ 配置面（F42）之后的 DAG 编排模块；按「最新无冲突基线」接续——本模块声明**第 19 变体**（冲突以 ADR-019 v5+ 为准，头部模块类型声明）。
+- **编号口径声明**：F46 为 Agent 化升级链（F26-F29）+ 配置面（F42）之后的 DAG 编排模块；按「最新无冲突基线」接续——本模块声明**第 19 变体**（冲突以 ADR-019 v5+ 为准）。
 
 ---
 

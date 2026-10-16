@@ -1,10 +1,9 @@
 # F57 日志埋点 + 全链路 i18n（Spec 规格）
 
-> **依据**: Issue #888（用户拍板：全译 + L1/L2 综合 + 复用现成）+ #887（日志埋点）+ #496（日志页显示，本 spec 是前置）
-> **类型定位**: 跨层横切平台能力（无新业务实体）——镜像 `specs/f19-packaging/spec.md`；**F57**（待 ADR-019 Feature 表登记录入，当前最大 F56）
-> **依赖**: ✅ ADR-016(loguru)/ADR-044(debug) ⏳ F53(secret-redact)/#875(工具参数链脱敏)/ADR-021(内核 HTTP)
+> **端**: cross
+> **依据**: ADR-016, ADR-021, ADR-044
+> **依赖**: [F53 机密脱敏](../f53-secret-redact/spec.md)
 > **参考 ADR**: ADR-016 · ADR-044 · ADR-005v2(LLM) · ADR-021/030
-
 
 ---
 

@@ -1,6 +1,6 @@
 # P0-11: 云端接口 Protocol 定义 — 功能规格
-> **端**: backend
 
+> **端**: backend
 > **依据**: PRD v2.2 §6.5, Constitution P1-P6
 > **依赖**: 无（纯接口定义，不依赖任何已实现模块）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体 + 接口隔离）, [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）, [ADR-024](../../adr/architecture/ADR-024.md)（云架构拓扑）

@@ -1,7 +1,8 @@
 # F51: 打包产物 Debug 模式（debug-mode）— 功能规格
 
-> **依据**: 用户需求（打包产物难测试），Constitution P1-P6, ADR-008/016/020/021/030
-> **依赖**: 无硬前置（三条均为新增能力；#715 复用 #713 的 `INKFLOW_DEBUG` 语义，建议同批排期）
+> **端**: backend
+> **依据**: Constitution P1-P6, ADR-008/016/020/021/030, ADR-044
+> **依赖**: 无硬前置
 > **参考 ADR**: [ADR-044](../../adr/packaging/ADR-044.md)（打包产物 Debug 模式总决策）· [ADR-008](../../adr/service/ADR-008.md)（pydantic settings 配置）· [ADR-016](../../adr/service/ADR-016.md)（loguru 日志）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 壳）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化）
 
 ---

@@ -1,22 +1,15 @@
 # F9: 角色管理 (character_service) — 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at（角色与分组 get 详情））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: backend
-
 > **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
-> **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F6 上下文](../f6-context/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 
-> **Spec 变更（v1.3，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① Character/CharacterGroup/CharacterRelation 移除 `is_deleted` 字段（§2.1/§2.2/§2.3）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /characters/{id}/restore` 端点与 `character restore` 命令移除（§3/§4/§14）；④ 关系删除改真删（物理删除，与 `knowledge_relations` 真删语义一致，§12）；⑤ 提取合并移除「软删同名→新建+warning」分支（§5.4）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
->
-> **Spec 变更（v1.2，2026-09-17，#495）**: `character_relations` 表废弃删除，角色关系数据面并入 `knowledge_relations` 的 character↔character 子空间（`source_type='character' AND target_type='character'`）——§2.3/§2.4 加历史快照声明（v1.0 时代 ORM 形态保留不改）、§12 决策表「关系存储」行追加状态演进留痕。**F9 对外契约零变更**：`CharacterRelation` 领域模型、`/characters/{cid}/relations` 四端点、`inkflow character relate/unrelate/relations`、角色详情面板全部保留，仅底层存储换表（`character_repo` 关系方法加子空间过滤）。
-> **Spec 变更（v1.1，2026-08-23，issue #593）**: `Character` 新增 **`brief`** 字段（一句话简介，≤500 字符，默认空串）——F6 上下文注入采用「名 + brief」轻量化（D5=A），未填 brief 时 F6 降级截 `personality`。新增于 §2.1 字段表 / §2.5 领域模型 / CharacterCreate / CharacterUpdate，DB 侧列由 `ensure_characters_brief_column` 幂等迁移补齐（§8）。
-
->
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 管理小说的**角色档案**（创建/查询/更新/软删除）、**角色分组**（阵营/组织归类）与**角色关系图谱**（角色间有向关系边），并支持**从章节文本用 LLM 自动提取角色与关系**（名称/性格/背景/目标/关系）。
 

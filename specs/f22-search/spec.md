@@ -1,12 +1,8 @@
 # F22: 全文搜索（search_service）— 功能规格
-> **端**: cross
 
+> **端**: cross
 > **依据**: PRD v2.2 §6.4 P1-16、Constitution P1-P6（P2 解耦 / P5 YAGNI）
->
-> **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=A FTS5+jieba（词法主检索）+ **AI 语义检索增强**（接入既有 RAG VectorStoreProtocol，`mode=semantic`）；Q2=用户自定义方案（默认用户自维护 + 设置项开启 AI 自动维护 + 写完一章审计确认后增量同步 + 手动全量重建——**章节审计拆出单独立项 #208/F34**，F22 不阻塞等待；同步触发用内容变更 + REVIEW/FINAL 状态，审计确认作为 F34 落地后的增强触发点）；Q3=默认单项目 + **同世界观项目选择器跨项目检索**（`project_ids` 数组，会话级选择不持久化）。§2/§3/§5/§6/§7/§8/§11/§12/§13 同步修订；Issue #54 验收标准 + #208 立项已 gh comment 留痕。
-> **Spec 变更（v1.1 → v1.2）**: **用户拍板（2026-08-09，方案 A）**——CLI 恒经 HTTP（ADR-030/F38 对齐，Issue #169）：`inkflow search` 查询经 `GET /api/v1/search`、`--rebuild` 经**新增 `POST /api/v1/search/rebuild` 端点**（v1.1 的「直接消费 service，不经 HTTP」废弃——F23/F21 直连先例已被 F38 推翻）。§3/§4/§5/§8/§9/§12/§13 同步修订。
->
-> **依赖**: ✅ F1（项目校验）· ✅ F2（章节正文源）· ✅ F9（角色档案源）· ✅ F10（世界观条目源）· ✅ F11（大纲源）· ✅ F12（时间线源）· ✅ F13（伏笔源）· ✅ F16（jieba 分词依赖已锁定，直接复用）· ✅ F14（RAG VectorStoreProtocol + chromadb + BGE——semantic 模式复用，零新增依赖）· ✅ F19 #77（token 中间件）· ✅ F38（CLI 恒经 HTTP 已合入，本模块 CLI 从第一天走 HTTP）· ✅ SQLite FTS5（实测 3.50.4 已启用，零新依赖）· ⏳ #208 F34 章节审计（增强触发点，**非阻塞**，见 §5.3 注）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F9 角色](../f9-character/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F11 大纲](../f11-outline/spec.md) · [F12 时间线](../f12-timeline/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F14 统一提取](../f14-extraction/spec.md) · [F16 风格分析](../f16-style-analysis/spec.md) · [F19 GUI](../f19-gui/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md) · [F38 CLI HTTP](../f38-cli-http/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-013](../../adr/llm/ADR-013.md)（RAG：向量检索边界声明，§5.8）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：token 契约）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定：零新增依赖）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务化：CLI 恒经 HTTP，§4）
 
 ---

@@ -1,24 +1,15 @@
 # F24: 会话管理（session_service）— 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（started_at（get 详情「开始:」））**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: backend
-
-> **依据**: PRD v2.1 §6.2 P1-13 会话管理（持久化/多会话/恢复），Constitution P1-P6
->
->
->
->
->
-> **依赖**: ✅ F1（项目实体，project_id 可空引用）· ⏳ F20（MCP Server，本模块是被依赖方）· ⏳ F3（写作会话上下文快照，Phase 2+ 联动）
->
+> **依据**: PRD v2.1 §6.2 P1-13 会话管理（持久化 / 多会话 / 恢复），Constitution P1-P6
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F3 写作](../f3-writing/spec.md) · [F20 MCP](../f20-mcp/spec.md)
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑/编号口径）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-004](../../adr/database/ADR-004.md)（领域+ORM 双模型）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
->
 
->
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 F24 会话管理为 InkFlow 提供**用户可见的业务会话**：写作会话（writing）与任务会话（task）的统一载体。会话实体记录一次写作/任务过程的**生命周期状态**（active/paused/completed/failed）、**上下文快照**（可恢复的续写/续跑依据）与**履历日志**（SessionLog 时间线条目），满足 PRD P1-13「会话持久化 / 多会话管理 / 会话恢复」。
 

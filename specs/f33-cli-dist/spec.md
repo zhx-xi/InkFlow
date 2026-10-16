@@ -1,11 +1,10 @@
 # F33: CLI 独立发布产物（cli-dist）— 功能规格
+
 > **端**: cross
+> **依据**: ADR-030 ⑤（CLI 独立发布产物决策原文）、ADR-019、ADR-021（内核进程化交付契约）、Constitution P1-P6
+> **依赖**: [F19 GUI](../f19-gui/spec.md) · [F30 内核冷启动](../f30-kernel/spec.md) · [F31 GUI 托盘](../f31-gui-tray/spec.md) · [F32 设置持久化](../f32-settings/spec.md)
+> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（⑤ CLI 独立发布产物）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑：SemVer 对齐）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：INKFLOW_READY 交付契约）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）
 
-> **依据**: ADR-030 ⑤（CLI 独立发布产物决策原文）、ADR-019 v5（版本对齐 SemVer）、ADR-021（内核进程化交付契约）、Constitution P1-P6
-> **依赖**: ✅ 0.4.0 打包基建（f19-packaging，PR #144 + 发布门禁 #145：inkflow.spec / release.yml / electron-builder.yml / tag 版本注入机制）· ✅ #166（PR #171：kernel.json + ensure_kernel + 互斥 + stale 清理——CLI 产物含 serve 能力的依据）· ✅ #167（PR #172：GUI 托盘——里程碑并行，无代码依赖）· ✅ #152（F32 设置持久化，PR #176——无代码依赖）
-> **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（⑤ CLI 独立发布产物）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v5：0.5.0 = Agent 集成，SemVer 对齐）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：INKFLOW_READY 交付契约）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）
-
->
 ---
 
 ## 1. 概述

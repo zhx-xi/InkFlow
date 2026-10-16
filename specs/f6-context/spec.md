@@ -1,58 +1,9 @@
 # F6: 上下文管理 (context_service) — 功能规格
+
 > **端**: backend
-
-> **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
-> **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service), F9 (character_service ✅), F10 (world_service ✅), F11 (outline_service ✅), F13 (foreshadowing_service ✅)
+> **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F9 角色](../f9-character/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F11 大纲](../f11-outline/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md)
 > **参考 ADR**: [ADR-010](../../adr/llm/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../adr/llm/ADR-013.md) (Phase 2 RAG), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构)
-
----
-
-> **Spec 变更（v1.1，2026-08-23，issue #593）— F6 上下文数据源补齐**：
-> ① CharacterSettingSource / WorldSettingSource 从 Phase 1 空实现改为**接真表**（characters / world_settings）；② OutlineSource 从读 `project.config.extra["outline"]` 改为**读 outlines 表**（overall→volume→chapter 三级，缺级降级）；③ 新增 `ContextRequest.override` 通道（`character_ids` / `foreshadowing_ids`，勾选时才注入，未勾选不注入）；④ 依赖 F9/F10/F11/F13 数据源（§10 已从「不在范围」移除对应项）。**角色注入轻量化 D5=A（名 + brief）**，`Character` 新增 `brief` 字段（D5-a1，见 f9 v1.1）。
-
-> **Spec 变更（v1.2，2026-09-17，issue #1236）— chapter_summary 状态如实标注**：
-> §3.2 表行与 §4.1 流程标注 `chapter_summary` 为「规划项、SummarySource 适配器未实现」
-> （原「本模块 LLM 生成 + 缓存表」文案失真：SummaryService/缓存表/注入点均就位，
-> 唯独生产者未接线，注册表 5 源无此槽位）。枚举保留，契约测试
-> `tests/unit/domain/models/test_context_source_registry_1236.py` 钉住现状。
-
-> **Spec 变更（v1.3，2026-09-17，issue #1234）— OutlineSource 分块 + 摘要化 + 卷/章匹配**：
-> 大纲注入从「三级全文拼接单条（实测 2392 字）」改为**按 level 分块**：
-> ① `overall` 每条独立块**始终注入**（不过滤）；② `volume`/`chapter` 仅注入**与当前章节匹配**的块
-> （章匹配 = `outline.chapter_id` 精确命中，未回填时标题兜底——候选集 {原样/arabic/chinese} 归一，
-> 沿用 F11 `auto_link_chapter_by_title` #1001 先例；卷匹配 = `chapter.volume_id` 关联或章纲
-> `parent_id` 上溯），其余卷/章**不注入**；③ 每块 content 摘要化 =
-> `"{level_label}：{name} —— {description 前 60 字}…"`（≤60 字原样，确定性截断、零 LLM、零新字段）；
-> ④ priority：overall=30 / volume=20 / chapter=10；metadata 携带 `level`/`outline_id`/`outline_ids`。
-> `OutlineSource` 构造追加可选 `chapter_repo`（deps 装配注入；None = 标题兜底/卷关联不可用，
-> 精确匹配仍工作）。端点契约不变（`ContextRequest.chapter_id` 本就存在，此前被 OutlineSource 忽略）。
-> 契约测试 `tests/unit/infrastructure/context/test_outline_source_chunking_1234.py`。
-
-> **Spec 变更（v1.4，2026-09-17，issue #1253）— SummarySource 接线，chapter_summary 通道打通**：
-> v1.2 标注的「唯一缺口」已补齐：新增 `SummarySource`（`infrastructure/context/sources.py`）
-> 并注册进 `api/deps.py`（注册表 6 源，CHAPTER_SUMMARY 槽位）。
-> 行为：**只读** `chapter_summaries` 缓存（经 `SummaryService.list_recent`，最近 ≤
-> `summary_max_chapters` 条，章节序号倒序），**不触发 LLM 生成**——生成职责仍在 agentic 轨
-> （`agent_service.ensure_summary`）与调试端点，两轨共用同一缓存表、无重复生成。
-> 失败策略按 §4.6：读缓存失败 → WARNING + 空列表（不阻断组装）；无缓存 = 正常空路径。
-> 条目标题「第 N 章摘要」与 priority（= 章节序号，越新越优先）来自 `chapters.order_index`
-> 轻读（`domain/services/summary_index.py`，不为显示字段新增 ORM 列/Protocol 方法）。
-> 契约测试 `tests/unit/infrastructure/context/test_summary_source_1253.py`；
-> #1236 哨兵测试按设计翻转为「已注册」正向断言。
-
-> **Spec 变更（v1.5，2026-10-06，issue #1480）— 装配可观测面（system prompt / skill 清单 / tool 清单）**：
-> `POST /api/v1/context/assemble`（§5）与 `inkflow context assemble`（§6）新增**默认关闭**的
-> 观测参数：请求体 `show_system_prompt` / `show_skills` / `show_tools`（CLI `--show-system-prompt` /
-> `--show-skills` / `--show-tools`）。显式开启时响应**额外**返回三项（默认不返回，避免体积与泄漏）：
-> ① `system_prompt` —— **写手轨（agentic writer）目标装配产物**：`writer_agent.yaml` 渲染结果
-> （`project_id`/`chapter_id`/`context` 由本次组装结果注入）经 `_append_skills` 拼接有效技能集正文；
-> ② `skills` —— 本次**有效技能集**清单，每项 `{name, bytes, source}`，`source ∈ {explicit, general}`
-> （`explicit` = 写手授权白名单显式挂载；`general` = 库中**未被任何 Agent 挂载**的通用 skill，判据同
-> `inkflow skill list` 的「引用 N 个 Agent」）；③ `tools` —— 装配层传入写手 agent 的 tool id 清单
-> （`expand_grants` 展开产物全序，与 `inkflow agent tools list` 目录同口径）。
-> **语义边界（重要）**：本观测面描述「按当前授权 + skill 库解析出的**目标装配**」，是 #1472/#1473
-> 的验收工具；它**不读取**生产 deps 的接线状态（`AgenticWriterDeps.skill_lookup` 现状未注入、
-> 管线链路无 skill 装配代码 —— 记于 #1472，本轨只观测不改行为）。
 
 ---
 

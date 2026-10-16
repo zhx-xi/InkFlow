@@ -1,8 +1,8 @@
 # F7: CLI 命令行接口 (cli_interface) — 功能规格
-> **端**: backend
 
+> **端**: backend
 > **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
-> **依赖**: F1-F6 全部（对外统一入口）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F3 写作](../f3-writing/spec.md) · [F4 Agent 编排](../f4-pipeline-engine/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F6 上下文](../f6-context/spec.md)
 > **参考 ADR**: [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru 日志), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁)
 
 ---

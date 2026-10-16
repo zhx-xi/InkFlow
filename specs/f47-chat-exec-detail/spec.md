@@ -1,12 +1,12 @@
-# F47 写作页底部 AI 聊天框 + AI 执行详情页（#379）
-> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
+# F47 写作页底部 AI 聊天框 + AI 执行详情页
+
 > **端**: cross
 
-
-
-
+---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块 GUI 显示的时间戳来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值 = UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（本地访问器手拼，禁 `toLocaleString`）。数据层（API / `--json` / MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
 
 写作页底部横栏从被动状态条改造为 **AI 聊天框**（可与 AI 对话，结果经用户确认落章），
 工具栏新增**视图切换按钮**（正文编辑 ↔ AI 执行详情）。详情页展示执行过程的

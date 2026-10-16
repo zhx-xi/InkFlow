@@ -1,13 +1,9 @@
 # F49: 长期记忆衰减（memory-decay）功能规格
+
 > **端**: cross
-
-**依据**: 设计定稿（docs/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #617（① 时间衰减）/ #618（② LLM 显式覆盖）/ #619（③ GUI）+ 用户拍板（2026-08-23 五点决策）+ F28 spec v1.0（specs/f28-memory-learning/spec.md）+ F45 spec v1.1（specs/f45-memory-evolution/spec.md，两段式基线）
-**依赖**: ✅ F28 agent-memory（project_preferences / user_preferences / memory_events / preference_learner / memory_service / PreferenceSource，PR #242）· ✅ F45 memory-evolution（M1 用户级偏好层 + M2 语义总结，semantic_summarizer / semantic_summaries，PR #442/#452）· ✅ F6 context-service（注入端口 ContextSourceType / PreferenceSource）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ ③ 依赖 ①②
-**参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
-
->
-
-> **模块类型声明**: 本模块为「**偏好学习闭环型（记忆衰减演进）**」变体——F28（第 12 变体）与 F45（第 20 变体）之上的遗忘机制增量，补上长期记忆「只增不衰」的短板。与 F45 的「AI 语义总结」不同：本模块新增**时间衰减**（活跃时钟 + 注入动态分）与**显式覆盖**（LLM 判定冲突 → superseded）。编号依据：按「最新无冲突基线」接续——F48=第 21 变体（实体关系图谱型）为当前最新无冲突基线，本模块声明**第 22 变体**（冲突以 ADR-019 v5+ 为准）。
+> **依据**: `docs/agentic-orchestrator-and-memory-design-2026-08-14.md` §3 记忆系统演进（唯一真相）、[F28 Agent 记忆](../f28-memory-learning/spec.md)、[F45 记忆演进](../f45-memory-evolution/spec.md)
+> **依赖**: [F6 上下文](../f6-context/spec.md) · [F28 Agent 记忆](../f28-memory-learning/spec.md) · [F32 设置持久化](../f32-settings/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md) · [F38 CLI HTTP](../f38-cli-http/spec.md) · [F45 记忆演进](../f45-memory-evolution/spec.md)
+> **参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
 
 ---
 

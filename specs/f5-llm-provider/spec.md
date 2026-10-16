@@ -1,8 +1,8 @@
 # F5: LLM Provider 适配层 (llm_service) — 功能规格
-> **端**: cross
 
+> **端**: cross
 > **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
-> **依赖**: 无（F5 是 F3/F4/F6 的前置依赖）
+> **依赖**: 无（本模块是 F3/F4/F6 的前置）
 > **参考 ADR**: [ADR-051](../../adr/llm/ADR-051.md) (LLM 出口统一 LiteLLM), [ADR-005v2](../../adr/llm/ADR-005v2.md) (已被 ADR-051 取代), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离规则)
 
 ---

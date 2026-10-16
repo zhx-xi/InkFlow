@@ -1,16 +1,9 @@
 # F39: 多 Agent 能力（multi-agent）功能规格
+
 > **端**: cross
-
-**依据**: 多 Agent 能力分析文档（`design/multi-agent-capability-analysis-2026-08-12.md`，已合入主仓）+ Issue #258（F39 后端核心）/ #259（F40 skill 上传绑定）/ #260（F41 自定义 Agent 编辑）+ 0.9.0 路线图拍板 Q1（`design/inkflow-0-9-0-roadmap-2026-08-15.md`：三 issue 合并一份 spec）
-**依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
-**参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
-
-
-
-
-
-
-> **模块类型声明**: 本模块为「**能力白名单强制型**」变体——新建 Agent/Skill 两张实体表（全局应用级）+ 工具目录分组扩展 + 装配点白名单过滤改造 + 前端上传/编辑两套 UI。编号依据：AGENTS.md 模块类型谱系口径下，F39 为 Agent 化升级链（F26 集成层 → F27 闭环 → F28 记忆 → **F39 多 Agent 能力** → F29 Supervisor）的能力差异化模块。核心不变式：**多 Agent 行为差异化 = 工具 + skill 白名单的确定性强制，而非 system prompt 概率性请求**（分析文档 §0）。
+> **依据**: `design/multi-agent-capability-analysis-2026-08-12.md`、`design/inkflow-0-9-0-roadmap-2026-08-15.md`
+> **依赖**: [F19 GUI](../f19-gui/spec.md) · [F26 Agent 工具](../f26-agent-tools/spec.md) · [F27 Writer Agent](../f27-writer-agent/spec.md)
+> **参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
 
 ---
 

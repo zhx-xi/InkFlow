@@ -1,12 +1,9 @@
 # F49.1: 全自动授权与项目级开关（autonomous-authorization）功能规格
 
-**依据**: Issue #598（全自动写一卷/几章 + 首次显式授权 + 项目 config 开关 + 执行详情旁切换按钮）+ 用户拍板 2026-08-23（D9=A 落章前 HITL 确认；D9-a1 首次显式授权 + 开关存项目 config + 执行详情旁切换按钮）+ 既有源码核查（`BookAgenticPipeline` #551 / `AgenticBookConfig.hitl_points` / `ProjectConfig.supervisor` F29 / `VolumeHITLDialog` #337 / chat 系统级 Agent #597）+ 参考规格 `specs/f27-writer-agent/spec.md`
-**依赖**: ✅ #551（BookAgenticPipeline + write_book_agentic + AgenticBookConfig）· ✅ #597（chat deepagents 系统级 Agent）· ✅ F29（ProjectConfig.supervisor + hitl_roles interrupt）· ✅ F44（VolumeHITLDialog + confirm_run）
-**参考 ADR**: adr/llm/ADR-015.md（LangChain 隔离）· ADR-035（编排引擎=Deep Agents harness 0.7.5）
-
-> **模块类型声明**: 本模块为 F49 的**授权门禁增量**（非独立变体）。F49 #551 已交付全自动写作**后端编排核心**（book_supervisor 动态路由 + write/audit/revise/mark_done/finish_book + `hitl_points` 白名单 + checkpoint 恢复）。**#598 在其上加「安全授权门禁」**：全自动属高风险动作，须**默认关闭、显式授权**（用户偏好：AI 自动化默认关闭），且写入边界需用户确认（checkpoint）。本 spec 不重做编排，只定义授权数据与 UI 契约。
-
-> **范围声明（本会话）**: 本 v1.0 spec 定义 **#598 授权门禁**（后端 `ProjectConfig` 开关 + agentic 授权检查 + 前端首次授权弹框 + 执行详情旁切换按钮）。编排核心（BookAgenticPipeline）已由 #551 交付，本 spec 只加授权层。
+> **端**: backend
+> **依据**: [F27 Writer Agent](./spec.md)
+> **依赖**: [F29 Supervisor](../f29-supervisor/spec.md) · [F44 长任务编排](../f44-book-orchestrator/spec.md)
+> **参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）
 
 ---
 

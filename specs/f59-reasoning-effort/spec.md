@@ -1,8 +1,8 @@
 # F59 思考模式（Reasoning Effort）+ LLM 出口统一 LiteLLM
 
-> **依据**: 用户需求（chat 页每轮可选思考档位 + 写作链/全自动设定页配置）+ 三轮实证调查（/models 探测、provider 专项包、LiteLLM SDK 源码核验）
-> **模块类型**: 跨端（backend LLM 基建 + API + GUI），含既有模块（F5 LLM Provider / F23 SSE / F32 设置 / F47 chat 执行细节）增量——无新业务实体
-> **依赖**: ✅ ADR-051（本 spec 随 docs PR 同批交付）；✅ F5（provider 注册表）✅ F23（SSE 帧）✅ F32（设置持久化）✅ #727（reasoning 帧提取）✅ #735（resolve_model 三级链）
+> **端**: cross（backend LLM 基建 + API + GUI）
+> **依据**: ADR-047, ADR-049, ADR-051
+> **依赖**: [F5 LLM Provider](../f5-llm-provider/spec.md) · [F23 SSE](../f23-sse/spec.md) · [F32 设置持久化](../f32-settings/spec.md) · [F47 chat 执行详情](../f47-chat-exec-detail/spec.md)
 > **参考 ADR**: [ADR-051](../../adr/llm/ADR-051.md)（取代 ADR-005v2）、ADR-049（fail-fast 装配）、ADR-047（fake LLM）、ADR-015（LangChain 全家桶）
 
 ---

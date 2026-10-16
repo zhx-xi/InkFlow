@@ -1,15 +1,8 @@
 # F60: 首次启动模型配置引导（first_run_guide）— 功能规格
 
 > **端**: cross（后端 readiness 判据 + GUI 引导向导 + CLI 状态提示行）
-
-> **依据**: Issue #934（0.14.0 milestone）
-
-
-
-> **依赖**: ✅ F19 #106（ProviderConfig 注册表 + ModelsPanel/ProviderDialog）· ✅ F19 #79（settings/llm-keys + settings/llm/test 工具端点）· ✅ F32 #152（设置持久化，本模块复用 settings 域不新增设置键）· ✅ #474（`hasChatModel` 判据 + `ensureModelReady` 前置校验）· ⏳ 无
-
+> **依赖**: [F19 GUI](../f19-gui/spec.md) · [F32 设置持久化](../f32-settings/spec.md)
 > **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（内核进程化）· [ADR-021](../../adr/kernel/ADR-021.md)（token 中间件 401 契约）· [ADR-049](../../adr/llm/ADR-049.md)（LLM 装配 fail-fast 原则）· [ADR-051](../../adr/llm/ADR-051.md)（litellm 统一出口）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
-
 
 ---
 

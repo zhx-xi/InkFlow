@@ -1,22 +1,15 @@
 # F42: Agent 链配置驱动编排（agent-chain-config）功能规格
+
 > **端**: cross
-
-**依据**: 0.8.0 路线图拍板记录 5-9（design/inkflow-0-8-0-roadmap-2026-08-12.md）+ Issue #268（Agent 链模型选择）+ Issue #269（Agent 执行顺序编辑）+ #225 三态语义（已合入）+ F26/F27 已合入实现源码核查 + 2026-08-12 用户拍板（Q1-Q3 + 执行节点 10 槽 + 评审修正 B1/B2/自定义 Agent 0.8.0）+ #484（Agent 链动态化 + 模板联动，D5，2026-08-19 拍板）+ #473 角色单一来源（PR #492 已合入）
-**依赖**: ✅ #225 三态语义（0.7.0 已合入）· ✅ F26 deepagents 集成层（PR #236 已合入）· ✅ F27 agentic writer（已合入）· ✅ F9/F13/F34 服务（工具包装对象）· ✅ #473 角色单一来源（PR #492 已合入，role_key 映射真源）· ⏳ #251 CLI project update（0.8.0 P1，agent_order CLI 读写联动）· ⏳ #268 先于 #269（编排域串行）
-**参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原字母 ADR-E，#283 已落盘）、ADR-015（LangChain 隔离）、ADR-019（编号口径）
-
-
-
-
-
-
-
-
-> **模块类型声明**: 本模块为「配置驱动编排型」变体——无新实体表、无新业务端点；在既有 Agent 管线（LangGraphAgentPipeline 四角色链）上增加**配置驱动**能力：① 三态模型选择补全 UI 与执行层解析（#268）；② 执行拓扑由模板硬编码改为 `agent_order` **层级配置驱动**（#269，层级=拓扑层特化，为 #270 DAG 铺路）；③ 预留 #270 DAG 关联关系扩展边界（0.9.0，不实现）。编号依据：AGENTS.md 模块类型谱系口径下，F42 为 Agent 化升级链（F26-F29）的配置面补全模块，与 F26（集成层）/F27（闭环）/F28（记忆）平行不冲突。
+> **依据**: `design/inkflow-0-8-0-roadmap-2026-08-12.md`, [F26 Agent 工具](../f26-agent-tools/spec.md), [F27 Writer Agent](../f27-writer-agent/spec.md)
+> **依赖**: [F9 角色](../f9-character/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F26 Agent 工具](../f26-agent-tools/spec.md) · [F27 Writer Agent](../f27-writer-agent/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md)
+> **参考 ADR**: [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）
 
 ---
 
 ## 1. 概述
+
+**模块类型声明**：本模块为「配置驱动编排型」变体——无新实体表、无新业务端点；在既有 Agent 管线（LangGraphAgentPipeline 四角色链）上增加**配置驱动**能力：① 三态模型选择补全 UI 与执行层解析；② 执行拓扑由模板硬编码改为 `agent_order` **层级配置驱动**（层级 = 拓扑层特化，为 DAG 关联关系铺路）；③ 预留 DAG 关联关系扩展边界（不实现）。编号依据：AGENTS.md 模块类型谱系口径下，F42 为 Agent 化升级链（F26-F29）的配置面补全模块，与 F26（集成层）/F27（闭环）/F28（记忆）平行不冲突。
 
 F42 合并覆盖 **#268（Agent 链模型选择）** 与 **#269（Agent 执行顺序编辑）** 两份 issue，作为两期实现的唯一真相来源。#270（关联关系编辑）仅作边界预留，不实现。
 

@@ -1,20 +1,9 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
-> **端**: cross
 
-> **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
->
->
->
->
->
->
->
->
->
-> **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters 实体校验；**character_relations 已于 #495 并入本模块 knowledge_relations**，角色↔角色边同为 knowledge_relations 子空间）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
->
+> **端**: cross
+> **依据**: PRD v2.1 §6.2 P1-01/P1-06、[F9 角色](../f9-character/spec.md)、[F36 地图视图](../f36-world-map/spec.md)、Constitution P1-P6
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F9 角色](../f9-character/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F11 大纲](../f11-outline/spec.md) · [F12 时间线](../f12-timeline/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F14 统一提取](../f14-extraction/spec.md) · [F36 地图视图](../f36-world-map/spec.md) · [F43 设定库 GUI](../f43-setting-library-gui/spec.md)
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务）
->
 
 ---
 

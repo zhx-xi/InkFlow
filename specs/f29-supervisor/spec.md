@@ -1,14 +1,11 @@
 # F29: Supervisor 自主编排 + HITL 功能规格（supervisor-agent）
+
 > **端**: backend
-
-**依据**: Issue #161（F29 Supervisor 自主编排 + HITL）+ roadmap v2 拍板记录 5-9（2026-08-12：F29 当前做 + 路由振荡护栏 + deterministic 回退）+ F42 spec v1.3（§5.3.1 _apply_agent_order 通用节点 / §5.5 deepagents 兼容 / §5.6 成品身份）+ Spike 验证报告 `docs/f29-supervisor-spike-2026-08-13.md`（M1 结论：自研 LangGraph StateGraph 编排层）
-**依赖**: ✅ F42 #269 已合入（PR #305：通用节点 + 多入口/终点引擎）· ✅ F26 deepagents 集成层（PR #236）· ✅ F27 agentic writer（PR #240/#241）· ✅ F28 agent-memory（PR #242）· LangGraph 1.2.10（venv 已锁）· checkpointer（InMemorySaver 内置 / SqliteSaver 待定）
-**参考 ADR**: [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5，原 ADR-E）、ADR-006v2（Agent 编排 LangGraph StateGraph）、ADR-015（LangChain 隔离）
-
-> **模块类型声明**: 本模块为「**自主编排型**」（第 13 变体，接续 F42 配置驱动编排型）——在既有 LangGraphAgentPipeline（静态 DAG 引擎）之上新增 **Supervisor 动态路由编排层**：supervisor 节点经 LLM 决策返回 `Command(goto=role)` 动态选择下一执行角色（替代静态边拓扑），配套路由振荡护栏（同角色连续调度上限 3 + 步数上限 30）、deterministic 回退（异常/超限回退固定链）与 HITL（关键节点人工确认）。无新实体表；复用既有 ExecutionStore 执行记录。
+> **依据**: `design/inkflow-0-8-0-roadmap-2026-08-12.md`, `docs/f29-supervisor-spike-2026-08-13.md`, [F42 Agent 链](../f42-agent-chain/spec.md)
+> **依赖**: [F26 Agent 工具](../f26-agent-tools/spec.md) · [F27 Writer Agent](../f27-writer-agent/spec.md) · [F28 Agent 记忆](../f28-memory-learning/spec.md) · [F42 Agent 链](../f42-agent-chain/spec.md)
+> **参考 ADR**: [ADR-035](../../adr/agent/ADR-035.md)（编排引擎 = Deep Agents harness）· [ADR-006v2](../../adr/agent/ADR-006v2.md)（Agent 编排 LangGraph StateGraph）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）
 
 ---
-
 
 ## 1. 概述
 

@@ -1,11 +1,10 @@
 # F15: 一致性审计服务 (audit_service) — 功能规格
-> **端**: backend
 
+> **端**: backend
 > **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
-> **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——事件 `source_chapter_id` 跨模块引用校验 + 提取缺口对照）；F9 ✅（角色/关系/分组档案读取）；F10 ✅（世界条目读取）；F12 ✅（事件档案读取 + **委托 `TimelineService.check_consistency`** 时间线维度）；F13 ✅（伏笔档案读取 + `event_id` 锚点校验）；F14 ✅（`extraction_runs` 状态读取）；F5 — **不依赖**（F15 无 LLM，见 §1/§5）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F9 角色](../f9-character/spec.md) · [F10 世界观](../f10-world-settings/spec.md) · [F12 时间线](../f12-timeline/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F14 统一提取](../f14-extraction/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 
->
 ---
 
 ## 1. 概述

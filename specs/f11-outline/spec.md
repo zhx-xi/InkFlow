@@ -1,23 +1,15 @@
 # F11: 大纲管理 (outline_service) — 功能规格
 
-> **时间口径（ADR-055 / #1000）**：本模块时间字段（created_at/updated_at）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
->
 > **端**: backend
-
-> **Spec 变更（v1.1，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① Outline/PlotPoint/StoryArc 移除 `is_deleted` 字段（§2.1/§2.2/§2.3）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），三个 restore 端点与 `outline restore` 命令移除（§3/§4/§14）；④ 大纲真删 → 情节点级联物理删除（§6/§7）；⑤ 弧线真删 → 成员 arc_id 置 NULL。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
->
-> **Spec 变更（v1.2，2026-10-07，#1483）**: `outline create` / `outline update` 新增 `--content-file <path>`（从 UTF-8 文件读取大纲正文=**总体描述**，解决内联 `--description` 受命令行长度限制（Windows ~32KB）且中文经 PowerShell 管道易 ANSI 误码）。语义与互斥规则 = F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.1 签名与 §14.2 状态流同步；子实体（`point` / `arc`）与其他模块另开 follow-up（F7 §4.0 范围边界）。
->
-> **Spec 变更（v1.3，2026-10-07，#1520）**: `outline point create|update` 与 `outline arc create|update` 新增 `--content-file <path>`（从 UTF-8 文件读取**要点描述 / 弧线说明**）。语义与互斥规则 = F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.2/§4.3 签名与 §14.2 状态流同步（#1483 的「子实体另开 follow-up」在本轮收口）。
->
 > **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
-> **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）；F2（边界声明，非硬依赖，见 §11）
+> **依赖**: [F1 项目](../f1-project/spec.md) · [F2 章节](../f2-chapter/spec.md) · [F5 LLM Provider](../f5-llm-provider/spec.md) · [F6 上下文](../f6-context/spec.md)
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
 
->
 ---
 
 ## 1. 概述
+
+> **时间口径**（ADR-055）：本模块时间字段**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串 = UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 
 管理小说的**结构化大纲**（卷/章/节规划层的创建/查询/更新/真删）、**情节点**（故事关键节点，有序、带类型）与**故事弧线**（跨章节的情节发展线，情节点的组织维度），并支持**基于项目设定用 LLM 自动生成大纲**（大纲名/情节点/弧线）。
 

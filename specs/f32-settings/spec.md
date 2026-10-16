@@ -1,18 +1,10 @@
 # F32: 设置持久化（settings_persistence）— 功能规格
+
 > **端**: cross
+> **依据**: ADR-030, Constitution P1-P6（P2 解耦 / P5 YAGNI）
+> **依赖**: [F9 角色](../f9-character/spec.md) · [F19 GUI](../f19-gui/spec.md) · [F31 GUI 托盘](../f31-gui-tray/spec.md)
+> **参考 ADR**: [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：token 中间件 + 401 契约）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁：后端 98.5/95.0 + 前端 thresholds）· [ADR-030](../../adr/kernel/ADR-030.md)（④ 关闭行为持久化）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）
 
-> **依据**: Issue #152（2026-08-07 用户拍板范围 ①②③）+ #167 归口（2026-08-07 评论区：关闭行为设置持久化归口 + 首次托盘提示开关登记 #167 Q3=A）、ADR-030 ④、Constitution P1-P6（P2 解耦 / P5 YAGNI）
->
-> **Spec 变更（v1.0 → v1.1）**: 评审有条件通过（2 🔴 + 4 🟡 已修订：theme 覆盖规则保留本地值 / flush 同步 project store / 测试文件 MODIFY 与路径修正 / F31 tray-hint 无消费端表述 / E2E 隔离 / ref 镜像）+ **用户拍板 Q1=A（theme 全局粒度）/ Q2=A（key-value app_settings 表）/ Q3=C（综合守卫：default_words 卸载 flush + 对话框显式语义）**（2026-08-08）；**实现偏差回写（GREEN 2026-08-08）**：SettingsKey 改 StrEnum（仓库惯例 RUFF UP042）、_merge 单字段校验改 strict=True（Pydantic lax bool 强转防御）——见 §2.2/§2.5 代码块留痕
->
->
->
-> **依赖**: ✅ F31 #167（settings:* IPC 三通道 + 托盘 + 关闭拦截状态机，PR #172）· ✅ F19 #105（设置页框架 + Agent 即改即存 + PATCH 直连模式）· ✅ F19 #106（ProviderConfig 注册表：设置类实体先例）· ✅ F19 #107（模板对话框显式保存语义）· ✅ F19 #78/#79（token 中间件 + 渲染层 + ensureApiReady）· ✅ F9（character_errors 通用错误类复用惯例）· ⏳ 无
->
-> **参考 ADR**: [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：token 中间件 + 401 契约）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁：后端 98.5/95.0 + 前端 thresholds）· [ADR-030](../../adr/kernel/ADR-030.md)（④ 关闭行为持久化归口 #152）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）
->
-
->
 ---
 
 ## 1. 概述

@@ -1,15 +1,15 @@
 # F28: Agent 记忆系统（agent-memory）功能规格
+
 > **端**: backend
-
-**依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 2 + adr/memory-skills/ADR-037.md/adr/memory-skills/ADR-038.md + F27 spec v1.0（specs/f27-writer-agent/spec.md，事件源契约）+ 用户拍板（2026-08-03 判据 E 纳入核心路径）
-**依赖**: ✅ F27 writer-agent（diff 事件源：draft 表 + update_content 未接线 + audit_logs，PR #241）· ✅ F6 context-service（注入端口，ContextSourceType/SOURCE_LAYER）· ✅ F26 agent-tools · ✅ F13（extra 键 + 请求覆盖先例）· ✅ F34（audit_logs 复用）· ✅ F32（settings 键扩展先例——本模块不新增全局设置键）
-**参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取方式：规则化统计 N≥2）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、adr/agent/ADR-034.md（产物保留语义）、ADR-027（覆盖率门禁）
-
-> **模块类型声明**: 本模块为 Agent 化升级新增变体——「**偏好学习闭环型**」（第 12 个模块变体，编号依据：AGENTS.md 模块类型谱系，F27=第 11 变体口径延续）。与 F27（自主循环闭环型）不同：F28 是**首个从用户行为反向学习并回注生成流程**的模块，新增 2 张表（project_preferences + memory_events，Q2 拍板），跨模块 MODIFY F27 draft 服务（接线 update_content）+ F6 context（新增数据源）。
+> **依据**: PRD §6.1 F3/F4/F5, `design/agent-upgrade-path-2026-08-03.md`, ADR-037, ADR-038, [F27 Writer Agent](../f27-writer-agent/spec.md)
+> **依赖**: [F6 上下文](../f6-context/spec.md) · [F13 伏笔](../f13-foreshadowing/spec.md) · [F26 Agent 工具](../f26-agent-tools/spec.md) · [F27 Writer Agent](../f27-writer-agent/spec.md) · [F32 设置持久化](../f32-settings/spec.md) · [F34 章节审计](../f34-chapter-audit/spec.md)
+> **参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取方式：规则化统计 N≥2）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、adr/agent/ADR-034.md（产物保留语义）、ADR-027（覆盖率门禁）
 
 ---
 
 ## 1. 概述
+
+**模块类型声明**：本模块为 Agent 化升级新增变体——「**偏好学习闭环型**」（第 12 个模块变体；编号依据：AGENTS.md 模块类型谱系，F27 = 第 11 变体口径延续）。与 F27（自主循环闭环型）不同：F28 是**首个从用户行为反向学习并回注生成流程**的模块，新增 2 张表（project_preferences + memory_events），跨模块 MODIFY F27 draft 服务（接线 update_content）+ F6 context（新增数据源）。
 
 F28 交付判据 E（升级路径 v1.1 §1 补充判据，用户拍板新增）：**越用越智能**——从用户修改/确认/重新生成行为中学习项目偏好并注入后续生成。
 
