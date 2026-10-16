@@ -24,7 +24,7 @@ conversation 删除授权为 manual 时为 None——核心工具本就不允许
 
 本模块的 GRANT_TOOL_MAP / TOOL_REGISTRY / ALL_TOOL_SPECS / TOOL_NAME_TO_CELL 被多处
 测试**硬编码快照断言**消费——改表（增删工具名/调整格值/改计数）前必读联保清单：
-    docs/contract-guard.md
+    contract-guard.md
 （含全仓消费面逐条登记 + CI 触发联保说明；改表 PR 须同步复核该清单内全部断言面。）
 """
 

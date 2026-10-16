@@ -119,7 +119,7 @@
 | 位置过滤 / 优先级区间 / 章节关联 | ❌ 均**无** | 口径 2 与方案 B 的区间能力需后端先行 |
 | 前端机制 | ✅ 已有先例：`useLibraryPagedList(..., extraQuery)`（#1320 角色等级筛选 `?role_rank=` 即走此路，extraQuery 变化即重拉 + 页码归零）— `hooks/useLibraryPagedList.ts:55-61`、`pages/library.tsx:161-167` | 状态/排序可直接复用该机制 |
 
-🔴 **由此推论（分页语义约束）**：#1300/#1320 已确立「筛选须下沉服务端，否则 total 口径错 + 跨页项漏取」。纯前端过滤只作用于当前页——在分页已启用的伏笔列表上会漏掉其他页的命中项。**本轮已拍板：位置面一并服务端化**，故实现后四项（状态 / 标题检索 / 位置 / 排序）全部走服务端、无跨页漏项。⚠️ 落地形态为**扩展既有 `?search=` 的覆盖面**（而非新增 `?location=`）——见 §4.6；该变体不改变接口形状，故未触发 `ci_cd/openapi_snapshot.json` 与 `docs/contract-guard.md` 联保同步，语义变化记入 `specs/f13-foreshadowing/spec.md` §6.3。
+🔴 **由此推论（分页语义约束）**：#1300/#1320 已确立「筛选须下沉服务端，否则 total 口径错 + 跨页项漏取」。纯前端过滤只作用于当前页——在分页已启用的伏笔列表上会漏掉其他页的命中项。**本轮已拍板：位置面一并服务端化**，故实现后四项（状态 / 标题检索 / 位置 / 排序）全部走服务端、无跨页漏项。⚠️ 落地形态为**扩展既有 `?search=` 的覆盖面**（而非新增 `?location=`）——见 §4.6；该变体不改变接口形状，故未触发 `ci_cd/openapi_snapshot.json` 与 `contract-guard.md` 联保同步，语义变化记入 `specs/f13-foreshadowing/spec.md` §6.3。
 
 ### 4.4 原型内设计注释条（实现时**不得**做进产品 UI）
 
@@ -154,7 +154,7 @@
 （标题 ∪ 位置）。若拆成 `?search=` + `?location=` 两参数，二者同时传入时的组合语义含混
 （常规 AND 会退化为「标题与位置都含查询串」的交集，与 N11 实测的并集 5/8 口径不符）。
 扩展 `?search=` 覆盖面后参数面不增、语义单义，且不改变接口形状（仍为 `?search=`）→
-未触动 `ci_cd/openapi_snapshot.json` 快照与 `docs/contract-guard.md` 联保清单；
+未触动 `ci_cd/openapi_snapshot.json` 快照与 `contract-guard.md` 联保清单；
 语义变化已同步 `specs/f13-foreshadowing/spec.md` §6.3。
 
 **反例守护**：不选任何筛选（「全部」+ 检索空）→ 请求与实现前逐字一致（仅 `limit`/`offset`，

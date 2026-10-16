@@ -146,7 +146,7 @@ MCP 工具面（`backend/src/inkflow/mcp/tools/schemas.py` 的 19 个 `*Params` 
 
 | 核查项 | 取证 | 结论 |
 |--------|------|------|
-| `ci.yml` contract filter 命中面 | filter 仅列 `infrastructure/agent/tools/registry.py` + 审计装配 + 写作链契约源（`docs/contract-guard.md` §消费面登记表同源） | MCP 文件不在其中 → 改 MCP schema **不触发** `e2e-frontend-settings` |
+| `ci.yml` contract filter 命中面 | filter 仅列 `infrastructure/agent/tools/registry.py` + 审计装配 + 写作链契约源（`contract-guard.md` §消费面登记表同源） | MCP 文件不在其中 → 改 MCP schema **不触发** `e2e-frontend-settings` |
 | e2e 是否硬编码 MCP 工具名 | `tests/e2e/**` 全目录 grep `mcp` 仅命中 `e2e-logs.spec.ts`（`caller_type=mcp` 字样，与工具面无关） | 无 e2e 快照可断 |
 | 谁锁 MCP 工具面 | `backend/tests/unit/mcp/`（恒跑 job `unit-backend`）+ `tests/cli/test_cli_mcp.py`、`test_mcp_tool_surface_retest_866.py`（`integration-cli-backend`） | 工具面契约由**恒跑**单元/集成 job 守卫，无需 e2e 联保 |
 

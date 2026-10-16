@@ -93,7 +93,7 @@ def test_all_pointers_resolve_returns_empty_and_main_exits_zero(
     (tmp_path / "tests" / "conftest.py").write_text("x\n", encoding="utf-8")
     _write_tokens(
         tmp_path,
-        ["AGENTS.md", "design/", "docs/contract-guard.md", "tests/conftest.py"],
+        ["AGENTS.md", "design/", "contract-guard.md", "tests/conftest.py"],
     )
     assert module.check_doc_pointers(str(tmp_path)) == []
     monkeypatch.setattr(sys, "argv", ["check_doc_pointers.py", str(tmp_path)])
