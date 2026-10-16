@@ -1,45 +1,29 @@
 # F19: GUI（内核进程化 + Electron 壳 + React 渲染层）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.6（§2-§5 ✅ / §6 交互反馈 ✅ 已合入 / §7 导航重构 ✅ 已合入 / §8 模型管理 ✅ 已合入 / §9 Agent 模板 ✅ 已合入） | **日期**: 2026-08-06 | **依据**: PRD v2.1, Constitution P1-P6, ADR-003/004/011/019(v2)/020/021/025
-> **Spec 变更**: 1.1（2026-08-04）：§3 占位 → 完整起草（#77 合入后条件满足；契约实测 serve.py 已交付 INKFLOW_READY 行 + 端口文件）
-> **Spec 变更**: 1.2（2026-08-05）：追加 §5 UI 打磨（#98，M8 补做）；原 §5-§8 顺延为 §6-§9；§3/§4 状态回写 ✅ 已合入
-> **Spec 变更**: 1.3（2026-08-05）：追加 §6 交互反馈（#99，用户拍板：spec 完成后关闭 #99，实现并入 #105）+ §7 导航重构（#105，0.4.0）；原 §6-§9 顺延为 §8-§11
-> **Spec 变更**: 1.4（2026-08-05）：追加 §8 模型管理（#106，前后端 Phase1=A+B 方案）+ §9 Agent 模板（#107，引用式）；原 §8-§11 顺延为 §10-§13
-> **Spec 变更**: 1.5（2026-08-06）：§8 追加顶栏主题/语言 Select 下拉改造（#106 Issue 追加，Q4 方案 A 拍板）；§6/§7 状态回写 ✅ 已合入（#105 PR #120/#121）；§8 待评审后实现
-> **Spec 变更**: 1.6（2026-08-06）：§8 状态回写 ✅ 已合入（#106 PR #122）；§9 状态回写 ✅ 已合入（#107，AgentTemplate 实体 + 引用式装配 + 角色独立温度链 + 风险确认）
-> **所属阶段**: 0.3.0 里程碑（Issue #69 拆分 3 子任务：#77 内核进程化 / #78 Electron 壳 / #79 React 渲染层；#98 UI 打磨为 M8 补做）
-> **关联 Issues**: [#69](https://github.com/zhx-xi/InkFlow/issues/69)（父）· [#77](https://github.com/zhx-xi/InkFlow/issues/77)（子任务 A，本章）· [#78](https://github.com/zhx-xi/InkFlow/issues/78)（子任务 B）· [#79](https://github.com/zhx-xi/InkFlow/issues/79)（子任务 C）· [#98](https://github.com/zhx-xi/InkFlow/issues/98)（子任务 D，本章）
-> **依赖**: 无（#77 可独立开发验证，不需要 GUI）；#78 依赖本章交付格式（端口文件/token 契约）；#79 依赖 #50 ✅（F23 SSE，PR #83）与 #78；#98 依赖 #79 ✅（渲染层已合入，本任务在其上纯前端打磨）
-> **参考 ADR**: [ADR-003](../../adr/database/ADR-003.md)（SQLite WAL 基础）、[ADR-004](../../adr/database/ADR-004.md)（Pydantic 契约）、[ADR-011](../../adr/architecture/ADR-011.md)（异步无阻塞）、[ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v2）、[ADR-020](../../adr/gui/ADR-020.md)（单机 GUI Electron）、[ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化）、[ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定）
-> **状态**: §2-§8 ✅ 已合入；§9 ✅ 已合入（#107）
+> **依据**: PRD v2.1, Constitution P1-P6, ADR-003/004/011/019/020/021/025
+> **依赖**: [F23 SSE](../f23-sse/spec.md)
 
->
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 内核进程化（子任务 A，#77） · 3. Electron 壳（子任务 B，#78） · 4. 渲染层（子任务 C，#79）
-> 5. UI 打磨（子任务 D，#98） · 6. 交互反馈与产品化补全（#99） · 7. 导航重构：侧边栏 + 设定库项目上下文 + 设置页框架（子任务 E，#105） · 8. 模型管理页：多 Provider/Model 注册 + 角色绑定 + embedding（子任务 F，#106）
-> 9. Agent 模板：引用式 + 角色独立温度 + 风险确认（子任务 G，#107） · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录（#77）
-> 13. 待澄清问题（≤3）
 ---
 
 ## 1. 概述
 
-F19 = 桌面 GUI（Electron 壳 + React 渲染层 + 本地内核进程化）。本 spec **一份文件按三章划分**（与子任务 Issue 一一对应，各自独立 PR 验收）：
+F19 = 桌面 GUI（Electron 壳 + React 渲染层 + 本地内核进程化）。本 spec **一份文件按子任务分章**，各章独立验收：
 
 | 章 | 子任务 | 内容 | 估算 | 依赖 |
 |----|--------|------|------|------|
-| §2 内核进程化 | #77 | `inkflow serve` 强化：动态端口 + token 鉴权 + WAL + 端口文件交付 | 3-4 人天 | 无 |
-| §3 Electron 壳 | #78 | 主进程生命周期管理：拉起/健康检查/崩溃拉起/回收 | 3-4 人天 | #77 交付格式 |
-| §4 渲染层 | #79 | React 界面：写作/项目管理/Agent 配置 + SSE 渲染 + 2 工具端点（key 管理/连通测试） | 5-7 人天 | #50 + #78 |
-| §5 UI 打磨 | #98 | 控件定制化 + 视觉层级 + 空态设计 + 品牌接入（M8 补做） | 2-3 人天 | #79 |
-| §6 交互反馈 | #99 | toast/骨架/空态/ESC/快捷键提示/主题预览 + 评审遗留清理（**设计基准，实现并入 #105**） | — | #98 |
-| §7 导航重构 | #105 | 侧边栏 + 设定库项目上下文 + 设置页框架 + 交互反馈实现 | 2-3 人天 | #99（spec） |
-| §8 模型管理 | #106 | ProviderConfig 注册表实体 + 模型管理页 + key 回退（用户拍板完整方案） | 5-7 人天 | #105；**角色绑定区依赖 #107**（C3） |
-| §9 Agent 模板 | #107 | AgentTemplate 实体（引用式）+ 角色独立温度 + 风险确认 | 3-5 人天 | #105 |
+| §2 内核进程化 | A | `inkflow serve` 强化：动态端口 + token 鉴权 + WAL + 端口文件交付 | 3-4 人天 | 无 |
+| §3 Electron 壳 | B | 主进程生命周期管理：拉起/健康检查/崩溃拉起/回收 | 3-4 人天 | §2 交付契约 |
+| §4 渲染层 | C | React 界面：写作/项目管理/Agent 配置 + SSE 渲染 + 2 工具端点（key 管理/连通测试） | 5-7 人天 | [F23 SSE](../f23-sse/spec.md) + §3 |
+| §5 UI 打磨 | D | 控件定制化 + 视觉层级 + 空态设计 + 品牌接入 | 2-3 人天 | §4 |
+| §6 交互反馈 | — | toast/骨架/空态/ESC/快捷键提示/主题预览 + 评审遗留清理（**设计基准**，实现并入 §7） | — | §5 |
+| §7 导航重构 | E | 侧边栏 + 设定库项目上下文 + 设置页框架 + 交互反馈实现 | 2-3 人天 | §6 |
+| §8 模型管理 | F | ProviderConfig 注册表实体 + 模型管理页 + key 回退 | 5-7 人天 | §7；**角色绑定区依赖 §9** |
+| §9 Agent 模板 | G | AgentTemplate 实体（引用式）+ 角色独立温度 + 风险确认 | 3-5 人天 | §7 |
 
 **边界声明**：
-- F19 **不含打包分发**（PyInstaller exe / 安装包 / 便携 ZIP）——#48 留 0.4.0（用户拍板，ADR-019 v2）
-- F19 前端走已拍板双包结构：`frontend/packages/renderer/`（React19+Vite6+shadcn+Zustand+Tailwind4，**永不 import electron**，走 REST+SSE）+ `frontend/packages/electron/`（薄壳，只做内核生命周期）——§3/§4 文件结构据此
+- F19 **不含打包分发**（PyInstaller exe / 安装包 / 便携 ZIP）——见 [f19-packaging](../f19-packaging/spec.md)（ADR-019）
+- F19 前端走双包结构：`frontend/packages/renderer/`（React19+Vite6+shadcn+Zustand+Tailwind4，**永不 import electron**，走 REST+SSE）+ `frontend/packages/electron/`（薄壳，只做内核生命周期）——§3/§4 文件结构据此
 - F19 **不新增业务实体、不新增业务 API 端点**：内核进程化只强化既有 serve 通道与本地安全基线；业务面（写作/角色/大纲等）全部复用既有 API
 
 ### 1.1 本章（§2 内核进程化）定位
@@ -52,17 +36,16 @@ F19 = 桌面 GUI（Electron 壳 + React 渲染层 + 本地内核进程化）。�
        交付: stdout 一行 JSON + 端口文件 {port, token} → GUI 壳（#78）消费
 ```
 
-**关键事实（现状盘点，2026-08-03 实测）**：
-- `cli/commands/serve.py`：仅 host/port/open_browser/reload，**无** token/端口文件/WAL——#77 全量待做
-- `GET /health` **已存在**（api/app.py:75，返回 `{status, version, mode}`）——#77 直接复用，不新建
-- `core/database.py`：`create_async_engine(config.database_url)` **无任何 WAL/busy_timeout PRAGMA**（全仓搜 0 匹配）——WAL 必须加在**连接工厂统一处**（CLI/agent/GUI 都要并发，不只 serve 路径）
-- `api/app.py`：CORS 白名单已硬编码 4 个本地源（localhost/127.0.0.1 × 5173/8765），满足「仅放行本地来源」基线，需**配置化 + 补 Electron file:// (null origin)**
-- `core/config.py`：已有 `server_host`/`server_port`（默认 127.0.0.1/8000）；无 token/WAL 相关配置
-- `tests/cli/test_cli_serve.py`：mock `uvicorn.run` 断言 host/port——强化后 mock 目标变为 `uvicorn.Server`/交付逻辑，**需重写**
+**设计约束**：
+- 内核交付面复用既有 `GET /health`（`{status, version, mode}`），不新建端点
+- WAL / busy_timeout 必须加在**连接工厂统一处**（`core/database.py`）——CLI/agent/GUI/MCP 都并发访问同一 DB 文件，不只 serve 路径
+- CORS 白名单需**配置化**，并补 Electron 生产模式（file://，Origin = `null`）
+- token / WAL 相关配置统一入 `core/config.py`
+- `tests/cli/test_cli_serve.py` 的 mock 目标由 `uvicorn.run` 变为交付逻辑 / `uvicorn.Server` 装配
 
 ---
 
-## 2. 内核进程化（子任务 A，#77）
+## 2. 内核进程化（子任务 A）
 
 ### 2.1 交付契约（GUI 壳 ↔ 内核）
 
@@ -96,8 +79,8 @@ INKFLOW_READY {"port": 38291, "token": "aB3x...", "pid": 4821, "version": "0.3.0
 
 - 请求头：`X-InkFlow-Token: <token>`
 - 校验范围：**所有 `/api/*` 请求**（含 SSE 流式端点——F23 端点为 POST/fetch，可带自定义头，不受 EventSource GET 限制）
-- 校验范围（Q2 已评审修订）：**所有端点均需 token**，含 `/health`——豁免仅 `/docs` `/redoc` `/openapi.json`（静态文档，无数据面）
-- 豁免增补（**#1093**）：`GET /api/v1/maps/{id}/image` 精确豁免（正则 `^/api/v1/maps/[^/]+/image\Z`，**仅 GET**）。
+- 校验范围：**所有端点均需 token**，含 `/health`——豁免仅 `/docs` `/redoc` `/openapi.json`（静态文档，无数据面）
+- 豁免增补：`GET /api/v1/maps/{id}/image` 精确豁免（正则 `^/api/v1/maps/[^/]+/image\Z`，**仅 GET**）。
   理由：该端点由浏览器原生 `<img src>` 消费，而 `<img src>` **无法附加自定义请求头** → 裸请求必被 401 挡下 → 地图「图片」tab 底图破图
   （MapCanvas.tsx 的 `imageSrc`）。该端点仅返回项目内已上传的静态图片。
   **写路径 `PUT /api/v1/maps/{id}/image`（上传/替换）不豁免**，仍受 token 保护。
@@ -109,7 +92,7 @@ INKFLOW_READY {"port": 38291, "token": "aB3x...", "pid": 4821, "version": "0.3.0
   id 段非空（`//image` 不豁免）；近似路径 `/images`、`/image/extra`、`/image/`、大小写变体均不豁免；
   反例守护见 `tests/api/test_map_image_token_exempt.py::TestExemptionSurfaceNoOverflow`。
 - 壳轮询 token 零成本：端口与 token 同在 `INKFLOW_READY` 行，壳解析该行是必经步骤，token 为免费副产品
-- 云端远程模式（2.0.0，ADR-024）：换 `Authorization: Bearer <JWT>`，同一 API client 抽象——本章只实现本地 token
+- 云端远程模式（见 [ADR-024](../../adr/architecture/ADR-024.md)）：换 `Authorization: Bearer <JWT>`，同一 API client 抽象——本章只实现本地 token
 
 ### 2.2 CLI 契约（serve 强化）
 
@@ -125,7 +108,7 @@ inkflow serve [--host HOST] [--port PORT] [--port-file PATH] [--token TOKEN]
 | `--port-file` | Path | 无 | **新增**。交付端口文件的路径；缺省仅 stdout 交付 |
 | `--token` | str | 随机生成 | **新增**。显式指定 token（调试/测试用）；缺省 `secrets.token_urlsafe(32)` 每次启动随机 |
 | `--open-browser` | bool | False | 保留 |
-| `--reload` | bool | False | 保留（开发热重载）。**与交付契约互斥**（Q3 评审修订）：reload 每次重启子进程、`--port 0` 端口漂移 → 不输出 INKFLOW_READY、不写端口文件；**token 校验保持启用**（`INKFLOW_SERVER_TOKEN` env 注入，reload 子进程天然继承） |
+| `--reload` | bool | False | 保留（开发热重载）。**与交付契约互斥**：reload 每次重启子进程、`--port 0` 端口漂移 → 不输出 INKFLOW_READY、不写端口文件；**token 校验保持启用**（`INKFLOW_SERVER_TOKEN` env 注入，reload 子进程天然继承） |
 
 ### 2.3 API 层变更（token 中间件 + CORS 配置化）
 
@@ -135,12 +118,12 @@ inkflow serve [--host HOST] [--port PORT] [--port-file PATH] [--token TOKEN]
 请求 → token 中间件
   ├─ 路径 /docs /redoc /openapi.json → 放行（静态文档，无数据面）
   ├─ 路径 /api/* 且带 X-InkFlow-Token 且匹配 → 放行
-  ├─ 路径 /health 且带 token 且匹配         → 放行（Q2 评审：/health 不豁免）
+  ├─ 路径 /health 且带 token 且匹配         → 放行（/health 不豁免）
   └─ 其余路径 token 缺失/不匹配             → 401 {"detail": "Unauthorized"}
 ```
 
 - 中间件持有 token：从**环境变量 `INKFLOW_SERVER_TOKEN`** 读取（serve 启动时生成并注入进程环境；测试可设固定值）——避免 config 单例启动时序问题，也天然兼容 reload 子进程继承
-- **env 未设置时中间件直通（无 token 模式）**：token 校验是 `serve` 命令的职责（serve 必设 env），不是 app 内置认证——TestClient 直连 app（不经 serve）、云端 JWT 路径（2.0.0）不受影响；既有 1667 测试零破坏
+- **env 未设置时中间件直通（无 token 模式）**：token 校验是 `serve` 命令的职责（serve 必设 env），不是 app 内置认证——TestClient 直连 app（不经 serve）、云端 JWT 路径均不受影响
 - 401 响应不携带内部细节（防探测）；无重定向、无 WWW-Authenticate 挑战（非 HTTP Basic 语义）
 - API 文档加**全局 HTTPBearer security scheme**（Swagger UI Authorize 按钮，开发调 API 用；同时是 ADR-024 云端 JWT 前置）
 
@@ -178,9 +161,9 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 | （journal_mode） | `WAL` | 连接级 PRAGMA；WAL 模式持久化在 DB 文件头，跨连接生效 |
 
 - WAL 生效验证：`PRAGMA journal_mode` 查询返回 `wal`（§2.6 M3）
-- **回归风险**：既有 1589 个测试多为内存库（`sqlite+aiosqlite:///:memory:`）——内存库不支持 WAL（journal_mode 返回 memory），PRAGMA 执行不报错但无效果；需确认 PRAGMA 在内存库路径下幂等不抛错（`journal_mode=WAL` 对 memory 库返回 `memory` 而非 `wal`，测试断言须按连接类型分支）
+- **回归风险**：既有测试多为内存库（`sqlite+aiosqlite:///:memory:`）——内存库不支持 WAL（journal_mode 返回 memory），PRAGMA 执行不报错但无效果；需确认 PRAGMA 在内存库路径下幂等不抛错（`journal_mode=WAL` 对 memory 库返回 `memory` 而非 `wal`，测试断言须按连接类型分支）
 
-### 2.5 文件结构（#77 CREATE/MODIFY 清单，对照真实树 2026-08-03）
+### 2.5 文件结构（CREATE/MODIFY 清单）
 
 | 操作 | 文件 | 内容 |
 |------|------|------|
@@ -190,9 +173,9 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 | MODIFY | `backend/src/inkflow/core/config.py` | 新增 `server_cors_origins: list[str]`、`db_busy_timeout_ms: int = 5000`、`server_token: str = ""`（env `INKFLOW_SERVER_TOKEN` 映射，空=随机生成）；CONFIG_WHITELIST 同步（如适用） |
 | MODIFY | `backend/src/inkflow/core/database.py` | connect 事件 PRAGMA（WAL + busy_timeout），**连接工厂统一处** |
 | MODIFY | `tests/cli/test_cli_serve.py` | 重写：mock 目标从 `uvicorn.run` 变为交付逻辑/Server 装配；`--port 0`、`--port-file`、`--token` 断言 |
-| NEW | `tests/api/test_token_auth.py` | 无 token → 401；错误 token → 401；正确 token → 200；/health 豁免（按 Q2） |
+| NEW | `tests/api/test_token_auth.py` | 无 token → 401；错误 token → 401；正确 token → 200；/health 豁免 |
 | NEW | `backend/tests/unit/infrastructure/database/test_database_pragma.py`（或并入既有 database 测试） | 文件库连接 PRAGMA journal_mode=wal + busy_timeout 断言；内存库幂等断言 |
-| MODIFY | `.github/workflows/ci.yml` | 新增 tests/api/test_token_auth.py 自动被 unit job 覆盖（tests/api/ 路径核对）；若新增 `tests/cli/` 文件必须显式追加 `integration-cli-backend` job（Issue #59 教训） |
+| MODIFY | `.github/workflows/ci.yml` | 新增 tests/api/test_token_auth.py 自动被 unit job 覆盖（tests/api/ 路径核对）；若新增 `tests/cli/` 文件必须显式追加 `integration-cli-backend` job |
 
 ### 2.6 测试策略
 
@@ -201,10 +184,10 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 | 单元（CLI） | serve 参数解析；`--port 0` 传入 uvicorn 装配；端口文件写入（原子性、JSON 结构）；token 缺省随机/显式指定；INKFLOW_READY stdout 格式 |
 | 集成（API） | token 中间件：缺失/错误/正确 token 三分支（**/health 同规则**）；/docs /openapi.json 豁免；HTTPBearer scheme 注册；CORS 白名单（本地源放行、非本地源拒绝） |
 | 集成（DB） | 文件库 `PRAGMA journal_mode` = wal；`PRAGMA busy_timeout` = 配置值；内存库不抛错 |
-| 回归 | 既有 1589 测试全量（WAL 改动在连接工厂，**必须先全量回归再合入**） |
+| 回归 | 既有测试全量（WAL 改动在连接工厂，**必须先全量回归再合入**） |
 | 冒烟（curl，无 GUI 可验证） | `serve --port 0 --port-file X` → 读端口文件 → `curl /health` 无 token 401 / 带 token 200 → `curl -X GET /api/v1/projects` 无 token 401 / 带 token 200 → `PRAGMA journal_mode` 返回 wal → kill 进程 |
 
-### 2.7 验收标准（#77，pytest + curl 冒烟闭环）
+### 2.7 验收标准（pytest + curl 冒烟闭环）
 
 - **M1** `serve --port 0` 启动：stdout 出现 `INKFLOW_READY` 行，JSON 含 port/token/pid/version；`--port-file` 指定时文件内容一致
 - **M2** token 校验：无 token / 错误 token 请求 `/api/v1/*` **与 `/health`** → 401；正确 token → 200；/docs /openapi.json 豁免

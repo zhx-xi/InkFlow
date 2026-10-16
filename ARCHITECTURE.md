@@ -131,7 +131,7 @@ D:\develop\projects\
 4. **GREEN 批**：分层实现（services → ports → infrastructure → api → cli）
 5. **QA**：全仓 ruff（CI 等价命令）+ mypy + 分两条命令跑测试 + 覆盖率
 6. **PR**：spec + 实现 + 测试同 PR（`Closes #N`），CI 绿后 squash merge
-7. **收尾同步**：AGENTS.md 里程碑表 / FEATURES.md / ADR-019 版本表 / spec 头部状态
+7. **收尾同步**：AGENTS.md 里程碑表 / FEATURES.md / ADR-019 版本表
 
 ## 6. 关键数据流
 

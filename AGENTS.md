@@ -116,7 +116,7 @@ grep -r "import langchain" src/inkflow/domain/ && echo "VIOLATION: domain layer 
 
 - 每个模块 spec 定义了：数据模型、API 契约、CLI 命令、边界情况、测试策略
 - **spec 是开发的唯一真相来源**。如果发现 spec 与实现矛盾，先更新 spec，再改代码
-- **Spec 篇幅纪律（2026-08-08 #201 立规）**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录，但 spec.md 头部必须显式声明 references/ 清单；已实现 spec 只加「快速导航」块
+- **Spec 篇幅纪律**：新 spec 默认单文件 ≤800 行；超过且章节内聚可拆时，允许 `specs/f<X>-<name>/references/` 子目录，但 spec.md 头部必须显式声明 references/ 清单
 
 ### 5.2 开始新功能
 流程细节（git worktree + PR）见 `design/workflow.md`；依赖锁定见 ADR-025（`backend/uv.lock` 唯一真相，日常一律 `uv sync --frozen`）。**环境创建/重建一律 uv，禁止 `python -m venv` / `virtualenv`。**
@@ -139,6 +139,7 @@ python -m ruff check --no-cache src/ tests/unit/ ..\tests\    # lint（src + 单
 python -m mypy src/                                           # ⚠️ 用 python -m mypy（Windows uv trampoline 兼容）
 python -m pytest tests/unit/ -q                               # 单元测试
 python -m pytest ..\tests\integration\ ..\tests\api\ ..\tests\cli\ -q  # 集成测试
+python ..\ci_cd\check_marker_discipline.py --diff              # 历史标记
 ```
 
 ### 5.6 创建 PR + 合并
@@ -192,7 +193,7 @@ CLI 测试**必须同时 patch 源模块与 CLI 模块**（Python import 缓存�
 | 3 | **CLI 测试用环境变量设置 DB** | 用 `monkeypatch.setattr` 直接替换 `engine` 和 `async_session_factory` |
 | 11 | **单元 + 集成测试不能放在同一命令** | 两个 `tests/` 目录（backend 和顶层）有命名冲突，必须分开跑 |
 | 13 | **Issue/PR 完成后检查配置同步** | 每个 Issue 完成后检查 AGENTS.md、ADR、pyproject.toml、ci.yml、FEATURES.md 是否过时 |
-| 26 | **改契约源 → 硬编码快照断言连锁过期** | 改 `agent/tools/registry.py` 表前必读 `docs/contract-guard.md` 联保清单；CI `contract` filter 命中即跑 `e2e-frontend-settings`（#993/#985） |
+| 26 | **改契约源 → 硬编码快照断言连锁过期** | 改 `agent/tools/registry.py` 表前必读 `contract-guard.md` 联保清单；CI `contract` filter 命中即跑 `e2e-frontend-settings`（#993/#985） |
 
 > 完整陷阱清单（UUID.int/跨模块遮蔽/CI 盲区/Windows 坑/流程治理等）见 `ai-traps.md`。
 
@@ -227,3 +228,34 @@ CLI 测试**必须同时 patch 源模块与 CLI 模块**（Python import 缓存�
 
 ## 11. 发布记录（Release Log）
 发布记录见 `CHANGELOG.md` + `FEATURES.md`。
+
+## 12. 历史标记纪律（不记 issue/日期/版本）
+
+**规则**：文档与代码**不记录** issue/PR 号、日期、项目版本号。这些内容的归属是 **git 履历 + ADR + issue 页**；写在文档与代码里只产生噪声（对 AI agent 是跳转线索而非可执行信息）并随时间腐烂。
+
+**查历史**（取代「修改履历」记录）：
+
+```bash
+git log -p --follow -- specs/fX-<name>/spec.md   # 每次改动一个 commit（squash merge 后为 PR 级粒度）
+git log -S"<被删的原文>" -- specs/                # 反查某段文字何时消失
+```
+
+**豁免面**（标记即文件用途；完整表见 `ci_cd/marker-discipline.md`）：`CHANGELOG.md` 版本+发布日期 · `FEATURES.md`/`README.md` 版本映射 · `adr/README.md` 决策日期列 · ADR 头部 `> **日期**`/`> **状态**` · spec 头部 `**依据**`/`**依赖**`/`**参考 ADR**` · 生成物 · **文档标识**（`ADR-0NN`、`PRD vX.Y`、`spec §N`、`python 3.13`、`ruff vX.Y.Z`）。
+
+**检查**（本地或由 agent 跑，**不挂 CI**）：
+
+```powershell
+python ci_cd/check_marker_discipline.py --diff   # 只扫新增行（存量脏文件可正常编辑）
+python ci_cd/check_marker_discipline.py --all    # 全仓（收尾/验收）
+```
+
+**spec 定位 = 规范**（「是什么」），不是决策记录、不是实现文档：
+
+- spec 头部只留 `**端**` / `**依据**` / `**依赖**`（依赖只写其他 spec 的**相对链接**，不列具体依赖项与 issue 号）/ `**参考 ADR**`；**不写** `Spec 版本` / `日期` / `所属阶段` / `关联 Issues` / `状态` / `快速导航`
+- 不写任何**进展状态**（`✅ 已合入`、`已实现`、`待实现`、`已落地`）与决策元叙述（`用户拍板：选项 X`）；细粒度决策集中在 spec 的**独立决策表**（全 spec 唯一决策落点，含备选列）
+- 不贴**实现代码**（函数体/算法/迁移 SQL）；数据模型 / API 契约 / CLI 签名 / json 示例属规范，保留
+- 不写「修改履历」列与「Spec 变更」块 —— 查历史走上面的 git 命令
+
+**证据不入库**：采集的证据随 worktree 走，PR 完成后上传对应 PR/issue 即可丢弃。仓库根 `evidence/`（内容 gitignored，仅留目录）只作工作区落点 —— 🔴 **禁止在 ADR/spec/源码/测试/文档里引用 `evidence/` 下的路径**（同 `.hermes/`、`.tmp/` 纪律）。需长期留痕：**决策 → ADR；证据 → 引用 PR/issue 编号**。
+
+> 本决策不另立 ADR（纯文档纪律、无技术选型变更），理由记于本节。

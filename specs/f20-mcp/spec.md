@@ -514,7 +514,7 @@ F20 被依赖:
 | A23 | `write action=revise` 的 `instruction` 落到内核**有效**字段（#1437） | `instruction` 单给 → body 经内核 `RevisionRequest.model_validate` 后 `feedback == instruction`（CLI `write revise --instruction` 同一语义），且 body **无** `instruction` 键（内核 DTO 无该字段）。反例守护：`feedback` 与 `instruction` 同给时仍以 `feedback` 为准；只给 `feedback` 的既有通道逐字不变。根因取证：内核 `RevisionRequest.model_fields` **无** `instruction`（且未设 `extra="forbid"` → 未知键静默忽略） | `test_mcp_field_wiring_1437.py::TestWriteReviseInstruction1437` | `unit-backend` job |
 | A24 | `export` 的 `output_path` 显式拒绝（#1437） | `output_path` 传入 → `INVALID_ARGS` **且零 HTTP**（内核无落盘能力，端点只回文本）；错误含可自愈说明。反例守护：不传 `output_path` 仍回原始文本（`GET_RAW /projects/{pid}/export`）；既有 `format != "txt"` 护栏未被顶掉 | `test_mcp_field_wiring_1437.py::TestExportOutputPath1437` | `unit-backend` job |
 
-> **MCP 工具面不在 `ci.yml` 的 `contract` filter 内**（核查结论与 checklist 见 `docs/contract-guard.md` §MCP 工具面契约源）——改 MCP schema **不触发** `e2e-frontend-settings`；工具面由恒跑 job `unit-backend` / `integration-cli-backend` 守卫。
+> **MCP 工具面不在 `ci.yml` 的 `contract` filter 内**（核查结论与 checklist 见 `contract-guard.md` §MCP 工具面契约源）——改 MCP schema **不触发** `e2e-frontend-settings`；工具面由恒跑 job `unit-backend` / `integration-cli-backend` 守卫。
 
 ---
 

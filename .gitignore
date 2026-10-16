@@ -46,6 +46,10 @@ data/
 Thumbs.db
 .DS_Store
 
+# 证据工作区：随 worktree 走，PR 完成后上传 PR/issue 即可丢弃（内容不入库，仅保留目录）
+evidence/*
+!evidence/.gitkeep
+
 # Hermes
 .hermes/
 pr-body-phase2.md

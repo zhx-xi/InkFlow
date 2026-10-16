@@ -864,7 +864,7 @@ backend/tests/unit/infrastructure/database/test_writing_plan_tasklist_migration_
 > F39 白名单两条 factory 均未装配 #1181）。W1/W2 已修复实现，本表两行现附可验证证据
 > （测试文件 + PR 号 + 装配点行号），同表其余 `✅ 已实现` 行亦补齐承载测试。
 > 原审计发现 #1184 的 b 部分**已闭环**；a 部分（证据门禁）见 PR #1189
-> （`docs/contract-guard.md` §「spec 状态标记证据要求」+ `ci.yml` contract filter）。
+> （`contract-guard.md` §「spec 状态标记证据要求」+ `ci.yml` contract filter）。
 > 同类另见 `specs/f6-context/spec.md` §11、`specs/f3-writing/spec.md` §11（同批修正）。
 
 **编号口径声明**：本模块为「长任务编排型」**第 20 变体**（F38=18 最新无冲突基线；F20/F46 双占第 19 变体，冲突以 ADR-019 v6+ 为准，F46 spec 笔记 2026-08-16 实录）。
