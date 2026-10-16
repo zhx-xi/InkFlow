@@ -4,8 +4,7 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.7 | **日期**: 2026-10-10 | **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）；v1.4 增量依据 Issue #1420（客户端超时后审计明细不可恢复——findings 落库 + 读口 + 超时文案对齐）；v1.5 增量依据 Issue #1425（审计异步语义——触发即返回 `log_id`（202）+ 后台执行 + 按 id 轮询状态；用户 2026-10-06 拍板**方案 B**）；v1.6 增量依据 Issue #1484（批量章节审计入口——批量编排 + 断点续跑 + 结果聚合；在 v1.5 异步语义之上加**编排薄层**，不新造审计执行机制）；v1.7 增量依据 Issue #1562（`--resume` 断点判据被 `audit_logs` 的非审计行污染——收窄为**正向认「审计记录」**；缺陷修复，端点/表零变化）；v1.7 连带文档面 Issue #1571（外部 skill `references/audit.md` 的 `--resume` 判据行同批改写）
-> **所属阶段**: 0.6.0（#208 章节审计，估算 5-7 人天——v1.1 拍板含轻量记录 + CLI 确认 + GUI 最小版）
+> **依据**: Issue #208（2026-08-09 用户拍板立项）、PRD P1-07 审计能力延伸、Constitution P1-P6（P2 解耦 / P5 YAGNI）；v1.2 增量依据 Issue #1267（审计结果消费方——写作链须按审计结论阻断）；v1.3 增量依据 Issue #1266（审计能力缺口——补「前后章连贯性」+「大纲符合度」两类 check_type）；v1.4 增量依据 Issue #1420（客户端超时后审计明细不可恢复——findings 落库 + 读口 + 超时文案对齐）；v1.5 增量依据 Issue #1425（审计异步语义——触发即返回 `log_id`（202）+ 后台执行 + 按 id 轮询状态；用户 2026-10-06 拍板**方案 B**）；v1.6 增量依据 Issue #1484（批量章节审计入口——批量编排 + 断点续跑 + 结果聚合；在 v1.5 异步语义之上加**编排薄层**，不新造审计执行机制）；v1.7 增量依据 Issue #1562（`--resume` 断点判据被 `audit_logs` 的非审计行污染——收窄为**正向认「审计记录」**；缺陷修复，端点/表零变化）；v1.7 连带文档面 Issue #1571（外部 skill `references/audit.md` 的 `--resume` 判据行同批改写）
 >
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=C **轻量审计记录**（audit_logs 表：时间/章节/结果/确认状态/备注，不含 findings 明细；可追溯性落地且避免全量持久化膨胀）；Q2=B **CLI 支持确认**（`--confirm accept|reject`——单 CLI 用户不应被迫下载 GUI，双入口确认状态统一落 audit_logs）；Q3=C **GUI 最小版一并做**（章节页审计按钮 + 报告弹层 + accept/reject，无历史页/通知——确认闭环是功能定义）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 同步修订；Issue #208 验收标准已更新（gh comment 留痕 2026-08-09）。
 >
@@ -46,10 +45,8 @@
 > 连带修订：§4（`--resume` 参数说明）/ §5.8（流程 ④ + 断点续跑语义）/ §7 E25 / §9.2（验收 16-17）/ §14 D13 / §15 M22。文档面连带 Issue #1571（skill `references/audit.md` / `cli-commands.md`）。
 
 >
-> **关联 Issues**: [#208](https://github.com/zhx-xi/InkFlow/issues/208)（本模块）；[#54](https://github.com/zhx-xi/InkFlow/issues/54)（F22 全文搜索——本模块为 F22「AI 自动维护」的增强触发语义前置，**F22 不阻塞等待本模块**）；[#45](https://github.com/zhx-xi/InkFlow/issues/45)（F15 审计服务——静态档案一致性，与本模块互补）
 > **依赖**: ✅ F2（章节 + ChapterStatus 四态：REVIEW/FINAL 为「写完一章」天然钩子）· ✅ F5（LLM 管线，ChatOpenAI 既有）· ✅ F9（角色档案读取）· ✅ F10（世界观条目读取）· ✅ F15（静态一致性审计可委托，API 已存在）· ✅ F19（GUI 渲染层，确认流程 UI 接线）· ⏳ F22（#54，被依赖方，非前置）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-014](../../adr/llm/ADR-014.md)（ChatPromptTemplate）· [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）· [ADR-026](../../adr/test-ci/ADR-026.md)（真实 AI CI：LLM 测试 Fake 注入 + label 触发验证）
-> **状态**: ✅ 已实现（PR #219，#208 2026-08-09）
 
 ---
 

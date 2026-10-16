@@ -1,11 +1,8 @@
 # 卷数据模型统一 — Volume 分组与卷纲(level=volume)显式关联
 > **端**: backend
 
-> **Spec 版本**: 1.0 | **日期**: 2026-08-23 | **依据**: 0.12.0 多需求分析 D2=A（用户拍板 2026-08-23），PRD §6.1 F2/F11
-> **所属阶段**: 0.12.0 — P0「卷概念统一」
-> **关联 Issues**: [#592](https://github.com/zhx-xi/InkFlow/issues/592)
+> **依据**: 0.12.0 多需求分析 D2=A（用户拍板 2026-08-23），PRD §6.1 F2/F11
 > **依赖**: F2 (chapter_service，Volume CRUD) ✅；F11 (outline_service，Outline level=volume) ✅；F43 P3（大纲三级 structure）✅
-> **状态**: 📝 草案
 
 ---
 

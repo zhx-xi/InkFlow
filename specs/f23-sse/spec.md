@@ -1,20 +1,11 @@
 # F23: SSE 流式输出 (sse_stream) — 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.4 | **日期**: 2026-08-02（v1.2 增量 / v1.3 实测修订 / v1.4 A3 实测修订 2026-09-10）| **依据**: PRD v2.1 §6.3 P1-12, Constitution P1-P6, ADR-012/015/018/019(v2)/021、**ADR-053（数据面变更统一推送）**
-> **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C（统一端点 `POST /api/v1/writing/stream` + mode 判别联合 DTO）/ Q2=选项 A（流式直通 + done 帧报告，不自动重试）/ Q3=修改（CLI **默认**流式输出，消费 service 流式方法——非加 `--stream` 标志）。**v1.2（2026-09-10，issue #992 设计单）— 新增 §15「数据面变更统一推送」（ADR-053 实现规范：事件信封 `DataChangeEvent` / `EventBus` / `GET /api/v1/events/stream` 订阅端点 / 失效语义矩阵 / #973-#989 ad-hoc 重拉收编 / 排期拆解）；§1-§14 内容不变。** **v1.3（2026-09-10，A1/A2 实施期实测修订）— ① §15.5.1 全局域示例帧去掉 `"project_id":null`（与同节不变量 3「省略该键」自相矛盾，实测修正）；② §15.2.2 补队列容量 `MAX_QUEUE_SIZE=100` + `subscribe()` 返回标注收窄为 `AsyncGenerator` + `source` ContextVar 位置与接线约束；③ §15.3.3 补 domain→infra 局部 import 说明；④ §15.13 修正「A1 ∥ A2 可并行」为「可并行开发，**A1 必须先合并**」，并补**两道契约门禁的完整清单**（快照漂移 / 前端类型漂移 / 前端调用面）+ 推论「改契约的 PR 必须自带两个同步产物（快照 + `openapi.d.ts`）」；⑤ 排期表补 A1 交付面含快照刷新 **+ `openapi.d.ts` 重生**（#1091 首轮 CI 因漏重生 d.ts 而 `lint-frontend` 红，实测修正）。** **v1.4（2026-09-10，A3 实施期实测修订）— ① §15.3.2 修正 `delete_character` 误判：实测为**薄透传**（`repo.hard_delete`，未加载实体），原 spec 声称「先取实体触发 map_cleanup」为假；补批次 A/B 域「薄透传」实测清单（`delete_character`/`delete_group`/`delete_pin`/`delete_outline`/`delete_point`/`delete_arc` → `None`+warning；`update_pin` 无 project_id 字段；**反例** `delete_relation` 反而可得）；② 明确「禁止为发声事件新增查询」铁律。**
-> **所属阶段**: 0.3.0 里程碑（**提前**，原 0.5.0——GUI 写作流式渲染的依赖项，ADR-019 v2；估算 **3-4 人天**（Q1=C 联合 DTO +0.5、Q3 CLI 默认流式 +0.5-1；v1.0 的 2-3 已含基础））
-> **关联 Issues**: [#50](https://github.com/zhx-xi/InkFlow/issues/50)
+> **依据**: PRD v2.1 §6.3 P1-12, Constitution P1-P6, ADR-012/015/018/019(v2)/021、**ADR-053（数据面变更统一推送）**
 > **依赖**: F3 ✅（WritingService 三原语 + DTO）；F5 ✅（**LLMClientProtocol.chat_stream 已实现**——`AsyncGenerator[StreamEvent]` 逐 token，基础设施层 LangChain astream 就绪）；F1 ✅（项目校验）；F2 ✅（章节校验）；F19（GUI 消费方，**反向依赖**——F23 端点先行，GUI 侧待 F19 落地后消费）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑 v2——F23 提前 0.3.0), [ADR-021](../../adr/kernel/ADR-021.md) (本地内核进程化——SSE 一条代码路径两用：GUI 与云端)
-> **状态**: ✅ 已实现（PR #83）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名（Q3 拍板：默认流式）
-> 5. 流式管线设计（服务层） · 6. SSE 帧协议 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（3 个，已全部拍板 ✅）
 ---
 
 ## 1. 概述

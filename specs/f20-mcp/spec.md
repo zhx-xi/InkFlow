@@ -1,33 +1,22 @@
 # F20: MCP Server（mcp_service）— 功能规格
 > **端**: backend
 
-**Spec 版本**: 1.1
-**日期**: 2026-08-16
 **依据**: PRD §6.4 F20（≥15 工具）· ADR-023 v2（薄客户端经 HTTP，2026-08-07 D3=A 拍板）· ADR-030（本地内核服务化 ④）· Constitution P1-P6
-**所属阶段**: 0.9.0（估算 5-8 人天；1.0.0 → 0.9.0 提前拍板 2026-08-12——1.0.0 定位改为「正式可用」不应再含大功能，MCP 提前实现、提前在实际使用中验证）
-**关联 Issues**: [#49](https://github.com/zhx-xi/InkFlow/issues/49)（本模块）
 **依赖**: ✅ F30（ensure_kernel + kernel.json 冷启动）· ✅ F38（`infrastructure/http/` 传输层 + 零 cli 依赖）· ✅ F26（ToolSpec 契约 + 工具注册表机制）· ✅ F7（JSON 信封/错误码契约）
 **参考 ADR**: [ADR-023](../../adr/mcp/ADR-023.md)（MCP 设计 v2）· [ADR-030](../../adr/kernel/ADR-030.md)（内核服务化 ④）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 双轨）· [ADR-021](../../adr/kernel/ADR-021.md)（内核并发契约）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）
-**状态**: ✅ 已实现（PR #400，2026-08-16）
 
-> **Spec 变更**（v1.0 → v1.1，2026-08-16）：待澄清 Q1-Q3 全部拍板（用户拍板 A/A/A）。① Q1 工具粒度 = **聚合 `manage_*`（action 枚举）15 工具**（细粒度 50+ 否决）；② Q2「与 F26 同源」落地 = **契约同源**（复用 ToolSpec + 信封语义，新建 `mcp/tools/` HTTP 工具工厂，非复用 F26 `build_reader_tools`）；③ Q3 write 流式 = **同步返回拼接结果**（走非流式端点 `/writing/generate|continue|revise`，不走 SSE 透传）。联动修订：§2.2/§2.3/§10/§12/待澄清节。
 
-> **Spec 变更**（v1.1 → v1.2，2026-09-09，#933）：工具面 **15 → 18**——新增 `manage_book`（F44 书级编排：plan start/respond/auto/show/confirm + run/status/confirm/intervene/summary）、`manage_config`（只读自检：provider_list/llm_status）、`manage_log`（只读巡检：query），`write` 扩 actions（confirm_draft/reject_draft/draft_list，转 `/agent/drafts*`）。动机：rc2 用户旅程实证外部 agent 经 MCP 走不完创作主线（book 域零覆盖/草稿确认缺失/配置不可见/只读巡检缺失），被迫回落 CLI（issue #933）。**零新增 REST 端点**（全部转既有端点，§2.2 映射表）。同批落地 #923 契约防漂移护栏扩展（新工具 inputSchema ⊇ 对应 DTO 字段面，§13 A8）。
 
-> **Spec 变更**（v1.2 → v1.3，2026-09-21，#1359）：工具面 **18 → 19**——新增 `manage_knowledge_relation`（跨实体图谱关系：create/list/graph/get/update/delete，转 F48 六端点 `/projects/{pid}/knowledge-relations`、`/projects/{pid}/knowledge-graph`、`/knowledge-relations/{id}`）。动机：既有 `manage_relation` 只打 F9 角色关系三端点（`/characters/{id}/relations`），而 `knowledge_relations` 才是图谱关系的真实承载表（#495 后 character↔character 并入其子空间）——跨实体关系（character→world / →foreshadow / →timeline / →outline / →map_pin）在 MCP 面**完全不可达**，而 GUI/CLI/HTTP 三面已有完整能力。**零新增 REST 端点**（全部转既有端点，§2.2 映射表）；**不改** `manage_relation`（F9 面向后兼容，两工具并存，描述中明示边界）。
 
-> **Spec 变更**（v1.3 → v1.4，2026-10-02，#1233）：**工具数不变（仍 19）**，补字段面 + 加固错误面。
 > ① `write` 增 `mode`（`deterministic`/`agentic`）与 `show_context`（写作链可触发/可观测，0.15.0 修复落点在 MCP 面缺失）；
 > ② `manage_project` 增 `config`（create/update 写路径透传，消「传了但静默无效」）；
 > ③ **通用加固**：19 个参数模型全部 `extra="forbid"` —— 未声明字段由「静默丢弃 + `ok=True` 无变更」改为 `INVALID_ARGS`（违反「显式失败优于静默错误」，issue #1233 通用要求）。
 > `mode="agentic"` / `show_context=true` 与 `action` 的组合性约束（仅 `generate`）在工具层显式校验，非静默忽略。**仍零新增 REST 端点**。
 
-> **Spec 变更**（v1.4 → v1.5，2026-10-02，#1430）：**工具数不变（仍 19）**，`manage_book` 补两个 run 字段。
 > ① `run` action 增 `force` / `confirm_overwrite`（`method="mcp"` 的二次确认对：只给其一 → 服务端 422）；
 > ② 随 F44 §5.8（v1.11）「`book run --force` 覆盖正文 + A2 旧稿备份落点」同步 —— **A8 护栏（inputSchema ⊇ DTO 字段面）把 MCP 面与新增的 `BookRunRequest.force/confirm_overwrite` 绑在一起**，本增量即该护栏的联保修订；
 > ③ 未传时 `_compact` 剔除 None → body 不含两位（既有调用面逐字不变）。**仍零新增 REST 端点**。
 
-> **Spec 变更**（2026-10-02，#1437，承接 #1436「声明即消费」同族第三批）：**工具数不变（仍 19）**，两处「声明了却零消费」参数接线完成。
 > ① `write` 的 `instruction`（仅 `revise`）：作为内核 `feedback` 的**回退别名**映射（镜像 CLI `write revise --instruction` → body `"feedback"`），`feedback` 存在时仍以 `feedback` 为准 —— 修复前该字段从不被读取，传了也不生效（静默）；
 > ② `export` 的 `output_path`：内核**无**落盘能力（端点直接回文本，无路径参数）→ 传入即**显式 `INVALID_ARGS`（零 HTTP）**，不再被静默接受（与同函数既有 `format != "txt"` 护栏同形）；
 > ③ `#1436` 引入的「声明即消费」自检豁免表随之**清空**（`_KNOWN_UNWIRED = {}`，双向断言仍生效）。**仍零新增 REST 端点。**

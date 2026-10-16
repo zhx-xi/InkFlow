@@ -1,12 +1,9 @@
 # F7: CLI 命令行接口 (cli_interface) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
-> **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#7](https://github.com/zhx-xi/InkFlow/issues/7) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（`agent status --json` 走统一信封） · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（`--content-file` 首轮） · [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（`--content-file` 横向覆盖）
+> **依据**: PRD v2.1 §6.1 F7, Constitution P1-P6
 > **依赖**: F1-F6 全部（对外统一入口）
 > **参考 ADR**: [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru 日志), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁)
-> **状态**: ✅ 已实现（PR #28）
 
 ---
 

@@ -1,10 +1,8 @@
 # Spec: F50 LangSmith 可观测性追踪接入
 > **端**: backend
 
-> **Spec 版本**: 1.0
 > **关联 Issue**: #629
 > **Feature 编号**: F50（0.12.0）
-> **状态**: 待实现 🔲
 > **依赖**: 无（langsmith 0.10.15 已传递安装；LangChain 1.3.14 + LangGraph 1.2.10 + deepagents 0.7.5）
 
 ---

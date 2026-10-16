@@ -10,19 +10,11 @@
 >
 > **Spec 变更（v1.3，2026-10-07，#1520）**: `outline point create|update` 与 `outline arc create|update` 新增 `--content-file <path>`（从 UTF-8 文件读取**要点描述 / 弧线说明**）。语义与互斥规则 = F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；文件内容**原样**落库（不 strip、不转码）。§4.2/§4.3 签名与 §14.2 状态流同步（#1483 的「子实体另开 follow-up」在本轮收口）。
 >
-> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第三个模块，估算 3-4 人天）
-> **关联 Issues**: [#41](https://github.com/zhx-xi/InkFlow/issues/41) · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.2 `--content-file`） · [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（v1.3 point/arc 横向覆盖）
+> **依据**: PRD v2.1 §6.2 P1-03, Constitution P1-P6, ADR-019
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）；F2（边界声明，非硬依赖，见 §11）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
-> **状态**: ✅ 已实现（PR #58）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. AI 生成模式（关键差异：生成而非提取） · 6. 大纲/弧线/情节点组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述

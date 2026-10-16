@@ -1,22 +1,16 @@
 # F35: 世界观地点层级（world-location-tree）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-10-06 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、F10 spec（世界观既有模块）、Constitution P1-P6
+> **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §4（workspace）、PRD v2.1 §6.2 P1-02、F10 spec（世界观既有模块）、Constitution P1-P6
 >
-> **Spec 变更**（1.2 → 1.3，2026-10-06，#1481）：**「每项目恒有且仅有一个根」不变量收紧——根不再只靠懒创建**。① **建项目自动建根（默认行为）**：`ProjectService.create_project` 落库后经 `root_initializer` 钩子调 `WorldService.ensure_root_setting(project_id)`，为全新项目建默认根「世界观总纲」（`parent_id IS NULL`、`category=""`、`content=""`）；② **存量兜底（幂等迁移）**：`core/database.py` 新增 `ensure_world_root_for_projects`（app lifespan 接线），为**每个无根的非删除项目**补默认根，不破坏既有数据、可重复执行；③ 既有 #641 懒创建分支（`POST /world-settings` 无 `parent_id` → 无根时建根）**保留不动**（旧库/异常兜底）。§2.1 规则 6-7 / §5.7（新增）/ §7 边界 17-18 / §13 M9 同步。**前置核验（M2）**：issue #1481 报的 `'NoneType' object is not subscriptable` 系用户脚本自身（`root=None` 后 `root["id"]`）——服务端现状已是 **422 校验提示**（实测无 500 路径），故本轨**不**做「内部异常 → 校验提示」（已成立），只落「根必存在」。
 >
-> **Spec 变更**（1.1 → 1.2，2026-09-18，#211 文档同步补齐）：#211「F10 删除语义统一（软删→真删）」**已落地**（f10 spec v1.1），本模块原「F10 单条软删保持现状（边界 X）」的表述随之作废——无参 `DELETE /world-settings/{id}` 现为**真删**（不可恢复），`restore` 端点不存在。§1 边界声明 / §3.1 状态流 / §5.5 声明 / §12 决策表 / Q1 同步。本模块自身的树级真删语义（cascade/reparent）不变。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后（原变更日期 2026-08-13）。
-> **Spec 变更**（1.0 → 1.1，2026-08-09 拍板）：Q1-Q3 全拍板——**Q1 删除语义=真删 + 子地点级联/reparent（D1/D2/D4/D6，非归档级联）**；**Q2 提取建树后置给内置 Agent（D8，本轮不做模板增强）**；Q3=列表 parent_id 过滤（A）。**边界 X（D7 + 0.8.0 #211）**：F10 既有单条删除/restore（软删）保持现状不动，本模块新增树级删除操作为**真删**——差异显式声明（§1.2/§5.5）；统一改造登记 [#211](https://github.com/zhx-xi/InkFlow/issues/211)（0.8.0）。
 >
-> **所属阶段**: 0.6.0 世界观三连 Step 1（数据地基，估算 2-3 人天）
 >
-> **关联 Issues**: [#173](https://github.com/zhx-xi/InkFlow/issues/173)（本模块）· #174（地图视图，**依赖本模块**）· #175（跨书复制，**依赖本模块**）· #211（F10 删除语义统一，**✅ 已落地**——F10 已真删，本 spec 见下变更说明）
 >
 > **依赖**: ✅ F10（world_settings 表 + WorldService + WorldRepositoryProtocol）· ✅ F1（项目 FK 校验）· ⏳ F24 语义（仅会话保留归档；本模块不沿用两级删除——见 §1.2）
 >
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
-> **状态**: ✅ 已实现（PR #215，#173 2026-08-09）
 
 ---
 

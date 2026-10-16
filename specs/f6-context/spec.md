@@ -1,12 +1,9 @@
 # F6: 上下文管理 (context_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.5 | **日期**: 2026-10-06 | **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
-> **所属阶段**: Phase 1 — 核心引擎（v1.1 数据源补齐）
-> **关联 Issues**: [#6](https://github.com/zhx-xi/InkFlow/issues/6), [#593](https://github.com/zhx-xi/InkFlow/issues/593), [#1480](https://github.com/zhx-xi/InkFlow/issues/1480)（装配可观测面）
+> **依据**: PRD v2.1 §6.1 F6, Constitution P1-P6, ADR-010, issue #593 (F6 上下文数据源补齐)
 > **依赖**: F1 (project_service), F2 (chapter_service), F5 (llm_service), F9 (character_service ✅), F10 (world_service ✅), F11 (outline_service ✅), F13 (foreshadowing_service ✅)
 > **参考 ADR**: [ADR-010](../../adr/llm/ADR-010.md) (分层 Token 预算 → RAG 增强), [ADR-013](../../adr/llm/ADR-013.md) (Phase 2 RAG), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构)
-> **状态**: ✅ 已实现（PR #27）
 
 ---
 

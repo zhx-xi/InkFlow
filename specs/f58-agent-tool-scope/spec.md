@@ -2,13 +2,9 @@
 
 > **端**: backend + frontend（GUI Agent 编辑对话框）
 
-**Spec 版本**: 1.0
-**日期**: 2026-09-06
 **依据**: 2026-09-06 架构讨论拍板（方案 D 分阶段混合）+ ADR-043（工具面分级授权）+ ADR-035（deepagents harness）+ #838（自定义 agent tool_ids 白名单）+ F43 P3（大纲三级层级不变量）
-**所属阶段**: 0.13.0（Phase 1 = 工具矩阵 + scope 授权 + GUI；Phase 2 = A2 动态重绑定，触发条件见 §7，本期不做）
 **关联 ADR**: [ADR-050](../../adr/agent/ADR-050.md)（本 feature 的决策记录）
 **参考**: `specs/f26-agent-tools/spec.md`（工具基础设施 v1.1）、`specs/f19-gui/agent.md`（Agent 编辑页交互）
-**状态**: ✅ 已实现（0.13.0 Phase 1：工具矩阵 + 域×CRUD scope 授权 + GUI 矩阵；实现 PR #969/#970/#971/#972，Phase 2 A2 动态重绑定触发条件见 §7，未做）
 
 ---
 

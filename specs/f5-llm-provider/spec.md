@@ -1,12 +1,9 @@
 # F5: LLM Provider 适配层 (llm_service) — 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.1 | **日期**: 2026-07-31 | **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
-> **Spec 变更**: v1.1（2026-09-09）：LLM 出口统一 LiteLLM（F59 M1，ADR-051 取代 ADR-005v2 决策）——旧实现类名表述融入原节全部修订为 ChatLiteLLM（正文/架构图/流程/路由/重试/测试策略/10.1 状态流表 + 修改履历列）。
-> **所属阶段**: Phase 1 — Sprint 1.2（数据层+LLM 适配）
+> **依据**: PRD v2.1 §6.1 F5, Constitution P1-P6
 > **依赖**: 无（F5 是 F3/F4/F6 的前置依赖）
 > **参考 ADR**: [ADR-051](../../adr/llm/ADR-051.md) (LLM 出口统一 LiteLLM), [ADR-005v2](../../adr/llm/ADR-005v2.md) (已被 ADR-051 取代), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离规则)
-> **状态**: ✅ 已实现（PR #16）
 
 ---
 

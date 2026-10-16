@@ -4,12 +4,8 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-23 | **依据**: PRD v2.1 §6.1 F1, Constitution P1-P6
-> **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#1](https://github.com/zhx-xi/InkFlow/issues/1), [#595](https://github.com/zhx-xi/InkFlow/issues/595)
-> **状态**: 已实现 (PR #8 merged) ✅（#595 破坏性重构：genre → tags，2026-08-23 拍板 D6=B/D7=A）
+> **依据**: PRD v2.1 §6.1 F1, Constitution P1-P6
 >
-> **Spec 变更**（2026-08-23 @ v1.1，#595）：
 > - 删除 `Genre` 枚举；`Project` 增加 `tags: list[str]`（多值标签）
 > - 旧项目 `genre` 值迁移为 `tags` 的**初始数据**（`{genre_value}` → `tags=["{genre_value}"]`）
 > - write_auto 题材变量 = `tags` 全拼串（不再读 `genre`）；输出/大纲的「类型」字段改从 `tags` 派生

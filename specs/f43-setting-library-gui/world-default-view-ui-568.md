@@ -1,10 +1,8 @@
 # F43 增量 spec（#568）：世界观默认视图 UI 完整重设计
 
-> **Spec 版本**: v1.0（2026-08-23） | **依据**: Issue #568 + issue #568 评论（2026-08-22，用户细化）+ #567/#588 拍板链
-> **所属阶段**: 0.12.0（issue #568，enhancement）
+> **依据**: Issue #568 + issue #568 评论（2026-08-22，用户细化）+ #567/#588 拍板链
 > **前置**: F43 P1（#306，世界观树/分类筛选/复制）✅、F43 P2（#311，地图工作台）✅、#567（根世界观单例 + 临时隐藏创建入口）✅、#588（已有根条目仍可创建，回归）✅
 > **关联 ADR / spec**: [`specs/f43-setting-library-gui/spec.md`](./spec.md)（F43 本体 P0-P5）、[`specs/f10-world-settings/spec.md`](../f10-world-settings/spec.md)（后端条目/分类/复制能力）、`design/setting-library-v2-decisions-2026-08-12.md`（拍板 D1-D13）
-> **状态**: 🔨 起草中（#568）
 
 ## 0. 本 spec 定位
 

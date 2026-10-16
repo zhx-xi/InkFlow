@@ -1,21 +1,16 @@
 # F37: 世界观跨书复制（world-copy）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6、#1482（分类过滤 + 缺失分类自动创建）
+> **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §6（workspace）、PRD v2.1 §6.2 P1-02、F35 spec v1.1（地点树）+ F36 spec v1.1（地图）、Constitution P1-P6、#1482（分类过滤 + 缺失分类自动创建）
 >
-> **Spec 变更**（1.2 → 1.3，2026-10-07，#1482 增强）：新增**按分类过滤复制**（CLI `--category` / DTO `category`；§2 规则 9、§3.2、§4、§5.1 ③b）与**缺失分类自动创建**开关（CLI `--auto-create-categories` / DTO `auto_create_categories`；**默认关·opt-in**；§2 规则 10、§5.1 ④b、§12 决策 10）；`WorldCopyResult` 新增 `categories_created` 报告键（§2、§12 决策 11）；边界、文件结构、测试策略、状态流与验收锚点同步（§7/§8/§9/§14）。既有复制语义（self_only / 子树起点 / 同名跳过 / 幂等）不变。
 >
-> **Spec 变更**（1.1 → 1.2，2026-08-10 实现期修订）：§8 文件结构对照真实源码树修正——`map_asset_store.py` 的 `copy` 方法**已由 F36 合入实现**（#174）改为「无变更」；`map_repository.py`/`map_repo.py` 的 `list_by_root_locations` 改为「F36 已实现基础签名，F37 加 `include_global` 参数」；CLI 测试因 900 行护栏拆分新文件 `tests/cli/test_cli_world_copy.py`（需登记 ci.yml）；API 端点路径修正为 `/projects/{target_project_id}/world-settings/copy`（spec §3.1 一致）；`deps.py` 为新增 `get_copy_service(db)`；补列 test_world_repo.py/test_map_repo.py MODIFY。
 >
-> **所属阶段**: 0.6.0 世界观三连 Step 3（复用层，估算 2-3 人天）
 >
-> **关联 Issues**: [#175](https://github.com/zhx-xi/InkFlow/issues/175)（本模块）· #173（地点树，**前置依赖**）· #174（地图视图，**地图复制前置依赖**）· #211（删除语义统一，关联登记）· [#1482](https://github.com/zhx-xi/InkFlow/issues/1482)（0.17.0：分类过滤 + 缺失分类自动创建）
 >
 > **依赖**: ✅ F10（world_settings 表）· ✅ F35（#173 地点树：list_descendants 子树查询）· ✅ F36（#174 地图：maps/map_pins 表 + MapAssetStoreProtocol + list_by_root_locations）· ✅ F1（项目 FK）
 >
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
-> **状态**: ✅ 已实现（PR #223，#175 2026-08-09）
 
 ---
 

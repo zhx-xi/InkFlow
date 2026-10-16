@@ -1,11 +1,7 @@
 # F2: 章节管理 (chapter_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.2（#1483 `--content-file` 正文双通道，2026-10-07；v1.1 #1097 自动建卷 + 章节归卷：卷名复用幂等 + 无卷父保持未分类，2026-09-11；v1.0 2026-07-31）
-> **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#2](https://github.com/zhx-xi/InkFlow/issues/2) · [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（`--content-file`）
 > **依赖**: F1 (project_service) 已完成 ✅
-> **状态**: ✅ 已实现（PR #9）
 
 ---
 

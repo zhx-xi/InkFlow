@@ -2,15 +2,13 @@
 
 > **端**: backend（config 启动源 + key_manager 存储层）
 
-> **Spec 版本**: 1.0 | **日期**: 2026-09-11 | **依据**: Issue #1096（0.15.0 milestone）
+> **依据**: Issue #1096（0.15.0 milestone）
 
-> **关联 Issues**: #1096（本模块）；#1076（F60 首启引导框架，本模块为其安全面增量）；#821（明文/密文交叉尝试兼容，本模块须保持其语义）；#614（F53 secret redact，消费 `redact.load_known_keys`）
 
 > **依赖**: ✅ `core/config.py` 多源配置链（#977/#987）· ✅ `APIKeyManager` AES-256-GCM（F5）· ✅ `provider_config._load_stored_key` 三级回退链（#821）
 
 > **参考 ADR**: ADR-008（配置管理，config.py 单一出口）
 
-> **状态**: 🚧 实施中（#1096）
 
 ---
 

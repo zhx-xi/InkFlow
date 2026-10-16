@@ -1,17 +1,14 @@
 # F21: 导出服务（output_service）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.3 | **日期**: 2026-08-09 | **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
-> **所属阶段**: 0.6.0（#53 导出服务，估算 1.5-2 人天——v1.1 拍板范围收敛）
+> **依据**: PRD v2.2 §6.4 P1-15, Issue #53, Constitution P1-P6（P2 解耦 / P5 YAGNI）
 >
 > **Spec 变更（v1.2 → v1.3）**: **评审修复吸收（2026-08-09，评审 PASS with minor 后父侧修订）**——① §3.3 异常映射表措辞漂移修正（404「项目不存在」/500「内部错误: <e>」，与实现/F15 audit 先例/ADR-012 中文文案一致）；② §6.1 卷排序键修正（`order_index ASC` 仅——`Volume` 实体无 `created_at` 字段）；③ §5.1 要点 2「asyncio.gather 并行拉取」在实现中落实（B4 修复批），正文与设定聚合并行、设定 5 源并行，include_settings=False 零调用契约不变。
 > **Spec 变更（v1.1 → v1.2）**: **实现期父侧裁定（2026-08-09）**——CLI 传输路径改为**恒经 HTTP**（`ensure_kernel()` + `InkFlowHTTPClient.get_raw` 下载，F38 #169 全仓改造后的一致模式；v1.1 的「直接消费 service 不经 HTTP」是未同步 F38 的陈旧措辞，§4/§8.1/§12 D 表修订）；CLI 信封按 F7 实际契约 `{"ok": ...}`（v1.1 示例 success 键为过时措辞，§4 修订）；人类模式成功文案码点锁定为 `✅ 导出成功: {name} → {path} ({bytes:,} bytes)`（§4 修订）。
 > **Spec 变更（v1.0 → v1.1）**: **用户拍板（2026-08-09）**——Q1=A 仅 TXT 格式（国内网文发布生态 TXT 为主流，EPUB/Markdown/DOCX 无发布场景，YAGNI 收敛）；Q2 自解（TXT 纯文本零依赖，不引入任何导出库）；Q3=C `include_settings` 参数切换（默认不含）。§1/§2/§3/§4/§5/§7/§8/§9/§10/§12/§13 全面修订为单格式管线；Issue #53 验收标准同步（gh comment 留痕 2026-08-09）。
 >
-> **关联 Issues**: [#53](https://github.com/zhx-xi/InkFlow/issues/53)
 > **依赖**: ✅ F1（项目校验 + Project 读取）· ✅ F2（卷/章读取）· ✅ F9（角色档案读取）· ✅ F10（世界观条目读取）· ✅ F11（大纲/情节点读取）· ✅ F12（时间线事件读取）· ✅ F13（伏笔档案读取）· ✅ F19 #77（token 中间件：导出端点同样受保护）· ⏳ 无
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md)（模块化单体）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-018](../../adr/test-ci/ADR-018.md)（测试分层）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 + 模块编号口径）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：token 契约）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定：本模块零新增依赖）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
-> **状态**: ✅ 已实现（PR #214，#53 2026-08-09）
 
 ---
 

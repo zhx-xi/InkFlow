@@ -1,21 +1,11 @@
 # F15: 一致性审计服务 (audit_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-09-18 | **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第七个**模块，估算 3-5 人天）
-> **关联 Issues**: [#45](https://github.com/zhx-xi/InkFlow/issues/45)
+> **依据**: PRD v2.1 §6.2 P1-07, Constitution P1-P6, ADR-012/018/019
 > **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——事件 `source_chapter_id` 跨模块引用校验 + 提取缺口对照）；F9 ✅（角色/关系/分组档案读取）；F10 ✅（世界条目读取）；F12 ✅（事件档案读取 + **委托 `TimelineService.check_consistency`** 时间线维度）；F13 ✅（伏笔档案读取 + `event_id` 锚点校验）；F14 ✅（`extraction_runs` 状态读取）；F5 — **不依赖**（F15 无 LLM，见 §1/§5）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
-> **状态**: ✅ 已实现（PR #74）
-> **Spec 变更**（1.1 → 1.2，2026-09-18 #211）：**软删集合机制整体作废**——#211「普通实体软删→真删」后 F9/F12/F13 移除 `is_deleted` 列，审计的软删集合补充查询（原 `AuditRepositoryProtocol.list_deleted` + `infrastructure/database/repositories/audit_repo.py` 实现）**已删除**（域端口保留为兼容构造签名的空壳，见 `domain/ports/audit_repository.py` 文件头注释）。R-C1/R-C2/R-F1 三规则的「软删目标 → warning」分档随之移除，收敛为**悬空 → error 单一档**（引用目标不在活动集合即 error）；warning 仅保留 R-X2（提取失败 run）。§5.1/§5.4/§6.1/§8.2/§9/§12/§13 同步。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后（原变更日期 2026-08-13）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
-> **Spec 变更**（1.0 → 1.1，2026-09-17 #495）：§13 M8 手工验证闭环的「悬空引用」造场景同步——角色关系行改插 `knowledge_relations` 的 character↔character 子空间（`source_type='character'` + `target_type='character'`），因 `character_relations` 表已随 #495 废弃删除；R-C1 规则读取路径（`character_repo.list_relations`）与 F15 契约零变更。
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. 审计规则引擎（横切审计核心） · 6. 审计组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述

@@ -1,19 +1,11 @@
 # F19: 打包分发（packaging）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.1（评审修订 2026-08-06：🔴1 版本链 /health、🔴2 copy_metadata、🔴3 async 装配、🔴4 hiddenimports 纪律、🔴5 数据目录 Q7=B 已拍板；🟡6-11 同步修复） | **日期**: 2026-08-06 | **依据**: PRD v2.1 P1-10, Constitution P1-P6, ADR-013/019(v2)/020/021/025
-> **所属阶段**: 0.4.0 里程碑（Issue #48，估算 4-6 人天；体积评审后追加 T0 瘦身与 B+ 装配，见 §3/§5）
-> **关联 Issues**: [#48](https://github.com/zhx-xi/InkFlow/issues/48)（本任务）· [#70](https://github.com/zhx-xi/InkFlow/issues/70)（F19-skills，并行无关）· [#137](https://github.com/zhx-xi/InkFlow/issues/137)（Tauri 2 体积优化专项，2.0.0，本 spec §10 不在范围）
+> **依据**: PRD v2.1 P1-10, Constitution P1-P6, ADR-013/019(v2)/020/021/025
 > **依赖**: #69 ✅（F19-GUI 已合入——内核进程化 #77 PR #85 / Electron 壳 #78 PR #95 / 渲染层 #79 PR #97 及其后子任务 #105/#106/#107）；#50 ✅（F23 SSE，PR #83）；#70 ⏳（skills 包，并行 worktree 无代码依赖）
 > **参考 ADR**: [ADR-013](../../adr/llm/ADR-013.md)（RAG 首次落地）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v2：0.4.0 = 打包；skills 后移至 1.0.0，2026-08-06 拍板 #70）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）· [ADR-021](../../adr/kernel/ADR-021.md)（内核进程化：resources/kernel/inkflow.exe 生命周期）· [ADR-025](../../adr/architecture/ADR-025.md)（依赖锁定 uv.lock/pnpm-lock）
-> **状态**: ✅ 已实现（PR #144 交付 + PR #145 发布门禁，v0.4.0 2026-08-07 正式发布）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 产物契约 · 3. 依赖瘦身（T0，用户拍板 2026-08-06：B+ 方案） · 4. PyInstaller 内核打包
-> 5. B+ 装配改造：API embedding（用户拍板 2026-08-06：P1=A 并入本任务） · 6. electron-builder 分发配置 · 7. GitHub Release 自动发布（release.yml） · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（已拍板，留痕）
 ---
 
 ## 1. 概述

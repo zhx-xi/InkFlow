@@ -2,13 +2,9 @@
 > **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
 > **端**: cross
 
-> **Spec 变更**（v1.0 → v1.1，2026-08-23，#597 增量）：本版将聊天框从「纯 LLM 对话 + 意图解析」（#541 streamChat，单轮对话、无工具）升级为 **ChatPanel 驱动 deepagents 系统级 Agent**（#551 C1，拍板 D8=A）——消息发出后走 deepagents agent loop（system agent 全量暴露工具），流式返回「工具调用 + 结果 + 最终回复」；同时**删除侧边栏 `nav.book` 书级编排入口**（拍板 D11=A），`/book` 路由与 BookPlannerPanel 保留（F44 编排能力迁移为对话内触发的全自动编排流程，非物理删除）。本增量明确新增后端 chat agent 端点 + SSE 帧协议扩展（见 §14）。
 
-> **Spec 变更**（v1.1 → v1.2，2026-08-29，#762-#765 增量）：将对话/写作会话提升为全局一等对象——左侧新增与「设定库」同级的独立**会话栏**（#762，取代 #752 会话入设定库栏 + 折叠/展开）；续写/生成按钮改为**创建新会话**而非页脚内联进度条（#763）；移除右栏「草稿审批」面板（审批/保存收敛到章节页顶部按钮，右栏只留上下文注入，D3，#764）；右栏折叠按钮移到左缘 +「折叠」提示（#765）。详见 §15。
 
-> **Spec 变更**（v1.3 → v1.4，2026-10-06，#1474 增量）：`builtin:chat` 的 stage system_prompt 漏消费设定变量——`variables.setting`（#366 G1 装配）已就绪但模板只含 `{prompt}`，LLM **完全看不到项目设定**（与 §2.2 承诺相反）。本版明确 **chat 模板必须含 `{setting}` 占位符**（§2.2），使对话助手真能「结合设定库」作答；前文摘要不作为（chat 主路径无 `chapter_id`）。详见 §2.2。
 
-> **Spec 变更**（v1.2 → v1.3，2026-09-14，#1161 增量）：修复 ChatPanel 挂载期历史加载与发送/删除的三处竞态缺陷（#1155 排查确认，E2E 侧已由 #1160 测试时序绕过，本增量修产品侧根因）：① 加载落地不得覆盖加载期间产生的本地新状态；② `conversationIdRef` 本地优先（加载不得回写覆盖 handleSend 已建的会话）；③ 发送的用户消息落库后回填服务端 id，删除必须真落服务端——**含 testid 契约变更**（`chat-msg-delete-user-<seq>` → 落库后 `chat-msg-delete-<uuid>`）。详见 §18。
 
 ## 1. 概述
 

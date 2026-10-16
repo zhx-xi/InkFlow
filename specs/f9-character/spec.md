@@ -4,15 +4,9 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.6 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
-> **Spec 变更**: v1.6 — #1520 `character group create|update`（分组说明）与 `character relate`（关系描述）新增 `--content-file <path>`；语义同 F7 §4.0 通用约定（与各自 `--description` 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1；原样落库）。§4.1/§4.2 签名与 §14 状态流同步。
-> **Spec 变更**: v1.5 — #1483 `character create` / `character update` 新增 `--content-file <path>`（从 UTF-8 文件读取角色正文=**背景设定**，解决内联传参长度限制与中文经 shell 的 ANSI 误码；与 `--background` 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1；原样落库）。语义见 F7 §4.0 通用约定。§4.1 签名与 §14.2 状态流同步。
-> **Spec 变更**: v1.4 — #1299 提取链补齐 `role_rank`（prompt 模板 + ExtractedCharacter + 落库 extra 三层；缺失回退 `minor` 并记 warning），对齐 #833 五档角色等级契约；#1303 工具 `create_character` 签名去默认值（schema 与实现一致必填）。§2.6 / §5.1 / §5.2 同步。
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第一个模块，估算 4-6 人天）
-> **关联 Issues**: [#39](https://github.com/zhx-xi/InkFlow/issues/39), [#593](https://github.com/zhx-xi/InkFlow/issues/593)（brief 字段）, [#1299](https://github.com/zhx-xi/InkFlow/issues/1299)（提取链 role_rank）, [#1303](https://github.com/zhx-xi/InkFlow/issues/1303)（工具 role_rank 必填）, [#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.5 `--content-file`）, [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（v1.6 group/relate 横向覆盖）
+> **依据**: PRD v2.1 §6.2 P1-01, Constitution P1-P6, ADR-019
 > **依赖**: F1 ✅, F2 ✅, F5 ✅（前置）；F6 ✅（数据源集成点，见 §11 与待澄清 Q1）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-014](../../adr/llm/ADR-014.md) (ChatPromptTemplate), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
-> **状态**: ✅ 已实现（PR #56）
 
 > **Spec 变更（v1.3，2026-09-18，#211 文档同步补齐）**: 删除语义统一——普通实体软删→真删（原变更日期 2026-08-13，#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属**文档同步滞后**，本次补齐）。① Character/CharacterGroup/CharacterRelation 移除 `is_deleted` 字段（§2.1/§2.2/§2.3）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /characters/{id}/restore` 端点与 `character restore` 命令移除（§3/§4/§14）；④ 关系删除改真删（物理删除，与 `knowledge_relations` 真删语义一致，§12）；⑤ 提取合并移除「软删同名→新建+warning」分支（§5.4）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**。
 >
@@ -20,11 +14,6 @@
 > **Spec 变更（v1.1，2026-08-23，issue #593）**: `Character` 新增 **`brief`** 字段（一句话简介，≤500 字符，默认空串）——F6 上下文注入采用「名 + brief」轻量化（D5=A），未填 brief 时 F6 降级截 `personality`。新增于 §2.1 字段表 / §2.5 领域模型 / CharacterCreate / CharacterUpdate，DB 侧列由 `ensure_characters_brief_column` 幂等迁移补齐（§8）。
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. AI 提取模式（样板核心） · 6. 关系图谱与分组管理规则 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述

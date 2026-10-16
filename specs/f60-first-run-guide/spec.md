@@ -2,17 +2,14 @@
 
 > **端**: cross（后端 readiness 判据 + GUI 引导向导 + CLI 状态提示行）
 
-> **Spec 版本**: 1.0 | **日期**: 2026-09-10 | **依据**: Issue #934（0.14.0 milestone）
+> **依据**: Issue #934（0.14.0 milestone）
 
-> **所属阶段**: 0.14.0（#934，W8-S2）
 
-> **关联 Issues**: #934（本模块）；#929（技术兜底：删静默 fallback + 422 引导，已 closed）；#474（模型未配置前置校验 `ensureModelReady`/`hasChatModel` 先例）；#770（轻量契约先例：能用既有机制作锚点就不新增字段）；#936（技术面一致性，同碰 provider_config_service.py，须与本单串行）
 
 > **依赖**: ✅ F19 #106（ProviderConfig 注册表 + ModelsPanel/ProviderDialog）· ✅ F19 #79（settings/llm-keys + settings/llm/test 工具端点）· ✅ F32 #152（设置持久化，本模块复用 settings 域不新增设置键）· ✅ #474（`hasChatModel` 判据 + `ensureModelReady` 前置校验）· ⏳ 无
 
 > **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（内核进程化）· [ADR-021](../../adr/kernel/ADR-021.md)（token 中间件 401 契约）· [ADR-049](../../adr/llm/ADR-049.md)（LLM 装配 fail-fast 原则）· [ADR-051](../../adr/llm/ADR-051.md)（litellm 统一出口）· [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
 
-> **状态**: 🚧 实施中（#934）
 
 ---
 
