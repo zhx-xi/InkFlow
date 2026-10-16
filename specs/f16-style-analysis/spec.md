@@ -1,20 +1,11 @@
 # F16: 风格检测服务 (style_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.1 | **日期**: 2026-08-02 | **依据**: PRD v2.1 §6.2 P1-08, Constitution P1-P6, ADR-012/015/018/019/025
-> **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C（综合：确定性 8 特征为主 + LLM 深度分析可选，报告加 llm_assessment 板块）/ Q2=选项 C（综合：零依赖正则词块为主 + jieba 精确分词增强，jieba 新增运行时依赖）/ Q3=选项 B（门面 + 独立入口，v1.0 已按此设计，仅标记确认）
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑**第八个**模块，估算 4.5-6.5 人天（Q1 LLM 深度分析 +2-2.5 + Q2 jieba 增强 +0.5-1；v1.0 的 2-3 已含 Q3=B））
-> **关联 Issues**: [#46](https://github.com/zhx-xi/InkFlow/issues/46)
+> **依据**: PRD v2.1 §6.2 P1-08, Constitution P1-P6, ADR-012/015/018/019/025
 > **依赖**: F1 ✅（项目存在性校验）；F2 ✅（章节读取——chapter_ids 模式）；F14 ✅（**STYLE 槽位注册 handler**：接口零变更，F14 §12 已承诺「F16 落地后仅需注册 handler」——本 spec 兑现该承诺并同步修订 F14 spec 的 STYLE 占位表述，见 §8.2）；F5 ✅（LLM 深度分析装配——**可选依赖**：LLMClientProtocol + PromptManager 构造注入，仅 llm_analysis=true 时调用；主体确定性分析不依赖 F5）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑), [ADR-025](../../adr/architecture/ADR-025.md) (依赖锁定)
-> **状态**: ✅ 已实现（PR #75）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. 风格检测算法（确定性文本分析核心） · 6. 风格报告组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（≤ 3 个，已全部拍板 ✅）
 ---
 
 ## 1. 概述

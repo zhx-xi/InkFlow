@@ -2,18 +2,11 @@
 > **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
 > **端**: backend
 
-**Spec 版本**: 1.1（Q1=B/Q2=B/Q3=A 拍板固化）
-**日期**: 2026-08-17
 **依据**: 设计定稿（design/agentic-orchestrator-and-memory-design-2026-08-14.md §3 记忆系统演进，唯一真相）+ Issue #339（M1 用户级偏好层）+ Issue #340（M2 语义风格提取）+ F28 spec v1.0（specs/f28-memory-learning/spec.md，演进基线）+ 用户拍板（2026-08-14 两段式架构 / 记忆演进独立排期）+ LLM 配置拍板（#415，2026-08-16）
-**所属阶段**: 0.10.0（记忆系统 AI 总结演进，F45），估算 M1 4-6 人天 + M2 6-8 人天（合计 10-14 人天）
-**关联 Issues**: #339（M1 用户级偏好层 + 归属分层 + 跨项目聚合）· #340（M2 语义风格提取——difflib 锚点 → LLM 语义总结）
 **依赖**: ✅ F28 agent-memory（演进基线：project_preferences/memory_events/learner/memory_service/PreferenceSource，PR #242）· ✅ F6 context-service（注入端口 ContextSourceType/SOURCE_LAYER）· ✅ F16 style-service（LLM 模板管线样板 _style_llm_analyzer）· ✅ F32 settings-persistence（app_settings 分层对照）· ✅ #415（LLM 默认模型 deepseek/deepseek-v4-flash，配置唯一默认源）· ✅ F38（CLI 恒 HTTP）· ✅ F34（audit_logs）· ⏳ M2 依赖 M1（#339 → #340）
 **参考 ADR**: adr/memory-skills/ADR-037.md（记忆提取方式：规则化先行 + LLM 第二阶段）、adr/memory-skills/ADR-038.md（memory_learning 默认 false）、adr/agent/ADR-031.md（双模式开关 extra 键）、ADR-027（覆盖率门禁）
-**状态**: ✅ 已实现（PR #442/#452）
 
-> **Spec 变更**: v1.0→v1.1（2026-08-17 用户拍板固化）：Q1=B（用户级偏好**惰性重算**——删除钩子零成本，查询/collect 时重算 + user-list 幽灵项目过滤，§5.1/§7/§13 联动）· Q2=B（注入前**惰性总结 + 后台异步刷新**——先用旧总结注入不等待 LLM，M2 硬依赖 F44 阶段4 后台任务基建，后台就位前降级同步总结过渡，§5.4/§11 联动）· Q3=A（用户级偏好注入过**显式设定冲突过滤**，§5.6 已覆盖，仅标 ✅）
 
-> **Spec 变更**: v1.1→v1.2（2026-09-11，#1098 缺陷修复）：**锚点数据源覆盖 agentic 会话**——原锚点唯一来源为 F28 draft 域 difflib 提取（用户编辑草稿），导致「仅有 agentic/planner/执行会话、零写作编辑」的项目锚点恒空 → `summarize` 恒 `summarized=false` → 记忆页「提取记忆」恒提示「暂无可提取的记忆内容」。扩展后 `session_completed` 事件（会话完成/失败）的文本参与项目级锚点集（§5.7.1 新增）；用户级锚点/防幻觉 B/幂等/GUI 反馈口径均不变。落地细节见 `specs/f28-memory-learning/spec.md` §5.7.1。
 
 > **模块类型声明**: 本模块为「**偏好学习闭环型（AI 语义总结演进）**」变体——F28（第 12 变体）的演进升级，补齐两段式架构的 LLM 后半截。与 F28 纯函数 difflib 不同：F45 新增**用户级偏好层**（user_preferences 全局表 + 归属分层 + 跨项目聚合）+ **语义风格提取**（difflib 锚点 → LLM 抽象偏好，替代字面片段注入）。编号依据：按「最新无冲突基线」接续——F46=第 19 变体为当前最新无冲突基线，本模块声明**第 20 变体**（冲突以 ADR-019 v5+ 为准；F44 编排器为并行轨独立声明）。
 

@@ -1,13 +1,8 @@
 # F49.1: 全自动授权与项目级开关（autonomous-authorization）功能规格
 
-**Spec 版本**: 1.0（初稿，2026-08-23）
-**日期**: 2026-08-23
 **依据**: Issue #598（全自动写一卷/几章 + 首次显式授权 + 项目 config 开关 + 执行详情旁切换按钮）+ 用户拍板 2026-08-23（D9=A 落章前 HITL 确认；D9-a1 首次显式授权 + 开关存项目 config + 执行详情旁切换按钮）+ 既有源码核查（`BookAgenticPipeline` #551 / `AgenticBookConfig.hitl_points` / `ProjectConfig.supervisor` F29 / `VolumeHITLDialog` #337 / chat 系统级 Agent #597）+ 参考规格 `specs/f27-writer-agent/spec.md`
-**所属阶段**: 0.12.0（AI 全自动写作授权门禁）
-**关联 Issues**: [#598](https://github.com/zhx-xi/InkFlow/issues/598)（本模块，Part of #551，Closes #598）· 前置：✅ #551 后端编排核心（BookAgenticPipeline）· ✅ #597 chat 接入系统级 Agent（Part of #551）· ✅ F29 Supervisor HITL · ✅ F44 卷级编排/VolumeHITLDialog
 **依赖**: ✅ #551（BookAgenticPipeline + write_book_agentic + AgenticBookConfig）· ✅ #597（chat deepagents 系统级 Agent）· ✅ F29（ProjectConfig.supervisor + hitl_roles interrupt）· ✅ F44（VolumeHITLDialog + confirm_run）
 **参考 ADR**: adr/llm/ADR-015.md（LangChain 隔离）· ADR-035（编排引擎=Deep Agents harness 0.7.5）
-**状态**: ✍️ 起草中（本会话 Specify）
 
 > **模块类型声明**: 本模块为 F49 的**授权门禁增量**（非独立变体）。F49 #551 已交付全自动写作**后端编排核心**（book_supervisor 动态路由 + write/audit/revise/mark_done/finish_book + `hitl_points` 白名单 + checkpoint 恢复）。**#598 在其上加「安全授权门禁」**：全自动属高风险动作，须**默认关闭、显式授权**（用户偏好：AI 自动化默认关闭），且写入边界需用户确认（checkpoint）。本 spec 不重做编排，只定义授权数据与 UI 契约。
 

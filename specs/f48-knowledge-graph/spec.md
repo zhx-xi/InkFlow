@@ -1,29 +1,20 @@
 # F48: 知识图谱（knowledge-graph）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.6 | **日期**: 2026-10-07 | **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
+> **依据**: Issue #478（用户拍板 D3）、PRD v2.1 §6.2 P1-01/P1-06、F9 spec（角色关系图谱）+ F36 spec（地图实体，第 15 变体范例）、Constitution P1-P6
 >
-> **Spec 变更**（1.5 → 1.6，2026-10-07 #1520）：`knowledge relation add` / `knowledge relation update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**关系说明** `description`）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4 签名与 §14 状态流同步。
 >
-> **Spec 变更**（1.4 → 1.5，2026-10-02 #1360）：**新增 drawio（mxGraph XML）导入/导出**（§5.7，ADR-061）——两端点（`GET …/knowledge-graph/export?format=mxgraph` + `POST …/knowledge-graph/import?mode=merge|replace`）、交换格式 v1（节点 id = `entity_type:entity_uuid`、边用 `<object label tooltip>` 包装）、导入**复用既有校验链**（冲突按幂等跳过 + 计数回报）、`total == imported + skipped + failed`；同步 §3.1-§3.3 端点与异常表（新增 `MxGraphImportError` → 422）、§7 边界 18-25、§8 文件结构、§9 测试场景 18-22、§10（「图谱导出/分享」状态演进：导出已交付、分享仍不做）、§12 决策 13、§13 M9、§14.1/§14.3（A7）。**不内嵌编辑器**（否决 iframe 内嵌 / 桌面包内嵌，见 ADR-061）。
 >
-> **Spec 变更**（1.3 → 1.4，2026-09-21 #1325）：**图谱聚合新增 `scope` 节点集语义（默认 `related`）+ 节点集改走全量方法 + 画布交互补全**——§5.2（scope 语义 + 顺序约束 + 每表全量 + C3 修复）、§5.4（样式表 import / Handle / 拉线建关系 / 全量视图开关 / 画布提示 / 关系列表分页）、§12 决策 4（状态演进）、§13 验收 M6、§14.1 端点状态流。**触发缺陷**：C1 `@xyflow/react/dist/style.css` 从未 import → 边 `stroke` 无值（不可见）+ 节点失 `position:absolute`（堆叠）＝ 用户「看得到块、看不到线」；C3 节点走 `repo.list()` 默认 `limit=50` → 实测 217/438 节点、8 条边被当孤立边丢弃（与 v1.3 §5.2「每表全量返回」冲突）。**归因修正**：C2（无 Handle）**不是**「无线」成因——React Flow v12 无 Handle 会回退节点中心锚点，边仍可渲染；C2 是「拉线建关系」的前置。
 >
-> **Spec 变更**（1.2 → 1.3，2026-09-17 #495 落地）：**`character_relations` 表已废弃删除，角色关系数据面统一到 `knowledge_relations` 的 character↔character 子空间**（六元组 `source_type='character'` + `target_type='character'`）——§1 核心交付/§1.1、§1.2 边界（双轨写入 → 单轨）、§2.1 规则 3b、§2.4 GraphEdge（`id` 恒 `kr:<uuid>`、`source_table` 恒 `knowledge_relations`）、§2.6 决策论证表、§3.1-§3.2 端点与示例、§5.2 聚合（单表，去重逻辑废止）、§5.5.1、§5.6 排序、§6 deps、§8 文件结构、§9 关键测试场景、§10 归属、§11 依赖、§12 决策 1/4/9/12 状态留痕、§13 验收、§14.1 端点状态流、待澄清 Q1 同步。**F9→F48 契约零变更**（`CharacterRelation` 领域模型 / 四端点 / CLI / GUI 保留，仅底层存储换表）；Q1-C 最终以「反向合并（character_relations → knowledge_relations）+ 契约零变更」形态实施。
 >
-> **Spec 变更**（1.1 → 1.2，2026-08-19 #479 契约定稿）
 >
-> **Spec 变更**（1.0 → 1.1，2026-08-19 拍板）：Q1-Q3 全拍板——**Q1=A**（图谱页允许建角色↔角色关系写 knowledge_relations，聚合去重；C 迁移合并建 #495 挂 1.0.0）；**Q2=A**（图谱渲染定稿 @xyflow/react）；**Q3=A**（提取运行记录不保留；追加需求「统一日志页」建 #496 挂 1.0.0）。同步：§1.2 边界、§2.1 业务规则、§5.2 聚合、§5.4 前端、§8 文件结构、§10 不在范围、§11 依赖、§12 决策表（新增决策 9-11）、§13 验收、待澄清节全标 ✅。
 >
-> **所属阶段**: 0.10.1（UI/产品修复批，D3 前半「知识图谱：关系模型 + 可视化 + 手动修改」，估算 5-8 人天）
 >
-> **关联 Issues**: [#478](https://github.com/zhx-xi/InkFlow/issues/478)（本模块）· #480（知识图谱检索页，**另 issue，依赖本模块**）· #479（定时任务 AI/规则提取，**本 spec §5.5 契约（v1.2 定稿），挂靠方**）· #495（character_relations 迁移合并，**Q1-C 后续重构——✅ 已实施，2026-09-17 落地于 1.0.0**）· #496（统一日志页，**Q3 追加需求，1.0.0**）· #174（F36 地图，实体来源之一）· #389（世界观分类，关联登记）
 >
 > **依赖**: ✅ F1（projects 表 + ProjectRepositoryProtocol）· ✅ F9（characters 实体校验；**character_relations 已于 #495 并入本模块 knowledge_relations**，角色↔角色边同为 knowledge_relations 子空间）· ✅ F10（world_settings 实体校验）· ✅ F11（outlines 实体校验）· ✅ F12（timeline_events 实体校验）· ✅ F13（foreshadowings 实体校验）· ✅ F36/F43 P2（maps + map_pins 实体校验）· ✅ F14（extractions/runs，原 rag tab 数据源——本模块改造其展示面；#479 定时提取挂靠 F14 提取服务）
 >
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）· [ADR-030](../../adr/kernel/ADR-030.md)（本地内核服务）
 >
-> **状态**: ✅ 已实现（PR #502 图谱 + #511 定时提取，2026-08-19）
 
 ---
 

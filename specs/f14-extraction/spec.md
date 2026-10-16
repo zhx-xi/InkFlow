@@ -2,25 +2,11 @@
 > **时间口径（ADR-055 / #1000，#1069 收口）**：本模块时间字段（run_at 等）**存储 / API / MCP / `--json` 一律 UTC ISO 原始值**；CLI 人类输出经 `cli/_time.format_local` 转**系统本地时区**显示（naive 串=UTC 口径先补 tzinfo 再换算）。硬约束惯例，非可配置开关。
 > **端**: backend
 
-> **Spec 版本**: 1.5 | **日期**: 2026-10-09 | **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
-> **Spec 变更**: v1.1 — 用户拍板 Q1=选项 A（STYLE 注册占位 + 调用 422，v1.0 已按此设计，仅标记确认——**本拍板已被 F16 兑现**：F16 ✅ 已注册 handler，§6.1/§12，占位表述随 F16 spec §8.2 第 10 项同步修订）/ Q2=选项 B（TIMELINE 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项，默认 false）/ Q3=综合方案（保留源 sha256 增量 + F12 事件 `source_chapter_id` 章节联动）；v1.0 的「TIMELINE 委托 F12 确定性检查」改为设置项关闭时的兜底语义（跨模块 MODIFY F12，F13 改 F6 sources.py 先例）
-> **Spec 变更**: v1.2 — RAG 切片扩展（#277 切片可配置 + #278 智能切片）：三档切片策略模式（fixed/paragraph/dialogue/llm）+ 滑动重叠开关（默认关，用户拍板按 docs 建议）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳）+ 切片参数纳入 #276 指纹联动 + 对话/LLM 切片器（M4，降级段落）——§5.6.1-§5.6.7 扩展，跨模块 MODIFY F32 settings（app_settings 4 键），§7/§8/§9/§12/§13 同步
-> **Spec 变更**: v1.3 — 类型面口径统一（#1408）：`ExtractionType.KNOWLEDGE_RELATION`（F48 知识图谱关系提取）接入统一提取入口——§6.1 注册表补第 7 槽（委托 `RelationExtractionService.extract_for_project(project_id, method="rule")`，与 `knowledge extract --method rule` 殊途同归：项目级、规则集、零 LLM）、§6.3/§6.4/§7 补项目级单源与输入约束（不接受 text/chapter_ids → 显式 422）、§2.1/§3.1/§4.1 类型清单 6 种 → 7 种；CLI 组 help / `--type` help / choices 三者口径一致由 `tests/cli/test_cli_extract_type_contract_1408.py` 契约测试守卫（枚举扩张未同步 → FAIL）
-> **Spec 变更**: v1.4 — 时间线提取补「时间表达」契约（#1526，0.17.0 rc1 数据质量）：`ExtractedTimelineEvent` 新增 `time_display`（**原文时间表达**，如「三月初二」）；提示词（zh/en 同源）要求**每事件必须给 `time_display`**，解析不出累计天数时 `time_value` 仍为 `null` 但**必须保留 `time_display`**；`time_unit` 仅在确实解析出 `time_value` 时写入（未解析出值 → 留空，防「假非空」噪声）；§5.5 schema / 模板 / 合并策略同步。**不推翻** [f12 §2.7](../f12-timeline/spec.md) S10（单位固定 + 项目内累计时基 + 不确定即 null）——本契约只补「原文表达不得丢」的展示面兜底，不改数值语义
-> **Spec 变更**: v1.5 — 暂存过期清理落地（#1551，0.17.0 W8c 收尾）：§5.9「过期清理」从「仅登记语义、不实现」改为「已实现」（内核启动期幂等清理超期未确认暂存行，阈值常量 30 天、失败不阻塞启动、不新增索引）；§5.9 / §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` **公开 compute-only 入口**（原私有 `_extract_rules` 升公开，消除跨模块私有调用）——关系提取算法与语义不变
-> **Spec 变更**: v1.6 — hnsw 段卡死自愈（#1563，0.17.0 rc2 修复）**— ⚠️ 根因已证伪 issue 原诊断，修复改为 A′+C**：新增 §5.6.8。实测根因 = chroma 1.5 中**一次「别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先于 `VECTOR.max_seq_id` 且不再追赶**（需要「对本 collection 再写一次」才 apply），带 `where` 的读 plan 随即抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）总是最后一次写 → reindex 返回后目标 collection 必然不可读，直到服务层自愈再 reindex 一次（= 这才是「第二次调用就好」的真实机制）。**已证伪**：① 不是「flush 窗口太短」（只等待永久不恢复，≥60s）；② 文件系统存在性判据无效（失败时段文件全部在位）；③ 原拍板 A（读侧等待）+ B（写侧同形探针）+ C 实测**不足以修复**。**改为 A′（读侧空写自愈：元数据原样回写触发 pending log apply + 重试，写次数有界）+ C（文案改「请重试一次」）**，并删除读侧固定次数重试与 1.5s 预算（#1011 评审 M2 读侧口径废止；写侧 `_FLUSH_PROBE_*`/`_ensure_hnsw_flushed` 不变）；实证 before 首调 500 → after 首调 200（同 harness，11ms 内自愈）
-> **Spec 变更**: v1.7 — 时间线未定事件入暂存 + 暂存批次列表端点 + 条目级确认/丢弃（#1581，0.17.0 rc3 修复；依据 [f12 §2.9](../f12-timeline/spec.md) / [ADR-067](../../adr/database/ADR-067.md)）：① §5.5 时间线管线新增**写前分流**——`time_value` 为空的事件经**后置归一**（确定性文本解析器）仍无值 → **不写 `timeline_events`**，改由门面落暂存（`entity_type=timeline_event`，连 `parse_reason`）；② §5.9 新增 **`GET /projects/{pid}/extractions/staging`（批次列表）** + **条目级 `confirm` / `DELETE`** 三端点（暂存区**可达 100%**、逐条定夺）；③ `StagedEntry` 增 `id`（条目级动作寻址）；**#1545/#1546/#1548/#1551 既有面零变更**（批次级 stage/confirm/cancel 语义不变）
-> **关联 Issues**: [#44](https://github.com/zhx-xi/InkFlow/issues/44), [#277](https://github.com/zhx-xi/InkFlow/issues/277), [#278](https://github.com/zhx-xi/InkFlow/issues/278)
+> **依据**: PRD v2.1 §6.2 P1-06, Constitution P1-P6, ADR-013/019
 > **依赖**: F1 ✅（项目校验 + `project.config.extra["timeline_auto_extract"]` 设置项，§2.6）；F2 ✅（章节读取，chapter_ids 模式 + chapter_chunk 索引源 + 事件 `source_chapter_id` 章节联动 FK）；F5 ✅（LLM）；F9 ✅ / F10 ✅ / F11 ✅ / F12 ✅（委托检查 + **跨模块 MODIFY F12 事件实体**，F13 改 F6 sources.py 先例）/ F13 ✅（委托管线）；F16 ✅（STYLE 类型依赖已交付——注册 StyleService.analyze handler，接口零变更，见 §6.1/§11）；ADR-013（RAG 首次落地：`VectorStoreProtocol` 已由 P0-11 定义，本模块实现基础设施层，**不重新定义协议**）；#276 ✅（RAG 向量指纹协议已合入——切片参数纳入指纹 §5.6.5 引用其 `ChunkingFingerprint`/`compare_fingerprints`/reindex 四步协议，**不重新定义**）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-013](../../adr/llm/ADR-013.md) (RAG: LangChain Chroma + BGE), [ADR-015](../../adr/llm/ADR-015.md) (LangChain 隔离), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
-> **状态**: ✅ v1.0/v1.1 已实现（PR #72 + #316 拆分，2026-08-13）；v1.2 RAG 切片扩展 ✅ 已实现（#277 PR #401 / #278 PR #413，2026-08-16）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. 统一提取门面与增量提取算法（横切收敛核心） · 6. 提取类型注册表与增量状态语义 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（≤ 3 个，全部 ✅ 已确认——留痕保留，正文已按拍板结果修订）
 ---
 
 ## 1. 概述

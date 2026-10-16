@@ -1,20 +1,11 @@
 # F33: CLI 独立发布产物（cli-dist）— 功能规格
 > **端**: cross
 
-> **Spec 版本**: 1.1（2026-08-08 拍板修订：Q1=A / Q2=C / Q3=A 已确认） | **日期**: 2026-08-08 | **依据**: ADR-030 ⑤（CLI 独立发布产物决策原文）、ADR-019 v5（版本对齐 SemVer）、ADR-021（内核进程化交付契约）、Constitution P1-P6
-> **Spec 变更**: v1.0 → v1.1（2026-08-08）：Q1-Q3 用户拍板——Q1=A（zip 不含 README，说明放 Release Notes/项目 README，推翻原建议 B）、Q2=C（SHELL_CONTEXT 跟随安装模式，与建议一致）、Q3=A（仅 GUI 安装器勾选，与建议一致）；正文 §1.4/§7 N9/§10/§12 D11 同步标注 ✅ 已确认，待澄清问题区留痕（原建议行保留）
-> **所属阶段**: 0.5.0 Agent 集成（本地内核服务化三件套第 3 个模块：F30 #166 ✅ / F31 #167 ✅ / F33 #168 本任务，估算 2-3 人天）
-> **关联 Issues**: [#168](https://github.com/zhx-xi/InkFlow/issues/168)（本任务）· [#166](https://github.com/zhx-xi/InkFlow/issues/166)（F30 内核冷启动基建 ✅ PR #171）· [#167](https://github.com/zhx-xi/InkFlow/issues/167)（F31 GUI 托盘 ✅ PR #172）· [#169](https://github.com/zhx-xi/InkFlow/issues/169)（CLI 恒 HTTP，0.6.0，不在本任务范围）
+> **依据**: ADR-030 ⑤（CLI 独立发布产物决策原文）、ADR-019 v5（版本对齐 SemVer）、ADR-021（内核进程化交付契约）、Constitution P1-P6
 > **依赖**: ✅ 0.4.0 打包基建（f19-packaging，PR #144 + 发布门禁 #145：inkflow.spec / release.yml / electron-builder.yml / tag 版本注入机制）· ✅ #166（PR #171：kernel.json + ensure_kernel + 互斥 + stale 清理——CLI 产物含 serve 能力的依据）· ✅ #167（PR #172：GUI 托盘——里程碑并行，无代码依赖）· ✅ #152（F32 设置持久化，PR #176——无代码依赖）
 > **参考 ADR**: [ADR-030](../../adr/kernel/ADR-030.md)（⑤ CLI 独立发布产物）· [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑 v5：0.5.0 = Agent 集成，SemVer 对齐）· [ADR-021](../../adr/kernel/ADR-021.md)（本地内核进程化：INKFLOW_READY 交付契约）· [ADR-020](../../adr/gui/ADR-020.md)（Electron 选型 + electron-builder 打包）
-> **状态**: ✅ 已实现（PR #181，2026-08-08）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 产物契约 · 3. release.yml 增量 · 4. NSIS PATH 勾选（installer.nsh 定制）
-> 5. 关键差异/决策节 · 6. 组织规则/边界 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（已拍板，留痕）
 ---
 
 ## 1. 概述

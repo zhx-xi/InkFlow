@@ -1,17 +1,10 @@
 # F4: Agent 编排 (agent_service) — 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.2 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
-> **所属阶段**: Phase 1 — 核心引擎
-> **关联 Issues**: [#4](https://github.com/zhx-xi/InkFlow/issues/4) · [#1478](https://github.com/zhx-xi/InkFlow/issues/1478)（CLI `--watch` 语义 + `agent status` 信封） · [#1520](https://github.com/zhx-xi/InkFlow/issues/1520)（`agent template create/update` 的 `--content-file`；补录本 spec 缺失的 template CRUD CLI 签名）
+> **依据**: PRD v2.1 §6.1 F4, ADR-006v2 (LangGraph StateGraph), Constitution P1-P6
 > **依赖**: F1 (project_service) ✅, F3 (writing_service), F5 (llm_service)
-> **状态**: ✅ 已实现（PR #22）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. 管线执行流程与状态机 · 6. 管线模板与 YAML 配置 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
 ---
 
 ## 1. 概述

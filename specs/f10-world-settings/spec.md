@@ -4,12 +4,9 @@
 >
 > **端**: cross
 
-> **Spec 版本**: 1.8 | **日期**: 2026-10-10 | **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
-> **所属阶段**: 0.9.0 里程碑（世界观分类 CRUD，issue #389，估算 2-4 人天）
-> **关联 Issues**: [#40](https://github.com/zhx-xi/InkFlow/issues/40)（v1.0 本体）、[#211](https://github.com/zhx-xi/InkFlow/issues/211)（v1.1 删除语义统一）、[#389](https://github.com/zhx-xi/InkFlow/issues/389)（v1.2 分类实体 CRUD）、[#1334](https://github.com/zhx-xi/InkFlow/issues/1334)（v1.4 分类 kind 挂根设计定义 · 已拍板 ①C）、[#1483](https://github.com/zhx-xi/InkFlow/issues/1483)（v1.7 `--content-file`）、[#1570](https://github.com/zhx-xi/InkFlow/issues/1570)（v1.8 提取不得写未注册类别 + 存量审计命令）
+> **依据**: PRD v2.1 §6.2 P1-02, Constitution P1-P6, ADR-019, ADR-027
 > **依赖**: F1 ✅, F5 ✅（前置）；F6 ✅（数据源集成点）；F9/F11/F12/F13 ✅（跨模块统一，§8.2）；F14/F15 ✅（连锁适配，§8.2）
 > **参考 ADR**: [ADR-027](../../adr/test-ci/ADR-027.md)（覆盖率门禁）
-> **状态**: ✅ 已实现 v1.0（PR #57）+ v1.1（PR #312）；🔨 v1.2 实施中（#389）
 
 > **Spec 变更（v1.7 → v1.8，2026-10-10，#1570）**: **提取路径不得写未注册类别**——契约源在 **F14 §5.8.1（已改为「拒绝而非写空」）**，本节登记 F10 侧语义升级：① 0.17.0-rc2 旅程库实测 `world_settings.category` 出现 82 条「非根且无类别」条目，根因 = 提取对「LLM 产出的类别不在项目分类中」**静默归空**并直调 `repo.add` 绕过 `create_setting` 的 #1321 校验（`_world_extractor.py` 类别归一分支）；② 现改为抛 `WorldCategoryNotRegisteredError`（422，列出全部缺失分类名）+ 该批次正式表零写入，由 agent / CLI 显式建类后重试；**禁止**自动建类；③ **空类别不拒绝**（prompt 允许 LLM 留空 → 维持 #722「未分类」），**接口层**「非根必填 + 存在性」校验（#1321）语义**不变**（`PATCH category=""` 显式清除仍合法）；④ 新增只读审计命令 `world uncategorized`（§4.1）作为**存量无类别条目的发现/处置路径**（回填走既有 `world update --category`，本命令零写入）；⑤ **与 #1482 复制路径区分**：`world copy --auto-create-categories` 是复制路径的用户**显式开关**，行为不变。验收断言见 `backend/tests/unit/domain/ports/test_world_extraction_category_1570.py` + `backend/tests/unit/domain/services/test_extract_category_strict_staging_1570.py` + `tests/cli/test_cli_world_uncategorized_1570.py`。
 > **Spec 变更（v1.2 → v1.3，2026-09-17，#495）**: §8.3 迁移章节补注——`character_relations` 表已废弃并入 `knowledge_relations`（#495 新增幂等迁移 `ensure_character_relations_merged_into_knowledge`，接线于 `ensure_character_drop_is_deleted` **之后**）；该 helper 的 `character_relations` 分支与 #831「`DROP TABLE characters` FK CASCADE 清空 `character_relations`」说明自此**仅适用旧库升级路径**（新库/已迁移库该表不存在 → 持续 no-op）。正文其余表述（迁移机制、FK=OFF 独立连接语义）不变。
@@ -22,11 +19,6 @@
 > **Spec 变更（v1.0 → v1.1，2026-08-13，issue #211）**: 删除语义统一——普通实体软删→真删。① WorldSetting 移除 `is_deleted` 字段（§2.1/§2.5）；② partial unique → 全唯一索引（§2.4）；③ DELETE 默认真删（移除 `force` 软删路径），restore 端点/命令移除（§3/§4）；④ 提取合并移除「软删同名→新建+warning」分支（§5.4）；⑤ 跨模块 F9/F11/F12/F13/F14/F15 同步适配（§8.2 全量 MODIFY 清单）；⑥ `is_deleted` 列移除 + 存量软删数据迁移（§8.3）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**（§10）。
 
 >
-> **快速导航**（2026-08-08 #201 + 2026-08-13 v1.1）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. AI 提取模式 · 6. 分类与查询规则 · 7. 边界情况与错误处理 · 8. 文件结构
-> 8.2 跨模块 MODIFY 清单 · 8.3 数据库迁移 · 9. 测试策略 · 10. 不在范围内
-> 11. 依赖关系 · 12. 关键架构决策记录 · 13. 验收标准 · 14. 影响面评估结论 · 待澄清问题
 ---
 
 ## 1. 概述

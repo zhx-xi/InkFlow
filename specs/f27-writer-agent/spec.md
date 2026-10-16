@@ -1,20 +1,12 @@
 # F27: Writer Agent 闭环（writer-agent）功能规格
 > **端**: backend
 
-**Spec 版本**: 1.3
-**日期**: 2026-08-10
 **依据**: PRD §6.1 F3/F4/F5 + Agent 化升级路径 v1.1（design/agent-upgrade-path-2026-08-03.md）§4 Stage 1 + F26 spec v1.1（specs/f26-agent-tools/spec.md §5.7）+ Spike 0 报告（docs/deepagents-evaluation-2026-08-10.md ② 空 content）+ 0.7.0 路线图拍板记录（2026-08-10）
-**所属阶段**: 0.7.0（Agent 化升级第二批），估算 8-12 人天
-**关联 Issues**: #160（F27 Writer Agent 闭环）
 **依赖**: ✅ F26 agent-tools（deepagents 集成 + 5 只读工具，PR #236）· ✅ F5 LLM Provider · ✅ F4 Agent 管线 · ✅ #87 LangGraph 重构 · ✅ F34 单章审计 · ✅ F3 writing_service · ⏳ F28 agent-memory（F27 是事件源，反向依赖）
 **参考 ADR**: adr/agent/ADR-034.md（护栏触发语义）、adr/agent/ADR-035.md（编排引擎=deepagents 0.7.5）、adr/agent/ADR-036.md（写工具形态）、adr/agent/ADR-033.md（预算护栏数值——本 spec 定稿）、ADR-015（LangChain 隔离）、ADR-027（覆盖率门禁）
-**状态**: ✅ 已实现（PR #241，2026-08-10 合入；Q1-Q4 拍板 2026-08-10）
 
-> **Spec 变更**（v1.0 → v1.1，2026-10-06，#1479 缺陷修复）：草稿清理路径补齐——① 新增 `DELETE /api/v1/agent/drafts/{draft_id}`（真删语义，清理出口；此前该路径无路由 → 405）；② `POST /agent/drafts/prune-orphans` 的「孤儿」判据扩展——由「仅 `project_id` 全零 GUID」扩为「**或**所属 `projects` 行不存在 / `projects.is_deleted` 为真」（旧判据保留不删）。动机：软删项目 + 已置 rejected 的草稿既不在 `#1371` 的硬删级联面、也不在旧 prune 判据面 → 永久残留且无接口可清（issue #1479 实测）。正文修订位置：§3.1（端点总览 +3 行 + 「修改履历」列）、§15.1（端点状态流 +2 行）、§15.2（CLI 状态流 +2 行，新增 `inkflow agent draft delete`）。**不含** GUI 草稿页清理入口（另开 UI 轨）。
 
-> **Spec 变更**（v1.1 → v1.2，2026-10-06，#1476 缺陷修复）：写作轨**检索工具的项目上下文注入**补齐——`build_agentic_writer` 调 `build_reader_tools` 时漏传 `project_id`（#680 的闭包绑定入口）→ 6 个项目域检索工具全以 `None` 查库，`write next --mode agentic` 实测 4 个被调用工具中 3 个返回 `{"ok": false, "error": "项目不存在"}`（`get_prior_summary` 因摘要服务对 None 宽容而假绿），Agent 因此盲写自造人名地名（设定漂移的结构性来源）。修法：装配期以 `expected_project_id`（请求真实项目）绑定，与 chat 轨 `tools/registry.py::_build_all_tools(project_id=…)` 同源语义；**不**把 `project_id` 放回 tool schema（那会推翻 #680 并放开孤儿数据面）。正文修订位置：§5.1（新增「工具的项目上下文注入方式」）、§13（+M10 验收）。
 
-> **Spec 变更**（v1.2 → v1.3，2026-10-07，#1507 缺陷修复）：写作轨**工具面与授权面口径对齐**——`resolve_writer_authorization()` 此前复用内置「写手」Agent 的 grants 展开（18 名），而 `build_agentic_writer` 只按 reader 目录（`reader_tools._TOOL_SPECS`，10 项）过滤 → `list_outlines`/`get_outline`/`list_plot_points`/`list_maps`/`generate`/`continue`/`revise` **7 名被静默丢弃**（授权面 18 / 物化面 11）。修法（拍板方案 A）：写作轨改为**私有显式白名单**（§5.1「写作轨专用工具面清单」= reader 10 + `save_draft` = 11 项），`resolve_writer_authorization()` 不再读 grants；目录外工具名由静默丢弃改为 **`ValueError`**（响亮）。chat 轨写手角色的 grants（18）**零改动**。正文修订位置：§1.1（工具列改 11 项口径）、§5.1（新增「写作轨专用工具面清单」+ 死代码处置）、§13（+M11 验收）。
 
 > **模块类型声明**: 本模块为 Agent 化升级新增变体——「**自主循环闭环型**」（第 11 个模块变体，编号依据：AGENTS.md 模块类型谱系，F26=第 10 变体口径延续）。与 F26（deepagents 集成 + 工具定义型）不同：F27 是**首个有 LLM 自主控制流 + 写操作落库 + 用户确认流**的业务闭环，新增 1 张 agent_run 表 + 1 张 draft 表（Q4 拍板）。
 

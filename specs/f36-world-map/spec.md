@@ -1,27 +1,19 @@
 # F36: 世界观地图视图（world-map）— 功能规格
 > **端**: backend
 
-> **Spec 版本**: 1.5 | **日期**: 2026-10-07 | **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
+> **依据**: 设计书 `design/world-geo-hierarchy-2026-08-08.md` §5（workspace）、PRD v2.1 §6.2 P1-02、F10 spec + F35 spec v1.1（地点树，本模块数据基础）、Constitution P1-P6
 >
-> **Spec 变更**（1.4 → 1.5，2026-10-07 #1520）：`map create` / `map update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**地图描述** `description`）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4 签名与 §14 状态流同步；`map pin update` 无正文字段，**刻意不接**。
 >
-> **Spec 变更**（1.3 → 1.4，2026-08-15 #378 拍板）：GUI 拖拽调层级——`WorldMapUpdate` 加 `parent_map_id`（PATCH 改挂：null=变根图 / id=成为其子图）；`update_map` 校验链扩展（父图存在/同项目复用 `MapParentMapNotFoundError` + **循环校验**——不能挂到自己子孙，新增 422 `MapParentCycleError`）；前端地图工作台左栏目录树（根图→子图→孙图）+ 原生 HTML5 拖拽。同步：§2.1 业务规则、§2.3 领域模型、§3.1 端点总览、§5.4 服务层校验链、§7 错误表、§12 决策 17、§13 M3/M4 验收。
 >
-> **Spec 变更**（1.2 → 1.3，2026-08-14 #368 拍板）：新增**图挂图层级**（maps 表加 `parent_map_id`）——语义区分 `root_location_id`（图关联世界观条目，保留）+ `parent_map_id`（图挂父图，新增）；一父多子（1:N）+ 子单父（N:1）+ 层级深度不限；根图 parent_map_id=null，子图 parent_map_id=父图 id；前端「创建子图」传父图 id（parent_map_id）而非条目 id；后端校验父图存在 + 同项目（422 新错误 `MapParentMapNotFoundError`）。同步：§2.1 maps 表 + 业务规则、§2.3 领域模型、§2.4 ORM、§3.1 端点总览、§5.4 服务层校验链、§7 错误表、§12 决策 16、§13 M3/M4 验收。
 >
-> **Spec 变更**（1.1 → 1.2，2026-08-09 实现期修订）：① §8 补 5 行 MODIFY（world_service/project_service 钩子接线、http client post_file/put_file/get_bytes、pyproject python-multipart、ci.yml 登记）；② §12 补决策 13-15（get_pin 新增裁定、python-multipart 依赖、钩子接线形态）。
 >
-> **Spec 变更**（1.0 → 1.1，2026-08-09 拍板）：Q1-Q3 全拍板——**Q1=B（drill-down + 面包屑一起）**；**Q2=A（真删删文件——删除语义收敛为真删，无归档窗口）**；Q3=A（root_location 过滤）。**删除语义重设计（D1-D7）**：maps/map_pins **新表无 is_deleted 列**（真删，无恢复）；地图删除 = 确认后真删 + **有子地图时强制选择**（`?cascade=true` 级联删 / `?reparent_to=<map_id>` 子地图改挂新父——目标父地图自动补 pin，D3）；**FK 运行时由 service 显式级联（D10=b，生产连接未开 foreign_keys=ON）**；children 查询补地点软删过滤（评审 F2）；地图树 drill-down 与 #175 复制共用地点→地图查询（评审 S10）。
 >
-> **所属阶段**: 0.6.0 世界观三连 Step 2（呈现层，估算 5-8 人天）
 >
-> **关联 Issues**: [#174](https://github.com/zhx-xi/InkFlow/issues/174)（本模块）· #173（地点树，**前置依赖**）· #175（跨书复制，**依赖本模块**的地图资产复制）· #211（删除语义统一，**关联登记**）
 >
 > **依赖**: ✅ F10（world_settings + WorldRepositoryProtocol——pin 关联地点校验）· ✅ F35（#173 地点树：root_location_id 挂地点树 + ancestors/descendants 导航）· ✅ F1（项目 FK）
 >
 > **参考 ADR**: [ADR-019](../../adr/packaging/ADR-019.md)（版本里程碑）· [ADR-002](../../adr/architecture/ADR-002.md)（六边形分层）· [ADR-003](../../adr/database/ADR-003.md)（Repository）· [ADR-004](../../adr/database/ADR-004.md)（Pydantic v2）· [ADR-012](../../adr/architecture/ADR-012.md)（错误处理）
 >
-> **状态**: ✅ 已实现（PR #220，#174 2026-08-09）
 
 ---
 

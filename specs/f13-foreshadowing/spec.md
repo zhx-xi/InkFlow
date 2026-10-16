@@ -4,22 +4,11 @@
 >
 > **端**: backend
 
-> **Spec 版本**: 1.3 | **日期**: 2026-10-07 | **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
-> **Spec 变更**: v1.3 — #1520 `foreshadowing create` / `foreshadowing update` 新增 `--content-file <path>`（从 UTF-8 文件读取正文=**伏笔详情**，叙事型长文本）。语义同 F7 §4.0 通用约定：与 `--description` **不可同传**（同传 → 退出码 2 + stderr 文案，不发生写入）；文件缺失/不可读 → `VALIDATION_ERROR` + 退出码 1（不泄漏栈回溯）；原样落库（不 strip、不转码）。§4.1 签名与 §14 状态流同步。
-> **Spec 变更**: v1.2 — 删除语义统一（issue #211，「普通实体软删→真删」）**文档同步补齐**：Foreshadowing 移除 `is_deleted` 字段（§2.1）；DELETE 默认真删（移除 `force` 软删路径与 `--permanent`），`POST /foreshadowings/{id}/restore` 端点与 `foreshadowing restore` 命令移除（§3/§4/§14）；§2.4 状态机的 `deleted` 态与 `restore` 迁移一并移除（两态 + 专用动作端点）；§2.3 partial unique → 全唯一索引。**注**：#211 落地时仅 f10/f35/f36/f37/f43/f48 同步，本 spec 属文档同步滞后，2026-09-18 补齐（原变更日期 2026-08-13）。**F1 项目（回收站）与 F24 会话（归档）保留软删语义，不在本次变更范围**
-> **Spec 变更**: v1.1 — 用户拍板 Q1=选项 C：伏笔绑定 F12 时间线事件（event_id 锚点）；移除独立 narrative_position；F12 升级为硬依赖（须先合入 main）；详见 §2.2/§11/§12
-> **所属阶段**: Phase 2 — 创作工具链（0.2.0 里程碑第五个模块，估算 2-3 人天）
-> **关联 Issues**: [#43](https://github.com/zhx-xi/InkFlow/issues/43)
+> **依据**: PRD v2.1 §6.2 P1-05, Constitution P1-P6, ADR-019
 > **依赖**: F1 ✅（前置）；F6 ✅（上下文注入契约，ForeshadowingSource 替换，见 §5/§11）；F12 ✅（硬依赖：event_id 事件锚点，timeline_events 表 + TimelineRepositoryProtocol 事件校验，**F12 须先合入 main**，见 §11）；F2（边界声明，非硬依赖，见 §11）；F5 — **不依赖**（F13 无 LLM，见 §1/§5）
 > **参考 ADR**: [ADR-001](../../adr/architecture/ADR-001.md) (模块化单体), [ADR-002](../../adr/architecture/ADR-002.md) (六边形分层), [ADR-003](../../adr/database/ADR-003.md) (Repository), [ADR-004](../../adr/database/ADR-004.md) (Pydantic v2), [ADR-007v2](../../adr/architecture/ADR-007v2.md) (包结构), [ADR-010](../../adr/llm/ADR-010.md) (上下文分层), [ADR-012](../../adr/architecture/ADR-012.md) (错误处理), [ADR-016](../../adr/service/ADR-016.md) (loguru), [ADR-017](../../adr/test-ci/ADR-017.md) (CI 门禁), [ADR-018](../../adr/test-ci/ADR-018.md) (测试分层), [ADR-019](../../adr/packaging/ADR-019.md) (版本里程碑)
-> **状态**: ✅ 已实现（PR #64）
 
 >
-> **快速导航**（2026-08-08 #201）：
-> 1. 概述 · 2. 数据模型 · 3. API 契约 · 4. CLI 命令签名
-> 5. 伏笔状态机与注入模式（关键差异：确定性状态追踪 + F6 数据源替换） · 6. 伏笔组织规则 · 7. 边界情况与错误处理 · 8. 文件结构
-> 9. 测试策略 · 10. 不在范围内 · 11. 依赖关系 · 12. 关键架构决策记录
-> 13. 验收标准 · 待澄清问题（≤ 3 个，评审时确认）
 ---
 
 ## 1. 概述

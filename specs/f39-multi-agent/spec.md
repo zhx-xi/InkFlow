@@ -1,24 +1,14 @@
 # F39: 多 Agent 能力（multi-agent）功能规格
 > **端**: cross
 
-**Spec 版本**: 1.4
-**日期**: 2026-08-16（v1.3 修订 2026-10-02；v1.4 修订 2026-10-06）
 **依据**: 多 Agent 能力分析文档（`design/multi-agent-capability-analysis-2026-08-12.md`，已合入主仓）+ Issue #258（F39 后端核心）/ #259（F40 skill 上传绑定）/ #260（F41 自定义 Agent 编辑）+ 0.9.0 路线图拍板 Q1（`design/inkflow-0-9-0-roadmap-2026-08-15.md`：三 issue 合并一份 spec）
-**所属阶段**: 0.9.0（多 Agent 能力一期），估算 10-15 人天（F39 后端 5-7 + F40 前端 2-3 + F41 前端 3-5，F40/F41 依赖 F39 可并行）
-**关联 Issues**: [#258](https://github.com/zhx-xi/InkFlow/issues/258)（F39 后端核心，W2 启动）· [#259](https://github.com/zhx-xi/InkFlow/issues/259)（F40 skill 上传绑定，W3，🔗#258）· [#260](https://github.com/zhx-xi/InkFlow/issues/260)（F41 自定义 Agent 编辑，W3，🔗#258）· [#1472](https://github.com/zhx-xi/InkFlow/issues/1472)（管线链路 skill 装配，0.17.0 W2）
 **依赖**: ✅ F26 工具注册表（已交付）· ✅ F27 agentic writer（已交付）· ✅ F19 AgentTemplate 实体模式（已交付）· ✅ #327 SQLite foreign_keys=ON（生产级联生效）
 **参考 ADR**: [ADR-015](../../adr/llm/ADR-015.md)（LangChain 隔离）· [ADR-019](../../adr/packaging/ADR-019.md)（编号口径）· [adr/agent/ADR-035.md](../../adr/agent/ADR-035.md)（编排引擎=Deep Agents harness 0.7.5）· [ADR-022](../../adr/memory-skills/ADR-022.md)（skills 包分发型，与本 spec Skill 实体不同域，见 §1.3）
-**状态**: ✅ 已实现（F39 后端 PR #403；F40 PR #408；F41 PR #407，2026-08-16）
 
-> **Spec 变更**（v1.4 → v1.5，2026-10-06，#1473 通用 skill 全局生效）：本版**推翻 #1472 的取集语义**（原：只拼该 Agent 白名单命中项）——改为**有效技能集 = 显式挂载 ∪ 通用**：`agent.skill_ids`（显式挂载）∪ `{skills_root 下未被任何 Agent 挂载的 skill}`（通用，对所有 Agent 自动生效）。「防串味」仍成立的部分：被**其他** Agent 显式挂载的 skill 不得注入本 Agent（仅「无人挂载」者才算通用）。同一规则落于管线链路（`_build_pipeline_context`）、写手轨目标装配（`assembly_observability`）与 `inkflow skill list` 的 `[通用]/[专属]` 标注。§5.2 同步。
 
-> **Spec 变更**（v1.3 → v1.4，2026-10-06，#1472 管线链路 skill 装配）：① **补齐管线链路（`agent run --pipeline`）的 skill 装配**——此前全仓 `_append_skills` 唯一调用点在写手轨（`infrastructure/agent/agentic_writer.py`），管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids`，用户 skill 在管线链路**静默失效**；本版在 `_build_pipeline_context` 汇合后按 `stage.id == Agent.role_key` 取该 Agent `skill_ids`，用同一拼接函数把命中 skill 正文追加到 `stage.agent.system_prompt` 之后（与写手轨同语义）；② 拼接纯函数 `_append_skills` **下沉 domain**（`domain/services/skill_assembly.py` 导出 `append_skills`），infrastructure 与 domain 共用同一实现（domain 不得 import infrastructure，AGENTS.md §4.2）；③ §5.2 新增「管线链路装配」段落与装配点表（含修改履历列）、负例契约。**不含**「通用 skill 全局生效」（#1473，W3 轨）。
 
-> **Spec 变更**（v1.2 → v1.3，2026-10-02，#1331 内置 skill 版本化 + 项目级覆盖，ADR-062）：① 内置 6 方法论 skill 内容抽离为 `i18n/skills/builtin/{zh,en}/<slug>.md`（frontmatter 带 `version`，正文逐字不变，独立子树不与 F19 操作类镜像混流）；② `ensure_builtin_skills` 升为**三态**（缺失写 / 未改升级 / 改过保留），基线落 `<skills_root>/.builtin_state.json`（文件系统真源，零 DDL）；③ 新增 `builtin_skill_status` / `builtin_skill_diff`（升级可见面）与 `resolve_skill_md_path` / `is_project_override`（项目级覆盖**仅落解析面**，装配接线另开 issue）；④ API `GET /api/v1/skills/builtin/status`、`GET /api/v1/skills/builtin/{name}/diff`；CLI `inkflow skill status|diff`；⑤ §12 新增 D11/D12、§13 新增 M12。
 
-> **Spec 变更**（v1.1 → v1.2，2026-08-20，#522 skill 存储架构重构去表）：① Skill 存储从 SQLite 表改为文件系统真源 `data_dir/skills/<name>/SKILL.md`（ADR-039）——§2.2/§3/§8/§10/§12 同步；② seed 语义改为 `ensure_builtin_skills(skills_root)`（同步回补）+ `migrate_skills_from_db(session, skills_root)`（一次性迁移）+ `seed_builtin_agents`（skill_ids=目录名）；③ 内置 6 skill 出厂名改英文 slug（N2 合规，§5.3 表）。
 
-> **Spec 变更**（v1.0 → v1.1，2026-08-16，用户拍板 Q0=A / Q1=A）：① **Q0 定稿**「Agent/Skill 全局定义（应用级）+ 项目引用」——§2 实体无 project_id 字段，项目引用经 project config 留阶段 2 落地；② **Q1 定稿**「本期与 AgentTemplate 解耦」——本期无 AgentTemplate MODIFY，Agent 暂无运行时消费（能力以单元测试验证），roles 扩展为 Agent 引用留二期。§6 组织规则标注已拍板、§12 新增 D9/D10、待澄清 Q0/Q1 标记 ✅ 已确认（选项 A）。
 
 > **模块类型声明**: 本模块为「**能力白名单强制型**」变体——新建 Agent/Skill 两张实体表（全局应用级）+ 工具目录分组扩展 + 装配点白名单过滤改造 + 前端上传/编辑两套 UI。编号依据：AGENTS.md 模块类型谱系口径下，F39 为 Agent 化升级链（F26 集成层 → F27 闭环 → F28 记忆 → **F39 多 Agent 能力** → F29 Supervisor）的能力差异化模块。核心不变式：**多 Agent 行为差异化 = 工具 + skill 白名单的确定性强制，而非 system prompt 概率性请求**（分析文档 §0）。
 
