@@ -16,7 +16,7 @@
 
 **核心价值**: 作者与 AI Agent 可以维护结构化世界观设定；AI 提取把「写在正文里的世界观信息」沉淀为可复用的设定档案，为 F6 上下文注入（世界观设定进 Prompt）、F16 一致性审计提供数据基础。
 
-**样板模块定位**: F9（角色管理）已沉淀「**实体 + AI 提取**」模式；F10 是 0.2.0 创作工具链**第二个**应用该模式的模块，**完全复用 F9 骨架**：
+**样板模块定位**: F9（角色管理）已沉淀「**实体 + AI 提取**」模式；F10 是创作工具链**第二个**应用该模式的模块，**完全复用 F9 骨架**：
 
 ```
 实体模型(domain/models) → CRUD Port(domain/ports) → Repository(infrastructure) → Service(domain/services)
@@ -29,7 +29,7 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 - F10 只做**单次、单章节文本**的基础提取（输入一段文本 → 输出世界观条目并合并落库）。增量提取、批量/全书提取、定时提取、指代消解归 **F14 统一提取服务**（Issue #44），见 §10
 - F10 不实现 F6 上下文注入（`ContextSourceProtocol` 的 `world_setting` 数据源）；实体与查询能力为其预留，集成点见 §11
 - F10 是世界观**条目/设定管理**，**不是复杂知识图谱**：不做条目间关系表、不做类别层级树（决策见 §2.2/§2.3，理由详见 §12）
-- **删除语义（v1.1 变更）**: 条目删除 = 确认后**真删**（物理删除，不可恢复），不再有软删/restore 语义。这是全项目「普通实体软删→真删」统一（issue #211）的一部分，与 F9/F11/F12/F13 同族（§8.2）。**例外**：F1 项目（回收站）与 F24 会话（归档）保留软删语义（§10）。
+- **删除语义**: 条目删除 = 确认后**真删**（物理删除，不可恢复），不再有软删/restore 语义。这是全项目「普通实体软删→真删」统一的一部分，与 F9/F11/F12/F13 同族（§8）。**例外**：F1 项目（回收站）与 F24 会话（归档）保留软删语义（§10）。
 
 ---
 
@@ -45,7 +45,7 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
 | name | str | NOT NULL, 1-50 字符, 去空白 | 条目名（如「灵气复苏」「宗门等级体系」）；**项目内同层级唯一**（全唯一，见 §2.4） |
 | parent_id | UUID? | FK→world_settings.id (CASCADE), 可空=顶层 | 父地点（F35 树形结构） |
-| category | str | NOT NULL, DEFAULT "", ≤ 50 字符, 去空白 | 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/魔法体系；自由文本，受控词表归 F14）；空串 = 未分类（**根条目常态**，§5.7/#722）。**非根条目**：接口层「必填 + 存在性」校验（#1321，§5.1）；**AI 提取路径不得写未注册类别**（#1570，契约源 F14 §5.8.1） |
+| category | str | NOT NULL, DEFAULT "", ≤ 50 字符, 去空白 | 类别（建议值：设定/规则/约束/组织/地理/种族/文化/科技/魔法体系；自由文本，受控词表归 F14）；空串 = 未分类（**根条目常态**，§5.7）。**非根条目**：接口层「必填 + 存在性」校验（§5.1）；**AI 提取路径不得写未注册类别**（契约源 F14 §5.8.1） |
 | content | str | NOT NULL, DEFAULT "", ≤ 20000 字符 | 条目内容/详细设定 |
 | extra | dict[str, Any] | NOT NULL, DEFAULT {} | 扩展字典（来源章节、标签、别名等 Phase 2+ 字段预留） |
 | ~~is_deleted~~ | ~~bool~~ | ~~NOT NULL, DEFAULT False~~ | **（v1.1 移除）** 原软删除标记，真删语义下无意义 |
@@ -58,18 +58,18 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 - 类别**层级树**（category 父子关系）不在 F10 范围（§10）
 - 条目间**不建立外键关联**：独立 `WorldRelation` 表属 Phase 2+（决策理由见 §2.3 与 §12）
 
-### 2.2 分类设计决策（v1.2 反转：建独立分类表）
+### 2.2 分类设计（独立分类表）
 
-> **v1.2 变更（2026-08-16，issue #389，用户拍板 Q1=B）**：反转 v1.0「不建独立分组表」决策——分类升级为独立受控词表实体 `WorldCategory`。触发 = GUI 世界观页需要「新建分类」CRUD + 分类数据独立于地图（#389），v1.0「类别表只有在需要类别 CRUD 时才值得」的条件已满足（Phase 2+ 演进提前落地）。
+> **分类升级为独立受控词表实体 `WorldCategory`**：反转「不建独立分组表」的旧决策。触发 = GUI 世界观页需要「新建分类」CRUD + 分类数据独立于地图，v1.0「类别表只有在需要类别 CRUD 时才值得」的条件已满足（Phase 2+ 演进提前落地）。
 
 | 考量 | v1.0 结论 | v1.2 结论 |
 |------|----------|----------|
 | PRD 语义 | 条目的类别属性，非容器关系 | **不变**：条目 `category` 字段保留（字符串快照），分类实体是「受控词表」而非「分组容器」 |
-| 独立表的价值 | 仅类别 CRUD 时才值得 | **需要**：GUI「新建分类」+ 重命名/删除 + 分类独立于地图（#389） |
+| 独立表的价值 | 仅类别 CRUD 时才值得 | **需要**：GUI「新建分类」+ 重命名/删除 + 分类独立于地图 |
 | LLM 提取兼容 | 字段可随条目一并提取 | **不变**：条目 `category` 仍为自由文本快照，提取不受影响 |
 | 代价 | 字段→表低成本演进 | **落地**：新增 `world_categories` 表 + CRUD；条目表不改（零存量迁移） |
 
-**受控词表语义（D1=B1）**：`WorldCategory` 是「预置分类词表」；条目 `category` 是「字符串快照」（创建/编辑条目时自由输入，不强制外键）。前端分类 chips 来源 = 分类实体列表；分类重命名/删除反向同步条目 `category`（§6.1）。**「地图」不是世界观分类**（地图归地图工作台 #378），不进入分类实体、不渲染为 chip。
+**受控词表语义（D1=B1）**：`WorldCategory` 是「预置分类词表」；条目 `category` 是「字符串快照」（创建/编辑条目时自由输入，不强制外键）。前端分类 chips 来源 = 分类实体列表；分类重命名/删除反向同步条目 `category`（§6.1）。**「地图」不是世界观分类**（地图归地图工作台），不进入分类实体、不渲染为 chip。
 
 > 「层级」一词在此解读为**条目的类型维度**（规则/设定/约束等），不是数据结构上的树/继承。真正的层级树归 Phase 2+（§10）。
 
@@ -86,7 +86,7 @@ F9 spec 已明示「F10 实施时直接对照 F9 §5 与对应文件结构，不
 
 > 结论：**倾向简单，避免过度设计**（Constitution P5 YAGNI）。`extra` 字典可临时承载轻量引用标记（不保证图谱能力，不做查询承诺）。
 
-### 2.4 唯一约束（全唯一索引，SQLite；v1.1 变更）
+### 2.4 唯一约束（全唯一索引，SQLite）
 
 **v1.0** 用 partial unique index（`WHERE is_deleted = 0`）保证「软删除后可重建同名」；**v1.1 真删语义下改为全唯一索引**：
 
@@ -104,7 +104,7 @@ __table_args__ = (
 
 **为什么是全唯一索引（v1.1）**: 「同名 = 同一世界观条目」是 AI 提取合并策略的锚点（§5.4），活动条目名必须唯一。v1.0 的 partial index 是为「软删后可重建同名」服务的；真删后记录被物理删除，重建同名条目天然合法（旧行已不存在），无需 `is_deleted` 条件。服务层再做一次同名检查以给出友好 422 文案。
 
-> ⚠️ **跨模块同类变更**：F9 角色名/分组名/关系、F11 大纲名/弧线名、F13 伏笔标题的 partial unique 索引同步改为全唯一（§8.2 清单 C4）。
+> ⚠️ **跨模块同类变更**：F9 角色名/分组名/关系、F11 大纲名/弧线名、F13 伏笔标题的 partial unique 索引同步改为全唯一（§8 清单 C4）。
 
 ### 2.5 领域模型（Pydantic v2 语法，参照 F9 `domain/models/character.py`）
 
@@ -193,7 +193,7 @@ class WorldUpdate(BaseModel):
 | id | UUID | PK | 领域层 UUID，DB int 自增映射 |
 | project_id | UUID | NOT NULL, FK→projects.id (CASCADE), 已索引 | 所属项目 |
 | name | str | NOT NULL, 1-50 字符, 去空白 | 分类名；**项目内唯一**（`(project_id, name)` 全唯一索引） |
-| kind | str | NOT NULL, DEFAULT `"geo"`，枚举 `geo` / `abstract`（`field_validator` 校验） | 分类类型（**新增**，对齐 #699 已实现）：`geo`=地理类可挂地图 / `abstract`=抽象类不可挂地图；条目挂根语义以此为准（§16） |
+| kind | str | NOT NULL, DEFAULT `"geo"`，枚举 `geo` / `abstract`（`field_validator` 校验） | 分类类型：`geo`=地理类可挂地图 / `abstract`=抽象类不可挂地图；条目挂根语义以此为准（§16） |
 | created_at | datetime | NOT NULL, AUTO | 创建时间 (UTC) |
 | updated_at | datetime | NOT NULL, AUTO | 更新时间 (UTC) |
 
@@ -209,7 +209,7 @@ class WorldCategory(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     name: str
-    kind: str = "geo"  # 新增（#699 已实现）：geo=地理类可挂地图 / abstract=抽象类不可挂地图
+    kind: str = "geo"  # geo = 地理类可挂地图 / abstract=抽象类不可挂地图
     created_at: datetime
     updated_at: datetime
 ```
@@ -245,7 +245,7 @@ class WorldExtractionResult(BaseModel):
 
 端点风格沿用 F2/F9：**创建/列表/类别汇总嵌套于项目路径**，**详情/更新/删除扁平**。错误响应格式沿用 F1/F2/F9（`{"detail": "..."}` 404 / 422）。
 
-### 3.1 端点总览（14 个；v1.1 移除 restore，DELETE 真删；v1.2 新增分类 CRUD 四端点）
+### 3.1 端点总览（14 个；DELETE 真删；含分类 CRUD 四端点）
 
 | 方法 | 路径 | 用途 | 请求体/参数 | 响应 |
 |------|------|------|--------|------|
@@ -368,7 +368,7 @@ inkflow world list --project-id <uuid> \
 
 inkflow world categories --project-id <uuid> [--json]   # 类别汇总
 
-inkflow world uncategorized --project-id <uuid> [--json]  # 存量审计：非根且无类别条目（#1570，只读）
+inkflow world uncategorized --project-id <uuid> [--json]  # 存量审计：非根且无类别条目（只读）
 
 inkflow world get --id <uuid> [--json]
 
@@ -460,7 +460,7 @@ variables:
 | 仍失败 | 构建修复 Prompt 重试 ≤ 2 次 |
 | 3 次均失败 | `WorldExtractionError` |
 
-### 5.4 合并策略（同名条目规则，v1.1 变更）
+### 5.4 合并策略（同名条目规则）
 
 **条目合并（按项目内活动条目 name 精确匹配）**:
 
@@ -488,13 +488,13 @@ variables:
 
 （对应 F9 §6「关系图谱与分组管理规则」的位置；F10 无图谱/分组，本节承载分类语义与查询规则）
 
-### 6.1 分类语义（v1.2 更新：受控词表落地）
+### 6.1 分类语义（受控词表）
 
 - `category` 是条目的**平铺属性**（一对一），字符串快照；`WorldCategory` 是**受控词表实体**（§2.2/§2.6，v1.2 反转）
 - **建议值清单**（设定/规则/约束/组织/地理/种族/文化/科技/魔法体系）仅用于 LLM 模板引导与 CLI/UI 提示，**不做枚举校验**——条目 `category` 仍为自由文本，不强制外键（D1=B1）
 - **空类别 = 未分类**，允许；`GET /world-settings/categories` 与 `GET /world-categories` 均不包含未分类条目
 - **反向同步（D2=A）**：分类重命名 → 同名字符串条目 `category` 改新名；分类删除 → 同名字符串条目 `category` 置空。条目 `category` 与分类实体名保持一致（在实体存在时）
-- **「地图」非世界观分类**：地图归地图工作台（#378），分类实体不建「地图」，前端 chips 不渲染「地图」
+- **「地图」非世界观分类**：地图归地图工作台，分类实体不建「地图」，前端 chips 不渲染「地图」
 - 类别**层级树**不在 F10 范围（§10）
 - 规则/约束类条目在 F6 上下文注入中的优先级排序归 F6 集成（§11）
 
@@ -520,17 +520,17 @@ variables:
 | 创建条目名为空/全空白 | 422: "条目名不能为空" |
 | 创建条目名 > 50 字符 | 422: "条目名不能超过 50 个字符" |
 | 创建条目名与项目内同层级条目重复 | 422: "同名世界观条目已存在（条目名在项目内必须唯一）" |
-| 创建条目时项目无根世界（非根条目带 parent_id） | 422: "请先创建根世界观后再创建条目"（`WorldRootMissingError`，#834 前置校验） |
-| 创建根条目但项目已有根（parent_id=None + 已存在根） | 422: "根世界观已存在，无法重复创建根"（`WorldRootConflictError`，#567/#834 根单例） |
-| 创建带 category 条目但分类未先建 | 422: "请先创建分类「<分类名>」后再创建条目"（`WorldCategoryMissingError`，#834 前置校验） |
+| 创建条目时项目无根世界（非根条目带 parent_id） | 422: "请先创建根世界观后再创建条目"（`WorldRootMissingError` 前置校验） |
+| 创建根条目但项目已有根（parent_id=None + 已存在根） | 422: "根世界观已存在，无法重复创建根"（`WorldRootConflictError` 根单例） |
+| 创建带 category 条目但分类未先建 | 422: "请先创建分类「<分类名>」后再创建条目"（`WorldCategoryMissingError` 前置校验） |
 | 删除后**再创建同名条目** | ✅ 成功（全唯一索引仅约束现存行；旧行已物理删除） |
 | category > 50 字符 | 422: "类别不能超过 50 个字符" |
 | content > 20000 字符 | 422: "内容不能超过 20000 个字符" |
-| 更新条目把非根条目置顶（parent_id→null + 项目已有根） | 422: "根世界观已存在，无法重复创建根"（`WorldRootConflictError`，#847 更新守卫） |
-| 更新条目把唯一根改挂他父 | 422: "请先创建根世界观后再创建条目"（`WorldRootMissingError`，#847 更新守卫） |
-| 复制到已有根的目标项目（#1493 收敛） | **子树的顶节点改挂目标根下**（不再跳过——`#1491` 后目标恒有根，原「顶层一律跳过」会让跨项目复制恒 0 条）；仅**源项目自身的根**仍跳过 + warning（不制造第二根，#848 意图保留） |
-| 复制带 category 条目到无该分类的目标 | 跳过 + warning（不落未建分类，#848 复制守卫） |
-| 并发双建根（DB 层兜底） | 仅一个成功——`(project_id) WHERE parent_id IS NULL` 部分唯一索引拒绝第二个（#849） |
+| 更新条目把非根条目置顶（parent_id→null + 项目已有根） | 422: "根世界观已存在，无法重复创建根"（`WorldRootConflictError` 更新守卫） |
+| 更新条目把唯一根改挂他父 | 422: "请先创建根世界观后再创建条目"（`WorldRootMissingError` 更新守卫） |
+| 复制到已有根的目标项目（收敛） | **子树的顶节点改挂目标根下**（不再跳过—— 目标恒有根，原「顶层一律跳过」会让跨项目复制恒 0 条）；仅**源项目自身的根**仍跳过 + warning（不制造第二根，意图保留） |
+| 复制带 category 条目到无该分类的目标 | 跳过 + warning（不落未建分类，复制守卫） |
+| 并发双建根（DB 层兜底） | 仅一个成功——`(project_id) WHERE parent_id IS NULL` 部分唯一索引拒绝第二个 |
 | 获取/更新/删除不存在的条目 | 404: "世界观条目不存在" |
 | 删除有子地点的条目（未指定 cascade/reparent_to） | 422: "该条目包含子地点，须指定级联删除或改挂"（`WorldChildrenActionRequiredError`） |
 | 级联真删（`?cascade=true`） | 整棵子树物理删除（含子地点），不可恢复 |
@@ -561,241 +561,15 @@ variables:
 
 ---
 
-## 8. 文件结构
+## 8. 迁移语义（无 alembic：`create_all` + 幂等迁移函数）
 
-遵循 ADR-007v2 包结构。**v1.1 变更面 = F10 本体 MODIFY（§8）+ 跨模块 MODIFY（§8.2）+ 数据库迁移（§8.3）**。F10 本体文件结构（对照 v1.0 §8 逐文件标注变更）：
+schema 由 `create_all` 建表 + `core/database.py` 的幂等迁移函数演进（先例 `ensure_provider_builtin_key_column` / `ensure_world_parent_id_column`）。「删除语义 = 真删」要求迁移覆盖 **5 张表**（`world_settings` / `characters` + `character_groups` + `character_relations` / `outlines` + `plot_points` + `story_arcs` / `timeline_events` / `foreshadowings`），每表幂等、步骤顺序固定：① 物理清理存量软删记录 → ② 删依赖 `is_deleted` 的索引（partial unique 与单列 `ix_*`）→ ③ 重建**全唯一**索引（去 `WHERE is_deleted = 0`，见 §2.4）→ ④ 删 `is_deleted` 列。
 
-```text
-backend/src/inkflow/
-├── domain/
-│   ├── models/
-│   │   ├── world.py             ← MODIFY: WorldSetting 移除 is_deleted 字段（§2.5）
-│   │   └── __init__.py          （不变）
-│   ├── ports/
-│   │   ├── world_repository.py  ← MODIFY: 移除 soft_delete / restore 方法（§8.1）
-│   │   ├── world_errors.py      （不变）
-│   │   └── __init__.py          （不变）
-│   └── services/
-│       ├── world_service.py     ← MODIFY: delete_setting 移除 force 软删路径；restore_setting 移除
-│       ├── _world_extractor.py  ← MODIFY: 移除 _has_soft_deleted_same_name + 软删同名分支
-│       └── __init__.py          （不变）
-├── infrastructure/
-│   ├── llm/templates/
-│   │   └── world_extract.yaml   （不变）
-│   └── database/
-│       ├── models/
-│       │   ├── world.py         ← MODIFY: WorldSettingORM 移除 is_deleted 列；partial unique → 全唯一（§2.4）
-│       │   └── __init__.py      （不变）
-│       └── repositories/
-│           ├── world_repo.py    ← MODIFY: 移除 soft_delete / restore；get/get_by_name/list 移除 ~is_deleted 过滤
-│           └── __init__.py      （不变）
-├── api/
-│   ├── routers/
-│   │   ├── world_settings.py    ← MODIFY: 移除 restore 端点；DELETE 移除 force 参数
-│   │   └── __init__.py          （不变）
-│   ├── deps.py                  （不变）
-│   └── app.py                   （不变）
-└── cli/
-    ├── commands/
-    │   ├── world.py             ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
-    │   └── __init__.py          （不变）
-    └── app.py                   （不变）
+> ⚠️ **顺序约束（load-bearing）**：SQLite `DROP COLUMN` 不允许删被索引或部分索引 `WHERE` 子句引用的列，故必须严格按上述四步；表不存在（全新环境）→ no-op，由 `create_all` 直接建无 `is_deleted` 列 + 全唯一索引。
 
-backend/src/inkflow/core/
-└── database.py                  ← MODIFY: 新增 ensure_world_drop_is_deleted 迁移函数（§8.3）
+**角色分组 N:M 迁移**：旧库需引入 `character_group_members` 关联表并移除 `characters.group_id` 单列；该列被外键引用、且 FK 不记录在 `sqlite_master` 索引里 → 必须先**重建 `characters` 表**（新表无 `group_id` 与相关 FK，拷贝数据、DROP 旧表、RENAME、重建索引）。
 
-backend/tests/
-├── unit/
-│   ├── test_world_models.py     ← MODIFY: 移除 is_deleted 断言
-│   ├── test_world_repo.py       ← MODIFY: 软删/恢复/partial unique 用例改写为真删/全唯一
-│   ├── test_world_service.py    ← MODIFY: 软删/恢复用例改写
-│   ├── test_world_extraction.py ← MODIFY: 软删同名分支用例移除
-│   └── test_world_api.py        ← MODIFY: restore 端点用例移除；DELETE 真删断言
-└── test_cli_world.py            ← MODIFY: restore 命令用例移除
-```
-
-### 8.1 WorldRepositoryProtocol（v1.1 移除软删方法）
-
-```python
-class WorldRepositoryProtocol(Protocol):
-    """世界观条目仓储端口.
-    按 spec §2.4: 项目内同层级条目 name 唯一（全唯一索引，v1.1）。
-    v1.1 真删语义：无 soft_delete / restore 方法。
-    注: 类内方法名 ``list`` 会在 mypy 类作用域解析中遮蔽内置 ``list``，
-    因此返回注解中的列表类型统一写作 ``builtins.list[...]``（同 F9）。"""
-
-    # ── WorldSetting ──
-    async def add(self, setting: WorldSetting) -> WorldSetting: ...
-    async def get(self, setting_id: int) -> WorldSetting | None: ...
-    async def get_by_name(self, project_id: int, name: str) -> WorldSetting | None: ...
-    async def list(self, project_id: int, search: str | None = None,
-                   category: str | None = None, sort_by: str = "updated_at",
-                   sort_desc: bool = True, offset: int = 0,
-                   limit: int = 50) -> tuple[builtins.list[WorldSetting], int]: ...
-    async def list_categories(self, project_id: int) -> builtins.list[tuple[str, int]]: ...
-    async def update(self, setting: WorldSetting) -> WorldSetting: ...
-    async def hard_delete(self, setting_id: int) -> bool: ...
-    async def hard_delete_many(self, setting_ids: builtins.list[int]) -> int: ...
-    async def delete_with_reparent(self, setting_id: int, reparent_to: int) -> bool: ...
-    # v1.1 移除: soft_delete / restore
-```
-
-> 仓储层方法入参用 int（与 F9 一致）；Service 负责 UUID ↔ int 转换。`hard_delete` / `hard_delete_many` / `delete_with_reparent` 为 F35 树级删除语义（保留）。
-
-### 8.2 跨模块 MODIFY 清单（全量，v1.1 变更核心）
-
-删除语义统一涉及 **F9/F11/F12/F13 同族真删 + F14 提取适配 + F15 审计适配**。总览：
-
-| 维度 | F9 角色 | F10 世界观 | F11 大纲 | F12 时间线 | F13 伏笔 | F14 提取 | F15 审计 |
-|------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| is_deleted 列移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| partial unique → 全唯一 | ✅×3 | ✅×1 | ✅×2 | ❌（无 unique） | ✅×1 | — | — |
-| restore 端点/命令/方法移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| DELETE force 参数移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| 提取软删同名分支移除 | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| 软删集合查询/引用检查移除 | — | — | — | — | — | — | ✅ |
-
-**F9 角色（character）**:
-```text
-domain/models/character.py                ← MODIFY: Character/CharacterGroup/CharacterRelation 移除 is_deleted
-domain/ports/character_repository.py      ← MODIFY: 移除 soft_delete/restore/soft_delete_group/
-                                              soft_delete_relations_of/restore_relations_of 等方法
-infrastructure/database/models/character.py ← MODIFY: 3 个 partial unique → 全唯一；移除 is_deleted 列
-infrastructure/database/repositories/character_repo.py ← MODIFY: 移除软删方法；查询移除 ~is_deleted
-domain/services/character_service.py      ← MODIFY: delete_character/delete_group 移除 force（默认真删，关系 FK CASCADE）；
-                                              restore_character 移除
-domain/services/_character_extractor.py   ← MODIFY: 移除 _has_soft_deleted_same_name + 软删同名分支
-api/routers/characters.py                 ← MODIFY: 移除 /restore 端点；DELETE 移除 force
-cli/commands/character.py                 ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
-```
-
-**F11 大纲（outline）**:
-```text
-domain/models/outline.py                  ← MODIFY: Outline/PlotPoint/StoryArc 移除 is_deleted
-domain/ports/outline_repository.py        ← MODIFY: 移除 soft_delete/restore/soft_delete_points_of/
-                                              restore_points_of 等方法
-infrastructure/database/models/outline.py ← MODIFY: 2 个 partial unique → 全唯一；移除 is_deleted 列
-infrastructure/database/repositories/outline_repo.py ← MODIFY: 移除软删方法；查询移除 ~is_deleted
-domain/services/outline_service.py        ← MODIFY: delete_outline/delete_point/delete_arc 移除 force；
-                                              restore_outline/restore_point/restore_arc 移除
-domain/services/_outline_generator.py     ← MODIFY: 移除软删同名分支
-api/routers/outlines.py                   ← MODIFY: 移除 3 个 /restore 端点；DELETE 移除 force
-cli/commands/outline.py                   ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
-```
-
-**F12 时间线（timeline）**:
-```text
-domain/models/timeline.py                 ← MODIFY: TimelineEvent 移除 is_deleted
-domain/ports/timeline_repository.py       ← MODIFY: 移除 soft_delete/restore
-infrastructure/database/models/timeline.py ← MODIFY: 移除 is_deleted 列（无 partial unique，§2.4 注）
-infrastructure/database/repositories/timeline_repo.py ← MODIFY: 移除 soft_delete/restore；查询移除 ~is_deleted
-domain/services/timeline_service.py       ← MODIFY: soft_delete_event/hard_delete_event → delete_event（真删）；
-                                              restore_event 移除
-domain/services/_timeline_extractor.py    ← MODIFY: 移除 _has_soft_deleted_same_title + 软删同名分支
-api/routers/timeline.py                   ← MODIFY: 移除 /restore 端点；DELETE 移除 force
-cli/commands/timeline.py                  ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
-```
-
-**F13 伏笔（foreshadowing）**:
-```text
-domain/models/foreshadowing.py            ← MODIFY: Foreshadowing 移除 is_deleted
-domain/ports/foreshadowing_repository.py  ← MODIFY: 移除 soft_delete/restore
-infrastructure/database/models/foreshadowing.py ← MODIFY: partial unique → 全唯一；移除 is_deleted 列
-infrastructure/database/repositories/foreshadowing_repo.py ← MODIFY: 移除 soft_delete/restore；查询移除 ~is_deleted
-domain/services/foreshadowing_service.py  ← MODIFY: soft_delete/hard_delete → delete（真删）；restore 移除
-domain/services/_foreshadowing_extractor.py ← MODIFY: 移除 _has_soft_deleted_same_title + 软删同名分支
-api/routers/foreshadowings.py             ← MODIFY: 移除 /restore 端点；DELETE 移除 force
-cli/commands/foreshadowing.py             ← MODIFY: 移除 restore 子命令；delete 移除 --permanent
-```
-
-**F14 提取（extraction）**: 各提取器的软删同名分支已并入各模块清单（_world/_character/_timeline/_foreshadowing/_outline 五处）；F14 提取服务本体（`extraction_service.py`）无软删实体、无独立变更（仅「F2 get 不含软删」注释措辞随 F2 语义不变而保留）。
-
-**F15 审计（audit）**:
-```text
-domain/ports/audit_repository.py          ← MODIFY: AuditRepositoryProtocol 移除 list_deleted
-infrastructure/database/repositories/audit_repo.py ← DELETE: 整文件移除（唯一职责 = 软删集合查询，真删后无意义）
-domain/services/audit_service.py          ← MODIFY: 移除 list_deleted 调用 + _deleted_set；
-                                              R-C1/R-C2/R-F1 软删 warning 分支移除，悬空（活动∪软删集合都不存在）→ error；
-                                              软删集合参数从 _audit_character/_audit_foreshadowing 签名移除
-domain/models/audit.py                    ← MODIFY: AuditSeverity.WARNING 移除「软删引用」语义（保留 run.status=error 等）
-```
-
-> ⚠️ **不纳入本次变更（明确排除）**：F1 项目（`project.py`/`project_repo.py`/`project_service.py`/`project` CLI 的 soft_delete/restore 保留，回收站模式）、F24 会话（`session.py` 系归档语义保留）、F16 风格（无软删实体）、F35/36/37 地图（已真删）。
-
-### 8.3 数据库迁移（is_deleted 列移除 + 存量软删数据清理）
-
-项目无 alembic，`create_all` 管理 schema + 幂等迁移函数（参照 `ensure_provider_builtin_key_column` / `ensure_world_parent_id_column` 先例，`core/database.py`）。v1.1 新增迁移函数，覆盖 **5 张表**（world_settings / characters+character_groups+character_relations / outlines+plot_points+story_arcs / timeline_events / foreshadowings）：
-
-**迁移步骤（每张表，幂等）**:
-1. **清理存量软删数据**：`DELETE FROM <表> WHERE is_deleted = 1`（Q3=A 拍板：存量软删记录物理删除，真删语义下本不该存在）
-2. **DROP 依赖 is_deleted 的索引**：partial unique 索引（`sqlite_where="is_deleted = 0"`）+ is_deleted 的 `ix_*` 单列索引
-3. **重建全唯一索引**：`CREATE UNIQUE INDEX ... ON <表>(...)`（无 `WHERE is_deleted = 0`）——partial unique → 全唯一（§2.4）
-4. **DROP is_deleted 列**：`ALTER TABLE <表> DROP COLUMN is_deleted`（SQLite 3.35+ 支持；必须先 DROP 引用该列的索引，否则报错）
-
-> ⚠️ **顺序约束（load-bearing）**：SQLite `DROP COLUMN` 不能删除「被索引/部分索引 WHERE 子句引用」的列，故步骤顺序必须是 ① 清数据 → ② 删索引 → ③ 建新索引 → ④ 删列。表不存在（全新环境）→ no-op，等 `create_all` 建新表（自动无 is_deleted 列 + 全唯一索引）。
-
-**迁移函数签名（plan 阶段展开实现）**:
-```python
-def ensure_world_drop_is_deleted(conn) -> None: ...      # world_settings
-def ensure_character_drop_is_deleted(conn) -> None: ... # characters/character_groups/character_relations
-def ensure_outline_drop_is_deleted(conn) -> None: ...   # outlines/plot_points/story_arcs
-def ensure_timeline_drop_is_deleted(conn) -> None: ...  # timeline_events
-def ensure_foreshadowing_drop_is_deleted(conn) -> None: ... # foreshadowings
-```
-
-这些函数在应用启动（`create_tables` 后）与 CLI `ensure_kernel` 路径按序调用，幂等、可重复执行。
-
-**角色分组 N:M 迁移（#701 + #831）**：`ensure_character_group_members_migration` 为旧库引入
-`character_group_members` 关联表（角色/分组 N:M），并**移除旧 schema `characters.group_id` 单列**。
-该列被 `FOREIGN KEY(group_id) REFERENCES character_groups(id) ON DELETE SET NULL` 引用，SQLite
-`ALTER TABLE ... DROP COLUMN` **禁止删除被 FK 引用的列**，且 FK 不存于 `sqlite_master` 索引记录，
-故必须在移除前**重建 characters 表**（新表无 group_id 列 + 无引用该列的 FK，拷贝其余列数据、
-DROP 旧表、RENAME、重建 `uq_characters_active_name` 等索引）。
-
-> ⚠️ **FK=ON 主事务内不可安全重建（#831）**：app lifespan 主迁移链在 `engine.begin()`（FK=ON）
-> 事务内运行——`PRAGMA foreign_keys=OFF` 在同一事务内是 no-op，且主事务 DDL 已持写锁；此时
-> `DROP TABLE characters` 会沿 FK CASCADE 清空 `character_relations` 与回填后的
-> `character_group_members`（数据丢失）。故本迁移由 `run_character_group_members_migration`
-> 在**独立 AUTOCOMMIT 连接 + FK=OFF** 上执行（主迁移事务提交后调用），规避 FK 拒止与级联清空。
->
-> **#495 备注（2026-09-17）**：`character_relations` 表此后已被并入 `knowledge_relations`（新增幂等迁移
-> `ensure_character_relations_merged_into_knowledge`，链上顺序在本段 helper **之后**）；本段为**旧库升级
-> 路径**的历史语境——新库/已迁移库该表不存在，helper 的 `character_relations` 分支持续 no-op。
-
-### 8.4 #1481 建项目自动建根 + 存量兜底（跨模块 MODIFY 清单）
-
-**默认根条目形态**（f10 侧定义；根规则与树语义见 f35 §2.1 规则 7 / §5.7）：
-
-| 字段 | 值 | 说明 |
-|------|-----|------|
-| `name` | `"世界观总纲"`（常量 `DEFAULT_WORLD_ROOT_NAME`，`domain/models/world.py`） | 条目名同级唯一 ⇒ 项目内顶层不再允许同名条目 |
-| `parent_id` | `NULL` | 根（顶层），受 `uq_world_settings_root_per_project` 部分唯一索引兜底 |
-| `category` | `""` | **根无分类**（#722 语义）⇒ 不触发 #834/#1321 分类前置校验 |
-| `content` | `""` | 空内容（用户后续自行填写） |
-| `extra` | `{}` | 无扩展属性 |
-
-**跨模块 MODIFY 清单**：
-
-```text
-domain/models/world.py                    ← MODIFY: 新增常量 DEFAULT_WORLD_ROOT_NAME = "世界观总纲"
-domain/services/world_service.py          ← MODIFY: 新增 ensure_root_setting(project_id)（幂等：有根返回既有根，
-                                              无根以空分类建默认根；复用 create_setting 校验链与 data_change 事件）
-domain/services/project_service.py        ← MODIFY: create_project 新增 root_initializer 钩子参数
-                                              （Callable[[uuid.UUID], Awaitable[Any]] | None，镜像 map_cleanup），
-                                              项目落库后调用——唯一项目创建入口，覆盖 API/CLI/agent 全部调用方
-api/deps.py                               ← MODIFY: get_project_service 注入 root_initializer
-                                              （延迟构造 WorldService，避免非创建端点承担构造开销）
-core/migrations_world_root.py             ← CREATE: ensure_world_root_for_projects(conn)（幂等补根迁移；
-                                              database.py 900 行护栏 → 拆模块 + re-export 进 __all__）
-core/database.py                          ← MODIFY: re-export ensure_world_root_for_projects（+ __all__ 登记）
-api/app.py                                ← MODIFY: lifespan 接线（ensure_world_root_unique_index 之后、
-                                              ensure_entity_uuid_columns 之前）
-```
-
-⚠️ **不动**：`api/routers/world_settings.py` 的 #641 懒创建分支（无 `parent_id` → 有根挂根 / 无根建根）保持不变
-——它是旧库与异常路径的兜底，且「无根建根」在「根必存在」后自然不可达（防御性保留）。
-
----
+> ⚠️ **FK=ON 主事务内不可安全重建**：主迁移链运行在 `engine.begin()`（FK=ON）事务内，`PRAGMA foreign_keys=OFF` 同事务内无效且已持写锁 → `DROP TABLE characters` 会沿 FK CASCADE 清空 `character_relations` 与 `character_group_members`。故该迁移须在**独立 AUTOCOMMIT 连接 + FK=OFF**、主迁移事务提交后执行。迁移函数在应用启动（`create_tables` 后）与 CLI `ensure_kernel` 路径按序调用，幂等可重复。
 
 ## 9. 测试策略
 
@@ -810,7 +584,7 @@ API 测试: 10 端点（Mock Service）
 CLI 测试: world 组（Mock WorldService）
 ```
 
-### 关键测试场景（v1.1 改写点）
+### 关键测试场景
 
 **领域模型**: WorldSetting 无 is_deleted 字段（构造不接受、序列化不含）；其余 name/category/content 校验、WorldUpdate 部分更新、提取 DTO schema 不变
 
@@ -824,7 +598,7 @@ CLI 测试: world 组（Mock WorldService）
 
 **CLI**: 各子命令成功路径与透传 / 信封与退出码 / delete 二次确认 + `--force` / `--json` + delete 无 `--force` → VALIDATION_ERROR / `--text` 与 `--text-file` 互斥 / extract 摘要与 `--json`。**v1.1 移除** restore 子命令用例
 
-### 跨模块测试改写面（§8.2 对应）
+### 跨模块测试改写面
 
 | 测试文件 | 改写内容 |
 |---------|---------|
@@ -876,9 +650,9 @@ F10 依赖:
 F10 被依赖（v1.1 删除语义变更的下游）:
   F6 (context_service) ✅ — world_setting 数据源
   F7 (CLI)             ✅ — world 命令组
-  F9/F11/F12/F13       ✅ — 同族真删统一（§8.2 联动）
+  F9/F11/F12/F13       ✅ — 同族真删统一（§8 联动）
   F14 (统一提取)        ✅ — 提取合并的软删同名分支随 F10/F9/F11/F12/F13 真删同步移除
-  F15 (审计)            ✅ — 软删集合查询/软删引用 warning 随真删移除（§8.2）
+  F15 (审计)            ✅ — 软删集合查询/软删引用 warning 随真删移除（§8）
   F20 (MCP)             ⏳ — manage_world 工具
 ```
 
@@ -886,23 +660,24 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 
 ---
 
-## 12. 关键架构决策记录
+## 12. 决策表
 
-| 决策 | 方案 | 理由 |
-|------|------|------|
-| 删除语义 | **普通实体（F9/F10/F11/F12/F13）软删 → 真删**（v1.1） | 2026-08-09 世界观三连拍板「删除语义收敛：会话唯一保留归档，其他功能删除 = 确认后真删，restore 无使用情景」；Q1=A 全族统一 |
-| F1 项目回收站保留 | **不改**（v1.1） | 项目是顶层容器，删除级联海量数据，回收站防误操作是 PRD 明确设计；issue 影响面未列 F1（Q2=A） |
-| F24 会话归档保留 | **不改**（v1.1） | 会话是唯一归档语义实体，拍板明确 |
-| is_deleted 列处置 | **移除列 + 存量软删记录物理删除**（v1.1） | 真删语义下列无意义；保留死列留下不可见死数据；Q3=A（最彻底） |
-| partial unique → 全唯一 | `(project_id, parent_id, name)` 全唯一索引（v1.1） | 真删后无软删记录，重建同名天然合法；partial 的 `WHERE is_deleted=0` 失去意义 |
-| 合并策略 | 非空字段覆盖；移除「软删同名 → 新建 + warning」分支 | 真删后不存在软删档案，分支无意义 |
-| 树级删除语义 | cascade/reparent 保留；force 软删路径移除 | F35 树形结构仍需要级联真删/改挂；软删/硬删切换（force）真删后无意义 |
-| 分类建模 / 条目关联 / 提取重试 / 温度 / 模板 / 端点布局 | 沿用 v1.0 决策 | 删除语义变更不影响这些决策 |
-| 分类建模反转（v1.2） | **条目平铺属性 → 独立受控词表实体 `WorldCategory`**（D1=B1） | #389 GUI 需「新建分类」CRUD + 分类独立于地图；反转 §2.2 v1.0「不建表」决策；条目 `category` 保留字符串快照，零存量迁移 |
-| 分类反向同步（v1.2） | **重命名改名 / 删除置空**（D2=A） | 受控词表一致性：条目 `category` 与分类实体名保持同步；删除后条目变「未分类」 |
-| 分类类型 kind（#699，**新增补记**） | **`WorldCategory` 增 `kind ∈ {geo, abstract}`**（默认 geo） | 区分「地理类（可挂地图）」与「抽象类（纯标签）」——地图树 kind 分流（`MapDirectoryTree.tsx` 中 abstract 分类的条目不进树）+ 地图入口门控；条目挂根语义见 §16 |
-
----
+| 决策点 | 选择 | 理由 | 备选（否决） |
+|--------|------|------|--------------|
+| 删除语义 | 普通实体（F9/F10/F11/F12/F13）**真删**（确认后，restore 移除） | 会话之外无 restore 使用情景；软删只留下不可见死数据 | 保留软删 + restore（无使用情景） |
+| F1 项目回收站 | **保留软删 + restore** | 项目是顶层容器，删除级联海量数据，防误操作是 PRD 明确设计 | 纳入统一真删（影响面未列 F1） |
+| F24 会话归档 | **保留归档语义**（可直删 / 可归档 / 取消归档） | 会话是唯一归档语义实体 | 纳入统一真删 |
+| `is_deleted` 列处置 | **移除列 + 存量软删记录物理删除** | 真删语义下列无意义；保留死列留下不可见死数据 | 保留列 / 只删列不清数据 |
+| 唯一约束 | `(project_id, parent_id, name)` **全唯一**索引 | 真删后无软删记录，重建同名天然合法；partial 的 `WHERE is_deleted = 0` 失去意义 | 保留 partial unique |
+| 合并策略 | 非空字段覆盖；无「软删同名 → 新建 + warning」分支 | 真删后不存在软删档案 | 保留该分支 |
+| 树级删除语义 | cascade / reparent 保留；`force` 软删路径移除 | 树形结构仍需级联真删 / 改挂；软删与硬删切换在真删后无意义 | 保留 `force` 切换 |
+| 分类建模 | **独立受控词表实体 `WorldCategory`**（条目 `category` 保留字符串快照） | GUI 需「新建分类」CRUD 且分类独立于地图；零存量迁移 | 条目平铺属性枚举（无法 CRUD） |
+| 分类反向同步 | 重命名改名 / 删除置空 | 受控词表一致性：条目 `category` 与分类实体名同步，删除后条目变「未分类」 | 删除分类时级联删条目 |
+| 分类 `kind` | `WorldCategory.kind ∈ {geo, abstract}`（默认 geo） | 区分「地理类（可挂地图）」与「抽象类（纯标签）」→ 地图树 kind 分流 + 入口门控 | 不设 kind（抽象条目混入地图树） |
+| abstract 条目父级 | **不挂树**（后端挂根行为不变，前端渲染层从树过滤，仅分类筛选视图可见） | 避免树语义分叉；后端零改动 | 建第二根 / 挂固定「抽象根」 |
+| geo 条目父级 | 自动挂根（现状不变，无迁移） | 既有自动挂根契约稳定 | 改为手动挂根 |
+| `kind` 判定 | 条目所属分类的 kind；`category=""` 或分类未注册 → 按 geo | 与前端地图树 kind 分流判据一致，避免双源 | 条目自带 kind 字段（与分类冲突） |
+| 章节职责边界 | §6.1 管分类受控词语义；本章只定义 kind 对条目父级归属的推导链 | 不改重命名 / 删除反向同步、提取合并语义、索引与迁移机制 | 合并进 §6（职责混淆） |
 
 ## 13. 验收标准
 
@@ -917,41 +692,29 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 | M7 | GUI 删除确认框对齐（真删不可恢复提示）+ restore 入口处理 | GUI 删除确认框文案对齐（GUI 本无 restore 入口，仅确认文案） |
 | M8 | 覆盖率门禁（ADR-027 98.5/95.0） | coverage.xml 对照 |
 | M9 | PR 合入 + CI 全绿 | statusCheckRollup 对照 |
-| M10 | issue #211 关闭；worktree 清理 | issue closed |
+| M10 | issue  关闭；worktree 清理 | issue closed |
 | M11 | 分类 CRUD 四端点 RED 全 FAIL 有实证（v1.2） | 后端测试输出存档，批全 FAIL |
 | M12 | 分类 CRUD 后端测试全绿（v1.2） | pytest 定向全绿 |
 | M13 | 分类反向同步生效（重命名改名 / 删除置空，v1.2） | 定向测试 + 手工验证 |
 | M14 | 前端导航 + 分类 chips + 地图视图按钮（v1.2） | vitest 全绿 + 三契约正确 |
-| M15 | issue #389 关闭；worktree 清理（v1.2） | issue closed |
-| M16 | 世界观「先建根/先建分类」后端前置校验（#834）：无根时建非根条目拒绝、根单例、带未建分类条目拒绝 | 定向测试（service 单测 + API 422 断言）全绿 |
+| M15 | issue  关闭；worktree 清理（v1.2） | issue closed |
+| M16 | 世界观「先建根/先建分类」后端前置校验：无根时建非根条目拒绝、根单例、带未建分类条目拒绝 | 定向测试（service 单测 + API 422 断言）全绿 |
 
 ---
 
-## 14. 影响面评估结论（对应 issue #211 影响面 1-7）
+## 14. 影响面评估结论
 
 | # | 影响面 | 评估结论 | 落地 |
 |---|--------|---------|------|
 | 1 | F10 world_settings | `is_deleted` 列移除；DELETE 默认软删 → 真删（force 软删路径移除）；restore 端点/方法/命令移除 | §2/§3/§4/§8 |
-| 2 | partial unique 索引 | 7 个 `(…, name) WHERE is_deleted=0` partial unique → 全唯一（F9×3、F10×1、F11×2、F13×1；F12 无 unique） | §2.4/§8.2/§8.3 |
-| 3 | F14 提取合并 | `get_by_name` 软删排除逻辑（`~is_deleted`）移除；同名合并锚点的「软删同名 → 新建 + warning」分支移除 | §5.4/§8.2 |
-| 4 | F15 审计 | 软删引用检查规则（`audit_repo.list_deleted` 数据源）移除；R-C1/R-C2/R-F1 软删 warning → 悬空 error；audit_repo 整文件删除 | §8.2 |
-| 5 | F9-F13/F16 同族 | F9/F11/F12/F13 软删 → 真删（与 F10 同族）；**F16 无软删实体，无变更** | §8.2 |
+| 2 | partial unique 索引 | 7 个 `(…, name) WHERE is_deleted=0` partial unique → 全唯一（F9×3、F10×1、F11×2、F13×1；F12 无 unique） | §2.4/§8/§8 |
+| 3 | F14 提取合并 | `get_by_name` 软删排除逻辑（`~is_deleted`）移除；同名合并锚点的「软删同名 → 新建 + warning」分支移除 | §5.4/§8 |
+| 4 | F15 审计 | 软删引用检查规则（`audit_repo.list_deleted` 数据源）移除；R-C1/R-C2/R-F1 软删 warning → 悬空 error；audit_repo 整文件删除 | §8 |
+| 5 | F9-F13/F16 同族 | F9/F11/F12/F13 软删 → 真删（与 F10 同族）；**F16 无软删实体，无变更** | §8 |
 | 6 | GUI | 删除确认框已统一（`ConfirmDialog`，F43）；**GUI 本无 restore 入口**（restore 仅后端 API + CLI），仅需确认文案对齐「真删不可恢复」 | §7 |
 | 7 | 测试面 | 688 处软删匹配、~45 测试文件改写（F9-F15 + world）；F1/F24/session/map 测试不动 | §9 |
 
 > **明确排除（拍板）**：F1 项目回收站、F24 会话归档——保留软删语义，不在本次变更范围。
-
----
-
-## 待澄清问题（已拍板 ✅，2026-08-13）
-
-| # | 问题 | 拍板 | 结论 |
-|---|------|------|------|
-| Q1 | 统一范围：F9/F11/F12/F13 是否一并真删？ | ✅ A（全部统一） | F9/F10/F11/F12/F13 一起真删，F14/F15 连锁适配（§8.2） |
-| Q2 | F1 项目是否纳入？ | ✅ A（不改 F1） | 项目保留回收站（软删 + restore），PRD 防误操作设计（§10/§12） |
-| Q3 | is_deleted 列处置 + 存量软删数据 | ✅ A（移除列 + 清存量） | 移除 is_deleted 列 + 存量软删记录物理删除（§8.3） |
-
-> **补充拍板（用户 2026-08-13）**：F24 会话归档语义确认——会话可直删 / 可归档 / 归档可取消归档 / 归档可直删，**保持不变**（§10）。
 
 ---
 
@@ -985,7 +748,7 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 | world create | 项目存在 | 建条目 | ✅ 世界观条目创建成功: [灵气复苏] (设定)；--json 信封 | 422 VALIDATION_ERROR | --content-file <path> 从 UTF-8 文件读正文（与 --content 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1） |
 | world list | 项目存在 | 列表 | 列表 / --json | — | --search/--category/--parent-id/--sort |
 | world categories | 项目存在 | 类别汇总 | JSON | — | — |
-| world uncategorized | 项目存在 | 只读审计：非根且无类别条目（#1570） | ⚠️ 列表 + 回填指引；--json `{items, total}` | 404 项目不存在 | 空类别过滤分页；**零写入**（不删/不改），回填走 `world update --category` |
+| world uncategorized | 项目存在 | 只读审计：非根且无类别条目 | ⚠️ 列表 + 回填指引；--json `{items, total}` | 404 项目不存在 | 空类别过滤分页；**零写入**（不删/不改），回填走 `world update --category` |
 | world get | 条目存在 | 查询 | JSON | NOT_FOUND「世界观条目不存在」退出码 1 | — |
 | world update | 条目存在 | 部分更新 | ✅ / JSON | 404 NOT_FOUND；422 VALIDATION_ERROR | --category "" 清除类别；--content-file <path> 从 UTF-8 文件读正文（与 --content 互斥 → 退出码 2） |
 | world delete | 条目存在 | 二次确认（--force 跳过）→ 真删 | ✅ 条目已删除: [灵气复苏]；--json data null | 404 NOT_FOUND；422 VALIDATION_ERROR（有子未指定）；--json 无 --force → VALIDATION_ERROR | --cascade 真删子树 / --reparent-to 改挂；无 --permanent（默认真删） |
@@ -1002,122 +765,18 @@ F10 被依赖（v1.1 删除语义变更的下游）:
 
 ---
 
-## 16. 分类 kind 与条目挂根语义（设计定义 · 已拍板 ①C · #1334）
+## 16. 分类 kind 与条目挂根语义
 
-> **章节定位（#1334 设计单）**：本章是**设计定义**（选项 + 推荐 + 取舍 + 迁移影响），**不含实现**。**① 已于 2026-10-02 拍板 ①C**（用户「按照推荐」）；实施另起实现轨。
->
-> **与既有章节的边界**：§6.1 定义「分类作为受控词表的语义」；本章只定义「分类 `kind` 如何影响**条目创建时的父级归属**」这一条推导链。**不改** §6.1 的分类重命名/删除反向同步，**不改** §5 提取合并语义，**不改** §2.4/§8.3 的索引与迁移机制（除非拍板 ①(a)/(b) 另开迁移）。
->
-> **上游基线**：#641（自动挂根）/ #699（分类 kind + 地图树隔离）/ #721（地图树 kind 分流）/ #834（一项目一根）/ #1321（非根条目必填分类）/ #1322（树污染 + 地图树显示门控）。
+> **边界**：§6.1 定义「分类作为受控词表」的语义；本章只定义「分类 `kind` 如何影响**条目创建时的父级归属**」这一条推导链，不改 §6.1 的重命名 / 删除反向同步、不改 §5 提取合并语义、不改 §2.4 / §8 的索引与迁移机制。
 
-### 16.1 事实基线（实测，2026-10-02，worktree 基于 main @ 8429c6aa）
+### 16.1 落地规则
 
-**「按 kind 挂根」从未实现过**（git 实证）：`61f8b5de`（#641）引入自动挂根时**无 kind 概念**（一律挂根）；`0bb0ab8b`（#699）只给**分类**加 `kind` 字段 + 地图树隔离，**条目创建的挂根分支完全未动**。用户记忆中的设计实际是 #699 的**分类层门控**（不进地图树 / 隐藏地图入口）。
+1. **分类 chip（工具栏）**：geo 类带 🗺、abstract 类不带（依 `kind`）。
+2. **树行分类徽标**：**不表达 kind**（只显示分类名）——badge 空间有限，kind 由 chip + 树分区表达。
+3. **树分区**：abstract 条目移出主树（折叠区 / 分类筛选视图），由前端渲染层过滤，**后端零改动**。
 
-| # | 现状（已实现） | 位置 |
-|---|---|---|
-| F1 | **自动挂根（#641）**：`POST /world-settings` body 无 `parent_id` → 取项目根；有根 → 挂根下；无根 → 建根 | `api/routers/world_settings.py:221-238`、`world_service.py:290-292` |
-| F2 | **一项目一根（#834）**：`parent_int is None and has_root → WorldRootConflictError`；有父但无根 → `WorldRootMissingError` | `world_service.py:160-168` |
-| F3 | **非根条目必填分类（#1321）**：`parent_int is not None and not category_stripped → WorldCategoryMissingError` | `world_service.py:189-194` |
-| F4 | **带 category 条目须先建分类（#834）**：分类实体不存在 → `WorldCategoryMissingError` | `world_service.py:174-179` |
-| F5 | **根单例 DB 兜底（#849）**：`uq_world_settings_root_per_project (project_id) WHERE parent_id IS NULL` | `infrastructure/database/models/world.py:54-59` |
-| F6 | **分类 kind（#699）**：`kind ∈ {geo, abstract}`，默认 geo；geo=可挂地图 / abstract=不可挂地图 | `domain/models/world.py:288`、ORM `world.py:173-178`、CLI `cli/commands/world.py:228` |
-| F7 | **前端 kind 分流（#721）**：`kindByCategory.get(category) !== 'abstract'` —— abstract 分类的条目不进**地图树**；**空/未知分类按 geo 处理** | `MapDirectoryTree.tsx:651-660` |
+### 16.2 验收锚点（设计级）
 
-**spec 漂移登记（已实现但本 spec 此前未记，本章同步对齐）**：
-
-- §2.6 `WorldCategory` 表 / §2.5 pydantic 原**未含 `kind` 字段** → 已补（标「新增」）。
-- §3.1/§3.2 原**未记载 #641 自动挂根**行为 → 本章 F1 补齐（§3 正文不动，以本章为登记面）。
-- §12 决策表原**未登记 #699 kind 决策** → 已补一行。
-
-**🔴 关键技术约束（决定选项可行性的根因）**：`kind` 是 `world_categories` 表的列，**`world_settings` 表没有 kind 列**。⇒ 任何「按 kind 分根」的 **DB 级约束**（#849 式部分唯一索引）**无法用现有表结构表达**——必须先在条目表冗余一列 kind（或由分类 kind 派生）。此约束使选项 (a) 的 DB 兜底成本显著高于 issue 正文估计（§16.5）。
-
-**原型证据表（不支持「按 kind 挂根」，且原型内部自相矛盾）**：
-
-| 项 | 实测 | 结论 |
-|---|---|---|
-| 树根数 | `design/GUI/world/world.html` 树视图 **多根森林**：**5 个节点皆 depth-0**（L430/470/476/482/488；原型示例条目名不复述） | 原型按「多根」画，但**不能证明**「按 kind 分根」——原型无 kind 表达 |
-| kind 视觉表达（①A 新 chips） | `world.html:344-376`：**仅「地理」带 🗺**；城市 / 秘境 / 势力 / 功法 / 文化 / 科技 **不带** | ❌ |
-| kind 视觉表达（legacy 对照 chips） | `world.html:381-385`：地理 / 城市 / 秘境 / 势力 / 功法 **全带 🗺** | ❌ 与上一行自相矛盾 |
-| kind 视觉表达（library world 面板） | `design/GUI/library/library.html:384-388`：地理🗺 / 城市🗺 / 秘境🗺 **带**；势力 / 功法 **不带** | ❌ 与 world.html 新 chips 不一致（同为 geo 的城市/秘境，一处带一处不带） |
-| 树行分类徽标 | `world.html:433/440/447/454/460/466/473/479/485/491` **全部无 🗺** | 与 chips 表达不一致 |
-| 新建条目对话框 | ❌ 原型无 | 对「默认挂根 / 选父」**零表达** |
-| 新建分类对话框 | ❌ 原型无（states 仅 main / cat-selected / cat-registered / btn-b / plan-b / plan-c / legacy / map / copy-dialog） | geo/abstract radio 是 **spec + 实现独有**（**规格领先原型**） |
-
-> ⚠️ **任务书勘误**：「world.html 五个 chip 全带 🗺」仅对 **legacy 对照 chips** 成立；①A 已实现形态的新 chips 只有「地理」带 🗺。三处（library 面板 / world 新 chips / world legacy）对同一 kind 语义有三种表达 ⇒ **原型不构成 kind 视觉规范，反而需要收敛**（§16.7）。
-
-### 16.2 ① abstract 条目的父是谁？
-
-| 选项 | 机制 | 代价 / 迁移影响 |
-|---|---|---|
-| **(a) 建第二个根** | 一项目两根（geo 根 + abstract 根）；`create_setting` 的 `parent_int is None` 分支从「有无根」改为「本 kind 是否已有根」 | 🔴 **推翻 #834 根单例不变量**，牵动 **#567 / #834 / #847 / #849** 四条契约；DB 兜底索引 `uq_world_settings_root_per_project` **无法用现有结构表达**（kind 在分类表 ⇒ 须先在条目表冗余 kind 列）→ 索引须改为 `(project_id, kind) WHERE parent_id IS NULL`；`update_setting` 置顶/改挂守卫（#847）按 kind 重写；**存量数据迁移**（现有项目全部条目在单一根下 → 须决定是否拆根/如何补 kind）；前端须渲染双根；**原型须重新出图** |
-| **(b) 挂固定「抽象根」** | 项目仍保持唯一根（`parent_id IS NULL`）；增设一个**约定节点**（如「抽象设定」）作为 abstract 类条目的父 | 🟡 **仍需区分「谁是约定根」**（约定节点是普通条目，须防用户误删/改挂，但无「不可删」语义）；**语义上仍「挂树」**——抽象条目依旧出现在树里，**不解决「树污染」诉求**（除非叠加 (c) 的树侧过滤）；后端改动中等（约定节点创建/查找/保护）+ 存量迁移 |
-| **(c) 不挂树**（✅ **已拍板 ①C**，2026-10-02） | **后端挂根行为不变**（#641 照旧一律挂根）；abstract 条目由**前端渲染层**从树过滤（复用 #721 `MapDirectoryTree` 的 kind 分流模式，扩展到列表页 `WorldNodeView`），仅在**分类筛选视图**（选中 abstract 分类）可见 | 🟢 **零后端改动**（无 DB / 无契约 / 无迁移）；前端须在**所有树渲染点**落地过滤（列表页 `WorldNodeView` + 地图树已有）；**局限**：后端数据层 abstract 条目仍挂在根下（`parent_id` 指向根）——其他消费方（CLI / MCP / agent 工具 / AI 提取读树）仍会看到其混在根下 |
-
-**①(c) 已拍板（2026-10-02，用户「按照推荐」）**：唯一「零后端改动 + 零迁移 + 与 #1322 前端树分区过渡方案同族」的选项；#1322 已合的「未挂图条目折叠区」是同一模式的延伸。
-
-### 16.3 ② geo 条目
-
-**保持现状（② 已拍板，2026-10-02）**（#641 自动挂根）：geo 类（及未分类 / 未知分类，见 §16.4）条目继续自动挂根。#641 行为**不变**，**无迁移**。
-
-### 16.4 ③ 谁判定 kind？（含无分类 / 未注册分类）
-
-- **判定源**：**条目的分类的 kind** —— 按条目 `category`（字符串快照）在 `world_categories` 中查同名分类，取 `kind`。
-- **边界 1（无分类）**：`category=""`（未分类）**合法**（§6.1「空类别 = 未分类」）→ 无分类可查 ⇒ **按 geo 处理（挂根）**。
-- **边界 2（有类别但未注册）**：`category` 有值但分类实体不存在（AI 提取管线豁免所致，见 `world_service.py:189-192` 注释；UI 表现为 #1375 ②A「待注册」chip）→ 同样**按 geo 处理**。
-- **判据统一（load-bearing）**：包「空/未知分类视为 geo」的口径**已在前端 #721 落地**（`kindByCategory.get(category) !== 'abstract'`，未命中 → geo）。**若选 (c)**，前端过滤直接沿用该判据，后端不参与；**若选 (a)/(b)**，后端 service 层新增判定**必须与前端同一判据**（否则 UI 与数据不一致）。
-- **判定位置**：唯一真相源随选项而定 —— (c) = 前端渲染层；(a)/(b) = 后端 service 层（`create_setting` / `update_setting`），因须与 DB 约束/守卫生效面一致。
-- **「未分类 / 未注册」为何不按 abstract**：若按 abstract 处理，则「无分类条目」会被静默排除出树——与 #722「根无分类」守护及 #1321「非根条目必填分类」的语义冲突（非根条目本应必有分类，空分类只应出现在根或历史豁免数据中）。按 geo 处理保持「默认可见」。
-- **③ 已拍板（2026-10-02，用户「按照推荐」）**：判定 = 条目的分类的 kind；`category=""` 或分类未注册 → 按 geo 处理。此为定论，实现轨按此执行。
-
-### 16.5 迁移影响评估（①C 不涉及；仅被否决的 (a)/(b) 需要）
-
-| 面 | (a) 建第二根 | (b) 约定节点 |
-|---|---|---|
-| 契约 #567（根单例） | 🔴 重写：由「一项目一根」→「一项目每 kind 一根」 | 🟡 不变（仍唯一根） |
-| 契约 #834（先建根 + 前置校验） | 🔴 重写 `parent_int is None` 分支（按 kind 判定根）+「先建根」按 kind | 🟡 部分（新增约定节点前置） |
-| 契约 #847（更新守卫：置顶/改挂） | 🔴 重写「变更后每 kind 仍恰有一根」不变量 | 🟡 扩展（禁改挂/删除约定节点） |
-| 契约 #849（DB 兜底） | 🔴 索引 → `(project_id, kind) WHERE parent_id IS NULL`；**须先给 `world_settings` 加 kind 列**（冗余分类 kind） | 🟡 不变（唯一根兜底仍成立） |
-| 端点 / CLI | `POST /world-settings` 自动挂根分支按 kind；CLI `world create` 增 kind 语义（或由分类派生） | 约定节点创建/查找（或惰性创建） |
-| 存量数据迁移 | 迁移函数（`create_all` + `ensure_*` 幂等，参照 `ensure_world_parent_id_column` 先例）：补 kind 冗余列；决定存量条目是否拆根 | 迁移：为存量 abstract 分类条目补挂约定节点 |
-| 原型重出图范围 | `design/GUI/world/`：树视图（双根）+ 新建条目对话框（选父/kind）+ 新建分类对话框（geo/abstract 与挂根联动）；两原型 kind 表达收敛（§16.7） | 同（约定节点须在原型可见 + 防误删表达） |
-| 测试面 | `backend/tests/unit/api/routers/test_world_api.py` 的 `TestWorldRootSingletonAPI`、`test_world_category_1321.py`、`MapDirectoryTree.*.test.tsx`、`library-p1/p2.test.tsx`、旅程 `stage4/stage5` 产物结构 | 同（+ 约定节点守护用例） |
-
-**规模估计**（父侧按 issue 正文 3-5 人天校准）：(a) 因 §16.1 的「kind 不在条目表」约束，**实际高于 3-5 人天**（须加列 + 索引重建 + 四条契约 + 迁移 + 原型）；(b) 中等（约定节点机制 + 守护 + 迁移）；(c) **小**（纯前端过滤 + 测试）。
-
-### 16.6 与 #1322 / #834 的关系
-
-- **#1322**（树污染 + 地图树显示门控，已合）：其「页面树污染」的**过渡解** = 地图工作台「未挂图条目折叠区」（前端分区）+ 地图树 #721 kind 分流。**#1334 是其完整解**——(c) 即把 #1322 的前端分区模式扩展到**列表页树**并覆盖 abstract 分类。**#1322 已声明**：「列表页 `WorldNodeView` 树不受影响（一项目一根 #834 + 后端 #641 自动挂根语义**不变**）」——(c) 顺此声明延伸，(a)/(b) 则**推翻**它。
-- **#834**（一项目一根，已合）：其「根单例」不变量是**当前后端硬语义**。(a) 直接推翻该不变量（成本最高）；(b) 保留不变量但未解决诉求；(c) **完全不触碰** #834 不变量——这正是 (c) 的最大优势。
-
-### 16.7 ①C 落地：原型统一规则（实现轨执行；本轨不产出原型）
-
-`design/GUI/` 三处 kind 表达自相矛盾（§16.1），须在实现轨按**单一规则**收敛：
-
-1. **分类 chip**（工具栏）：**geo 类带 🗺、abstract 类不带**（依 `kind`）⇒ `world.html` 新 chips 须给「城市 / 秘境」补 🗺（其语义为 geo）；`library.html` 已符合；`world.html` legacy chips（全带 🗺）**保留为「复刻旧现状」对照，不作目标态**。
-2. **树行分类徽标**：**不表达 kind**（只显示分类名），或与 chip 一致加 🗺——**二选一须统一**（现状为「树行一律无 🗺」）。**推荐：树行不表达 kind**（badge 空间有限，kind 由 chip + 树分区表达）。
-3. **树分区**：abstract 条目移出主树（折叠区 / 分类筛选视图）——与 #1322 折叠区形态对齐。
-
-> 上述规则**仅供实现轨**；本轨**不修改任何原型文件**（边界）。
-
-### 16.8 拍板结果（2026-10-02 · 用户确认「按照推荐」）
-
-| # | 决策点 | 结论（已拍板） |
-|---|---|---|
-| **①** | abstract 条目的父是谁？ | **①C — 不挂树**（后端挂根行为不变；abstract 条目由前端渲染层从树过滤，仅在分类筛选视图可见）。**否决**：(a) 建第二根、(b) 挂固定「抽象根」 |
-| **②** | geo 条目 | **保持现状**（#641 自动挂根不变，无迁移） |
-| **③** | 谁判定 kind | **条目的分类的 kind；`category=""` 或分类未注册 → 按 geo 处理**（与前端 #721 判据一致） |
-
-> 落地归属：①C 由**前端渲染层**实现（`WorldNodeView` 树侧过滤，复用 #721 kind 分流模式），**后端零改动**；③ 判据前端沿用 `kindByCategory.get(category) !== 'abstract'`。实施轨开工无需再确认。
-
-### 16.9 验收锚点（设计级，本章无实现）
-
-- D1：§16.2 三选项各含「机制 + 代价 + 迁移影响」，且已拍板项明示局限。
-- D2：§16.4 覆盖「无分类」「未注册分类」两个边界，并给出与前端 #721 一致的判据。
-- D3：§16.5 列出 (a)/(b) 须同步的四条契约（#567/#834/#847/#849）+ 唯一索引改动 + 存量迁移 + 原型重出图范围。
-- D4：§16.1 原型证据表纳入三处 kind 表达的自相矛盾项，并说明 (c) 下的统一规则（§16.7）。
-- D5：**①C 已拍板**（2026-10-02）——实现轨按 ①C 实施（前端树过滤），**后端零改动**，无需同步 §3.1/§7/§12/§13。
-
----
-
-*本章为 #1334 设计定义。① 已于 2026-10-02 拍板 **①C**（不挂树，前端过滤）；实现轨可据此开工。*
+- abstract 分类下的条目**不进入**地图树（`WorldNodeView` 树侧过滤 `kindByCategory.get(category) === 'abstract'`），仅在分类筛选视图可见。
+- geo 分类下的条目自动挂根行为不变，无迁移。
+- `category=""` 或分类未注册 → 按 geo 处理，与地图树 kind 分流判据一致。
