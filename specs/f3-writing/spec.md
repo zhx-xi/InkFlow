@@ -26,7 +26,7 @@
         ┌───────────────────────────┼───────────────────────────┐
         ↓                           ↓                           ↓
 LLMClientProtocol           PromptTemplateProtocol      ContextProviderProtocol
-   (F5 已实现)                (F5 已实现)                  (F6 待实现, F3 提供 Null 实现)
+   (F5)                (F5)                  (F6, F3 提供 Null 实现)
 
  domain/ 不 import langchain / infrastructure（CI 强制检查，ADR-015）
 ```
@@ -381,7 +381,7 @@ backend/tests/
 └── test_writing_api.py          ← CREATE: API 集成测试 (Mock Service)
 ```
 
-> 复用 F5 已实现的 `infrastructure/llm/`（LangChainLLMClient + PromptManager + templates）。F3 使用现有 `writer.yaml`（生成/续写）与 `reviser.yaml`（修订）模板；如需细分可在 `infrastructure/llm/templates/` 新增 `writing_generate.yaml` 等，属 F5 范围的小扩展。
+> 复用 F5 的 `infrastructure/llm/`（LangChainLLMClient + PromptManager + templates）。F3 使用现有 `writer.yaml`（生成/续写）与 `reviser.yaml`（修订）模板；如需细分可在 `infrastructure/llm/templates/` 新增 `writing_generate.yaml` 等，属 F5 范围的小扩展。
 
 ### 8.1 ContextProviderProtocol（F6 依赖的 Port）
 
@@ -390,7 +390,7 @@ class ContextProviderProtocol(Protocol):
     """上下文注入端口 — 由 F6 (context_service) 实现。
 
     F6 (context_service) 未装配时，F3 使用 NullContextProvider（返回空字符串），
-    上下文由调用方通过请求中的 context 字段传入（F6 已实现后由 ContextProvider 注入）。
+    上下文由调用方通过请求中的 context 字段传入（由 ContextProvider 注入）。
     """
 
     async def get_context(
@@ -492,21 +492,14 @@ class ContextProviderProtocol(Protocol):
 
 ```text
 F3 依赖:
-  F1 (project_service) ✅ — project.config 读取（model / temperature / writing_style）
-  F2 (chapter_service) ✅ — 章节存在性与归属校验（count_words 复用）
-  F5 (llm_service)     ✅ — LLMClientProtocol + PromptTemplateProtocol（ADR-015 隔离）
-  F6 (context_service) ✅ — ContextProviderProtocol 上下文注入（F3 曾以 Null 实现先行开发，
-                             F6 就绪后替换为真实实现，零改动——替换已发生：#1176 / PR #1189，
-                             `api/deps.py:205` 注入 `ContextService`；
-                             `tests/api/test_writer_factory_authorization.py::
-                             test_get_writing_service_injects_real_context_provider` 绿）
+  F1 (project_service) — project.config 读取（model / temperature / writing_style）
+  F2 (chapter_service) — 章节存在性与归属校验（count_words 复用）
+  F5 (llm_service)     — LLMClientProtocol + PromptTemplateProtocol（ADR-015 隔离）
+  F6 (context_service) — ContextProviderProtocol 上下文注入（`api/deps.py` 注入 `ContextService`；
+                          回归守护 `tests/api/test_writer_factory_authorization.py::
+                          test_get_writing_service_injects_real_context_provider`）
 ```
 
-> ✅ **状态标记已复核并修正（2026-09-16，#1184b）**：上方「F6 就绪后替换为真实实现，零改动」
-> 原为**无证据谎报**（#1184 审计发现：替换从未发生，产线仍运行 `NullContextProvider`，#1176 / #1175）。
-> W1-B 已完成替换且 F3 领域层**确实零改动**（仅装配层 `api/deps.py` 注入），现附可验证证据。
-> 原审计发现 #1184 的 b 部分**已闭环**。同类另见 `specs/f44-book-orchestrator/spec.md` §11（同批修正）、
-> `specs/f6-context/spec.md` §11。
 
 ```text
 F3 被依赖:
