@@ -294,7 +294,7 @@ inkflow agent run \
     [--var key=value] ...        # 可重复，注入 Prompt 变量
     [--override role.field=value] ...  # 如 writer.temperature=0.9
     [--watch]                    # 阻塞轮询直到终态（实时打印状态迁移 + 阶段完成）
-    [--watch-timeout <秒>]       # --watch 总超时，默认 600（#1478）
+    [--watch-timeout <秒>]       # --watch 总超时，默认 600
     [--json]
 
 inkflow agent status \
@@ -353,14 +353,14 @@ inkflow agent status --run-id 5e8f2c1a-... --json
 
 > **为何阶段行只有 `stage_id` 而无角色显示名/进度条**：`GET executions/{id}` 的 `stages` 快照只含 `stage_id` / `status` / `retry_count` / `duration_ms`（§2.5），角色显示名与逐阶段实时进度由 SSE 推送（`POST /agent/pipelines/stream`，Phase 2 增强）提供；`--watch` 轮询轨不做 Phase 2 承诺。
 
-### 4.2 `--watch` 轮询语义（#1478）
+### 4.2 `--watch` 轮询语义
 
 | 项 | 契约 |
 |----|------|
 | 轮询端点 | `GET /api/v1/agent/pipelines/executions/{execution_id}`（§3.1） |
 | 终态判定 | `status` **不在** `{pending, running, waiting_hitl}` 内即为终态——`completed`/`failed` 及未来新增状态一律按终态处理（防未知状态死循环）；`waiting_hitl` 等人工确认，CLI 不代确认 → 继续等待 |
 | 退避 | 首轮间隔 1s → 2s → 4s → … 封顶 30s（`_WATCH_INITIAL_INTERVAL` / `_WATCH_MAX_INTERVAL`） |
-| 总超时 | `--watch-timeout`（默认 **600 秒**）。单次查询的传输超时沿用 #926 的 `LLM_TASK_TIMEOUT`（300s）——内核跑长任务期间事件循环可能繁忙，默认 30s 会假失败；`--watch-timeout` 约束的是轮询节奏（两次查询之间的累计等待上限） |
+| 总超时 | `--watch-timeout`（默认 **600 秒**）。单次查询的传输超时沿用 `LLM_TASK_TIMEOUT`（300s）——内核跑长任务期间事件循环可能繁忙，默认 30s 会假失败；`--watch-timeout` 约束的是轮询节奏（两次查询之间的累计等待上限） |
 | 超时语义 | 退出码 **1** + 明确错误（人类模式 → stderr；`--json` → `{"ok": false, "error": {"code": "WATCH_TIMEOUT", "message": ...}}`）；**消息含 run_id**，用户可继续用 `agent status --run-id <id>` 轮询 |
 | 终态 failed | 退出码 **0**（终态是执行结果而非 CLI 失败，同 `agent status` 语义）+ `❌ 管线失败: <error>` |
 | 轮询失败 | 内核非 2xx → 按 F7 §7 错误映射报错退出（`--json` → 错误信封），**不静默成功** |
@@ -675,7 +675,7 @@ F4 被依赖:
 
 ## 2. 背景与问题
 
-2026-08-03 LangGraph 1.x 代码审查（inkflow-dev §6.2 实测）确认：
+LangGraph 1.x 代码审查确认：
 
 1. **整体替换语义**：`StateGraph(dict)` 下节点返回的 dict 会**整体替换** state（连初始输入的 key 都会丢失）→ 当前代码被迫让每个节点原地 mutate + 返回完整 state（`pipeline_nodes.py` L57-59 注释准确描述了这一约束）。
 2. **全量复制**：每个 super-step 都复制 `context`/`stages`/`llm_client`，无谓开销。
@@ -842,11 +842,3 @@ stage_results = [
 - A6：validate 非法图（input_from 引用不存在阶段）→ {valid: false, errors: [...]}，文案与 §7 一致
 
 ---
-
-## 14. 修改履历
-
-| 版本 | 日期 | 变更 | 关联 |
-|------|------|------|------|
-| 1.2 | 2026-10-07 | `agent template create` / `agent template update` 新增 `--content-file <path>`（UTF-8 文件读正文=模板 description；与 `--description` 互斥 → 退出码 2；文件缺失 → VALIDATION_ERROR 退出码 1）。**补录**：本 spec §4 CLI 签名块此前仅列 `agent template list`，本轮补齐 create/update 完整签名；§13.2 状态流同步。语义 = F7 §4.0 通用约定 | [#1520](https://github.com/zhx-xi/InkFlow/issues/1520) |
-| 1.1 | 2026-10-06 | CLI `run --watch` 如实实现：轮询退避（1s→2s→…封顶 30s）+ `--watch-timeout` 总超时（默认 600s）+ 超时报错退出码 1 且保留 run_id + 轮询失败不静默 + 终态 failed 退出码 0；`agent status --json` 改走 F7 §5 统一信封（根级/命令级 `--json` 等价）；新增 §4.2 轮询语义表，§4 / §4.1 / §13.2 同步 | [#1478](https://github.com/zhx-xi/InkFlow/issues/1478) |
-| 1.0 | 2026-07-31 | 首版（PR #22） | [#4](https://github.com/zhx-xi/InkFlow/issues/4) |

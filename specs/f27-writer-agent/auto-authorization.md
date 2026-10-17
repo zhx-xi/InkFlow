@@ -9,15 +9,15 @@
 
 ## 1. 概述
 
-### 1.1 现状缺口（2026-08-23 源码实证）
+### 1.1 现状缺口
 
-| # | 缺口 | 实证 | 归属 |
-|---|------|------|------|
-| ① | **无「全自动」项目开关**：`ProjectConfig` 只有 `supervisor.hitl_roles`（F29 HITL）与 `agent_*` 模型字段，无「是否全自动」布尔开关 | `domain/models/project.py` `ProjectConfig` | #598 |
-| ② | **agentic 无授权检查**：`POST /runs mode=agentic` 直接 `write_book_agentic`，不检查用户是否显式授权全自动 | `books.py` `start_run` + `book_run_mixin.py` `write_book_agentic` | #598 |
-| ③ | **前端无全自动开关入口**：写作页「查看 AI 执行详情」按钮（view-toggle）右侧无「是否全自动」切换按钮 | `EditorToolbar.tsx` `view-toggle` | #598 |
-| ④ | **首次触发无授权弹框**：第一次触发全自动时无显式授权确认 | 前端无 `AutoAuthorizationDialog` | #598 |
-| ⑤ | **agentic 默认无落章 HITL**：`AgenticBookConfig.hitl_points` 默认空（全自动无打断） | `agent_book.py` `AgenticBookConfig.hitl_points` default_factory=list | #598（D9=A 落章前 HITL 确认） |
+| # | 缺口 | 实证 |
+|---|------|------|
+| ① | **无「全自动」项目开关**：`ProjectConfig` 只有 `supervisor.hitl_roles`（F29 HITL）与 `agent_*` 模型字段，无「是否全自动」布尔开关 | `domain/models/project.py` `ProjectConfig` |
+| ② | **agentic 无授权检查**：`POST /runs mode=agentic` 直接 `write_book_agentic`，不检查用户是否显式授权全自动 | `books.py` `start_run` + `book_run_mixin.py` `write_book_agentic` |
+| ③ | **前端无全自动开关入口**：写作页「查看 AI 执行详情」按钮（view-toggle）右侧无「是否全自动」切换按钮 | `EditorToolbar.tsx` `view-toggle` |
+| ④ | **首次触发无授权弹框**：第一次触发全自动时无显式授权确认 | 前端无 `AutoAuthorizationDialog` |
+| ⑤ | **agentic 默认无落章 HITL**：`AgenticBookConfig.hitl_points` 默认空（全自动无打断） | `agent_book.py` `AgenticBookConfig.hitl_points` default_factory=list（D9=A 落章前 HITL 确认） |
 
 ### 1.2 目标
 
@@ -28,7 +28,7 @@
 
 ### 1.3 与样板差异
 
-非独立变体——是 F49 #551 的**授权门禁增量**。复用既有编排核心，只加「授权数据模型 + 授权检查 + UI 开关/弹框」。
+非独立变体——是 F49 的**授权门禁增量**。复用既有编排核心，只加「授权数据模型 + 授权检查 + UI 开关/弹框」。
 
 ---
 
@@ -41,7 +41,7 @@ class ProjectConfig(BaseModel):
     # ... 既有字段 ...
     auto_write_enabled: bool = Field(
         default=False,
-        description="项目级「是否全自动」开关（#598 D9-a1）：True=允许全自动写书（mode=agentic）；"
+        description="项目级「是否全自动」开关（D9-a1）：True=允许全自动写书（mode=agentic）；"
         "False=禁止（默认，AI 自动化默认关闭，首次触发弹授权框）。与 supervisor 同层。",
     )
 ```
@@ -82,7 +82,7 @@ class ProjectConfig(BaseModel):
 
 `mode=agentic` 时，`AgenticBookConfig.hitl_points` **默认含 `chapter_done`**（每章 mark_done 前 interrupt，最坏只丢一章）。前端复用 `VolumeHITLDialog`（waiting_hitl 时弹出 approve/reject）。
 
-> **决策**：`chapter_done` 语义 = 「每章落库前确认」。F49 的 `hitl_points` 白名单已支持 `chapter_done`，#598 只需**默认开启**（agentic 启动时若 config 未显式传 hitl_points，则默认 `["chapter_done"]`）。
+> **决策**：`chapter_done` 语义 = 「每章落库前确认」。F49 的 `hitl_points` 白名单已支持 `chapter_done`，只需**默认开启**（agentic 启动时若 config 未显式传 hitl_points，则默认 `["chapter_done"]`）。
 
 ---
 
@@ -165,12 +165,11 @@ class ProjectConfig(BaseModel):
 
 ---
 
-## 8. 验收标准（对应 issue #598）
+## 8. 验收标准
 
 - **M0** spec 定稿合入 worktree
 - **M1** RED 批全 FAIL（未授权不自动 / 首次弹框 / 开关持久化 / 落章前 interrupt）
 - **M2** GREEN + vitest/tsc 全绿 + 后端 pytest/ruff/mypy
-- **M3** PR merged + #598 CLOSED + worktree 清理
 
 ---
 
