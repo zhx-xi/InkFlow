@@ -45,7 +45,7 @@ F19 = 桌面 GUI（Electron 壳 + React 渲染层 + 本地内核进程化）。�
 
 ---
 
-## 2. 内核进程化（子任务 A）
+## 2. 内核进程化
 
 ### 2.1 交付契约（GUI 壳 ↔ 内核）
 
@@ -163,20 +163,6 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 - WAL 生效验证：`PRAGMA journal_mode` 查询返回 `wal`（§2.6 M3）
 - **回归风险**：既有测试多为内存库（`sqlite+aiosqlite:///:memory:`）——内存库不支持 WAL（journal_mode 返回 memory），PRAGMA 执行不报错但无效果；需确认 PRAGMA 在内存库路径下幂等不抛错（`journal_mode=WAL` 对 memory 库返回 `memory` 而非 `wal`，测试断言须按连接类型分支）
 
-### 2.5 文件结构（CREATE/MODIFY 清单）
-
-| 操作 | 文件 | 内容 |
-|------|------|------|
-| MODIFY | `backend/src/inkflow/cli/commands/serve.py` | `--port 0` 语义、`--port-file`、`--token`；uvicorn 启动改为手动装配（`uvicorn.Server` + 启动就绪后读取实际端口 → 输出 INKFLOW_READY / 写端口文件）；`INKFLOW_SERVER_TOKEN` env 注入 |
-| NEW | `backend/src/inkflow/api/middleware/token_auth.py` | token 校验中间件（`@app.middleware("http")` 或纯 ASGI 中间件，按测试契约定） |
-| MODIFY | `backend/src/inkflow/api/app.py` | 注册 token 中间件；CORS 白名单改读 config |
-| MODIFY | `backend/src/inkflow/core/config.py` | 新增 `server_cors_origins: list[str]`、`db_busy_timeout_ms: int = 5000`、`server_token: str = ""`（env `INKFLOW_SERVER_TOKEN` 映射，空=随机生成）；CONFIG_WHITELIST 同步（如适用） |
-| MODIFY | `backend/src/inkflow/core/database.py` | connect 事件 PRAGMA（WAL + busy_timeout），**连接工厂统一处** |
-| MODIFY | `tests/cli/test_cli_serve.py` | 重写：mock 目标从 `uvicorn.run` 变为交付逻辑/Server 装配；`--port 0`、`--port-file`、`--token` 断言 |
-| NEW | `tests/api/test_token_auth.py` | 无 token → 401；错误 token → 401；正确 token → 200；/health 豁免 |
-| NEW | `backend/tests/unit/infrastructure/database/test_database_pragma.py`（或并入既有 database 测试） | 文件库连接 PRAGMA journal_mode=wal + busy_timeout 断言；内存库幂等断言 |
-| MODIFY | `.github/workflows/ci.yml` | 新增 tests/api/test_token_auth.py 自动被 unit job 覆盖（tests/api/ 路径核对）；若新增 `tests/cli/` 文件必须显式追加 `integration-cli-backend` job |
-
 ### 2.6 测试策略
 
 | 层次 | 关键场景 |
@@ -198,7 +184,7 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 
 ---
 
-## 3. Electron 壳（子任务 B，#78）
+## 3. Electron 壳
 
 ### 3.1 本章定位
 
@@ -215,18 +201,18 @@ Electron 主进程 (main.ts)
               └── renderer 通过 fetch 访问内核（§4.4 client.ts 消费）
 ```
 
-**关键事实（现状盘点，2026-08-04 实测）**：
-- **#77 已合入**（PR #85）：`backend/src/inkflow/cli/commands/serve.py` 已交付 `INKFLOW_READY {port, token, pid, version}` stdout 行 + `--port-file` 原子写入 + `--port 0` 动态端口 + `INKFLOW_SERVER_TOKEN` env 注入 + reload 互斥（§2 契约全部落地）——**壳直接消费，零后端改动**
-- **frontend workspace 已初始化**（feat/f19-gui-ui 前置落盘，2026-08-04）：`frontend/package.json`（inkflow-frontend 0.3.0，scripts 已配 dev/build/test/lint → renderer）+ `pnpm-workspace.yaml`（`packages/*` 通配）+ `pnpm-lock.yaml`（已锁定）+ renderer 包（`packages/renderer/`，Vite 构建产物 `dist/` 已可产出）——**electron 包尚未创建，本章全量 CREATE**
+**设计约束**：
+- **内核交付契约由 §2 承载**：`backend/src/inkflow/cli/commands/serve.py` 提供 `INKFLOW_READY {port, token, pid, version}` stdout 行 + `--port-file` 原子写入 + `--port 0` 动态端口 + `INKFLOW_SERVER_TOKEN` env 注入 + reload 互斥——**壳直接消费，零后端改动**
+- **frontend workspace 形态**：`frontend/package.json`（inkflow-frontend，scripts = dev / build / test / lint → renderer）+ `pnpm-workspace.yaml`（`packages/*` 通配）+ `pnpm-lock.yaml` + renderer 包（`packages/renderer/`，Vite 产物 `dist/`）；**electron 包由本章创建**
 - `packages/` 通配符已覆盖 → 新增 `packages/electron/` **零 workspace 配置改动**
 - renderer 构建产物路径：`frontend/packages/renderer/dist/`（vite.config.ts `outDir: 'dist'`，base 需确认为相对路径——`base: './'`，否则 file:// 加载静态资源绝对路径失效，§3.4 决策）
-- CI 现状：ci.yml **无前端 job**（frontend-ci 技能约定 #79 交付时加 renderer job）；本章 E2E（Playwright `_electron`）按 electron-app-testing 技能**不进常规 CI**（Electron 启动重、拖慢 PR 门禁），本地/手动跑，0.4.0 再决定自动化节奏
+- **CI 面**：renderer job 由本章加入 `ci.yml`（frontend-ci 技能约定）；本章 E2E（Playwright `_electron`）按 electron-app-testing 技能**不进常规 CI**（Electron 启动重、拖慢 PR 门禁），本地/手动跑
 
 **边界声明（本章）**：
 - **壳层零业务逻辑**：不 import renderer 代码、不代理 API 请求、不承载业务状态；只做进程管理与窗口
 - **通信一律 REST + SSE**（ADR-021）：renderer ↔ 内核直连（经 preload 注入的 baseURL/token），壳不中转
 - **不引入 Node 侧业务依赖**：无 Express/Koa 等；仅 electron + child_process + fs
-- **打包分发不在本章**：#48 0.4.0（ADR-019 v2）；electron-builder.yml 仅留占位（electron-shell-dev 技能已备好模板）
+- **打包分发不在本章范围**（见 ADR-019）；`electron-builder.yml` 仅留占位（electron-shell-dev 技能备有模板）
 - **token 不落 renderer 全局可写区**：contextBridge 只读注入（§3.3）
 
 ### 3.2 生命周期管理（主进程核心）
@@ -243,10 +229,10 @@ const kernel = spawn(kernelCommand(), ['serve', '--port', '0'], {
 
 | 项 | 约定 |
 |----|------|
-| 内核命令定位 | dev = `backend\.venv\Scripts\python.exe -m inkflow serve`（backend venv，记忆：InkFlow 运行/测试必须用 backend\.venv）；打包后 = `resources/kernel/inkflow.exe`（0.4.0）；`app.isPackaged` 分支 + env 覆盖（`INKFLOW_KERNEL_CMD`，测试注入用） |
+| 内核命令定位 | dev = `backend\.venv\Scripts\python.exe -m inkflow serve`；打包后 = `resources/kernel/inkflow.exe`；`app.isPackaged` 分支 + env 覆盖（`INKFLOW_KERNEL_CMD`，测试注入用） |
 | 参数 | `serve --port 0`（动态端口，契约 §2.2）；不传 `--port-file`（stdout 通道即可，§2.1 双通道之一） |
 | stdio | stdout 管道（行缓冲解析 INKFLOW_READY）；stderr 管道（日志转发，供排障） |
-| 超时 | spawn 后 90s 内未收到 INKFLOW_READY → 判启动失败 → 走崩溃拉起流程（§3.2.3）（#1077 对齐 #1068 冷启动实测） |
+| 超时 | spawn 后 90s 内未收到 INKFLOW_READY → 判启动失败 → 走崩溃拉起流程（§3.2.3） |
 
 **3.2.2 stdout 行缓冲解析**
 
@@ -288,7 +274,7 @@ app 退出（window-all-closed / before-quit / 崩溃退出）
   └─ stopKernel()
        ├─ 1. 优雅：child.kill()（SIGTERM 语义，Windows 上 TerminateProcess 兜底）
        ├─ 2. 超时 3s 未退出 → 强制杀进程树（taskkill /PID <pid> /T /F，Windows）
-       └─ 3. Job Object 兜底（可选，0.4.0 打包评估；electron-shell-dev 技能记 Windows 防僵尸三保险）
+      └─ 3. Job Object 兜底（可选，打包时评估；electron-shell-dev 技能记 Windows 防僵尸三保险）
 ```
 
 - **验收硬指标：关闭窗口后 `Get-Process inkflow*` 为空**（#78 验收标准）
@@ -334,22 +320,6 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - dev 模式（Vite dev server 5173 调试）：无 preload 注入 → renderer 回退 `import.meta.env.VITE_API_BASE` / `VITE_API_TOKEN`（§4.4 已定，不冲突）
 - 生产模式：BrowserWindow 加载 `file://${rendererDist}/index.html`（renderer `dist/` 构建产物；**vite.config.ts 需 `base: './'`** 否则 file:// 下静态资源绝对路径 `/assets/...` 404——实现时必须核）
 
-### 3.5 文件结构（#78 CREATE/MODIFY 清单，对照真实树 2026-08-04）
-
-| 操作 | 文件 | 内容 |
-|------|------|------|
-| NEW | `frontend/packages/electron/package.json` | name=inkflow-electron（private）；scripts：`build`（tsc 编译 main/preload 到 `out/`）、`dev`（dev 模式启动）、`test:e2e`（playwright）；devDeps：electron、typescript、@playwright/test（版本与 lock 对齐，ADR-025） |
-| NEW | `frontend/packages/electron/tsconfig.json` | 编译 `src/main.ts` + `src/preload.ts` → `out/`（CommonJS，Electron 主进程模块格式） |
-| NEW | `frontend/packages/electron/src/main.ts` | §3.2 生命周期全套：spawn/行缓冲/健康轮询/崩溃拉起/退出回收 + BrowserWindow（§3.3）+ 测试钩子 |
-| NEW | `frontend/packages/electron/src/preload.ts` | contextBridge 注入 `{baseURL, token}`（§3.4） |
-| NEW | `frontend/packages/electron/electron-builder.yml` | **占位**（0.4.0 #48 打包用；electron-shell-dev 技能模板：appId/NSIS/portable） |
-| NEW | `tests/e2e/electron-smoke.spec.ts` | Playwright `_electron` 冒烟（§3.6；AGENTS.md §3 tests/e2e 预留目录启用） |
-| MODIFY | `frontend/packages/renderer/vite.config.ts` | `base: './'`（file:// 加载兼容，§3.4 决策；**本行与 #79 骨架冲突面最小**，若 #79 已合入则在其上改） |
-| MODIFY | `frontend/README.md` | 补 electron 包说明（可选，0.4.0 前薄文档） |
-| （不改） | `pnpm-workspace.yaml` | `packages/*` 通配已覆盖 electron 包，零改动 |
-
-> **合入顺序依赖（Q3 拍板 A 定稿）**：`frontend/package.json` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` 由 **feat/f19-gui-ui（#79 前置落盘）** 提供——执行节奏：**先开 #79 前置落盘 PR（纯 workspace 骨架，无业务代码）→ 合入 main → #78 worktree 从 main 建**。若 #79 前置落盘 PR 被阻塞，本章才考虑自带最小子集（评审兜底，非默认路径）。
-
 ### 3.6 测试策略
 
 | 层次 | 关键场景 |
@@ -371,7 +341,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - **M6** 崩溃保护：连续失败 5 次 → 停止自动重拉 + 错误对话框出现（不再无限重启）
 - **M7** renderer 集成（依赖 #79 合入）：生产模式 `file://` 加载 renderer `dist/` 全流程可用（CORS null origin 放行，§2.3.2 已含 `null`）；renderer 经注入 baseURL/token 读写内核成功（§4.8 M7 同源验收）
 
-### 3.8 关键架构决策记录（#78）
+### 3.8 关键架构决策记录
 
 | 决策 | 方案 | 理由 | 备选（否决） |
 |------|------|------|--------------|
@@ -382,13 +352,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 | token 注入 = contextBridge 只读 | `window.INKFLOW_API = {baseURL, token}`（Object.freeze） | contextIsolation 下页面 JS 不可篡改；renderer 零 electron import（ADR-020） | ipcRenderer 逐请求取（renderer 需 electron API，破坏 ADR-020）；注入全局可写区（安全红线） |
 | 测试钩子 = isPackaged 条件暴露 | `__kernelInfo` 仅 dev 暴露 | Playwright `app.evaluate` 断言必需；生产不泄露 | 生产也暴露（安全风险）；无钩子（E2E 无法断言内核状态） |
 
-### 3.9 待澄清问题（≤3）
-
-- **Q1 preload 注入命名**：A. `window.inkflow`（短名，contextBridge 习惯）；B. `window.INKFLOW_API`（spec §4.4 已用此语义命名）；C. 两者别名（冗余）。**✅ 已确认（用户拍板：选项 B，2026-08-04）**——§4.4 client.ts 已写 `window.INKFLOW_API = {baseURL, token}`（#78 preload 注入，契约 §3 待定），保持一致避免实现时两端命名漂移；contextBridge 暴露名与实际读法同名（`exposeInMainWorld('INKFLOW_API', …)`）。正文已按 B 修订（§3.3/§3.4/§3.7/§3.8）。
-- **Q2 连续失败次数阈值**：A. 5 次（对应退避序列 1+2+4+8+16+30×N，约 1 分钟）；B. 3 次（更快弹错，约 7s）；C. 不限（仅退避封顶，永不弹错）。**✅ 已确认（用户拍板：选项 A，2026-08-04）**——5 次覆盖「环境瞬时故障」（端口占用短暂、杀毒扫描）后自愈窗口，又不至于无限重启。正文维持 A（§3.2.4/§3.7 M6/§3.8）。
-- **Q3 workspace 前置落盘合入方式**：A. 等待 feat/f19-gui-ui（#79 前置落盘）先合入 main，再建 #78 worktree 开发（串行，依赖 #79 节奏）；B. #78 自带最小 workspace 三文件（package.json/pnpm-workspace.yaml/pnpm-lock.yaml）先合入，renderer 骨架留 #79（#78 先于 #79 落地，双包结构由 #78 立）；C. 两个 worktree 并行开发、谁先合入谁带 workspace 三文件（有冲突风险）。**✅ 已确认（用户拍板：选项 A，2026-08-04）**——#79 前置落盘分支已存在（feat/f19-gui-ui，1 提交「初始化前端 workspace + renderer 骨架」），先合入它（纯 workspace 骨架 PR）再开 #78 最干净。执行节奏：**先开 #79 前置落盘 PR（纯 workspace 骨架，无业务代码）→ 合入 main → #78 worktree 从 main 建**（§3.5 合入顺序依赖已按 A 定稿）。
-
-## 4. 渲染层（子任务 C，#79）
+## 4. 渲染层
 
 ### 4.1 本章定位
 
@@ -396,9 +360,9 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 > **变体编号声明**：AGENTS.md 模块类型谱系（F9-F23）仅覆盖后端模块变体；渲染层为**前端栈首个变体**，不沿用「第 N 变体」编号（参照 §1.1 先例，编号依据 = AGENTS.md 谱系，f19 §4 为前端类型）。
 
-**关键事实（现状盘点，2026-08-03 实测）**：
+**设计约束**：
 - `frontend/` **仅有 README.md**——pnpm workspace 双包结构（renderer + electron）未初始化，本子任务全量 CREATE
-- `#50 F23 SSE` ✅ 已合入（PR #83）：`POST /api/v1/writing/stream`（mode 判别 generate/continue/revise）+ 帧协议（`data: {delta, done}` JSON 行，spec f23 §6）；**客户端必须 fetch + ReadableStream**（EventSource 不支持 POST/自定义头——ADR-021 token 要求）
+- **SSE 写作流由 F23 承载**：`POST /api/v1/writing/stream`（mode 判别 generate/continue/revise）+ 帧协议（`data: {delta, done}` JSON 行，spec f23 §6）；**客户端必须 fetch + ReadableStream**（EventSource 不支持 POST/自定义头——ADR-021 token 要求）
 - `#77 内核进程化`（本 spec §2，同文件同 PR 前序）：token 中间件 `X-InkFlow-Token`（§2.1.3/§2.3.1）、CORS 白名单已含 `null`（Electron file:// 生产模式）——renderer 消费契约 = baseURL + token 头
 - API 业务面 94 端点全量就绪（projects/chapters/characters/world_settings/outlines/timeline/foreshadowings/extractions/style/audit/context/agent/writing）——渲染层零后端新增
 - `ProjectConfig`（domain/models/project.py）已含 `agent_architect/agent_writer/agent_auditor/agent_reviser/temperature/writing_style`——**Agent 配置页数据落点 = `PATCH /api/v1/projects/{id}` 更新 config**，无独立配置端点
@@ -408,10 +372,10 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 **边界声明（本章）**：
 - **不 import electron 任何东西**（ADR-020）：API 走 fetch REST + SSE；浏览器调试（Vite dev）与 Electron 内加载同一份代码
 - **不新增后端端点/实体**（F19 总声明 §1）：本章只消费既有 API——**例外（Q3 拍板）**：新增 2 个基础设施工具端点 `settings/llm-keys` + `settings/llm/test`（key 加密存储与 LLM 连通测试，不落业务库/不建实体，与 /health 同类，§4.9 决策行）
-- **不做富文本/Markdown 渲染**（0.3.0）：编辑器 = **段落化纯文本**（Q1 拍板，§4.10）；Markdown 渲染/导出归 0.6.0 F21 联动
-- **不做云端远程模式 UI**：base URL + JWT 属 2.0.0（ADR-024）；client 抽象预留 baseURL 注入位（§4.4）
+- **不做富文本/Markdown 渲染**：编辑器 = **段落化纯文本**；Markdown 渲染/导出不在本章范围（归 F21 联动）
+- **不做云端远程模式 UI**：base URL + JWT 不在本章范围（见 ADR-024）；client 抽象预留 baseURL 注入位（§4.4）
 - **SSE 无断点续传**（F23 契约）：断开/停止后重触发 = 从头重拉；不做自动重连
-- **不做打包分发**：#48 0.4.0
+- **不做打包分发**（见 ADR-019）
 
 ### 4.2 页面规格（三页 + 路由）
 
@@ -430,7 +394,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 └ 状态栏: 内核连接 · 模型 · 字数 · 自动保存 ┘
 ```
 
-- 左：项目树（卷/章 + 各章字数；当前章高亮 accent-weak）；**项目印章**（所有主题常驻，颜色跟随 accent，文字取书名关键字——规则见 `design/gui-design-tokens-2026-08-03.md` 已知项 #3）；底部「新建章节」
+- 左：项目树（卷/章 + 各章字数；当前章高亮 accent-weak）；**项目印章**（所有主题常驻，颜色跟随 accent，文字取书名关键字——规则见 `frontend/packages/renderer/src/theme/tokens.css`）；底部「新建章节」
 - 中：工具栏默认 opacity 0.35、hover 编辑器区域全显（Q2 拍板 C：**快捷键 + hover 双通道**——`Ctrl+Z` 撤销 / `Ctrl+Y` 重做 / `Ctrl+S` 保存 / `Ctrl+Enter` 续写 / `Ctrl+Shift+Enter` 生成；纯文本无格式按钮）；正文区下方 SSE 流式区（生成中 live 标记 + 停止按钮 + 完成摘要行）
 - 右：上下文面板 4 卡片（角色 tags/世界观/大纲/伏笔）；折叠按钮 → 26px 展开条恢复（原型评审已修复的交互闭环）
 - 状态栏：内核地址/模型（done 帧回填）/实时字数/自动保存时间
@@ -449,14 +413,14 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 ### 4.3 设计 token 与主题系统
 
-**完整 token 表与机制见 `design/gui-design-tokens-2026-08-03.md`**（评审通过，2026-08-03），本章落点：
+**完整 token 表与机制见 `frontend/packages/renderer/src/theme/tokens.css`**，本章落点：
 
 - **三主题**：素笺 paper（默认，墨蓝 #3B5B7C）/ 夜航 night（深色，暖金 #C9A24B，**跟随系统深色偏好**）/ 墨韵 ink（东方，朱砂 #A6402E 点缀，手动选择）+ 各 1 背景变体（羊皮纸/墨蓝黑/深褐纸）
 - **实现**：CSS 变量 + `data-theme`/`data-bg` 属性（html 与 body 同步持有——原型踩坑教训）；Tailwind 4 CSS-first `@theme` 引用变量；shadcn CSS variables 映射同组 token
 - **持久化**：localStorage `inkflow.ui` = `{theme, bg, lang}`；默认策略：首次素笺，用户未手动选择且系统 `prefers-color-scheme: dark` 时自动夜航；手动选择后以 localStorage 为准
 - **i18n**：轻量自研（`useI18n` hook + `zh.ts`/`en.ts` 字典；文案 <100 key 不引入 i18next——YAGNI）；数字/时间单位随语言格式化（原型已验证数据文案 i18n）
 - **品牌**：`assets/inkflow-{icon,icon-dark,logo,logo-dark}.svg`（墨滴 + 流线，浅/深双版本）——renderer 静态资源；深色主题自动切 `-dark` 版
-- **字体跨平台降级**（已知项）：楷体（墨韵）Linux 无 → 降级衬线栈；内置 Noto 子集 0.4.0 打包时评估
+- **字体跨平台降级**：楷体（墨韵）Linux 无 → 降级衬线栈；内置 Noto 子集在打包阶段评估
 
 ### 4.4 API client（REST + SSE 封装）
 
@@ -464,7 +428,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 - baseURL + token 注入：`window.INKFLOW_API = {baseURL, token}`（#78 preload 注入，契约 §3 待定）；Vite dev 模式回退 `import.meta.env.VITE_API_BASE` / `VITE_API_TOKEN`（开发连本地 serve）
 - fetch 封装：自动带 `X-InkFlow-Token`；**401 → 统一「内核未就绪」提示**（壳拉起失败/内核退出，ADR-021）；404/422/500 → 统一错误模型（detail 展示）
-- 端点面（0.3.0 渲染层消费面）：projects CRUD · chapters/volumes · outlines（列表）· writing stream · **settings/llm-keys + settings/llm/test（Q3 拍板新增工具端点）**· context 摘要（可选展示）；其余 94 端点按页面演进增量接入
+- 端点面（渲染层消费面）：projects CRUD · chapters/volumes · outlines（列表）· writing stream · **settings/llm-keys + settings/llm/test（工具端点）**· context 摘要（可选展示）；其余端点按页面演进增量接入
 
 **sse.ts**（`src/api/sse.ts`，消费 F23 契约）：
 
@@ -487,24 +451,6 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - **store 边界**：流式生命周期在组件/`useStream` hook 层持有（AbortController/reader），**Zustand store 不持有非序列化对象**（frontend-testing 约定）；流完成一次性 `chapterStore.setContent()` 提交
 - **done 帧摘要**：`{word_count} 字 · {model} · 格式校验 {通过/未通过} + warnings 逐条`；error 帧：错误展示 + 保留已生成前文
 - **停止**：按钮 → `abort()`；生成中工具栏禁用「续写/生成」（防并发流）
-
-### 4.6 文件结构（#79 CREATE 清单，对照真实树 2026-08-03）
-
-| 操作 | 文件 | 内容 |
-|------|------|------|
-| NEW | `frontend/package.json` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | workspace 根（packages/renderer + packages/electron 声明；ADR-025 锁定，lock 必须提交） |
-| NEW | `frontend/packages/renderer/`（全量） | `package.json`（React19/Vite6/shadcn/Zustand5/Tailwind4 + vitest）· `vite.config.ts` · `vitest.config.ts`（jsdom + setup）· `tsconfig.json` · `index.html` |
-| NEW | `.../src/main.tsx` + `App.tsx` | 入口 + HashRouter 布局（顶栏/路由出口/状态栏） |
-| NEW | `.../src/api/client.ts` + `sse.ts` | §4.4（baseURL/token 注入 + 帧解析/批渲染） |
-| NEW | `.../src/stores/project.ts` `chapter.ts` `agent.ts` `theme.ts` | Zustand stores（项目列表/当前项目、卷章树/正文、ProjectConfig 表单、主题/背景/语言持久化） |
-| NEW | `.../src/pages/writing.tsx` `projects.tsx` `agents.tsx` | 三页（§4.2） |
-| NEW | `.../src/components/` | 布局骨架/项目树/编辑器/SSE 流式区/上下文面板/项目卡片/新建对话框/Agent 行/开关/外观卡片（shadcn 为基础覆盖 token） |
-| NEW | `.../src/theme/tokens.css` + `index.ts` | 三主题变量（token 文档 §3 全量）+ 切换/持久化 |
-| NEW | `.../src/i18n/zh.ts` `en.ts` `useI18n.ts` | 字典 + hook |
-| NEW | `.../src/lib/cn.ts` | shadcn 工具 |
-| NEW | `.../src/assets/` | 品牌 logo（inkflow-*.svg 复制） |
-| MODIFY | `backend/src/inkflow/api/routers/settings.py`（NEW）+ `api/app.py`（注册） | **Q3 拍板新增 2 工具端点**：`POST /settings/llm-keys`（包装 `APIKeyManager.store`，复用 `config.secret_key/data_dir`）+ `POST /settings/llm/test`（LLMClient 最小探测请求，`provider/model/api_key` → 连通/失败 + 错误消息）；基础设施端点，不落业务库 |
-| MODIFY | `.github/workflows/ci.yml` | **新增 `frontend-renderer` job**：`pnpm install --frozen-lockfile` → `pnpm --filter renderer lint` → `tsc --noEmit` → `vitest run` → `pnpm --filter renderer build` |
 
 ### 4.7 测试策略（TDD 硬纪律延续，frontend-testing 技能）
 
@@ -529,35 +475,26 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - **M7** 接入 Electron 壳（#78 合入后）：生产构建经 file:// 加载全流程可用（CORS null origin）
 - **M8** 回归与走查：前端测试全绿 + vision-auxiliary 三主题视觉走查（无模板感/对比度 AA）
 
-### 4.9 关键架构决策记录（#79）
+### 4.9 关键架构决策记录
 
 | 决策 | 方案 | 理由 | 备选（否决） |
 |------|------|------|--------------|
 | 路由 = HashRouter | react-router HashRouter，三路由 | file://（Electron 生产）与 Vite dev 兼容，刷新不 404；桌面应用无 SEO 需求 | BrowserRouter（file:// 下刷新 404，否决） |
 | SSE 渲染 = rAF 批渲染 | delta 队列 + rAF 合帧追加 | 长文逐 token 每帧 setState 触发全树重渲染（千字级卡顿）；合帧 = 视觉连续 + 性能安全 | 每 token 直接 setState（实现简单但重渲染风暴）；双缓冲（复杂度不值） |
 | 流式生命周期不入 store | useStream hook 持有 AbortController/reader，完成一次性提交 | store 可序列化（frontend-testing 约定）；测试可注入 mock 流 | store 持有流对象（测试困难、非序列化状态） |
-| i18n = 轻量自研 | useI18n + 字典 + data-i18n 模式（原型验证） | 文案 <100 key；零依赖；与原型评审一致；学习价值 | i18next（0.3.0 场景过重，YAGNI） |
+| i18n = 轻量自研 | useI18n + 字典 + data-i18n 模式（原型验证） | 文案 <100 key；零依赖；与原型评审一致；学习价值 | i18next（场景过重，YAGNI） |
 | 主题 = CSS 变量 + data-theme | 三主题 token 组 + 属性切换 + localStorage | 运行时切换零重载；Tailwind4 @theme 原生支持；背景变体随主题过滤 | 三套静态 CSS 文件（切换闪烁、无法持久化变体组合） |
 | 印章常驻跟随 accent | 项目印章所有主题显示，颜色取 --accent | 原型评审修正（时有时无造成困惑）；单一强调色原则 | 仅墨韵显示（原设计，评审否决） |
 | API 注入 = window.INKFLOW_API | #78 preload 注入 {baseURL, token}；dev 回退 env | renderer 零 electron import（ADR-020 硬约束）；dev/生产同代码 | import.meta.env 全量（生产无 env，需壳注入，二者并存双通道） |
 | 工具端点例外（Q3 拍板） | settings/llm-keys + settings/llm/test 随 #79 交付 | 渲染层需要 key 管理/连通测试能力，而 APIKeyManager 仅 CLI 消费（源码核实）；工具端点 = 基础设施（与 /health 同类，不落业务库/不建实体），F19「不新增**业务**端点」不涵盖 | 前端直持 key（安全红线，否决）；复用 /pipelines/validate（语义不符——配置校验非连通性，评审否决）；不做测试（用户拍板否决：测试→保存是设置页标准 UX） |
 
-### 4.10 待澄清问题（≤3，已全部拍板）
-
-- **Q1 编辑器形态**：A. `textarea` 纯文本（样式可覆盖字体/行距，简单稳定，TDD 友好）；B. `contenteditable` 富文本（排版自由但光标/SSE 插入/格式清理复杂）；C. Markdown 双模式（编辑 textarea + 预览切换，自研轻量 md 渲染，为 0.6.0 F21 导出 MD 铺路，+0.5-1 人天）。**✅ 已确认（用户拍板：A 增强版——段落化纯文本，2026-08-03）**——按业界调查：中文网文平台（起点/阅文、晋江、番茄、飞卢）写作后台**高度一致为「纯文本段落」**（发布管线按段落解析，格式按钮基本被忽略），无 Markdown 分歧 → **不做切换功能**（用户预案「各网站不同则加切换」条件不成立，YAGNI；真遇差异后期可加，可逆）。落地 = textarea 增强：自动分段/首行缩进/字数统计/自动保存，**无格式按钮**。正文已按 A 修订（§4.2.1 工具栏移除加粗/链接）。
-- **Q2 工具栏交互形态**：A. hover 编辑器区域唤起（原型现状，沉浸优先）；B. 常驻显示（发现性最好但占写作空间）；C. 快捷键 + hover 双通道。**✅ 已确认（用户拍板：选项 C，2026-08-03）**——快捷键提升长写效率、hover 保发现性。快捷键表按纯文本能力定义：`Ctrl+Z` 撤销 / `Ctrl+Y` 重做 / `Ctrl+S` 保存（Electron 内 preventDefault 接管）/ `Ctrl+Enter` AI 续写 / `Ctrl+Shift+Enter` 生成；**无格式快捷键**（纯文本无加粗/斜体）。正文已按 C 修订（§4.2.1）。
-- **Q3 「测试连接」按钮语义**：A. 调用 `POST /api/v1/agent/pipelines/validate`（现有端点，但语义是管线配置校验而非 LLM 连通性）；B. 0.3.0 按钮禁用 + 提示「保存后于写作时验证」（无后端新增，语义诚实）；C. 新增后端连接测试端点（违背 F19「不新增业务端点」总声明）。**✅ 已确认（用户拍板：选项 A 修正——测试→保存主流程 + 保留直接保存，2026-08-03）**——评审翻转：设置页「先测试连接、通过后保存」是标准 UX（用户主路径），同时保留直接保存（用户自信场景）。原建议 B 存在认知偏差：「F19 不新增**业务**端点」≠「不新增任何端点」——key 管理与连通测试是**基础设施工具端点**（与 /health 同类，不落业务库/不建实体），不违背 F19 精神。前置事实（源码核实）：`APIKeyManager`（AES-256-GCM 加密，`data_dir/keys`）**唯一调用方为 CLI**（`cli/commands/llm.py`），后端无 key 管理端点、无 LLM 连通测试端点 → **#79 新增 2 个工具端点**（§4.4/§4.6）：`POST /api/v1/settings/llm-keys`（store）+ `POST /api/v1/settings/llm/test`（LLMClient 最小探测）。估算 4-6 → **5-7 人天**（+0.5-1）。正文已按 A 修正修订（§4.2.3/§4.4/§4.6/§4.8/§4.9/§8）。
-
-
----
-
-## 5. UI 打磨（子任务 D，#98）
+## 5. UI 打磨
 
 ### 5.1 本章定位
 
-**前端渲染层视觉打磨**（F19 第四子任务，M8 补做）：#79 渲染层（§4）已合入、功能完整，但视觉完成度约 60%——2026-08-05 三页实拍（vision-auxiliary 走查）确认 9 项差距；§4.8 M8「回归与走查」在 #79 交付时仅完成回归（91 测试绿），**视觉走查从未执行**。本任务 = 补执行 M8 + 按差距清单逐项打磨，交付 = **控件定制化 + 视觉层级 + 空态设计 + 品牌接入**四项打磨。
+**前端渲染层视觉打磨**（F19 视觉打磨子任务）：渲染层（§4）功能完整，视觉完成度约 60%——三页实拍（vision-auxiliary 走查）确认 9 项差距；§4.8 M8 的「视觉走查」部分单独执行。交付 = **控件定制化 + 视觉层级 + 空态设计 + 品牌接入**四项打磨。
 
-**关键事实（现状盘点，2026-08-05 源码 + 实拍核对）**：
+**设计约束**：
 
 - **token 已全量落地但 shadow 未接线**：`src/theme/tokens.css` 三主题色板/字体/圆角/`--shadow` 与 token 文档 §3 逐项一致；但 `src/index.css` `@theme` 仅映射色/字体/圆角，**未映射 shadow token**——卡片/对话框现用 Tailwind 默认 `shadow` 类（`ProjectCard.tsx`/`NewProjectDialog.tsx`），不随主题、无层级（差距 #5 平面化根因）
 - **顶栏调试残留**：`App.tsx` L36-38 渲染 `{theme} / {lang}`（即「paper / zh」）；品牌 = 纯文本 `t('app.brand')`（'InkFlow'）；`src/assets/` 四个旧占位 svg（#94 骨架复制，墨滴概念）**全仓 0 组件引用**（grep 实测）——替换零引用风险
@@ -565,23 +502,23 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - **Agent 链字母方块**：`AgentChainCard.tsx` `AGENT_ROLES.glyph`（A/W/A/R，差距 #3）；`EditorToolbar` 为文字按钮（关联项）
 - **状态栏空值半处理**：`StatusBar.tsx` 对 `null` 显示 `—`，但**空字符串未处理**（model 空串 → 渲染 `模型: `，差距 #8）；内核连接项仅 label 无状态值
 - **空态简陋**：项目页空列表 = 网格仅剩虚线「+ 新建项目」卡片（差距 #4）；写作页无项目/无章节时仅 `write.stream.idle` placeholder 文案
-- **状态色 token 已就位但应用稀疏**：`--ok/--warn/--err` 三主题已定义，仅测试连接结果等少数处使用（差距 #7 颜色单调）
-- **依赖现状**：`package.json` 无 lucide-react（#79 骨架 6 个依赖）；引入需更新 `pnpm-lock.yaml`（ADR-025 锁定）
-- **测试基线**：11 个测试文件 91 用例全绿（2026-08-05）；`data-testid` 契约密集（tree-chapter / new-project-btn / new-project-card / project-card / agent-llm-card / agent-chain-card / editor-toolbar / chapter-editor 等）——行为不变约束的回归锚点
-- **CI 已就位**：`frontend-unit`（lint + typecheck + vitest）/ `frontend-integration`（真实内核）/ `frontend-e2e` 三 job 已落地（§4.6 声明兑现），本章**零 ci.yml 改动**
+- **状态色 token 须全量应用**：`--ok/--warn/--err` 三主题 token 已定义，状态反馈面（连接结果、保存/删除提示等）一律取用——不得只覆盖少数处（否则颜色单调）
+- **图标依赖**：`package.json` 引入 lucide-react（当前零图标依赖），按 §5.6 决策选型；引入需更新 `pnpm-lock.yaml`（ADR-025 锁定）
+- **测试基线**：`data-testid` 契约密集（tree-chapter / new-project-btn / new-project-card / project-card / agent-llm-card / agent-chain-card / editor-toolbar / chapter-editor 等）——行为不变的回归锚点
+- **CI 面**：`frontend-unit`（lint + typecheck + vitest）/ `frontend-integration`（真实内核）/ `frontend-e2e` 三 job 承载本章验收，本章**零 ci.yml 改动**
 
 **边界声明（本章）**：
-- **前端为主，壳层一处例外**：改动主要限 `frontend/packages/renderer/`（src/ + package.json + pnpm-lock.yaml）；**唯一壳层改动 = 移除 Electron 默认菜单栏**（`frontend/packages/electron/src/main.ts`，§5.2.9）——用户拍板（2026-08-05）；零后端改动、零 API 契约变更
+- **前端为主，壳层一处例外**：改动限 `frontend/packages/renderer/`（src/ + package.json + pnpm-lock.yaml）；**唯一壳层改动 = 移除 Electron 默认菜单栏**（`frontend/packages/electron/src/main.ts`，§5.2.9）；零后端改动、零 API 契约变更
 - **行为不变（硬约束）**：不改变交互语义——快捷键（Ctrl+Z/Y/S/Enter/Shift+Enter）、上下文折叠/展开条、SSE 流式与停止、自动保存、路由与跳转全部保持；既有 `data-testid` 契约不删不改（新增锚点除外）
-- **低动效**：token 文档 §1 五项约束（动效 ≤180ms 仅状态变化；`prefers-reduced-motion` 降级已就位 tokens.css）；SSE 逐 token 仍是唯一动态感
+- **低动效**：token 文档 §1 五项约束（动效 ≤180ms 仅状态变化；`prefers-reduced-motion` 降级由 `tokens.css` 提供）；SSE 逐 token 是唯一动态感
 - **不含主题可视化预览卡片**：外观卡片 radio 仅做样式定制，预览卡片归 **#99**（范围外，本章 Q 亦不涉及）
 - **不含位图/窗口图标接入**：favicon.ico、Electron 窗口/打包图标属 #48 0.4.0；本章只做 renderer 内 SVG 品牌接入
 
-### 5.2 工作分解（issue 范围 8 项）
+### 5.2 工作分解
 
 #### 5.2.1 M8 视觉走查（补执行 + 修正闭环）
 
-- 基线：三页实拍差距清单 9 项（2026-08-05，见 §5.1）即 M8 走查基线；实施完成后用 **vision-auxiliary 三主题截图 + ui-design-taste checklist**（无模板感/无紫色渐变/无玻璃拟态/无 6 级排版/动效 ≤200ms/写作页密度最低档）复核，逐项关闭
+- 基线：三页实拍差距清单 9 项（见 §5.1）即 M8 走查基线；复核用 **vision-auxiliary 三主题截图 + ui-design-taste checklist**（无模板感/无紫色渐变/无玻璃拟态/无 6 级排版/动效 ≤200ms/写作页密度最低档），逐项关闭
 - 输出：走查记录（三主题 × 背景变体截图 + checklist 勾选 + 残留项说明）随 PR 附上
 
 #### 5.2.2 控件定制化（差距 #2/#9）
@@ -595,7 +532,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 | checkbox/switch | AgentChainCard 四行开关 | switch 形态（轨道 + 滑块，checked=accent；`role="switch"` 语义与 aria-label 保持） |
 | range 滑杆 | AgentLlmCard 温度 0-2.0 | 轨道/滑块定制（accent 填充、`--radius-s`、hover 反馈、数值对齐） |
 
-- 定制样式统一收敛（**决策 Q1 ✅ = A：shadcn 组件化**——引入 Radix Select/Switch/Slider/RadioGroup 依赖栈，组件收敛 `src/components/ui/`，用户拍板 2026-08-05）：select 用 shadcn Select（Radix，含自定义下拉面板/箭头/高亮）、radio 用 RadioGroup、开关用 Switch、温度用 Slider——全部覆盖 token 色板 + focus ring；**交互语义保持**（`role="switch"`、aria-label、onChange 契约不变）
+- 定制样式统一收敛（**决策：shadcn 组件化**——引入 Radix Select/Switch/Slider/RadioGroup 依赖栈，组件收敛 `src/components/ui/`）：select 用 shadcn Select（Radix，含自定义下拉面板/箭头/高亮）、radio 用 RadioGroup、开关用 Switch、温度用 Slider——全部覆盖 token 色板 + focus ring；**交互语义保持**（`role="switch"`、aria-label、onChange 契约不变）
 
 #### 5.2.3 视觉层级（差距 #5/#7）
 
@@ -609,7 +546,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 
 - 卡片内 padding 统一：Agent 卡片 `p-6` 与 ProjectCard `p-5` 对齐（按 token 密度：项目/配置页标准工具密度，写作页最低档）
 - Label-Input 间距：`mb-1` → 统一 6-8px（表单布局 gap 化：NewProjectDialog / AgentLlmCard / AppearanceCard）
-- 字重/字号层级收敛（≤3 级）：页面标题（26px 衬线 semibold）→ 卡片标题（17-18px）→ 正文（13-14px）→ 辅助（11-12px）；现状部分组件 12px 过小、字重全靠 semibold 堆叠
+- 字重/字号层级收敛（≤3 级）：页面标题（26px 衬线 semibold）→ 卡片标题（17-18px）→ 正文（13-14px）→ 辅助（11-12px）；**禁止** 12px 以下正文、禁止字重全用 semibold 堆叠
 - 编辑器正文保持 16px / 行高 1.85 / 首行缩进 2em（token 文档 §3.3，**不改**）
 
 #### 5.2.5 图标资产（差距 #3）
@@ -629,52 +566,22 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - 顶栏：移除 `{theme} / {lang}` 调试文本 → 品牌接入（§5.2.8）
 - 状态栏：空字符串与 null 统一显示 `—`（model 空串场景）；内核连接项显示状态值（已连接/未就绪——i18n 已有 `sb.kernel` / `sb.kernelOffline` key）
 
-#### 5.2.8 品牌接入（环流口，2026-08-05 定稿）
+#### 5.2.8 品牌接入（环流口）
 
 ```text
 现状: [InkFlow 文字]  导航…                      paper / zh    ← 调试残留
 改造: [icon] InkFlow  导航…                      （移除）      ← 品牌 logo 接入
 ```
 
-- 资产替换：`src/assets/` 四个旧占位 svg（墨滴概念，#94 复制）→ **环流口**新版（源 `logos/brand/`，2026-08-05 定稿「Ink 从环中 Flow 出」）：`inkflow-icon.svg`（素笺墨蓝）/ `inkflow-icon-dark.svg`（夜航暖金）/ `inkflow-icon-ink.svg`（墨韵朱砂）+ 横版 `inkflow-logo*.svg`（按决策 Q2 选型）
-- 主题切换（**决策 Q2 ✅ = A：三主题精确**——paper→`inkflow-icon.svg`（墨蓝）/ night→`-dark.svg`（暖金）/ ink→`-ink.svg`（朱砂），用户拍板 2026-08-05）：随 `data-theme` 切换图标变体；实现方式（组件内按 theme store 选资源或 CSS url 切换）以 TDD 为准
+- 资产替换：`src/assets/` 四个旧占位 svg（墨滴概念）→ **环流口**新版（源 `logos/brand/`，「Ink 从环中 Flow 出」）：`inkflow-icon.svg`（素笺墨蓝）/ `inkflow-icon-dark.svg`（夜航暖金）/ `inkflow-icon-ink.svg`（墨韵朱砂）+ 横版 `inkflow-logo*.svg`
+- 主题切换（**决策：三主题精确**——paper→`inkflow-icon.svg`（墨蓝）/ night→`-dark.svg`（暖金）/ ink→`-ink.svg`（朱砂））：随 `data-theme` 切换图标变体；实现方式（组件内按 theme store 选资源或 CSS url 切换）以 TDD 为准
 - 旧占位 svg 全量删除（0 引用，安全）；品牌 README 落位指引中「frontend/assets/」路径以实际 `frontend/packages/renderer/src/assets/` 为准
 
-#### 5.2.9 Electron 菜单栏移除（用户拍板 2026-08-05）
+#### 5.2.9 Electron 菜单栏移除
 
-- **现状**：`frontend/packages/electron/src/main.ts` BrowserWindow 未配置菜单——Windows 默认显示 File/Edit/View/Window/Help 原生菜单栏（File/Edit/Window 等按钮 + 选择框），与沉浸式写作产品形态不符
+- **动因**：`frontend/packages/electron/src/main.ts` 的 BrowserWindow 未配置菜单——Windows 默认显示 File/Edit/View/Window/Help 原生菜单栏（File/Edit/Window 等按钮 + 选择框），与沉浸式写作产品形态不符
 - **方案**：`Menu.setApplicationMenu(null)` 彻底移除（含 Alt 唤出通道）；**开发模式保留调试通道**——`app.isPackaged === false` 时注册快捷键（F12 / Ctrl+Shift+I）调 `webContents.openDevTools()`（无菜单后默认加速键失效，需显式注册）
-- 约束：不动 renderer；E2E 无菜单断言（实测），移除不破坏现有测试；macOS 差异（应用菜单系统惯例）记录待 2.0.0 云端/跨平台阶段，本章以 Windows 为准
-
-### 5.3 文件结构（#98 CREATE/MODIFY 清单，对照真实树 2026-08-05）
-
-| 操作 | 文件 | 内容 |
-|------|------|------|
-| MODIFY | `frontend/packages/renderer/package.json` | 新增依赖 `lucide-react`（版本与 pnpm 解析对齐，ADR-025） |
-| MODIFY | `frontend/pnpm-lock.yaml` | lock 更新（lucide-react 及传递依赖；lock 必须提交） |
-| MODIFY | `src/index.css` | `@theme` 补 shadow 映射（`--shadow` → `shadow-card` 语义类） |
-| MODIFY | `src/theme/tokens.css` | 新增 `--ring`（focus ring 色，三主题按 accent 派生）等控件 token（§5.2.3） |
-| MODIFY | `src/App.tsx` | 顶栏：品牌 logo + 移除 `{theme} / {lang}` 调试文本（§5.2.7/5.2.8） |
-| MODIFY | `src/pages/projects.tsx` | 空列表引导化分支（§5.2.6） |
-| MODIFY | `src/pages/writing.tsx` | 无项目/无章节空态（§5.2.6） |
-| MODIFY | `src/components/AgentChainCard.tsx` | 字母方块 → lucide 图标；checkbox → 定制 switch（§5.2.2/5.2.5） |
-| MODIFY | `src/components/AgentLlmCard.tsx` | select/range 定制 + Label-Input 间距（§5.2.2/5.2.4） |
-| MODIFY | `src/components/AppearanceCard.tsx` | radio/select 定制（§5.2.2；**不做预览卡片，#99**） |
-| MODIFY | `src/components/NewProjectDialog.tsx` | select 定制 + 表单间距（§5.2.2/5.2.4） |
-| MODIFY | `src/components/ProjectCard.tsx` | shadow 层级 + hover 浮起 + padding（§5.2.3/5.2.4） |
-| MODIFY | `src/components/EditorToolbar.tsx` | 文字按钮 → 图标按钮（aria-label 保持）（§5.2.5） |
-| MODIFY | `src/components/StatusBar.tsx` | 空字符串空态 + 内核连接状态值（§5.2.7） |
-| MODIFY | `src/components/ChapterEditor.tsx` | 无章节空态文案（§5.2.6） |
-| MODIFY | `src/components/ProjectTree.tsx` | 新建章节 ✓/× → 图标（§5.2.5） |
-| MODIFY | `src/components/ProjectSeal.tsx` `ContextPanel.tsx` `StreamArea.tsx` | 按走查清单微调（间距/反馈，§5.2.3/5.2.4） |
-| MODIFY | `src/i18n/zh.ts` `en.ts` | 空态文案 + 新 aria-label key（§5.2.6，≤6 key 双语） |
-| MODIFY | `src/assets/` | 旧占位 svg ×4 删除；环流口新版 svg 复制（`logos/brand/` 2026-08-05 定稿） |
-| NEW | `src/components/ui/`（决策 Q1=A：shadcn 组件化） | Radix 封装组件收敛（Select/Switch/Slider/RadioGroup + 样式 token 覆盖，§5.2.2） |
-| MODIFY | `frontend/packages/electron/src/main.ts` | 移除默认菜单栏：`Menu.setApplicationMenu(null)` + 开发模式 F12/Ctrl+Shift+I 开 DevTools（§5.2.9） |
-| MODIFY | `frontend/packages/electron/src/main.test.ts` 或新增 | 菜单移除/DevTools 快捷键注册的单元断言（§5.4，如现有 kernel.test.ts 惯例） |
-| NEW | 组件测试（同目录 `*.test.tsx` 惯例，如 `src/components/StatusBar.test.tsx`） | 空态/空值/图标 aria-label 断言（§5.4） |
-
-> **要求 ↔ 清单映射核对**：§5.2 八项工作分解全部能映射到上表落点；M8 走查（§5.2.1）为过程性工作项，不产生独立文件（走查记录随 PR 附上）。
+- 约束：不动 renderer；E2E 无菜单断言，移除不破坏现有测试；macOS 差异（应用菜单系统惯例）不在本章范围，本章以 Windows 为准
 
 ### 5.4 测试策略
 
@@ -682,7 +589,7 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 |------|----------|
 | 回归（自动，行为不变） | 现有 91 用例全量（`pnpm --filter renderer test`）——`data-testid` 契约与交互语义零变更；**本章零 MODIFY store / api / useStream**（三处测试不动） |
 | 组件补充（自动，vitest + RTL） | 项目页空列表引导化分支（空态文案渲染 + CTA 打开新建对话框）；写作页无项目空态；StatusBar 空字符串/空值 → `—`；Agent 链图标替换后 `aria-label` 与开关切换语义不变（`getByRole('switch')` 断言保持）；顶栏 logo 渲染（img alt 或 aria-label） |
-| 类型/门禁（自动） | `pnpm --filter renderer typecheck` + `lint` + `build`；CI `frontend-unit` job（已就位，零 ci.yml 改动） |
+| 类型/门禁（自动） | `pnpm --filter renderer typecheck` + `lint` + `build`；CI `frontend-unit` job（零 ci.yml 改动） |
 | 集成冒烟（自动，真实内核） | CI `frontend-integration`（renderer apiFetch ↔ 真实内核）保持绿——证明 API 面零回归 |
 | 视觉走查（手动 + vision-auxiliary） | 三主题（素笺/夜航/墨韵）× 各背景变体截图 + ui-design-taste checklist 逐项勾选；对比度 AA（token 文档已知项 #4）；深色模式控件/logo 变体切换 |
 
@@ -700,30 +607,19 @@ contextBridge.exposeInMainWorld('INKFLOW_API', {
 - **M8**（自动）调试残留清理断言：组件测试断言顶栏无 theme/lang 调试文本；StatusBar 空串显示 `—`
 - **M9**（手动 + 自动）Electron 菜单栏移除：窗口无 File/Edit/View/Window 原生菜单栏（手动）；`Menu.setApplicationMenu(null)` 调用断言 + 开发模式 F12 快捷键注册断言（自动，electron 包单元测试）——`frontend-e2e` 回归绿
 
-> M 行 ↔ 自动化载体映射：M1/M2/M4/M5/M6 视觉类（vision-auxiliary 截图 + 手动交互，走查记录随 PR 留档）；M3/M8 自动（vitest + CI）；M7 手动冒烟。视觉类验收以「截图 + checklist」留档，不引入自动化视觉回归（超出 0.3.0 范围，0.4.0 评估 visual-regression 技能）。
+> M 行 ↔ 自动化载体映射：M1/M2/M4/M5/M6 视觉类（vision-auxiliary 截图 + 手动交互）；M3/M8 自动（vitest + CI）；M7 手动冒烟。视觉类验收以「截图 + checklist」为准，不引入自动化视觉回归（visual-regression 技能后续评估）。
 
-### 5.6 关键架构决策记录（#98）
+### 5.6 关键架构决策记录
 
 | 决策 | 方案 | 理由 | 备选（否决） |
 |------|------|------|--------------|
 | 图标库 = lucide-react | tree-shaking 按需引入 | shadcn 生态同源（#79 骨架以 shadcn 为基础，后续 shadcn 组件可复用其图标）；线性 stroke 契合「安静克制」语言；React 19 兼容、零配置 | 自绘 SVG 集（维护成本、无统一 stroke 语义）；纯文本/Unicode 符号（差距 #3 现状，否决） |
-| 控件定制路径（Q1 ✅ = A，2026-08-05 用户拍板） | **A. shadcn 组件化**（Radix Select/Switch/Slider/RadioGroup，+依赖栈） | 学习价值（项目第一动机）+ 还 #79 选型债（骨架以 shadcn 为基础但实现用了原生控件）；可访问性完备（Radix 键盘导航/ARIA 开箱即用）；与 lucide-react 同生态 | B. CSS 覆盖原生（零依赖但下拉面板/键盘导航受限，select 能力不足时反而更难）；C. 混合（两套路径并存，维护面分裂） |
-| Electron 菜单栏 = 移除（用户拍板 2026-08-05） | `Menu.setApplicationMenu(null)` 彻底移除 + 开发模式显式注册 F12/Ctrl+Shift+I 开 DevTools | 沉浸式写作形态（Windows 默认 File/Edit/Window 菜单栏与产品气质冲突）；无菜单后默认加速键失效需显式补 dev 通道；E2E 无菜单断言不破坏 | `autoHideMenuBar: true`（Alt 仍可唤出，未彻底）；保留默认菜单（现状，验收不过） |
-| 品牌图标主题切换（Q2 ✅ = A，2026-08-05 用户拍板） | **A. 三主题精确切换**（paper→icon / night→icon-dark / ink→icon-ink） | ink 版资产已定稿存在（`logos/brand/inkflow-icon-ink.svg`），三版按 `data-theme` 切换零额外成本；「深浅二分」在墨韵（浅底 + 朱砂 accent）下不成立——浅底配墨蓝 icon 会突兀 | B（token 文档 §4.5 表述，但文档早于品牌定稿，未考虑墨韵第三色） |
+| 控件定制路径 | **A. shadcn 组件化**（Radix Select/Switch/Slider/RadioGroup，+依赖栈） | 学习价值（项目第一动机）+ 还选型债（骨架以 shadcn 为基础但实现用了原生控件）；可访问性完备（Radix 键盘导航/ARIA 开箱即用）；与 lucide-react 同生态 | B. CSS 覆盖原生（零依赖但下拉面板/键盘导航受限，select 能力不足时反而更难）；C. 混合（两套路径并存，维护面分裂） |
+| Electron 菜单栏 = 移除 | `Menu.setApplicationMenu(null)` 彻底移除 + 开发模式显式注册 F12/Ctrl+Shift+I 开 DevTools | 沉浸式写作形态（Windows 默认 File/Edit/Window 菜单栏与产品气质冲突）；无菜单后默认加速键失效需显式补 dev 通道；E2E 无菜单断言不破坏 | `autoHideMenuBar: true`（Alt 仍可唤出，未彻底）；保留默认菜单（验收不过） |
+| 品牌图标主题切换 | **A. 三主题精确切换**（paper→icon / night→icon-dark / ink→icon-ink） | ink 版资产已定稿（`logos/brand/inkflow-icon-ink.svg`），三版按 `data-theme` 切换零额外成本；「深浅二分」在墨韵（浅底 + 朱砂 accent）下不成立——浅底配墨蓝 icon 会突兀 | B（token 文档 §4.5 表述，未考虑墨韵第三色） |
 | 空态实现 = 组件内条件渲染 | 不新增路由/页面/抽象组件，`projects.tsx` / `writing.tsx` 分支内联 | 仅 2 处空态，独立 EmptyState 组件抽象价值低（YAGNI）；i18n 文案 key ≤6 | 独立 EmptyState 组件（可复用性当前为零）；新增引导路由（过度设计） |
 | 顶栏调试文本 = 移除 | 品牌 logo 替代 `{theme} / {lang}` | 外观设置入口已在 Agent 配置页「外观」卡片（token 文档已知项 #5），顶栏重复指示冗余；主题/语言当前值非用户高频信息 | 产品化为主题名 label（视觉噪音、信息冗余，否决）；保留（调试残留，验收不过） |
 | shadow 接线 = @theme 映射 | `index.css` 补 `--shadow` → Tailwind 语义类 | token 文档 §3.3 已定义三主题 `--shadow`，只差映射（现状卡片用默认 shadow 不随主题）；零 token 值改动 | 组件内联 shadow 样式（散落、不随主题）；重定义 shadow 值（token 文档已评审通过，YAGNI） |
-
-### 5.7 待澄清问题（≤3）
-
-- **Q1 控件定制路径**：A. shadcn 组件化（引入 Radix Select/Switch/Slider/RadioGroup 依赖栈，一致性最好、可访问性完备）；B. CSS 覆盖原生控件（`appearance-none` + `controls.css` 全局类，零新依赖）；C. 混合（select 走 shadcn、checkbox/radio 走 CSS）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——学习价值（项目第一动机）+ 还 #79 选型债（骨架以 shadcn 为基础但实现用了原生控件）；Radix 键盘导航/ARIA 开箱即用；与 lucide-react 同生态。正文已按 A 修订（§5.2.2/§5.3/§5.6）。
-- **Q2 品牌图标主题切换粒度**：A. 三主题精确切换（paper→`inkflow-icon.svg` / night→`-dark.svg` / ink→`-ink.svg`，ink 版资产已定稿）；B. 深浅双版（素笺/墨韵共用浅色版、仅夜航切 `-dark`）。**✅ 已确认（用户拍板：选项 A，2026-08-05）**——墨韵为浅色底 + 朱砂 accent，共用墨蓝 icon 视觉突兀；三版资产均已存在，切换成本为零。正文已按 A 修订（§5.2.8/§5.6）。
-- **Q3 顶栏品牌形态**：A. 仅图标；B. 图标 + 横版 logo（含副标题，顶栏高度内不可读）；C. 图标 + 文字「InkFlow」（复用 i18n `app.brand`）。**✅ 已确认（用户拍板：选项 C，2026-08-05）**——横版 logo 为 1000×320 比例副标题在顶栏（约 40px 高）内不可读；C 复用现有 i18n、零新增文案，横版 logo 留给后续页面。正文已按 C 修订（§5.2.8）。
-- **Q4 Electron 菜单栏**（用户主动提出，2026-08-05）：彻底移除默认菜单栏（`Menu.setApplicationMenu(null)`）+ 开发模式 F12/Ctrl+Shift+I 显式注册开 DevTools。已并入正文（§5.2.9/§5.3/§5.5 M9/§5.6）。
-
-（注：主题可视化预览卡片已明确划归 #99，本章全部 Q 与工作项均不涉及。）
-
----
 
 ## 6. 交互反馈与产品化补全（#99）
 

@@ -1,6 +1,6 @@
 """设置 REST API — 基础设施工具端点 + 应用级设置持久化（F32 #152）。
 
-对应 F19 GUI 渲染层（spec §4.4/§4.6，Q3 拍板）的 2 个工具端点：
+对应 F19 GUI 渲染层（spec §4.4）的 2 个工具端点：
 - POST /api/v1/settings/llm-keys — APIKeyManager AES-256-GCM 加密存储 API Key
 - POST /api/v1/settings/llm/test — LLMClient 最小连通探测
 
