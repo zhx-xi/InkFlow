@@ -150,7 +150,7 @@
 
 - **N19**：**实体筛选语义统一 + 排序 + 分页**——① 实体改**多选集合（默认全选）**；取消某实体 → 该实体与相关边**统一灰显**（画布保留全部节点与边，`data-dim="1"`），勾选 = 正常彩色；`filterActive` 判据统一为「`categories.length < 6 || entities !== null`」（**仅取消一个实体 → filterActive 必须为真**）；② 实体列表按 `Intl.Collator('zh')` **拼音序**排列（中英文均正确——**断言顺序**，不是「有排序函数」）；③ 实体列表**纯前端分页**：池 > 每页条数时出现分页条（`N / M`，首页 prev 禁用 / 末页 next 禁用），**每页条数 10/25/50/100 可改**，翻页只重绘列表（画布不动）；④ **分类块与实体块拆成两个独立块**——各有独立滚动区 + 独立分页条，**页码互不相干**（分类 6 条 ≤ 每页条数 → 其分页条常态不出现）；⑤ 取消某类别**不再清空**实体选择（勾回即恢复，与实体勾回对称）；⑥ 实体**无独立表**（跨表引用）→ 分页为**纯前端切片**，不调后端分页
 
-> 🔴 **#1568 已收窄本条的 ①**：实体**未选中者不再一概「统一灰显」**——实体定向激活时改为**三态**（选中彩色 / 相连灰显保位 / 无关隐藏），见 N12/N21。**类别路**（取消某类 = 只降灰不隐藏）维持本条 ① 不变。
+> 🔴 **本条 ① 已收窄**：实体**未选中者不再一概「统一灰显」**——实体定向激活时改为**三态**（选中彩色 / 相连灰显保位 / 无关隐藏），见 N12/N21。**类别路**（取消某类 = 只降灰不隐藏）维持本条 ① 不变。
 
 ## 4. 节点着色与筛选规则
 
@@ -160,7 +160,7 @@
 
 | 方案 | 做法 | 跨会话稳定 | 契约改动 | 取舍 |
 |------|------|-----------|---------|------|
-| **A（✅ 采用，原型默认）** | 前端派生：类型色相带内按 `hash(id\|name)` 取 4 色相（−18/−6/+6/+18°）× 3 明度 = 12 色槽 | ✅ 同实体永远同色 | ❌ 零改动 | 类型一眼可辨 + 同类个体可辨；#1418 扩槽后 8 个角色实渲 7 色（6 槽时仅 4 色、碰撞组 3+3）；代价：同类内仍属「同色系微差」，极密时靠名称辨认 |
+| **A（✅ 采用，原型默认）** | 前端派生：类型色相带内按 `hash(id\|name)` 取 4 色相（−18/−6/+6/+18°）× 3 明度 = 12 色槽 | ✅ 同实体永远同色 | ❌ 零改动 | 类型一眼可辨 + 同类个体可辨；扩槽后 8 个角色实渲 7 色（6 槽时仅 4 色、碰撞组 3+3）；代价：同类内仍属「同色系微差」，极密时靠名称辨认 |
 | **A′（A 的契约变体，原型未出图）** | 同一套色板，但由后端在 graph 响应返回稳定 `color` / `palette_index` | ✅（更强：可跨端/跨导出统一） | ✅ 改 `GraphNode` 契约 + 后端派生 | 视觉与 A 一致；换来「导出图 / CLI 报告 / 未来云端同色」与「前端零算法」；代价：契约变更 + 存量兼容 |
 | **B（备选，原型出图对照）** | 同类型内**图邻接贪心着色**（相邻节点必定异色） | ❌ 图的增删会重排颜色 | ❌ 零改动 | 追连线最不易看丢；代价：颜色不稳定、用户无法形成长期记忆——实测 8 个角色里只有「角色甲」与其余 7 个异色，**个体分辨力反而低于 A** |
 
@@ -188,11 +188,11 @@
 
 - 类别：**多选**（**默认全选** = 不做类别过滤）——取消某类 = 该类节点/边**统一灰显**（**不再摘除**），勾回 = 恢复；「全选 == 显示全部」由负例守护
 - 实体：**多选集合**（**默认全选**，`entities: string[]`，`null` = 全选）——取消某实体 = 该实体灰显保位；与类别取交集；🔴 **邻接子图语义退休**（旧「单选 = 该实体 + 一跳邻居」不再存在）
-- 🔴 **#1568 收窄 #1529 的「一律降灰、不隐藏」**：**仅实体定向这一路**改为三态（含隐藏）；**类别路维持「不摘除、只降灰」**（红线：实体定向激活时类别外节点仍不隐藏）。隐藏的实现要求：被隐藏节点**不参与布局/连线**（从画布渲染集与边绘制集一并排除），但其位置记忆保留（取消隐藏即回原位）
+- 🔴 **「一律降灰、不隐藏」仅适用于类别路**：**仅实体定向这一路**改为三态（含隐藏）；**类别路维持「不摘除、只降灰」**（红线：实体定向激活时类别外节点仍不隐藏）。隐藏的实现要求：被隐藏节点**不参与布局/连线**（从画布渲染集与边绘制集一并排除），但其位置记忆保留（取消隐藏即回原位）
 - 搜索框：只过滤实体列表，不直接改画布
 - **面板拆两块**：块① 类别（固定 6 条，自带分页条 → 常态不出现）/ 块② 实体（池 = 已勾选类别 ∩ 搜索词 → **拼音排序** → **分页切片**）；两块各有**独立滚动区**与**独立分页条**，页码互不相干
 - **灰显而非摘除的理由（用户拍板）**：摘除节点会让 @xyflow 重排布局（画布跳动、上下文丢失）；灰显保留空间记忆 ——「未勾选 = 统一灰色，选中就正常显示」
-- **#1568 的补充（三态为何仍要「隐藏」）**：灰显只解决「颜色区分」，不解决「聚焦」——实体定向时用户要的是**只看相关子图**。故实体定向路升级三态：**邻居灰显保位**（保留布局与上下文）+ **无关节点隐藏**（真正聚焦）。类别路不动（其语义是「粗筛颜色」，隐藏会破坏「全选==显示全部」的对称）
+- **三态为何仍要「隐藏」**：灰显只解决「颜色区分」，不解决「聚焦」——实体定向时用户要的是**只看相关子图**。故实体定向路升级三态：**邻居灰显保位**（保留布局与上下文）+ **无关节点隐藏**（真正聚焦）。类别路不动（其语义是「粗筛颜色」，隐藏会破坏「全选==显示全部」的对称）
 - **形态 B（左侧筛选面板，✅ 采用）**：实体规模大时可滚动 / 可搜索 / 可多选语义；**配「底部折叠栏」抵消其唯一劣势**——展开态占宽 224px（画布 968 → 732px），点「折叠」后面板整块消失、画布恢复全宽，改由画布下方的折叠栏承载摘要 / 清除 / 展开；筛选结果在折叠态保持生效（用户拍板原话：「添加底部折叠栏和折叠功能，不牺牲画布宽度」）
 - **形态 A（顶部两行 chip 组，未采用，仅原型对照）**：不占横向空间、复用既有 `.rank-chip` 视觉；出局原因是实体多时 chip 行会换行抬高页面（`knowledge-graph-filter-a.png` 保留对照）
 - **记忆（决策③）**：每次用户选择即写入 `inkflow:kg:filters:<project_id>`（`{categories, entities}`；`entities === null` = 全选）；面板开合写 `inkflow:kg:panel`。**只在用户动作时写**，截图/演示态（`setState`）不写，避免污染记忆。旧格式 `{category, entity}` 向后兼容：`category` → 只勾该类；`entity` → 只勾该实体（幽灵 id 丢弃后回退全选）
@@ -203,25 +203,15 @@
 `lib.knowledge.filter.category`（类别）· `lib.knowledge.filter.entity`（实体）· `lib.knowledge.filter.all`（全部）· `lib.knowledge.filter.search`（搜索实体名…）· `lib.knowledge.filter.more`（更多 {n}）· `lib.knowledge.filter.clear`（清除筛选）· `lib.knowledge.filter.empty`（当前筛选下没有可见实体）· `lib.knowledge.filter.shown`（显示 {n} 个实体）· `lib.knowledge.filter.collapse`（折叠）· `lib.knowledge.filter.expand`（展开筛选）· `lib.knowledge.legend`（图例）
 
 > ⚠️ 落地前先核 `i18n/zh.ts` / `en.ts` 的行数上限（两者等高，净增必须 ≤ 0，见项目既有约定）。
-> #1465：**不新增 i18n key**——复用既有 `filter.all`（全选时摘要读「全部」）/ `filter.clear` / `filter.expand` / `filter.shown`；竖条圆点状态用 `aria-pressed` 表达（不写「已显示/已隐藏」文案）。
-> **#1568**：`lib.knowledge.filter.clear` 的**值**由「清除筛选」改为「全选」（`zh.ts`/`en.ts` 原地改值，不增行——该键语义一直是「全选」）；**新增 2 键** `lib.knowledge.filter.cancelAll`（全部取消）与 `lib.knowledge.filter.none`（无；全部取消后摘要的类别标签）。因 `zh.ts`/`en.ts` 已贴 900 行护栏，两键落在**新域文件** `i18n/knowledge-filter.ts`（导出 `knowledgeFilterZh` / `knowledgeFilterEn`；zh 为权威，两语 key 集必须一致），同 `knowledge-drawio.ts` 先例，并**同步登记**进 `useI18n.ts` 的 `dicts` 与 `i18n.contract.test.ts` 的 `comboZh/comboEn` + 跨域重复键 `sourcesZh/sourcesEn` 清单。
+> **不新增 i18n key**——复用既有 `filter.all`（全选时摘要读「全部」）/ `filter.clear` / `filter.expand` / `filter.shown`；竖条圆点状态用 `aria-pressed` 表达（不写「已显示/已隐藏」文案）。
+> `lib.knowledge.filter.clear` 的**值**由「清除筛选」改为「全选」（`zh.ts`/`en.ts` 原地改值，不增行——该键语义一直是「全选」）；**新增 2 键** `lib.knowledge.filter.cancelAll`（全部取消）与 `lib.knowledge.filter.none`（无；全部取消后摘要的类别标签）。因 `zh.ts`/`en.ts` 已贴 900 行护栏，两键落在**新域文件** `i18n/knowledge-filter.ts`（导出 `knowledgeFilterZh` / `knowledgeFilterEn`；zh 为权威，两语 key 集必须一致），同 `knowledge-drawio.ts` 先例，并**同步登记**进 `useI18n.ts` 的 `dicts` 与 `i18n.contract.test.ts` 的 `comboZh/comboEn` + 跨域重复键 `sourcesZh/sourcesEn` 清单。
 
 ### 4.4 原型已用 testid（实现请沿用，勿另起名）
 
 **采用（形态 B）**：`library-kg-view`（图谱视图根容器）· `library-kg-legend` · `library-kg-legend-<type>` · `library-kg-filter-panel` · `library-kg-filter-panel-search` · `library-kg-filter-panel-cat-<type>` · `library-kg-filter-panel-entity-<type>-<id>` · `library-kg-filter-panel-clear`（=**全选**） · `library-kg-filter-panel-cancel-all`（=**全部取消**） · `library-kg-filter-collapse` · `library-kg-filter-summary` · `library-kg-filterbar` · `library-kg-filterbar-summary` · `library-kg-filterbar-clear`（=全选） · `library-kg-filterbar-cancel-all`（=全部取消） · `library-kg-filterbar-expand`（折叠态 = **画布左侧竖条**，testid 沿用不改名；竖条内六类圆点 = `library-kg-rail-dot-<type>`） · `library-kg-filter-empty` · `library-kg-node-<type>-<id>`
-· **#1360 drawio**：`library-kg-export-drawio` · `library-kg-import-drawio` · `library-kg-drawio-status` · `library-kg-drawio-error` · `library-kg-import-dialog` · `library-kg-import-file` · `library-kg-import-mode-merge` · `library-kg-import-mode-replace` · `library-kg-import-replace-ack` · `library-kg-import-submit` · `library-kg-import-cancel` · `library-kg-import-result` · `library-kg-import-error`
-· **#1529 两个独立块的分页（分类块 / 实体块，各自一套）**：`library-kg-cat-page` · `library-kg-cat-page-prev` · `library-kg-cat-page-info` · `library-kg-cat-page-next` · `library-kg-cat-page-size-select` ／ `library-kg-entity-page` · `library-kg-entity-page-prev` · `library-kg-entity-page-info` · `library-kg-entity-page-next` · `library-kg-entity-page-size-select`（分页条复用 `components/Pagination.tsx`，`testIdPrefix` 即前缀；`compact` 模式）
-· **#1529 灰显标记**：画布节点 / 边在「未勾选」时带 `data-dim="1"`（jsdom 可断言节点；**边的灰显只在真实浏览器可复验**）
-· **#1568 隐藏标记**：实体定向三态下被隐藏的节点带 `data-hidden="1"`（jsdom 可断言——隐藏节点仍需存在于 DOM 以便测试锚定，但以 `display:none` 呈现、且从布局/连线输入集中排除），未隐藏恒为 `data-hidden="0"`
+· **drawio 导出/导入**：`library-kg-export-drawio` · `library-kg-import-drawio` · `library-kg-drawio-status` · `library-kg-drawio-error` · `library-kg-import-dialog` · `library-kg-import-file` · `library-kg-import-mode-merge` · `library-kg-import-mode-replace` · `library-kg-import-replace-ack` · `library-kg-import-submit` · `library-kg-import-cancel` · `library-kg-import-result` · `library-kg-import-error`
+· **两个独立块的分页（分类块 / 实体块，各自一套）**：`library-kg-cat-page` · `library-kg-cat-page-prev` · `library-kg-cat-page-info` · `library-kg-cat-page-next` · `library-kg-cat-page-size-select` ／ `library-kg-entity-page` · `library-kg-entity-page-prev` · `library-kg-entity-page-info` · `library-kg-entity-page-next` · `library-kg-entity-page-size-select`（分页条复用 `components/Pagination.tsx`，`testIdPrefix` 即前缀；`compact` 模式）
+· **灰显标记**：画布节点 / 边在「未勾选」时带 `data-dim="1"`（jsdom 可断言节点；**边的灰显只在真实浏览器可复验**）
+· **隐藏标记**：实体定向三态下被隐藏的节点带 `data-hidden="1"`（jsdom 可断言——隐藏节点仍需存在于 DOM 以便测试锚定，但以 `display:none` 呈现、且从布局/连线输入集中排除），未隐藏恒为 `data-hidden="0"`
 
 **备选（形态 A，未采用，仅原型保留）**：`library-kg-filters` · `library-kg-filter-category` · `library-kg-filter-cat-<type>`（含 `-cat-all`）· `library-kg-filter-entity` · `library-kg-filter-entity-<type>-<id>` · `library-kg-filter-entity-more` · `library-kg-filter-search` · `library-kg-filter-clear`（=全选） · `library-kg-filter-cancel-all`（=全部取消）
-
-## 5. 修改履历
-
-| 日期 | 单号 | 变更 |
-|------|------|------|
-| 2026-09-30 | #1373 | 首版：节点个体着色（12 色槽）+ 左侧筛选面板（形态 B）+ 折叠栏 + 选择记忆 |
-| 2026-10-08 | #1465 | 类别改多选（默认全选）；实体列表随类别过滤；面板等高内滚；折叠态改画布左侧竖条 |
-| 2026-10-09 | #1529 | 实体改多选集合 + 拼音排序 + 双独立分页；**未勾选一律灰显不摘除**（邻接子图语义退休） |
-| 2026-10-10 | **#1568** | **收窄 #1529**：实体定向路改**三态**（选中彩色 / 相连灰显保位 / 无关隐藏，`data-hidden`）；类别路维持只降灰不隐藏；「清除筛选」改名「**全选**」并新增「**全部取消**」两态分离入口（面板/竖条/chip 三处）；新增 `i18n/knowledge-filter.ts` 域 |
-| 2026-10-10 | **#1569** | 分页条出场判据 = 「池总数 > 当前每页条数」；改「每页条数」→ 归零回第 1 页；分类块与实体块判据各自独立 |
