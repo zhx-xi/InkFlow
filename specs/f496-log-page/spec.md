@@ -8,11 +8,11 @@
 
 ## 1. 背景与目标
 
-F57（#888）交付了结构化日志 schema、`GET/POST /api/v1/logs`、i18n messages 目录与前端 logger bridge，
+F57 定义了结构化日志 schema、`GET/POST /api/v1/logs`、i18n messages 目录与前端 logger bridge，
 但**日志的"查看面"缺失**：内核日志只进 loguru 文件/stderr（不进 store），GUI 上报进了 store 却无处可看。
-#496 交付统一日志页：内核 / GUI / AI 三类日志同页分类展示与查询，无需 DevTools/翻文件。
+本模块交付统一日志页：内核 / GUI / AI 三类日志同页分类展示与查询，无需 DevTools/翻文件。
 
-**验收锚点**（issue #496）：
+**验收锚点**：
 1. 日志页可分类展示三类日志（内核=api/agent/tool/cli/mcp，GUI=frontend，AI=llm）。
 2. 支持按时间范围 / 级别 / 关键字（q/correlation_id/project_id）过滤查询。
 3. message 用 `t(message_key, params)` 渲染，语言切换实时生效（非硬编码）。
@@ -57,7 +57,7 @@ items 按 timestamp 降序；字段见 F57 spec §2.2（level/caller_type/caller
 | `log-search-btn` | 查询按钮 | 提交 q/correlation/from/to（page 归 0）并查询 |
 | `log-reset-btn` | 重置按钮 | 全部筛选回默认（tab all/level INFO/项目全部/输入清空）并重查 |
 | `log-list` | 日志列表容器 | — |
-| `log-row` | 单条记录行 | 含：`log-level-badge`（level 文本）、timestamp（**系统本地时区** `'YYYY-MM-DD HH:mm:ss'`，`lib/log-format.formatTimestamp` 本地访问器手拼——勿用 `toLocaleString()`，12/24 小时制与 locale 差异致契约不可测；ADR-055 / #1000）、caller_type、caller_name、**渲染后 message**、duration_ms（有则显）、error_code（有则显）、correlation_id（有则显，可截断展示） |
+| `log-row` | 单条记录行 | 含：`log-level-badge`（level 文本）、timestamp（**系统本地时区** `'YYYY-MM-DD HH:mm:ss'`，`lib/log-format.formatTimestamp` 本地访问器手拼——勿用 `toLocaleString()`，12/24 小时制与 locale 差异致契约不可测；ADR-055）、caller_type、caller_name、**渲染后 message**、duration_ms（有则显）、error_code（有则显）、correlation_id（有则显，可截断展示） |
 | `log-empty` | 空态（total=0） | 文案 `logs.empty` |
 | `log-loading` | 加载态 | 请求进行中 |
 | `log-error` | 错误态 | 含失败信息（errorMessage） |
