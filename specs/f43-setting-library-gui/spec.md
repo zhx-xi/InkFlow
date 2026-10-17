@@ -111,7 +111,7 @@ interface TagEditorProps {
 }
 ```
 
-- 交互（wiki 风格，评审原型 §tagEditor）：
+- 交互（wiki 风格）：
   - 已选标签渲染 chips（× 可移除）
   - 建议标签渲染 + 前缀按钮（点击追加，已选的不再显示）
   - 输入框回车/逗号创建新标签（strip 去空，去重）
@@ -125,7 +125,6 @@ interface TagEditorProps {
 - `CharacterCreate` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；`CharacterUpdate` 加 `extra: dict[str, Any] | None = None`（exclude_unset 语义：不传不修改；传 dict 整体替换）
 - `CharacterCreateBody` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；create 调用透传 `data.extra`
 - `create_character` 加 `extra: dict[str, Any] | None = None` 参数 → `Character(extra=extra or {})`；`update_character` 用 `model_copy(update=model_dump(exclude_unset=True))` → extra 自动生效（整体替换）
-
 - 校验：extra 自由字典；但 **role_rank 由后端必填 + 枚举校验**（创建/修改角色必须传 `extra.role_rank`，缺失或非法值 → 422；五档 `protagonist|major|minor|scene|walkon`）。groups 仍自由文本，后端不校验。
 - 兼容：**创建必须带 `extra.role_rank`**（缺省 → 422）；更新不传 `extra` = 不修改，传 `extra` 但缺 role_rank = 视为该字段未改（保留原值）、带非法 role_rank → 422。
 
@@ -141,7 +140,7 @@ class WorldCopyRequest(BaseModel):
 ```
 
 - `self_only=True` 且 `root_setting_id=None` → 422（互斥校验，VALIDATION_ERROR）。
-- `copy_service.copy` 加 `self_only: bool = False` 参数：复制集合确定分支（§5 算法 ③）：
+- `copy_service.copy` 加 `self_only: bool = False` 参数：复制集合确定分支（§5.6）：
   - `root + not self_only` → `list_descendants(root)`（既有语义，含自身全部后代）
   - `root + self_only` → `[root]`（仅本体；map 复制联动 `list_by_root_locations(source, [root.int], ...)` 自动收窄）
   - `root=None`（整体复制）→ `list_all_active(source)`（self_only 无意义，互斥校验拦）
@@ -1069,7 +1068,7 @@ POST /api/v1/projects/p1/outlines
 
 > 大纲/时间线 E2E 不在本节范围。
 
-### 9.9 删除清理后端 RED 契约（C 系列）
+### 9.9 删除清理 RED 契约（后端 C 系列 / 前端 X 系列）
 
 **层次**：repo 层真实 SQLite 轨（`PRAGMA foreign_keys=OFF` 镜像生产——测试 fixture 不用 ON，证明显式清理有效）+ service/API 层 mock 轨。
 
@@ -1086,12 +1085,12 @@ POST /api/v1/projects/p1/outlines
 | C9 | service | world_service.delete_setting reparent 路径触发 location_cleanup | 现未调 → assert_awaited FAIL |
 | C10 | api | DELETE /characters/{id} 清理语义（mock svc + 断言） | 现有实现无清理 → 断言 FAIL |
 
-**前端 RED 契约（文案对齐，D 系列）**：
+**前端 RED 契约（文案对齐，X 系列）**：
 
 | # | 用例 | 断言要点 | 预期 RED 形态 |
 |---|------|---------|-------------|
-| D1 | library.test.tsx 删除文案 | ConfirmDialog 显示「点击确认后立即移除，不可恢复」 | 现断言旧文案 → FAIL |
-| D2 | projects.test.tsx 删除文案 | 项目删除弹窗显示新文案 | 现断言旧文案 → FAIL |
+| X1 | library.test.tsx 删除文案 | ConfirmDialog 显示「点击确认后立即移除，不可恢复」 | 现断言旧文案 → FAIL |
+| X2 | projects.test.tsx 删除文案 | 项目删除弹窗显示新文案 | 现断言旧文案 → FAIL |
 
 > **RED 验证注意**：repo 层 C 系列必须用 `PRAGMA foreign_keys=OFF` 的真实 SQLite（镜像生产），不能复用既有 fixture 的 ON（否则 FK 级联掩盖 RED——测试会假绿）。C5/C7/C8 是「新钩子/新接线」类契约（方法不存在 → AttributeError/断言 FAIL），镜像规则 1c/1k 形态。
 
@@ -1157,10 +1156,10 @@ POST /api/v1/projects/p1/outlines
 
 | # | 验收项 | 验证方式 |
 |---|--------|---------|
-| M2 | RED 批全 FAIL 有实证（后端 C1-C10 + 前端 D1-D2 契约） | RED 日志存档 |
+| M2 | RED 批全 FAIL 有实证（后端 C1-C10 + 前端 X1-X2 契约） | RED 日志存档 |
 | M3 | 后端测试全绿（既有 + C 系列；真实 SQLite foreign_keys=OFF 轨） | `backend/.venv pytest backend/tests/unit/ -q` |
 | M4 | 删除设定实体后引用残留被清理（地图 pin / 章关联 / 关系 / 情节点 / 伏笔锚点） | repo C1-C4 + 手动核对（删除角色 → 关联 pin/chapterRef 清理） |
 | M5 | 清理时机正确（同步，删除方法内同一事务） | C5-C9 断言 + 代码走查（无调度器/无异步入口） |
-| M6 | 前端文案表达真删（`lib.delete.confirm` =「立即移除，不可恢复」） | D1-D2 + `pnpm --filter renderer test` |
-| M7 | 前端测试全绿（既有 + D 系列） | `pnpm --filter renderer test` |
+| M6 | 前端文案表达真删（`lib.delete.confirm` =「立即移除，不可恢复」） | X1-X2 + `pnpm --filter renderer test` |
+| M7 | 前端测试全绿（既有 + X 系列） | `pnpm --filter renderer test` |
 | M10 | 角色等级必填 + 枚举校验：创建/修改角色缺 `extra.role_rank` 或非法值 → 422；AI 工具 `create_character` 带 role_rank 必填参数并透传；CLI `character create --role-rank` | RED 契约全 FAIL 实证 + `uv run pytest backend/tests/unit/domain/ports/test_character_role_rank.py` + 全量 |
