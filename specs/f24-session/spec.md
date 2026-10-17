@@ -38,15 +38,15 @@ F13 状态机（动作端点迁移）  ×  F12 无 LLM（确定性）  ×  双�
 | 视角 | **管线内部执行记录**（pipeline 标识、stage 快照、retry_count、duration_ms） | **用户可见业务会话**（类型/状态/上下文快照/履历日志） |
 | 粒度 | 一次管线运行（write_chapter 全流程） | 一次业务会话（写作会话可含多次执行；任务会话对应一次外部 agent 任务） |
 | 消费方 | F4 agent_service / 调试 | CLI/API/未来 GUI/F20 MCP / ADR-022 skills（履历查询） |
-| 关联 | — | **MVP 软关联**：SessionLog.payload 可观测键（`execution_id`/`agent_name`/`stage`/`tool_calls`，契约见 §5.4）；正式 FK 与 CI/CD 式执行视图归 0.7.0 Agent 化升级（Q3 拍板 2026-08-07） |
+| 关联 | — | **MVP 软关联**：SessionLog.payload 可观测键（`execution_id`/`agent_name`/`stage`/`tool_calls`，契约见 §5.4）；正式 FK 与 CI/CD 式执行视图归 后续 Agent 化升级（决策 Q3） |
 
 > 会话是**跨执行的任务/写作意图**，执行记录是**单次运行的技术细节**——两者并存不重叠。F24 不读取、不修改 F4 表。
 
-### 1.3 用户拍板（2026-08-07 时间表设计会话）
+### 1.3 设计决策
 
 - **会话承载任务履历**：外部 agent 任务（F20 MCP / ADR-022 skills 调用）基于会话——任务触发来源多样（用户 CLI 设定 / chat 指令 / 其他 agent 经 MCP/skill 调用），统一以会话记录生命周期 + 履历日志，用户可查看任务履历/历史日志
 - **F20 依赖 F24**：F20 MCP Server spec 基于本 spec 定稿（被依赖方）
-- **外部 agent 调用形态**：进度通知写入本模块 SessionLog（本 spec §5.4 预留进度写入契约）——原 F25 daemon 载体已移除（ADR-029，2026-08-07：伪需求判定；task 会话类型保留，语义 = 外部 agent 任务履历）
+- **外部 agent 调用形态**：进度通知写入本模块 SessionLog（本 spec §5.4 预留进度写入契约）——原 F25 daemon 载体已移除（ADR-029：伪需求判定；task 会话类型保留，语义 = 外部 agent 任务履历）
 
 ---
 
@@ -126,7 +126,7 @@ F13 状态机（动作端点迁移）  ×  F12 无 LLM（确定性）  ×  双�
 - `completed` / `failed` → 任意：**禁止**（终态不可逆；如需重跑 → 新建会话，MVP 不支持 reopen——YAGNI 论证见 §12）
 - 归档状态与会话状态**正交**：任何状态的会话都可归档（归档 = 从列表隐藏，履历通过详情仍可查，见 §2.5）
 
-### 2.5 删除语义（归档 → 真实删除，两级；用户拍板 2026-08-07）
+### 2.5 删除语义（归档 → 真实删除，两级）
 
 产品语言：**归档**（= 软删除，is_deleted=True）；两级删除流程：
 
@@ -583,9 +583,9 @@ PRD P1-13「会话恢复」的落地：
 
 > 进度写入与状态机**独立**：日志可在任何状态追加（含终态，Q2 拍板）；`fail` 动作与 error 日志二选一由调用方决定（fail 写 `error` 字段 + 可选日志），不强制双写。
 
-### 5.4b 可观测键约定（agent 运行可视化铺路，Q3 拍板 2026-08-07）
+### 5.4b 可观测键约定（agent 运行可视化铺路）
 
-为「用户查看当前哪个 agent 在工作 + 点击查看运行细节（工具/skill 调用）」预留**软关联**——日志 payload 可携带以下**可选**键（契约形状由 F24 定义，明细由 0.7.0 Agent 化升级 F27/F28 填充）：
+为「用户查看当前哪个 agent 在工作 + 点击查看运行细节（工具/skill 调用）」预留**软关联**——日志 payload 可携带以下**可选**键（契约形状由 F24 定义，明细由 后续 Agent 化升级 F27/F28 填充）：
 
 | 键 | 类型 | 含义 | 例子 |
 |----|------|------|------|
@@ -828,7 +828,7 @@ F24 依赖:
   F7（CLI 约定）          — JSON 信封/退出码/错误码标准
 
 F24 被依赖:
-  F20（MCP Server）      — 任务会话载体 + 履历日志 + 暂停/恢复状态机（外部 agent 调用，2026-08-07 用户拍板；原 F25 daemon 载体已移除，ADR-029）
+  F20（MCP Server）      — 任务会话载体 + 履历日志 + 暂停/恢复状态机（外部 agent 调用；原 F25 daemon 载体已移除，ADR-029）
   F26+（Agent 化）        — agent 任务履历可复用会话（未来）
 ```
 
@@ -842,13 +842,13 @@ F24 被依赖:
 |---|------|------|------|-------------|
 | 1 | 会话类型用字段而非子类 | `session_type: writing/task` + 统一 context/result JSON 快照 | 轻量载体（§2.3）；深层语义由消费方约定，避免双套 CRUD/状态机 | writing/task 分表（复杂度翻倍，无收益）；纯 JSON 无类型（无法区分行为） |
 | 2 | 状态机四态 + 动作端点 | active/paused/completed/failed，pause/resume/complete/fail 专用端点 | 任务履历需要暂停/恢复语义（外部 agent 调用依赖）；迁移规则单一入口可校验（F13 模式） | PATCH 直改 status（任意跳转无法校验，F13 否决同款）；两态 open/closed（无暂停语义，不满足 PRD「暂停恢复」） |
-| 3 | 双实体（Session + SessionLogEntry） | 日志子实体追加语义、seq 递增、不可篡改 | 「任务履历日志」是用户拍板的核心诉求（§1.3）；日志与状态机独立（终态也可补记）；履历查询 = GET /logs | 单实体 + JSON 日志数组（不可分页/不可独立追加校验）；无日志（不满足履历诉求） |
+| 3 | 双实体（Session + SessionLogEntry） | 日志子实体追加语义、seq 递增、不可篡改 | 「任务履历日志」是本模块核心诉求（§1.3）；日志与状态机独立（终态也可补记）；履历查询 = GET /logs | 单实体 + JSON 日志数组（不可分页/不可独立追加校验）；无日志（不满足履历诉求） |
 | 4 | 会话是全局资源（project_id 可空） | 顶层资源 + 项目过滤维度，FK SET NULL | 任务履历跨项目（全局定时任务）；项目删除保留履历 | 项目嵌套资源（履历随项目生命周期，删除即失）；强制 project_id（无法表达全局任务） |
 | 5 | 终态不可 reopen | completed/failed 终态，重跑 = 新建会话 | 状态机简单可证；重跑语义 = 新会话 + 新履历（旧履历保留对照） | reopen 动作（终态复活 → 履历时序混乱，F13 dropped 态 YAGNI 同构论证） |
-| 6 | 归档 → 真实删除两级 + 详情可追溯（用户拍板 2026-08-07） | 第一次 DELETE 归档（可 restore 解除）、已归档再 DELETE 真实删除、force 直删 | 产品语义「归档可解除、归档且删除 = 真删」（用户拍板）；履历可追溯是会话模块特性；与 F12/F13 软删事件兼容（底层 is_deleted 不变） | 硬删默认（误删不可恢复）；软删后详情也 404（无法追溯历史履历） |
+| 6 | 归档 → 真实删除两级 + 详情可追溯 | 第一次 DELETE 归档（可 restore 解除）、已归档再 DELETE 真实删除、force 直删 | 产品语义「归档可解除、归档且删除 = 真删」；履历可追溯是会话模块特性；与 F12/F13 软删事件兼容（底层 is_deleted 不变） | 硬删默认（误删不可恢复）；软删后详情也 404（无法追溯历史履历） |
 | 7 | ProjectNotFoundError 复用 F9 | 不导出同名类（陷阱 16） | 避免 ports 遮蔽破坏既有 router except 链 | 自建 ProjectNotFoundError 并导出（F13 实测教训） |
 | 8 | 动作不承诺幂等 | 重复 complete → 422 | 动作语义 = 迁移（非确保状态），重复调用明确报错；幂等重试由调用方（F20 MCP）实现 | complete 幂等（第二次返回已 completed——掩盖调用方状态盲区） |
-| 9 | 会话↔执行：MVP 软关联，不加 FK（Q3 拍板 2026-08-07） | SessionLog.payload 可观测键（execution_id/agent_name/stage/tool_calls/duration_ms，§5.4b） | 用户需求「查看 agent 运行细节」（2026-08-07）：日志即时间线 + payload 即下钻入口；F4/agent_run 表 0.7.0 可能演进，FK 过早绑定有重构风险 | Session.execution_id FK（依赖 F4 表结构，0.7.0 重构风险）；SessionLog.execution_id FK（同左） |
+| 9 | 会话↔执行：MVP 软关联，不加 FK（决策 Q3） | SessionLog.payload 可观测键（execution_id/agent_name/stage/tool_calls/duration_ms，§5.4b） | 用户需求「查看 agent 运行细节」：日志即时间线 + payload 即下钻入口；F4/agent_run 表后续可能演进，FK 过早绑定有重构风险 | Session.execution_id FK（依赖 F4 表结构，重构风险）；SessionLog.execution_id FK（同左） |
 
 ---
 
@@ -873,9 +873,9 @@ F24 被依赖:
 
 | # | 问题 | 影响 | 结论 |
 |---|------|------|------|
-| Q1 | 会话是否**必须**挂项目？ | 数据模型约束与 API 校验（§2.1/§3.2） | ✅ 已确认（用户拍板 2026-08-07：按设计）——`project_id` **可空**；三类场景支撑（程序内 chat AI 辅助任务、跨项目/全局外部 agent 任务、项目删除后履历保留），详见正文 §2.1/§6.1 |
-| Q2 | 终态会话（completed/failed）是否允许**追加日志**？ | 状态机与日志语义（§2.4/§5.4/§7 #9） | ✅ 已确认（用户拍板 2026-08-07：按设计）——**允许追加**（履历补记优先；「终态冻结」反直觉：调用方被迫在 complete 前塞完日志） |
-| Q3 | 会话与 F4 AgentExecution 是否 MVP 建立关联？ | 数据模型字段与外部 agent 消费方式（§2.1/§5.4b） | ✅ 已确认（用户拍板 2026-08-07：**MVP 软关联，不加 FK**）——SessionLog.payload 可观测键（execution_id/agent_name/stage/tool_calls/duration_ms，§5.4b）承载「查看当前 agent 运行/执行到哪一步/工具调用细节」；正式 FK 与 CI/CD 式执行视图归 0.7.0 Agent 化升级（F27/F28），届时零迁移 |
+| Q1 | 会话是否**必须**挂项目？ | 数据模型约束与 API 校验（§2.1/§3.2） | **裁定：按设计**——`project_id` **可空**；三类场景支撑（程序内 chat AI 辅助任务、跨项目/全局外部 agent 任务、项目删除后履历保留），详见正文 §2.1/§6.1 |
+| Q2 | 终态会话（completed/failed）是否允许**追加日志**？ | 状态机与日志语义（§2.4/§5.4/§7 #9） | **裁定：按设计**——**允许追加**（履历补记优先；「终态冻结」反直觉：调用方被迫在 complete 前塞完日志） |
+| Q3 | 会话与 F4 AgentExecution 是否 MVP 建立关联？ | 数据模型字段与外部 agent 消费方式（§2.1/§5.4b） | **裁定：MVP 软关联，不加 FK**——SessionLog.payload 可观测键（execution_id/agent_name/stage/tool_calls/duration_ms，§5.4b）承载「查看当前 agent 运行/执行到哪一步/工具调用细节」；正式 FK 与 CI/CD 式执行视图归 后续 Agent 化升级（F27/F28），届时零迁移 |
 
 ---
 
