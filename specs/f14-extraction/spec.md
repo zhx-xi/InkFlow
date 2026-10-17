@@ -27,19 +27,19 @@ F14  新增:    章节文本(text) ──LLM──▶ 时间线事件 ──合�
 F14  门面:    ExtractionType(7 种) ──分发──▶ 上述管线（character/setting 委托提取、
              outline 委托生成、timeline 提取/检查双语义（设置项切换）、foreshadowing 新建提取管线、
              style 注册 handler（F16 ✅）、knowledge_relation 委托 F48 关系提取（项目级规则集，
-             零 LLM，#1408））+ 增量提取（hash 变更追踪） + RAG 索引（ADR-013）
+             零 LLM））+ 增量提取（hash 变更追踪） + RAG 索引（ADR-013）
 ```
 
 **复用** F9/F10/F11/F12/F13 的既有管线（`CharacterService.extract` / `WorldService.extract` / `OutlineService.generate` / `TimelineService.check_consistency`——门面直接注入各模块 Service 委托，**不重写管线**）；F13 移交的「伏笔 AI 提取」（F13 spec §10）与 Q2 拍板的「时间线事件提取」（章节文本 → 时间线事件，`timeline_auto_extract` 设置项控制，§5.5）是本模块**新建的两条 LLM 管线**（`_foreshadowing_extractor.py` + `foreshadowing_extract.yaml` / `_timeline_extractor.py` + `timeline_extract.yaml`，均镜像 F9/F10 提取骨架）；时间线提取需**跨模块 MODIFY F12**（事件实体加 `source_chapter_id` 来源章节字段 + 仓储 `list_by_chapter`，F13 改 F6 sources.py 先例，§2.6/§8）；`VectorStoreProtocol`（P0-11 已定义，5 种 EntityType + IndexableEntity/RetrievedEntity）由本模块首次实现为 `infrastructure/rag/langchain_vector_store.py`。
 
 **边界声明**:
 - F14 不做**新实体档案**：不建角色/世界观/伏笔表，所有落库仍走 F9-F13 的仓储与合并语义（§2/§5）
-- F14 不做**F6 数据源替换**（CharacterSettingSource/WorldSettingSource 空实现）：归 0.2.0 联调（F13 先例，Q1 已确认 F9/F10 替换不纳入模块里程碑），见 §10/§11
+- F14 不做**F6 数据源替换**（CharacterSettingSource/WorldSettingSource 空实现）：归联调阶段（F13 先例：F9/F10 的注入替换不纳入模块里程碑），见 §10/§11
 - F14 的**增量提取**是「按源（章节/文本）变更」粒度 + 事件-章节联动（Q3 综合方案：源 sha256 hash + F12 事件 `source_chapter_id`，§2.6/§5.2/§5.5）；实体级字段 diff 仍归 Phase 2+（§10/§12）
 - F14 的 RAG 落地**只做基础设施与编排**：索引触发（提取后自动索引 / 全量重建）、检索入口（API/CLI）；**不接入 F3/F6 写作链路**（RAG 注入写作上下文归 Phase 2+ 联调，见 §10）
-- F14 的 **STYLE 类型**（F16 风格检测，Issue #46 **已交付**）**已注册 handler**：接口契约（枚举/API/CLI）在 F14 全量支持，F16 落地后注册 `StyleService.analyze`（确定性文本分析 + LLM 深度分析可选），调用返回 200 + StyleReport（§6.1；Q1 ✅ 已确认选项 A 的承诺已兑现——本 spec 占位表述随 F16 修订，见 §6.1/§12）
-- F14 的 **TIMELINE 类型**（Q2 ✅ 已确认选项 B）＝「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项（**默认 false**——AI 自动写事件档案需用户显式开启）；开启时新建管线提取事件（跨模块 MODIFY F12 事件实体加 `source_chapter_id`，Q3 联动），关闭时退回 F12 确定性检查；事件自动删除归 Phase 2+（§2.6/§5.5/§10）
-- F14 v1.2 的 **RAG 切片可配置**（#277/#278）＝三档切片策略模式（fixed/paragraph/dialogue/llm，§5.6.1）+ 滑动重叠开关（默认关，§5.6.3）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳，§5.6.4）+ 切片参数纳入 #276 指纹（§5.6.5）；对话/LLM 档（M4）为 0.9.0 后置档（§5.6.6/§5.6.7）——基础设施与索引编排已由 v1.0/v1.1 交付，本节扩展切片策略与配置（§8 跨模块 MODIFY F32 settings）
+- F14 的 **STYLE 类型**（F16 风格检测）由 F16 注册 handler：接口契约（枚举/API/CLI）在 F14 全量支持，`StyleService.analyze`（确定性文本分析 + LLM 深度分析可选）返回 200 + StyleReport（§6.1/§12）
+- F14 的 **TIMELINE 类型**＝「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract` 设置项（**默认 false**——AI 自动写事件档案需用户显式开启）；开启时提取事件（跨模块 MODIFY F12 事件实体加 `source_chapter_id`），关闭时退回 F12 确定性检查；事件自动删除归 Phase 2+（§2.6/§5.5/§10）
+- F14 的 **RAG 切片可配置**＝切片策略模式（fixed/paragraph/dialogue/llm，§5.6.1）+ 滑动重叠开关（默认关，§5.6.3）+ 检索元数据补强（章节 x/y + chunk 偏移 + 时间戳，§5.6.4）+ 切片参数纳入向量指纹（§5.6.5）；对话/LLM 档为后置档（§5.6.6/§5.6.7）；切片配置经 F32 `app_settings` 读写（跨模块 MODIFY F32 settings）
 
 ---
 
@@ -59,7 +59,7 @@ class ExtractionType(StrEnum):
     TIMELINE = "timeline"          # 时间线事件提取（设置项开启，§5.5）/ 一致性检查（关闭，委托 F12 check_consistency）
     FORESHADOWING = "foreshadowing"  # 伏笔提取 → 本模块新建 ForeshadowingExtractor（F13 移交，§5.4）
     STYLE = "style"                # 风格检测 → F16 已注册 StyleService.analyze（§6.1）
-    KNOWLEDGE_RELATION = "knowledge_relation"  # 知识图谱关系提取 → F48 RelationExtractionService（项目级规则提取，零 LLM；#1408 接入统一入口）
+    KNOWLEDGE_RELATION = "knowledge_relation"  # 知识图谱关系提取 → F48 RelationExtractionService（项目级规则提取，零 LLM）
 ```
 
 **类型语义表**（每种类型在统一接口中的「输入模式 / 引擎 / 落库 / 增量 / RAG 映射」见 §6.1 注册表；本节只列身份映射）:
@@ -72,7 +72,7 @@ class ExtractionType(StrEnum):
 | `timeline` | F12（实体 MODIFY）+ F14（管线） | `TimelineExtractor.extract`（设置项**开启**）/ `TimelineService.check_consistency`（设置项**关闭**——v1.1 起为兜底语义） | LLM 提取（章节文本 → 时间线事件，镜像 F9 骨架，合并到 F12 事件档案）/ 确定性检查（无 LLM） | 开启：text / chapter_ids；关闭：无（库内事件档案） |
 | `foreshadowing` | F13 | `ForeshadowingExtractor`（F14 新建） | LLM 提取（镜像 F9 骨架，合并到 F13 档案） | text / chapter_ids |
 | `style` | F16 ✅ | `StyleService.analyze`（F16 注册，§6.1） | 确定性文本分析（+ LLM 深度分析可选，仅独立入口） | text / chapter_ids |
-| `knowledge_relation` | F48 ✅ | `RelationExtractionService.extract_for_project`（#1408 接入，`method="rule"`） | 确定性规则集（R1/R2/R3，零 LLM） | 无（项目级；不接受 text/chapter_ids → 422） |
+| `knowledge_relation` | F48 ✅ | `RelationExtractionService.extract_for_project`（`method="rule"`） | 确定性规则集（R1/R2/R3，零 LLM） | 无（项目级；不接受 text/chapter_ids → 422） |
 
 > **为什么 OUTLINE/TIMELINE 也算「提取类型」**: PRD P1-06 明确列出 6 种类型统一接口；大纲与时间线在创作工具链中的角色是「从创作资料收敛出结构化产物」，与角色/世界/伏笔同属「一键沉淀」的用户心智。统一接口对它们做**语义适配**（outline=生成；timeline=提取（设置项开启）或检查（关闭）），而不是强行为它们编造「从文本提取」的管线——能力等价、入口统一（论证见 §5.7/§12）。
 >
@@ -138,13 +138,11 @@ class ExtractionRequest(BaseModel):
             raise ValueError("num_chapters 必须在 1-100 之间")
         return v
 
-
 class Granularity(StrEnum):
     """提取粒度（§5.8.3；仅 character / setting 生效，其他类型非 FINE → 422）."""
 
     FINE = "fine"      # 默认：LLM 输出几条落几条
     COARSE = "coarse"  # 粗粒度：模板注入粗粒度指令 + 每源条目上限（§5.8.3）
-
 
 class ExtractionStatus(StrEnum):
     """统一结果状态 — MVP 产出 SUCCESS / SKIPPED；ERROR 预留（§5.3）."""
@@ -152,7 +150,6 @@ class ExtractionStatus(StrEnum):
     SUCCESS = "success"    # 管线执行完成（含部分成功：部分源 skip、部分源执行）
     SKIPPED = "skipped"    # 全部源内容未变更（增量提取，§5.2），未调用 LLM
     ERROR = "error"        # 预留：门面内错误走异常（ADR-012），该值供 run 记录表使用
-
 
 class ExtractionResult(BaseModel):
     """统一提取结果 — 各类型共用的信封结构（§5.3 字段语义）."""
@@ -170,7 +167,6 @@ class ExtractionResult(BaseModel):
     batch_id: str | None = None         # 本次 run 落库批次标识（§5.8.5；dry_run / 无写入时 None）
     detail: dict[str, Any] = Field(default_factory=dict)  # 各类型原始结果 model_dump（§5.3）
 
-
 class ReindexResult(BaseModel):
     """全量重建索引结果（vector reindex / POST vector/reindex）."""
 
@@ -178,7 +174,6 @@ class ReindexResult(BaseModel):
     entity_types: list[EntityType]      # 实际处理的实体类型
     indexed: int                        # 索引的实体总数（含 upsert 覆盖）
     warnings: list[str] = []
-
 
 class RollbackResult(BaseModel):
     """批次回滚结果（§5.8.5）."""
@@ -264,7 +259,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from inkflow.domain.ports.vector_store import EntityType  # P0-11 已定义，引用不重定义（§2.4）
 
-
 class ExtractionType(StrEnum):
     """统一提取接口的 7 种类型（§2.1）。"""
 
@@ -276,12 +270,10 @@ class ExtractionType(StrEnum):
     STYLE = "style"
     KNOWLEDGE_RELATION = "knowledge_relation"
 
-
 class ExtractionStatus(StrEnum):
     SUCCESS = "success"
     SKIPPED = "skipped"
     ERROR = "error"
-
 
 class ExtractionRequest(BaseModel):
     """统一提取请求（§2.2）— 类型相关参数约束见 §6.4。"""
@@ -331,7 +323,6 @@ class ExtractionRequest(BaseModel):
             raise ValueError("num_chapters 必须在 1-100 之间")
         return v
 
-
 class ExtractionResult(BaseModel):
     """统一提取结果（§2.2/§5.3）。"""
 
@@ -346,7 +337,6 @@ class ExtractionResult(BaseModel):
     model: str | None = None
     indexed: bool = False
     detail: dict[str, Any] = Field(default_factory=dict)
-
 
 class ExtractionRun(BaseModel):
     """增量追踪记录（§2.3）— 每 (project, type, source) 一行最新状态。"""
@@ -367,7 +357,6 @@ class ExtractionRun(BaseModel):
     indexed: bool = False
     run_at: datetime
 
-
 class ReindexResult(BaseModel):
     """全量重建索引结果（§5.6）。"""
 
@@ -379,7 +368,7 @@ class ReindexResult(BaseModel):
 
 > 注: `ExtractionRun` 领域模型引用 `EntityType`（ReindexResult 用），从 `domain/ports/vector_store.py` 导入（P0-11，ADR-002 依赖方向允许 domain 内互引）。
 
-### 2.6 TIMELINE 提取设置项与事件-章节联动（Q2/Q3 拍板 — 跨模块 MODIFY F12）
+### 2.6 TIMELINE 提取设置项与事件-章节联动（跨模块 MODIFY F12）
 
 **设置项 `timeline_auto_extract`**（F1 `ProjectConfig.extra` 模式——项目级扩展配置字典，无需 F1 schema 变更）:
 
@@ -395,9 +384,9 @@ class ReindexResult(BaseModel):
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| source_chapter_id | uuid.UUID?（DB int?） | NULLABLE, FK→chapters.id ON DELETE SET NULL, 已索引 | 事件**来源章节**——LLM 提取事件时记录（Q3 联动锚点）；手工建档为 None；章节硬删 → 置 None（事件保留） |
+| source_chapter_id | uuid.UUID?（DB int?） | NULLABLE, FK→chapters.id ON DELETE SET NULL, 已索引 | 事件**来源章节**——LLM 提取事件时记录（事件-章节联动锚点）；手工建档为 None；章节硬删 → 置 None（事件保留） |
 
-配套修改（F13 改 F6 `sources.py` 先例——已合入 main 的既有模块文件随 F14 一并修改，§8 文件清单）: `domain/models/timeline.py`（TimelineEvent + TimelineEventCreate/Update 对应字段）、`domain/ports/timeline_repository.py`（Protocol 加 `list_by_chapter`）、`infrastructure/database/models/timeline.py`（ORM 列 + FK + 索引）、`infrastructure/database/repositories/timeline_repo.py`（实现 `list_by_chapter`）。
+配套修改（F13 改 F6 `sources.py` 先例——既有模块文件随本模块一并修改，见 §8 模块归属）: `domain/models/timeline.py`（TimelineEvent + TimelineEventCreate/Update 对应字段）、`domain/ports/timeline_repository.py`（Protocol 加 `list_by_chapter`）、`infrastructure/database/models/timeline.py`（ORM 列 + FK + 索引）、`infrastructure/database/repositories/timeline_repo.py`（实现 `list_by_chapter`）。
 
 **事件合并匹配键**: `(project_id, title, source_chapter_id)`——同章同名事件 = 同一事件（更新），跨章同名 = 不同事件（新建），手工事件（source_chapter_id=None）不参与提取合并匹配（匹配逻辑在**服务层**——F12 事件表无 partial unique，表结构不引入唯一索引，§5.5 合并策略）。
 
@@ -412,7 +401,7 @@ class ReindexResult(BaseModel):
 
 端点风格沿用既有约定：**统一提取入口扁平**（`POST /api/v1/extract`——type 是资源维度而非项目维度，镜像 F9 `/characters/extract` 扁平先例）；**runs 查询与向量动作嵌套项目路径**（项目级资源）。错误响应格式沿用 F1/F2/F9-F13（`{"detail": "..."}` 404/422；LLM/管线失败 500）。
 
-### 3.1 端点总览（7 个，实现核对补全 2026-08-29；#1485 增 rollback）
+### 3.1 端点总览（7 个）
 
 | 方法 | 路径 | 用途 | 请求体 | 响应 |
 |------|------|------|--------|------|
@@ -420,12 +409,12 @@ class ReindexResult(BaseModel):
 | GET | `/api/v1/projects/{project_id}/extractions/runs` | 增量状态列表 | Query: `?type=&offset=&limit=` | 200 + `{items, total, offset, limit}` |
 | POST | `/api/v1/projects/{project_id}/vector/reindex` | 全量重建索引（RAG） | `{entity_types?: [...]}` | 200 + ReindexResult |
 | POST | `/api/v1/projects/{project_id}/vector/retrieve` | 语义检索（RAG） | `{query, entity_types?, top_k?, min_score?}` | 200 + `{items: [RetrievedEntity]}` |
-| GET | `/api/v1/projects/{project_id}/vector/status` | 向量库状态（stale 原因，含 chunking_changed） | — | 200 + `{stale, reason?}`（#276） |
-| PUT | `/api/v1/vector/embedding-model` | 切换激活 embedding 模型 | `{provider, model_id}`（必填校验） | 200（#525；404「Provider 不存在」/「模型不存在」，422 缺失） |
+| GET | `/api/v1/projects/{project_id}/vector/status` | 向量库状态（stale 原因，含 chunking_changed） | — | 200 + `{stale, reason?}` |
+| PUT | `/api/v1/vector/embedding-model` | 切换激活 embedding 模型 | `{provider, model_id}`（必填校验） | 200（404「Provider 不存在」/「模型不存在」，422 缺失） |
 | POST | `/api/v1/projects/{project_id}/extractions/rollback` | 按批次整批回滚本次提取**新建**的条目（§5.8.5，幂等） | `{batch_id}` | 200 + RollbackResult |
 
 > `/api/v1/extract` 为**静态路径段**，无与既有路由的歧义（F10 §3.1 的 extract 路径歧义处理不适用——本端点无 `{resource_id}` 兄弟段）。
-> 切片配置（mode/chunk_size/overlap）经 F32 `GET/PATCH /settings` 读写（§5.6.3，F32 已有端点），本 spec **不新增 API 端点**；`vector/status`（#276）的 stale reason 已含 `chunking_changed`（§5.6.5）。
+> 切片配置（mode/chunk_size/overlap）经 F32 `GET/PATCH /settings` 读写（§5.6.3，F32 已有端点），本 spec **不新增 API 端点**；`vector/status` 的 stale reason 已含 `chunking_changed`（§5.6.5）。
 
 ### 3.2 请求/响应示例 — 统一提取
 
@@ -611,7 +600,7 @@ POST /api/v1/projects/3f2e1d4a-.../vector/retrieve
 // 404 — 资源不存在
 {"detail": "项目不存在"}
 
-// 422 — 业务校验失败 / Pydantic 验证失败 / 类型未实现
+// 422 — 业务校验失败 / Pydantic 验证失败 / 类型不支持
 {"detail": "text 与 chapter_ids 不能同时使用"}
 {"detail": "character/setting/foreshadowing 类型必须提供 text 或 chapter_ids"}
 {"detail": "outline 类型不支持 text/chapter_ids（使用 prompt/num_chapters）"}
@@ -634,18 +623,18 @@ POST /api/v1/projects/3f2e1d4a-.../vector/retrieve
 | 无效 UUID 格式（project_id / chapter_ids 内） | 404 / 422 | 统一解析失败处理（同 F9-F13 `_parse_id`；chapter_ids 内非法 UUID → Pydantic 422） |
 | text 与 chapter_ids 互斥 / 缺失 / 类型不匹配（§6.4） | 422 | 服务层业务校验（`ExtractionValidationError`，消息即 detail） |
 | timeline 设置项未开启且携带 text/chapter_ids | 422 | `ExtractionValidationError`（消息「时间线自动提取未开启（配置 timeline_auto_extract）」——设置项判定在门面层，§5.5） |
-| STYLE 类型调用 | 200 | 成功返回（F16 已落地——`StyleValidationError` 等 F16 错误见 F16 spec §3.3） |
+| STYLE 类型调用 | 200 | 成功返回（`StyleValidationError` 等 F16 错误见 F16 spec §3.3） |
 | chapter_ids 指向不存在章节（含软删——F2 get 不含软删） | 422 | `ChapterNotFoundError`（「章节不存在」） |
 | chapter_ids 指向其他项目章节 | 422 | `ChapterNotInProjectError`（「章节不属于该项目」） |
 | outline 同名活动大纲 | 422 | 透传 F11 `OutlineNameConflictError`（同 F11 现状） |
 | LLM 调用失败 | 500 | 透传 `LLMRequestError`（F5 重试耗尽，不消耗解析重试；router 转 500，同 F9-F11） |
 | 提取解析重试耗尽（character/setting/foreshadowing/timeline） | 500 | 透传 `CharacterExtractionError` / `WorldExtractionError` / `ForeshadowingExtractionError` / `TimelineExtractionError` |
 | 生成解析重试耗尽（outline） | 500 | 透传 `OutlineGenerationError` |
-| RAG 暂时不可用（vector_store 未装配 / BGE 模型加载失败） | **503 + Retry-After** | `RAGUnavailableError`（消息含「RAG 向量库不可用」前缀；#1381 语义升级——调用方可区分「暂时不可用（可重试）」与「请求错误」） |
+| RAG 暂时不可用（vector_store 未装配 / BGE 模型加载失败） | **503 + Retry-After** | `RAGUnavailableError`（消息含「RAG 向量库不可用」前缀——调用方可区分「暂时不可用（可重试）」与「请求错误」） |
 | chroma 存储层错误（hnsw 段读取失败等） | 500 | `VectorStoreError`（消息即 detail，服务层自愈重试后仍失败） |
 | run 记录 DB 错误 | 500 | 全局处理器（loguru，ADR-012/016） |
 
-> **与 F9-F13 的差异**: F14 是首个**同时携带** LLM 错误（LLM_ERROR）、管线错误（EXTRACTION_ERROR）与 RAG 错误（RAG_ERROR）的模块；「类型未实现」作为 422 业务错误表达（区别于 404/501，见 §12 决策表——STYLE 占位 422 已被 F16 取代，仅剩防御性「未注册类型」分支）。
+> **与 F9-F13 的差异**: F14 是首个**同时携带** LLM 错误（LLM_ERROR）、管线错误（EXTRACTION_ERROR）与 RAG 错误（RAG_ERROR）的模块；「类型不支持」作为 422 业务错误表达（区别于 404/501，见 §12 决策表——STYLE 占位 422 已被 F16 取代，仅剩防御性「未注册类型」分支）。
 
 ---
 
@@ -671,7 +660,7 @@ inkflow extract run --project-id <uuid> \
     #   timeline_auto_extract：开启=LLM 事件提取，关闭=F12 确定性检查，§5.5）
     # --index 提取成功后自动索引本次产物（§5.6）；--force 忽略增量 skip 强制重跑（§5.2）
     # --type style → F16 已注册 handler（§6.1）：成功退出码 0（校验失败 → VALIDATION_ERROR 信封，F16 spec §3.3）
-    # --type knowledge_relation → F48 关系提取（#1408）：项目级单源、规则集提取（零 LLM），不带源参数；
+    # --type knowledge_relation → F48 关系提取：项目级单源、规则集提取（零 LLM），不带源参数；
     #   带 --text/--text-file/--chapters → 422「knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）」（§6.4）
 
 inkflow extract status --project-id <uuid> [--type <character|setting|outline|timeline|foreshadowing|style|knowledge_relation>] [--json]
@@ -705,7 +694,7 @@ inkflow vector retrieve --project-id <uuid> --query <str> \
 ✅ 提取完成: character 处理 2 个源（跳过 0），新增 3 更新 2，警告 1 条
 ⏭ 提取跳过: character 内容未变更（源: chapter 7a4f2c91-...），未调用 LLM
 📋 提取状态（project 3f2e1d4a-...）:
-  [character] 7a4f2c91-... — ✅ success (2026-08-02 10:00, 新增 2 更新 1, 已索引)
+  [character] 7a4f2c91-... — ✅ success (新增 2 更新 1, 已索引)
   [setting]   9b1c2d3e-... — ⏭ skipped (内容未变更)
   [character] 5e6f7a8b-... — ❌ error (3 次尝试后仍无法解析为合法 JSON)
 ✅ 索引完成: character/setting/foreshadowing/timeline_event/chapter_chunk 共 87 条
@@ -893,7 +882,7 @@ async def _run_sources(request, sources) -> ExtractionResult:
 ⑤ 解析 JSON → Pydantic schema 校验（ExtractedForeshadowing）
    → 非法条目跳过 + warning
 ⑥ 修复式重试 ≤ 2 次（附错误信息）→ 仍失败 → ForeshadowingExtractionError
-⑦ 章号映射（#1350）: first_chapter_number ∈ [1, len(chapters)] → 对应章节 UUID；
+⑦ 章号映射: first_chapter_number ∈ [1, len(chapters)] → 对应章节 UUID；
    越界 / 清单为空 / None → None（宽容降级，不抛错、不丢条目）
 ⑧ 合并落库（§5.4 合并策略）: 按 (project_id, title) 匹配活动伏笔 →
    存在=更新(非空字段覆盖，含 first_chapter_id) / 不存在=创建（priority 默认 50）
@@ -943,9 +932,9 @@ variables:
 
 **幂等性**: 对同一文本重复提取，第二次应产出空 created/updated（全部命中已有档案，非空覆盖后值不变）——与 F9/F10 相同的验收点。
 
-### 5.5 时间线提取管线（TimelineExtractor — Q2 拍板，F14 新建 LLM 管线）
+### 5.5 时间线提取管线（TimelineExtractor — F14 新建 LLM 管线）
 
-**背景**: v1.0 的 timeline 类型仅委托 F12 确定性检查；用户拍板 Q2=选项 B——「章节文本 → 时间线事件」纳入 MVP，并附加要求：AI 自动化需设置项由用户选择是否开启（§2.6）。**两种语义并存，由 `timeline_auto_extract` 设置项切换**：开启 = 本节提取管线（新建/更新 F12 事件档案）；关闭 = F12 `check_consistency`（§5.1 步骤 ④ 分发）。
+**背景**: timeline 类型初始仅委托 F12 确定性检查；「章节文本 → 时间线事件」提取纳入 MVP，且 AI 自动化须由设置项控制是否开启（§2.6）。**两种语义并存，由 `timeline_auto_extract` 设置项切换**：开启 = 本节提取管线（新建/更新 F12 事件档案）；关闭 = F12 `check_consistency`（§5.1 步骤 ④ 分发）。
 
 **管线设计**（镜像 F9 `_character_extractor.py` 骨架，仅替换领域实体与模板）:
 
@@ -969,8 +958,8 @@ variables:
 | title | str（必填，1-100 字符） | 事件标题 |
 | description | str \| None | 事件描述（该时刻发生了什么；None = 不覆盖） |
 | time_value | float \| None | 世界内时间数值键（无法推断 → null；校验同 F12：有限且 \|v\| ≤ 1e12） |
-| time_unit | str \| None | 时间单位标签（纪元/年/月/日/时；None = 不覆盖）。**仅在确实解析出 `time_value` 时有意义**——解析不出值时管线留空（防「假非空」，§5.5 #1526） |
-| time_display | str \| None | **原文时间表达**（照抄文本，如「三月初二」「觉醒前世记忆后两年」）；≤ 100 字符、去空白；None = 不覆盖。**解析不出累计天数时必须保留本字段**（原文表达不得丢，§5.5 #1526） |
+| time_unit | str \| None | 时间单位标签（纪元/年/月/日/时；None = 不覆盖）。**仅在确实解析出 `time_value` 时有意义**——解析不出值时管线留空（防「假非空」，§5.5 时间表达契约） |
+| time_display | str \| None | **原文时间表达**（照抄文本，如「三月初二」「觉醒前世记忆后两年」）；≤ 100 字符、去空白；None = 不覆盖。**解析不出累计天数时必须保留本字段**（原文表达不得丢，§5.5 时间表达契约） |
 | narrative_position | int \| None | 叙事位置（LLM 输出或 null——新建时 null = F12 追加语义） |
 | timeline_flag | str \| None | 时间线标记（""/flashback/flashforward；None = 不覆盖） |
 
@@ -1016,13 +1005,13 @@ variables:
 | 情况 | 行为 | 计入 |
 |------|------|------|
 | 项目内存在同 (title, source_chapter_id) 的**活动**事件 | 非空提取字段覆盖（title/description/time_value/time_unit/**time_display**/narrative_position/timeline_flag **独立判断，不动 None 未知值**），更新 updated_at | `updated` |
-| 不存在 | 创建新事件（source_chapter_id=当前章节；`time_value`/`time_display` = LLM 输出（未解析出则为 `null` → 落 `None`/空串）；`time_unit` 仅在 `time_value` 非 None 时落值、否则空串——#1526；narrative_position=LLM 输出或 None——None 走 F12 追加语义、timeline_flag 透传） | `created` |
+| 不存在 | 创建新事件（source_chapter_id=当前章节；`time_value`/`time_display` = LLM 输出（未解析出则为 `null` → 落 `None`/空串）；`time_unit` 仅在 `time_value` 非 None 时落值、否则空串——见 §5.5 时间表达契约；narrative_position=LLM 输出或 None——None 走 F12 追加语义、timeline_flag 透传） | `created` |
 | 存在但已**软删除** | 视为不存在 → 创建新事件 + warning「存在已删除的同名同章事件」 | `created` + warning |
 | 提取字段非法（title 空/超长、time_value 越界等） | 该条跳过 | `warnings` |
 
 > **匹配逻辑在服务层**: F12 事件表**无任何唯一约束**（事件是实例而非档案，F12 spec §2.4）——同名同章匹配由 TimelineExtractor 经 `TimelineRepositoryProtocol.list_by_chapter` 拉取该章事件后按 title 比对完成，**表结构不引入唯一索引**（跨模块 MODIFY F12 仅加列 + FK + 索引，§8）。
 
-**写前分流 + 后置时间归一（#1581，0.17.0 rc3 修复）**：合并阶段的**新建**分支前追加一步：
+**写前分流 + 后置时间归一**：合并阶段的**新建**分支前追加一步：
 
 1. 若 `ee.time_value is None` 且 `ee.time_display` 非空 → 调 `parse_time_display(ee.time_display)`
    （`domain/services/_timeline_text_time.py`，**确定性、零 LLM**，[f12 §2.9](../f12-timeline/spec.md) Z2）；
@@ -1030,13 +1019,12 @@ variables:
    `time_display` **原样保留**）；
 3. 解析失败 / 仍无值 → **不调用 `repo.add`**（正式表零变更，Z1），该事件进 `TimelineExtractionResult.pending`
    并记 `reason`（门面据此落暂存，Z3）；
-4. `time_unit` 仅在 `time_value` 非 None 时落值（#1526 不变量保持）。
+4. `time_unit` 仅在 `time_value` 非 None 时落值（时间表达不变量保持）。
 
 **干跑（`dry_run=True`，含 `stage=True`）行为不变**：`pending` 为空、全部 would-be 新建照旧进 `created`
-（暂存批次级路径依赖该口径，#1545/#1546 零回归）。**存量已落库的未定事件不回溯改写**（Z5）。
+（暂存批次级路径依赖该口径）。**存量已落库的未定事件不回溯改写**（Z5）。
 
-
-**事件-章节联动语义（Q3 综合方案 — 精确提取 + 事件和章节联动）**:
+**事件-章节联动语义（精确提取 + 事件与章节联动）**:
 
 | 场景 | 行为 |
 |------|------|
@@ -1048,9 +1036,9 @@ variables:
 
 **幂等性**: 对同一文本重复提取，第二次应产出空 created/updated（全部命中已有事件，非空覆盖后值不变）——与 F9/F10/F13 相同的验收点。
 
-**时间表达契约（#1526，0.17.0 rc1 数据质量修复）**:
+**时间表达契约**：
 
-0.17.0-rc1 隔离库实测：183 事件中 `time_value` 空 181（98.9%）、`time_display` 空 182 → 世界序视图满屏「未知」，时间线校验能力失效。根因有二：① 管线在新建落库处**硬编码** `time_display=""`；② 提示词未要求该字段。修法（用户 2026-10-08 拍板 **A + C**：A 治根、C 兜底展示）：
+时间字段的两个失效形态（世界序视图满屏「未知」、一致性检查无输入）源于：① 管线在新建落库处**硬编码** `time_display=""`；② 提示词未要求该字段。契约如下（治根 + 展示兜底）：
 
 | # | 契约 |
 |---|------|
@@ -1058,7 +1046,7 @@ variables:
 | T2 | 解析不出累计天数 → `time_value = null` **但 `time_display` 必须保留**（不得两者都空） |
 | T3 | `time_unit` 仅在**确实解析出 `time_value`** 时写入；未解析出值 → 留空（防「假非空」：rc1 的 `time_unit='日' ×182` 即此类噪声，会掩盖真实缺口） |
 | T4 | **不变量不回归**：§2.7 S10「单位固定（日）+ 项目内累计时基 + 不确定即 null」语义不变；`time_display` 是**展示面兜底**，不参与排序 / 一致性检查（同 F12 §2.7 S6「归一用比较、不回写库」的精神） |
-| T5 | 前端（方案 C）世界序取值链**优先消费 `time_display`**（原文），两者皆空才落「未知」占位——前端既有实现已满足（`timeline-axis-labels.ts` 的 `axisLabels` 与 `timeline-era-axes.ts` 的 `timeScaleText`），本轨以契约测试**守护**（防 #1527 等后续改动回归） |
+| T5 | 前端（方案 C）世界序取值链**优先消费 `time_display`**（原文），两者皆空才落「未知」占位——前端既有实现已满足（`timeline-axis-labels.ts` 的 `axisLabels` 与 `timeline-era-axes.ts` 的 `timeScaleText`），本轨以契约测试**守护**（防后续改动回归） |
 
 **契约测试**: `tests/unit/domain/services/test_timeline_extractor.py::TestTimelineTimeDisplayContract1526`（管线保留原文 / 非空率 > 80% / `time_unit` 防假非空 / 更新覆盖）+ `TestTimelineExtractPromptContract1526`（zh/en 提示词必须要求 `time_display`）+ 前端 `timeline-axis-labels.test.ts`（原文兜底 C1-C3）。
 
@@ -1078,7 +1066,7 @@ class LangChainVectorStore:
     - embeddings 由构造注入（生产 HuggingFaceBgeEmbeddings(BAAI/bge-small-zh-v1.5)，
       测试 FakeEmbeddings）——BGE 模型首次使用需联网下载 ~100MB，懒加载（§7/§11 影响）
     - chromadb 同步 API 用 asyncio.to_thread 包装（不阻塞事件循环）
-    - chromadb 客户端统一传 Settings(anonymized_telemetry=False)（#946 关闭匿名遥测，
+    - chromadb 客户端统一传 Settings(anonymized_telemetry=False)（关闭匿名遥测，
       本地运行数据不出本机）
     - 距离度量 cosine；relevance_score = 1 - distance
     """
@@ -1117,11 +1105,11 @@ class LangChainVectorStore:
 | **增量索引** | `extract` 带 `index=true` | 提取成功后，本次 created/updated 实体（character/setting/foreshadowing/timeline（开启时提取的事件））→ index_batch；章节模式额外索引该章 chapter_chunk | 日常提取即索引（按需开启） |
 | **全量重建** | `vector reindex` / POST vector/reindex | 从各模块仓储全量拉取档案（分页循环 `list(limit=100)`；timeline 用已有 `list_all`；章节用 `list_chapters` 分页循环）→ index_batch | 升级/初始化/索引修复（幂等 upsert，可重复执行） |
 
-**批量索引分片（#1404）**: `LangChainVectorStore._index_batch_sync` 内按模块常量
+**批量索引分片**: `LangChainVectorStore._index_batch_sync` 内按模块常量
 `_EMBED_MAX_INPUTS_PER_REQUEST`（64 条 = zhipu embedding-3 单请求 input 上限）分片调用
 `embed_documents` 后合并，再一次性 upsert —— 实体总数 > 64 的项目重建索引不再因上游
 400 code 1214（「input数组最大不得超过64条」）中断；合并顺序 = 有效实体顺序（`_probe_embedding`
-取末条与分片前语义一致）。单条路径 `_index_sync` 逐条提交，不受影响。该常量与 #929 空串守卫正交
+取末条与分片前语义一致）。单条路径 `_index_sync` 逐条提交，不受影响。该常量与空串守卫正交
 （先过滤空白 content，再对有效集分片）；接入第二个 embedding provider 时改为按 provider 取值。
 
 **检索入口**: `vector retrieve` / POST vector/retrieve（§3/§4）。**不接入 F3/F6 写作链路**（RAG 注入写作上下文归 Phase 2+ 联调，见 §10——MVP 只交付「能索引、能检索」的实证闭环）。
@@ -1130,23 +1118,23 @@ class LangChainVectorStore:
 
 | 场景 | 行为 |
 |------|------|
-| vector_store 未装配（deps 初始化失败） | `RAGUnavailableError`（**503 + Retry-After**，#1381）——不影响非 RAG 功能（extract 不带 index 照常工作） |
+| vector_store 未装配（deps 初始化失败） | `RAGUnavailableError`（**503 + Retry-After**）——不影响非 RAG 功能（extract 不带 index 照常工作） |
 | BGE 模型首次下载（~100MB，需网络） | 懒加载：首次 index/retrieve 时初始化（deps 层模块级单例缓存）；失败 → RAGUnavailableError（**503 + Retry-After**，消息提示联网/重试） |
 | chroma 持久化目录不可写 / 损坏 | `VectorStoreError`（500，loguru 记录） |
 | retrieve 无结果 | 200 + 空 items（正常路径，同 F9 空搜索） |
 
-#### 5.6.1 切片策略模式（ChunkingMode — 三档可配，#277/#278）
+#### 5.6.1 切片策略模式（ChunkingMode — 四档可配）
 
-将单一 `chunk_text` 扩展为**策略模式**：一个入口按 `mode` 分发到切片器，为 #278 对话/LLM 档预留统一接口。三档成本递增（docs `rag-vector-enhancement-requirements.md` §2.1 已定）：**段落（零成本）< 对话（纯规则零 LLM）< LLM 分析（token 成本）**。
+将单一 `chunk_text` 扩展为**策略模式**：一个入口按 `mode` 分发到切片器，为对话/LLM 档预留统一接口。三档成本递增（docs `rag-vector-enhancement-requirements.md` §2.1 已定）：**段落（零成本）< 对话（纯规则零 LLM）< LLM 分析（token 成本）**。
 
 ```python
 # domain/services/_chunking.py（扩展，纯函数 + 零框架依赖，ADR-002/015）
 
 class ChunkingMode(StrEnum):
     FIXED = "fixed"            # 固定字符切片（现状：~500 字标点回溯，无重叠）
-    PARAGRAPH = "paragraph"    # 段落切片（空行切分 + 超长段降级标点回溯，#277）
-    DIALOGUE = "dialogue"      # 对话切片（说话人切换 + 短块合并，#278 M4）
-    LLM = "llm"                # LLM 语义分析切片（注入 analyzer + 失败降级，#278 M4）
+    PARAGRAPH = "paragraph"    # 段落切片（空行切分 + 超长段降级标点回溯）
+    DIALOGUE = "dialogue"      # 对话切片（说话人切换 + 短块合并）
+    LLM = "llm"                # LLM 语义分析切片（注入 analyzer + 失败降级）
 
 @dataclass
 class Chunk:
@@ -1167,7 +1155,7 @@ def chunk_text(
 - `mode` / `chunk_size` / `overlap_ratio` 来自全局设置（app_settings，§5.6.3/§5.6.5）；`analyzer` 仅 LLM 档由装配层注入（`_chunking.py` 零 LLM import）。
 - 三档共享 `Chunk{text, start_offset}` 返回结构与块 id 规则（§5.6.3）；overlap=0 时 FIXED 行为与现状逐字一致（向后兼容，存量向量无需重建）。
 
-#### 5.6.2 段落切片器（#277 M3，P1）
+#### 5.6.2 段落切片器
 
 ```text
 规则（纯函数 _chunk_paragraph）:
@@ -1180,11 +1168,11 @@ def chunk_text(
 - 段落边界贴合小说「空行分段」语义结构；超长段降级保证单块不超 chunk_size（embedding 质量与固定档一致）。
 - `chunk_size <= 0` → ValueError（与 FIXED 同契约）；`chunk_size` 越界（<100 或 >2000）由 app_settings 校验层 422（§5.6.3）。
 
-#### 5.6.3 滑动重叠开关（#277，默认关——用户拍板按 docs 建议）
+#### 5.6.3 滑动重叠开关（默认关）
 
 ```text
 全局设置（app_settings，§2 数据模型 + §8 跨模块 MODIFY F32 settings）:
-  rag_chunk_overlap       : bool  = False   # 重叠开关，默认关（用户拍板按 docs 建议）
+  rag_chunk_overlap       : bool  = False   # 重叠开关，默认关
   rag_chunk_overlap_ratio : float = 0.15    # 重叠比例，范围 [0.10, 0.20]
 ```
 
@@ -1192,7 +1180,7 @@ def chunk_text(
 - **检索去重**：overlap>0 时相邻块共享内容，检索合并按 `(entity_type, 源实体 id)` 去重取最高分再截断 top_k——chapter_chunk 的「源实体 id」= `chapter_id`（章节）非块 id（同章节多块命中只留最高分一条，杜绝相邻重复块刷屏，QA §P1-1）。
 - **不变式**：overlap=0 保持「拼接还原原文」不变式；overlap>0 打破该不变式 → 断言改为弱不变式「原文每字符至少被一个块覆盖」（§9，QA §4.1-A4）。
 
-#### 5.6.4 检索元数据补强（#277）
+#### 5.6.4 检索元数据补强
 
 chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}` 基础上新增（全部 `str|int|float`）：
 
@@ -1205,17 +1193,17 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 | `indexed_at` | str | 索引时间戳（ISO 8601，reindex 统一写入） |
 
 - `_map_retrieved` 延续 `.get()` fallback 约定（旧数据缺键不崩：`metadata.get("chapter_x")` 等，缺失回退现状展示，QA §P2-1）——**任何新代码禁止直接 `metadata["chapter_x"]` 下标访问**。
-- 章节 x/y 语义与卷信息表达见待澄清 Q4。
+- 章节 x/y 语义与卷信息表达见 §12 决策 24。
 
-#### 5.6.5 切片参数纳入指纹（#276 联动，不重定义协议）
+#### 5.6.5 切片参数纳入指纹（不重定义协议）
 
-复用 #276 已实现指纹协议（`domain/models/vector_fingerprint.py` 的 `ChunkingFingerprint{mode, chunk_size, overlap_ratio, chunker_version}` 已存在）——**本 spec 只声明装配接线，不重定义协议**：
+复用既有指纹协议（`domain/models/vector_fingerprint.py` 的 `ChunkingFingerprint{mode, chunk_size, overlap_ratio, chunker_version}` 已存在）——**本 spec 只声明装配接线，不重定义协议**：
 
 - reindex 装配时从 app_settings 读取切片配置快照 → `build_fingerprint(chunking={mode, chunk_size, overlap_ratio, chunker_version})` 写入指纹（`_extraction_rag.py` reindex 的 `_fingerprint_provider`）。
-- 任一字段变更（含 `chunker_version` 手动 bump）→ `compare_fingerprints` 报 `chunking_changed` → stale → GUI/CLI 提示重新向量化（复用 #276 的 status 端点 + 警告条）。
+- 任一字段变更（含 `chunker_version` 手动 bump）→ `compare_fingerprints` 报 `chunking_changed` → stale → GUI/CLI 提示重新向量化（复用 status 端点 + 警告条）。
 - `chunker_version` 语义：切片算法改版手动 +1（对话/LLM 切片器边界规则调整、LLM analyzer 换 prompt 等不可复现变更），强制触发 stale（QA §P2-2 chunk id 漂移管控）。
 
-#### 5.6.6 对话切片器（#278 M4，P2）
+#### 5.6.6 对话切片器
 
 ```text
 规则（纯函数 _chunk_dialogue）:
@@ -1230,7 +1218,7 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 - 纯规则零 LLM 成本；识别规则易错（中文对话形态多样），M4 落地前需真实对话体样本验证（QA §2.5 Q2.5）。
 - 说话人切换点 = 语义边界（一段对话 = 一个完整情境），召回片段自洽（docs §2.1）。
 
-#### 5.6.7 LLM 分析切片器（#278 M4，P2）
+#### 5.6.7 LLM 分析切片器
 
 ```text
 规则（装配层注入 analyzer，_chunking.py 保持纯函数）:
@@ -1247,74 +1235,27 @@ chapter_chunk 的 `metadata` 在现有 `{chapter_id, chapter_title, chunk_index}
 - LLM 档成本最高（每次重建 token 成本），选择时 GUI/CLI 预估 token（docs §2.3）。
 - `_chunking.py` 通过 `analyzer: Callable[[str], list[int]] | None` 注入，domain 层零 LLM import（ADR-015）；analyzer 装配在 deps/装配层（复用 F5 LLMClient，未配置对话模型 → 降级段落 + warning，§7）。
 
-#### 5.6.8 hnsw 段卡死自愈（#1563，0.17.0 rc2 修复 · 已实施 A′ + C）
+#### 5.6.8 hnsw 段就绪判定与读侧自愈
 
-**缺陷**：全新 collection（或**任意一次「写 A collection 之后又写 B collection」**）之后，目标 collection 的 `retrieve` 恒 500 ——
-`向量检索失败：chromadb hnsw 段读取失败（<entity_type>）`；**同一进程内对同一 collection 再做一次写**之后即可读。
+**缺陷**：全新 collection（或「写完 A collection 再写 B collection」）之后，目标 collection 的 `retrieve` 恒 500 ——
+`向量检索失败：chromadb hnsw 段读取失败（<entity_type>）`；对同一 collection 再做一次写之后才可读。
 
-**实测根因（rc2 真实库上确定性复现，非推断）**：chroma 1.5 每个 collection 有两个 segment —— `METADATA`（sqlite）
-与 `VECTOR`（hnsw-local-persisted）。**一次「别的 collection 的写」会把本 collection 的 `METADATA.max_seq_id`
-推前、而 `VECTOR.max_seq_id` 原地不动**；带 `where` 的读 plan 需要两段一致，于是抛
-`Error executing plan: Internal error: Error finding id`（冷启动未落盘时同族报
-`Error creating hnsw segment reader: Nothing found on disk`）。
+**根因（chroma 1.5）**：每个 collection 有 `METADATA`（sqlite）与 `VECTOR`（hnsw-local-persisted）两个 segment；
+一次「别的 collection 的写」会把本 collection 的 `METADATA.max_seq_id` 推前、而 `VECTOR.max_seq_id` 原地不动。
+带 `where` 的读 plan 要求两段一致，于是抛 `Error finding id`（冷启动未落盘时同族报 `Nothing found on disk`）。
+**等待不恢复**——只有对**本 collection** 再发生一次写才触发 pending log 的 apply；`reindex` 的 commit-last 指纹写
+（`inkflow_meta`）恰是最后一次写，故 reindex 返回后目标 collection 必然不可读。
 
-实测状态（复刻 `reindex` 的 store 级调用序列，`inkflow_timeline_event`）：
+**契约**：
 
-| 时点 | METADATA seq | VECTOR seq | 首读 |
-|------|--------------|-----------|------|
-| 只写 timeline_event（**不写指纹**） | 一致 | 一致 | ✅ OK |
-| 写 timeline_event **+ 写 `inkflow_meta` 指纹** | 104 | **101（落后且不再追赶）** | ❌ `Error finding id` |
+| 项 | 规则 |
+|----|------|
+| 段就绪判定（读侧自愈） | `_retrieve_sync` 首次 `InternalError` 后取该 collection 内本项目一条现存记录、把 metadata **原样回写**（chroma `update` 只替换传入字段 → document/embedding 不动，数据面语义零变化）以触发 pending log apply，再重试真实查询 |
+| 写次数有界 | `_SEGMENT_HEAL_MAX_WRITES` = 2；**不做墙钟等待**（等待无效） |
+| 文案 | `VectorStoreError` 消息「向量检索失败：chromadb hnsw 段未就绪（<entity_type>），请重试一次」——不指引重建索引 |
+| 不采用 | 读侧固定次数重试 + 固定时间预算（等待无效，已删除该路径）；写侧 flush 探针保持不变 |
 
-**关键否定结论：这不是「flush 窗口 / 多睡几秒就能好」**——实测「只等待不写」**永久不恢复**（≥60s 仍 FAIL），
-因为它需要的是「对**本 collection** 再发生一次写」来触发 pending log 的 apply。`reindex` 的 commit-last
-指纹写（`inkflow_meta`）恰好总是 **最后一次写**，因此 `reindex` 返回后该 collection 必然处于不可读状态，
-直到服务层自愈再跑一次 `reindex`（= 又写一次本 collection）——这正是「第二次调用就好」的真实机制。
-
-**动作矩阵（每项 1 次独立复现，确定性）**：
-
-| 解除卡死的动作 | 结果 |
-|----------------|------|
-| 只等待 / 只读 / 重复读 | ❌ 永久 FAIL |
-| `collection.count()` + 无 where 探针 query | ❌ FAIL（**这正是写侧旧自检失灵的机制**） |
-| 再写一次 `inkflow_meta`（再写指纹） | ❌ FAIL |
-| **对本 collection 再做一次写**（`upsert` 同实体，或**仅元数据的 `update`**） | ✅ **立即 OK** |
-
-**必读的连带结论：原拍板 A+B+C 已按剧本实现并实测，<ins>不足以修复</ins>**（dev 内核同形复现：
-修复版首读仍 FAIL、仍报 `Error finding id`，A 的墙钟等待只把首调从 12.5s 拖到 21.7s）。原因：A 是
-「等待型」、B 的探针在 commit-last 指纹写**之前**执行（写序：实体写 → 自检 → 指纹写），指纹写之后
-才产生卡死。故本单按「停下报告 + 替代方案」条款改为 **A′（读侧空写自愈）+ C（文案）**：
-
-**已证伪的原拍板 A+B+C → 改为已实施的 A′ + C**：
-
-| 项 | 位置 | 实现 |
-|----|------|------|
-| **A′ 读侧空写自愈** | `_retrieve_sync` + 新私有方法 `_heal_stuck_segment` | 首次 `InternalError` 后取该 collection 内本项目的一条现存记录、把 metadata **原样回写**（chroma `update` 只替换传入字段 → document/embedding 不动，数据面语义零变化）触发 pending log apply，再重试真实查询；写次数有界 `_SEGMENT_HEAL_MAX_WRITES`（2）。**不再等待**（等待无效，见动作矩阵） |
-| **C 文案** | `_retrieve_sync` 的 `VectorStoreError` | 「向量检索失败：chromadb hnsw 段未就绪（<entity_type>），请重试一次」——**不再指引重建索引** |
-| **取代** | `_RETRIEVE_RETRY_STEP_S` / `_RETRIEVE_RETRY_BUDGET_S` 与读侧固定次数重试循环 | 删除（#1011 评审 M2 的读侧 1.5s 预算口径随本单废止；`/tests/unit/infrastructure/rag/test_vector_retry_budget_1011.py` 读侧契约改为「失败路径 0 次 sleep」）；写侧 `_FLUSH_PROBE_*`（#1011 m1）与 `_ensure_hnsw_flushed` 保持不变 |
-| **未做（记录理由）** | B′（reindex 末尾探针） | A′ 已在读侧确定性自愈（首调即 200），B′ 需改 `domain/services/_extraction_rag.py` 第二个文件且只换来「reindex 返回时即保证可读」的冗余保证；若后续需要 reindex 自证可读再补 |
-
-**实证（dev 内核同形复现，同一 harness before/after，数据目录 = rc2 真实库 + 新项目）**：
-
-```
-# before（main@d8dae36e）
-retrieve #1 rc=1 12.49s ok=False 向量检索失败：chromadb hnsw 段读取失败（timeline_event），建议重建索引后重试
-retrieve #2 rc=0 11.60s ok=True
-# after（本单）
-retrieve #1 rc=0  6.86s ok=True
-```
-内核日志（after，项目末位 007）：
-```
-16:35:00.639 retrieve_entities started
-16:35:00.906 WARNING _retrieve_sync:421 - chromadb hnsw 段读取失败，空写触发段 apply 后重试: entity_type=timeline_event
-16:35:00.917 retrieve_entities completed      ← 首调 200（11ms 内自愈；无 500、无服务层 reindex）
-```
-
-**回归锁定**：`tests/unit/infrastructure/rag/test_vector_segment_ready_1563.py` 4 条（根因断言 / 空写须为
-元数据 no-op / 文案 / 写次数有界），全部确定性；#823/#873/#1011 既有契约（清晰上抛、恒失败不上抛、
-写侧落盘自检）不回归。
-
-
-
+**回归锁定**：`tests/unit/infrastructure/rag/test_vector_segment_ready_1563.py` 4 条（根因断言 / 空写须为元数据 no-op / 文案 / 写次数有界），全部确定性；既有契约（清晰上抛、恒失败不上抛、写侧落盘自检）不回归。
 
 ### 5.7 横切收敛 vs 实体样板：差异对照表
 
@@ -1332,10 +1273,10 @@ retrieve #1 rc=0  6.86s ok=True
 
 ---
 
-### 5.8 提取写入策略（类别归属 / 近义合并 / 粒度 / dry-run / 批次回滚 —— #1485）
+### 5.8 提取写入策略（类别归属 / 近义合并 / 粒度 / dry-run / 批次回滚）
 
-> **背景**：#1485 实测 `extract run --type character|setting` 大幅冲稀设定库（角色 24→76、
-> 世界观 105→401），且类别归属被压平（提取条目落在项目分类体系之外，GUI 分类视图里被压平）。
+> **背景**：`extract run --type character|setting` 若无写入约束会大幅冲稀设定库（同库条目成倍膨胀），
+> 且类别归属被压平（提取条目落在项目分类体系之外，GUI 分类视图里被压平）。
 > 本节定义五条收敛策略，**仅对 character / setting 生效**（其他类型传 `granularity != fine`
 > 或 `dry_run=true` → 422，§6.4）。
 
@@ -1345,20 +1286,19 @@ retrieve #1 rc=0  6.86s ok=True
   清单**不可判**（仓储为 Mock / 未实现该方法 / 非列表返回）→ **跳过类别校验**
   （保持既有语义；既有单测替身依赖该守卫）。
 - 渲染模板时把清单以 `{categories}` 变量注入（空清单 →「（无）」），引导 LLM 从既有分类中选择。
-- **落库前严格校验（#1570 修订，取代 #1485 的「静默归空」）**：LLM 输出 `category`
+- **落库前严格校验**：LLM 输出 `category`
   （strip 后）**非空且不在项目已有分类集合中** → **拒绝整批**：
   - 抛 `WorldCategoryNotRegisteredError`（422），消息**列出全部缺失分类名**
     （去重、保留首次出现顺序），供 agent / CLI 据此建类；
   - 该批次**正式表零写入**（批次内已合法的条目同样不落库）；
   - **禁止**自动建类（不提供 `auto-create`）。
 - **项目无任何分类时同样拒绝**：清单**可判**（真实仓储返回列表）但为空 ⇒ LLM 产出的
-  任何非空类别都属「未注册」→ 拒绝。取代 #1485「无分类 → 不做归一、原样落库」。
-- **空类别（LLM 主动留空）不拒绝**：prompt 明确「无法判断时留空」→ 维持 #722
+  任何非空类别都属「未注册」→ 拒绝。
+- **空类别（LLM 主动留空）不拒绝**：prompt 明确「无法判断时留空」→ 维持
   「未分类」语义（落空串）。**拒绝口径仅覆盖「非空但未注册」的类别。**
-- **与 #1482 的语义区分（重要）**：`world copy --auto-create-categories` 是**复制路径**
+- **与复制路径的语义区分（重要）**：`world copy --auto-create-categories` 是**复制路径**
   的**用户显式开关**（用户主动要求自动建类），行为**不变**；本节约束的是**提取路径**
   的**默认行为**（缺类别则拒绝）。二者不冲突，勿混用。
-
 
 > **拒绝的落点 = 两条写回路径的单一漏斗**：直接写（`stage=false`）与两段式暂存
 > （`stage=true`，§5.9）都经 `_world_extractor._merge` 的**同一**预检 —— 暂存路径下
@@ -1393,7 +1333,7 @@ retrieve #1 rc=0  6.86s ok=True
 `dry_run=true`：执行 LLM + 解析 + 合并决策，但**不写实体、不写 run 表**；返回
 `created` / `updated` 计数与 `detail`（含将落库的条目清单），`batch_id=None`。
 **忽略增量 skip**（恒执行，保证预览有效）——预览会真实调用 LLM（成本提示见 §10）。
-**类别严格校验同样生效**（#1570）：预览遇未注册类别同样拒绝（§5.8.1），
+**类别严格校验同样生效**：预览遇未注册类别同样拒绝（§5.8.1），
 不因「只是预览」而放过 —— 否则预览结果与实际落库行为不一致。
 
 #### 5.8.5 批次标识与整批回滚
@@ -1406,9 +1346,9 @@ retrieve #1 rc=0  6.86s ok=True
   返回 `RollbackResult{batch_id, deleted, warnings}`。
 - **幂等**：重复回滚 → `deleted=0`，不报错。
 - **不恢复被更新条目的历史值**（未存快照）→ 返回 warning 提示「本次 run 的更新条目不回滚」。
-- 回滚替代「按 `created_at` 小时窗口猜时间」的历史做法（#1485 现象节的处置记录）。
+- 回滚替代「按 `created_at` 小时窗口猜时间」的做法（批次标识是唯一权威）。
 
-#### 5.9 两段式暂存（stage / confirm / cancel，#1545）
+#### 5.9 两段式暂存（stage / confirm / cancel）
 
 **语义**：提取产物先落**暂存区**（正式表零变更），用户确认后物化进正式表；取消则清空暂存。
 
@@ -1417,21 +1357,21 @@ retrieve #1 rc=0  6.86s ok=True
 - `stage=true`：对该次提取**走零写入**（各类型管线以 `dry_run=true` 调用，不写实体 /
   关系、不写 run 表），随后把 `detail.created` / `detail.updated` 的条目清单落到
   `extract_staging` 表；信封回 `batch_id`。
-- **支持范围（#1545 PR-2b 放开全类型）**：`granularity` / `dry_run` 仍**仅
+- **支持范围**：`granularity` / `dry_run` 仍**仅
   character / setting**（不变）；`stage` 覆盖全部**可物化**类型——character /
   setting / foreshadowing / timeline（要求该类型物化仓储已装配）+ knowledge_relation
   （关系物化走 F48 关系写入点）；outline / style 无档案实体产物 → 422。
 - `stage` 与 `dry_run` 同时传 → 422（互斥）。
 
-**暂存表 `extract_staging`**（§8）：`project_id` / `batch_id` / `type` / `entity_type` /
+**暂存表 `extract_staging`**：`project_id` / `batch_id` / `type` / `entity_type` /
 `action`(create\|update) / `target_id`(update 时指向被覆盖行) / `payload`(JSON) / `created_at`。
 
-**entity_type 枚举（#1545 PR-2b）**：`character` / `world_setting` / `foreshadowing` /
+**entity_type 枚举**：`character` / `world_setting` / `foreshadowing` /
 `timeline_event` / `knowledge_relation`（由 ExtractionType 映射，见 `_STAGE_TARGETS`
 分派表）。knowledge_relation 的 stage 结果由 F48 确定性规则集「只算不写」产出
 would-be 关系、置于信封 `detail.created` 后落暂存（不写 knowledge_relations 表）。
 该「只算不写」经 F48 `RelationExtractionService.extract_rules` **公开 compute-only 入口**
-（#1551：原私有 `_extract_rules` 升公开），消除跨模块私有调用，规则集与语义不变。
+（原私有 `_extract_rules` 升公开），消除跨模块私有调用，规则集与语义不变。
 
 **端点**：
 
@@ -1440,38 +1380,37 @@ would-be 关系、置于信封 `detail.created` 后落暂存（不写 knowledge_
 | GET | `/api/v1/projects/{pid}/extractions/staging/{batch_id}` | `StagedListResult{batch_id, items[]}`（元素 `StagedEntry{id, entity_type, action, name, payload}`） |
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/confirm` | `ConfirmStagedResult{batch_id, created, updated}` |
 | POST | `/api/v1/projects/{pid}/extractions/staging/{batch_id}/cancel` | `CancelStagedResult{batch_id, deleted}` |
-| **GET** | **`/api/v1/projects/{pid}/extractions/staging`** | **`{batches: [{batch_id, type, created_at, item_count}]}`**（**新→旧**，`created_at DESC`；#1581） |
-| **POST** | **`/api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}/confirm`** | **`{item_id, event_id}`**（body `{time_value, time_unit}`；#1581） |
-| **DELETE** | **`/api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}`** | **`{deleted}`**（`1` 删除 / `0` 不存在，幂等；#1581） |
+| **GET** | **`/api/v1/projects/{pid}/extractions/staging`** | **`{batches: [{batch_id, type, created_at, item_count}]}`**（**新→旧**，`created_at DESC`） |
+| **POST** | **`/api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}/confirm`** | **`{item_id, event_id}`**（body `{time_value, time_unit}`） |
+| **DELETE** | **`/api/v1/projects/{pid}/extractions/staging/{batch_id}/items/{item_id}`** | **`{deleted}`**（`1` 删除 / `0` 不存在，幂等） |
 
-**批次列表端点（#1581，契约冻结）**：`GET .../extractions/staging` 返回**本项目的暂存批次聚合**（新→旧），
+**批次列表端点（契约冻结）**：`GET .../extractions/staging` 返回**本项目的暂存批次聚合**（新→旧），
 以供「待确认提取（N）」入口与待确认区消费。
 - **形状冻结**：`{batches: [{batch_id: str, type: str, created_at: iso8601, item_count: int}]}`——`type` = `ExtractionType.value`；**新→旧**排序。
 - **「未确认」由存在性表达**：暂存表**无 status 列**（行在 = 未确认），本端点**不引入**状态字段、**不新增迁移**。
 - 无批次 → `{"batches": []}`（幂等）；项目不存在 → 404（同 rollback 口径）。
 
-**条目级动作（#1581）**：`item_id` = 暂存行 `id`（`StagedEntry.id`）。
+**条目级动作**：`item_id` = 暂存行 `id`（`StagedEntry.id`）。
 - **条目 confirm**：按 `(project_id, batch_id, item_id)` 取该行 → 复用该行既有物化路径（`entity_type` → 仓储 `add`），
   **写入前以 body 的 `time_value`/`time_unit` 覆盖 payload 的时间字段**（`time_display` 原样保留）→ 删除该行
   （**只删本行**，同批其余行保留）。`time_value` 为**必填有限数值**（未给 → 422，[f12 §2.9](../f12-timeline/spec.md) D3「确认强制带时间」）。
 - **条目 DELETE**：只删该行，零物化（同 cancel 语义，粒度到行）；重复删除 → `deleted=0`，不报错。
-- **与批次级的关系**：#1545 的批次级 `confirm` / `cancel` **语义与行为逐条不变**（前端「AI 提取结果」对话框仍用它）；条目级是**增量能力**，两者共用同一物化分派表（`_STAGE_TARGETS` / `_ENTITY_TARGETS`）。
+- **与批次级的关系**：批次级 `confirm` / `cancel` **语义与行为逐条不变**（前端「AI 提取结果」对话框仍用它）；条目级是**增量能力**，两者共用同一物化分派表（`_STAGE_TARGETS` / `_ENTITY_TARGETS`）。
 
-**写前分流（#1581，时间线专用）**：TIMELINE 管线的 `_merge` 在**写库前**对每条新建事件做**后置归一**（[f12 §2.9](../f12-timeline/spec.md) Z2）——
+**写前分流（时间线专用）**：TIMELINE 管线的 `_merge` 在**写库前**对每条新建事件做**后置归一**（[f12 §2.9](../f12-timeline/spec.md) Z2）——
 解析失败/无 `time_value` 者**不调用仓储**，作为 `TimelineExtractionResult.pending` 返回；门面在非 `stage` 路径下把
 `pending` 落暂存（`entity_type=timeline_event`、`action=create`；`payload` 为该事件的 `model_dump` 并附
 `parse_reason`（失败原因，物化时被 Pydantic 忽略））。`stage=true` 路径**行为不变**（全部条目本就落暂存）。
 
-**列表端点（#1581 交付，供 GUI「待确认提取（N）」入口消费）**：
+**列表端点（供 GUI「待确认提取（N）」入口消费）**：
 `GET /api/v1/projects/{pid}/extractions/staging` → `{batches: [{batch_id, type, created_at, item_count}]}`
 （新→旧；「未确认」由存在性表达）。计数口径 = **批次数**（非条目数）。
 
-**前端生命周期（#1582，GUI 侧；本层语义不变）**：暂存批次**不随宿主页卸载而失效**——GUI 把提取会话
+**前端生命周期（GUI 侧；本层语义不变）**：暂存批次**不随宿主页卸载而失效**——GUI 把提取会话
 （`open` / `minimized` / `staged`）提升到全局 store 并挂 App 层，宿主重挂载 / 路由切换后浮窗与结果视图
 仍在；关闭对话框只清结果视图（暂存行仍在库中，经「待确认提取」入口的
 `GET .../staging/{batch_id}` 读回后再 confirm / cancel）。`stage` → `confirm` 物化 / `cancel` 清空 /
 过期清理三条语义**均不变**。
-
 
 **物化纪律**：confirm 逐行按 `entity_type` 反序列化（Character / WorldSetting /
 Foreshadowing / TimelineEvent / KnowledgeRelation 各自 `model_validate(payload)`），再按
@@ -1480,7 +1419,7 @@ Foreshadowing / TimelineEvent / KnowledgeRelation 各自 `model_validate(payload
 （支持部分装配），**不得绕过既有合并语义**；物化后删除本批暂存行。
 **幂等**：重复 cancel / confirm 空批 → 计数 0，不报错；项目不存在 → 404（同 rollback 口径）。
 
-**过期清理（#1551，已实现）**：内核**启动期幂等清理**超期未确认的暂存行——`created_at`
+**过期清理（内核启动期）**：内核**启动期幂等清理**超期未确认的暂存行——`created_at`
 早于「当前 UTC − 阈值天数」的行，在 lifespan（`reconcile_stale_running_plans` 之后、
 scheduler 之前）被删除（`core/startup_cleanup.py: cleanup_expired_staging` →
 `SQLExtractStagingRepository.delete_expired`），返回清理条数并落日志。
@@ -1488,7 +1427,7 @@ scheduler 之前）被删除（`core/startup_cleanup.py: cleanup_expired_staging
 - **阈值**：模块常量 `STAGING_RETENTION_DAYS = 30`（对齐软删 30 天纪律），函数参数
   `retention_days` 可覆盖（测试 / 后续接入设置）；阈值走**代码常量**（对齐本仓
   F15/F16「阈值 → 代码常量 YAGNI」惯例）——**未新增全局 config 项**。
-- **范式**：复用 #953 `reconcile_stale_running_plans` 的**启动期维护范式**（lifespan 内
+- **范式**：复用 `reconcile_stale_running_plans` 的**启动期维护范式**（lifespan 内
   幂等执行、返回条数）——本仓**无真定时器范式**，故不引入调度库（AGENTS §10.2 简单优先）。
 - **幂等**：重复清理 → 第二次 0 行、0 报错；已 confirm / cancel 批次无残留行 → 清理
   不报错、**正式表零影响**（暂存表独立）。
@@ -1500,7 +1439,7 @@ scheduler 之前）被删除（`core/startup_cleanup.py: cleanup_expired_staging
 
 （对应 F9 §6「关系图谱与分组管理规则」的位置；F14 无图谱，本节承载类型注册、输入约束与 run 状态语义）
 
-### 6.1 类型注册表（7 槽，7 实现——STYLE 由 F16 注册 handler，§12；KNOWLEDGE_RELATION 由 #1408 接入）
+### 6.1 类型注册表（7 槽，7 实现——STYLE 由 F16 注册 handler，§12）
 
 | 槽位 | handler | 输入模式 | 增量追踪 | RAG 映射 | 依赖 |
 |------|---------|----------|----------|----------|------|
@@ -1510,9 +1449,9 @@ scheduler 之前）被删除（`core/startup_cleanup.py: cleanup_expired_staging
 | `timeline` | `TimelineExtractor.extract`（设置项开启）/ `TimelineService.check_consistency`（设置项关闭——判定在门面层，§5.5） | 开启：text / chapter_ids；关闭：无（库内事件） | ✅（开启，按源 hash）/ ❌（关闭，每次执行） | timeline_event（增量索引 + reindex） | F12 ✅（实体 MODIFY）+ F14 管线 |
 | `foreshadowing` | `ForeshadowingExtractor`（F14 新建） | text / chapter_ids | ✅ | foreshadowing | F13 ✅ |
 | `style` | `StyleService.analyze`（F16 注册，§12） | text / chapter_ids | ❌（每次执行，确定性只读计算——F16 语义） | —（不在 RAG 范围） | F16 ✅ |
-| `knowledge_relation` | `RelationExtractionService.extract_for_project`（#1408 接入，`method="rule"`） | 无（项目级单源 `"full"`；text/chapter_ids → 422） | ❌（每次执行，规则集确定性计算，无增量价值） | —（不在 RAG 范围；index=true 忽略 + warning） | F48 ✅ |
+| `knowledge_relation` | `RelationExtractionService.extract_for_project`（`method="rule"`） | 无（项目级单源 `"full"`；text/chapter_ids → 422） | ❌（每次执行，规则集确定性计算，无增量价值） | —（不在 RAG 范围；index=true 忽略 + warning） | F48 ✅ |
 
-> **关系 no-write 公开入口（#1551）**：两段式暂存 stage 下知识关系「只算不写」经
+> **关系 no-write 公开入口**：两段式暂存 stage 下知识关系「只算不写」经
 > `RelationExtractionService.extract_rules`（**公开 compute-only 入口**，原私有
 > `_extract_rules`；`extract_for_project` 内部同样复用之）——消除 `_extraction_staging`
 > 对 F48 服务的**私有跨模块调用**；规则集与提取语义**不变**（仅可见性提升）。
@@ -1530,11 +1469,11 @@ _HANDLERS: dict[ExtractionType, ...] = {
     ExtractionType.TIMELINE: self._timeline_handler,   # 设置项切换（§5.5）
     ExtractionType.FORESHADOWING: self._foreshadowing_extractor.extract,
     ExtractionType.STYLE: self._style_service.analyze,  # F16 注册（F16 spec §8.2，接口零变更兑现）
-    ExtractionType.KNOWLEDGE_RELATION: self._knowledge_relation_handler,  # #1408 接入（F48 关系提取）
+    ExtractionType.KNOWLEDGE_RELATION: self._knowledge_relation_handler,  # F48 关系提取
 }
 ```
 
-> **STYLE 落地论证（v1.1 修订：F16 已交付，原「占位论证」被取代）**: ① 验收标准 ①「≥6 种提取类型统一接口」要求接口层面 6 种齐全——枚举、API、CLI 全量支持；② F16 落地时只需在注册表填 handler（`StyleService.analyze`），**接口零变更**（F16 spec §8.2 兑现；Q1 ✅ 已确认选项 A 的历史决策见 §12）；③ F16 落地后 STYLE 调用返回 200 + ExtractionResult（detail=StyleReport），`UNSUPPORTED_TYPE` 错误码对 style 不再可达（F16 spec §8.2 错误面替换声明）。
+> **STYLE 槽位论证**: ① 验收标准「≥6 种提取类型统一接口」要求接口层面齐全——枚举、API、CLI 全量支持；② F16 落地只需在注册表填 handler（`StyleService.analyze`），**接口零变更**（F16 spec §8.2）；③ STYLE 调用返回 200 + ExtractionResult（detail=StyleReport）。
 
 ### 6.2 run 状态语义（success / skipped / error）
 
@@ -1555,7 +1494,7 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | 类型 ∈ {character, setting, foreshadowing, timeline（开启时）} 且源 hash == run.content_hash 且 not force | skip | 核心增量路径 |
 | 同上但 force=true | 执行 | 强制重跑（作者想重新审视 LLM 结果） |
 | outline | 执行 | 生成不承诺幂等（§5.2） |
-| knowledge_relation | 执行 | 项目级单源、规则集确定性计算（每次执行，无增量价值，#1408） |
+| knowledge_relation | 执行 | 项目级单源、规则集确定性计算（每次执行，无增量价值） |
 | timeline（设置项关闭） | 执行 | 确定性检查只读廉价（§5.2） |
 | 无 run 行 | 执行 | 首次提取 |
 | hash 不同 | 执行 | 内容已变更 |
@@ -1571,9 +1510,9 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | outline | 无效（422） | prompt 可选 / num_chapters 1-100 / save 默认 true | 无效（422） | 无效（422） | 忽略 + warning |
 | timeline | 开启：**必须提供其一**（互斥，同 character）；关闭：无效（422） | 无效（422） | ✅ 透传 F12（关闭语义） | ✅ 仅 timeline 生效（bool \| None；None=跟随项目配置） | ✅ 生效（开启）/ 忽略 + warning（关闭） |
 | style | **必须提供其一**（互斥，同 character/setting/foreshadowing——F16 落地后语义） | 无效（422） | 无效（422） | 无效（422） | 忽略 + warning「style 类型不支持自动索引」 |
-| knowledge_relation | 无效（422——项目级提取，不接受源参数，#1408） | 无效（422） | 无效（422） | 无效（422） | 忽略 + warning「knowledge_relation 类型不支持自动索引」 |
+| knowledge_relation | 无效（422——项目级提取，不接受源参数） | 无效（422） | 无效（422） | 无效（422） | 忽略 + warning「knowledge_relation 类型不支持自动索引」 |
 
-> 类型不匹配的字段一律 422 而非静默忽略（显式错误优先，同 F13 event_id 校验风格；`knowledge_relation` 为项目级提取，携带 text/chapter_ids → 422「knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）」，#1408）；`index` 对 outline / timeline（关闭时）是**忽略 + warnings 提示**（非错误——索引是增强行为，不阻塞提取主流程）；`auto_extract` 是 timeline 专属覆盖参数——显式 `true`/`false` 覆盖项目配置 `timeline_auto_extract`，缺省 None 跟随项目配置（§2.6）；timeline 关闭时携带 text/chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」（设置项判定在门面层，§5.5）。
+> 类型不匹配的字段一律 422 而非静默忽略（显式错误优先，同 F13 event_id 校验风格；`knowledge_relation` 为项目级提取，携带 text/chapter_ids → 422「knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）」）；`index` 对 outline / timeline（关闭时）是**忽略 + warnings 提示**（非错误——索引是增强行为，不阻塞提取主流程）；`auto_extract` 是 timeline 专属覆盖参数——显式 `true`/`false` 覆盖项目配置 `timeline_auto_extract`，缺省 None 跟随项目配置（§2.6）；timeline 关闭时携带 text/chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」（设置项判定在门面层，§5.5）。
 
 ---
 
@@ -1586,10 +1525,10 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | character/setting/foreshadowing 无 text 且无 chapter_ids | 422: "character/setting/foreshadowing 类型必须提供 text 或 chapter_ids" |
 | outline 携带 text/chapter_ids | 422: "outline 类型不支持 text/chapter_ids（使用 prompt/num_chapters）" |
 | timeline 设置项关闭且携带 text/chapter_ids | 422: "时间线自动提取未开启（配置 timeline_auto_extract）"（设置项判定在门面层，§5.5） |
-| STYLE 类型调用 | 200 + ExtractionResult（detail=StyleReport，created=0/updated=0/model=None——F16 已落地，F16 spec §5.3 归一语义） |
-| `knowledge_relation` 无源参数调用（#1408） | 200 + ExtractionResult（项目级规则关系提取：created=新增关系数、updated=0、model=None、indexed=false；与 `inkflow knowledge extract --method rule` 同一执行体） |
-| `knowledge_relation` 携带 text/chapter_ids（#1408） | 422: "knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）" |
-| `knowledge_relation` 但门面未装配关系提取服务（#1408 防御） | 422: "不支持的提取类型"（UnsupportedExtractionTypeError——注册表槽位缺失时兜底，不静默成功） |
+| STYLE 类型调用 | 200 + ExtractionResult（detail=StyleReport，created=0/updated=0/model=None，F16 spec §5.3 归一语义） |
+| `knowledge_relation` 无源参数调用 | 200 + ExtractionResult（项目级规则关系提取：created=新增关系数、updated=0、model=None、indexed=false；与 `inkflow knowledge extract --method rule` 同一执行体） |
+| `knowledge_relation` 携带 text/chapter_ids | 422: "knowledge_relation 类型不支持 text/chapter_ids（项目级提取，无需源参数）" |
+| `knowledge_relation` 但门面未装配关系提取服务（防御） | 422: "不支持的提取类型"（UnsupportedExtractionTypeError——注册表槽位缺失时兜底，不静默成功） |
 | text 为空/全空白 / > 50000 字符 | 422（Pydantic，同 F9 约束） |
 | 章节内容 > 50000 字符 | 422: "章节内容超过提取上限（50000 字符）" |
 | chapter_ids 指向不存在/软删章节 | 422: "章节不存在"（F2 get 不含软删） |
@@ -1607,15 +1546,15 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | timeline 提取时事件不再出现于章节 | **不删除**（只增改不删除；自动删除归 Phase 2+，§10） |
 | 手动模式重复提交同一文本 | 200 + status=skipped（source_key="manual" 同 hash） |
 | --force 重跑未变更源 | 200 + status=success（强制执行，run hash 更新） |
-| RAG：vector_store 未装配 / BGE 下载失败 | **503 + Retry-After: "RAG 向量库不可用: ..."**（RAGUnavailableError；#1381 语义升级）；**不影响非 RAG 功能**（修改履历 2026-08-31：retrieve 优雅降级防吞空 INTERNAL_ERROR——chroma hnsw 段读取失败不再吞成「内部错误（无详情）」） |
-| chroma 存储层错误（hnsw 段读取失败等，段就绪等待 + 自愈重试后仍失败） | 500: "向量检索失败：索引正在落盘（chromadb hnsw 段未就绪），请重试一次（<entity_type>）"（VectorStoreError，清晰可定位，**不吞空**） |
+| RAG：vector_store 未装配 / BGE 下载失败 | **503 + Retry-After: "RAG 向量库不可用: ..."**（RAGUnavailableError）；**不影响非 RAG 功能**（retrieve 优雅降级防吞空 INTERNAL_ERROR——hnsw 段读取失败不再吞成「内部错误（无详情）」） |
+| chroma 存储层错误（hnsw 段读取失败等，读侧自愈后仍失败） | 500: "向量检索失败：chromadb hnsw 段未就绪（<entity_type>），请重试一次"（VectorStoreError，清晰可定位，**不吞空**） |
 | extract 带 index=true 但类型为 outline / timeline（关闭时） | 200 + indexed=false + warning "outline/timeline 类型不支持自动索引"（不报错；timeline 开启时 index 生效） |
 | vector retrieve 无结果 / min_score 过滤全空 | 200 + 空 items（正常路径） |
-| vector retrieve query 空白（空串/纯空格，#929 R4） | store 层确定性降级：`logger.warning` + 返回 `[]`（不调 embed_query、不打 chroma；外部 zhipu 400 1213 家族根治，端点契约不变仍 200 空 items） |
-| 索引实体 content 空白（#929 R4） | store 层逐条跳过：`logger.warning`（含实体 id）+ 不 embed 不 upsert（reindex 继续不中断；批量全空 → 零 embed 调用） |
-| 批量索引单组有效实体数 > 64（#1404） | store 层分片：`embed_documents` 按 `_EMBED_MAX_INPUTS_PER_REQUEST`（64）分批提交后合并，再一次性 upsert（每类型一次）——超限不再触发上游 400 code 1214、重建不中断、指纹可达 `fresh`；单条路径不受影响 |
+| vector retrieve query 空白（空串/纯空格） | store 层确定性降级：`logger.warning` + 返回 `[]`（不调 embed_query、不打 chroma；外部 zhipu 400 1213 家族根治，端点契约不变仍 200 空 items） |
+| 索引实体 content 空白 | store 层逐条跳过：`logger.warning`（含实体 id）+ 不 embed 不 upsert（reindex 继续不中断；批量全空 → 零 embed 调用） |
+| 批量索引单组有效实体数 > 64 | store 层分片：`embed_documents` 按 `_EMBED_MAX_INPUTS_PER_REQUEST`（64）分批提交后合并，再一次性 upsert（每类型一次）——超限不再触发上游 400 code 1214、重建不中断、指纹可达 `fresh`；单条路径不受影响 |
 | vector retrieve top_k 越界（≤0 或 >50） | 422（Pydantic 校验 top_k 1-50，min_score 0-1） |
-| vector retrieve 遇 chromadb hnsw 段读取失败（"Nothing found on disk" / "Error finding id"，#468 同族） | **段就绪判定（#1563）**：首次 InternalError 后不立刻判终态 → 调 `_hnsw_segment_ready`（与读路径同形的 `where` 过滤探针）轮询至就绪（墙钟预算 `_SEGMENT_READY_READ_BUDGET_S`，就绪优先于固定次数）→ 就绪后重试真实查询；成功 → 200 命中（relevance_score 降序）。仍失败 → 服务层自愈（捕获 VectorStoreError → reindex 一次 → 重试一次）；再失败 → 500 "向量检索失败：索引正在落盘（chromadb hnsw 段未就绪），请重试一次(...)"（清晰可定位、**不吞空**「内部错误（无详情）」、**不再指引重建索引**——重建无效，重试一次即过；#1563 新增 / 2026-08-31 初版） |
+| vector retrieve 遇 chromadb hnsw 段读取失败（"Nothing found on disk" / "Error finding id" 同族） | **段就绪判定 + 读侧自愈**（§5.6.8）：首次 `InternalError` → 对本 collection 做一次元数据空写（`_heal_stuck_segment`，写次数有界 `_SEGMENT_HEAL_MAX_WRITES`=2）触发段 apply → 重试真实查询；成功 → 200 命中（relevance_score 降序）。仍失败 → 500「向量检索失败：chromadb hnsw 段未就绪（<entity_type>），请重试一次」（清晰可定位、**不吞空**「内部错误（无详情）」、**不指引重建索引**——重建无效，重试一次即过） |
 | vector reindex 空项目（无档案） | 200 + indexed=0（正常路径） |
 | vector reindex 未指定 entity_types | 默认全部 5 种（config.vector_store_collections） |
 | extract 非法 type 值（API 层） | 422（Pydantic 枚举校验） |
@@ -1632,159 +1571,26 @@ _HANDLERS: dict[ExtractionType, ...] = {
 | 切片：LLM analyzer 失败 / 未配置对话模型 / 超时 | 降级段落切片 + logger.warning，reindex 不中断（§5.6.7） |
 | 检索：旧向量数据缺新元数据键（chapter_x 等） | `_map_retrieved` `.get()` fallback 不崩（§5.6.4） |
 | 切片配置变更 | stale（chunking_changed）→ 提示重新向量化；重建前检索继续用旧向量（200 非空，§5.6.5） |
-| 非 character/setting 类型传 granularity != fine / dry_run=true（#1485） | 422: "granularity/dry_run 仅支持 character/setting 类型" |
-| character/setting `dry_run=true`（#1485） | 200 + ExtractionResult（created/updated = 「将写入」计数，`batch_id=null`；**DB 零写入**——实体与 run 表均不落） |
-| setting 提取：LLM 类别不在项目已有分类中（#1485，**#1570 修订**） | **拒绝整批**：422 `WorldCategoryNotRegisteredError`，消息列出**全部**缺失分类名（去重、保序）+ 该批次**正式表零写入**；`stage` 路径在落暂存前拒绝（暂存区零行）。项目无分类时同样拒绝。**空类别不拒绝**（LLM 主动留空 → 维持未分类）。由 agent / CLI 建类后重试（禁自动建类；`#1482 --auto-create-categories` 仅复制路径） |
-| 提取条目与已有条目近义（#1485） | 合并到已有条目（content 追加 + warning），**不新建**；条目总数不因重复提取线性增长 |
-| 回滚不存在 / 已回滚的 batch_id（#1485） | 200 + RollbackResult(deleted=0)（幂等，不报错） |
-| 回滚 batch 含此前批次条目（#1485） | 不受影响——batch_id 精确匹配；被更新的条目不携带本批 batch_id |
+| 非 character/setting 类型传 granularity != fine / dry_run=true | 422: "granularity/dry_run 仅支持 character/setting 类型" |
+| character/setting `dry_run=true` | 200 + ExtractionResult（created/updated = 「将写入」计数，`batch_id=null`；**DB 零写入**——实体与 run 表均不落） |
+| setting 提取：LLM 类别不在项目已有分类中 | **拒绝整批**：422 `WorldCategoryNotRegisteredError`，消息列出**全部**缺失分类名（去重、保序）+ 该批次**正式表零写入**；`stage` 路径在落暂存前拒绝（暂存区零行）。项目无分类时同样拒绝。**空类别不拒绝**（LLM 主动留空 → 维持未分类）。由 agent / CLI 建类后重试（禁自动建类；`--auto-create-categories` 仅复制路径） |
+| 提取条目与已有条目近义 | 合并到已有条目（content 追加 + warning），**不新建**；条目总数不因重复提取线性增长 |
+| 回滚不存在 / 已回滚的 batch_id | 200 + RollbackResult(deleted=0)（幂等，不报错） |
+| 回滚 batch 含此前批次条目 | 不受影响——batch_id 精确匹配；被更新的条目不携带本批 batch_id |
 
 ---
 
-## 8. 文件结构
+## 8. 模块归属与端口契约
 
-遵循 ADR-007v2 包结构，与真实源码树一一对应。新增/修改文件（**对照主仓 `backend/src/inkflow/` 真实树逐文件核对**）：
+遵循 ADR-007v2 包结构；新增/修改按层归属：
 
-```text
-backend/src/inkflow/
-├── domain/
-│   ├── models/
-│   │   ├── extraction.py        ← CREATE: ExtractionType, ExtractionStatus, ExtractionRequest,
-│   │   │                              ExtractionResult, ExtractionRun, ReindexResult
-│   │   └── __init__.py          ← MODIFY: 导出新模型
-│   ├── ports/
-│   │   ├── extraction_errors.py ← CREATE: ExtractionServiceError(422 基类) /
-│   │   │                              ExtractionValidationError(422) / UnsupportedExtractionTypeError(422) /
-│   │   │                              ChapterNotFoundError(422) /
-│   │   │                              ChapterNotInProjectError(422) / RAGUnavailableError(503) /
-│   │   │                              VectorStoreError(500) / ExtractionRunError(500)
-│   │   ├── extraction_run_repository.py ← CREATE: ExtractionRunRepositoryProtocol
-│   │   │                              （get/upsert/list，见 §8.1）
-│   │   └── __init__.py          ← MODIFY: 导出
-│   └── services/
-│       ├── extraction_service.py ← CREATE: ExtractionService（门面：extract 分发 + 增量判定 +
-│       │                              reindex/retrieve/list_runs；构造注入各模块 Service +
-│       │                              ForeshadowingExtractor + run_repo + chapter_repo +
-│       │                              vector_store(可选) + project_repo）
-│       ├── _foreshadowing_extractor.py ← CREATE: ForeshadowingExtractor（§5.4 伏笔提取管线，
-│       │                              镜像 _character_extractor.py 骨架）
-│       ├── _timeline_extractor.py ← CREATE: TimelineExtractor（§5.5 时间线提取管线，镜像
-│       │                              _character_extractor.py 骨架；LLM 输出 ExtractedTimelineEvent；
-│       │                              合并按 (project_id, title, source_chapter_id)，经
-│       │                              TimelineRepositoryProtocol.list_by_chapter 匹配）
-│       ├── _chunking.py          ← MODIFY: 切片策略模式（ChunkingMode + Chunk + chunk_text 分发 + _chunk_fixed/_chunk_paragraph/_chunk_dialogue，§5.6.1/§5.6.2/§5.6.6；返回 Chunk{text, start_offset}）
-│       └── __init__.py           ← MODIFY
-├── infrastructure/
-│   ├── rag/                      ← CREATE 目录（当前不存在，ADR-013 指定位置）
-│   │   ├── __init__.py           ← CREATE
-│   │   └── langchain_vector_store.py ← CREATE: LangChainVectorStore（VectorStoreProtocol 实现，
-│   │                                  每 EntityType 一个 collection；embeddings 构造注入；
-│   │                                  to_thread 包装 chroma 同步 API；cosine + 1-distance）
-│   ├── database/
-│   │   ├── models/
-│   │   │   ├── extraction_run.py ← CREATE: ExtractionRunORM（§2.3 字段；索引 project_id /
-│   │   │   │                          (project_id, type)；UNIQUE(project_id, type, source_key)；
-│   │   │   │                          project_id FK→projects.id ON DELETE CASCADE）
-│   │   │   └── __init__.py       ← MODIFY: 注册 ExtractionRunORM（create_tables 依赖）
-│   │   └── repositories/
-│   │       ├── extraction_run_repo.py ← CREATE: SQLExtractionRunRepository
-│   │       │                          （get/upsert(ON CONFLICT DO UPDATE)/list）
-│   │       └── __init__.py       ← MODIFY
-│   └── llm/templates/
-│       ├── foreshadowing_extract.yaml ← CREATE: 伏笔提取模板（§5.4；变量 text）
-│       ├── timeline_extract.yaml      ← CREATE: 时间线提取模板（§5.5；变量 text）
-│       └── llm_chunk.yaml             ← CREATE: LLM 切片模板（§5.6.7；变量 text，输出语义边界偏移列表）
-├── api/
-│   ├── routers/
-│   │   ├── extractions.py       ← CREATE: 4 个端点（POST /extract + GET runs +
-│   │   │                              POST vector/reindex + POST vector/retrieve，
-│   │   │                              挂 prefix=/api/v1）
-│   │   └── __init__.py          ← MODIFY
-│   ├── deps.py                  ← MODIFY: get_extraction_service（复用 get_character_service /
-│   │                                  get_world_service / get_outline_service / get_timeline_service +
-│   │                                  ForeshadowingExtractor 装配（LangChainLLMClient +
-│   │                                  LangChainPromptManager + SQLiteForeshadowingRepository）+
-│   │                                  TimelineExtractor 装配（LangChainLLMClient +
-│   │                                  LangChainPromptManager + SQLiteTimelineRepository +
-│   │                                  项目配置读取 timeline_auto_extract，§2.6）+
-│   │                                  SQLExtractionRunRepository + SQLiteChapterRepository +
-│   │                                  SQLiteProjectRepository + get_vector_store(懒加载)）；
-│   │                                  get_vector_store（模块级单例：LangChainVectorStore(
-│   │                                  config.vector_store_dir, HuggingFaceBgeEmbeddings(
-│   │                                  config.embedding_model, device=config.embedding_device))，
-│   │                                  首次调用初始化——BGE 下载 ~100MB 懒加载，失败抛 RAGUnavailableError）
-│   └── app.py                   ← MODIFY: 注册 extractions.router
-└── cli/
-    ├── commands/
-    │   ├── extract.py           ← CREATE: extract 组（run/status 2 命令）
-    │   ├── vector.py            ← CREATE: vector 组（reindex/retrieve 2 命令）
-    │   └── __init__.py          ← MODIFY
-    └── app.py                   ← MODIFY: 注册 extract / vector 命令组
-```
-
-```text
-backend/tests/unit/
-├── test_extraction_models.py         ← CREATE: 枚举/DTO 校验（互斥、超限、类型约束）
-├── test_extraction_run_repo.py       ← CREATE: 仓储集成（in-memory SQLite，unique upsert）
-├── test_extraction_service.py        ← CREATE: 门面测试（Mock 各模块 Service：分发/增量 skip/
-│                                         force/错误封装/断点续跑/部分失败语义/索引编排）
-├── test_foreshadowing_extractor.py   ← CREATE: 伏笔提取管线（Mock LLM 分支覆盖，同 F9 模式）
-├── test_timeline_extractor.py        ← CREATE: 时间线提取管线（Mock LLM 分支 + 设置项开/关切换 +
-│                                         事件合并 + 章节联动语义，§5.5）
-├── test_chunking.py                  ← CREATE: 分块纯函数（边界/标点切分/空文本）
-├── test_chunking_modes.py            ← CREATE: 切片器变体（段落/重叠/对话/LLM 降级/块 id/元数据/指纹联动，§9）
-├── test_langchain_vector_store.py    ← CREATE: 真实 chroma（tmp 目录）+ FakeEmbeddings
-│                                         （index/retrieve/delete/delete_project/cosine 分数/
-│                                         min_score 过滤/project_id where 过滤）
-└── test_extractions_api.py           ← CREATE: API 集成（Mock ExtractionService，4 端点）
-
-tests/cli/
-├── test_cli_extraction_crud.py       ← CREATE: extract 组（Mock ExtractionService，信封/退出码）
-└── test_cli_vector.py                ← CREATE: vector 组（Mock ExtractionService，信封/退出码）
-```
-
-**跨模块 MODIFY F12（F13 改 F6 `sources.py` 先例 — 已合入 main 的既有模块文件，随 F14 一并修改，§2.6）**:
-
-```text
-backend/src/inkflow/
-├── domain/
-│   ├── models/timeline.py           ← MODIFY F12: TimelineEvent 增加 source_chapter_id:
-│   │                                    uuid.UUID | None（来源章节，§2.6）；TimelineEventCreate /
-│   │                                    TimelineEventUpdate 增加对应可选字段（不破坏既有调用）
-│   ├── ports/timeline_repository.py ← MODIFY F12: TimelineRepositoryProtocol 增加
-│   │                                    list_by_chapter(project_id, chapter_id) -> list[TimelineEvent]
-│   │                                    （重提取/联动查询——TimelineExtractor 合并匹配用，§5.5）
-│   └── services/timeline_service.py ← 无改动（check_consistency 语义不变；新字段对检查透明）
-├── infrastructure/
-│   └── database/
-│       ├── models/timeline.py       ← MODIFY F12: TimelineEventORM 增加 source_chapter_id 列
-│       │                                （FK→chapters.id ON DELETE SET NULL，已索引——章节硬删
-│       │                                置 None、事件保留；软删章节事件保留来源锚点）
-│       └── repositories/timeline_repo.py ← MODIFY F12: SQLiteTimelineRepository 实现
-│                                            list_by_chapter（WHERE project_id=? AND
-│                                            source_chapter_id=?）——#211 后无 is_deleted 列
-```
-
-**跨模块 MODIFY F32 settings（app_settings 切片配置 — 行式键值表免 ALTER，§5.6.3）**:
-
-```text
-backend/src/inkflow/
-└── domain/
-    └── models/settings.py          ← MODIFY F32: SettingsKey 枚举加 rag_chunk_mode /
-                                        rag_chunk_size / rag_chunk_overlap /
-                                        rag_chunk_overlap_ratio 四键；AppSettings 加对应
-                                        字段（默认 mode="fixed"/size=500/overlap=False/
-                                        ratio=0.15，字段名=SettingsKey 值）；AppSettingsUpdate
-                                        加对应可选字段（None=不更新）——service/repo/ORM 零改动
-                                        （行式键值表免 ALTER，SettingsService._merge 基于字段名
-                                        白名单自动生效，§5.6.3/§5.6.5）
-```
-
-> **迁移注意**: timeline_events 表加列需 SQLite ALTER TABLE（`ALTER TABLE timeline_events ADD COLUMN source_chapter_id INTEGER`）——既有本地库升级路径；新列可空，既有事件 source_chapter_id=None（手工事件语义，不参与提取合并匹配，§5.5）。
-
-> **不新增依赖**: chromadb / langchain-chroma / sentence-transformers 已在 `backend/pyproject.toml` dependencies 锁定（ADR-025 uv.lock），RAG 配置（embedding_model / vector_store_dir / vector_store_collections / retrieval_top_k / embedding_device）已在 `backend/src/inkflow/core/config.py` 存在——**spec 声明使用现有依赖与配置，不新增 pyproject/config 变更**（唯一例外：若实现需要暴露 chunk 大小常量，写代码常量而非配置，YAGNI）。
->
-> ⚠️ **CI 覆盖盲区防范（Issue #59/#61 教训）**: `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py` **默认不被任何 CI job 收集**——实施时必须将其**显式加入 ci.yml `integration-cli-backend` job 的 pytest 文件列表**（与现有 12 个 `../tests/cli/test_cli_*.py` 并列；PowerShell 反引号续行、Windows 下 pytest 不展开 glob，须显式文件名——见 §9/§12）。`backend/tests/unit/` 新文件由 `unit-test-backend` job 的 `pytest tests/unit/` 自动覆盖（无需改 ci.yml）。
+- **domain/models**：`extraction.py`（ExtractionType / ExtractionStatus / ExtractionRequest / ExtractionResult / ExtractionRun / ReindexResult）；`vector_fingerprint.py`（指纹协议，§5.6.5 复用）
+- **domain/ports**：`extraction_errors.py`（错误类族）、`extraction_run_repository.py`（§8.1）、`extraction_staging_repository.py`（§5.9）、`vector_store.py`（既有 `VectorStoreProtocol`，不重定义）
+- **domain/services**：`extraction_service.py`（门面）、`_foreshadowing_extractor.py` + `_timeline_extractor.py`（提取管线）、`_chunking.py`（切片纯函数）、`_llm_chunk_analyzer.py`（LLM 切片分析）、`_extraction_rag.py`（索引编排）、`_extraction_staging.py`（暂存编排）、`_timeline_text_time.py`（原文时间解析，确定性）
+- **infrastructure**：`database/models/extraction.py` + `repositories/extraction_run_repo.py` / `extraction_staging_repo.py`；`rag/langchain_vector_store.py`（`VectorStoreProtocol` 唯一实现）
+- **api / cli**：`api/routers/extractions.py`（端点，§3.1）、`cli/commands/extract.py` + `cli/commands/vector.py`（§4）
+- **跨模块 MODIFY**：F12 `models/timeline.py` + `repositories/timeline_repo.py`（`source_chapter_id` + `list_by_chapter`，§2.6/§5.5）；F32 `app_settings`（切片配置四键，§5.6.3）；F9/F10 `characters` / `world_settings`（`batch_id` 列，§5.8.5）
+- **测试文件归属**：`backend/tests/unit/**`（自动收集）；CLI 测试在顶层 `tests/cli/`，**须显式登记 ci.yml `integration-cli-backend` job**（Windows pytest 不展开 glob）
 
 ### 8.1 ExtractionRunRepositoryProtocol（参照 F9 `character_repository.py` Protocol 风格）
 
@@ -1810,7 +1616,7 @@ class ExtractionRunRepositoryProtocol(Protocol):
 
 > 仓储层入参用 int（与 F9-F13 RepositoryProtocol 一致）；Service 负责 UUID ↔ int 转换（沿用 F1 `_to_int_id` 模式）。`upsert` 用 SQLite `ON CONFLICT` 保证原子性（并发重复提取时最后写入者胜——单用户本地工具，无竞态处理，同 F9-F13）。
 >
-> **v1.1（Q3 拍板）**: 本 Protocol **无变化**——增量判定所需方法 v1.0 已齐备（get/upsert/list）；时间线提取所需的跨模块方法（`TimelineRepositoryProtocol.list_by_chapter`）属 **MODIFY F12**（§8 跨模块 MODIFY 块），不在本 Protocol 内新增。
+> 本 Protocol 只承载增量判定所需方法（get/upsert/list）；时间线提取所需的跨模块方法（`TimelineRepositoryProtocol.list_by_chapter`）属 **MODIFY F12**（§8 模块归属），不在本 Protocol 内新增。
 
 ---
 
@@ -1837,7 +1643,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 **仓储（run）**: get 命中/未命中 / upsert 新建 + 同键更新（ON CONFLICT：字段整体覆盖，run_at 更新）/ list 按 type 过滤、run_at DESC、分页 / 项目硬删 → 级联清理 / 空表 list
 
 **服务（门面，Mock 各模块 Service + Mock run_repo + Mock chapter_repo + Mock vector_store）**:
-- 分发正确性：5 种已实现类型分别委托对应 Service 方法，参数透传（text / prompt+num_chapters+save / include_flashbacks / model）
+- 分发正确性：5 种委托类型分别委托对应 Service 方法，参数透传（text / prompt+num_chapters+save / include_flashbacks / model）
 - 项目校验：project_repo.get → None → ProjectNotFoundError（所有类型统一）
 - 增量判定：hash 相同 + not force → skip（status=skipped、processed=0、零 LLM 调用断言——Mock handler 未被调用）/ hash 不同 → 执行 / 无 run → 执行 / force=true → 执行
 - 手动模式：source_key="manual" 同文本重复 → skip；不同文本 → 执行
@@ -1849,7 +1655,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 - timeline 开启语义：章节/文本源增量 skip 判定同 character；提取事件 → TimelineExtractionResult 归一计数
 - STYLE：成功路径（F16 已注册——Mock StyleService 委托断言 + 归一 created=0/updated=0；占位测试已随 F16 同步，见 F16 spec §9）
 - index=true：Mock vector_store.index_batch 收到本次 created/updated 实体转成的 IndexableEntity（content 投影正确、metadata 含 project_id）；章节模式额外收到 chapter_chunk 块；outline / timeline（关闭时）→ indexed=false + warning；timeline（开启时）→ 提取事件索引为 timeline_event（metadata 含 chapter_id=source_chapter_id）
-- RAG 未装配（vector_store=None）+ index=true → RAGUnavailableError（503 + Retry-After，#1381）
+- RAG 未装配（vector_store=None）+ index=true → RAGUnavailableError（503 + Retry-After）
 - 结果归一：各类型 created/updated 计数口径（§5.3）；detail 保留首个执行源原始结果
 
 **伏笔提取管线（Mock LLM）**: 合法 JSON → 合并落库 / 代码块围栏 → `_extract_json_fragment` / 修复重试 ≤2 → ForeshadowingExtractionError（raw_output 截断 500）/ 条目级非法 → 跳过 + warning / 同名活动伏笔 → 非空覆盖且 **status 不重置** / 软删同名 → 新建 + warning / 幂等：同文本二次提取 → 空 diff / 自环与关系逻辑不适用（伏笔无关系）
@@ -1864,18 +1670,18 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 - 对话模式：说话人切换边界（引号/破折号/冒号+引号）/ 连续对话归并 / 短块合并叙述上下文 / 无对话文本降级段落 / 空文本 []
 - LLM 模式：注入 mock analyzer（返回边界列表）→ 边界生效 / analyzer 异常 → 降级段落（reindex 不中断）/ 内容 hash 相同 → 不重复调用 analyzer（增量契约）
 - 元数据：_project_chapter_chunk 输出 chapter_x/chapter_y/volume_title/chunk_start/indexed_at；_map_retrieved 缺键 .get() fallback 不崩
-- 指纹联动：切片配置变更 → compare_fingerprints 报 chunking_changed（#276 既有纯函数，复用其测试）
+- 指纹联动：切片配置变更 → compare_fingerprints 报 chunking_changed（既有纯函数，复用其测试）
 
 **RAG（真实 chroma + FakeEmbeddings，tmp 目录）**: index → collection upsert（id 幂等：同 id 二次 index 覆盖）/ index_batch / retrieve 按 project_id where 过滤（跨项目不可见）/ entity_types 过滤 / cosine 分数 = 1 - distance（FakeEmbeddings 固定向量可断言排序）/ min_score 过滤 / top_k 截断 / delete 单实体 / delete_project 返回删除数 / 空库 retrieve → 空列表 / **FakeEmbeddings 维度一致性**（size=384，与 BGE 输出维度同）/ **timeline_event 投影**（metadata 含 chapter_id=source_chapter_id——来自章节提取的事件；手工事件省略该键，§5.6 表）
 
-**API（Mock ExtractionService）**: 4 端点成功路径（含 extract 全字段、style 成功（F16 已注册）、auto_extract 透传、runs 分页、reindex 缺省类型、retrieve 参数校验）/ 404 项目不存在 / 422 全路径（互斥、缺失、类型不匹配、timeline 未开启带文本、top_k 越界）/ 500 透传（LLM/管线）与 **503 + Retry-After 透传（RAGUnavailableError，#1381）** / 无效 UUID → 404 / 信封序列化（ExtractionResult.model_dump(mode="json")）
+**API（Mock ExtractionService）**: 4 端点成功路径（含 extract 全字段、style 成功（F16 已注册）、auto_extract 透传、runs 分页、reindex 缺省类型、retrieve 参数校验）/ 404 项目不存在 / 422 全路径（互斥、缺失、类型不匹配、timeline 未开启带文本、top_k 越界）/ 500 透传（LLM/管线）与 **503 + Retry-After 透传（RAGUnavailableError）** / 无效 UUID → 404 / 信封序列化（ExtractionResult.model_dump(mode="json")）
 
 **CLI（Mock ExtractionService）**: extract run 各类型参数透传（--text/--text-file/--chapters 三选一、--prompt、--num-chapters、--no-save、--auto-extract/--no-auto-extract、--index、--force）/ status 人类可读与 --json / vector reindex 缺省与多 --type / vector retrieve 参数与排序输出 / 信封格式与退出码 0/1/2 / STYLE → 成功信封（退出码 0，F16 已注册）/ NOT_FOUND / RAG_ERROR 信封 / --text 与 --text-file 同时 → 退出码 2 / --type 非法值 → 退出码 2
 
 ### 覆盖率目标
 
 - F14 模块行覆盖率 **≥ 80%**（门面分发全分支、增量判定全分支、RAG 实现全方法，同 F9-F13）
-- 全仓覆盖率 **≥ 60%**（0.2.0 DoD，ADR-019）
+- 全仓覆盖率 **≥ 60%**（DoD，ADR-019）
 - CI 门禁：ruff + mypy + pytest 全绿（ADR-017/018）；domain/ 零 FastAPI/Typer/SQLAlchemy/LangChain import（ADR-002/015——`_chunking.py` 纯函数、门面只依赖 Protocol）
 - **CI 覆盖盲区防范**: `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py` 必须显式加入 ci.yml `integration-cli-backend` job（Issue #59/#61 教训，见 §8 注记）——实施 PR 中 ci.yml 修改与测试文件同时合入
 - **CI 无网络约束**: 所有测试**不触发 BGE 模型下载**——RAG 测试一律 FakeEmbeddings 注入；生产装配（deps.get_vector_store）不进入任何测试路径（BGE 下载 ~100MB 只在真实运行时发生，§11 影响）
@@ -1887,7 +1693,7 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 | 项 | 归属/原因 |
 |----|----------|
 | 新实体档案表（角色/世界/伏笔/大纲/事件） | 本 spec 决策：F14 是横切收敛型，实体与合并语义全部复用 F9-F13（§1/§5） |
-| F6 数据源替换（CharacterSettingSource / WorldSettingSource 空实现） | 0.2.0 联调（F13 先例：F9/F10 的注入替换不纳入模块里程碑，Q1 已确认；F13 因注入是验收标准本体而例外） |
+| F6 数据源替换（CharacterSettingSource / WorldSettingSource 空实现） | 联调阶段（F13 先例：F9/F10 的注入替换不纳入模块里程碑；F13 因注入是验收标准本体而例外） |
 | RAG 接入 F3/F6 写作链路（检索结果注入写作 Prompt） | Phase 2+ 联调——MVP 只交付「能索引、能检索」实证闭环（§5.6）；注入策略（何时检索、预算分配）归 ADR-013 影响节后续决策 |
 | 时间线事件自动删除（提取移除章节中不再存在的事件） | Phase 2+——MVP 提取只增改不删除（§5.5 联动语义）；自动删除需「事件-章节存在性核对」策略（作者可能有意保留跨章事件），F15 审计需要时再设计 |
 | 伏笔自动回收检测（正文 → 兑现识别） | Phase 2+（§5.4 论证：误报成本高 + F13 状态机语义需人工确认） |
@@ -1896,14 +1702,14 @@ CLI 测试: extract/vector 组（Mock ExtractionService）    ~20 cases
 | 向量数据随项目删除自动清理 | Phase 2+——孤儿向量按 project_id 过滤不可见，`vector reindex` 可覆盖（§7/§12） |
 | 向量集合管理（collection 生命周期、迁移、备份） | Phase 2+——MVP 固定 5 个 collection（config.vector_store_collections 已定） |
 | RAG 混合检索（BM25 + 向量）、rerank | Phase 2+——MVP cosine 相似度 + 切片策略模式（§5.6） |
-| 风格检测（F16 本体：风格指纹/AI 痕迹/词汇分析） | F16 风格检测服务（Issue #46 **已交付**）——F14 注册 handler 兑现（§6.1） |
+| 风格检测（F16 本体：风格指纹/AI 痕迹/词汇分析） | F16 风格检测服务——F14 注册 handler 兑现（§6.1） |
 | extraction_runs 历史审计（多次运行轨迹、变更回溯） | F15 审计服务（Phase 2）——run 表每源一行最新状态（§2.3） |
 | RAG 检索结果用于 F15 审计的跨模块一致性核对 | F15 审计服务（Phase 2） |
 | 增量提取定时任务 / daemon 自动提取 | F25 daemon（Phase 3）——MVP 手动触发（API/CLI） |
 | 项目级切片配置覆盖（每项目独立 mode/chunk_size/overlap） | Phase 2+——MVP 全局 app_settings（§5.6.3，需求文档 Q2.1 建议全局；小说类型差异支持项目级，需项目配置持久化 + API 扩展） |
-| CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖 | 后置 P2（需求文档 §2.3 建议）——MVP 切片配置经 app_settings 持久化，reindex 不加覆盖参数（YAGNI，待澄清 Q6） |
+| CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖 | 后置 P2（需求文档 §2.3 建议）——MVP 切片配置经 app_settings 持久化，reindex 不加覆盖参数（YAGNI，见 §12 决策） |
 | 检索结果位置跳转（点击结果跳原文章节） | P2 前端增强——MVP 只展示位置文本（章节 x/y），§5.6.4 |
-| 对话切片真实样本收集与识别规则验证 | #278 M4 前置（QA §2.5 Q2.5）——落地前需真实对话体样本验证识别规则 |
+| 对话切片真实样本收集与识别规则验证 | 落地前需真实对话体样本验证识别规则 |
 | LLM 档 token 成本预估弹窗（选 LLM 档时展示） | 后置 P2（docs §2.3）——MVP LLM 档仅降级 + 日志 |
 
 ---
@@ -1929,66 +1735,63 @@ F14 依赖:
                             索引数据源（增量 + reindex，§5.6）
   F13 (foreshadowing_service) ✅ — ① 委托档案（FORESHADOWING 合并落库复用 F13 实体/仓储/
                             partial unique 合并锚点，§5.4）；② foreshadowing 索引数据源
-  F16 (style_service)  ✅ — STYLE 类型依赖（Issue #46 已交付）：注册 `StyleService.analyze` handler
-                            （§6.1；F16 spec §8.2 兑现 Q1 ✅ 选项 A——接口零变更）
-  F6 (context_service) — 不依赖（不替换数据源，归 0.2.0 联调，§10）
+  F16 (style_service)  ✅ — STYLE 类型依赖：注册 `StyleService.analyze` handler（§6.1，接口零变更）
+  F6 (context_service) — 不依赖（不替换数据源，归联调阶段，§10）
   ADR-013 (RAG)        ✅ — 本模块落地：实现 VectorStoreProtocol（P0-11 已定义，
                             不重定义）；LangChain Chroma + BAAI/bge-small-zh-v1.5
                             （§5.6/§8）；依赖已锁定（chromadb/langchain-chroma/
                             sentence-transformers，pyproject），不新增
   F32 (settings_service) ✅ — 切片配置经 app_settings 读取（跨模块 MODIFY F32 settings 四键，
                             §5.6.3/§8）；SettingsService.get_settings 供 reindex 装配读配置快照
-  #276 (RAG 指纹)       ✅ — 切片参数纳入指纹引用其 ChunkingFingerprint / compare_fingerprints /
+  向量指纹协议          — 切片参数纳入指纹引用其 ChunkingFingerprint / compare_fingerprints /
                             reindex 四步协议（§5.6.5，**不重定义**）
   ADR-012 (错误处理)    ✅ — 门面失败即异常；错误码新增 EXTRACTION_ERROR / RAG_ERROR
                             （UNSUPPORTED_TYPE 已随 F16 删除，§3.4/§4）
 
 F14 被依赖:
   F7 (CLI)             ✅ — extract / vector 命令组并入 F7 命令树（cli/app.py 注册）
-  F15 (审计)            ⏳ — (Issue 待创建) 提取 run 状态与各档案作为 4 维度一致性审计数据源；
+  F15 (审计)            ⏳ — 提取 run 状态与各档案作为 4 维度一致性审计数据源；
                             run 表升级为历史表的需求在此确认（§10）
   F20 (MCP)            ⏳ — (Phase 3) extract / vector 工具基于本模块 API
-  F6 (context_service) ⏳ — (0.2.0 联调) RAG 检索结果作为动态上下文候选源（ADR-013 影响节）
+  F6 (context_service) ⏳ — (联调阶段) RAG 检索结果作为动态上下文候选源（ADR-013 影响节）
   F3 (writing_service) ⏳ — (Phase 2+ 联调) 写作时 RAG 检索注入（§10）
 ```
 
 > **ADR-013 影响节（本模块实证）**: ① BGE 模型首次下载 ~100MB（HF hub，需网络）——懒加载 + RAGUnavailableError 降级，非 RAG 功能不受影响；② chromadb 持久化磁盘占用（每项目 ~10-50MB，`config.vector_store_dir` 默认 `./data/chroma`）；③ 检索延迟 ~10-50ms（本地 CPU），不阻塞 LLM 调用大头延迟；④ `VectorStoreProtocol` 的检索接口强制 project_id——多项目数据天然隔离（metadata where 过滤，§5.6）。
 
-> **编号口径**: F14 = 统一提取（ADR-019 现行口径）；旧文档中「F14 伏笔」字样均为 ADR-019 之前旧编号（实际 = F13），本 spec 及后续一律以 ADR-019 为准（同 F9/F10/F12/F13 spec §11 声明）。
-
 ---
 
-## 12. 关键架构决策记录
+## 12. 决策表
 
-| 决策 | 方案 | 理由 |
-|------|------|------|
-| 模块类型 | **横切收敛型门面**（不建新实体档案） | PRD P1-06 验收标准 ① 是「统一接口」而非新实体；F9-F13 管线已存在且合并语义成熟，重写或复制任何一条管线都是重复投资（P5 YAGNI）；门面 + 注册表（§6.1）使新类型（F16 style）落地只需注册 handler |
-| 委托方式 | 门面注入**各模块 Service**（CharacterService.extract 等），不注入底层 extractor | 各 Service 已封装项目校验 + 提取器装配（deps.py 现成）；门面零业务逻辑（§5.1 要点 1）；伏笔除外——ForeshadowingService 无提取方法，F14 新建 ForeshadowingExtractor 直接装配（§5.4） |
-| 统一接口形态 | `ExtractionType` 6 值枚举 + `ExtractionRequest`（type 决定输入）+ `ExtractionResult`（统一信封，detail 保留原始结果） | 一份契约覆盖提取/生成/检查三类语义（能力等价、入口统一，§2.1）；detail 保留原始模块结果避免信息损失（CLI/API 消费者可深挖）；计数归一化（created/updated）提供轻量摘要 |
-| OUTLINE/TIMELINE 语义适配 | outline 委托**生成**（save 透传）、timeline 委托**确定性检查**（include_flashbacks 透传），不为它们编造「文本提取」管线 | PRD 列 6 类型是「一键沉淀」心智（§2.1 论证）；强行给大纲/时间线造 LLM 提取管线 = 新管线 × 2，超出 4-6 人天估算且与 F11/F12 边界声明冲突（大纲情节点不与章节挂钩、事件档案手工维护）；待澄清 Q2 建议答案。**（v1.1 修订：本行 timeline 部分已被下方「TIMELINE 提取管线（选项 B）」取代——Q2 拍板后 timeline 改为设置项切换的 LLM 提取 / 确定性检查双语义；outline 部分维持原决策）** |
-| 增量粒度 | **按源（章节/文本）sha256 hash 变更追踪**，非实体字段级 diff | ① 提取语义是内容驱动（文本变了才需重跑）——hash 精确、不受元数据 updated_at 干扰、内容回退也能正确判定（§5.2 论证）；② 与 F9/F10/F13 同名合并幂等性叠加（hash 失效重跑 = 空 diff）双保险；③ 实体级 diff 需跨章节追踪实体出现位置（复杂、收益低），F15 需要时再设计。**（v1.1 修订：Q3 拍板综合方案——保留本行源 hash 核心 + 新增事件-章节联动 source_chapter_id，见下方新增行；实体级 diff 仍归 Phase 2+）** |
-| 增量记录形态 | `extraction_runs` 表：每 (project, type, source) **一行最新状态**（UNIQUE + upsert），非历史表 | 增量判定只需要「最新指纹」；历史轨迹是审计需求（归 F15）；upsert 原子（SQLite ON CONFLICT），避免「查-写」竞态窗口；失败源不写 run（无行 = 缺口，§6.2） |
-| 批量失败语义 | 逐章独立执行 + 失败即抛异常 + 已成功章 run 已落库（断点续跑） | 与 F9「合并阶段不重试」一致（已落库数据不可重复合并）；run 表使「部分成功」可观测（extract status 可见缺口）；重跑自动 skip 成功章——增量提取验收标准 ② 的核心实证（§5.2） |
-| STYLE 占位（v1.1 修订：**已被 F16 取代**） | ~~注册表 handler=None + 422（UNSUPPORTED_TYPE），接口契约全量先行~~ → **F16 已注册 `StyleService.analyze`**（确定性文本分析 + LLM 深度分析可选，F16 spec §8.2/§12 记录落地决策） | 历史决策（F14 Q1 ✅ 选项 A）：验收标准 ① 要求 6 种类型统一接口（接口层齐全），F16 落地零接口变更（填 handler 即可）——该承诺已由 F16 兑现，本行保留为历史记录（§6.1） |
-| RAG 落地范围 | 基础设施（LangChainVectorStore）+ 索引编排（index=true 增量 / reindex 全量）+ 检索入口（API/CLI）；**不接 F3/F6** | 验收标准 ③ 是「向量存储落地」——可演示闭环（索引 + 检索）即达标；写作链路注入涉及预算分配/触发策略（F6 领域），归 Phase 2+ 联调（§10）；MVP 聚焦基础设施正确性 |
-| collection 组织 | 每 EntityType 一个 collection（`f"inkflow_{type}"`，对齐 config.vector_store_collections）+ metadata.project_id 过滤 | config 已声明 5 个 collection（P0-11 定稿）；单 collection 混合类型会导致 where 过滤组合（type + project）复杂度上升且类型维度被稀释；每类型 collection 与 EntityType 一一对应（检索 entity_types 过滤 = 查对应 collection） |
-| embedding 注入 | `LangChainVectorStore(embeddings)` 构造注入：生产 HuggingFaceBgeEmbeddings，测试 FakeEmbeddings | BGE 下载 ~100MB 不能进 CI/测试（无网络约束，§9）；注入使 chroma 真实库测试可行（FakeEmbeddings size=384 对齐 BGE 维度）；生产装配在 deps 层懒加载（首次 index/retrieve 才初始化） |
-| RAG 可用性降级 | 未装配/模型加载失败 → RAGUnavailableError（**503 + Retry-After**，#1381），**不影响非 RAG 功能** | RAG 是增强能力（写作链路尚未接入）；extract 不带 index 照常工作；错误消息提示联网/重试（§5.6 策略表） |
-| 索引内容投影 | 各档案字段拼装纯文本 content（姓名/性格/背景…）+ metadata 透传关键字段 | 检索匹配的是 content 文本（embedding 对象）；metadata 供过滤/展示（name/status/title）；投影为确定性纯函数（可单测，§5.6 表） |
-| 分块 | `_chunk_text` 纯函数：~500 字/块、标点边界回溯、无重叠；块 id = `{chapter_id}:{idx}` | 与 ADR-013「~500 字/chunk」一致；无重叠简化检索去重；块 id 稳定 → upsert 幂等（章节更新后同 id 覆盖） |
-| 项目删除与向量 | 项目硬删 → run 表 FK CASCADE；chroma 向量**不自动清理**（孤儿不可见，reindex 覆盖） | 向量库生命周期管理（delete_project 协议已有，但触发时机/级联语义归 Phase 2+）；MVP 不把项目删除与向量清理耦合（YAGNI），Protocol 的 delete_project 方法已留好能力 |
-| 错误码扩展 | 新增 EXTRACTION_ERROR / RAG_ERROR / UNSUPPORTED_TYPE（沿用 NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / DB_ERROR） | F14 是首个同时携带 LLM + 管线 + RAG 错误面的模块（§3.4）；独立码保证脚本可编程处理（F7 §7 错误码表扩展）；422 承载「类型未实现」（业务校验语义，区别于 404/501）。**（v1.1 修订：UNSUPPORTED_TYPE 已随 F16 删除——STYLE 不再是「未实现类型」，见 STYLE 占位决策行；EXTRACTION_ERROR / RAG_ERROR 维持）** |
-| API 布局 | 统一入口扁平（POST /api/v1/extract）+ runs/向量嵌套项目路径 | extract 的 type 是资源维度（镜像 F9 `/characters/extract` 扁平先例）；runs/vector 是项目级资源（沿袭「创建/列表嵌套项目路径」风格）；静态路径段无歧义（§3.1） |
-| CLI 布局 | `inkflow extract`（run/status）+ `inkflow vector`（reindex/retrieve）两个顶级组 | 提取与向量是两个用户心智（一键沉淀 vs RAG 运维）；不塞进既有模块组（character extract 等保留不动——向后兼容，F9-F13 命令不迁移）；--json 信封/退出码沿用 F7 全局约定 |
-| 伏笔提取合并 | 按 (project_id, title) 匹配活动伏笔 → 非空覆盖 / 新建；**status 永不重置**；不自动回收 | F13 partial unique 的「同名 = 同一伏笔」档案语义（F13 §12 已声明为 F14 提供合并锚点）；status 是作者确认的状态机（自动迁移会破坏「已回收」语义）；自动回收归 Phase 2+（§5.4） |
-| CLI 测试归属 | `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` + `test_cli_vector.py`（顶层 tests/cli/）+ ci.yml `integration-cli-backend` job 显式列出 | 新增 CLI 测试文件默认是 CI 盲区（Issue #59 实测）；显式文件列表是既有 job 风格（Windows 下 pytest 不展开 glob，陷阱 15）；unit 新文件由 `pytest tests/unit/` 自动覆盖 |
-| TIMELINE 提取管线（选项 B，v1.1） | 新建「章节文本 → 时间线事件」LLM 提取管线（`_timeline_extractor.py` + `timeline_extract.yaml`，镜像 F9 骨架）+ 设置项 `timeline_auto_extract`（默认 **false**；请求 `auto_extract` / CLI `--auto-extract` 可覆盖）；关闭时退回 F12 确定性检查 | 用户拍板 Q2=选项 B（含附加要求：AI 自动化需设置项由用户选择是否开启）——AI 自动写事件档案是**副作用型**能力（直接落库作者档案），默认关闭避免意外修改，显式开启 = 知情同意（与 F13 注入「默认进 dynamic 层」的差异：写入型自动化门槛高于读取型）；关闭语义保留 v1.0 的确定性检查（两种语义并存、设置项切换）；估算 +1.5 人天（§5.5/§13 M5b） |
-| 事件-章节联动 source_chapter_id（v1.1） | F12 事件实体新增 `source_chapter_id`（UUID?，FK→chapters.id ON DELETE SET NULL，已索引）；事件合并匹配键 `(project_id, title, source_chapter_id)`；仓储新增 `list_by_chapter` | 用户拍板 Q3 综合方案要求「精确提取 + 事件和章节联动」；与 F13 的 `event_id` 锚点**同构**（跨模块引用先例：F13 引 F12 事件、F14 引 F2 章节——引用方模块负责校验，被引用方只加可空 FK + SET NULL 语义）；同章同名 = 同一事件（重提取更新）、跨章同名 = 不同事件（章节是事件实例的语境）；章节软删保留来源锚点、硬删 SET NULL（事件档案不因来源删除而丢失） |
-| 增量粒度综合（源 hash + 联动，v1.1） | 保留 v1.0 的**按源 sha256 hash** 增量（选项 A 核心）+ 事件-章节联动（重提取按 `source_chapter_id` 匹配更新）；实体级字段 diff 仍归 Phase 2+ | 用户拍板 Q3=综合方案（在 A 与 B 之间取交集：A 的精确内容指纹 + B 的实体来源追踪）；MVP 收益上限 = 「章节变更 → 该章事件精准更新」闭环（M10 手工实证）；字段级 diff 的跨章节实体追踪（F9 档案无来源章节字段）仍超出 MVP 范围（YAGNI） |
-| 切片策略模式（v1.2，#277/#278） | `ChunkingMode` 四值（fixed/paragraph/dialogue/llm）+ `chunk_text` 按 mode 分发，三档共享 `Chunk{text, start_offset}` 返回与块 id 规则 | 固定 500 字切片不符合小说语义结构（对话密集章节硬切语义单元）；策略模式为 #278 预留统一接口（§5.6.1）；三档成本递增（段落<对话<LLM，docs §2.1）；默认 fixed 保持存量行为与向量不变（零迁移） |
-| 重叠默认关（v1.2，用户拍板按 docs 建议） | `rag_chunk_overlap` 默认 False，范围 10%-20%；overlap>0 块 id 加 start_offset，检索按章节去重取最高分 | 保持存量行为不变、索引体积可控；开启后打破「拼接还原原文」不变式 → 弱不变式「每字符至少被一块覆盖」（QA §4.1-A4）；去重杜绝相邻重复块刷屏（QA §P1-1） |
-| 切片参数纳入指纹（v1.2，#276 联动） | reindex 装配从 app_settings 读切片配置 → `build_fingerprint(chunking=...)` 写入；chunker_version 手动 bump 管控 LLM 非确定漂移 | 复用 #276 已实现协议（不重定义）；切片变更 → chunking_changed → stale → 提示重建（QA §P1-1 幽灵块根治） |
-| 对话/LLM 切片降级段落（v1.2，#278 M4） | 对话无对话文本 / LLM analyzer 失败 → 降级段落切片 + warning，reindex 不中断；LLM 复用 _content_hash sha256 增量 | 失败不中断 reindex（QA §4.1-A3）；sha256 增量控制 LLM 档成本（QA §P2-2）；降级保证任何文本都有可用切片 |
+全 spec 唯一决策落点。
+
+| 决策点 | 选择 | 理由 | 备选（否决） |
+|--------|------|------|--------------|
+| 1 模块类型 | **横切收敛型门面**（不建新实体档案） | 「统一接口」而非新实体是验收核心；F9-F13 管线与合并语义成熟，重写或复制任一条管线都是重复投资；门面 + 注册表使新类型落地只需注册 handler | 为每种类型建新实体档案（与 F9-F13 边界冲突） |
+| 2 委托方式 | 门面注入**各模块 Service**（`CharacterService.extract` 等），不注入底层 extractor | 各 Service 已封装项目校验 + 提取器装配；门面零业务逻辑（§5.1）；伏笔例外——F13 无提取方法，F14 新建 extractor 直接装配（§5.4） | 注入底层 extractor（重复实现项目校验与装配） |
+| 3 统一接口形态 | `ExtractionType` 7 值枚举 + `ExtractionRequest`（type 决定输入）+ `ExtractionResult`（统一信封，detail 保留原始结果） | 一份契约覆盖提取/生成/检查三类语义；detail 避免信息损失；created/updated 归一提供轻量摘要 | 每类型一套请求/响应（消费者需分支记忆） |
+| 4 OUTLINE/TIMELINE 语义适配 | outline 委托**生成**（save 透传）；timeline **双语义**（`timeline_auto_extract` 开启 = LLM 提取管线，关闭 = F12 确定性检查） | 大纲/时间线属「一键沉淀」心智，语义适配即可；写入型自动化默认关闭（显式开启 = 知情同意） | 为大纲/时间线另造「文本提取」管线（新管线 × 2，超出估算）；timeline 恒确定性检查（丢失提取能力） |
+| 5 增量粒度 | **按源（章节/文本）sha256 hash** + 事件-章节联动（匹配键含 `source_chapter_id`） | hash 精确、不受元数据干扰、内容回退也能判定；联动使「章节变更 → 该章事件精准更新」闭环；与模块合并幂等叠加双保险 | 实体字段级 diff（需跨章节来源追踪，Phase 2+）；`updated_at` 时间戳（不可靠） |
+| 6 增量记录形态 | `extraction_runs` 每 (project, type, source) **一行最新状态**（UNIQUE + upsert） | 增量判定只需最新指纹；历史轨迹归审计；upsert 原子避免查-写竞态；失败源不写行 = 缺口信号（§6.2） | 历史表（无消费者，YAGNI） |
+| 7 批量失败语义 | 逐章独立执行 + 失败即抛异常 + 已成功章 run 已落库（断点续跑） | 与 F9「合并阶段不重试」一致；run 表使部分成功可观测；重跑自动 skip 成功章 | 全批回滚（已完成工作浪费）；吞错继续（静默缺口） |
+| 8 STYLE 槽位 | 注册表槽位 + `StyleService.analyze` handler（接口零变更） | 接口层先齐全，F16 落地只填 handler | 从枚举/API/CLI 剔除（接口要变一次）；501 预留通道（语义混乱） |
+| 9 RAG 落地范围 | 基础设施（LangChainVectorStore）+ 索引编排（index=true 增量 / reindex 全量）+ 检索入口（API/CLI）；**不接 F3/F6** | 「向量存储落地」的可演示闭环即达标；写作注入涉及预算/触发策略，归 Phase 2+ | 直接接入写作链路（触发策略未定，超范围） |
+| 10 collection 组织 | 每 EntityType 一个 collection（`inkflow_{type}`）+ `metadata.project_id` 过滤 | 单 collection 混合类型使 where 组合复杂且类型维度被稀释；与 EntityType 一一对应，检索过滤即选 collection | 单 collection + type 字段（过滤组合复杂） |
+| 11 embedding 注入 | 构造注入：生产 BGE / 测试 FakeEmbeddings；deps 层懒加载 | BGE 下载 ~100MB 不能进测试；注入使真实 chroma 测试可行 | 全局单例硬编码（测试不可行） |
+| 12 RAG 可用性降级 | 未装配/模型加载失败 → `RAGUnavailableError`（503 + Retry-After），不影响非 RAG 功能 | RAG 是增强能力；extract 不带 index 照常工作；消息提示联网/重试 | 500 统错（调用方无法区分可重试） |
+| 13 索引内容与分块 | 各档案字段拼装纯文本 content + metadata 透传关键字段；分块纯函数 ~500 字/标点回溯/无重叠，块 id = `{chapter_id}:{idx}` | 检索匹配 content 文本，metadata 供过滤/展示；投影与分块均为确定性纯函数（可单测）；块 id 稳定 → upsert 幂等 | 存结构化 JSON 进向量库（embedding 语义退化） |
+| 14 项目删除与向量 | 项目硬删 → run 表 FK CASCADE；chroma 向量**不自动清理**（孤儿不可见，reindex 覆盖） | 向量库生命周期管理归 Phase 2+；不把项目删除与向量清理耦合（YAGNI）；`delete_project` 能力已备 | 项目删除级联清向量（跨存储事务复杂度高） |
+| 15 错误码 | 新增 `EXTRACTION_ERROR` / `RAG_ERROR`（沿用 NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / DB_ERROR）；「类型未注册」用 422 | 首个同时携带 LLM + 管线 + RAG 错误面的模块；独立码保证脚本可编程处理；422 承载业务校验语义 | 501 表达「类型不支持」（与业务校验混淆） |
+| 16 API / CLI 布局 | 统一入口扁平 `POST /api/v1/extract` + runs/向量嵌套项目路径；CLI 两个顶级组 `extract` / `vector` | type 是资源维度（镜像 F9 `/characters/extract` 扁平先例）；runs/vector 是项目级资源；提取与向量是两个用户心智 | 塞进既有模块组（命令树膨胀）；单顶级组混放（心智混淆） |
+| 17 伏笔提取合并 | 按 (project_id, title) 匹配活动伏笔 → 非空覆盖 / 新建；`status` 永不重置；不自动回收 | F13 partial unique 的「同名 = 同一伏笔」档案语义；status 是作者确认的状态机，自动迁移会破坏「已回收」语义；误报成本高 | 按描述相似度合并（不确定）；自动回收（误报率高） |
+| 18 CLI 测试归属 | CLI 测试在顶层 `tests/cli/` + ci.yml `integration-cli-backend` job 显式列出文件 | 新 CLI 测试默认是 CI 盲区；显式文件列表是既有 job 风格（Windows pytest 不展开 glob）；unit 新文件自动覆盖 | 依赖 glob（CI 上不展开 → 假绿） |
+| 19 时间线提取管线 | 新建「章节文本 → 时间线事件」LLM 提取管线 + `timeline_auto_extract`（默认 false；请求/CLI 可单次覆盖）；关闭退回确定性检查 | AI 自动写事件档案是副作用型能力，默认关闭 = 避免意外改档；显式开启即知情同意；关闭语义保留确定性检查 | 恒确定性检查（无提取能力）；默认开启（写入型自动化无门槛） |
+| 20 事件-章节联动 | F12 事件加 `source_chapter_id`（可空 FK，ON DELETE SET NULL，已索引）；匹配键 `(project_id, title, source_chapter_id)`；仓储加 `list_by_chapter` | 与 F13 `event_id` 锚点同构（引用方负责校验，被引用方只加可空 FK）；同章同名 = 同一事件，跨章同名 = 不同事件；章节硬删不丢事件档案 | 仅按 title 匹配（跨章误合并）；不存来源（无法联动更新） |
+| 21 切片策略模式 | `ChunkingMode` 四值（fixed/paragraph/dialogue/llm）+ `chunk_text` 按 mode 分发，共享 `Chunk{text, start_offset}` 与块 id 规则 | 固定 500 字切片不符合小说语义结构（对话密集章被硬切）；策略模式为后续档预留统一接口；默认 fixed 保持存量行为与向量不变 | 只做固定切片（语义结构丢失）；一次做透四档（成本递增未验证） |
+| 22 重叠与指纹 | `rag_chunk_overlap` 默认 False，比例 [0.10, 0.20]；overlap>0 时块 id 加 `start_offset`、检索按章节去重取最高分；切片参数纳入指纹（`chunker_version` 手动 bump） | 默认关保持存量行为与索引体积；指纹联动使切片变更触发 stale → 提示重建（杜绝幽灵块）；去重防相邻重复块刷屏 | 默认开重叠（存量向量全失效）；不纳指纹（切片变更后检索结果静默错配） |
+| 23 对话/LLM 切片降级 | 无对话文本 / analyzer 失败 / 未配模型 → 降级段落切片 + warning，reindex 不中断；LLM 档复用内容 hash 增量 | 失败不中断重建；hash 增量控制 LLM 档成本；降级保证任何文本都有可用切片 | 失败即整体失败（重建不可用） |
+| 24 检索元数据口径 | 全书级 `chapter_x` / `chapter_y`（按 order_index 全局排序）+ `volume_title`；卷内序后置 | 复用 order_index 零额外 join；卷信息仅作展示 | 卷内级（无卷项目需退化逻辑）；两者都写（字段冗余） |
+| 25 切片配置暴露面 | 仅 `app_settings`（GET/PATCH /settings）；`reindex` 不加覆盖参数 | 最小暴露面；配置持久化即生效；CLI 覆盖参数无场景（YAGNI） | CLI `--chunk-mode/--chunk-size/--overlap`（与持久化配置冲突） |
 
 ---
 
@@ -1996,113 +1799,19 @@ F14 被依赖:
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| M1 | 领域模型 + DTO 校验（ExtractionType 7 值（#1408 补 KNOWLEDGE_RELATION）/ ExtractionRequest 互斥与类型约束 / ExtractionResult / ExtractionRun / ReindexResult） | `pytest backend/tests/unit/domain/models/test_extraction_models.py -v` 全绿 |
+| M1 | 领域模型 + DTO 校验（ExtractionType 7 值（含 `KNOWLEDGE_RELATION`）/ ExtractionRequest 互斥与类型约束 / ExtractionResult / ExtractionRun / ReindexResult） | `pytest backend/tests/unit/domain/models/test_extraction_models.py -v` 全绿 |
 | M2 | ExtractionRun 仓储（get/upsert(ON CONFLICT)/list，in-memory SQLite） | `pytest backend/tests/unit/infrastructure/database/test_extraction_run_repo.py -v` 全绿 |
-| M3 | 门面分发（Mock 各模块 Service：7 类型委托（timeline 双语义：设置项开/关；STYLE → StyleService.analyze，F16 已注册；KNOWLEDGE_RELATION → F48 关系提取，#1408 接入）+ 项目校验 + 结果归一） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
+| M3 | 门面分发（Mock 各模块 Service：7 类型委托（timeline 双语义：设置项开/关；STYLE → StyleService.analyze，F16 已注册；KNOWLEDGE_RELATION → F48 关系提取）+ 项目校验 + 结果归一） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
 | M4 | 增量提取算法（hash 变更检测 / skip / force / 手动模式 / 断点续跑 / 部分失败语义；timeline 开启时按源增量、关闭时每次执行） | `pytest backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿（增量相关用例） |
 | M5 | 伏笔提取管线（foreshadowing_extract.yaml + ForeshadowingExtractor：解析/重试/合并/幂等） | `pytest backend/tests/unit/domain/services/test_foreshadowing_extractor.py -v` 全绿 |
 | M5b | **时间线提取管线**（timeline_extract.yaml + TimelineExtractor：解析/重试/事件合并（匹配键 (project_id, title, source_chapter_id)）/ 设置项开/关切换（门面层判定）/ 事件-章节联动语义；含跨模块 MODIFY F12 四文件（source_chapter_id 字段 + list_by_chapter）） | `pytest backend/tests/unit/domain/services/test_timeline_extractor.py -v` 全绿 + F12 相关用例（test_timeline_repo 增补 list_by_chapter 用例） |
 | M6 | LangChainVectorStore（FakeEmbeddings + tmp chroma：index/index_batch/retrieve/delete/delete_project/cosine/min_score/project_id 过滤） | `pytest backend/tests/unit/infrastructure/rag/test_langchain_vector_store.py -v` 全绿 |
 | M7 | 章节分块 + reindex/retrieve 编排（_chunking.py + ExtractionService.reindex/retrieve + 索引编排） | `pytest backend/tests/unit/domain/services/test_chunking.py backend/tests/unit/domain/services/test_extraction_service.py -v` 全绿 |
 | M8 | API 4 端点 + 错误路径全绿 | `pytest backend/tests/unit/api/routers/test_extractions_api.py -v` 全绿 |
-| M9 | CLI extract/vector 组（信封/退出码/RAG_ERROR——UNSUPPORTED_TYPE 已随 F16 删除，style 走成功路径）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py`** | `pytest tests/cli/test_cli_extraction_crud.py tests/cli/test_cli_extraction_errors.py tests/cli/test_cli_vector.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
-| M10 | 手工验证闭环（含 BGE 首次下载）：建项目/章节 → 增量提取 → 索引 → 检索 → 变更重提取 → **时间线提取联动** | 手工验证（`inkflow chapter create` 建 2+ 章 → `inkflow extract run --type character --chapters ... --index` 首次 success → 再次同请求 status=skipped（⏭）→ 修改第 2 章内容（`chapter update`）→ 再提取只处理第 2 章（processed_sources=1、skipped_sources=1）→ `inkflow vector reindex` 全量 → `inkflow vector retrieve --query <章节人物/伏笔关键词>` 返回相关实体（首次自动下载 BGE ~100MB，需网络）→ **时间线场景（Q2/Q3 拍板）**：项目更新设置 `config.extra["timeline_auto_extract"]=true`（或每次调用带 `--auto-extract` 单次覆盖）→ `inkflow extract run --type timeline --chapters ...` 提取事件 → `inkflow timeline list` 事件带 `source_chapter_id`（来源章节）→ 修改某章内容后重提取 → 同源事件被更新（updated>0）、新事件 created → 章节硬删后事件保留且 source_chapter_id 置空） |
-| M11 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F14 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015，含 `_chunking.py`） |
-| M12 | 切片器变体 + 重叠 + 元数据 + 指纹联动（#277 M3，P1——**先行合入**） | `pytest backend/tests/unit/domain/services/test_chunking_modes.py backend/tests/unit/domain/services/test_chunking.py -v` 全绿（段落切分/重叠率 ∈ 区间/块 id 三态/对话降级/LLM 降级/元数据 fallback/指纹联动）；扩展 test_search_service.py 元数据缺键 `.get()` fallback 用例；手工：改切片配置 → stale → `vector reindex` → 检索正常且无幽灵块、无相邻重复块 |
-| M13 | 对话切片器 + LLM 分析切片器（#278 M4，P2——**同里程碑后续批次**） | `pytest backend/tests/unit/domain/services/test_chunking_modes.py -v` 全绿（说话人切换边界/短块合并/无对话降级段落；LLM mock analyzer 边界生效/失败降级不中断/hash 相同跳过 analyzer）；手工：对话文本检索返回对话级 chunk；LLM 档内容未变章节不重复调用 analyzer |
-
-> **验收标准 ↔ Issue #44 映射**: ①「≥6 种提取类型统一接口」→ M1/M3/M8/M9（ExtractionType 6 值 + 注册表 6 槽 + 统一 API/CLI；#1408 补齐第 7 值 `knowledge_relation` → 7 值 + 7 槽，CLI 口径一致由契约测试守卫）；②「增量提取（只处理变更内容）」→ M4/M10（hash 追踪 + skip + 断点续跑，手工闭环含「只处理第 2 章」实证）；③「RAG 向量存储落地（chromadb + BGE）」→ M6/M7/M10（LangChainVectorStore + reindex/retrieve + 手工检索闭环，BGE 首次下载 ~100MB 在 M10 实证）；**Q2/Q3 拍板范围** → M5b/M10（时间线提取管线 + 设置项切换 + 事件-章节联动，§2.6/§5.5）。
+| M9 | CLI extract/vector 组（信封/退出码/RAG_ERROR；style 走成功路径）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_extraction_crud.py`/`test_cli_extraction_errors.py` 与 `tests/cli/test_cli_vector.py`** | `pytest tests/cli/test_cli_extraction_crud.py tests/cli/test_cli_extraction_errors.py tests/cli/test_cli_vector.py -v` 全绿 + CI job 覆盖确认 |
+| M10 | 手工验证闭环（含 BGE 首次下载）：建项目/章节 → 增量提取 → 索引 → 检索 → 变更重提取 → **时间线提取联动** | 手工验证（`inkflow chapter create` 建 2+ 章 → `inkflow extract run --type character --chapters ... --index` 首次 success → 再次同请求 status=skipped（⏭）→ 修改第 2 章内容（`chapter update`）→ 再提取只处理第 2 章（processed_sources=1、skipped_sources=1）→ `inkflow vector reindex` 全量 → `inkflow vector retrieve --query <章节人物/伏笔关键词>` 返回相关实体（首次自动下载 BGE ~100MB，需网络）→ **时间线场景**：项目更新设置 `config.extra["timeline_auto_extract"]=true`（或每次调用带 `--auto-extract` 单次覆盖）→ `inkflow extract run --type timeline --chapters ...` 提取事件 → `inkflow timeline list` 事件带 `source_chapter_id`（来源章节）→ 修改某章内容后重提取 → 同源事件被更新（updated>0）、新事件 created → 章节硬删后事件保留且 source_chapter_id 置空） |
+| M11 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F14 模块行覆盖 ≥ 80%、全仓 ≥ 60%（DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015，含 `_chunking.py`） |
+| M12 | 切片器变体 + 重叠 + 元数据 + 指纹联动 | `pytest backend/tests/unit/domain/services/test_chunking_modes.py backend/tests/unit/domain/services/test_chunking.py -v` 全绿（段落切分/重叠率 ∈ 区间/块 id 三态/对话降级/LLM 降级/元数据 fallback/指纹联动）；扩展 test_search_service.py 元数据缺键 `.get()` fallback 用例；手工：改切片配置 → stale → `vector reindex` → 检索正常且无幽灵块、无相邻重复块 |
+| M13 | 对话切片器 + LLM 分析切片器 | `pytest backend/tests/unit/domain/services/test_chunking_modes.py -v` 全绿（说话人切换边界/短块合并/无对话降级段落；LLM mock analyzer 边界生效/失败降级不中断/hash 相同跳过 analyzer）；手工：对话文本检索返回对话级 chunk；LLM 档内容未变章节不重复调用 analyzer |
 
 ---
-
-## 待澄清问题（历史 Q1-Q3 ✅ 已确认留痕；v1.2 新增 Q4-Q6 ✅ 已确认——正文已按拍板结果修订）
-
-| # | 问题 | 影响 | 建议 |
-|---|------|------|------|
-| Q1 | ✅ **已确认（用户拍板：选项 A）**——**STYLE 类型在 F16（Issue #46）未实现时如何进入统一接口？** 选项 A：注册表占位 + 调用返回 422「风格提取尚未实现（依赖 F16 风格检测）」（接口契约全量先行，F16 落地只填 handler）；选项 B：MVP 从 ExtractionType 枚举/API/CLI 剔除 STYLE，F16 落地时再加（接口变更一次）；选项 C：STYLE 映射到「预留通道」——统一接口返回 501 + 说明文档（区别于业务 422） | 验收标准 ①「≥6 种类型统一接口」的达成口径；F16 落地时的接口兼容性 | **A（已确认）**：v1.0 已按选项 A 设计（§6.1/§12），v1.1 **无正文变更**、仅标记确认；枚举/API/CLI 全量 6 种（验收 ① 直接可证），占位 422 + 独立错误码 UNSUPPORTED_TYPE 语义清晰，F16 落地零接口变更（修订位置：§1 边界声明/§6.1/§7/§12）（F16 已交付——本决策已兑现，F14 spec §6.1/§12 已同步修订） |
-| Q2 | ✅ **已确认（用户拍板：选项 B + 附加要求设置项）**——**TIMELINE 类型在统一接口中的语义？** 选项 A：委托 F12 确定性检查（check_consistency，零新 LLM 管线，事件档案仍手工维护）；选项 B：新建「章节文本 → 时间线事件」LLM 提取管线（新模板 + 提取器 + 事件合并，约 +1.5 人天）；选项 C：TIMELINE 从提取类型中剔除（与 PRD P1-06 6 种列表冲突） | 估算（4-6 → 5.5-7.5 人天）与 F12 边界声明；「时间线提取」是否 PRD 本意 | **B（已确认）**：新建时间线提取管线 + **设置项 `timeline_auto_extract`（默认 false，请求/CLI 可覆盖）**——AI 自动写事件档案需用户显式开启；关闭时退回 F12 确定性检查（两种语义并存）；§5.4 伏笔管线模式直接复用（管线同构）（修订位置：§2.6/§5.5/§6.1/§6.4/§7/§8/§12/§13 M5b） |
-| Q3 | ✅ **已确认（用户拍板：综合方案）**——**增量提取的变更追踪粒度？** 选项 A：按源 hash（章节/文本内容 sha256，MVP 方案）；选项 B：按实体字段级 diff（追踪每个实体最后提取的章节与字段来源，只重提取含变更字段的实体）；选项 C：updated_at 时间戳（章节 updated_at > 上次 run_at 才重跑） | 验收标准 ② 的实现口径；LLM token 节省上限 vs 实现复杂度 | **综合方案（已确认）**：保留源 sha256 hash 增量（选项 A 核心，§5.2）+ **事件-章节联动**（F12 事件 `source_chapter_id` 字段——章节变更 → 重提取 → 按 (project_id, title, source_chapter_id) 匹配更新，精确提取 + 联动，§2.6/§5.5）；实体级字段 diff 仍归 Phase 2+；C（updated_at）维持否决（修订位置：§2.6/§5.5/§8 跨模块 MODIFY/§12/§13 M5b/M10） |
-| Q4 | ✅ **已确认（用户拍板：选项 A 全书级）**——**章节 x/y 的语义与卷信息表达？** 选项 A：全书级 chapter_x/chapter_y（第 x 章/共 y 章，按 order_index 全局排序），有卷时附加 volume_title（卷内序后置 P2）；选项 B：卷内级（卷内第 x 章/卷内共 y 章），无卷项目退化全书级；选项 C：两者都写（volume_index/volume_title + 全书 chapter_x/chapter_y + 卷内 chapter_x_in_volume） | 检索结果「第几卷·第几章」展示口径；§5.6.4 元数据字段 + _map_retrieved 展示 + 测试契约 | **A（已确认）**：全书级复用 order_index 排序零额外 join，卷信息仅附 volume_title 展示（「第 y 章」= 全书序）；卷内序 P2 再补（§5.6.4 元数据表已按全书级起草，正文无变更） |
-| Q5 | ✅ **已确认（用户拍板：M3 先行 + M4 后续批次）**——**三档切片交付节奏（M3 先行 vs 同批）？** 选项 A：0.9.0 同批交付三档（段落+对话+LLM 一起实现合入）；选项 B：M3（段落+重叠+元数据+指纹联动）先行合入，M4（对话+LLM）作为同里程碑后续批次 | §13 M12/M13 实现分批与后续会话提示词拆分 | **B（已确认）**：issue 已分 M3/M4 两层、成本递增、LLM 档需真实对话体样本验证（QA §2.5）；spec 一次写全、实现分批——M12（#277 M3）先行合入，M13（#278 M4）同里程碑后续批次（修订位置：§13 M12/M13 标注交付节奏） |
-| Q6 | ✅ **已确认（选项 A，按建议——用户未单独拍板，正文已按 A 起草）**——**切片配置的 CLI 暴露面？** 选项 A：仅 app_settings（GET/PATCH /settings + 现有 config/settings CLI），reindex 不加覆盖参数；选项 B：额外加 CLI `vector reindex --chunk-mode/--chunk-size/--overlap` 显式覆盖（需求文档 §2.3 建议） | §3/§4/§10 的 CLI 覆盖参数是否落地 | **A（已确认）**：本次最小，配置经 app_settings 持久化（§5.6.3），reindex 不加覆盖参数（YAGNI）；CLI 覆盖后置 P2（§10） |
-
----
-
-## 14. 动作确认
-
-> 每个端点/命令的完整状态流表（基于 §3 API + §4 CLI + §7 边界事实，不重复）；增量提取语义基于 §5.2/§6.2/§6.3。
-
-### 14.1 端点状态流（4 端点，§3.1）
-
-| 端点 | 前置条件 | 动作/状态转换 | 成功 | 失败 | 边界 |
-|------|---------|--------------|------|------|------|
-| POST /api/v1/extract | 项目存在 | 门面校验项目（404）→ 注册表查 handler（未注册 → 422 防御）→ 类型输入约束（422）→ 增量判定（hash 比对，skip 不调 LLM）→ 逐源执行 → 每源成功后 upsert run → index=true 时索引本次产物 | 200 + ExtractionResult（status=success/skipped；processed_sources/skipped_sources/created/updated/warnings/model/indexed/detail） | 404「项目不存在」；422「text 与 chapter_ids 不能同时使用」/「character/setting/foreshadowing 类型必须提供 text 或 chapter_ids」/「outline 类型不支持 text/chapter_ids（使用 prompt/num_chapters）」/「时间线自动提取未开启（配置 timeline_auto_extract）」/「章节不存在」（含软删）/「章节不属于该项目」/「章节内容超过提取上限（50000 字符）」/非法 type（Pydantic 枚举）；500「LLM 调用失败: ...」/「角色提取失败: 2 次修复重试后仍无法解析为合法 JSON（...）」/「RAG 向量库不可用: ...」 | 全源未变更且 not force → 200 status=skipped 零 LLM（skipped_reason「内容未变更（源: chapter <id>/manual）」）；force=true 强制重跑；outline 每次执行（save=false 预览不落库）；timeline 关闭 → F12 确定性检查（无 LLM）；STYLE → F16 确定性分析（created=0/updated=0/model=None）；index=true 对 outline/timeline(关闭)/style → indexed=false + warning 不报错；text 与 chapter_ids 互斥；手动模式 source_key=manual |
-| GET /projects/{project_id}/extractions/runs | 项目存在 | 增量状态列表（type 过滤 + 分页，run_at DESC） | 200 + {items,total,offset,limit}（ExtractionRun：content_hash/status/created_count/updated_count/error/model/indexed） | 404「项目不存在」 | limit ge=1 le=100；status=success/skipped/error（error 行仅防御保留——失败源实际不写 run，无 run 行=缺口） |
-| POST /projects/{project_id}/vector/reindex | 项目存在 | 全量重建索引（F9-F13 档案 + F2 章节 → 向量库，幂等 upsert） | 200 + ReindexResult（entity_types/indexed/warnings） | 404「项目不存在」；500「RAG 向量库不可用: ...」（未装配/BGE 下载失败/chroma 错误） | entity_types 缺省=全部 5 种；空项目 → indexed=0；切片配置经 app_settings（reindex 不加覆盖参数）；切片 LLM analyzer 失败 → 降级段落切片不中断 |
-| POST /projects/{project_id}/vector/retrieve | 项目存在 | 语义检索（query/entity_types/top_k/min_score） | 200 + {items: [RetrievedEntity]}（relevance_score 降序） | 404「项目不存在」；422（top_k 越界/min_score 越界/query 空或超 500）；500「RAG 向量库不可用: ...」 | 无结果/min_score 过滤全空 → 200 空 items；旧向量缺新元数据键 → .get() fallback 不崩；切片配置变更 → stale（chunking_changed）提示重新向量化 |
-| POST /projects/{project_id}/extractions/rollback | 项目存在 | 按 batch_id 单事务删除本次新建条目（§5.8.5） | 200 + RollbackResult{batch_id, deleted, warnings} | 404「项目不存在」；422 batch_id 空白 | 幂等（重复回滚 deleted=0 不报错）；更新条目不改写 batch_id 故不受影响 |
-
-### 14.2 CLI 命令状态流
-
-| 命令 | 前置 | 动作 | 成功 | 失败 | 边界 |
-|------|------|------|------|------|------|
-| extract run | 项目存在 | 统一提取（--text/--text-file/--chapters 三选一互斥；--force 强制重跑；--index 自动索引；--auto-extract 仅 timeline；--no-save 仅 outline） | 「✅ 提取完成: character 处理 2 个源（跳过 0），新增 3 更新 2，警告 1 条」/「⏭ 提取跳过: character 内容未变更（源: chapter ...），未调用 LLM」；--json 信封 | 404 NOT_FOUND；422 VALIDATION_ERROR；500 LLM_ERROR/EXTRACTION_ERROR/RAG_ERROR | --text 与 --text-file 同传 → 退出码 2；--type 非法 → 退出码 2（Typer Choice）；UNSUPPORTED_TYPE 已随 F16 删除 |
-| extract status | 项目存在 | 列出各 (type, 源) 最近一次 run 状态（--type 过滤） | 「📋 提取状态（project ...）: [character] <source_key> — ✅ success (..., 新增 2 更新 1, 已索引)」/「⏭ skipped」/「❌ error」 | 404 | 缺 run 行 = 失败缺口（error 行仅历史兼容/防御保留） |
-| vector reindex | 项目存在 | 全量重建索引（--type 可重复指定，缺省全部 5 种） | 「✅ 索引完成: character/setting/... 共 87 条」/ --json | 404；500 RAG_ERROR | 幂等（全量 upsert） |
-| vector retrieve | 项目存在 | 语义检索（--top-k 默认 10；--min-score 默认 0.0） | 「🔍 检索结果 (query: ..., top 5): 1. [foreshadowing] 林晚的身世 — 0.82」；--json 信封 | 404；422 VALIDATION_ERROR；500 RAG_ERROR | 缺 --query → 退出码 2 |
-| extract rollback（#1485） | 项目存在 | 按 --batch-id 整批回滚新建条目 | 「↩️ 已回滚批次 ext-xxxx：删除 N 条」/ --json RollbackResult | 404 NOT_FOUND；422 VALIDATION_ERROR（batch_id 空白） | 幂等（重复回滚 deleted=0）；缺 --batch-id → 退出码 2 |
-
-> 错误码：NOT_FOUND / VALIDATION_ERROR / LLM_ERROR / EXTRACTION_ERROR / RAG_ERROR / DB_ERROR（F14 是首个同时携带 LLM/管线/RAG 三类错误的模块）。
-
-### 14.3 增量提取语义（幂等/去重/部分失败/重试/回滚——§5.2/§6.2/§6.3/§7 事实）
-
-| 语义 | 规则 | 边界/依据 |
-|------|------|----------|
-| 幂等（同源同内容重跑） | 源 sha256 == run.content_hash 且 not force → skip，零 LLM 调用；全源 skip → 200 status=skipped + skipped_reason「内容未变更（源: chapter <id>/manual）」，并对**首个源** upsert 一行 skipped（记录确认事实） | §5.2/§6.2/§6.3；skip 判定先于 LLM（纯本地 O(n) 计算） |
-| 幂等（模块合并兜底） | 即使 hash 判定失效重跑，character/setting/foreshadowing/timeline 合并均为空 diff（同名匹配 + 非空字段覆盖后值不变）——与 hash 双保险 | §5.2「与模块幂等性叠加」；§5.4/§5.5 幂等性验收点 |
-| 去重（合并锚点） | foreshadowing 按 (project_id, title) 活动伏笔匹配（软删同名 → 视为不存在新建 + warning）；timeline 按 (project_id, title, source_chapter_id) 匹配（F12 表无唯一约束，服务层 list_by_chapter 比对；手工事件 source_chapter_id=None 不参与匹配） | §5.4/§5.5 合并策略表 |
-| 部分失败（批量章节） | 第 N 章 LLM/解析失败 → 门面抛异常 → router 500；第 1..N-1 章**已落库 + run 已写**（success）；**失败源不写 run 行**（无 run 行 = 失败缺口信号） | §5.2 失败语义/§6.2/§7；失败即异常（ADR-012），不吞错 |
-| 重试（断点续跑） | 重跑同一请求 → 成功章 hash 相同自动 skip、失败章重新执行；extract status 可见成功章与失败缺口 | §5.2/§6.2/§7；增量提取验收标准 ② 的核心实证 |
-| 回滚 | 单源「提取+合并」内 DB 错误 → 该源事务整体回滚（无部分落库）；run upsert 失败 → 500 但**实体不回滚**（run 是副产物，失败不回滚实体） | §7（落库中途 DB 错误行/run 表 upsert DB 错误行） |
-| 强制重跑 | force=true 忽略 skip（run hash 更新，200 status=success）——作者想重新审视 LLM 结果 | §5.2/§6.3/§7 |
-| 内容变更联动（timeline 开启） | 章节 hash 变化 → 重提取 → 同 (title, source_chapter_id) 事件非空字段覆盖更新、新事件创建——**只增改不删除**（提取时事件不再出现也不删除；自动删除归 Phase 2+） | §5.5 事件-章节联动/§7 |
-| 章节软删/硬删（timeline 开启） | 软删 → 事件保留 source_chapter_id（历史来源锚点）；硬删 → FK ON DELETE SET NULL 置 None（事件保留、来源解除） | §5.5/§7 |
-
-### 14.4 验收锚点（写入 §14）
-
-- A1：同一章节第二次提交 → 200 status=skipped + skipped_reason「内容未变更（源: chapter 7a4f2c91-...）」、skipped_sources=1、model=null（未调用 LLM）
-- A2：--force 重跑未变更源 → 200 status=success（强制执行，run hash 更新）
-- A3：批量 2 章、第 2 章失败 → 500；runs 列表第 1 章 success 行存在、第 2 章无 run 行；重跑同请求 → 成功章 skip、失败章执行（断点续跑）
-- A4：同文本重复提取 foreshadowing / timeline（开启）→ 第二次 created=0/updated=0（合并幂等）
-- A5：vector reindex 空项目 → 200 indexed=0；重复 reindex 幂等（全量 upsert）
-- A6：index=true 但 RAG 未装配 → 500「RAG 向量库不可用: ...」；非 RAG 功能不受影响（index=false 正常）
-- A7：timeline 设置项关闭 + 携带 chapter_ids → 422「时间线自动提取未开启（配置 timeline_auto_extract）」
-- A8：手动模式重复提交同一文本 → 200 status=skipped（source_key=manual 同 hash）
-- A9（#1485）：setting 提取在已有分类「修炼体系」的项目上 → 产出的条目类别命中已有分类；
-  LLM 给出项目分类之外的类别 → 落空串 + warning（不再原样落库）
-- A10（#1485）：同一次 request 的全部新建条目共享同一 `batch_id`；
-  `extract rollback --batch-id <该值>` → 删除全部新建条目且不影响此前数据；重复回滚 → deleted=0
-- A11（#1485）：同一 mock LLM 输出下 `--granularity coarse` 落库条目数严格少于 `fine`
-- A12（#1485）：`--dry-run` → 返回 created/updated 计数且 DB 零写入（实体计数 + run 表回读均不变）
-- A13（#1485）：已有条目「A」+ LLM 输出近义条目「A 的近似名」 → 走合并更新（created=0/updated=1），
-  条目总数不增；无关条目仍新建（反向守护）
-
-### 14.5 Spec 漂移标注（追加时核对实现 backend/src/inkflow/）
-
-- **top_k 边界漂移（已修复 2026-08-29）**：原 spec §7 写「1-100」；实现 `RetrieveBody` validator 为「top_k 必须在 1-50 之间」+ 测试 `test_retrieve_top_k_out_of_range_422`（0/51 → 422）锁定 1-50——**已改 spec §7 为 1-50**（实现+测试一致，spec 落后）。
-- **端点面漂移（已补全 2026-08-29）**：原 spec §3.1 声明 4 端点；实现 extractions.py 另有 `GET /vector/status`（#276）+ `PUT /vector/embedding-model`（#525）——**已补入 §3.1（共 6 端点）**。
-- **LLM 错误文案漂移（轻微）**：spec §3.4 示例 `LLM 调用失败: ...`；实现固定「LLM 调用失败，请稍后重试」（同 F9-F11）——以实现为准，spec 示例待后续同步（cosmetic）。
-- **增量核心语义无漂移**：hash skip / force / 逐源 run upsert（success）/ 全 skip 首源 upsert skipped / 失败即异常（失败源无 run 行）/ 断点续跑，与 spec §5.2/§6.2 完全一致（已逐行核对 extraction_service.py `_resolve_sources`/`_run_sources`）。
-
----
-
-## 15. 修改履历
-
-| 日期 | 变更 | 依据 |
-|------|------|------|
-| 2026-10-07 | 新增 §5.8「提取写入策略」五条（类别归属归一 / 近义合并 / 粒度控制 / dry-run 预览 / batch_id 整批回滚）；`ExtractionRequest` 增 `granularity`·`dry_run`，`ExtractionResult` 增 `batch_id`，新增 `Granularity`·`RollbackResult`；§3.1 端点 6 → 7（新增 rollback）；§4.1 增 `--granularity`/`--dry-run` 与 `extract rollback` 命令；§6.4 输入约束表增 `granularity`/`dry_run` 两列 | #1485（0.17.0 W5b） |
-| 2026-10-07 | 边界：新列 `world_settings.batch_id` / `characters.batch_id`（可空 TEXT）+ 幂等迁移三件套 | #1485（0.17.0 W5b） |
-| 2026-10-09 | §5.9「过期清理」从「仅登记语义、不实现」改为「已实现」：内核启动期幂等清理超期未确认暂存行（`core/startup_cleanup.py: cleanup_expired_staging` → `SQLExtractStagingRepository.delete_expired`，阈值常量 30 天、失败不阻塞启动、不新增索引/迁移）；§5.9 · §6.1 注明知识关系 stage「只算不写」经 F48 `RelationExtractionService.extract_rules` 公开 compute-only 入口（私有 `_extract_rules` 升公开，消除跨模块私有调用，算法与语义不变） | #1551（0.17.0 W8c） |
-| 2026-10-10 | **§5.8.1 类别归属改为「拒绝而非写空」**（取代 #1485 的静默归空）：LLM 产出的**非空且未注册**类别 → 抛 `WorldCategoryNotRegisteredError`（422，列出全部缺失分类名）+ 该批次正式表零写入；**项目无分类时同样拒绝**（替代旧「无分类 → 原样落库」）；**空类别不拒绝**（维持未分类）；**与 #1482 复制路径 `--auto-create-categories` 显式区分**（那是用户显式开关，行为不变）。§5.8.4 注明 dry_run 同样受校验；§7 边界表同步；新增错误类属 `WorldServiceError`（F14 router 新增 `WorldCategoryNotRegisteredError → 422` 映射） | #1570（0.17.0 W10b） |
-| 2026-10-10 | 新增 §5.6.8「hnsw 段就绪判定」（#1563）：**实测根因（确定性复现 + 二分）** = chroma 1.5 中「一次别的 collection 的写」会让本 collection 的 `METADATA.max_seq_id` 领先 `VECTOR.max_seq_id` 且**不再自动追赶**（需对本 collection 再写一次才 apply）→ 带 `where` 的读 plan 抛 `Error finding id`；`reindex` 的 commit-last 指纹写（`inkflow_meta`）恒为最后一次写 → reindex 返回后目标 collection 必然不可读，「第二次调用就好」的真实机制是服务层自愈又写了一次本 collection。**证伪 issue 原诊断**：非 flush 窗口（只等待 ≥60s 永不恢复）、文件系统判据无效（段文件全部在位）。**证伪原拍板修复**：A（读侧等待）+B（写侧同形探针）+C（文案）实测不足以修复。§5.6.8 固化根因 + 动作矩阵 + 已实施 A′+C（读侧空写自愈 + 文案），删除读侧固定次数重试与 1.5s 预算 | #1563（0.17.0 rc2 修复） |
-| 2026-10-11 | §5.9 补「列表端点（#1581）」与「前端生命周期（#1582）」两段：列表端点形状冻结（批次数口径）；GUI 会话提升到全局 store + 挂 App 层 → 宿主卸载后批次仍可恢复（关框只清结果视图），`stage`/`confirm`/`cancel`/过期清理四条语义不变 | #1581 / #1582（0.17.0 rc3 反馈修复批 W11a） |
