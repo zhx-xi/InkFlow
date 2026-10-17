@@ -39,7 +39,7 @@
   - 内容区三态：加载骨架（library-list 容器内 3 行 Skeleton）/ 加载失败（library-error + library-retry 重试按钮）/ 按 activeCat 分派视图（knowledge → KnowledgeGraphView；world 工作台 → MapWorkbench；outline → OutlineTree；world → WorldCategoryToolbar+WorldNodeView 树；timeline → TimelineView；其余 → LibraryItemList）
   - 无项目空态（library-empty）：虚线圆角卡片居中，Library 图标 +「选择或新建项目开始构建设定」+ 前往项目页按钮（library-go-projects）
 - 布局说明：纵向单栏——标题 → 项目上下文行 → tab 栏 → 内容区；弹层（创建/编辑对话框、删除确认、角色详情、复制、关系表单等）统一挂页面根部；全局反馈走 toast 三态（ok/err/warn，§14.2 约定）
-- 分页条（#1300 / PR #1314，公共组件 `components/Pagination.tsx`）：仅 **characters / foreshadow**（`PageableCatKey`）分页列表下方渲染；`library-page` 前缀，容器 `mt-4 justify-end`；左「每页条数」Select（默认 50 = `LIBRARY_PAGE_SIZE`）→ 「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→ 「下一页」。服务端切片（`useLibraryPagedList`，`limit/offset`，`hooks/useLibraryPagedList.ts:27`）；**world 全量取数不分页**；首页 prev 禁用 / 末页 next 禁用；total ≤ pageSize 时组件仍渲染（双向禁用）
+- 分页条（公共组件 `components/Pagination.tsx`）：仅 **characters / foreshadow**（`PageableCatKey`）分页列表下方渲染；`library-page` 前缀，容器 `mt-4 justify-end`；左「每页条数」Select（默认 50 = `LIBRARY_PAGE_SIZE`）→ 「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→ 「下一页」。服务端切片（`useLibraryPagedList`，`limit/offset`，`hooks/useLibraryPagedList.ts:27`）；**world 全量取数不分页**；首页 prev 禁用 / 末页 next 禁用；total ≤ pageSize 时组件仍渲染（双向禁用）
 - 分类内容区细节见各分类规格：characters.md / world.md / outline.md / timeline.md / foreshadow.md / knowledge.md
 
 ## 2. 动作样式（按钮 × 状态表）
@@ -50,16 +50,16 @@
 | 分类 tab（library-tabs） | 当前分类 accent 下边框 | handleTabChange → URL cat 同步 + 内容重载 | 拉取中 → 内容区骨架 | 新分类视图渲染 | 拉取失败 → 错误态可重试 | 侧边导航 /library?cat=x 直达联动（URL 变化反向同步 tab）；切换时重置角色详情面板 |
 | 前往项目页（library-go-projects） | 空态主按钮 | navigate('/projects') | — | 路由切换 | — | 仅 currentProjectId===null 时渲染 |
 | 去创建（library-create-btn） | accent 主按钮（列表非空时） | 打开 LibraryCreateDialog（cat=activeCat，编辑态空） | 保存中按钮禁用 | 保存成功 → 关框 + reloadKey 刷新列表 | err toast，对话框保持可改重试 | knowledge 不渲染；world 需选中分类（语义=创建子条目）；outline 不渲染；world 工作台态隐藏；空列表由空态 CTA 覆盖 |
-| 待确认提取（extract-pending-entry） | 描边按钮 + 角标「N」（**仅 N>0 渲染**） | 展开批次面板（extract-pending-panel，右对齐下拉）；行内四动作：**详情**（#1590 → 右侧详情面板）· 查看（→ 还原该批结果视图）· 取消（#1590 → **先弹二次确认**，确认后才清暂存）· 确认落库（批次级物化）；**整行可点 = 详情** | 面板内行操作进行中 | 确认 / 取消后角标同步下降 | 无批次 → 入口不渲染；列表拉取失败 → 空面板 + err toast | 计数 = **批次数**（非条目数）；按 currentProjectId 拉取、切项目重算（不串项目）；「查看」与「详情」都走既有 GET .../extractions/staging/{batch_id}（不新增端点） |
-| AI 提取（extract-entry-lib） | 描边按钮 | 打开 AIExtractDialog（类型/范围选择，见 §2.1） | 提取中（extract.running） | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；类型=角色/世界观/时间线/伏笔/知识图谱（单选）+ 通用多选；范围=全文/按卷/按章（多选+区间）；章节下拉**全量加载**（#1407：翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
+| 待确认提取（extract-pending-entry） | 描边按钮 + 角标「N」（**仅 N>0 渲染**） | 展开批次面板（extract-pending-panel，右对齐下拉）；行内四动作：**详情**（→ 右侧详情面板）· 查看（→ 还原该批结果视图）· 取消（**先弹二次确认**，确认后才清暂存）· 确认落库（批次级物化）；**整行可点 = 详情** | 面板内行操作进行中 | 确认 / 取消后角标同步下降 | 无批次 → 入口不渲染；列表拉取失败 → 空面板 + err toast | 计数 = **批次数**（非条目数）；按 currentProjectId 拉取、切项目重算（不串项目）；「查看」与「详情」都走既有 GET .../extractions/staging/{batch_id}（不新增端点） |
+| AI 提取（extract-entry-lib） | 描边按钮 | 打开 AIExtractDialog（类型/范围选择，见 §2.1） | 提取中（extract.running） | 完成 toast + 最近提取记录 | 失败 toast | 仅 currentProjectId 非 null 渲染；类型=角色/世界观/时间线/伏笔/知识图谱（单选）+ 通用多选；范围=全文/按卷/按章（多选+区间）；章节下拉**全量加载**（翻页取满章节列表 `total`，>50 章项目可选第 51 章起） |
 | 顶部保存指示（lib-save-indicator） | 不渲染（idle） | 编辑保存发起 → saving | 「保存中…」 | 「已保存」2s 自动隐藏（timer 清理防重叠） | 失败回 idle + err toast | 仅编辑（PATCH）路径驱动；创建/删除保持 toast 语义 |
 | 加载骨架 | 3 行 Skeleton | — | — | 数据到达渲染列表 | — | 骨架保持至请求 settle |
 | 失败重试（library-retry） | 「加载失败，请重试」+ 重试按钮 | reloadKey+1 重新拉取 | 骨架 | 列表渲染 | 再次失败仍错误态 | 重试不丢当前分类与 URL |
 | 分页条（library-page） | 首页：prev 禁用 / next 可用（total > pageSize 时）；信息「第 1 / {m} 页 · 共 {k} 条」 | 「下一页」→ setPage(p+1) → 服务端按 `offset=(p+1)*50` 重拉；「上一页」→ setPage(p-1) | 列表区保持骨架/旧数据（hook 内部 loading） | 列表换页 + 信息更新 | 拉取失败 → 走既有错误态（library-error） | 仅 characters/foreshadow 渲染；末页 next 禁用；total ≤ 50 → 双向禁用；「每页条数」Select 变档（默认 50） |
 
-### 2.1 AI 提取对话框（#1528 / #1544：类型面 + 范围面）
+### 2.1 AI 提取对话框（类型面 + 范围面）
 
-> 原型：`design/GUI/library/library.html`（`extract-single` / `extract-generic` 两态；#1566/#1567 增补 `extract-timeline` 来源页默认类型 · `extract-chapter` 按章范围块（非法提示）· `extract-chapter-overlap` 重叠提示）+ `library-extract-single.png` / `library-extract-generic.png` / `library-extract-timeline.png` / `library-extract-chapter.png` / `library-extract-chapter-overlap.png`
+> 原型：`design/GUI/library/library.html`（`extract-single` / `extract-generic` 两态；另含 `extract-timeline` 来源页默认类型 · `extract-chapter` 按章范围块（非法提示）· `extract-chapter-overlap` 重叠提示）+ `library-extract-single.png` / `library-extract-generic.png` / `library-extract-timeline.png` / `library-extract-chapter.png` / `library-extract-chapter-overlap.png`
 
 ```text
 ┌─ AI 提取 ──────────────────────────────────────────── × ┐
@@ -83,12 +83,12 @@
   - 单次 `chapter_ids` **≤ 100**（后端 `ExtractionRequest` validator）；超出**自动分批**（每批 ≤ 100，多请求）
   - `timeline`：只发 `chapter_ids` + `auto_extract: true`（后端只收章节模式，不收 `text`）
   - `knowledge_relation`：**不带** `text` / `chapter_ids`（项目级提取）
-- 章节 / 卷列表**全量加载**（#1407：翻页取满 `total`；卷→章用章节的 `volume_id` 归并）
-- **默认类型随来源页**（#1566）：弹框接受来源页传入的默认类型（prop `initialKind`），打开即**单选**选中该页自身类型 —— 角色页→`character`、世界观页→`world`、时间线页→`timeline`、伏笔页→`foreshadowing`、知识图谱页→`knowledgeGraph`；**每次打开按来源页重置**（资料库入口跨分类复用同一实例，故不能只在挂载时取初值）；无来源页上下文（写作页、大纲页）→ 回落 `character`，不报错。「通用」多选**不预选**（要同时提多类由用户自行切「通用」）。
-- **按章范围块**（#1567）：已添加的每个 `{from,to}` 在「按章」输入区**下方**渲染为可读 chip（`第 {from}–{to} 章`），每块带 `×` 删除入口（容器 `ai-extract-range-list`、单块 `ai-extract-range-chip`、删除钮 `ai-extract-range-remove`）；删除后 chips 与提交集合同步。
-- **非法输入就地提示 + 重叠提示**（#1567）：空 / 非数字 / `< 1` / 起 > 止 → 就地红字提示（`ai-extract-range-error`，复用 `text-err` 12px 校验风格），**不再静默 return**；重复/重叠区间**只提示不合并**（`extract.rangeOverlap`，两段 chip 均保留），提交时按**并集**去重；「界面所见范围块之并集 = `resolveChapterIds` 产出集合」。
+- 章节 / 卷列表**全量加载**（翻页取满 `total`；卷→章用章节的 `volume_id` 归并）
+- **默认类型随来源页**：弹框接受来源页传入的默认类型（prop `initialKind`），打开即**单选**选中该页自身类型 —— 角色页→`character`、世界观页→`world`、时间线页→`timeline`、伏笔页→`foreshadowing`、知识图谱页→`knowledgeGraph`；**每次打开按来源页重置**（资料库入口跨分类复用同一实例，故不能只在挂载时取初值）；无来源页上下文（写作页、大纲页）→ 回落 `character`，不报错。「通用」多选**不预选**（要同时提多类由用户自行切「通用」）。
+- **按章范围块**：已添加的每个 `{from,to}` 在「按章」输入区**下方**渲染为可读 chip（`第 {from}–{to} 章`），每块带 `×` 删除入口（容器 `ai-extract-range-list`、单块 `ai-extract-range-chip`、删除钮 `ai-extract-range-remove`）；删除后 chips 与提交集合同步。
+- **非法输入就地提示 + 重叠提示**：空 / 非数字 / `< 1` / 起 > 止 → 就地红字提示（`ai-extract-range-error`，复用 `text-err` 12px 校验风格），**不再静默 return**；重复/重叠区间**只提示不合并**（`extract.rangeOverlap`，两段 chip 均保留），提交时按**并集**去重；「界面所见范围块之并集 = `resolveChapterIds` 产出集合」。
 
-### 2.2 AI 提取结果视图 + 最小化（#1532 / #1546）
+### 2.2 AI 提取结果视图 + 最小化
 
 > 原型：`design/GUI/library/library.html`（`extract-result` / `extract-min` 两态）+ `library-extract-result.png` / `library-extract-min.png`
 
@@ -116,7 +116,7 @@
   `ai-extract-updated` / `ai-extract-updated-item` / `ai-extract-confirm` / `ai-extract-cancel` /
   `ai-extract-min` / `ai-extract-float`
 
-### 2.3 待确认提取入口 + 浮窗生命周期（#1582）
+### 2.3 待确认提取入口 + 浮窗生命周期
 
 > 原型：`design/GUI/library/library.html`（`extract-pending-panel` / `extract-float-pending` /
 > `extract-close-prompt` 三态）+ `library-extract-pending-panel.png` / `library-extract-float-pending.png`
@@ -152,7 +152,7 @@
 - testid：`extract-pending-entry` / `extract-pending-panel` / `extract-pending-item` /
   `extract-pending-view` / `extract-pending-confirm` / `extract-pending-cancel`
 
-### 2.4 取消二次确认 + 条目详情右侧面板（#1590）
+### 2.4 取消二次确认 + 条目详情右侧面板
 
 > 原型：`design/GUI/library/library.html`（`extract-pending-cancel-prompt` / `extract-pending-detail`
 > 两态）+ `library-extract-pending-cancel-prompt.png` / `library-extract-pending-detail.png`
@@ -200,29 +200,21 @@
 - N3：项目选择器切换 → 内容按新项目重载 + 面包屑项目名同步
 - N4：加载骨架 / 失败重试闭环
 - N5：「去创建」与「AI 提取」按分类可见性规则正确显隐（knowledge 无创建；world 需选中分类；outline 树内创建）
-- N6（#1300 / PR #1314）：characters / foreshadow 分类列表下方渲染分页条（`library-page` 前缀）——首页 prev 禁用、末页 next 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 50/页）；点「下一页」→ 服务端按 offset 重拉且 total 不变；world 分类**不**渲染分页条（全量取数）
-- N7（#1528 / #1544）：AI 提取对话框类型单选含**时间线 / 伏笔 / 知识图谱**（共 6 项含「通用」）；中英文 i18n 键对齐
-- N8（#1544）：**通用**多选 → 每选中类型各发一次 `POST /api/v1/extract`，`type` 映射正确；`knowledge_relation` 不带源、`timeline` 带 `chapter_ids` + `auto_extract`
-- N9（#1544）：范围「全文」→ `chapter_ids` = 全部章；「按卷」多选 → 选中卷全部章；「按章」区间 → 展开；单批 > 100 章 → 自动分批
-- N10（#1532 / #1546）：提取成功 → 对话框切结果视图（新增/更新清单）；提交带 `stage: true`；正式表零变更（确认前）
-- N11（#1546）：「确认落库」→ 调 confirm 端点（带 `batch_id`）→ 关框 + ok toast；「取消」→ 调 cancel 端点 → 关框
-- N12（#1546）：提取进行中可最小化 → 对话框收起 + 右下角 `ai-extract-float` 浮窗；点浮窗「还原」恢复对话框
-- N13（#1566）：弹框默认类型**随来源页**——从时间线页打开 → 「时间线」单选即选中；角色 / 世界观 / 伏笔 / 知识图谱页各自对应；无来源页上下文 → 回落「角色」且不报错；「通用」多选默认不预选（与 #1544 类型面不冲突）
-- N15（#1582）：提取最小化后**跨路由 / 宿主页重挂载**，浮窗仍在；点「还原」可见结果视图（新增/更新清单）
-- N16（#1582）：存在「待确认提取（N）」入口；重开 App / 刷新后仍能列出未确认批次并可 查看 / 确认落库 / 取消；
+- N6：characters / foreshadow 分类列表下方渲染分页条（`library-page` 前缀）——首页 prev 禁用、末页 next 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 50/页）；点「下一页」→ 服务端按 offset 重拉且 total 不变；world 分类**不**渲染分页条（全量取数）
+- N7：AI 提取对话框类型单选含**时间线 / 伏笔 / 知识图谱**（共 6 项含「通用」）；中英文 i18n 键对齐
+- N8：**通用**多选 → 每选中类型各发一次 `POST /api/v1/extract`，`type` 映射正确；`knowledge_relation` 不带源、`timeline` 带 `chapter_ids` + `auto_extract`
+- N9：范围「全文」→ `chapter_ids` = 全部章；「按卷」多选 → 选中卷全部章；「按章」区间 → 展开；单批 > 100 章 → 自动分批
+- N10：提取成功 → 对话框切结果视图（新增/更新清单）；提交带 `stage: true`；正式表零变更（确认前）
+- N11：「确认落库」→ 调 confirm 端点（带 `batch_id`）→ 关框 + ok toast；「取消」→ 调 cancel 端点 → 关框
+- N12：提取进行中可最小化 → 对话框收起 + 右下角 `ai-extract-float` 浮窗；点浮窗「还原」恢复对话框
+- N13：弹框默认类型**随来源页**——从时间线页打开 → 「时间线」单选即选中；角色 / 世界观 / 伏笔 / 知识图谱页各自对应；无来源页上下文 → 回落「角色」且不报错；「通用」多选默认不预选（与类型面不冲突）
+- N15：提取最小化后**跨路由 / 宿主页重挂载**，浮窗仍在；点「还原」可见结果视图（新增/更新清单）
+- N16：存在「待确认提取（N）」入口；重开 App / 刷新后仍能列出未确认批次并可 查看 / 确认落库 / 取消；
   N = 批次数（非条目数），confirm / cancel 后同步下降
-- N17（#1582）：有未确认结果时关闭对话框有可见提示（`extract.unconfirmedKept`）；library 与 writing
+- N17：有未确认结果时关闭对话框有可见提示（`extract.unconfirmedKept`）；library 与 writing
   两宿主页同走 `stores/extract.ts`（无页面级 extract state）
-- N14（#1567）：「按章」添加范围 → 输入区下方**立即出现范围块 chip**（`第 {from}–{to} 章` + `×`）；每块可**单独删除**，删除后 chips 与提交集合同步；非法输入（空 / 0 / 起 > 止）有**可见提示**、不静默丢弃；重叠**只提示不合并**（保留两段）；提交时 `resolveChapterIds` 产出的章节集合 = 界面所见范围块之并集；zh/en i18n 键对齐
-- N18（#1590）：面板行「取消」→ **先弹二次确认**（不立即删批）；三条出路 —— 右上角 **×** → `POST .../staging/{batch_id}/cancel` → 该批消失 + 角标 N 减 1（正式表零写入）；右上角 **—** → 弹窗与面板关闭、**零请求**、批次仍在；底部「返回」→ 弹窗关闭、面板保持打开、批次仍在
-- N19（#1590）：确认弹窗文案写明两条出路（**会清除**本批暂存 / 可点右上角「**最小化**」暂时保留），标题「取消这批提取？」
-- N20（#1590）：行内「详情」**或整行**（非按钮处）→ 右侧详情面板打开；字段与 `GET .../staging/{batch_id}` 的 `payload` **逐项一致**（含 `time_display` 原文 / `parse_reason`）；空字段显示占位文案、**不出现 `null`**；点选另一条目 → 明细同步切换
-- N21（#1590）：面板底部「确认落库」**未填时间时禁用**，填后 `POST .../items/{item_id}/confirm` 带 `time_value` / `time_unit`（条目级）；「丢弃」走 `DELETE .../items/{item_id}` 且**零物化**（不调 confirm）；处理完该批最后一条 → 面板自行关闭 + 入口角标同步
-
-## 4. 修改履历
-
-| 项 | 内容 | 修改履历 |
-|----|------|----------|
-| 取消二次确认 + 条目详情右侧面板 | #1590：面板行「取消」**点了即永久删批**（不可逆）→ 复用共享 `ConfirmDialog` 做二次确认（右上角 **×** = 确认取消 / **—** = 最小化保留（零请求）；底部 **返回** = 只关弹窗）；行内新增「详情」+ **整行可点** → 右侧详情面板（字段直读暂存 `payload`，空值给占位**不渲染 null**；底部**单一**动作区：确认落库（未填时间禁用，条目级端点）/ 丢弃（零物化））。原型增补 `extract-pending-cancel-prompt` / `extract-pending-detail` 两态 + PNG；待确认面板宽度 430→520（容纳四动作）。服务端语义不变、**零新端点**。 | 2026-10-12（#1590，0.17.0 rc4 反馈修复批 W12a 轨 2） |
-| 提取入口 / 浮窗生命周期 | #1582：浮窗与结果视图绑宿主页局部 state → 会话（`open`/`minimized`/`staged`/`initialKind`/`projectId`）提升到 `stores/extract.ts` + 挂 App 层（跨路由 / 重挂载存活，两宿主页同源）；新增「待确认提取（N）」工具栏入口（N = 批次数，查看 / 确认 / 取消）；关框改「清视图不清批次」+ warn 提示；浮窗文案随状态变。原型增补 `extract-pending-panel` / `extract-float-pending` / `extract-close-prompt` 三态 + PNG。 | 2026-10-11（#1582，0.17.0 rc3 反馈修复批 W11a 轨 2） |
-| 弹框默认类型随来源页 + 按章范围块 | #1566：弹框默认类型写死 `character` → 加 `initialKind` prop，由资料库 5 分类页传入（每次打开按来源页重置，缺省回落 `character`）。#1567：`ranges` state 零 JSX 渲染 + `addRange` 静默 return → 范围块 chip（`第 {from}–{to} 章` + `×` 删除）+ 非法输入就地提示；拍板：重叠**只提示不合并**、默认类型为各页**直接单选**自身类型（不预选「通用」）。原型增补 `extract-timeline` / `extract-chapter` / `extract-chapter-overlap` 三态 + PNG。 | 2026-10-10（#1566 / #1567，0.17.0 rc2 修复批 W10a 轨 4） |
+- N14：「按章」添加范围 → 输入区下方**立即出现范围块 chip**（`第 {from}–{to} 章` + `×`）；每块可**单独删除**，删除后 chips 与提交集合同步；非法输入（空 / 0 / 起 > 止）有**可见提示**、不静默丢弃；重叠**只提示不合并**（保留两段）；提交时 `resolveChapterIds` 产出的章节集合 = 界面所见范围块之并集；zh/en i18n 键对齐
+- N18：面板行「取消」→ **先弹二次确认**（不立即删批）；三条出路 —— 右上角 **×** → `POST .../staging/{batch_id}/cancel` → 该批消失 + 角标 N 减 1（正式表零写入）；右上角 **—** → 弹窗与面板关闭、**零请求**、批次仍在；底部「返回」→ 弹窗关闭、面板保持打开、批次仍在
+- N19：确认弹窗文案写明两条出路（**会清除**本批暂存 / 可点右上角「**最小化**」暂时保留），标题「取消这批提取？」
+- N20：行内「详情」**或整行**（非按钮处）→ 右侧详情面板打开；字段与 `GET .../staging/{batch_id}` 的 `payload` **逐项一致**（含 `time_display` 原文 / `parse_reason`）；空字段显示占位文案、**不出现 `null`**；点选另一条目 → 明细同步切换
+- N21：面板底部「确认落库」**未填时间时禁用**，填后 `POST .../items/{item_id}/confirm` 带 `time_value` / `time_unit`（条目级）；「丢弃」走 `DELETE .../items/{item_id}` 且**零物化**（不调 confirm）；处理完该批最后一条 → 面板自行关闭 + 入口角标同步
