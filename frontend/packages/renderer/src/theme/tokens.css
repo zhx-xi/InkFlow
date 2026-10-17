@@ -1,6 +1,6 @@
 /* ============================================================
    InkFlow 设计 Token — 三主题 × 背景变体
-   依据: design/gui-design-tokens-2026-08-03.md（评审通过）
+   依据: design/GUI/ 原型三主题 token 组 + specs/f19-gui/spec.md §4.3
    机制: CSS 变量 + data-theme/data-bg 属性（html 与 body 同步持有，
          原型踩坑：body 自带属性会覆盖继承值 → theme/index.ts 双写）
    ============================================================ */
