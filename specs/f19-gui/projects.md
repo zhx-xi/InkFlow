@@ -34,7 +34,7 @@
   - 网格：grid-cols-3 gap-5 项目卡片 + 末位虚线新建卡片（new-project-card，min-h 168px）；加载中显示 3 张骨架卡片（role=status）；加载失败显示错误横幅（projects-error）+「重试」按钮（projects-retry，`projects.tsx:168`）→ 点重试重跑 loadProjects；无项目显示空态引导（见 §1 三态）（BookOpen + 标题/副文案 + CTA）
   - 项目卡片：书名 + 标签全拼（逗号分隔，空标签不渲染行）+ 目标字数 + 章节进度 n/m（**全量口径** —— 分母 m 取 `GET /projects/{pid}/chapters` 响应体 `total`，分子 n 为全量章节中 `word_count > 0` 的条数；前端翻页取满，>50 章项目不再显示「n / 50」） + 相对更新时间（刚刚/n 分钟前/n 小时前/n 天前/n 周前）+ 进度条（role=progressbar）+ 右上角卡片菜单（MoreHorizontal）；当前写作项目 → accent 边框 + 「写作中」角标
   - 卡片菜单：修改 / 重命名 / 导出 / 删除 四项（点击外部关闭；Enter/Space 可达）
-  - 对话框族：新建（NewProjectDialog，遮罩点击不关闭 #195）/ 重命名（轻量单字段）/ 删除（ConfirmDialog danger）/ 导出（ExportDialog）——均遮罩不关闭，关闭仅 取消/Esc/成功
+  - 对话框族：新建（NewProjectDialog，遮罩点击不关闭）/ 重命名（轻量单字段）/ 删除（ConfirmDialog danger）/ 导出（ExportDialog）——均遮罩不关闭，关闭仅 取消/Esc/成功
 - 布局说明：项目页为居中限宽滚动页，上为标题与新建主入口，下为三列卡片网格。每张卡片聚合项目元信息与写作进度，末位虚线卡片作为第二新建入口。所有次级操作收纳进卡片右上角菜单，避免卡片表面堆叠按钮。
 
 ## 2. 动作样式（按钮 × 状态表，逐控件）
