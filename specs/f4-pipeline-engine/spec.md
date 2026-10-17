@@ -657,7 +657,6 @@ F4 被依赖:
 
 ## 附录：f87-langgraph-refactor（原独立 spec，容器化合并）
 
-> 本章节由原 `specs/f87-langgraph-refactor/spec.md` 合并而来（2026-08-29 spec 目录重构）。
 
 # F87: LangGraph 管线状态重构（StateGraph(dict) → TypedDict + reducer）
 
@@ -667,7 +666,6 @@ F4 被依赖:
 **类型**: 内部重构（无新用户功能，行为不变）
 **分支**: `feat/f87-langgraph-refactor`
 **依据**: AGENTS.md §5.1（spec 是唯一真相来源）· ADR-015（LangChain 全家桶，本重构不改变技术选型）· inkflow-dev `references/langchain-langgraph-stack.md` §6.2（方案已实测）
-**状态**: ✅ 已实现（PR #110）
 
 ## 1. 概述
 

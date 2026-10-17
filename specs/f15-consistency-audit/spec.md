@@ -498,7 +498,7 @@ inkflow audit check --project-id 00000000-0000-0000-0000-000000000000 --json
 ```
 
 **模式要点**:
-1. **零业务逻辑复制**：所有档案读取走各模块既有 Protocol（F9-F14 已实现）；时间线检查委托 F12 `TimelineService.check_consistency`（不重写算法）；F15 只做「读取 + 规则扫描 + 汇总」——同 F14 门面「不复制管线」的先例
+1. **零业务逻辑复制**：所有档案读取走各模块既有 Protocol（F9-F14）；时间线检查委托 F12 `TimelineService.check_consistency`（不重写算法）；F15 只做「读取 + 规则扫描 + 汇总」——同 F14 门面「不复制管线」的先例
 2. **项目校验单一入口**：服务层统一校验一次（404）；委托 F12 时其内部会再次校验（幂等，成本可忽略——保持 F12 不感知 F15，同 F14 要点 2）
 3. **规则全确定性**：每条规则是纯函数（输入 = 快照数据集，输出 = findings 列表），同一数据永远得到同一报告（快照断言友好，同 F12 §5 要点 1）
 4. **单次全量读取**：所有规则共享步骤 ② 的数据快照（角色/关系/分组/条目/事件/伏笔/章节/runs），**不逐规则重复查询**——审计是低频操作（量级 ≤ 数百条记录），一次读取 + 内存扫描总成本毫秒级
@@ -647,7 +647,7 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
        「伏笔 {title} 状态为 open 但存在 resolved_at（状态与时间戳矛盾）」
 ```
 
-> **引用完整性语义（v1.2 / #211 更新）**: ① 真删语义下**不存在「软删引用」这一档**——F9/F12/F13 的实体被删除后不保留记录，故引用目标要么活动、要么悬空，无中间状态；② **悬空（目标不在活动集合中）一律报 error**——这是唯一档——正常业务路径下 F9/F13/F14 的 FK ON DELETE SET NULL / 级联删除会阻止悬空产生（F2 章节为**硬删除**，事件 `source_chapter_id` 在章节删除时被 FK SET NULL 置 None，故 R-X1 只有 error 档、无软删分支，§5.5 注），error 级意味着「数据已处于异常状态」（历史迁移、手工 DB 操作、并发窗口），需要人工修复；③ 该判定与各模块 spec 的删除语义一一对应（F9 §2.4 级联物理删除、F13 §2.1 事件真删 → FK SET NULL 解除挂接、F14 §2.6 章节联动（按 F2 实际语义：章节硬删 → SET NULL）），审计不引入新语义。
+> **引用完整性语义**: ① 真删语义下**不存在「软删引用」这一档**——F9/F12/F13 的实体被删除后不保留记录，故引用目标要么活动、要么悬空，无中间状态；② **悬空（目标不在活动集合中）一律报 error**——这是唯一档——正常业务路径下 F9/F13/F14 的 FK ON DELETE SET NULL / 级联删除会阻止悬空产生（F2 章节为**硬删除**，事件 `source_chapter_id` 在章节删除时被 FK SET NULL 置 None，故 R-X1 只有 error 档、无软删分支，§5.5 注），error 级意味着「数据已处于异常状态」（历史迁移、手工 DB 操作、并发窗口），需要人工修复；③ 该判定与各模块 spec 的删除语义一一对应（F9 §2.4 级联物理删除、F13 §2.1 事件真删 → FK SET NULL 解除挂接、F14 §2.6 章节联动（按 F2 实际语义：章节硬删 → SET NULL）），审计不引入新语义。
 
 ### 5.5 跨维度联动规则明细（R-X1 / R-X2）
 
@@ -762,7 +762,7 @@ n_chapters ≥ 1 且 n_world == 0 → info「项目已有 {n} 个章节但尚未
 
 ## 8. 文件结构
 
-遵循 ADR-007v2 包结构，与真实源码树一一对应。新增/修改文件（**对照主仓 `backend/src/inkflow/` 真实树逐文件核对**——F9-F14 已合入 main，本节声明全部基于现行树）：
+遵循 ADR-007v2 包结构，与真实源码树一一对应。新增/修改文件（**对照主仓 `backend/src/inkflow/` 真实树逐文件核对**）：
 
 ```text
 backend/src/inkflow/
@@ -774,7 +774,7 @@ backend/src/inkflow/
 │   │   └── __init__.py        ← MODIFY: 导出新模型
 │   ├── ports/
 │   │   ├── audit_errors.py    ← CREATE: AuditServiceError / ProjectNotFoundError（404）
-│   │   ├── audit_repository.py ← 空壳保留（#211 后无软删集合查询；仅兼容
+│   │   ├── audit_repository.py ← 空壳保留（无软删集合查询；仅兼容
 │   │   │                            历史构造签名，见文件头注释）
 │   │   └── __init__.py        ← MODIFY: 导出
 │   └── services/
@@ -879,26 +879,6 @@ def get_audit_service(db: AsyncSession) -> AuditService:
         # (v1.1/#211) audit_repo 参数已移除
     )
 ```
-
-### 8.2 ~~AuditRepositoryProtocol（F15 自有补充查询端口 — 软删集合）~~【v1.2 / #211 已作废】
-
-> **本节的 `list_deleted` 契约与 `SQLiteAuditRepository` 实现已于 #211 删除**（F9/F12/F13 真删后无 `is_deleted` 列）。下方内容作为 v1.0 设计**历史快照**保留，**不作当前契约依据**。现行为：引用完整性规则以「目标不在活动集合即悬空 → error」单一档判定（§5.4 注）；`domain/ports/audit_repository.py` 文件仍存在但仅剩兼容历史构造签名的空壳（见其文件头注释）。
-
-```python
-# domain/ports/audit_repository.py —— v1.0 历史快照（#211 后 list_deleted 已删除）
-class AuditRepositoryProtocol(Protocol):
-    """~~审计软删集合补充查询端口~~ —— #211 真删语义下作废。
-
-    现行文件内容：仅保留空的 Protocol 定义以兼容历史构造签名；
-    list_deleted 方法与其实现 audit_repo.py 均已删除。
-    """
-```
-
-> **（v1.0 历史论证，v1.2/#211 起该端口已作废）为什么 audit_repo 曾是「F15 自己的 port」而非 MODIFY 既有 Protocol**: ① 软删集合查询是**审计特有的读取需求**——各模块业务 CRUD 不需要「列出软删实体」（`restore` 是单实体操作、`get` 排除软删），为审计给 F9/F12 加方法 = 扩大既有模块契约面；② F15 自有 port + 实现保持「零跨模块 MODIFY」的纯消费者定位（§11），新增代码全部收在 F15 文件清单内；③ 依赖方向合法：`domain/ports/audit_repository.py` 定义契约、`infrastructure/database/repositories/audit_repo.py` 实现（同其它仓储同构，ADR-002/003）；④ 测试简单：服务层 Mock 该 port、实现层 in-memory SQLite 集成测试（§9）。
-
-> **不新增依赖**: F15 无 LLM、无 RAG、无新表——`backend/pyproject.toml` 与 `core/config.py` **零变更**（无新依赖、无新配置项；审计为只读计算，无阈值/开关类配置——规则常量写代码常量，YAGNI）。
-
----
 
 ## 9. 测试策略
 
@@ -1049,7 +1029,7 @@ F15 被依赖:
 | M5 | 服务编排（分页循环全量读取 / 汇总计数 / consistent 语义 / findings 排序 / counts / 项目校验 404 / 失败传播 / 确定性快照断言） | `pytest backend/tests/unit/domain/services/test_audit_service.py -v` 全绿（编排用例） |
 | M6 | API GET /audit（成功路径 / 404 项目不存在 / 无效 UUID / 500 透传 / 幂等） | `pytest backend/tests/unit/api/routers/test_audit_api.py -v` 全绿 |
 | M7 | CLI audit 组（摘要两种形态 / --json 完整报告 / 退出码 0 语义 / NOT_FOUND / DB_ERROR / 缺参退出码 2）；**ci.yml `integration-cli-backend` job 显式列出 `tests/cli/test_cli_audit.py`** | `pytest tests/cli/test_cli_audit.py -v` 全绿 + CI job 覆盖确认（Issue #59/#61 教训） |
-| M8 | 手工验证闭环：真实项目全流程 | 手工验证（`inkflow project create` + `chapter create` 建 2+ 章 → `audit check` 见 info（未建档案/未提取章节）→ `character create` 建 2 角色 + `relation add` 建关系 → `world create` 建条目 → `timeline create` 建 3 事件制造逆序（如 5.0/3.0/4.0）→ `foreshadowing create --event-id ...` 建伏笔挂事件 → `audit check` 见：时间线 error（未声明倒叙）+ 其余维度干净 → `timeline update` 修正时间或加 flashback 标记 → `timeline delete` 软删某事件 → `audit check` 见伏笔锚点 warning（事件已软删）+ 时间线 error 消除 → `foreshadowing update --event-id \"\"` 解除挂接 → `audit check` 全维度 error=0（warning/info 可留）→ **悬空场景**：SQLite 直接插入一条 from/to 指向不存在角色的关系（`sqlite3 data.db "INSERT INTO knowledge_relations (project_id, source_type, source_id, target_type, target_id, relation_type) VALUES (1, 'character', 999, 'character', 998, '师徒')"`）→ `audit check` 见 R-C1 error「悬空引用」→ 删除该行 → 恢复一致；`--json` 信封与 summary.consistent 全程可断言；**#495 备注（2026-09-17）**：悬空行插入目标由 `character_relations` 表改为 `knowledge_relations` 的 character↔character 子空间——前者已随 #495 废弃删除） |
+| M8 | 手工验证闭环：真实项目全流程 | 手工验证（`inkflow project create` + `chapter create` 建 2+ 章 → `audit check` 见 info（未建档案/未提取章节）→ `character create` 建 2 角色 + `relation add` 建关系 → `world create` 建条目 → `timeline create` 建 3 事件制造逆序（如 5.0/3.0/4.0）→ `foreshadowing create --event-id ...` 建伏笔挂事件 → `audit check` 见：时间线 error（未声明倒叙）+ 其余维度干净 → `timeline update` 修正时间或加 flashback 标记 → `timeline delete` 软删某事件 → `audit check` 见伏笔锚点 warning（事件已软删）+ 时间线 error 消除 → `foreshadowing update --event-id \"\"` 解除挂接 → `audit check` 全维度 error=0（warning/info 可留）→ **悬空场景**：SQLite 直接插入一条 from/to 指向不存在角色的关系（`sqlite3 data.db "INSERT INTO knowledge_relations (project_id, source_type, source_id, target_type, target_id, relation_type) VALUES (1, 'character', 999, 'character', 998, '师徒')"`）→ `audit check` 见 R-C1 error「悬空引用」→ 删除该行 → 恢复一致；`--json` 信封与 summary.consistent 全程可断言；悬空行插入目标为 `knowledge_relations` 的 character↔character 子空间） |
 | M9 | 全量回归 + 覆盖率 + lint/type | `pytest -v` 全绿；F15 模块行覆盖 ≥ 80%、全仓 ≥ 60%（0.2.0 DoD）；ruff + mypy 通过（CI 门禁 ADR-017）；domain/ 零框架 import（ADR-002/015） |
 
 > **验收标准 ↔ Issue #45 映射**: ①「4 维度一致性检查（角色/时间线/世界/伏笔）」→ M2/M3/M4（R-C1/R-C2 角色、R-T1 时间线、R-W1/R-W2 世界、R-F1/R-F2 伏笔 + R-X1/R-X2 跨维度联动，§5.2 规则注册表）；②「可生成审计报告」→ M1/M5/M6/M7/M8（AuditReport 模型 + 编排汇总 + API/CLI 输出 + 手工闭环的 summary/findings 断言）。
@@ -1060,9 +1040,9 @@ F15 被依赖:
 
 | # | 问题 | 影响 | 建议 |
 |---|------|------|------|
-| Q1 | **CLI `audit check` 发现 error 级 findings 时退出码语义？** 选项 A：退出码恒 0——发现不一致是「结果」而非「执行错误」，脚本用 `--json` 的 `data.summary.consistent` 判断（与 F7 退出码语义完全隔离，NOT_FOUND/DB_ERROR 仍为 1）；选项 B：发现 error 时退出码 1——与 F7「退出码 1 = 执行错误」语义冲突，脚本无法区分「审计失败」与「审计发现不一致」；选项 C：新增退出码 3（「审计未通过」专用）——F7 全局约定需扩展，所有 CLI 消费方需感知新码 | F7 §5 全局退出码约定的扩展范围；Agent/脚本对审计结果的编程判断方式 | **✅ 已确认（用户拍板：选项 A）**：审计是只读检查（同 F12 check），「发现问题」是正常输出；consistent 是报告数据而非进程状态；选项 C 的「专门退出码」留给 F25 daemon 联调期再评估（若 MCP/Agent 需要强信号，届时按 ADR 流程扩展） |
-| Q2 | **世界维度的检查内容？**（世界条目无跨模块引用字段，F10 单实体无 FK）选项 A：档案健康度 + 缺口提示——空内容条目 → info、有章节无世界档案 → info（§5.4，本 spec 设计）；选项 B：仅占位——维度存在但 MVP 无规则（不满足验收标准 ①「4 维度一致性检查」的实证口径）；选项 C：跨模块 MODIFY F10 给世界条目加引用字段（如关联角色/章节）再查引用完整性——超 3-5 人天估算且改动已合入的 F10 | 验收标准 ① 的达成口径；世界维度是否有实际检查内容 | **✅ 已确认（用户拍板：选项 A）**：健康度 + 缺口是确定性、低成本、有作者价值的检查（「条目只有名字没有内容」「写了 3 章还没建世界观档案」都是真实创作痛点）；C 的引用字段设计应等真实需求（YAGNI） |
-| Q3 | **F14 extraction_runs 缺口检查的范围？** 选项 A：状态可观测级——run.status=error → warning「提取失败」、活动章节从未有任何 run → info「从未提取」（§5.5，本 spec 设计）；选项 B：完整缺口矩阵——按类型 × 章节逐一对比（每章 × 4 类型的未提取提示，章节多时 info 噪音巨大，且需感知 `timeline_auto_extract` 开关语义）；选项 C：MVP 排除 extraction_runs——跨维度只保留 R-X1（事件→章节） | R-X2 规则的复杂面与报告噪音；「提取缺口可观测」是否纳入 MVP | **✅ 已确认（用户拍板：选项 A）**：error run 是零成本高价值信号（F14 失败即异常，run 表 error 行是防御保留——F14 §6.2）；「从未提取章节」按章节粒度 info 提示有价值且不噪音化（量级 ≤ 数百）；B 的类型矩阵 + 设置项感知归 Phase 2+ |
+| Q1 | **CLI `audit check` 发现 error 级 findings 时退出码语义？** 选项 A：退出码恒 0——发现不一致是「结果」而非「执行错误」，脚本用 `--json` 的 `data.summary.consistent` 判断（与 F7 退出码语义完全隔离，NOT_FOUND/DB_ERROR 仍为 1）；选项 B：发现 error 时退出码 1——与 F7「退出码 1 = 执行错误」语义冲突，脚本无法区分「审计失败」与「审计发现不一致」；选项 C：新增退出码 3（「审计未通过」专用）——F7 全局约定需扩展，所有 CLI 消费方需感知新码 | F7 §5 全局退出码约定的扩展范围；Agent/脚本对审计结果的编程判断方式 | **裁定：选项 A**：审计是只读检查（同 F12 check），「发现问题」是正常输出；consistent 是报告数据而非进程状态；选项 C 的「专门退出码」留给 F25 daemon 联调期再评估（若 MCP/Agent 需要强信号，届时按 ADR 流程扩展） |
+| Q2 | **世界维度的检查内容？**（世界条目无跨模块引用字段，F10 单实体无 FK）选项 A：档案健康度 + 缺口提示——空内容条目 → info、有章节无世界档案 → info（§5.4，本 spec 设计）；选项 B：仅占位——维度存在但 MVP 无规则（不满足验收标准 ①「4 维度一致性检查」的实证口径）；选项 C：跨模块 MODIFY F10 给世界条目加引用字段（如关联角色/章节）再查引用完整性——超 3-5 人天估算且改动已合入的 F10 | 验收标准 ① 的达成口径；世界维度是否有实际检查内容 | **裁定：选项 A**：健康度 + 缺口是确定性、低成本、有作者价值的检查（「条目只有名字没有内容」「写了 3 章还没建世界观档案」都是真实创作痛点）；C 的引用字段设计应等真实需求（YAGNI） |
+| Q3 | **F14 extraction_runs 缺口检查的范围？** 选项 A：状态可观测级——run.status=error → warning「提取失败」、活动章节从未有任何 run → info「从未提取」（§5.5，本 spec 设计）；选项 B：完整缺口矩阵——按类型 × 章节逐一对比（每章 × 4 类型的未提取提示，章节多时 info 噪音巨大，且需感知 `timeline_auto_extract` 开关语义）；选项 C：MVP 排除 extraction_runs——跨维度只保留 R-X1（事件→章节） | R-X2 规则的复杂面与报告噪音；「提取缺口可观测」是否纳入 MVP | **裁定：选项 A**：error run 是零成本高价值信号（F14 失败即异常，run 表 error 行是防御保留——F14 §6.2）；「从未提取章节」按章节粒度 info 提示有价值且不噪音化（量级 ≤ 数百）；B 的类型矩阵 + 设置项感知归 Phase 2+ |
 
 ---
 
