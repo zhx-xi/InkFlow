@@ -31,9 +31,9 @@
 ```
 - 参考锚点（以真实组件为准：pages/writing.tsx + components/ProjectTree、EditorToolbar、ContextPanel、ChatPanel、ChatDeleteAuthControl、ThinkingLevelSelect、ChatStreamBlocks、StatusBar、ChapterSummaryPanel、AuditDialog、StyleAnalyzeDialog、AIExtractDialog、AutoAuthorizationDialog）：
   - 布局：全高 flex 三栏 — 左项目树（aside project-tree）/ 中编辑器区（main）/ 右上下文栏（aside right-rail）
-  - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；**拖拽结果按项目持久化**（同一键 `inkflow.rail_layout.<projectId>` 的 `treeWidth` 字段，跨切页/切章重挂载保持；#1397）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
-  - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用 + 输入行下方 ThinkingLevelSelect 思考级别选择器（F59 spec §3.4）+ ChatStreamBlocks 流式思考/工具折叠块（#727））；工具栏行**最右**为草稿审批入口（`drafts-approval-button`，`ml-auto` 右对齐分组，无选中章节不渲染 —— 见 §9）
-  - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel。**两面板按 flex 比例分配右栏上下显示区**（`flex-grow` + `flex-basis: 0%`，默认 context : summary = **2 : 1**，合计铺满不留固定空白；#1378）——row-resize 拖拽改的是该**比例**（夹在 0.2~0.8，任一面板不塌陷为 0），比例与栏宽一并按项目持久化（`inkflow.rail_layout.<projectId>`），跨切页/切章重挂载保持
+  - 左栏：默认宽 208px（treeWidth 受控），col-resize 拖拽 160~360px（ProjectTree RESIZE_MIN/MAX）；**拖拽结果按项目持久化**（同一键 `inkflow.rail_layout.<projectId>` 的 `treeWidth` 字段，跨切页/切章重挂载保持）；卷章树加载中显示骨架屏（头像/标题/6 行 Skeleton）；顶部 ProjectSeal 项目印章
+  - 中栏：EditorToolbar 默认 opacity 0.35、hover 编辑器区域 group-hover 全显；下方 ChapterEditor（正文编辑）或 ExecutionDetailPanel（执行详情，视图切换）；底部 ChatPanel 对话区（含 ChatDeleteAuthControl 删除授权三态分段控件，HITL 弹窗打开期间控件禁用 + 输入行下方 ThinkingLevelSelect 思考级别选择器（F59 spec §3.4）+ ChatStreamBlocks 流式思考/工具折叠块）；工具栏行**最右**为草稿审批入口（`drafts-approval-button`，`ml-auto` 右对齐分组，无选中章节不渲染 —— 见 §9）
+  - 右栏：默认 240px（railWidth），col-resize 90~540px；整栏可折叠为 26px 展开条（按钮 right-col-toggle）；内含 ContextPanel（写作要求/大纲/角色/世界观/伏笔卡片，数据来自设定库 assemble）+ row-resize 手柄 + ChapterSummaryPanel。**两面板按 flex 比例分配右栏上下显示区**（`flex-grow` + `flex-basis: 0%`，默认 context : summary = **2 : 1**，合计铺满不留固定空白）——row-resize 拖拽改的是该**比例**（夹在 0.2~0.8，任一面板不塌陷为 0），比例与栏宽一并按项目持久化（`inkflow.rail_layout.<projectId>`），跨切页/切章重挂载保持
   - 空态：无任何项目 → WritingEmptyState（Compass 图标 + 文案 + 「返回项目页」按钮 navigate('/projects')）
   - 流式时序：续写/生成 → ensureModelReady 前置校验（未配置 warn toast「模型未配置」不启动）→ 创建 chat 会话（失败静默降级）→ start(mode) → SSE 流式（status=running）→ done 帧 finalOutput 落章（setContent）+ 归档 AI chat 消息；error 帧展示错误
   - 状态栏 StatusBar（只读）：内核连接态 / 模型 / 字数 / 自动保存时间
@@ -41,51 +41,51 @@
 
 ## 2. 动作样式（按钮 × 状态表，逐控件）
 
-| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 | 修改履历 |
-|------|--------|--------|--------|------|------|------|---------|
-| 工具栏 撤销/重做/保存 | 图标按钮，整栏 opacity 0.35 hover 全显 | 点击执行 undo/redo/save | 无独立 loading（保存异步） | 保存成功 → 状态栏自动保存时间更新 | 保存失败 toast | 快捷键 Ctrl+Z / Ctrl+Y / Ctrl+S（document.execCommand）；生成中不禁用 | — |
-| 续写/生成 | Wand2/Sparkles 图标按钮 | startWithCheck：ensureModelReady 未配置 → warn toast 不启动；通过后建会话再 start | 生成中（status=running）两者 disabled(opacity 40)，Sparkles animate-pulse text-accent | done → finalOutput 落章 + 状态 success + AI 消息归档 | error 帧 → error 状态展示 | 快捷键 Ctrl+Enter 续写 / Ctrl+Shift+Enter 生成；生成中禁用防并发流 | — |
-| 章节审计 | ScanSearch 图标 | 打开 AuditDialog 并拉取报告 | 弹窗内 loading | 报告展示 + accept/reject 确认（note 备注） | 拉取失败 → 弹窗内 error 展示 | 无项目/无当前章时 handleAudit 直接 return | — |
-| 风格分析 | Gauge 图标 | 打开 StyleAnalyzeDialog 并拉取报告 | 弹窗内 loading | 风格报告展示 | 失败 → 弹窗内 error | 同上守卫 | — |
-| 视图切换 | Eye 图标 | editor ↔ detail 切换 | — | 正文区 ↔ ExecutionDetailPanel 互换 | — | aria-label/title 随视图变化；detail 态不渲染 ChatPanel | — |
-| 全自动开关 | Zap 图标 aria-pressed=auto_write_enabled | toggle 项目 config.auto_write_enabled → updateConfig PATCH | PATCH 在途（即改即存） | 图标 pressed 态更新 | 失败 toast（store 内） | 无当前项目时 onToggleAuto 不动作 | — |
-| AI 提取 | FileSearch 图标 | 打开 AIExtractDialog | 弹窗内提取中 | 提取内容入章 | 失败 toast | 仅 onExtract 传入时渲染该图标 | — |
-| 自动保存 | 编辑置 dirty | 输入停止 2s 防抖 → saveContent | 防抖窗口内 | 成功 savedAt 更新（状态栏） | 失败 toast | SSE done 帧落章不触发防抖；隐藏窗口/卸载时 flush | — |
-| 章节选择/新建 | 树节点点击 / 底部「+ 新建章节」 | 点击 selectChapter 载入编辑器；新建展开 inline 输入行（可先选目标卷）Enter/✓ 提交 | 卷章树首次加载骨架屏 | 新章节出现于树 + 编辑器加载 | 错误 toast（store 内） | Esc 取消；标题空 → 默认「新章节」 | — |
-| 章节重命名/删除 | hover 显示 Pencil/Trash2（opacity 0→1） | 行内 input（Enter 提交 / Esc 取消）；删除 → ConfirmDialog 二次确认 | — | 标题更新 / 章节移除 | — | 重命名空串或未变更 → 跳过不 PATCH | — |
-| 卷新建/重命名/删除 | 「+ 新建卷」/ hover Pencil/Trash2 | 同章节 inline 模式；删除 → VolumeDeleteDialog（章节数 + 其他卷迁移选项） | — | 卷创建/更名/删除（含章节迁移） | — | Esc 取消；标题空 → 默认「新卷」 | — |
-| 章节拖拽移动 | 章节行 draggable（effectAllowed=move） | 拖到卷区/未分组区 drop → moveChapter | 拖经卷高亮 ring-accent | 树内章节归属更新 | — | 数据经 dataTransfer text/plain 传递 | — |
-| 左栏宽度拖拽 | col-resize 手柄（tree-resize-handle） | mousedown 拖拽调宽 | — | 宽度 160~360px 实时更新；mouseup 落盘 | — | 拖拽中 body userSelect 锁定；mouseup 结束并落盘（与右栏同一时机）；越界夹 160~360；无当前项目不落盘 | 2026-09-23：#1397 拖拽结果按项目持久化（同键 treeWidth 字段，部分写不覆盖右栏两项） |
-| 右栏折叠/调宽/调高 | 折叠按钮 right-col-toggle + col-resize 手柄 + row-resize 手柄 | 折叠 → 26px 展开条（PanelLeftOpen+展开 文案），再点展开恢复 | — | 宽度 90~540px 实时更新；面板**比例**实时更新（默认 2:1 铺满，夹 0.2~0.8） | — | 折叠态隐藏两面板与全部手柄；鼠标松开才落盘持久化 | 2026-09-23：#1378 面板高度由固定 px 改 flex 比例（2:1 铺满）+ 比例/宽度按项目持久化 |
-| ChatPanel 发送/停止 | 输入框 + 发送按钮（chat-send） | 发送 → streamChat 流式对话 | streaming 中发送按钮替换为「停止」（chat-interrupt，方块图标） | done → AI 消息落地 + 意图解析（onDone） | error → 错误文案不插入正文 | in-flight 再发不触发第二次流；停止 → abortChatRun(run_id) + 本地 abort 保留已生成前文；卸载 abort 清理 | — |
-| 思考级别选择器（ThinkingLevelSelect） | 输入行下方原生 Select（chat-reasoning-effort），值=localStorage 记忆（缺省「跟随模型默认」）；当前模型能力 false → 禁用 + tooltip | 展开七档（chat-reasoning-effort-option-<value>）选择 → 写 localStorage per-project + state | — | 仅下一轮发送带 `reasoning_effort`（default 不发参数键） | 能力数据未载 → 按可支持处理（未知/null 不禁用，软降级） | 七档顺序 关闭思考/最低/低/中/高/极高/跟随模型默认；能力 false → opacity-60 + cursor-not-allowed + tooltip「当前模型不支持思考」；切换不影响进行中一轮；记忆键 inkflow.reasoning_effort.<projectId>（Q2 拍板 B）；行为/降级明细见 F59 spec §2.1/§3.4/§5.5/§12 D8 | 2026-09-09：新增（F59-M3） |
-| 流式思考折叠块（ChatStreamBlocks） | 无（未收到 reasoning 帧不渲染） | reasoning 帧到达 → 消息流内灰底 muted 折叠块（chat-reasoning-<n>，标签「思考过程」）；点 toggle 展开/收起正文 | 多帧逐条渲染（chat-reasoning-0/1…，不合并不丢失） | 展开可见思考全文；收起仅标题行 | 思考输出为空 → 无 reasoning 帧即无块（与 default 档一致） | 思考内容不插入正文/草稿（仅 trace 存档）；折叠块交互键与 #727 契约一致；SSE 帧协议不变（F59 spec §3.2） | 2026-09-09：新增（F59-M3） |
-| 删除授权三态分段控件 | 三按钮（delete-mode-manual/ask-once/auto，默认 manual 选中 data-selected=true） | 点击切换 → updateChatDeletePermission(conversationId, mode) PATCH | PATCH 在途 | 选中态切换 + PATCH 生效 | 失败静默（本地选中保留，服务端不变） | conversation 缺失先 createChatConversation 再 PATCH；HITL 弹窗打开期间三按钮 disabled | — |
-| HITL 删除确认弹窗 | interrupt SSE 帧到达 → 渲染（delete-confirm-dialog，实体名 + confirmTitle） | 点确认删除（delete-confirm-approve）→ resumeChatRun({conversation_id, approved:true})；点取消（delete-confirm-cancel）→ approved:false | — | 弹窗关闭 + resume 续跑 | resume 失败静默（弹窗关闭） | 弹窗打开期间分段控件禁用；取消不删除（approved:false 拒绝续跑） | — |
-| 无项目空态按钮 | 「返回项目页」 | navigate('/projects') | — | 路由切换 | — | 仅无项目分支渲染（writing-empty） | — |
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 工具栏 撤销/重做/保存 | 图标按钮，整栏 opacity 0.35 hover 全显 | 点击执行 undo/redo/save | 无独立 loading（保存异步） | 保存成功 → 状态栏自动保存时间更新 | 保存失败 toast | 快捷键 Ctrl+Z / Ctrl+Y / Ctrl+S（document.execCommand）；生成中不禁用 |
+| 续写/生成 | Wand2/Sparkles 图标按钮 | startWithCheck：ensureModelReady 未配置 → warn toast 不启动；通过后建会话再 start | 生成中（status=running）两者 disabled(opacity 40)，Sparkles animate-pulse text-accent | done → finalOutput 落章 + 状态 success + AI 消息归档 | error 帧 → error 状态展示 | 快捷键 Ctrl+Enter 续写 / Ctrl+Shift+Enter 生成；生成中禁用防并发流 |
+| 章节审计 | ScanSearch 图标 | 打开 AuditDialog 并拉取报告 | 弹窗内 loading | 报告展示 + accept/reject 确认（note 备注） | 拉取失败 → 弹窗内 error 展示 | 无项目/无当前章时 handleAudit 直接 return |
+| 风格分析 | Gauge 图标 | 打开 StyleAnalyzeDialog 并拉取报告 | 弹窗内 loading | 风格报告展示 | 失败 → 弹窗内 error | 同上守卫 |
+| 视图切换 | Eye 图标 | editor ↔ detail 切换 | — | 正文区 ↔ ExecutionDetailPanel 互换 | — | aria-label/title 随视图变化；detail 态不渲染 ChatPanel |
+| 全自动开关 | Zap 图标 aria-pressed=auto_write_enabled | toggle 项目 config.auto_write_enabled → updateConfig PATCH | PATCH 在途（即改即存） | 图标 pressed 态更新 | 失败 toast（store 内） | 无当前项目时 onToggleAuto 不动作 |
+| AI 提取 | FileSearch 图标 | 打开 AIExtractDialog | 弹窗内提取中 | 提取内容入章 | 失败 toast | 仅 onExtract 传入时渲染该图标 |
+| 自动保存 | 编辑置 dirty | 输入停止 2s 防抖 → saveContent | 防抖窗口内 | 成功 savedAt 更新（状态栏） | 失败 toast | SSE done 帧落章不触发防抖；隐藏窗口/卸载时 flush |
+| 章节选择/新建 | 树节点点击 / 底部「+ 新建章节」 | 点击 selectChapter 载入编辑器；新建展开 inline 输入行（可先选目标卷）Enter/✓ 提交 | 卷章树首次加载骨架屏 | 新章节出现于树 + 编辑器加载 | 错误 toast（store 内） | Esc 取消；标题空 → 默认「新章节」 |
+| 章节重命名/删除 | hover 显示 Pencil/Trash2（opacity 0→1） | 行内 input（Enter 提交 / Esc 取消）；删除 → ConfirmDialog 二次确认 | — | 标题更新 / 章节移除 | — | 重命名空串或未变更 → 跳过不 PATCH |
+| 卷新建/重命名/删除 | 「+ 新建卷」/ hover Pencil/Trash2 | 同章节 inline 模式；删除 → VolumeDeleteDialog（章节数 + 其他卷迁移选项） | — | 卷创建/更名/删除（含章节迁移） | — | Esc 取消；标题空 → 默认「新卷」 |
+| 章节拖拽移动 | 章节行 draggable（effectAllowed=move） | 拖到卷区/未分组区 drop → moveChapter | 拖经卷高亮 ring-accent | 树内章节归属更新 | — | 数据经 dataTransfer text/plain 传递 |
+| 左栏宽度拖拽 | col-resize 手柄（tree-resize-handle） | mousedown 拖拽调宽 | — | 宽度 160~360px 实时更新；mouseup 落盘 | — | 拖拽中 body userSelect 锁定；mouseup 结束并落盘（与右栏同一时机）；越界夹 160~360；无当前项目不落盘 |
+| 右栏折叠/调宽/调高 | 折叠按钮 right-col-toggle + col-resize 手柄 + row-resize 手柄 | 折叠 → 26px 展开条（PanelLeftOpen+展开 文案），再点展开恢复 | — | 宽度 90~540px 实时更新；面板**比例**实时更新（默认 2:1 铺满，夹 0.2~0.8） | — | 折叠态隐藏两面板与全部手柄；鼠标松开才落盘持久化 |
+| ChatPanel 发送/停止 | 输入框 + 发送按钮（chat-send） | 发送 → streamChat 流式对话 | streaming 中发送按钮替换为「停止」（chat-interrupt，方块图标） | done → AI 消息落地 + 意图解析（onDone） | error → 错误文案不插入正文 | in-flight 再发不触发第二次流；停止 → abortChatRun(run_id) + 本地 abort 保留已生成前文；卸载 abort 清理 |
+| 思考级别选择器（ThinkingLevelSelect） | 输入行下方原生 Select（chat-reasoning-effort），值=localStorage 记忆（缺省「跟随模型默认」）；当前模型能力 false → 禁用 + tooltip | 展开七档（chat-reasoning-effort-option-<value>）选择 → 写 localStorage per-project + state | — | 仅下一轮发送带 `reasoning_effort`（default 不发参数键） | 能力数据未载 → 按可支持处理（未知/null 不禁用，软降级） | 七档顺序 关闭思考/最低/低/中/高/极高/跟随模型默认；能力 false → opacity-60 + cursor-not-allowed + tooltip「当前模型不支持思考」；切换不影响进行中一轮；记忆键 inkflow.reasoning_effort.<projectId>（Q2 拍板 B）；行为/降级明细见 F59 spec §2.1/§3.4/§5.5/§12 D8 |
+| 流式思考折叠块（ChatStreamBlocks） | 无（未收到 reasoning 帧不渲染） | reasoning 帧到达 → 消息流内灰底 muted 折叠块（chat-reasoning-<n>，标签「思考过程」）；点 toggle 展开/收起正文 | 多帧逐条渲染（chat-reasoning-0/1…，不合并不丢失） | 展开可见思考全文；收起仅标题行 | 思考输出为空 → 无 reasoning 帧即无块（与 default 档一致） | 思考内容不插入正文/草稿（仅 trace 存档）；折叠块交互键与折叠块既有契约一致；SSE 帧协议不变（F59 spec §3.2） |
+| 删除授权三态分段控件 | 三按钮（delete-mode-manual/ask-once/auto，默认 manual 选中 data-selected=true） | 点击切换 → updateChatDeletePermission(conversationId, mode) PATCH | PATCH 在途 | 选中态切换 + PATCH 生效 | 失败静默（本地选中保留，服务端不变） | conversation 缺失先 createChatConversation 再 PATCH；HITL 弹窗打开期间三按钮 disabled |
+| HITL 删除确认弹窗 | interrupt SSE 帧到达 → 渲染（delete-confirm-dialog，实体名 + confirmTitle） | 点确认删除（delete-confirm-approve）→ resumeChatRun({conversation_id, approved:true})；点取消（delete-confirm-cancel）→ approved:false | — | 弹窗关闭 + resume 续跑 | resume 失败静默（弹窗关闭） | 弹窗打开期间分段控件禁用；取消不删除（approved:false 拒绝续跑） |
+| 无项目空态按钮 | 「返回项目页」 | navigate('/projects') | — | 路由切换 | — | 仅无项目分支渲染（writing-empty） |
 
 ## 3. 验收
 
-- N1：无项目进入写作页 → 空态引导（Compass + 返回项目页）；有项目 → 三栏布局 + 卷章树骨架加载后正常渲染（#1407：卷章树**全量加载** —— 前端翻页取满 `GET /projects/{pid}/chapters` 的 `total`，>50 章项目第 51 章起同样可见/可选/可编辑）
+- N1：无项目进入写作页 → 空态引导（Compass + 返回项目页）；有项目 → 三栏布局 + 卷章树骨架加载后正常渲染（卷章树**全量加载** —— 前端翻页取满 `GET /projects/{pid}/chapters` 的 `total`，>50 章项目第 51 章起同样可见/可选/可编辑）
 - N2：工具栏默认 opacity 0.35、hover 编辑器区域全显；Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+Enter / Ctrl+Shift+Enter 五组快捷键生效
 - N3：续写/生成四触发点（工具栏按钮×2 + 快捷键×2）共享模型未配置守卫：未配置 → warn toast 且不启动生成
 - N4：生成中续写/生成禁用 + Sparkles 脉冲动画；SSE 停止按钮仅流式中出现，停止后保留已生成前文
-- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用（#1407：卷章树全量加载 → 第 51 章起的章节同样可重命名/删除/拖拽）；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（#1378：默认 2:1 铺满、拖拽改比例、跨重挂载保持；#1397：左栏宽度同样按项目持久化、跨重挂载保持）
+- N5：章节/卷 CRUD（新建/重命名/删除确认）与章节拖拽移动完整可用（卷章树全量加载 → 第 51 章起的章节同样可重命名/删除/拖拽）；左栏 160~360px / 右栏 90~540px 可折叠 26px / 面板比例拖拽均生效（默认 2:1 铺满、拖拽改比例、跨重挂载保持；左栏宽度同样按项目持久化、跨重挂载保持）
 - N6：自动保存 2s 防抖落盘 + 状态栏自动保存时间更新；SSE done 帧落章不触发防抖保存
 - N7：删除授权三态分段控件（delete-mode-manual/ask-once/auto）渲染三按钮，默认 manual 选中（data-selected=true / aria-pressed）；点击一次确认/全自动 → updateChatDeletePermission(conversationId, mode) PATCH 生效；conversation 缺失先建再 PATCH
 - N8：interrupt SSE 帧到达 → HITL 确认弹窗（delete-confirm-dialog 显示实体名 + confirmTitle）；点确认删除 → resumeChatRun({approved:true}) 续跑删除；点取消 → {approved:false} 拒绝不删除；弹窗打开期间分段控件 disabled
 - N20：UI 必须出现——两套 ChatPanel（章节内 inline + 全局 chat）输入工具栏均渲染思考级别选择器（chat-reasoning-effort），默认「跟随模型默认」；展开显示七档选项（chat-reasoning-effort-option-<value>，顺序 关闭思考→最低→低→中→高→极高→跟随模型默认）（F59 spec §3.4）
 - N21：档位仅作用于下一轮发送：`default` 不发 `reasoning_effort` 参数；选择值写 localStorage per-project（键 inkflow.reasoning_effort.<projectId>），跨刷新保持，切换不打断进行中一轮（F59 spec §3.4/§12 D8）
 - N22：UI 必须出现——当前模型 `supports_reasoning=false` → 选择器禁用（disabled + opacity-60）且外层出现 chat-reasoning-effort-tooltip（文案「当前模型不支持思考」）；未知/null 不禁用（超能力软降级不断流，F59 spec §5.5）
-- N23：UI 必须出现——reasoning 帧到达 → 流式思考折叠块（chat-reasoning-0…）渲染于回复上方，标签「思考过程」，点 chat-reasoning-toggle-<n> 展开/收起正文（aria-expanded 同步）；多帧逐条渲染（chat-reasoning-0/chat-reasoning-1 并存不合并）（F59 spec §3.2/#727 契约）
+- N23：UI 必须出现——reasoning 帧到达 → 流式思考折叠块（chat-reasoning-0…）渲染于回复上方，标签「思考过程」，点 chat-reasoning-toggle-<n> 展开/收起正文（aria-expanded 同步）；多帧逐条渲染（chat-reasoning-0/chat-reasoning-1 并存不合并）（F59 spec §3.2 契约）
 - N24：思考内容不进入正文/草稿（SSE 帧协议不变，reasoning 帧仅展示 + trace 存档）；未开思考的模型/档位 default → 无 reasoning 帧、无折叠块
 
-## 4. #770 会话页架构增量
+## 4. 会话页架构增量
 
 > 无章节写作页由「空」改全局 chat 页；章节内 chat 与全局 chat 页两套视图；会话跟随章节 + 命名/改名。完整契约见 f47 §17。
 
 ### 4.1 画面样式补充（场景 A：无章节 → 全局 chat 页）
-> 低保真排版示意简图（区块+标签，非精确像素；#770 两套视图，完整契约见 f47 §17.4）
+> 低保真排版示意简图（区块+标签，非精确像素；两套视图，完整契约见 f47 §17.4）
 
 ```text
 场景 A：无章节选中 → 全局 chat 页（始终占满中栏、不可调节大小）
@@ -130,7 +130,7 @@
   - 不渲染 `EditorToolbar` / `ChapterEditor` / `ExecutionDetailPanel`
   - 左栏项目树、右栏 `right-rail` 均保持
 - 与场景 B（章节选中）区别：章节内 ChatPanel 为底部横栏 inline（resize handle 80~480px）。两套视图条件分支渲染，不共享同一布局组件硬编码。
-- F59-M3（#964）：两套 ChatPanel 视图输入区共用 compose——思考级别选择器（输入行下方，默认「跟随模型默认」）与流式思考折叠块（消息流内回复上方）行为见 §2 新增行 + F59 spec §3.4/§5.5。
+- F59-M3：两套 ChatPanel 视图输入区共用 compose——思考级别选择器（输入行下方，默认「跟随模型默认」）与流式思考折叠块（消息流内回复上方）行为见 §2 新增行 + F59 spec §3.4/§5.5。
 
 ### 4.2 动作样式补充
 
@@ -142,9 +142,9 @@
 - N10：章节选中 → 章节内 ChatPanel（inline，resize handle）完整保留。
 - N11：章节内对话/生成/续写均创建新会话，title=章节名；全局 chat 页对话 title=首条用户消息前 30 字；会话可改名。
 
-## 5. #840 会话点击贯通（conversationId prop）
+## 5. 会话点击贯通（conversationId prop）
 
-> 会话归档恢复后点击进入 chat 页历史不显示——`conversation_id` URL 参数此前全链路未消费（ChatPanel 恒取「最新活跃线程」）。完整契约见 f47 §17 + sessions §4。
+> 要求：会话归档恢复后点击进入 chat 页**须显示该会话历史**——`conversation_id` URL 参数必须全链路消费（ChatPanel 不得恒取「最新活跃线程」）。完整契约见 f47 §17 + sessions §4。
 
 ### 5.1 画面/逻辑补充
 
@@ -156,7 +156,7 @@
 - N12：`/writing?conversation_id=<id>` → ChatPanel 加载该指定会话历史（非最新活跃线程/非空）；指定会话后不新建线程、不解析最新线程。
 - N13：session 点击（SessionBar/sessions 目录）跳转的 `conversation_id` 被 writing.tsx 消费并传给 ChatPanel 加载对应会话（含归档恢复场景）。
 
-## 6. #842 AI 回复中切页状态丢失（卸载中止后端 run + 断连终态落库）
+## 6. 切页时的 AI 回复状态处理（卸载中止后端 run + 断连终态落库）
 
 > AI 回复中转页 → 转回按钮复位未发送、AI 永不回复——卸载只调本地 abort 不调后端端点，断连 run 无终态落库。
 
@@ -170,7 +170,7 @@
 - N14：流式运行中卸载 → `abortChatRun(run_id)` 被调（后端 run 有终态）；转回 chat 页不误复位为未发送状态。
 - N15：SSE 断连（`is_disconnected=True`）→ run 落 TERMINATED 终态（`repo.save` 被调，status=terminated），不遗留 running。
 
-## 7. #841 项目标识跳全局 chat + 写作模式控件锚定输入框上方
+## 7. 项目标识跳全局 chat + 写作模式控件锚定输入框上方
 
 > 顶部项目标识点击无反应（5a）；无 chat 内容时「手动/一次确认/全自动」控件被顶到面板顶部、与输入框分离（5b）。
 
@@ -184,7 +184,7 @@
 - N16：点击项目标识（project-seal）→ 写作页切换为全局 chat 视图（选中章节时也如此）。
 - N17：full 变体无 chat 内容 → 分段控件（delete-mode-manual/ask-once/auto）与输入框同在 `chat-compose` 组、位于输入框上方；inline 变体同样控件在输入框上方。
 
-## 8. #839 对话优雅异常处理（工具循环/递归超限自动收束）
+## 8. 对话优雅异常处理（工具循环/递归超限自动收束）
 
 > 对话工具循环/递归超限时裸抛「工具执行失败」原始异常。核心 = 异常处理不「只抛出去」而「处理掉」。
 
@@ -198,16 +198,15 @@
 - N18：工具循环触发递归上限 → 对话不显示「工具执行失败」裸异常，优雅结束（done 帧 + 已流出部分结果）。
 - N19：astream_events config 含 `recursion_limit > 25`（护栏非默认 25）。
 
-## 9. 草稿审批入口（#976 常显 → #1003 移入工具栏行最右）
+## 9. 草稿审批入口（工具栏行最右）
 
-> 本节锁**入口的位置与可见性**契约；**弹层内控件形态与接线**见 §11（#1377 驳回钮）与 f44/f27（后端草稿域：确认自动建章/建卷——不含前端控件）。
+> 本节锁**入口的位置与可见性**契约；**弹层内控件形态与接线**见 §11（驳回钮）与 f44/f27（后端草稿域：确认自动建章/建卷——不含前端控件）。
 
 ### 9.1 画面/布局补充
 
 - 审批入口 `drafts-approval-button` 位于**编辑态** `EditorToolbar` 行**最右**：工具栏末尾渲染一个 `ml-auto` 右对齐分组（按钮直接父节点 = 该分组，且该分组是工具栏最后一个元素子节点）。
-- #976 引入的独立顶栏 `writing-topbar`（页面顶部独占一行）**已废弃移除**（#1003）。
-- **无选中章节**（`currentChapterId === null`，global chat 页）不渲染 `EditorToolbar` → 审批入口**不显示**（#1003 拍板）。
-- 入口随工具栏 `opacity-[0.35]` 默认淡化、hover 编辑器区全显（沿用既有工具栏交互，#1003 拍板保持）。
+- **无选中章节**（`currentChapterId === null`，global chat 页）不渲染 `EditorToolbar` → 审批入口**不显示**。
+- 入口随工具栏 `opacity-[0.35]` 默认淡化、hover 编辑器区全显（沿用既有工具栏交互）。
 
 ### 9.2 动作样式补充
 
@@ -224,10 +223,10 @@
 - N20：编辑态工具栏行最右出现审批入口（计数文案 + `pendingDraftsCount > 0` 圆点）；点击 → 审批弹层打开；`writing-topbar` 不再存在。
 - N21：无选中章节（global chat 页）不渲染审批入口；树双击草稿节点仍可打开审批弹层。
 
-## 10. #1342 上下文注入面板勾选接线到生成链路 + #1349 章级注入记录回显
+## 10. 上下文注入面板勾选接线到生成链路 + 章级注入记录回显
 
-> 现象：写作页「上下文注入」面板的勾选/取消**对实际生成仍无影响** —— 勾选只喂 assemble 预览端点，生成链路（`/agent/pipelines/stream`）拿不到 override。
-> 后端通道已由 #1341 打通（`PipelineExecuteRequest.override` / `_assemble_setting_context(..., override=)`，角色/世界观两源白名单过滤 + #1235 三态语义）；本节锁**前端上游接线**。
+> 设计要求：勾选/取消必须**影响实际生成**——生成链路（`/agent/pipelines/stream`）须拿到 override，不得只喂 assemble 预览端点。
+> 后端通道由 `PipelineExecuteRequest.override` / `_assemble_setting_context(..., override=)`，角色/世界观两源白名单过滤 + 三态语义）；本节锁**前端上游接线**。
 
 ### 10.1 逻辑补充
 
@@ -238,11 +237,10 @@
 - `usePipeline` 新增**可选** `override?: ContextOverride`：`start(mode)` 构造 `PipelineExecuteRequest` 时**按需附加** `override` 字段（缺省不传键 = 后端 `override=None` = 全注入）。
 - `api/pipeline.ts` 的 `PipelineExecuteRequest` 新增 `override?: ContextOverride`（复用 `api/context.ts` 既有类型，不新建）。
 - `pages/writing.tsx` 持 `contextOverride` state 并传入 `usePipeline`；`ContextPanel` 的 `onOverrideChange` 接 `setContextOverride`。
-- **三态语义贯通**（#1235）：不勾选任何项 → 不传 override（全注入）≠ 全部取消勾选 → 传空数组（该类零注入）。
+- **三态语义贯通**：不勾选任何项 → 不传 override（全注入）≠ 全部取消勾选 → 传空数组（该类零注入）。
 
-### 10.2 章级注入记录回显（#1349 已落地）
+### 10.2 章级注入记录回显
 
-> **#1342 时本节声明「后端无落库载体、另开后端轨」；#1349 即该后端轨，本节同步为已实现形态。**
 
 面板承载**两个并列区块**，语义必须可区分：
 
@@ -282,7 +280,7 @@
 - N23：`usePipeline.start` 构造的请求体：传 `override` → body 含该三字段；不传 → body **无** `override` 键；传显式空数组 → body 保留空数组（不塌缩为「全注入」）。
 - N24：可证伪自证 —— 移除 `usePipeline` 的 override 传参 → N23 的「body 含 override」断言必须失败。
 
-### 10.5 #1349 验收补充（章级注入回执面）
+### 10.5 验收补充（章级注入回执面）
 
 - N25：该章有注入记录 → 面板渲染 `context-injected-echo` 明细块 + `context-injected-count` 计数 + `context-injected-item-<id>` 条目 chip；明细 id 与当次 `_assemble_setting_context` 实际产出同源（白名单剔除项不出现）。
 - N26：该章无记录（`injected_context: null`）→ 渲染 `context-injected-empty` 回退提示，**不**渲染计数徽章与明细分组；预览区块（`context-block-*`）不受影响。
@@ -291,9 +289,9 @@
 - N29：读端点失败 → 静默降级为回退态，不阻塞预览主路径；无 `chapterId` → 不发请求。
 - N30：可证伪自证 —— 剥掉 `_persist_injection_detail` 的 store 落库调用 → 落库接线契约必须 FAIL（实测 2 例红），还原后复绿。
 
-## 11. #1377 草稿审批弹层「驳回」入口
+## 11. 草稿审批弹层「驳回」入口
 
-> 现象：弹层内每条待审批草稿只有「取消」+「确认」，**没有驳回入口** → 用户无法在 GUI 否掉不满意的草稿。
+> 设计要求：弹层内每条待审批草稿须有「驳回」入口（不能只有「取消」+「确认」）——用户须能在 GUI 否掉不满意的草稿。
 > 后端能力齐备：`POST /api/v1/agent/drafts/{id}/reject` 已可用，前端 `api/drafts.ts` 的 `rejectDraft` 亦已封装但**零消费**（纯前端接线缺口）；本节锁**弹层内控件形态与接线**。
 
 ### 11.1 画面/布局补充
@@ -305,7 +303,6 @@
 
 原型基准：`design/GUI/writing/writing.html` 的 `drafts-approval` 状态（弹层：遮罩 + 两行草稿 + 动作行 `取消 / 拒绝 / 确认`）；截图见同目录 `writing-drafts-approval.png`；生成/断言脚本 `design/GUI/_tools/shot-writing-drafts-approval.cjs`（结构/几何断言全绿）。
 
-⚠️ **工具栏入口 `drafts-approval-button`（#1003）尚未进本原型** —— 存量缺口：补它会使工具栏可见的 **9 张既有状态图全部过期**（实测 `writing-editor-idle.png` 工具栏右侧为空，新增右对齐按钮即位移），故不在本 PR 范围（只回填弹层本身）；原型同步门禁见 #1330。
 
 ### 11.2 动作样式补充
 
@@ -313,7 +310,7 @@
 |------|--------|--------|------|
 | 驳回（`drafts-drawer-reject-{id}`） | X 图标 + 文案 `t('write.drafts.reject')`（「拒绝」）；描边次要钮，悬停转 err 色 | `rejectDraft(draft.id)` 成功 → `pushToast('ok', t('write.drafts.rejectDone'))` + 卷章树/草稿双轨重拉（同确认钮）+ `onClose()` | 进行中 `rejectingId === draft.id` 禁用；失败 → 框内 `drafts-drawer-error` 透传且**不关框**；不触碰确认接口 |
 
-- i18n：复用既有 `write.drafts.reject`（zh「拒绝」/ en「Reject」，此前定义但零消费）；新增 `write.drafts.rejectDone`（zh「草稿已驳回」/ en「Draft rejected」）落 `i18n/writing-ux.ts` —— zh.ts / en.ts 贴 900 行护栏，**净增 0 行**。
+- i18n：复用既有 `write.drafts.reject`（zh「拒绝」/ en「Reject」）；新增 `write.drafts.rejectDone`（zh「草稿已驳回」/ en「Draft rejected」）落 `i18n/writing-ux.ts` —— zh.ts / en.ts 贴 900 行护栏，**净增 0 行**。
 
 ### 11.3 验收补充
 
@@ -323,12 +320,12 @@
 - N34：可证伪自证 —— 移除驳回钮 → N31-N33 断言必须 FAIL（实测 4 例红），按备份字节还原后复绿。
 - 确认路径不劣化：既有 `DraftApprovalDrawer.test.tsx` 用例**零翻转**（实测 10 例仍绿）。
 
-## 12. #1379 上下文注入「Agent 按大纲预选」+ 一键清除 / 全选 + #1405 分类清除 / #1464 按章持久化
+## 12. 上下文注入「Agent 按大纲预选」+ 一键清除 / 全选 + 分类清除 / 按章持久化
 
-> 现象（v0.15.0-rc5 GUI 目视）：进入空章时面板把**全部**候选条目默认勾上（初始全注入回显），
-> 用户期望默认勾选 = 与本章相关的子集；且条目区无「一键清除」——想清空只能逐条取消。
+> 设计要求：进入空章时面板**不得默认勾满全部**候选条目（初始全注入只是回显，不等于用户选择）；
+> 默认勾选 = 与本章相关的子集；条目区须提供「一键清除」（否则清空只能逐条取消）。
 > 本节锁三件事：① 预选的触发/应用/回退语义；② 「清除」「全选」两枚工具钮的形态与语义；
-> ③ 勾选/清除结果的**按章持久化**（#1464：切章再回 / 刷新**不复活**；修复 #1405 分类清除的持久化缺口）。
+> ③ 勾选/清除结果的**按章持久化**：切章再回 / 刷新**不复活**；分类清除同样持久化。
 
 ### 12.1 画面/布局补充
 
@@ -342,12 +339,12 @@
 - 三类可勾选卡片头（`GroupHeader`）右侧新增**分类清除**按钮 `context-clear-<source>`
   （source ∈ `character_setting` / `world_setting` / `foreshadowing`）：描边次要钮、与「＋ 选择注入」同组、位于其**左**，
   **仅当该类勾选数 > 0 时可用**（0 时 `disabled`）。
-- **#1464 按章持久化**：勾选/清除结果落 `localStorage`，键 = **`inkflow.context_override.<chapterId>`**
-  （按章隔离；镜像 #1378 `inkflow.rail_layout.<projectId>` / #964 `inkflow.reasoning_effort.<projectId>` 形态，
+- **按章持久化**：勾选/清除结果落 `localStorage`，键 = **`inkflow.context_override.<chapterId>`**
+  （按章隔离；镜像 `inkflow.rail_layout.<projectId>` / `inkflow.reasoning_effort.<projectId>` 的键形态，
   纯前端、**零后端改动 / 零 DDL**）。读侧**不信任存储内容**：无记录 / JSON 损坏 / 形态非法（缺字段 · 非字符串数组）/
   存储不可用（隐私模式）→ 读回 `null`（= **缺省全注入**，与改动前行为完全一致）；空 `chapterId`（章节未选 / 已删）
   → 不读不写（**不落脏键**）。
-  回读时机 = 面板**挂载 / 切章**（`chapterId` 变化）；该章有记录时**先全量组装**（保住 #1379 的「全选」恢复基准）
+  回读时机 = 面板**挂载 / 切章**（`chapterId` 变化）；该章有记录时**先全量组装**（保住「全选」的恢复基准）
   **再按记录收窄组装**（最后一次组装决定渲染），且**不发起预选**（用户显式选择优先于预选）。
   写回仅发生在**用户手动改动**（勾选/取消 · 分类清除 · 一键清除 · 全选 · 选择器确认）之后；集合回到全量基准
   → **抹掉该章记录**（恢复缺省全注入语义）。预选结果**不持久化**（每次进章实时算）。
@@ -356,24 +353,24 @@
 截图 `writing-context-preselect.png`（子集勾选：角色甲保留 / 角色乙排除 + 标题行「清除」「全选」同框）、
 `writing-context-preselect-loading.png`（加载态状态条 + 面板暂为全选）；
 生成/断言脚本 `design/GUI/_tools/shot-writing-context-preselect.cjs`（结构/几何断言全绿）。
-⚠️ #1464 为**行为（持久化）变更、非新增控件/布局**：静态原型 HTML 无法表达 localStorage 行为
+⚠️ 本节为**行为（持久化）变更、非新增控件/布局**：静态原型 HTML 无法表达 localStorage 行为
 → 原型与 PNG **零改动**（三件同步判据见 AGENTS.md §4.6，判定过程见该 PR body；本轮已核实无新增可见控件）。
 
 ### 12.2 动作样式补充
 
-| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 | 修改履历 |
-|------|--------|--------|--------|------|------|------|---------|
-| 一键清除（`context-clear-all`） | 描边次要钮，`t('write.context.clearAll')` | 三类勾选清空 + 以**三类空列表** override 重新组装 → 外传 `onOverrideChange` 三类空数组 | 无独立 loading（组装结果回写勾选） | 三类空 = 该类不注入（#1235 语义；复用既有后端通道，**零后端改动**） | 组装失败走既有 `context-error` 错误态 | 未组装（`data=null`）时点击等同空转；清除后「全选」可恢复；结果**按章落盘**（切章再回 / 刷新不复活） | 2026-10-04：#1464 结果按章持久化 |
-| 全选（`context-select-all`） | 描边次要钮；首次全量组装未返回（`fullIdsRef=null`）时 `disabled` | 恢复**首次全量组装**记录的候选集 → 重新组装 + 外传 | 同上 | 三类恢复全量 | 同上 | 恢复基准不随预选/清除收窄而缩水；集合回到全量基准 → **抹掉该章记录**（恢复缺省全注入） | 2026-10-04：#1464 归一化「回到全选 ⇒ 抹记录」 |
-| 智能预选（自动，无按钮） | 进入章节（`projectId/chapterId/model` 齐 + 写作要求非空）**并发**发起 `POST /api/v1/context/preselect` | — | 状态条 `pending`；**不阻塞**勾选/选择器/清除 | `mode="agent"` → 子集覆盖初始全选 + 二次组装（面板 blocks 随之收窄） | 调用失败 / `mode="fallback"` / 预选函数不可用 → 保持全选 + `fallback` 状态条 | 用户已手动改过勾选（toggle / 选择器确认 / 清除 / 全选）→ 丢弃晚到结果；切章重置状态与全量基准；该章**有持久化记录时不发起预选**（用户显式选择优先） | 2026-10-04：#1464 预选结果**不持久化**、有记录时跳过预选 |
-| 分类一键清除（`context-clear-<source>`，source ∈ character_setting/world_setting/foreshadowing） | 描边次要钮 `t('write.context.clearCategory')`；该类勾选数为 0 时 `disabled` | **仅该 source 清空** + 其余两类保持当前值 → 重新组装 → 外传 `onOverrideChange` 同步 | 无独立 loading（组装结果回写勾选） | 该类 `[]` = 该类不注入（#1235 语义；复用既有后端通道，零后端改动） | 组装失败走既有 `context-error` 错误态 | 空态/错误态仍常驻渲染（#1017）；清除后该类按钮禁用（幂等不发请求）；该类仍可经「＋ 选择注入」重选恢复；结果**按章落盘**（切章再回 / 刷新不复活） | 2026-10-01：#1405 新增分类清除；2026-10-04：#1464 结果按章持久化 |
-| 章级写作要求「恢复继承」（#1017 既有） | 不受本节影响 | 同既有 | 同既有 | 同既有 | 同既有 | 与清除/全选互不干涉（不同维度） | — |
+| 控件 | 初始态 | 点击后 | 进行中 | 成功 | 失败 | 边界 |
+|------|--------|--------|--------|------|------|------|
+| 一键清除（`context-clear-all`） | 描边次要钮，`t('write.context.clearAll')` | 三类勾选清空 + 以**三类空列表** override 重新组装 → 外传 `onOverrideChange` 三类空数组 | 无独立 loading（组装结果回写勾选） | 三类空 = 该类不注入（三态语义；复用既有后端通道，**零后端改动**） | 组装失败走既有 `context-error` 错误态 | 未组装（`data=null`）时点击等同空转；清除后「全选」可恢复；结果**按章落盘**（切章再回 / 刷新不复活） |
+| 全选（`context-select-all`） | 描边次要钮；首次全量组装未返回（`fullIdsRef=null`）时 `disabled` | 恢复**首次全量组装**记录的候选集 → 重新组装 + 外传 | 同上 | 三类恢复全量 | 同上 | 恢复基准不随预选/清除收窄而缩水；集合回到全量基准 → **抹掉该章记录**（恢复缺省全注入） |
+| 智能预选（自动，无按钮） | 进入章节（`projectId/chapterId/model` 齐 + 写作要求非空）**并发**发起 `POST /api/v1/context/preselect` | — | 状态条 `pending`；**不阻塞**勾选/选择器/清除 | `mode="agent"` → 子集覆盖初始全选 + 二次组装（面板 blocks 随之收窄） | 调用失败 / `mode="fallback"` / 预选函数不可用 → 保持全选 + `fallback` 状态条 | 用户已手动改过勾选（toggle / 选择器确认 / 清除 / 全选）→ 丢弃晚到结果；切章重置状态与全量基准；该章**有持久化记录时不发起预选**（用户显式选择优先） |
+| 分类一键清除（`context-clear-<source>`，source ∈ character_setting/world_setting/foreshadowing） | 描边次要钮 `t('write.context.clearCategory')`；该类勾选数为 0 时 `disabled` | **仅该 source 清空** + 其余两类保持当前值 → 重新组装 → 外传 `onOverrideChange` 同步 | 无独立 loading（组装结果回写勾选） | 该类 `[]` = 该类不注入（三态语义；复用既有后端通道，零后端改动） | 组装失败走既有 `context-error` 错误态 | 空态/错误态仍常驻渲染；清除后该类按钮禁用（幂等不发请求）；该类仍可经「＋ 选择注入」重选恢复；结果**按章落盘**（切章再回 / 刷新不复活） |
+| 章级写作要求「恢复继承」（既有） | 不受本节影响 | 同既有 | 同既有 | 同既有 | 同既有 | 与清除/全选互不干涉（不同维度） |
 
 **回退语义（后端契约，`POST /api/v1/context/preselect`）**：无大纲 / 预选未接线 / LLM 失败 / 输出不可解析
 → `mode="fallback"` 且三类 id 为**全量候选**（前端直接采用即等价既有「全选」，无需再取全量）；
 预选结果与候选集求交（幻觉 id 被过滤）；无候选 → 空集 + `mode="agent"`（没得选，不算回退）。
 
-**不做**：预选结果持久化（每次进章实时算；#1464 只持久化**用户手动**的勾选/清除结果）、预选专用微调 UI（沿用既有勾选与「＋ 选择注入」）。
+**不做**：预选结果持久化（每次进章实时算；只持久化**用户手动**的勾选/清除结果）、预选专用微调 UI（沿用既有勾选与「＋ 选择注入」）。
 
 ### 12.3 验收补充
 
@@ -386,20 +383,19 @@
 - N41：点某类「清除本类」→ 重组装请求体 `override` **仅该类为 `[]`**，另两类为**当前勾选值**（显式数组，非 `undefined`）。
 - N42：该类勾选数为 0 → 该按钮 `disabled`，另两类按钮仍可用；重复点击**不发请求**。
 - N43：清除后经「＋ 选择注入」重选该类条目 → 外传该类恢复非空，另两类不受影响。
-- N44：三类各自清除互不干扰（反向断言：另两类勾选面与外传值不变）；#1379 全局清除/全选与 #1017 写作要求栏**零劣化**。
+- N44：三类各自清除互不干扰（反向断言：另两类勾选面与外传值不变）；全局清除/全选与写作要求栏**零劣化**。
 - N56：清除某分类 → **同章重挂载**（切走再回 / F5 刷新）→ 该类仍为空（**不复活**），面板按持久化集合组装、勾选面收窄。
 - N57：**按章隔离** —— A 章的清除不影响 B 章（不同 `inkflow.context_override.<chapterId>` 键）；B 章仍缺省全注入（首轮组装无 override）。
 - N58：**反例守护** —— 从未清除过的章 → 缺省全注入（首轮无 override）且**不落任何**上下文覆盖键；无 `chapterId`（章节未选 / 已删）→ 不组装、不写脏键。
-- N59：**#1379 非劣化** —— 重挂载后「全选」仍可用（恢复基准不因持久化缩水）；清除后点「全选」→ 抹掉该章记录（`localStorage` 无该键）。
+- N59：**全选可用性非劣化** —— 重挂载后「全选」仍可用（恢复基准不因持久化缩水）；清除后点「全选」→ 抹掉该章记录（`localStorage` 无该键）。
 - N60：可证伪自证 —— 移除挂载时的持久化读回 → N56/N57 断言必须 FAIL（实测 8 例红）；把存储键改为**章无关** → N57 必 FAIL（实测 3 例红）；两次还原后复绿。
 
 > 编号说明：N56-N60 接 §15（N55）之后顺延 —— N41-N45 已被 §13.4、N46-N50 已被 §14.4 占用。
 
-## 13. #1378 右栏两面板 2:1 铺满 + 拖拽比例持久化
+## 13. 右栏两面板 2:1 铺满 + 拖拽比例持久化
 
-> 现象（v0.15.0-rc5 GUI 目视）：右栏「上下文注入」「章节摘要」高度为**固定 px**（`useState(240)` /
-> `useState(160)` 直接写 `style.height`）→ ① 默认在右栏下方留一块固定空白；② 高度只存页面组件
-> state，**切页/切章重挂载即丢**，用户每次进来都要重新拖大。
+> 设计要求：右栏「上下文注入」「章节摘要」高度按**比例**分配（不写死 px）——① 两面板合计吃满右栏剩余高度（不留固定空白）；
+> ② 高度（比例）跨切页/切章重挂载保持。
 > 本节锁三件事：① 默认铺满 + 2:1 的比例语义；② row-resize 拖的是**比例**（含夹值）；③ 拖拽结果按项目持久化。
 
 ### 13.1 画面/布局补充
@@ -415,13 +411,13 @@
 | 控件 | 初始态 | 拖拽中 | 成功 | 边界 |
 |------|--------|--------|------|------|
 | row-resize 手柄（`rail-resize-handle-0`） | 两面板 2:1 铺满 | 按「指针位移 ÷ **两面板合计盒高**」换算比例，实时改 `flex-grow` | mouseup → 写 `localStorage['inkflow.rail_layout.<projectId>']`（`{split, width}`） | 比例夹 [0.2, 0.8]；未布局（合计盒高为 0）→ 忽略本次拖拽；无当前项目（`projectId === ''`）→ 不落盘 |
-| col-resize 手柄（`right-col-drag`，#720 既有） | 默认 240px | 90~540px 实时改宽 | mouseup → 同上落盘（`width` 字段） | 与比例同键存储；部分写不覆盖另一字段 |
+| col-resize 手柄（`right-col-drag`，既有） | 默认 240px | 90~540px 实时改宽 | mouseup → 同上落盘（`width` 字段） | 与比例同键存储；部分写不覆盖另一字段 |
 
 ### 13.3 持久化语义
 
 - 载体：`localStorage['inkflow.rail_layout.<projectId>']` = `{"split": number, "width": number, "treeWidth": number}`（JSON），
-  **按项目隔离**（镜像 #964 思考档位的 `inkflow.reasoning_effort.<projectId>` 形态）。
-  `treeWidth`（左栏宽度）由 #1397 并入同一键，见 §14；写入为**部分写**（只覆盖传入字段）。
+  **按项目隔离**（镜像思考档位的 `inkflow.reasoning_effort.<projectId>` 形态）。
+  `treeWidth`（左栏宽度）并入同一键，见 §14；写入为**部分写**（只覆盖传入字段）。
 - 读侧**不信任**存储内容：越界 → 夹到合法区间；非数字 / 缺字段 / JSON 损坏 / 存储不可用（隐私模式）→
   该项回退默认（`2/3` / `240`），不抛错、不崩 UI。
 - 回读时机：**首挂载** + **切项目**（`effectiveProjectId` 变化）；同一项目内的重挂载（切页/切章回来）走首挂载路径。
@@ -432,31 +428,26 @@
 - N41：挂载后两面板无固定 px 高、以 flex 比例分配（`flex-basis: 0%` + 两面板 `flex-grow` 占比 = **2:1**）→ 合计铺满右栏上下显示区（不留固定空白）。
 - N42：拖拽 `rail-resize-handle-0` → 比例跟随（向下拖 context 占比变大）；猛拖到底 / 到顶分别夹在 0.8 / 0.2，任一面板不为 0。
 - N43：拖拽结束（mouseup）→ 落盘 `inkflow.rail_layout.<projectId>`；**卸载后重挂载比例保持**（清掉记忆则回默认 2:1）。
-- N44：`right-col-drag` 调宽同样落盘并跨重挂载保持（#720 拖拽结果原本同样只存组件 state，本单**一并覆盖**）。
+- N44：`right-col-drag` 调宽同样落盘并跨重挂载保持（右栏拖拽宽度与比例共用同一键）。
 - N45：可证伪自证 —— 两面板改回固定 px 高（旧形态）→ N41 必须 FAIL，「重挂载保持」同时失效（实测红，还原后复绿）。
 
 **不做**（范围拍板）：
 
 - 不引入 split-pane 类依赖 —— 既有受控手柄形态已够用；
-- **左栏** `treeWidth`（#702）不持久化 → ~~本条诉求是右栏（#1378 正文只点右栏宽度「一并核实」），左栏另议~~ **已由 #1397 覆盖**（同一键并入 `treeWidth`，见 §14）；#1378 自身范围仍只锁右栏；
+- **左栏** `treeWidth` 的持久化并入同一键（见 §14）—— 本节的持久化要求同样覆盖左栏宽度；
 - `railCollapsed`（整栏收起）不持久化：它是临时视图态，不是拖拽结果。
 
-原型基准：`design/GUI/writing/writing.html`（两面板 flex 2:1 铺满）；受影响状态 PNG **全量重出** ——
-`writing-editor-idle / writing-streaming / writing-global-chat / writing-thinking-level / writing-reasoning /
-writing-context-injected / writing-context-no-record / writing-context-preselect /
-writing-context-preselect-loading / writing-drafts-approval / writing-delete-auth / writing-delete-hitl`
-（`collapsed` / `empty` 两态右栏面板不渲染，无需重出）。
-其中 `delete-auth` / `delete-hitl` 此前**无 shot 脚本**（孤儿 PNG，改原型后无法再生成）→ 本单补
-`design/GUI/_tools/shot-writing-delete-auth.cjs` 纳入可重生成集合；`shot-writing-global-chat-and-sessions.cjs`
-增「面板铺满（summary 底缘 = rail 底缘）+ context:summary ≈ 2:1」几何断言（断言全绿）。
+原型基准：`design/GUI/writing/writing.html`（两面板 flex 2:1 铺满）。对应状态 PNG：
+`writing-editor-idle` / `writing-streaming` / `writing-global-chat` / `writing-thinking-level` / `writing-reasoning` /
+`writing-context-injected` / `writing-context-no-record` / `writing-context-preselect` / `writing-context-preselect-loading` /
+`writing-drafts-approval` / `writing-delete-auth` / `writing-delete-hitl`（`collapsed` / `empty` 两态右栏面板不渲染，无对应状态图）。
 
 ⚠️ **视觉复验边界**：jsdom 无盒模型 → 前端契约只锁 flex 结构 / 占比 / 持久化读写；真实像素呈现
 （铺满、2:1、拖拽手感、窗口 resize 行为）由上述 PNG 几何断言 + 人工目视确认，**无**浏览器自动化回归。
 
-## 14. #1397 左栏宽度拖拽结果持久化
+## 14. 左栏宽度拖拽结果持久化
 
-> 现象（#1378 收尾核实的同族缺口）：左栏宽度自 #702 起是页面 state（`writing.tsx` 的 `useState(208)`），
-> **无任何存储读写** → 拖完切页 / 切章 / 重挂载即回默认 208px。与 #1378 修掉的右栏是同一类缺陷。
+> 设计要求：左栏宽度须**跨切页 / 切章 / 重挂载保持**（不得只存页面 state：拖完即回默认 208px）。
 > 本节锁三件事：① 复用同一份工作区布局记忆（不另建键 / 不抽 hook）；② 落盘时机与右栏一致（mouseup）；
 > ③ 区间与容错口径沿用左栏既有形态（160~360，越界夹值 / 损坏回退）。
 
@@ -472,14 +463,14 @@ writing-context-preselect-loading / writing-drafts-approval / writing-delete-aut
 |------|--------|--------|------|------|
 | col-resize 手柄（`tree-resize-handle`） | 左栏默认 208px（或该项目上次的记忆宽） | 160~360px 实时改宽（既有 `onResizeWidth`） | mouseup → 经新增可选 prop `onResizeEnd(w)` 落盘 `localStorage['inkflow.rail_layout.<projectId>'].treeWidth`（**部分写**） | 越界由 `ProjectTree` 夹到 160~360；无当前项目（`projectId === ''`）→ 不落盘；拖拽中 body userSelect 锁定（既有） |
 
-- `ProjectTree` 新增**可选** prop `onResizeEnd?: (w: number) => void`（未传 → 行为与 #702 完全一致，既有调用点零影响）；携带手柄内部算出的**最终宽度**（父层不读自己的陈旧 state）。
+- `ProjectTree` 新增**可选** prop `onResizeEnd?: (w: number) => void`（未传 → 行为与既有实现完全一致，既有调用点零影响）；携带手柄内部算出的**最终宽度**（父层不读自己的陈旧 state）。
 
 ### 14.3 持久化语义
 
 - 载体 = **同一键** `inkflow.rail_layout.<projectId>` 的 `treeWidth` 字段（与 `split` / `width` 并列，见 §13.3）——单键、单读回时机、一份容错逻辑；
-- 回读时机与右栏**完全共用**（`writing.tsx` 既有回读 effect：#1378 建立，首挂载 + 切项目）：同一 effect 内一并 `setRailSplit / setRailWidth / setTreeWidth`；
+- 回读时机与右栏**完全共用**（`writing.tsx` 既有回读 effect：首挂载 + 切项目）：同一 effect 内一并 `setRailSplit / setRailWidth / setTreeWidth`；
 - 读侧不信任存储：越界 → 夹 160~360；非数字 / 缺字段 / JSON 损坏 / 存储不可用 → 该项回退 208（**不影响**右栏两项读回）；
-- #1378 旧数据（无 `treeWidth` 字段）→ 仅该项取默认，右栏两项照读（向前兼容）。
+- 旧数据（无 `treeWidth` 字段）→ 仅该项取默认，右栏两项照读（向前兼容）。
 
 ### 14.4 验收补充
 
@@ -502,13 +493,13 @@ writing-context-preselect-loading / writing-drafts-approval / writing-delete-aut
 （`writing-streaming` 为流式态动画帧——同一 HTML 连跑两次字节亦不同，属既有非确定性渲染），
 故未提交任何 PNG 变更（避免把动画噪声当作本轨产物）。
 
-## 15. #1440 被覆盖章的「已有上一稿」徽标 + 恢复入口
+## 15. 被覆盖章的「已有上一稿」徽标 + 恢复入口
 
-> 背景：#1430 A2（PR #1433）让 `book run --force` 覆盖正文前把旧稿落到 `chapters.previous_content`，
+> 背景：`book run --force` 覆盖正文前把旧稿落到 `chapters.previous_content`，
 > 并提供恢复读口（经 `update_chapter` 覆盖写 ⇒ `content` ⇄ `previous_content` **互换**，可再切回）。
-> GUI 侧此前**零消费**（无封装、无徽标、无入口）→ 本节锁前端三件：
+> GUI 侧**零消费**（无封装、无徽标、无入口）→ 本节锁前端三件：
 > ① 树内「已有上一稿」徽标（常显）；② 行内「恢复上一稿」入口 + 确认框；③ 恢复后正文/徽标同步刷新。
-> **后端零改动**（读面早已通过 `model_dump(mode="json")` 透出 `previous_content`；端点为 #1430 既有）。
+> **后端零改动**（读面早已通过 `model_dump(mode="json")` 透出 `previous_content`；端点既有）。
 
 ### 15.1 画面/布局补充
 
