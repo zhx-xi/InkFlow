@@ -1,19 +1,21 @@
-# AI 执行链路可重放补全（#615）
-> **端**: backend
+# AI 执行链路可重放补全
 
-> **Spec（0.12.0，2026-08-23）**：在 `#599`（统一执行视图）基础上补齐「**chat 会话可重放**」缺口——chat 流式对话（`/api/v1/chat/agent/stream`，走 deepagents ReAct）落 `run_id + steps`（含工具调用 args/result），复用 F27 `agent_runs` 表，使对话后可回看 agent 内部步骤与工具调用链路。
->
-> 依赖：`#597`（chat 接 deepagents）+ `#599`（f55-unified-exec-view，前端已支持 runId 渲染）已合入；F27 `AgentRun/AgentStep/AgentToolCall` 模型与 `GET /api/v1/agent/runs/{id}` 已存在。
->
-> ## 拍板记录（2026-08-23，用户拍板 A：继续 #615）
->
-> | 决策 | 结论 | 说明 |
-> |------|------|------|
-> | D1 run 落库方式 | **A：复用 `agent_runs` 表 + `AgentRun` 模型**（`mode="chat"`） | 零迁移（表已存在）；与 agentic run 同表、按 `mode` 区分；GET `/agent/runs/{id}` 直接复用——不新建 ChatRun 表（避免「第二次造执行实体」）。 |
-> | D2 steps 构造 | 从 `astream_events v2` 收集 `on_chat_model_end`（完整 AIMessage）+ `on_tool_end`（ToolMessage）→ 组装 `AgentStep` | 镜像 F27 `_build_steps`（每条 AI 消息一个 step，tool_calls 按 tool_call_id 回填 result）。 |
-> | D3 管线 trace | **不补 tool_calls**（管线单次 LLM，无工具，已核实 `pipeline_nodes._call_llm_node`）→ 范围外 | 管线 trace `tool_calls=[]` 是正确反映（非缺陷）；「推理可重放增强」（reasoning 记 prompt）列为后续增值项。 |
+> **端**: backend
+> **依赖**: [F27 Writer Agent](../f27-writer-agent/spec.md) · [F55 统一执行视图](../f55-unified-exec-view/spec.md)
 
 ---
+
+## 概述
+
+在统一执行视图（[F55](../f55-unified-exec-view/spec.md)）基础上补齐「**chat 会话可重放**」缺口——chat 流式对话（`/api/v1/chat/agent/stream`，走 deepagents ReAct）落 `run_id + steps`（含工具调用 args/result），复用 F27 `agent_runs` 表，使对话后可回看 agent 内部步骤与工具调用链路。
+
+## 决策记录
+
+| 决策 | 结论 | 说明 |
+|------|------|------|
+| D1 run 落库方式 | **A：复用 `agent_runs` 表 + `AgentRun` 模型**（`mode="chat"`） | 零迁移（表已存在）；与 agentic run 同表、按 `mode` 区分；GET `/agent/runs/{id}` 直接复用——不新建 ChatRun 表（避免「第二次造执行实体」）。 |
+| D2 steps 构造 | 从 `astream_events v2` 收集 `on_chat_model_end`（完整 AIMessage）+ `on_tool_end`（ToolMessage）→ 组装 `AgentStep` | 镜像 F27 `_build_steps`（每条 AI 消息一个 step，tool_calls 按 tool_call_id 回填 result）。 |
+| D3 管线 trace | **不补 tool_calls**（管线单次 LLM，无工具，已核实 `pipeline_nodes._call_llm_node`）→ 范围外 | 管线 trace `tool_calls=[]` 是正确反映（非缺陷）；「推理可重放增强」（reasoning 记 prompt）列为后续增值项。 |
 
 ## 1. 现状与分析（源码实锤，2026-08-23）
 

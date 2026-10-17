@@ -1,26 +1,30 @@
-# 统一 AI 执行工作流视图 —— 链式静态 + agentic 动态双时间线（#599）
-> **时间口径（ADR-055 / #1000，#1069 收口）**：本模块 GUI 显示的时间戳（created_at/updated_at/started_at/completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值=UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（'YYYY-MM-DD HH:mm:ss'，本地访问器手拼，禁 toLocaleString）。数据层（API/`--json`/MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
-> **端**: frontend
+# 统一 AI 执行工作流视图 —— 链式静态 + agentic 动态双时间线
 
-> **Spec（0.12.0，2026-08-23）**：将「续写/生成/全自动/对话」等 AI 动作**全部展示到同一个 AI 执行详情视图**，用**统一执行模型**渲染两种形态——
-> **链式**（固定 stage 静态序列）与 **agentic**（deepagents 动态 tool_call 轨迹）。工作流栏可置于视图上方/下方。
->
-> 依赖：#597（chat 接入 deepagents 系统级 Agent）已合入 main；本 spec 在其上做**统一执行渲染**。
->
-> ## 拍板记录（2026-08-23，用户拍板）
->
-> | 决策 | 结论 | 说明 |
-> |------|------|------|
-> | D10 统一 agent_run 双形态 | **A：统一执行视图** | 链式=静态 stage 序列、agentic=动态 tool_call 轨迹，**都渲染到同一「查看 AI 执行详情」入口**。物理存储：链式仍在 `agent_executions`（stages/trace/relations），agentic 在 `agent_runs`（steps/tool_calls）——二者各有 GET 端点；**视图层统一**，不物理合并两表（避免大规模高风险 refactor + 迁移；符合「可逆性」「不做架构宇航员」）。物理库存合列为后续增值项。 |
-> | D12 双入口统一出口 | **A：同一入口看双态** | 续写/生成按钮（链式，`executionId`）+ 对话/全自动（agentic，`runId`）都经**同一个 ExecutionDetailPanel** 渲染；panel 的项目级历史列表**同时列出链式 execution + agentic run**，任一点击进入对应详情。 |
->
-> ## 设计原则（理解 D10-A 的落地边界）
->
-> 1. **统一的是「视图」不是「存储」**：D10-A「落到 agent_run + steps」在本 issue 的实现语义 = 两种动**都能被同一视图模型渲染**。链式数据源（`GET /api/v1/agent/pipelines/executions/{id}` → stages）与 agentic 数据源（`GET /api/v1/agent/runs/{id}` → steps）都有结构化轨迹，面板按类型归一渲染。
-> 2. **不重复造 abstraction**：面板用判别数据驱动（`executionId` → 链式分支；`runId` → agentic 分支），而非强行造一个中间「统一 timeline」抽象层——每种形态天然线性，判别 prop 已足够，避免过度架构造型。
-> 3. **可逆**：面板新增 `runId`/`workflowPlacement` 可选 prop，零破坏既有链式/历史契约。
+> **端**: frontend
+> **依据**: ADR-055（时间字段 UTC 存储 + 本地时区显示口径）
 
 ---
+
+## 概述
+
+将「续写/生成/全自动/对话」等 AI 动作**全部展示到同一个 AI 执行详情视图**，用**统一执行模型**渲染两种形态—— **链式**（固定 stage 静态序列）与 **agentic**（deepagents 动态 tool_call 轨迹）。工作流栏可置于视图上方/下方。
+
+## 时间口径
+
+时间戳（created_at / updated_at / started_at / completed_at 类字段）来自实体端点的 **naive UTC 串**（SQLite 剥 tzinfo，值 = UTC）→ `lib/log-format.formatTimestamp` 先按 UTC 归一（无偏移 date-time 补 Z）再转**系统本地时区**显示（`'YYYY-MM-DD HH:mm:ss'`，本地访问器手拼，禁 `toLocaleString`）。数据层（API / `--json` / MCP）保持 UTC 原始值。硬约束惯例，非可配置开关。
+
+## 决策记录
+
+| 决策 | 结论 | 说明 |
+|------|------|------|
+| D10 统一 agent_run 双形态 | **A：统一执行视图** | 链式=静态 stage 序列、agentic=动态 tool_call 轨迹，**都渲染到同一「查看 AI 执行详情」入口**。物理存储：链式仍在 `agent_executions`（stages/trace/relations），agentic 在 `agent_runs`（steps/tool_calls）——二者各有 GET 端点；**视图层统一**，不物理合并两表（避免大规模高风险 refactor + 迁移；符合「可逆性」「不做架构宇航员」）。物理库存合列为后续增值项。 |
+| D12 双入口统一出口 | **A：同一入口看双态** | 续写/生成按钮（链式，`executionId`）+ 对话/全自动（agentic，`runId`）都经**同一个 ExecutionDetailPanel** 渲染；panel 的项目级历史列表**同时列出链式 execution + agentic run**，任一点击进入对应详情。 |
+
+## 设计原则
+
+1. **统一的是「视图」不是「存储」**：D10-A「落到 agent_run + steps」在本模块的实现语义 = 两种动**都能被同一视图模型渲染**。链式数据源（`GET /api/v1/agent/pipelines/executions/{id}` → stages）与 agentic 数据源（`GET /api/v1/agent/runs/{id}` → steps）都有结构化轨迹，面板按类型归一渲染。
+2. **不重复造 abstraction**：面板用判别数据驱动（`executionId` → 链式分支；`runId` → agentic 分支），而非强行造一个中间「统一 timeline」抽象层——每种形态天然线性，判别 prop 已足够，避免过度架构造型。
+3. **可逆**：面板新增 `runId`/`workflowPlacement` 可选 prop，零破坏既有链式/历史契约。
 
 ## 1. 现状与分析（代码实锤）
 
