@@ -6,7 +6,7 @@
 
 ---
 
-## 1. 概述与根因（代码实锤，2026-09-11）
+## 1. 概述与根因
 
 `INKFLOW_SECRET_KEY` 未设置时，`APIKeyManager` 退化为明文存储用户 API Key。这是**已知降级路径**，但存在三个缺口：
 
@@ -47,9 +47,9 @@
 - **目标**：全新数据目录首启时，`INKFLOW_SECRET_KEY` 缺失 → **自动生成**随机密钥并落盘 → 告警降级为单次 INFO；显式设置该 env 时零告警。
 - **非目标**：
   - 不提供 GUI 弹窗/选择界面（方案 B 不在本模块范围；GUI 可见性由字段消费面 `secret_key_ready` 承接，见 §5）。
-  - 不迁移已有明文 `keys/*.key` 文件为密文（存量文件靠 #821 交叉尝试继续可读，§3.4 边界 4）。
-  - 不改动 `_load_stored_key` 三级回退链语义（#821 契约保持）。
-  - 不引入新设置键（`secret_key` 字段已存在，沿用；镜像 #770 轻量契约先例）。
+  - 不迁移已有明文 `keys/*.key` 文件为密文（存量文件靠明文交叉尝试继续可读，§3.4 边界 4）。
+  - 不改动 `_load_stored_key` 三级回退链语义（契约保持）。
+  - 不引入新设置键（`secret_key` 字段已存在，沿用；镜像既有轻量契约先例）。
 
 ---
 
@@ -65,7 +65,7 @@ _SECRET_KEY_WARNED = False
 
 
 def _warn_empty_secret_key_once() -> None:
-    """空 secret_key 降级告警，每进程至多一条（#1096 G1）。
+    """空 secret_key 降级告警，每进程至多一条（G1）。
 
     多线程原子：先置位再打日志，check-and-set 之间无线程切换窗口。
     """
@@ -103,7 +103,7 @@ def load_or_create_secret_key(data_dir: Path) -> str:
 
 | 决策点 | 裁定 | 理由 |
 |--------|------|------|
-| D1 落盘位置 | `<data_dir>/keys/.secret_key` | **不用** issue 原文的 `<data_dir>/.secret_key`——与密文文件同域（`keys/`），备份/迁移只需带走 `keys/` 一个目录；且 `provider_config._load_stored_key` 已锚定 `keys/`（#821） |
+| D1 落盘位置 | `<data_dir>/keys/.secret_key` | **不用** `<data_dir>/.secret_key`——与密文文件同域（`keys/`），备份/迁移只需带走 `keys/` 一个目录；且 `provider_config._load_stored_key` 已锚定 `keys/` |
 | D2 已存在时不重新生成 | **必须** | 重新生成 → 已加密的 `keys/*.json` 全部解不开（**不可逆数据丢失**）。这是本方案最高危点，RED 契约专测 |
 | D3 生成后回写 `config.secret_key` | **必须** | 否则同进程内 `config.secret_key` 仍为 `""`，7 个调用点仍走明文分支——A 方案最隐蔽的失效模式 |
 | D4 权限 | POSIX `chmod 0600`；Windows 平台跳过（POSIX 权限位在 NTFS 无语义） | 跨平台不报错 |
@@ -129,7 +129,7 @@ data_dir.mkdir → database_url 派生 → vector_store_dir 派生 → debug 派
 | 1 | `<data_dir>/keys/.secret_key` 已存在 | 读取其内容，**不重新生成**（D2） |
 | 2 | `keys/` 目录不存在 | 创建（含父目录）后生成 |
 | 3 | `keys/.secret_key` 存在但内容为空/非法 | 视为缺失 → 生成覆盖？**否**——按「内容为空串」处理为异常，退化为 `""`（保守：宁可明文降级，不覆盖可能有效的密钥文件） |
-| 4 | 存量 `keys/*.key` 明文文件（升级用户） | 不受影响——`_load_stored_key` 第 2 级明文读取仍命中（#821 语义保留）；新写入的 key 走密文 |
+| 4 | 存量 `keys/*.key` 明文文件（升级用户） | 不受影响——`_load_stored_key` 第 2 级明文读取仍命中（明文读取语义保留）；新写入的 key 走密文 |
 | 5 | 显式 `INKFLOW_SECRET_KEY` | 零告警、零文件系统访问 |
 | 6 | 多个进程并发首启 | 两进程可能各生成一份，后写者胜——两进程各自内存中的 key 均可解密自己写的数据；**已知局限**，不引入文件锁（详 §7 取舍） |
 
@@ -172,7 +172,7 @@ data_dir.mkdir → database_url 派生 → vector_store_dir 派生 → debug 派
 
 ---
 
-## 5. 验收判据（对齐 issue #1096）
+## 5. 验收判据
 
 - [ ] 全新数据目录启动后 `logs` 中该告警 **≤1 条**（非 16 条）
 - [ ] key 实际加密存储（`keys/*.json` 密文；`APIKeyManager.load` 往返成功）

@@ -11,7 +11,7 @@
 
 本 feature 把当前 `config.py` 中**空壳声明**的 `langsmith_*` 字段完成真实接线：启动时按 config 注入 LangSmith 环境变量。
 
-**用户拍板（2026-08-24）**：方案 C = 默认关闭 + 先 SaaS（`smith.langchain.com`），后续可切自托管。核心原则：
+**方案 C = 默认关闭 + 先 SaaS（`smith.langchain.com`），后续可切自托管。核心原则：
 - **默认关**：`langsmith_enabled=False` 保留现状；仅显式开启才注入 env
 - **按需开**：调试 agent 行为时手动开启，日常写作不追踪（内容不上云）
 - **key 不落盘明文**：经 env `INKFLOW_LANGSMITH_API_KEY` / config.json 注入；全程 mask
@@ -148,7 +148,7 @@
 
 | 决策 | 选择 | 备选 | 理由 |
 |------|------|------|------|
-| 默认状态 | 关闭（`enabled=False`） | 默认开 | 内容不上云；调试时手动开（用户拍板 C） |
+| 默认状态 | 关闭（`enabled=False`） | 默认开 | 内容不上云；调试时手动开（方案 C） |
 | 云 vs 自托管 | 先 SaaS + `endpoint` 预留 | 直接自托管 | SaaS 零部署成本；key 免费；自托管后续可切（endpoint 字段已留） |
 | key 存储 | config 字段（env 注入） | APIKeyManager 加密库 | LangSmith key 非 LLM provider key；v1 最小化（范围外声明 §2） |
 | env 注入点 | `lifespan()` 单点 | 每 request / CLI 注入 | 内核单进程覆盖全部入口；早于首次 ChatOpenAI |
@@ -171,7 +171,7 @@
 
 | 输入组合 | 前置 | 动作 | 成功 | 失败 | 边界 |
 |---------|------|------|------|------|------|
-| enabled=False | 无 | 直接返回空 dict，不注入 | {} | — | 无副作用；默认关（用户拍板方案 C） |
+| enabled=False | 无 | 直接返回空 dict，不注入 | {} | — | 无副作用；默认关（方案 C） |
 | enabled=True + key 空 | — | 返回 {} + logger.warning | {} | warning（非致命，不阻断启动） | 提示 key 缺失 |
 | enabled=True + key 非空 | — | 构造 3 键 env | LANGSMITH_TRACING=true + LANGSMITH_API_KEY + LANGSMITH_PROJECT | — | PROJECT 空串回退 "inkflow" |
 | enabled=True + key 非空 + endpoint 非空 | — | 追加 LANGSMITH_ENDPOINT | 4 键 env | — | 自托管端点预留（§2 范围外声明） |

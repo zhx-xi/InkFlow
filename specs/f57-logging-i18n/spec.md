@@ -16,7 +16,7 @@
 - LLM/工具/agent 提示词：`backend/src/inkflow/infrastructure/llm/templates/*.yaml` 硬编码中文，无 per-locale。
 - 埋点广度：后端可埋点函数 ≈ **416**（统计口径 regex 实测：API 路由端点 **~220** + agent 编排 ~40 + LLM 调用 ~16 + 工具 ~80 + CLI 命令 ~30 + MCP 工具 ~30 + 前端页面操作）。
 
-**1.3 边界声明**：本模块不新增业务实体；只加**日志埋点 + i18n 基础设施 + 前端桥接**。#496（日志页显示）消费本 spec 产出的结构化日志；#887 为日志埋点细节引用。前端 UI 文案全量 i18n 已有（前端已 i18n），本 spec 只加日志消息键 + 后端对齐。**GUI 日志口径**：包括渲染层页面操作 + **Electron 主进程**日志（均经前端 logger 上报 `/api/v1/logs` 聚合进后端 loguru 同一流）。
+**1.3 边界声明**：本模块不新增业务实体；只加**日志埋点 + i18n 基础设施 + 前端桥接**。日志页（[f496](../f496-log-page/spec.md)）消费本 spec 产出的结构化日志。前端 UI 文案全量 i18n 已有（前端已 i18n），本 spec 只加日志消息键 + 后端对齐。**GUI 日志口径**：包括渲染层页面操作 + **Electron 主进程**日志（均经前端 logger 上报 `/api/v1/logs` 聚合进后端 loguru 同一流）。
 
 ---
 
@@ -49,7 +49,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 ```
 - `caller_type` 枚举：`api`(路由端点)、`agent`(编排)、`llm`(LLM 调用)、`tool`(工具调用)、`cli`(CLI 命令)、`mcp`(MCP 工具)、`frontend`(前端页面操作)。
 - **字段必填**：`timestamp/level/logger/caller_type/caller_name/event/message_key/params/correlation_id`（`stack` 仅 ERROR 必填）；**可选**：`trace_id/span_id/parent_span_id/project_id/entity_id/duration_ms/error_code`。`params` 含脱敏后参数摘要（不泄 key）。
-- **时间口径（ADR-055 / #1000）**：`timestamp` **存储与 API 响应一律 UTC ISO 原始值**（`datetime.now(UTC)`，SQLite `DateTime` 列剥 tzinfo → 序列化为 naive UTC 串）；**显示层转系统本地时区**——GUI 日志页经 `lib/log-format.formatTimestamp`/`formatClock`（本地访问器手拼 `'YYYY-MM-DD HH:mm:ss'`，列表/调用链节点/详情面板三处一致），不做 UTC/本地切换开关、不加时区标注。原始 ISO 值仍可从 API / `--json` 取得。（**收敛点（#1099 补记）**：三条落盘路径必须同口径——① `POST /api/v1/logs` 经 `StructuredLogRecord.timestamp` 默认值（UTC）；② 进程内 `log_structured()` 经 loguru 结构化 sink（`core/log.py:_structured_sink` 用 `record["time"].astimezone(UTC)` 归一，**禁用裸 `record["time"]`**——loguru 自行按宿主本地时区格式化，会绕过模型默认值）；③ CLI/MCP 转发器不传 `timestamp`，由内核走路径①。）
+- **时间口径（ADR-055）**：`timestamp` **存储与 API 响应一律 UTC ISO 原始值**（`datetime.now(UTC)`，SQLite `DateTime` 列剥 tzinfo → 序列化为 naive UTC 串）；**显示层转系统本地时区**——GUI 日志页经 `lib/log-format.formatTimestamp`/`formatClock`（本地访问器手拼 `'YYYY-MM-DD HH:mm:ss'`，列表/调用链节点/详情面板三处一致），不做 UTC/本地切换开关、不加时区标注。原始 ISO 值仍可从 API / `--json` 取得。（**收敛点**：三条落盘路径必须同口径——① `POST /api/v1/logs` 经 `StructuredLogRecord.timestamp` 默认值（UTC）；② 进程内 `log_structured()` 经 loguru 结构化 sink（`core/log.py:_structured_sink` 用 `record["time"].astimezone(UTC)` 归一，**禁用裸 `record["time"]`**——loguru 自行按宿主本地时区格式化，会绕过模型默认值）；③ CLI/MCP 转发器不传 `timestamp`，由内核走路径①。）
 - `message_key` = i18n msgid（语言中立）；日志页用 `t(message_key, params)` 渲染 → **实时切换**。
 - `trace_id`/`span_id`/`parent_span_id`：OpenTelemetry/W3C 语义——入口面（GUI/CLI/MCP）生成根 trace；W3C `traceparent` 请求头格式 `00-<trace-id 32hex>-<span-id 16hex>-<flags 2hex>`，中间件解析/兜底生成（缺失或非法 → 新根）；每条日志携带三字段（OTel 父子链，2.0 cloud 前置）。
 - `correlation_id`：保留为操作级 uuid 兜底（一次操作/对话/pipeline 贯穿前后端，前端生成 uuid → 请求头 `X-Correlation-Id` → 后端沿用）。
@@ -148,7 +148,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 | i18n 缺 msgid | `t()` 回退打包默认/zh 并 WARN 记录（防静默） |
 | 用户 override 孤儿键 | 校验：override 键必须存在于打包默认，否则 WARN |
 | 前端 bridge 失败 | 前端 logger 本地 console 兜底 + 重试/丢弃（非阻塞） |
-| 参数含 key/secret | `mask_fields` 脱敏（F53 + #875） |
+| 参数含 key/secret | `mask_fields` 脱敏（F53） |
 | 日志轮转 | loguru `rotation`（按天）+ 保留 N 份；`/logs` 读文件聚合 |
 
 ---
@@ -157,7 +157,7 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 
 | 项 | 归属/原因 |
 |----|----------|
-| #496 日志页 UI 实现 | 本 spec 只产日志结构，页面另 issue |
+| 日志页 UI 实现 | 本 spec 只产日志结构，页面见 [f496-log-page](../f496-log-page/spec.md) |
 | 2.0 cloud 可观测（OTEL exporter/远端收集） | 本 spec 预留字段，cloud 里程碑再做 |
 | 前端 UI 文案全量 i18n（已有） | 前端已 i18n，本 spec 只加日志消息键 + 后端对齐 |
 | prompt per-project 定制 | scope 克制，后续扩展 |
@@ -174,8 +174,8 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 
 ## 10. 依赖关系
 
-- 依赖：ADR-016(loguru)、ADR-044(debug)、F53(redact)、#875(工具脱敏)、ADR-021(内核 HTTP)。
-- 被依赖：#496（日志页）、2.0 cloud（可观测 + 按用户 locale）。
+- 依赖：ADR-016(loguru)、ADR-044(debug)、F53(redact)、ADR-021(内核 HTTP)。
+- 被依赖：日志页（[f496](../f496-log-page/spec.md)）、2.0 cloud（可观测 + 按用户 locale）。
 
 ---
 
@@ -203,4 +203,4 @@ project_id / entity_id / duration_ms / error_code / stack?(仅ERROR)
 | M5 | 提示词/工具/skill 全译（zh/en）+ per-call 准实时切换生效 | `backend/tests/unit/i18n/test_i18n_s4_domains.py`（提示词/skill 键对称 + per-call 切换）/ `backend/tests/unit/i18n/test_tool_i18n_parity.py`（工具译名双向 parity） |
 | M6 | 零回归（backend 全测 + 前端 vitest/tsc/lint + ruff/mypy） | CI |
 
-> 所有里程碑验收以本节 M1-M6 为准；#496 依赖 M1-M3（日志结构 + 消息目录就绪）后消费。
+> 所有里程碑验收以本节 M1-M6 为准；日志页依赖 M1-M3（日志结构 + 消息目录就绪）后消费。

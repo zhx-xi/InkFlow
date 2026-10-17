@@ -75,7 +75,7 @@
 
 **Provider 路由**: `model` 参数格式 `provider/model_name`（如 `openai/gpt-4o`），解析 provider → `get_provider_config`（注册表优先 + API Key 注入，ADR-051）→ 模型名经 litellm 前缀口径校准 → 注入 ChatLiteLLM（api_base 按 Provider 配置覆盖）。
 
-**重试**: `max_retries`/`request_timeout` 直传 ChatLiteLLM 顶层参数（单层重试，默认 3、超时 120s；禁 `num_retries`——实证 tenacity × openai SDK 双层叠加重试为缺陷，#962）。耗尽或上游异常 → `LLMRequestError`（retries_exhausted=True）；401/403 认证错误不重试（SDK 按状态码语义直接抛错）。
+**重试**: `max_retries`/`request_timeout` 直传 ChatLiteLLM 顶层参数（单层重试，默认 3、超时 120s；禁 `num_retries`——实证 tenacity × openai SDK 双层叠加重试为缺陷）。耗尽或上游异常 → `LLMRequestError`（retries_exhausted=True）；401/403 认证错误不重试（SDK 按状态码语义直接抛错）。
 
 > **YAGNI 决策**: 不显式维护 `ProviderManager` 类。Provider 配置通过 Pydantic Settings 环境变量注入，`LangChainLLMClient` 在调用时按需解析。
 
@@ -211,12 +211,12 @@ backend/tests/
 
 ### 10.1 LangChainLLMClient 方法状态流
 
-| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 | 修改履历 |
-|------|------|------|------|------|------|---------|
-| chat(messages, *, model, temperature, max_tokens) | API Key 已配置 | 解析 provider/model → 注入 ChatLiteLLM → ainvoke → 映射 ChatResponse | ChatResponse | LLMRequestError（Key 未配置 / 401 不重试 / 重试耗尽 / 模型不支持） | max_retries ≤3 单层重试（litellm 顶层，禁 num_retries），超时 120s；401/403 不重试；model 格式 provider/model_name | 2026-09-09：LLM 出口迁移 ChatLiteLLM（ADR-051） |
-| chat_stream(messages, *, model, temperature, max_tokens) | 同上 | 流式逐 token | AsyncGenerator[StreamEvent]（is_final 收尾） | stream 中断 → LLMRequestError | — | — |
-| count_tokens(messages, *, model) | — | tiktoken 估算 | int | — | 无 tokenizer 模型 → 回退字符数/4 + WARNING；空消息 → 0 | — |
-| chat([]) | — | 空消息调用 | — | ValueError("messages cannot be empty") | 前置校验，非 LLM 错误 | — |
+| 方法 | 前置 | 动作 | 成功 | 失败 | 边界 |
+|------|------|------|------|------|------|
+| chat(messages, *, model, temperature, max_tokens) | API Key 已配置 | 解析 provider/model → 注入 ChatLiteLLM → ainvoke → 映射 ChatResponse | ChatResponse | LLMRequestError（Key 未配置 / 401 不重试 / 重试耗尽 / 模型不支持） | max_retries ≤3 单层重试（litellm 顶层，禁 num_retries），超时 120s；401/403 不重试；model 格式 provider/model_name |
+| chat_stream(messages, *, model, temperature, max_tokens) | 同上 | 流式逐 token | AsyncGenerator[StreamEvent]（is_final 收尾） | stream 中断 → LLMRequestError | — |
+| count_tokens(messages, *, model) | — | tiktoken 估算 | int | — | 无 tokenizer 模型 → 回退字符数/4 + WARNING；空消息 → 0 |
+| chat([]) | — | 空消息调用 | — | ValueError("messages cannot be empty") | 前置校验，非 LLM 错误 |
 
 ### 10.2 LangChainPromptManager 方法状态流
 

@@ -144,7 +144,7 @@ R 系列（本 spec）——镜像 `test_outline_p3.py` 四层失败形态:
 ## 9. 不在范围内
 
 - ❌ 合并 Volume 与卷纲成一实体（D2=A 明确否决）。
-- ❌ F6 上下文注入的三级链消费（属 #568/F6，消费本 spec 的解析链）。
+- ❌ F6 上下文注入的三级链消费（属 F6 上下文注入，消费本 spec 的解析链）。
 - ❌ GUI 卷/章树渲染改造（前端职责，本 spec 仅数据面）。
 - ❌ `project.config.extra["outline"]` 旧字段迁移（读旧 config 的 F6 Source 单独处理）。
 
