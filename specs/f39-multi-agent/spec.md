@@ -9,18 +9,18 @@
 
 ## 1. 概述
 
-F39 合并覆盖 **#258（F39 后端核心）/ #259（F40 skill 上传绑定）/ #260（F41 自定义 Agent 编辑）** 三份 issue，作为三期实现的唯一真相来源。按章节划分子验收（§13 M1-Mn 标注子域归属）。
+F39 覆盖后端核心 / skill 上传绑定 / 自定义 Agent 编辑三个子域，作为唯一真相来源；按章节划分子验收（§13 M1-Mn）。
 
-### 1.1 现状缺口（2026-08-16 源码实证）
+### 1.1 设计动因（当前实现的六处硬编码）
 
-| # | 缺口 | 实证 | 归属 |
-|---|------|------|------|
-| ① | 角色体系四角色固定（architect/writer/auditor/reviser），system prompt 代码内置，用户不可自定义 Agent | `infrastructure/agent/pipeline_templates.py` + `domain/models/agent_template.py` RoleTemplate（无 system_prompt 可编辑面，仅 prompt 字段 F42 扩展） | #258/#260 |
-| ② | 工具装配硬编码：`build_agentic_writer` 无条件 `build_reader_tools`（5 只读）+ `build_save_draft_tool`，无按 Agent 过滤 | `infrastructure/agent/agentic_writer.py` L119-129 | #258 |
-| ③ | 工具注册表 `TOOL_REGISTRY` 仅 5 只读 ToolSpec，**save_draft 动态构建不进注册表**、无分组（group）字段、无稳定目录给 UI 勾选 | `infrastructure/agent/tools/__init__.py` L18 + `reader_tools.py` `_TOOL_SPECS` + `save_draft_tool.py`（动态） | #258/#260 |
-| ④ | **skill 概念零命中**（多 Agent 能力维度）——无 Skill 实体、无 skill 装配、无上传/绑定 UI | 代码仓 grep `skill` 仅 F19-skills 分发型 CLI（文件系统 `data_dir/skills/`，与本 spec 不同域） | #258/#259 |
-| ⑤ | 无「Agent 管理列表 / 创建编辑页」——设置页「Agent」分类当前只挂 AgentChainCard（F42 编排配置），无 Agent 实体 CRUD 入口 | `pages/settings.tsx` L506-580 | #260 |
-| ⑥ | 无「skill 上传/绑定/管理列表」UI | 前端无对应 store/组件 | #259 |
+| # | 缺口 | 实证 |
+|---|------|------|
+| ① | 角色体系四角色固定（architect/writer/auditor/reviser），system prompt 代码内置，用户不可自定义 Agent | `infrastructure/agent/pipeline_templates.py` + `domain/models/agent_template.py` RoleTemplate（无 system_prompt 可编辑面，仅 prompt 字段 F42 扩展） |
+| ② | 工具装配硬编码：`build_agentic_writer` 无条件 `build_reader_tools`（5 只读）+ `build_save_draft_tool`，无按 Agent 过滤 | `infrastructure/agent/agentic_writer.py` L119-129 |
+| ③ | 工具注册表 `TOOL_REGISTRY` 仅 5 只读 ToolSpec，**save_draft 动态构建不进注册表**、无分组（group）字段、无稳定目录给 UI 勾选 | `infrastructure/agent/tools/__init__.py` L18 + `reader_tools.py` `_TOOL_SPECS` + `save_draft_tool.py`（动态） |
+| ④ | **skill 概念零命中**（多 Agent 能力维度）——无 Skill 实体、无 skill 装配、无上传/绑定 UI | 代码仓 grep `skill` 仅 F19-skills 分发型 CLI（文件系统 `data_dir/skills/`，与本 spec 不同域） |
+| ⑤ | 无「Agent 管理列表 / 创建编辑页」——设置页「Agent」分类当前只挂 AgentChainCard（F42 编排配置），无 Agent 实体 CRUD 入口 | `pages/settings.tsx` L506-580 |
+| ⑥ | 无「skill 上传/绑定/管理列表」UI | 前端无对应 store/组件 |
 
 ### 1.2 与样板差异
 
@@ -32,7 +32,7 @@ F39 合并覆盖 **#258（F39 后端核心）/ #259（F40 skill 上传绑定）/
 - **不含** 本期对 AgentTemplate 的改动（Q1 拍板：本期解耦；AgentTemplate.roles 扩展为 Agent 引用放二期）。
 - **不含** 写作侧 Agent 选择入口（二期，F29 Supervisor 联动时设计）。
 - **不含** Agent 实体的运行时消费接线（阶段 1 只交付「实体 + 装配能力」，装配点改造以单元测试验证白名单过滤；「哪个 Agent 跑哪个任务」的接线在阶段 2/3——分析文档 §6 演进路径）。F27 agentic writer 路径保持独立入口（工具型单 agent，`system_prompt=writer_agent.yaml`），不在本模块改造（F42 §1.3 同口径）。
-- **与 F19-skills（ADR-022）的关系（#522 修订）**：F19-skills 是**分发型**基建（`inkflow skills` CLI 把用户自定义 SKILL.md 导入 `data_dir/skills/` 文件系统，供**外部 agent**（Hermes 等）学会操作 InkFlow）；#522 后本 spec 的 **Skill 实体同样以 `data_dir/skills/<name>/SKILL.md` 为文件系统真源**（ADR-039 去表）——两者**共用同一目录**（F19-skills 向该目录写入、F39 从该目录读取消费）。CLI 命名区分保留：本 spec `inkflow skill`（单数，REST 实体域）vs F19-skills `inkflow skills`（复数，文件系统导入）。
+- **与 F19-skills（ADR-022）的关系**：F19-skills 是**分发型**基建（`inkflow skills` CLI 把用户自定义 SKILL.md 导入 `data_dir/skills/` 文件系统，供**外部 agent**（Hermes 等）学会操作 InkFlow）；本 spec 的 **Skill 实体同样以 `data_dir/skills/<name>/SKILL.md` 为文件系统真源**（ADR-039 去表）——两者**共用同一目录**（F19-skills 向该目录写入、F39 从该目录读取消费）。CLI 命名区分保留：本 spec `inkflow skill`（单数，REST 实体域）vs F19-skills `inkflow skills`（复数，文件系统导入）。
 - **不含** 项目配置层对 Agent 的引用字段（Q0 的「项目引用」部分，二期 AgentTemplate.roles 扩展时一并落地；本期 Agent/Skill 均为全局应用级实体，项目差异留待阶段 2）。
 
 ---
@@ -50,8 +50,8 @@ class Agent(BaseModel):
     description: str = ""            # 描述
     icon: str = ""                   # 图标（emoji 字符或图标键；空串 = 默认图标）
     system_prompt: str = ""          # system prompt（内置 Agent 只读；自定义 Agent 可编辑）
-    tool_ids: list[str] = Field(default_factory=list)      # 【存量兼容列·#1356】工具目录 name 列表（不再写入；读取口见 F58 §5.3）
-    skill_ids: list[str] = Field(default_factory=list)     # 能力白名单：skill 目录名列表（#522）
+    tool_ids: list[str] = Field(default_factory=list)      # 【存量兼容列】工具目录 name 列表（不再写入；读取口见 F58 §5.3）
+    skill_ids: list[str] = Field(default_factory=list)     # 能力白名单：skill 目录名列表
     model_override: str | None = None        # 模型覆盖（provider/model 格式，None = 跟随默认）
     temperature_override: float | None = Field(default=None, ge=0.0, le=2.0)  # 温度覆盖
     builtin: bool = False            # 是否内置（True = 只读，出厂 seed；False = 用户自定义）
@@ -59,12 +59,12 @@ class Agent(BaseModel):
     updated_at: datetime | None = None
 ```
 
-- **`tool_ids` 列已退役为「存量兼容只读口」（#1356）**——工具面唯一真源是 `grants`（F58 §2.1）；
+- **`tool_ids` 列已退役为「存量兼容只读口」**——工具面唯一真源是 `grants`（F58 §2.1）；
   `tool_ids` 保留 DB 列与领域字段只为存量行（`grants` 为空）读取时反查推断，**写入路径不再写它**
   （原「存工具 `name` 白名单」语义仅对存量行有效；下线工具在编辑页置灰提示（§5.5））。
-- **`skill_ids` 存 skill 目录名列表（#522）**——与文件系统真源目录名（= frontmatter name，N2 规则）精确相等匹配（`agent_repository.list_agents_by_skill(skill_name)` 反查同语义）；不再存 DB 主键字符串化（ADR-039 D5 修订，§12）。
+- **`skill_ids` 存 skill 目录名列表**——与文件系统真源目录名（= frontmatter name，N2 规则）精确相等匹配（`agent_repository.list_agents_by_skill(skill_name)` 反查同语义）；不再存 DB 主键字符串化（ADR-039 D5 修订，§12）。
 - **`model_override` 强制 `provider/model` 格式**（与 `parse_model_string` 硬契约一致，F42 Q3 同口径）——不存裸模型名/裸 provider 名。
-- **`builtin` 折叠分析文档的 `source` 字段**（issue #258 字段清单仅列 `builtin`）：`builtin=True` 等价 `source="builtin"`，`builtin=False` 等价 `source="custom"`；内置 Agent 只读（PATCH/DELETE → 409）。
+- **`builtin` 折叠分析文档的 `source` 字段**（字段清单仅列 `builtin`）：`builtin=True` 等价 `source="builtin"`，`builtin=False` 等价 `source="custom"`；内置 Agent 只读（PATCH/DELETE → 409）。
 
 ### 2.2 Skill 实体（`domain/models/skill.py` CREATE）
 
@@ -80,8 +80,8 @@ class Skill(BaseModel):
     updated_at: str | None = None    # 最后更新时间（文件 mtime ISO 字符串或 None）
 ```
 
-- **文件系统真源（#522 ADR-039）**：Skill 实体 = `data_dir/skills/<name>/SKILL.md`，**不再落 DB 表**；`content` 为文件内容原样（提示词注入面的「真相源 blob」），`name` = 目录名（= frontmatter name，N2 规则），`description` 为 frontmatter 解析元数据（列表展示用），上传时从 content 解析填充（§3/§5.4）。
-- **`source` 由目录名判定（#522）**：目录名 ∈ `BUILTIN_SKILL_NAMES`（6 英文 slug）→ `"builtin"`，只读（PATCH/DELETE → 409「内置 skill 只读」）；否则 `"user_upload"`，可编辑/删除。不再有 DB source 列。
+- **文件系统真源（ADR-039）**：Skill 实体 = `data_dir/skills/<name>/SKILL.md`，**不再落 DB 表**；`content` 为文件内容原样（提示词注入面的「真相源 blob」），`name` = 目录名（= frontmatter name，N2 规则），`description` 为 frontmatter 解析元数据（列表展示用），上传时从 content 解析填充（§3/§5.4）。
+- **`source` 由目录名判定**：目录名 ∈ `BUILTIN_SKILL_NAMES`（6 英文 slug）→ `"builtin"`，只读（PATCH/DELETE → 409「内置 skill 只读」）；否则 `"user_upload"`，可编辑/删除。不再有 DB source 列。
 - **`agent_ids` 反查（非存储字段）**：由「哪些 Agent.skill_ids 精确含该目录名」反查计算（`agent_repository.list_agents_by_skill(skill_name)`，镜像 AgentTemplate `list_projects_by_template` 反查），删除保护用（§5.6）。
 - **frontmatter 契约**（F40 上传解析，§5.4）：`name`（必选，1-64 小写字母数字+单连字符，N2 规则 `^[a-z0-9]+(-[a-z0-9]+)*$`，须与目录名一致）、`description`（必选）、`tags`（可选，列表，本 spec 不落列、保留在 content frontmatter 内）。
 
@@ -110,40 +110,26 @@ class ToolSpec:
 
 - `project` 组本期为空（预留未来项目域工具）；分组字段随 `ToolSpec` 扩展一次性补齐，save_draft 的 ToolSpec 静态化（name/description/input_schema/group）但其 `func` 仍动态构建（依赖 draft_service/audit_service 注入）。
 
-### 2.4 决策论证表
-
-| 决策 | 方案 | 理由 |
-|------|------|------|
-| Agent 主键 / Skill 标识 | Agent 主键 int 自增（镜像 AgentTemplate）；Skill 无主键，标识 = 目录名（#522） | 项目全局惯例（F1-F19 全 int 自增）；Skill 去表后目录名即唯一标识（N2 规则） |
-| skill_ids 引用形态 | `list[str]` 存 skill 目录名（英文 slug，N2） | 与文件系统真源目录名对齐（deepagents 原生 name 引用，#522 ADR-039 D5）；删除级联按目录名精确清理 |
-| tool_ids 引用形态（#1356 退役） | `list[str]`（存量兼容只读口，不再写入） | 工具面唯一真源改为 `grants`（F58 §2.1）；保留列仅为存量行（grants 空）反查推断，避免迁移窗内丢权限 |
-| Skill.content 语义 | 文件内容原样（frontmatter + 正文，文件系统真源 #522） | content 是注入真相源（原样可预览/可追溯）；name/description 由 frontmatter 解析供列表展示 + 唯一性校验 |
-| 内置只读保护 | `builtin`(Agent) 字段 + `source`(Skill，由目录名判定) + 服务层 409 | 镜像 AgentTemplate `is_default` → 409 保护模式；「改坏了怎么恢复」的二次负担免于维护 |
-| 工具目录分组 | `ToolSpec.group` 字段扩展（非独立分组表） | 6 工具规模小，字段扩展最小改动；分组表过度设计 |
-| 装配能力 vs 消费接线 | 阶段 1 只交付装配能力（单元测试验证），不接运行时消费 | 分析文档 §6 演进路径（阶段 2 模板 roles 扩展、阶段 3 Supervisor 调度）；避免阶段 1 大改双配置源（Q1） |
-
----
-
 ## 3. API 契约
 
-端点风格沿用既有扁平路由（镜像 `agent_templates.py`）：前缀 `/api/v1/agents` 与 `/api/v1/skills`，`Depends(get_db)` 注入 session。Agent 侧 `_parse_id`（非法 id → 404）；Skill 侧路径标识 = `skill_name`（目录名，#522，不存在/非法 → 404「Skill 不存在」，非 422）；`_run_service`（业务异常 → HTTP）、`_to_response`（实体 → 响应字典，Skill 兼容层 id=name）三层惯例。
+端点风格沿用既有扁平路由（镜像 `agent_templates.py`）：前缀 `/api/v1/agents` 与 `/api/v1/skills`，`Depends(get_db)` 注入 session。Agent 侧 `_parse_id`（非法 id → 404）；Skill 侧路径标识 = `skill_name`（目录名，不存在/非法 → 404「Skill 不存在」，非 422）；`_run_service`（业务异常 → HTTP）、`_to_response`（实体 → 响应字典，Skill 兼容层 id=name）三层惯例。
 
 ### 3.1 端点总览
 
-| 方法 | 路径 | 语义 | 响应 | 归属 |
-|------|------|------|------|------|
-| GET | `/api/v1/agents` | Agent 列表 | 200 `{items, total}` | #258/#260 |
-| GET | `/api/v1/agents/tools` | 工具目录（勾选 UI 数据源） | 200 `{items:[{name,description,group,input_schema}]}` | #258/#260 |
-| POST | `/api/v1/agents` | 创建自定义 Agent | 201 完整实体 | #258/#260 |
-| GET | `/api/v1/agents/{agent_id}` | Agent 详情 | 200 完整实体 | #258 |
-| PATCH | `/api/v1/agents/{agent_id}` | 部分更新（exclude_unset） | 200 完整实体 | #260 |
-| DELETE | `/api/v1/agents/{agent_id}` | 删除自定义 Agent | 204 | #260 |
-| GET | `/api/v1/skills` | Skill 列表（含反查） | 200 `{items, total}` | #258/#259 |
-| POST | `/api/v1/skills` | 上传/创建 Skill（frontmatter 解析） | 201 完整实体 | #259 |
-| GET | `/api/v1/skills/{skill_name}` | Skill 详情（含反查；id=name 兼容层，#522） | 200 完整实体 | #259 |
-| PATCH | `/api/v1/skills/{skill_name}` | 部分更新（content 写回文件；内置 → 409） | 200 完整实体 | #258 |
-| DELETE | `/api/v1/skills/{skill_name}` | 删除 Skill（被引用 → 级联清目录名引用） | 204 | #259 |
-| POST | `/api/v1/skills/{skill_name}/duplicate` | 复制 Skill（新名 f"{name}-copy"） | 201 完整实体 | #485/#259 |
+| 方法 | 路径 | 语义 | 响应 |
+|------|------|------|------|
+| GET | `/api/v1/agents` | Agent 列表 | 200 `{items, total}` |
+| GET | `/api/v1/agents/tools` | 工具目录（勾选 UI 数据源） | 200 `{items:[{name,description,group,input_schema}]}` |
+| POST | `/api/v1/agents` | 创建自定义 Agent | 201 完整实体 |
+| GET | `/api/v1/agents/{agent_id}` | Agent 详情 | 200 完整实体 |
+| PATCH | `/api/v1/agents/{agent_id}` | 部分更新（exclude_unset） | 200 完整实体 |
+| DELETE | `/api/v1/agents/{agent_id}` | 删除自定义 Agent | 204 |
+| GET | `/api/v1/skills` | Skill 列表（含反查） | 200 `{items, total}` |
+| POST | `/api/v1/skills` | 上传/创建 Skill（frontmatter 解析） | 201 完整实体 |
+| GET | `/api/v1/skills/{skill_name}` | Skill 详情（含反查；`id` = `name` 兼容层） | 200 完整实体 |
+| PATCH | `/api/v1/skills/{skill_name}` | 部分更新（content 写回文件；内置 → 409） | 200 完整实体 |
+| DELETE | `/api/v1/skills/{skill_name}` | 删除 Skill（被引用 → 级联清目录名引用） | 204 |
+| POST | `/api/v1/skills/{skill_name}/duplicate` | 复制 Skill（新名 f"{name}-copy"） | 201 完整实体 |
 
 > 路由顺序约束：`GET /agents/tools` 必须声明在 `GET /agents/{agent_id}` 之前（FastAPI 顺序匹配，否则 "tools" 被吞进 path 参数 404——镜像 `agent_templates` `/default` 契约 #3）。
 
@@ -164,7 +150,7 @@ class ToolSpec:
 }
 ```
 
-> `tool_ids` 为**弃用别名**（#1356：写入路径只写 `grants`；与 `grants` 同传 → 422）；`grants` 的展开工具面见 F58 §2.2 `GRANT_TOOL_MAP`。
+> `tool_ids` 为**弃用别名**（写入路径只写 `grants`；与 `grants` 同传 → 422）；`grants` 的展开工具面见 F58 §2.2 `GRANT_TOOL_MAP`。
 
 **POST /api/v1/skills**（上传 Skill，frontmatter 后端解析）：
 
@@ -174,7 +160,7 @@ class ToolSpec:
 }
 ```
 
-> 响应 201 返回解析后的完整实体（#522 兼容层：`id` 字段值 = `name`）：`{id: "web-research", name: "web-research", description: "网络调研方法论", content: "<原样>", source: "user_upload", ...}`。
+> 响应 201 返回解析后的完整实体（兼容层：`id` 字段值 = `name`）：`{id: "web-research", name: "web-research", description: "网络调研方法论", content: "<原样>", source: "user_upload", ...}`。
 
 **GET /api/v1/skills**（列表，含反查）：
 
@@ -222,14 +208,14 @@ inkflow agent show --id <N> [--json]
   退出码: 0 成功 / 1 运行错误（含 404 不存在）/ 2 参数错误
 
 inkflow skill list [--json]
-  列出全部 Skill（name + source + 被引用 Agent 数 + **`[通用]`/`[专属]` 生效范围标注**，#1473）
+  列出全部 Skill（name + source + 被引用 Agent 数 + **`[通用]`/`[专属]` 生效范围标注**）
   退出码: 0 成功 / 1 运行错误 / 2 参数错误
 ```
 
-> **#1473 修订（2026-10-06）**：`skill list` 在「引用 N 个 Agent」旁增标**生效范围**——被任一 Agent 引用（N>0）标 `[专属]`（仅该 Agent 获取）；未被任何 Agent 引用（N=0）标 `[通用]`（所有 Agent 自动获取）。判据同装配侧 `mounted_names`（同一 `agents.skill_ids` 数据面），零新增 API 字段。
+> `skill list` 在「引用 N 个 Agent」旁增标**生效范围**——被任一 Agent 引用（N>0）标 `[专属]`（仅该 Agent 获取）；未被任何 Agent 引用（N=0）标 `[通用]`（所有 Agent 自动获取）。判据同装配侧 `mounted_names`（同一 `agents.skill_ids` 数据面），零新增 API 字段。
 
 - 实现位置：MODIFY `backend/src/inkflow/cli/commands/agent_cmd.py`（`agent` 组新增 `list`/`show` 子命令）+ CREATE `backend/src/inkflow/cli/commands/skill_cmd.py`（`skill` 组）+ MODIFY `backend/src/inkflow/cli/app.py`（注册 `skill` 子组）。
-- **命名区分（防撞）**：`inkflow agent list`（本 spec，列 Agent 实体）≠ `inkflow agent template list`（F19，列模板）≠ `inkflow agent tools list`（F26，本地枚举工具）；`inkflow skill list`（本 spec，单数，REST 实体域，文件系统真源 #522）≠ `inkflow skills list`（F19-skills，复数，文件系统导入）。
+- **命名区分（防撞）**：`inkflow agent list`（本 spec，列 Agent 实体）≠ `inkflow agent template list`（F19，列模板）≠ `inkflow agent tools list`（F26，本地枚举工具）；`inkflow skill list`（本 spec，单数，REST 实体域，文件系统真源）≠ `inkflow skills list`（F19-skills，复数，文件系统导入）。
 
 ---
 
@@ -244,7 +230,7 @@ inkflow skill list [--json]
 3. 白名单外的一切对 LLM 不可见 → 行为差异 = 确定性，非概率
 ```
 
-> **#1473 修订（2026-10-06）**：第 2 条的 skill 取集从「仅 `agent.skill_ids` 白名单」扩为「**显式挂载 ∪ 通用**」——未被任何 Agent 挂载的库内 skill（通用规范）对**所有** Agent 自动生效（详见 §5.2）。工具白名单（第 1 条）语义不变。
+> 第 2 条的 skill 取集从「仅 `agent.skill_ids` 白名单」扩为「**显式挂载 ∪ 通用**」——未被任何 Agent 挂载的库内 skill（通用规范）对**所有** Agent 自动生效（详见 §5.2）。工具白名单（第 1 条）语义不变。
 
 ### 5.1 工具目录与分组（`infrastructure/agent/tools/` MODIFY）
 
@@ -277,30 +263,30 @@ def build_agentic_writer(
 ```
 
 - **`build_reader_tools` 增加 `include: list[str] | None = None` 参数**：None → 返回 5 只读全量（现行为不变）；`[...]` → 只返回白名单命中项（按目录序）。`save_draft` 因依赖不同 deps 独立判断是否追加。
-- **skill 拼接函数 `_append_skills(base_prompt, skill_ids, skill_lookup)`**：对每个白名单 skill 目录名，追加 `\n\n# 技能：<name>\n\n<content>\n\n---\n`（base prompt 在前、skill 在后——分析文档 §5.3「skill 追加在用户 prompt 之后」优先级）。`skill_lookup` 由装配层注入（从 `data_dir/skills/` 文件系统按目录名取 content，#522）。
+- **skill 拼接函数 `_append_skills(base_prompt, skill_ids, skill_lookup)`**：对每个白名单 skill 目录名，追加 `\n\n# 技能：<name>\n\n<content>\n\n---\n`（base prompt 在前、skill 在后——分析文档 §5.3「skill 追加在用户 prompt 之后」优先级）。`skill_lookup` 由装配层注入（从 `data_dir/skills/` 文件系统按目录名取 content）。
 - **向后兼容**：`tool_ids=None, skill_ids=None` = 现 F27 行为（全工具 + writer_agent.yaml prompt，无 skill）。**阶段 1 不改动 F27 调用点**（`get_agentic_writer_service._build_agent` 不传白名单），白名单过滤能力由单元测试验证（§9），运行时消费接线留阶段 2/3（§1.3 边界）。
 
-**管线链路装配（#1472，2026-10-06 融入）**：
+**管线链路装配**：
 
-`agent run --pipeline`（static 与 supervisor 两模式）的每个 stage，在 `_build_pipeline_context` 汇合后按 `stage.id`（= 该 stage 对应内置 Agent 的 `role_key`）查 Agent 实体的 `skill_ids`，用同一拼接函数把命中的 skill 正文追加到 `stage.agent.system_prompt` 之后——与写手轨同语义（base 前 skill 后，查不到跳过）。这是「工具 + skill 白名单确定性强制」不变式在**管线链路**上的落点：此前 `_append_skills` 全仓唯一调用点在写手轨，管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids` → 用户 skill 在管线链路**静默失效**（#1472 根因）。**#1473 修订（2026-10-06）**：取集从「仅该 Agent 的 `skill_ids`」扩为「显式 ∪ 通用」——库中未被任何 Agent 挂载的 skill 对所有 stage 自动生效（见下方取集规则）；`_attach_agent_skills` 的通用部分由 `resolve_effective_skills` 以全库 `skill_ids` 并集（`mounted_names`）判定。
+`agent run --pipeline`（static 与 supervisor 两模式）的每个 stage，在 `_build_pipeline_context` 汇合后按 `stage.id`（= 该 stage 对应内置 Agent 的 `role_key`）查 Agent 实体的 `skill_ids`，用同一拼接函数把命中的 skill 正文追加到 `stage.agent.system_prompt` 之后——与写手轨同语义（base 前 skill 后，查不到跳过）。这是「工具 + skill 白名单确定性强制」不变式在**管线链路**上的落点：此前 `_append_skills` 全仓唯一调用点在写手轨，管线四阶段（架构师/写手/审校员/修订师）的 stage 构造完全不碰 `skill_ids` → 用户 skill 在管线链路**静默失效**。取集规则从「仅该 Agent 的 `skill_ids`」扩为「显式 ∪ 通用」——库中未被任何 Agent 挂载的 skill 对所有 stage 自动生效（见下方取集规则）；`_attach_agent_skills` 的通用部分由 `resolve_effective_skills` 以全库 `skill_ids` 并集（`mounted_names`）判定。
 
-| 装配点 | 落点 | 白名单来源 | 修改履历 |
-|--------|------|-----------|----------|
-| 写手轨（agentic writer） | `infrastructure/agent/agentic_writer.py` `build_agentic_writer` | `resolve_writer_authorization()`（内置 writer Agent 的 grants/skill）∪ 通用（观测面） | 2026-08-16 初版（F39 #258）；2026-10-06 通用语义（#1473，观测面） |
-| 管线链路（pipeline stage） | `domain/services/agent_service_stream.py` `_build_pipeline_context` | `AgentRepository.list()` 取 `stage.id == role_key` 的 `skill_ids`（显式）∪ 全库未挂载者（通用） | 2026-10-06 新增（#1472）；同日修订引入通用取集（#1473） |
+| 装配点 | 落点 | 白名单来源 |
+|--------|------|-----------|
+| 写手轨（agentic writer） | `infrastructure/agent/agentic_writer.py` `build_agentic_writer` | `resolve_writer_authorization()`（内置 writer Agent 的 grants/skill）∪ 通用（观测面） |
+| 管线链路（pipeline stage） | `domain/services/agent_service_stream.py` `_build_pipeline_context` | `AgentRepository.list()` 取 `stage.id == role_key` 的 `skill_ids`（显式）∪ 全库未挂载者（通用） |
 
-- **拼接函数下沉**：`_append_skills` 纯函数下沉至 `domain/services/skill_assembly.py`（导出名 `append_skills`），infrastructure 与 domain 双方引用**同一实现**（`agentic_writer.py` 以 `_append_skills = append_skills` 别名保留既有导入面；`api/.../assembly_observability.py` 亦引用同一实现——**#1473 起其 `resolve_effective_skills` 委托 domain `skill_assembly.resolve_effective_skills`，仅补 `bytes` 字段**，两份取集逻辑合一）。理由：管线 stage 构造在 domain 层，而 domain 层**不得 import infrastructure**（AGENTS.md §4.2）；纯字符串拼接零依赖，下沉不引入循环。
-- **skill 内容读取**：`domain/services/skill_assembly.py` 提供 `read_skill_content(skills_root, name)` / `file_skill_lookup(skills_root)`，真源 = `<data_dir>/skills/<name>/SKILL.md`（ADR-039 #522 文件系统真源）；目录/文件缺失 → 跳过（防御语义，镜像 `_append_skills` 的查不到跳过）。
-- **取集规则（#1473 修订，2026-10-06，推翻 #1472 的「只拼白名单」语义）**：每个 Agent 的有效技能集 = `agent.skill_ids`（**显式挂载**）∪ `{skills_root 下未被任何 Agent 挂载的 skill}`（**通用**）——通用 skill 对**所有** Agent 自动生效（「一次放置、全局生效」，不必逐个挂载；内置 Agent 不可编辑时尤为需要）。
+- **拼接函数下沉**：`_append_skills` 纯函数下沉至 `domain/services/skill_assembly.py`（导出名 `append_skills`），infrastructure 与 domain 双方引用**同一实现**（`agentic_writer.py` 以 `_append_skills = append_skills` 别名保留既有导入面；`api/.../assembly_observability.py` 亦引用同一实现——**其 `resolve_effective_skills` 委托 domain `skill_assembly.resolve_effective_skills`，仅补 `bytes` 字段**，两份取集逻辑合一）。理由：管线 stage 构造在 domain 层，而 domain 层**不得 import infrastructure**（AGENTS.md §4.2）；纯字符串拼接零依赖，下沉不引入循环。
+- **skill 内容读取**：`domain/services/skill_assembly.py` 提供 `read_skill_content(skills_root, name)` / `file_skill_lookup(skills_root)`，真源 = `<data_dir>/skills/<name>/SKILL.md`（ADR-039 文件系统真源）；目录/文件缺失 → 跳过（防御语义，镜像 `_append_skills` 的查不到跳过）。
+- **取集规则（显式挂载 ∪ 通用）**：每个 Agent 的有效技能集 = `agent.skill_ids`（**显式挂载**）∪ `{skills_root 下未被任何 Agent 挂载的 skill}`（**通用**）——通用 skill 对**所有** Agent 自动生效（「一次放置、全局生效」，不必逐个挂载；内置 Agent 不可编辑时尤为需要）。
   - **覆盖顺序**：显式挂载优先于通用（同名去重取显式那份）。
   - **「未被任何 Agent 挂载」判据**：全库 Agent `skill_ids` 并集（同 `AgentRepository.list_agents_by_skill(name)` 返回空 / `inkflow skill list` 的「引用 N 个 Agent」为 0）。
   - **防串味仍成立的部分**：被**其他** Agent 显式挂载的 skill **不得**注入本 Agent（只有「无人挂载」者才算通用）。
   - **实现落点**：`domain/services/skill_assembly.py` 的 `resolve_effective_skills`（纯函数，`mounted_names` 由装配侧从 `AgentRepository.list()` 一次性聚合，零额外查询）；写手轨目标装配 `assembly_observability.resolve_effective_skills` 同源。
 - **负例契约**：① 被其他 Agent 显式挂载的 skill 不出现在本 Agent 的 stage prompt（防串味）；② Agent 无任何有效 skill（`skill_ids` 为空且全库无通用）→ stage prompt 与装配前**逐字符一致**（零回归）。
 
-### 5.3 内置出厂配置 seed / 启动回补（`app.py` lifespan MODIFY，#522 修订）
+### 5.3 内置出厂配置 seed / 启动回补（`app.py` lifespan MODIFY）
 
-#522（ADR-039）后 skill 不再落 DB：启动在 `create_tables()` 后、provider seed 同点依次调用：
+skill 不落 DB（ADR-039）：启动在 `create_tables()` 后、provider seed 同点依次调用：
 - `ensure_builtin_skills(config.data_dir / "skills")`（**同步**纯文件操作）：目录缺失/内置缺失 → 幂等写出 6 个内置 SKILL.md（frontmatter name=英文 slug，删了回补），返回本次写入数
 - `await migrate_skills_from_db(session, config.data_dir / "skills")`（**async**，raw SQL）：旧 skills 表 `source='user_upload'` 行 → 写出 `<name>/SKILL.md` → 清表（DELETE/DROP；表不存在 → 0，不重建、不依赖 SkillORM）
 - `await seed_builtin_agents(session)`（保留）：`skill_ids=[spec.skill_name]`（目录名，不再按 BUILTIN_SKILL_NAMES.index 预测主键）
@@ -317,14 +303,14 @@ def build_agentic_writer(
 | 润色师 | 文笔润色 | polishing-methodology |
 
 > ✅ **出厂工具白名单的唯一真相源 = `grants`**（下表；代码侧 `BUILTIN_AGENT_SPECS[*]["grants"]`）。
-> #1356 终局清理：本表原先的 `tool_ids` 字面值列已**删除**（F58 §2.1/ADR-050「写入路径只写
+> 本表 `tool_ids` 字面值列已删除（F58 §2.1 / ADR-050），
 > `grants`」）——seed 不再写 `tool_ids`，`BUILTIN_AGENT_SPECS` 也不再保留该手写副本。
 > DB 的 `agents.tool_ids` **列保留**，仅为**存量行**（grants 为空）提供兼容读取口：读取时经
 > `resolve_grants` 反查推断 grants；新写入行的该列为空。
 
-**内置 Agent 出厂 grants（6 个，#1327 权限修正后的运行时真源）**：
+**内置 Agent 出厂 grants（6 个，运行时真源）**：
 
-| Agent | 出厂 grants（domain: ops） | #1327 变动 |
+| Agent | 出厂 grants（domain: ops） | 权限修正 |
 |-------|---------------------------|-----------|
 | 架构师 | character:read, foreshadowing:read, writing:read, **outline:read** | ➕ outline.read（只读：规划≠落库） |
 | 写手 | character:read, foreshadowing:read, writing:read+write, world:read, **outline:read** | ➕ outline.read |
@@ -336,16 +322,16 @@ def build_agentic_writer(
 > 每条域·操作展开为的工具名见 F58 §2.2 `GRANT_TOOL_MAP`（唯一真相源）。展开示例：
 > `outline:read` → `list_outlines` / `get_outline` / `list_plot_points`；
 > `world:read` → `list_maps` / `list_world_settings` / `get_world_setting`。
-> 反向断言（#1327）：架构师不得有 `outline:write`（否则 `create/update_*_outline` 共 7 个
+> 反向断言：架构师不得有 `outline:write`（否则 `create/update_*_outline` 共 7 个
 > 写工具落入规划角色），审校员/世界观顾问不得有 `world:write`。
 >
-> ⚙️ **存量行同步（#1443）**：本表是**唯一真源**，由 `seed_builtin_agents` 每次启动对**同名
+> ⚙️ **存量行同步**：本表是**唯一真源**，由 `seed_builtin_agents` 每次启动对**同名
 > 存量内置行**做「归一签名不等即同步」（幂等 no-op）。否则老库的内置 agent 永远停留在旧
 > grants（或为空），而 `resolve_grants` 读的正是它 —— 本表的修正等于不生效。
 
-**内置 Skill 出厂配置（6 个，目录名 ∈ BUILTIN_SKILL_NAMES → `source="builtin"` 只读）**：与上表「出厂 skill」一一对应（架构/写作/审校/修订/世界观/润色六份方法论 SKILL.md，content 含 frontmatter name=slug + 中文正文，须通过 `parse_skill_metadata` 校验）。出厂 prompt 与 skill 正文为 ensure 内容（实现期编写，非契约字段），契约只定「6 Agent + 6 Skill slug + 上表白名单映射」。**（#1331 修订）** 正文自 0.16.0 起抽离为 `i18n/skills/builtin/zh/<slug>.md`（frontmatter 增 `version`；en 槽位留空回退 zh），播种为三态语义 —— 见 §12 D11/D12 与 ADR-062。
+**内置 Skill 出厂配置（6 个，目录名 ∈ BUILTIN_SKILL_NAMES → `source="builtin"` 只读）**：与上表「出厂 skill」一一对应（架构/写作/审校/修订/世界观/润色六份方法论 SKILL.md，content 含 frontmatter name=slug + 中文正文，须通过 `parse_skill_metadata` 校验）。出厂 prompt 与 skill 正文为 ensure 内容（实现期编写，非契约字段），契约只定「6 Agent + 6 Skill slug + 上表白名单映射」。正文抽离为 `i18n/skills/builtin/zh/<slug>.md`（frontmatter 增 `version`；en 槽位留空回退 zh），播种为三态语义 —— 见 §12 D11/D12 与 ADR-062。
 
-### 5.4 F40 skill 上传与绑定（前端交互，#259）
+### 5.4 skill 上传与绑定（前端交互）
 
 | 步骤 | 交互 | 契约锚点 |
 |------|------|----------|
@@ -356,7 +342,7 @@ def build_agentic_writer(
 
 **D1 绑定时机（已拍板，固化）**：上传动作当下是意图最清晰时刻；默认不启用杜绝「幽灵注入」（行为莫名改变无法归因）；「应用到全部」照顾全局诉求。绑定产物 = 更新目标 Agent 的 `skill_ids`（PATCH /agents/{id}）。
 
-### 5.5 F41 自定义 Agent 编辑（前端交互，#260）
+### 5.5 自定义 Agent 编辑（前端交互）
 
 | 步骤 | 交互 | 契约锚点 |
 |------|------|----------|
@@ -373,10 +359,10 @@ def build_agentic_writer(
 |------|------|------|
 | 内置 Agent（`builtin=True`） | 只读 | PATCH/DELETE → `AgentBuiltinError` 409 |
 | 内置 Skill（`source="builtin"`） | 只读 | PATCH/DELETE → `SkillBuiltinError` 409 |
-| 用户 Skill（被 N 个 Agent 引用） | 级联清引用 | DELETE → 服务层先移除所有 Agent.skill_ids 中的该目录名（`agent_repository.list_agents_by_skill(skill_name)` 反查 + 批量 update，#522 目录名语义）再删目录（镜像 AgentTemplate `delete` 级联清 `config.template_id`）；前端删除前经 `agent_ids` 反查列影响面确认 |
+| 用户 Skill（被 N 个 Agent 引用） | 级联清引用 | DELETE → 服务层先移除所有 Agent.skill_ids 中的该目录名（`agent_repository.list_agents_by_skill(skill_name)` 反查 + 批量 update，目录名语义）再删目录（镜像 AgentTemplate `delete` 级联清 `config.template_id`）；前端删除前经 `agent_ids` 反查列影响面确认 |
 | 自定义 Agent | 无引用面（本期） | DELETE → 直接删；二期引入 project/template 引用时扩展影响面确认（Q0/Q1） |
 
-> **级联清引用 + `foreign_keys=ON` 双保险**：`PRAGMA foreign_keys=ON` 已启用（#327），若引入 skill/agent 中间表需声明 `ondelete`；本 spec 用 JSON 列（`Agent.skill_ids`）存引用，无 FK 约束，级联清引用由**服务层显式**完成（不可依赖 repo 注释「FK CASCADE」——F43 P5 假绿教训）。
+> **级联清引用 + `foreign_keys=ON` 双保险**：`PRAGMA foreign_keys=ON` 已启用，若引入 skill/agent 中间表需声明 `ondelete`；本 spec 用 JSON 列（`Agent.skill_ids`）存引用，无 FK 约束，级联清引用由**服务层显式**完成（不可依赖 repo 注释「FK CASCADE」——F43 P5 假绿教训）。
 
 ---
 
@@ -386,7 +372,7 @@ def build_agentic_writer(
 - **与 AgentTemplate 解耦（Q1 已拍板 A）**：Agent 管「能力边界」（白名单），AgentTemplate 管「模型/温度」（F19 引用式）——两个正交维度；本期独立，二期 AgentTemplate.roles 扩展为任意 Agent 引用（模型/温度覆盖保留）时打通。
 - **白名单确定性强制**：任何 Agent 运行，工具与 skill 均按 `tool_ids`/`skill_ids` 白名单过滤后交付 LLM——白名单外对 LLM 不可见（确定性，非概率）。
 - **内置只读**：出厂 Agent/Skill 只读（409），用户只能「复制后改」或「新建自定义」；内置清单 = 产品资产，禁止运行时增删改。
-- **能力引用唯一真源**：工具以 `ToolSpec.name` 为唯一标识、skill 以目录名（= frontmatter name）为唯一标识（#522）；下线工具在编辑页置灰提示（不硬删，避免存量 Agent 白名单悬空）。
+- **能力引用唯一真源**：工具以 `ToolSpec.name` 为唯一标识、skill 以目录名（= frontmatter name）为唯一标识；下线工具在编辑页置灰提示（不硬删，避免存量 Agent 白名单悬空）。
 
 ---
 
@@ -405,72 +391,7 @@ def build_agentic_writer(
 | ⑨ | 非法 id 格式（非整数）/ 非法 skill_name（N2 违规或不存在） | 404（`_parse_id` 语义，不 422；skill_name 404「Skill 不存在」） |
 | ⑩ | skill 上传 = prompt injection 面扩大 | 本地单用户工具（风险自担）+ skill 内容 UI 可预览 + skill 追加在用户 prompt 之后（优先级明确） |
 | ⑪ | 工具下线/改名漂移 | 工具注册表唯一真源；Agent 存 name 引用；下线工具编辑页置灰 |
-| ⑫ | 存量库升级（无 alembic，#522） | `agents` 表由 `create_all` 自动建；旧 `skills` 表由 `migrate_skills_from_db` 一次性迁移 user_upload 行 → 文件后清表（表不存在 → 0）；内置 Skill 由 `ensure_builtin_skills` 回补文件 |
-
----
-
-## 8. 文件结构
-
-> 对照真实源码树（2026-08-16 origin/main 4e6be5f 核查）。后端 `backend/src/inkflow/`，前端 `frontend/packages/renderer/src/`。
-
-### 8.1 后端 CREATE
-
-| 文件 | 内容 |
-|------|------|
-| `domain/models/agent.py` | `Agent` / `AgentCreate` / `AgentUpdate`（镜像 `agent_template.py`） |
-| `domain/models/skill.py` | `Skill` / `SkillCreate` / `SkillUpdate` |
-| `domain/ports/agent_repository.py` | `AgentRepositoryProtocol`（add/get/get_by_name/list/update/delete + `list_agents_by_skill`） |
-| `domain/ports/agent_errors.py` | `AgentNotFoundError`/`AgentNameConflictError`/`AgentBuiltinError`/`ToolReferenceError`/`SkillReferenceError` |
-| `domain/ports/skill_errors.py` | `SkillNotFoundError`/`SkillNameConflictError`/`SkillBuiltinError`/`SkillFrontmatterError` |
-| `domain/services/agent_entity_service.py` | Agent CRUD + 白名单引用校验（skill_ids 目录名存在性）+ builtin 只读保护 |
-| `domain/services/skill_service.py` | Skill CRUD（文件系统真源内联操作）+ frontmatter 解析校验 + 删除级联清引用 + `ensure_builtin_skills`/`migrate_skills_from_db` |
-| `infrastructure/database/models/agent.py` | `AgentORM`（`agents` 表；tool_ids/skill_ids 存 LenientJSON） |
-| `infrastructure/database/repositories/agent_repo.py` | `SQLiteAgentRepository`（转换函数 + `list_agents_by_skill` 反查） |
-| `api/routers/agents.py` | `/api/v1/agents` 路由（`/tools` 声明在 `/{agent_id}` 前） |
-| `api/routers/skills.py` | `/api/v1/skills` 路由 |
-| `cli/commands/skill_cmd.py` | `skill list` 子命令（HTTP 薄层） |
-
-> #522 删除：`domain/ports/skill_repository.py`（SkillRepositoryProtocol）、`infrastructure/database/models/skill.py`（SkillORM）、`infrastructure/database/repositories/skill_repo.py`（SQLiteSkillRepository）——skills 表相关 DB 路径整体退役（ADR-039 D3a=B）。
-
-### 8.2 后端 MODIFY
-
-| 文件 | 改动 |
-|------|------|
-| `domain/models/agent_tools.py` | `ToolSpec` 增加 `group` 字段 |
-| `infrastructure/agent/tools/__init__.py` | `TOOL_REGISTRY` 升级为完整 6 工具目录（含 save_draft 静态 spec） |
-| `infrastructure/agent/tools/reader_tools.py` | `build_reader_tools` 增加 `include` 参数（白名单过滤） |
-| `infrastructure/agent/tools/save_draft_tool.py` | save_draft `ToolSpec` 静态化（常量提取，供目录注册） |
-| `infrastructure/agent/agentic_writer.py` | `build_agentic_writer` 增加 `tool_ids`/`skill_ids` 参数 + `_append_skills` |
-| `infrastructure/database/models/__init__.py` | import 注册 `AgentORM`（触发 Base.metadata；#522 移除 SkillORM 注册） |
-| `api/app.py` | `include_router(agents.router, skills.router)` + lifespan `ensure_builtin_skills()` → `migrate_skills_from_db()` → `seed_builtin_agents()`（#522 顺序） |
-| `cli/commands/agent_cmd.py` | `agent` 组新增 `list`/`show` 子命令 |
-| `cli/app.py` | 注册 `skill` 子组 |
-
-### 8.3 前端 CREATE / MODIFY
-
-| 文件 | 改动 | 归属 |
-|------|------|------|
-| `stores/agents.ts` | CREATE：`useAgentsStore`（loadAgents/createAgent/updateAgent/deleteAgent/loadToolCatalog，镜像 `stores/templates.ts` apiFetch 模式） | #260 |
-| `stores/skills.ts` | CREATE：`useSkillsStore`（loadSkills/uploadSkill/deleteSkill + agent_ids 反查） | #259 |
-| `components/AgentList.tsx` | CREATE：Agent 管理列表（内置只读展示 / 自定义可编辑） | #260 |
-| `components/AgentEditDialog.tsx` | CREATE：创建/编辑页（基本信息 + prompt + 分组 checkbox + skill 绑定 + 模型/温度覆盖） | #260 |
-| `components/SkillUploadDialog.tsx` | CREATE：上传（frontmatter 解析预览 + 上传时绑定 Agent） | #259 |
-| `components/SkillList.tsx` | CREATE：skill 管理列表（来源/反查/删除确认） | #259 |
-| `pages/settings.tsx` | MODIFY：五分类导航新增「Agent 管理」「Skill 管理」（或并入既有「Agent」分类 + 新增「Skill」分类，实现确认） | #259/#260 |
-
-### 8.4 测试文件
-
-| 文件 | 内容 |
-|------|------|
-| `backend/tests/unit/domain/services/test_agent_service.py` | Agent 服务 CRUD + 白名单校验 + builtin 保护 |
-| `backend/tests/unit/domain/services/test_skill_service.py` | Skill 服务 CRUD + frontmatter 解析 + 级联清引用 |
-| `backend/tests/unit/domain/models/test_tool_catalog.py` | 6 工具目录 + group 分组 + save_draft 静态 spec |
-| `backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` | `build_agentic_writer` 白名单过滤（工具 + skill 拼接） |
-| `tests/api/test_agents_api.py` | `/api/v1/agents` 端点契约（含 `/tools` 路由顺序） |
-| `tests/api/test_skills_api.py` | `/api/v1/skills` 端点契约（frontmatter 校验 + 反查） |
-| `tests/integration/test_builtin_seed.py` | seed 幂等（6 Agent + 6 Skill + 重复启动不重复插入） |
-| `frontend/.../agents.test.tsx` + `skills.test.tsx` | store 单测 + 组件测试（Vitest + RTL） |
-| `frontend/.../e2e/*.spec.ts` | 上传→绑定→引用视图→删除确认 全流程（F40）+ 创建→编辑→白名单展示→删除确认（F41） |
+| ⑫ | 存量库升级（无 alembic） | `agents` 表由 `create_all` 自动建；旧 `skills` 表由 `migrate_skills_from_db` 一次性迁移 user_upload 行 → 文件后清表（表不存在 → 0）；内置 Skill 由 `ensure_builtin_skills` 回补文件 |
 
 ---
 
@@ -497,9 +418,9 @@ def build_agentic_writer(
 | 写作侧 Agent 选择入口 | 二期 | F29 Supervisor 联动时设计 |
 | Agent 实体运行时消费接线（哪个 Agent 跑哪个任务） | 阶段 2/3 | 分析文档 §6 演进路径；F27 路径保持独立入口 |
 | 项目配置层 Agent 引用字段 | 二期 | Q0「项目引用」随 AgentTemplate.roles 扩展一并落地 |
-| F19-skills 文件系统 skill（`data_dir/skills/`）消费 | 共用目录（#522） | #522 后本 spec Skill 实体与 F19-skills **共用 `data_dir/skills/` 文件系统真源**（ADR-039 去表）：F19-skills 导入写入、F39 读取消费同一目录 |
-| MCP Server（#49） | 0.9.0 独立 | F20 独立域 |
-| DAG 编排（#270） | 0.9.0 独立 | F46 独立域 |
+| F19-skills 文件系统 skill（`data_dir/skills/`）消费 | 共用目录 | 本 spec Skill 实体与 F19-skills **共用 `data_dir/skills/` 文件系统真源**（ADR-039 去表）：F19-skills 导入写入、F39 读取消费同一目录 |
+| MCP Server | 独立域（F20） | F20 独立域 |
+| DAG 编排 | 独立域（F46） | F46 独立域 |
 
 ---
 
@@ -509,17 +430,17 @@ def build_agentic_writer(
 
 | 依赖 | 关系 | 说明 |
 |------|------|------|
-| F26 工具注册表（✅ 已交付） | MODIFY | `ToolSpec` 加 group + `build_reader_tools` 加 include |
-| F27 agentic writer（✅ 已交付） | MODIFY | `build_agentic_writer` 加白名单参数（向后兼容，F27 调用点不改） |
-| F19 AgentTemplate（✅ 已交付） | 参照 | CRUD/ORM/repo/service/router 模式照搬 |
+| F26 工具注册表 | MODIFY | `ToolSpec` 加 group + `build_reader_tools` 加 include |
+| F27 agentic writer | MODIFY | `build_agentic_writer` 加白名单参数（向后兼容，F27 调用点不改） |
+| F19 AgentTemplate | 参照 | CRUD/ORM/repo/service/router 模式照搬 |
 | F9/F13/F34/F6/F3 服务 | 消费 | 工具包装对象（reader_tools 既有，不变） |
 
 **被依赖（消费本模块）**：
 
 | 消费方 | 说明 |
 |--------|------|
-| #259 F40 skill 上传绑定 | 依赖本 spec §2/§3 的 Skill 实体 + API + §5.4 交互 |
-| #260 F41 自定义 Agent 编辑 | 依赖本 spec §2/§3 的 Agent 实体 + API + §5.5 交互 |
+| F40 skill 上传绑定 | 依赖本 spec §2/§3 的 Skill 实体 + API + §5.4 交互 |
+| F41 自定义 Agent 编辑 | 依赖本 spec §2/§3 的 Agent 实体 + API + §5.5 交互 |
 | 阶段 2 AgentTemplate.roles 扩展 | 依赖 Agent 实体（引用式） |
 | 阶段 3 F29 Supervisor 调度 | 依赖 Agent 库（按能力调度） |
 
@@ -527,30 +448,32 @@ def build_agentic_writer(
 
 ---
 
-## 12. 关键架构决策记录
+## 12. 决策表
 
-| # | 决策 | 方案 | 理由（含备选否决） |
-|---|------|------|-------------------|
-| D1 | skill 绑定时机 | 上传时显式指定（默认不启用）+ 编辑页可改 + 「应用到全部」 | 上传当下意图最清晰；默认不启用符合「AI 自动化默认关闭」铁律，杜绝幽灵注入。否决：默认全部可用（违反铁律）/创建 Agent 时指定（决策瘫痪）/仅编辑页指定（可发现性差） |
-| D2 | 函数选择 UI | 分组 checkbox 列表（writing/检索/审计/项目 + 描述，>10 加搜索）；内置只读、自定义可编辑 | 白名单是多选语义；分组 checkbox 比下拉直观；内置锁定避免「改坏了怎么恢复」二次负担 |
-| D3 | 自定义函数 | 不做 | 心智负担 > 收益；注册表是产品资产 |
-| D4 | 白名单确定性强制 | 装配层按 tool_ids/skill_ids 过滤后交付 LLM | 行为差异化从「概率」变「确定」；与 deepagents harness `tools` 参数天然契合 |
-| D5 | skill 引用形态 | `skill_ids` 存 **skill 目录名**（英文 slug，N2 规则，#522 修订） | 与文件系统真源目录名（= frontmatter name）对齐，deepagents 原生 name 引用；删除级联按目录名精确清理（ADR-039）。否决：DB 主键字符串化（去表后无主键） |
-| D6 | 装配能力 vs 消费接线 | 阶段 1 只交付能力（单元测试验证），不接运行时消费 | 分析文档 §6 演进路径分阶段；避免阶段 1 大改 F27 路径与双配置源 |
-| D7 | 内置只读 | builtin/source 字段 + service 409 | 镜像 AgentTemplate is_default 保护；内置清单 = 产品资产 |
-| D8 | Skill 存储形态 | **文件系统真源** `data_dir/skills/<name>/SKILL.md`（#522 修订） | 与 F19-skills **共用同一目录**：启动 `ensure_builtin_skills` 回补 + `migrate_skills_from_db` 一次性迁移旧表（ADR-039）；反查经 Agent.skill_ids 目录名过滤 |
-| D9 | Agent/Skill 归属 | 全局定义（应用级）+ 项目引用（阶段 2 经 project config 落地） | Q0 拍板 A：方法论跨项目复用、与「设定库随项目走」分层不冲突；§2 实体无 project_id。否决：项目级定义（每项目重建，改动面大） |
-| D10 | 与 AgentTemplate 关系 | 本期解耦，二期 roles 扩展为 Agent 引用 | Q1 拍板 A：避免一次大改双配置源。否决：本期打通（+3-5 人天改造模板 + 管线，F42 已证执行层复杂度） |
-| D11 | 内置 skill 版本化与播种语义 | **三态播种**（缺失写 / 指纹==基线 → 升级 / 指纹≠基线 → 保留用户版）+ 基线 `<skills_root>/.builtin_state.json`；内容抽离为 `i18n/skills/builtin/{zh,en}/*.md`（frontmatter 带 version）（#1331 修订） | 取证确认「存在即跳过」不覆盖用户改动、但**未改副本也永不升级**——升级路径完全缺失。基线指纹可自证「未改」才升级，避免数据丢失。否决：无条件覆盖（丢用户方法论）/ 基线落 DB（违背 ADR-039 文件系统真源）/ 自指纹内嵌 md（用户编辑即破坏）|
-| D12 | 项目级 skill 覆盖 | 载体 `data_dir/projects/<id>/skills/<name>/SKILL.md`，查找顺序 项目级 → 全局；**本期只落解析原语**（`resolve_skill_md_path` / `is_project_override`），装配接线另期 | 修订 D9「项目差异留阶段 2」的起点：先交付可测的解析面，避免一次改动 agentic_writer/books/_chat_auth 三处装配点（回归面大）。否决：本期全链路接线（范围翻倍，与 D6 分阶段口径冲突）|
-
----
+| 决策点 | 选择 | 理由 | 备选（否决） |
+|--------|------|------|--------------|
+| Agent 主键 / Skill 标识 | Agent 主键 int 自增（镜像 AgentTemplate）；Skill 无主键，标识 = 目录名 | 项目全局惯例（F1-F19 全 int 自增）；Skill 去表后目录名即唯一标识（N2 规则） | — |
+| `tool_ids` 引用形态 | `list[str]`（存量兼容只读口，不再写入） | 工具面唯一真源为 `grants`（F58 §2.1）；保留列仅供存量行（grants 空）反查推断，避免迁移窗内丢权限 | — |
+| `Skill.content` 语义 | 文件内容原样（frontmatter + 正文，文件系统为真源） | content 是注入真相源（原样可预览 / 可追溯）；name / description 由 frontmatter 解析供列表展示 + 唯一性校验 | — |
+| 工具目录分组 | `ToolSpec.group` 字段扩展（非独立分组表） | 6 工具规模小，字段扩展最小改动 | 独立分组表（规模不值） |
+| skill 绑定时机 | 上传时显式指定（默认不启用）+ 编辑页可改 + 「应用到全部」 | 上传当下意图最清晰；默认不启用符合「AI 自动化默认关闭」铁律，杜绝幽灵注入 | 默认全部可用（违反铁律）/ 创建 Agent 时指定（决策瘫痪）/ 仅编辑页指定（可发现性差） |
+| 函数选择 UI | 分组 checkbox 列表（writing / 检索 / 审计 / 项目 + 描述，>10 加搜索）；内置只读、自定义可编辑 | 白名单是多选语义；分组 checkbox 比下拉直观；内置锁定避免「改坏了怎么恢复」二次负担 | 下拉多选（分组层级丢失） |
+| 自定义函数 | 不做 | 心智负担 > 收益；注册表是产品资产 | 开放用户自定义函数注册 |
+| 白名单确定性强制 | 装配层按 tool_ids / skill_ids 过滤后交付 LLM | 行为差异化从「概率」变「确定」；与 deepagents harness `tools` 参数天然契合 | 靠 prompt 约束（不确定） |
+| skill 引用形态 | `skill_ids` 存 **skill 目录名**（英文 slug，N2 规则） | 与文件系统真源目录名（= frontmatter name）对齐，deepagents 原生 name 引用；删除级联按目录名精确清理（ADR-039） | DB 主键字符串化（去表后无主键） |
+| 装配能力 vs 消费接线 | 本期只交付装配能力（单元测试验证），不接运行时消费 | 演进路径分阶段（阶段 2 模板 roles 扩展、阶段 3 Supervisor 调度）；避免本期大改 F27 路径与双配置源 | 本期直接接运行时消费（改动面大） |
+| 内置只读 | `builtin`（Agent）字段 + `source`（Skill，由目录名判定）+ 服务层 409 | 镜像 AgentTemplate `is_default` → 409 保护模式；「改坏了怎么恢复」的二次负担免于维护 | 允许改内置（需恢复机制） |
+| Skill 存储形态 | **文件系统真源** `data_dir/skills/<name>/SKILL.md` | 与 F19-skills **共用同一目录**：启动 `ensure_builtin_skills` 回补 + `migrate_skills_from_db` 一次性迁移旧表（ADR-039）；反查经 `Agent.skill_ids` 目录名过滤 | 继续落 DB 表（与分发真源双份） |
+| Agent/Skill 归属 | 全局定义（应用级）+ 项目引用（阶段 2 经 project config 落地） | 方法论跨项目复用；与「设定库随项目走」分层不冲突；§2 实体无 `project_id` | 项目级定义（每项目重建，改动面大） |
+| 与 AgentTemplate 关系 | 本期解耦，二期 roles 扩展为 Agent 引用 | 避免一次大改双配置源；Agent 管「能力边界」与模板管「模型 / 温度」是正交维度 | 本期打通（+3-5 人天改造模板 + 管线装配） |
+| 内置 skill 版本化与播种语义 | **三态播种**（缺失写 / 指纹 == 基线 → 升级 / 指纹 ≠ 基线 → 保留用户版）+ 基线 `<skills_root>/.builtin_state.json`；内容抽离为 `i18n/skills/builtin/{zh,en}/*.md`（frontmatter 带 version） | 「存在即跳过」不覆盖用户改动，但**未改副本也永不升级**——升级路径完全缺失 | 存在即跳过（永不升级） |
+| 项目级 skill 覆盖 | 载体 `data_dir/projects/<id>/skills/<name>/SKILL.md`，查找顺序 项目级 → 全局；本期只落解析原语（`resolve_skill_md_path` / `is_project_override`） | 先交付可测的解析面，避免一次改动 agentic_writer / books / _chat_auth 三处 | 本期直接接装配（三处联动风险） |
 
 ## 13. 验收标准
 
 > 验收锚点 = 三 issue 验收要点合并，按子域划分。命令以 `backend\.venv\Scripts\python.exe -m pytest`（或 `uv run python -m pytest`）执行。
 
-### F39 后端核心（#258）
+### 后端核心
 
 | M | 验收 | 验证 |
 |---|------|------|
@@ -559,16 +482,16 @@ def build_agentic_writer(
 | M3 | 白名单装配确定性：`tool_ids` 只 build 命中工具、`skill_ids` 只拼命中 skill（base 前 skill 后）；`None` 向后兼容 | `pytest backend/tests/unit/infrastructure/agent/test_agentic_whitelist.py` |
 | M4 | 内置 seed 幂等：启动后 6 Agent 落库 + 6 Skill 文件回补就绪，重复启动不重复插入/写入 | `pytest tests/integration/test_builtin_seed.py` + 手工 `inkflow agent list`/`inkflow skill list` |
 | M5 | 内置只读（PATCH/DELETE 409）；被引用 user skill 删除级联清引用 | `pytest` 服务层 + 端点契约用例 |
-| M12 | 内置版本化三态（用户改过保留 / 未改升级 / 缺失写）+ 播种逐字一致 + 项目级覆盖解析顺序 + status/diff 可见面（#1331） | `pytest backend/tests/unit/domain/services/test_skill_versioning.py tests/api/test_skills_builtin_status_api.py tests/cli/test_cli_skill.py` + `pytest tests/integration/test_builtin_seed.py` |
+| M12 | 内置版本化三态（用户改过保留 / 未改升级 / 缺失写）+ 播种逐字一致 + 项目级覆盖解析顺序 + status/diff 可见面 | `pytest backend/tests/unit/domain/services/test_skill_versioning.py tests/api/test_skills_builtin_status_api.py tests/cli/test_cli_skill.py` + `pytest tests/integration/test_builtin_seed.py` |
 
-### F40 skill 上传绑定（#259）
+### skill 上传绑定
 
 | M | 验收 | 验证 |
 |---|------|------|
 | M6 | 上传：frontmatter 解析（name/description/tags）+ 内容预览；格式非法/同名 422 提示 | `pytest tests/api/test_skills_api.py` + 前端 store/组件测试 |
 | M7 | 上传时绑定：显式指定 Agent（默认不勾选 + 可搜索 + 「应用到全部」）；管理列表（来源/反查）；删除确认列影响面 | 前端组件测试 + E2E `上传→绑定→引用视图→删除确认` |
 
-### F41 自定义 Agent 编辑（#260）
+### 自定义 Agent 编辑
 
 | M | 验收 | 验证 |
 |---|------|------|
@@ -579,37 +502,8 @@ def build_agentic_writer(
 
 - 三层测试全绿（unit/integration/e2e 独立 job）+ 覆盖率达标（模块 ≥80%）
 - CLI 手工验证闭环：`inkflow agent list`/`inkflow agent show --id N`/`inkflow skill list` 三命令输出正确
-- #258/#259/#260 在各自 PR 合入时关闭（F39 后端 `Closes #258`；F40 `Closes #259`；F41 `Closes #260`——分 issue 分别 close，非合并 close）
 
 ---
-
-## 待澄清问题（≤3，留给用户拍板）
-
-### Q0：Agent/Skill 是否全局定义 + 项目引用？　✅ 已确认（用户拍板：选项 A，2026-08-16）
-
-**用途**：决定 Agent/Skill 实体的归属粒度——是「应用级全局」（跨项目复用，「我的润色师」不每项目重建）还是「项目级」（每项目独立配置）。影响数据模型的 scope 字段与阶段 2 的项目引用设计。
-
-| 选项 | 说明 |
-|------|------|
-| A（推荐） | **全局定义（应用级）+ 项目引用**：Agent/Skill 全局唯一，项目经 config 选择 Agent（阶段 2 落地项目引用字段）；skill 是「方法论」非「项目数据」，与「设定库随项目走」不同层不冲突 |
-| B | 项目级定义：Agent/Skill 随项目走，每项目独立重建（与设定库同层） |
-
-**建议**：A。分析文档 §5.1 与 §6 演进路径均按全局定义设计；「设定库随项目走」是已拍板先例，但 skill=方法论、角色/世界观=项目数据，分层不冲突。**影响**：A 方案 §2 实体无 project_id 字段、阶段 2 项目引用走 config；B 方案需加 project_id 列 + 全部 CRUD 挂项目上下文，改动面大。
-
-### Q1：本期是否与 AgentTemplate 解耦？　✅ 已确认（用户拍板：选项 A，2026-08-16）
-
-**用途**：决定本期是否改造 AgentTemplate（roles 四角色 → 任意 Agent 引用）。影响 F39-F41 的边界与阶段 2 排期。
-
-| 选项 | 说明 |
-|------|------|
-| A（推荐） | **本期解耦**：F39-F41 只做 Agent/Skill 实体 + 装配能力，不动 AgentTemplate；二期 AgentTemplate.roles 扩展为 Agent 引用（模型/温度覆盖保留） |
-| B | 本期打通：AgentTemplate.roles 直接引用 Agent 实体，一次性改造双配置源 |
-
-**建议**：A。分析文档 §3「本期解耦、二期扩展，避免一次大改双配置源」；Agent 管「能力边界」与模板管「模型/温度」是两个正交维度，一次打通风险高（F42 已证执行层改造的复杂度）。**影响**：A 方案本期无 AgentTemplate MODIFY、Agent 暂无运行时消费（能力以单元测试验证）；B 方案需 +3-5 人天改造 AgentTemplate + 管线装配。
-
----
-
-> **Spec 变更记录**：v1.0 初稿（2026-08-16）→ v1.1（2026-08-16，Q0=A / Q1=A 拍板定稿，留痕见头部 Spec 变更行 + §12 D9/D10）→ v1.2（2026-08-20，#522 skill 存储架构重构去表，留痕见头部 Spec 变更行 + §12 D5/D8）。
 
 ## 14. 动作确认
 
