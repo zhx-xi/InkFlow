@@ -32,7 +32,7 @@
 └────────┴─────────────────────────┘
 ```
 
-- 参考锚点（以真实组件 pages/search.tsx 为准，#480 RAG embedding 增强检索 + #657 索引维护）：
+- 参考锚点（以真实组件 pages/search.tsx 为准：RAG embedding 增强检索 + 索引维护）：
   - 页面骨架：max-w-[1080px] 居中容器，标题「检索」（font-serif 26px）+ 副标题「基于 RAG embedding 的语义/关键词检索」
   - 检索表单：检索模式 Select / 项目 Select / 检索输入框 / 「检索」按钮，flex-wrap 一行排布（gap-4）
   - 无项目空态：Search 图标 + 「请先创建或选择项目」+「前往项目页」按钮（跳 /projects），不发检索请求
@@ -44,7 +44,7 @@
   - 检索区（mt-6）：模式 Select（w-32）→ 项目 Select（w-56）→ 输入框（max-w-xs 弹性）→ 检索按钮
   - 索引维护卡（mt-8）：标题 + 描述 + 双 Select 行 + 重建按钮 + 反馈块（loading/ok/err 三态）
   - 结果区（mt-8）：loading / error / results / empty 四态互斥展示
-- 结果分页条（#1300 / PR #1314，公共组件 `components/Pagination.tsx`）：结果列表下方，`search-page` 前缀，容器 `mt-6 justify-center`；「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→「下一页」，默认 20/页（`SEARCH_PAGE_SIZE`，`search.tsx:41`）。**服务端分页**（`limit/offset`，`:116-117`）——翻页会**重新发起检索请求**，非本地切片；total 来自后端 `result.total`
+- 结果分页条（公共组件 `components/Pagination.tsx`）：结果列表下方，`search-page` 前缀，容器 `mt-6 justify-center`；「上一页」→ 信息「第 {n} / {m} 页 · 共 {k} 条」→「下一页」，默认 20/页（`SEARCH_PAGE_SIZE`，`search.tsx:41`）。**服务端分页**（`limit/offset`，`:116-117`）——翻页会**重新发起检索请求**，非本地切片；total 来自后端 `result.total`
 
 ## 2. 动作样式（按钮 × 状态表，逐控件）
 
@@ -69,5 +69,5 @@
 - N5：索引维护卡齐全（范围/类型/重建按钮），默认「当前项目」+「两者」；点重建先出确认弹窗（含 API 费用提示），确定才发请求
 - N6：重建三态闭环：running 轮询（2s 间隔，spinner+步骤+进度）→ done 绿块（rebuilt_at + 项目数）/ failed 红块（原因）；轮询异常或 404 落入 err 块且页面其余交互不受影响
 - N7：参数映射：范围=当前项目且已选项目 → project_ids=[id]；全部项目/未选 → null；索引类型 both/fulltext/vector 直传
-- N8（#1300 / PR #1314）：结果列表下方渲染分页条（`search-page` 前缀，居中）——首页 prev 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 20/页）；点「下一页」→ **重新发起检索请求**（服务端 `offset` 切片）且结果列表与信息同步更新；loading/error/empty 三态**不**渲染分页条
-> 说明（#802）：本页重建走异步端点 POST /api/v1/index/rebuild（#659，202 异步 + task_id 轮询）为主；遗留同步端点 POST /api/v1/search/rebuild（routers/search.py:158）无 scope 参数、返回 rebuilt_at（非 task_id），标记 deprecated，不作为本页路径。
+- N8：结果列表下方渲染分页条（`search-page` 前缀，居中）——首页 prev 禁用、信息「第 1 / {m} 页 · 共 {k} 条」正确（默认 20/页）；点「下一页」→ **重新发起检索请求**（服务端 `offset` 切片）且结果列表与信息同步更新；loading/error/empty 三态**不**渲染分页条
+> 说明：本页重建走异步端点 POST /api/v1/index/rebuild（202 异步 + task_id 轮询）为主；遗留同步端点 POST /api/v1/search/rebuild（routers/search.py:158）无 scope 参数、返回 rebuilt_at（非 task_id），标记 deprecated，不作为本页路径。
