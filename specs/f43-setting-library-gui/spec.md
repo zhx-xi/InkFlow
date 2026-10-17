@@ -1,4 +1,4 @@
-# F43 设定库 GUI 升级（P0+P1+P2+P3+P4+P5 批次）— 功能规格
+# F43 设定库 GUI 升级 — 功能规格
 
 > **端**: cross
 > **依据**: `design/setting-library-v2-decisions-2026-08-12.md`、`design/setting-library-p5-facts-2026-08-13.md`、[F10 世界观](../f10-world-settings/spec.md)
@@ -9,58 +9,51 @@
 
 ### 1.1 模块定位
 
-设定库 GUI（library.tsx 六分类 tab + projects.tsx 项目卡片）通过 issue #284 分 P0-P5 批次升级。P0（PR #301，v1.0）补齐六分类编辑/删除 + 项目重命名/删除 CRUD 闭环；P1（PR #306，v1.1）补齐角色等级必填（D1）+ 分组标签多选（D2）+ 世界观树/分类筛选（D3）+ 世界观复制（F37）；P2（PR #311，v1.2）落地地图工作台（D4-D7）；P3+P4（PR #319，v1.3）落地大纲三级 + 章关联 + 时间线双序 + 两级检查（D8-D10）。本批（P5，v1.4）为**最后一批**，在删除语义方向收尾（决策文档 D11 + §4「删除 30 天清理」→ 事实核查后重定位）：
+设定库 GUI（`library.tsx` 六分类 tab + `projects.tsx` 项目卡片 + 地图工作台）是本产品的设定管理界面：按角色 / 世界观 / 大纲 / 时间线 / 伏笔 / 知识图谱六分类提供条目 CRUD，并承载角色等级与分组标签、世界观树与分类筛选与跨项目复制、地图工作台、大纲三级树与章关联、时间线双序与一致性检查。删除语义为真删：删除设定实体时在同一事务内清理跨表引用残留。
 
-1. **删除后引用残留清理 job**（#211 真删对齐）：删除设定实体后同步清理引用残留——角色关系（`knowledge_relations` 中 `source_type='character' AND target_type='character'` 的 from/to 双向行；#495 前为独立 `character_relations` 表，2026-09-17 起该表已并入）、地图 pin 关联（map_pins.ref_id / location_id）、大纲父子（outlines.parent_id）+ 情节点（plot_points）、伏笔事件锚点（foreshadowings.event_id）、章节引用 6 处（outlines.chapter_id / timeline_events.source_chapter_id / audit_logs / chapter_summaries / agent_runs / drafts）。
-2. **前端删除确认文案对齐真删**（D11 → #211 语义）：`lib.delete.confirm` 由「后台逻辑删除，30 天后彻底清除」改为「立即移除，不可恢复」。
-3. **世界观删除补漏**：reparent 路径补 location_cleanup 钩子；`maps.root_location_id` 置空。
+### 1.2 范围
 
-**与 F42 的关系**：F42 = 0.9.0 多 Agent 配置（agent-chain-config），本 F43 = 0.8.0 设定库 GUI（issue #284 的 P0-P5，本批收尾）。编号按 AGENTS.md 模块类型谱系顺延。
+| # | 交付物 |
+|---|--------|
+| 1 | **六分类 CRUD**：条目创建/编辑/删除 + 已保存指示 + 删除确认；项目卡片重命名/删除 |
+| 2 | **角色等级**：五档枚举必填（`extra.role_rank`）+ 列表行等级徽标 |
+| 3 | **角色分组标签**：自由文本多选（`extra.groups`，去重保序），建议标签取项目内已用标签并集 |
+| 4 | **世界观树**：按 `parent_id` 前端建树 + 分类筛选 chips（无「全部」项，toggle 语义） |
+| 5 | **世界观复制**：行内子树/仅本体复制 + 顶部整体复制，目标项目选择 + 结果 toast |
+| 6 | **地图工作台**：左树 + 右画布；三底图（简图/图片/AI 占位）+ 简图形状 + 一图多标记 + 面包屑导航 |
+| 7 | **大纲三级树**：overall / volume / chapter + 情节点，各层新增按钮 + 章关联徽标 |
+| 8 | **时间线双序 + 两级检查**：叙事序/世界序切换；整体一致性检查 + 单事件检查 |
+| 9 | **删除后引用残留清理**：角色 / 大纲 / 时间线事件 / 世界观条目 / 写作章节五类删除的跨表清理（同事务） |
+| 10 | **删除确认文案**：`lib.delete.confirm` 表达真删语义（立即移除，不可恢复） |
 
-### 1.2 范围（P5 交付物）
-
-P0（六分类 CRUD 闭环，PR #301）+ P1（角色等级/标签/世界观树/复制，PR #306）+ P2（地图工作台，PR #311）+ P3+P4（大纲三级/章关联/时间线双序/两级检查，PR #319）已全部合入。本批 P5 在删除语义方向收尾（决策文档 D11 + P5 事实核查）：
-
-| # | 交付物 | 来源 |
-|---|--------|------|
-| 1 | **删除角色清理**：`knowledge_relations` 的角色↔角色行（`source_type='character' AND target_type='character'`，from/to 双向）显式级联删除；map_pins ref_id(type=role) 置空 | #211 + P5 事实核查（#495 表合并同步） |
-| 2 | **删除大纲清理**：子大纲 outlines.parent_id 置空（SET NULL）；plot_points 显式级联删除 | #211 + P5 事实核查 |
-| 3 | **删除时间线事件清理**：foreshadowings.event_id 置空；map_pins ref_id(type=event) 置空 | #211 + P5 事实核查 |
-| 4 | **删除世界观条目清理**：reparent 路径补 location_cleanup 钩子；maps.root_location_id 置空；pin location_id 置空（既有） | #211 + P5 事实核查 |
-| 5 | **删除写作章节清理（6 处）**：outlines.chapter_id / timeline_events.source_chapter_id / audit_logs.chapter_id / chapter_summaries.chapter_id / agent_runs.chapter_id / drafts.chapter_id | Q3=B 拍板 + P5 事实核查 |
-| 6 | **前端删除确认文案对齐真删**：`lib.delete.confirm` 改为「点击确认后立即移除，不可恢复」（zh/en 同步 + 3 处测试断言同步） | Q2=B 拍板 |
-| 7 | 清理实现遵循**同步**（删除方法内，同一事务）——非异步 job（Q1=A 拍板） | Q1=A 拍板 |
-
-> **范围定性**：P5 为**后端为主 + 前端文案对齐**（非 GUI 新交互）。全部引用残留清理走 service/repo 显式语句（沿用 `clear_arc_of_points` / `clear_location_pins` / `map_repo.delete_by_project` 既有样板），**不新增异步任务基建**（Q1=A 拍板，删除低频 + 无调度器 → 同步最简单且一致性强）。
+> **范围定性**：后端为主 + 前端交互补齐。引用残留清理走 service/repo 显式语句（沿用 `clear_arc_of_points` / `clear_location_pins` / `map_repo.delete_by_project` 既有样板），**不引入异步任务基建**（删除低频 + 项目无调度器 → 同步最简单且一致性强，见 §12 决策表）。
 
 ### 1.3 边界声明
 
-- 本批**覆盖 P5**（删除后引用残留清理 + 文案对齐），为 issue #284 **最后一批**——PR body `Closes #284`（各批全部完成后关闭；spec §11/§13 门禁同步）。
-- **清理时机 = 同步**（Q1=A 拍板）：删除端点调用的 service 方法内，repo 显式清理语句与主删除**同一事务**；**不做异步后台 job、不引入调度器**（项目无 job 基建；删除低频，异步收益低）。
-- **清理语义矩阵**（与 ORM 声明一致，但显式实现）：`CASCADE` 类（角色↔角色关系行：`knowledge_relations` 中 `source_type='character' AND target_type='character'`，#495 前为 `character_relations` / plot_points / audit_logs / chapter_summaries）→ 显式 DELETE 子行；`SET NULL` 类（outlines.parent_id / outlines.chapter_id / timeline_events.source_chapter_id / foreshadowings.event_id / map_pins.ref_id / map_pins.location_id / maps.root_location_id / agent_runs.chapter_id / drafts.chapter_id）→ 显式 UPDATE 置 NULL。
-- **前端文案对齐真删**（Q2=B 拍板）：`lib.delete.confirm` 由「点击确认后立即移除（后台逻辑删除，30 天后彻底清除）」改为「点击确认后立即移除，不可恢复」。**影响 3 个消费方**（library.tsx 六分类 / projects.tsx 项目删除 / MapWorkbench.tsx pin 删除）——文案是通用删除确认，语义全部适用真删。
-- **范围含写作章节**（Q3=B 拍板）：`chapter_service.delete_chapter` 清理 6 处引用（outlines / timeline_events / audit_logs / chapter_summaries / agent_runs / drafts）。M4 门禁「章关联」= outline.chapter_id 由此覆盖。
+- 引用残留清理**同步**执行：删除端点调用的 service 方法内，repo 显式清理语句与主删除**同一事务**；**不做异步后台 job、不引入调度器**（项目无 job 基建；删除低频，异步收益低）。
+- **清理语义矩阵**（与 ORM 声明一致，但显式实现）：`CASCADE` 类（角色↔角色关系行：`knowledge_relations` 中 `source_type='character' AND target_type='character'` / plot_points / audit_logs / chapter_summaries）→ 显式 DELETE 子行；`SET NULL` 类（outlines.parent_id / outlines.chapter_id / timeline_events.source_chapter_id / foreshadowings.event_id / map_pins.ref_id / map_pins.location_id / maps.root_location_id / agent_runs.chapter_id / drafts.chapter_id）→ 显式 UPDATE 置 NULL。
+- **前端文案表达真删**：`lib.delete.confirm` =「点击确认后立即移除，不可恢复」。**影响 3 个消费方**（library.tsx 六分类 / projects.tsx 项目删除 / MapWorkbench.tsx pin 删除）——文案是通用删除确认，语义全部适用真删。
+- **范围含写作章节**：`chapter_service.delete_chapter` 清理 6 处引用（outlines / timeline_events / audit_logs / chapter_summaries / agent_runs / drafts）；「章关联」= outline.chapter_id 由此覆盖。
 - **不新增删除端点**：清理是既有 DELETE 端点的内部行为增强，API 面零变更（§3 无新端点/新参数）。
-- **AI 底图不做**（D5 拍板「占位后置」）：仅渲染「即将推出」禁用态，无生成逻辑、无 LLM 调用。
+- **AI 底图不做**：仅渲染「即将推出」禁用态，无生成逻辑、无 LLM 调用。
 - **简图地图创建（无图片）**：需放宽 `maps.image_path` NOT NULL 语义（简图模式无图）。SQLite ALTER 无法改 NOT NULL 约束 → 简图模式 `image_path` 存空串 `""`，service 按 `bg_source` 校验（image 模式必须有图，shape 模式可空）。
 - **pin 关联实体校验**：`type=role` → `ref_id` 指向同项目活动角色；`type=event` → `ref_id` 指向同项目活动事件；`type=location` → 沿用 F36 `location_id`（指向同项目活动地点）；`type=other` → 无关联（纯注释 pin）。跨项目/软删实体 → 422。
-- 地图创建仍复用 F36 端点（本批扩展 `bg_source` 参数支持简图）；**不新增绘图引擎**（形状是简单绝对定位 div，非 SVG 笔刷/图层）。
-- 角色等级筛选 chips（P1 §10 登记）仍归 P2+ 候选，本批不做。
-
-- **大纲三级 level 默认值（向后兼容）**：旧平铺大纲（含情节点）历史行为默认 `level=chapter`（孤立章，parent_id 空）——存量行保持可读（渲染降级顶层仅作数据库向后兼容）；**2026-08-31 起新建/更新强制树形**——`level=chapter` 必须挂 `level=volume` 父大纲，否则 422（决策点 2.A「孤立章合法」移除，情节点仍挂其下）。
-- **三级层级约束（严格）**：`overall` 无 parent；`volume` 只能 parent=`overall`；`chapter` 只能 parent=`volume`（parent 空 = 孤立章 → **2026-08-31 起 422**）。非法层级/跨项目/不存在 parent → 422。
-- **章关联约束（D9）**：仅 `level=chapter` 可关联写作章节（`chapter_id`）；关联章节须同项目且存在，跨项目/软删 → 422；`chapter_id` 可清除（置空）。「关联章节」按钮的**选择器后置**（D9 拍板）——本批仅渲染按钮 + 📎 徽标，章节选择器交互后置。
+- 地图创建仍复用 F36 端点（`bg_source` 参数支持简图）；**不新增绘图引擎**（形状是简单绝对定位 div，非 SVG 笔刷/图层）。
+- 角色等级筛选 chips 不在范围内（与分类筛选语义不同，需单独决策）。
+- **大纲三级 level 默认值（向后兼容）**：旧平铺大纲（含情节点）历史行为默认 `level=chapter`（孤立章，parent_id 空）——存量行保持可读（渲染降级顶层仅作数据库向后兼容）；**新建/更新的 chapter 必须挂 volume 父大纲**，否则 422。
+- **三级层级约束（严格）**：`overall` 无 parent；`volume` 只能 parent=`overall`；`chapter` 只能 parent=`volume`（parent 空 = 孤立章 → 422）。非法层级/跨项目/不存在 parent → 422。
+- **章关联约束**：仅 `level=chapter` 可关联写作章节（`chapter_id`）；关联章节须同项目且存在，跨项目/软删 → 422；`chapter_id` 可清除（置空）。章节选择器交互不在范围内——本节仅规定「关联章节」按钮 + 📎 徽标渲染。
 - **情节点挂载**：情节点仍挂 `outline_id`（不关心 level，历史兼容）；新建情节点仅在 `level=chapter` 节点（前端渲染「＋情节点」按钮仅 chapter 层级）。
-- **时间线双序数据已就绪**：F12 已含 `time_value`（世界序）+ `narrative_position`（叙事序）+ `TimelineView` 双视图端点——本批仅前端消费双视图切换，零后端字段新增。
+- **时间线双序数据已就绪**：F12 已含 `time_value`（世界序）+ `narrative_position`（叙事序）+ `TimelineView` 双视图端点——前端仅消费双视图切换，零后端字段新增。
 - **单事件检查语义**：单事件检查 = 该事件与其叙事相邻事件的逆序对（作为 prev/next 的 order_conflict/flashback/flashforward）；`time_value` 为 None 的事件不参与检查（返回 `checked=false`）。
 
 ---
 
 ## 2. 数据模型（前端类型扩展 + 后端加列扩展）
 
-### 2.1 设定库列表项 DTO（library.tsx 现 `ListItem` 仅 id/name/title）
+### 2.1 设定库列表项 DTO
 
-P0 v1.0 已扩展 `LibraryItemDTO`（见 `frontend/packages/renderer/src/components/LibraryCreateDialog.tsx`）。P1 追加字段：
+列表项 DTO 覆盖六分类字段（前端 `LibraryItemDTO`，见 `frontend/packages/renderer/src/components/LibraryCreateDialog.tsx`）：
 
 ```ts
 interface LibraryItemDTO {
@@ -76,7 +69,6 @@ interface LibraryItemDTO {
   time_display?: string; // timeline
   priority?: number;    // foreshadow
   location?: string;    // foreshadow
-  // ── P1 新增 ──
   parent_id?: string | number | null;      // world：F35 父节点（null=顶层）
   extra?: Record<string, unknown>;         // characters：role_rank / groups 承载
 }
@@ -84,18 +76,19 @@ interface LibraryItemDTO {
 
 - **角色等级存储**：`extra.role_rank`（string，五档枚举 key：`protagonist | major | minor | scene | walkon`）。旧数据无该键 = 未选等级（编辑时下拉显示占位）。
 
-**角色等级字段表（#833 收紧，修改履历）**：
+**角色等级字段表**：
 
-| 字段 | 存储 | 必填性 | 校验 | 修改履历 |
-|------|------|--------|------|---------|
-| role_rank | `extra.role_rank`（string，零加列） | 创建必带；修改若带则校验 | 五档枚举 `protagonist/major/minor/scene/walkon`；缺失或非法 → 422 | ★#833 新增：由「非必填/后端不校验」收紧为「后端必填 + 枚举校验」；AI 工具 `create_character` 补 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create --role-rank` |
+| 字段 | 存储 | 必填性 | 校验 |
+|------|------|--------|------|
+| role_rank | `extra.role_rank`（string，零加列） | 创建必带；修改若带则校验 | 五档枚举 `protagonist/major/minor/scene/walkon`；缺失或非法 → 422；AI 工具 `create_character` 带 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create --role-rank` |
+
 - **角色分组标签存储**：`extra.groups`（string[]，自由文本标签，去重保序）。旧数据无该键 = 无标签。
 - **world 树**：`parent_id` 由后端 F35 返回（list 端点 `model_dump(mode="json")` 已含）；前端本地建树（顶层 = parent_id 为 null/缺失），不做分页树。
 
 ### 2.2 角色等级枚举（前端常量 + i18n）
 
 ```ts
-/** 五档角色等级（D1 拍板；存 extra.role_rank） */
+/** 五档角色等级（D1；存 extra.role_rank） */
 const ROLE_RANKS = [
   { key: 'protagonist', labelKey: 'lib.rank.protagonist' }, // 主角
   { key: 'major',       labelKey: 'lib.rank.major' },       // 重要配角
@@ -108,7 +101,7 @@ const ROLE_RANKS = [
 - 下拉用 shadcn Select（library.tsx 已有 Select 依赖）；**必填无默认**（D1）：初始 value 空 → 保存按钮 disabled（与名称/标题必填同 gate）。
 - 列表行渲染等级徽标（badge，`extra.role_rank` 映射 i18n 文案）+ 标签 chips（只读展示，`extra.groups`）。
 
-### 2.3 标签编辑器（前端新组件 TagEditor，D2）
+### 2.3 标签编辑器（TagEditor，D2）
 
 ```ts
 interface TagEditorProps {
@@ -118,27 +111,24 @@ interface TagEditorProps {
 }
 ```
 
-- 交互（wiki 风格，评审原型 §tagEditor）：
+- 交互（wiki 风格）：
   - 已选标签渲染 chips（× 可移除）
   - 建议标签渲染 + 前缀按钮（点击追加，已选的不再显示）
   - 输入框回车/逗号创建新标签（strip 去空，去重）
 - **建议标签来源**：当前项目角色列表 `extra.groups` 的并集（数据驱动，非硬编码）——角色列表已加载时直接聚合；角色 tab 打开创建/编辑对话框时可用。
 - 建议标签空 → 只显示输入创建（无建议区）。
 
-### 2.4 后端角色 DTO 扩展（极小改动，无迁移）
+### 2.4 后端角色 DTO 扩展（无迁移）
 
-`Character` 领域实体/ORM/Repo 已有 `extra` 字段（LenientJSON 列，`default_factory=dict`），**P0 前 API body 未透传**——本批补齐（P0 spec §10「需 extra 字段读写」预告项）：
+`Character` 领域实体/ORM/Repo 已有 `extra` 字段（LenientJSON 列，`default_factory=dict`），需在 API body 与 service 参数透传：
 
-| 文件 | 变更 |
-|------|------|
-| `backend/src/inkflow/domain/models/character.py` | `CharacterCreate` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；`CharacterUpdate` 加 `extra: dict[str, Any] \| None = None`（exclude_unset 语义：不传不修改；传 dict 整体替换） |
-| `backend/src/inkflow/api/routers/characters.py` | `CharacterCreateBody` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；create 调用透传 `data.extra` |
-| `backend/src/inkflow/domain/services/character_service.py` | `create_character` 加 `extra: dict[str, Any] \| None = None` 参数 → `Character(extra=extra or {})`；`update_character` 已用 `model_copy(update=model_dump(exclude_unset=True))` → extra 自动生效（整体替换） |
+- `CharacterCreate` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；`CharacterUpdate` 加 `extra: dict[str, Any] | None = None`（exclude_unset 语义：不传不修改；传 dict 整体替换）
+- `CharacterCreateBody` 加 `extra: dict[str, Any] = Field(default_factory=dict)`；create 调用透传 `data.extra`
+- `create_character` 加 `extra: dict[str, Any] | None = None` 参数 → `Character(extra=extra or {})`；`update_character` 用 `model_copy(update=model_dump(exclude_unset=True))` → extra 自动生效（整体替换）
+- 校验：extra 自由字典；但 **role_rank 由后端必填 + 枚举校验**（创建/修改角色必须传 `extra.role_rank`，缺失或非法值 → 422；五档 `protagonist|major|minor|scene|walkon`）。groups 仍自由文本，后端不校验。
+- 兼容：**创建必须带 `extra.role_rank`**（缺省 → 422）；更新不传 `extra` = 不修改，传 `extra` 但缺 role_rank = 视为该字段未改（保留原值）、带非法 role_rank → 422。
 
-- 校验：extra 自由字典；但 **role_rank 由后端必填 + 枚举校验**（#833 收紧：创建/修改角色必须传 `extra.role_rank`，缺失或非法值 → 422；五档 `protagonist|major|minor|scene|walkon`）。groups 仍自由文本，后端不校验。[修改履历：原「后端不校验 role_rank」被 #833 判为不符并收紧]
-- 兼容：#833 变更后，**创建必须带 `extra.role_rank`**（缺省 → 422）；更新不传 `extra` = 不修改，传 `extra` 但缺 role_rank = 视为该字段未改（保留原值）、带非法 role_rank → 422。[修改履历：原「extra 缺省 = 空 dict」的创建兼容被 #833 收紧为「创建必带 role_rank」；既有创建测试契约已同步补充 role_rank]
-
-### 2.5 复制请求 DTO 扩展（F37 极小扩展）
+### 2.5 复制请求 DTO 扩展（F37 扩展）
 
 `WorldCopyRequest`（`backend/src/inkflow/domain/models/copy.py`）加范围参数：
 
@@ -146,11 +136,11 @@ interface TagEditorProps {
 class WorldCopyRequest(BaseModel):
     source_project_id: uuid.UUID
     root_setting_id: uuid.UUID | None = None   # F37 既有：复制起点子树（含自身）；None=全部
-    self_only: bool = False                     # P1 新增：True = 仅复制 root_setting_id 本体（不含子级）
+    self_only: bool = False                     # True = 仅复制 root_setting_id 本体（不含子级）
 ```
 
 - `self_only=True` 且 `root_setting_id=None` → 422（互斥校验，VALIDATION_ERROR）。
-- `copy_service.copy` 加 `self_only: bool = False` 参数：复制集合确定分支（§5 算法 ③）：
+- `copy_service.copy` 加 `self_only: bool = False` 参数：复制集合确定分支（§5.6）：
   - `root + not self_only` → `list_descendants(root)`（既有语义，含自身全部后代）
   - `root + self_only` → `[root]`（仅本体；map 复制联动 `list_by_root_locations(source, [root.int], ...)` 自动收窄）
   - `root=None`（整体复制）→ `list_all_active(source)`（self_only 无意义，互斥校验拦）
@@ -172,9 +162,9 @@ class WorldCopyRequest(BaseModel):
 - 复制结果 `WorldCopyResult`：`created`（条目数）/ `skipped`（同名冲突）/ `maps_created` / `pins_created` / `warnings`——toast 文案聚合（`lib.copy.result` 模板）。
 - 复制成功后**不自动切换项目**；toast 提示「已复制到 {目标项目名}」。
 
-### 2.7 地图工作台后端扩展（P2，F36 增量）
+### 2.7 地图工作台后端扩展（F36 增量）
 
-P0/P1 的后端改动（角色 extra / 复制 self_only）零迁移。P2 需 **F36 maps/map_pins 表加列**——这是本批相对前两批的质变（加列迁移 + DTO/服务/路由扩展）。
+地图工作台需 **F36 maps/map_pins 表加列**（加列迁移 + DTO/服务/路由扩展）；角色 extra / 复制 self_only 两条扩展零迁移。
 
 #### 2.7.1 map_pins 扩展：type 枚举 + ref_id 关联（D6）
 
@@ -185,17 +175,17 @@ F36 `map_pins` 现仅 `location_id`（关联地点）。D6 需四类标记 + 关
 | `type` | str | NOT NULL, DEFAULT 'location' | 枚举 `location`/`role`/`event`/`other`（旧数据默认 location） |
 | `ref_id` | int \| NULL | 可空，已索引 | 关联实体主键（int，与 ORM 层一致）；`type` 推导目标表 |
 
-**关联语义**（A-1 落地，`location_id` 保留为 `type=location` 的兼容别名——F36 既有端点/CLI/测试零破坏）：
+**关联语义**（`location_id` 保留为 `type=location` 的兼容别名——F36 既有端点/CLI/测试零破坏）：
 
 | type | 关联列 | 目标表 | 校验 |
 |------|--------|--------|------|
 | `location` | `location_id`（F36 既有） | world_settings | 同项目活动地点（F36 既有校验链） |
-| `role` | `ref_id` | characters | 同项目活动角色（本批新增） |
-| `event` | `ref_id` | timeline_events | 同项目活动事件（本批新增） |
+| `role` | `ref_id` | characters | 同项目活动角色 |
+| `event` | `ref_id` | timeline_events | 同项目活动事件 |
 | `other` | 两者均 NULL | — | 纯注释 pin，无关联 |
 
 - `ref_id` 是**领域 UUID 映射的 int 主键**（沿用 F1 `_to_int_id` 模式），存 ORM 层 int。
-- `role`/`event` 关联校验需 `CharacterRepositoryProtocol` / `TimelineRepositoryProtocol` 注入 `MapService`（本批 MapService 依赖扩展：`character_repo` / `timeline_repo` 可选注入，默认 None 向后兼容——无注入时跳过校验仅透传，防破坏既有 F36 测试）。
+- `role`/`event` 关联校验需 `CharacterRepositoryProtocol` / `TimelineRepositoryProtocol` 注入 `MapService`（MapService 依赖扩展：`character_repo` / `timeline_repo` 可选注入，默认 None 向后兼容——无注入时跳过校验仅透传，防破坏既有 F36 测试）。
 - `type=location` 时 `ref_id` 为 NULL（用 location_id）；`type=role/event` 时 `location_id` 为 NULL（用 ref_id）。不双列并存。
 
 #### 2.7.2 maps 扩展：bg_source + extra（shapes 存储，D5）
@@ -224,23 +214,13 @@ interface MapShape {
 - **pin 独立叠加层**（D5 核心契约）：pins 存独立表 `map_pins`，与 bg_source/shapes 正交——切换底图只改 `maps.bg_source`，pins 列表零影响。
 - `bg_source` 三态是**互斥展示**，非数据互斥：切到 shape 不删 image_path，切到 image 不删 shapes（都可回切）。AI 是占位态（不落任何数据）。
 
-#### 2.7.3 迁移（database.py `ensure_*_column` 模式）
+#### 2.7.3 迁移
 
-沿用 F35 `ensure_world_parent_id_column` 幂等模式，新增 `ensure_map_columns(conn)`：
+沿用 F35 `ensure_world_parent_id_column` 幂等模式，新增 `ensure_map_columns(conn)`：按 `PRAGMA table_info` 探测，缺失则 ALTER 追加 `maps.bg_source`（`VARCHAR(16)`，默认 `'image'`）、`maps.extra`（JSON，LenientJSON fallback `{}`）、`map_pins.type`（`VARCHAR(16)`，默认 `'location'`）、`map_pins.ref_id`（`INTEGER`）。表不存在（全新环境）→ no-op，等 `create_all` 建新表（ORM 已含新列）；在 lifespan `create_tables()` 后调用（对齐 F35 接线）。
 
-```text
-① PRAGMA table_info(maps) → 无 bg_source → ALTER TABLE maps ADD COLUMN bg_source VARCHAR(16) DEFAULT 'image'
-② PRAGMA table_info(maps) → 无 extra → ALTER TABLE maps ADD COLUMN extra JSON（LenientJSON fallback {}）
-③ PRAGMA table_info(map_pins) → 无 type → ALTER TABLE map_pins ADD COLUMN type VARCHAR(16) DEFAULT 'location'
-④ PRAGMA table_info(map_pins) → 无 ref_id → ALTER TABLE map_pins ADD COLUMN ref_id INTEGER
-```
+#### 2.8 大纲三级 + 章关联后端扩展（F11 加列）
 
-- 表不存在（全新环境）→ no-op，等 `create_all` 建新表（ORM 已含新列）。
-- `ensure_map_columns` 在 lifespan `create_tables()` 后调用（对齐 F35 接线）。
-
-#### 2.8 大纲三级 + 章关联后端扩展（P3，F11 加列）
-
-F11 `outlines` 现仅平铺（name/description/sort_order/extra），情节点挂 `outline_id`。D8 三级结构 + D9 章关联需加三列：
+F11 `outlines` 现仅平铺（name/description/sort_order/extra），情节点挂 `outline_id`。三级结构 + 章关联需加三列：
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -248,53 +228,39 @@ F11 `outlines` 现仅平铺（name/description/sort_order/extra），情节点�
 | `parent_id` | int \| NULL | 可空，自引用 FK→outlines.id（SET NULL），已索引 | 父大纲：volume→overall、chapter→volume；None = 顶层（overall 根）——**chapter 无 parent 非法（422）** |
 | `chapter_id` | int \| NULL | 可空，FK→chapters.id（SET NULL），已索引 | 章关联实际写作章节（仅 level=chapter 可设） |
 
-**层级校验（严格，决策点 2.A）**：
+**层级校验（严格）**：
 
-| 场景 | 校验 | 修改履历 |
-|------|------|---------|
-| level 非法（非 overall/volume/chapter） | 422（OutlineServiceError 子类） | 新增 |
-| overall + parent_id 非空 | 422（overall 不允许挂父） | 新增 |
-| volume + parent 非 overall（同项目） | 422（卷只能挂整体） | 新增 |
-| chapter + parent 非 volume（同项目） | 422（章只能挂卷） | 新增 |
-| chapter + parent 空（孤立章） | **422（章必须挂卷，强制树形）** | 2026-08-31：新增需求强制树形（移除「孤立章合法」分支） |
-| chapter_id 非空且 level ≠ chapter | 422（仅章可关联章节） | 新增 |
-| chapter_id 指向不存在/跨项目/软删章节 | 422 | 新增 |
+| 场景 | 校验 |
+|------|------|
+| level 非法（非 overall/volume/chapter） | 422（OutlineServiceError 子类） |
+| overall + parent_id 非空 | 422（overall 不允许挂父） |
+| volume + parent 非 overall（同项目） | 422（卷只能挂整体） |
+| chapter + parent 非 volume（同项目） | 422（章只能挂卷） |
+| chapter + parent 空（孤立章） | **422（章必须挂卷，强制树形）** |
+| chapter_id 非空且 level ≠ chapter | 422（仅章可关联章节） |
+| chapter_id 指向不存在/跨项目/软删章节 | 422 |
 
 **Outline 领域实体扩展**（`domain/models/outline.py`）：
 
 ```python
 class Outline(BaseModel):
     # ... 既有字段 ...
-    level: str = "chapter"                    # P3：overall/volume/chapter
-    parent_id: uuid.UUID | None = None        # P3：父大纲
-    chapter_id: uuid.UUID | None = None       # P3：关联写作章节（仅 chapter）
+    level: str = "chapter"                    # overall/volume/chapter
+    parent_id: uuid.UUID | None = None        # 父大纲
+    chapter_id: uuid.UUID | None = None       # 关联写作章节（仅 chapter）
 ```
 
-**OutlineCreate/Update 扩展**（字段 + 校验同上表）；`OutlineUpdate.parent_id`/`chapter_id` 传 `""` = 清除（置 None，对齐 PlotPointUpdate.arc_id 先例）。
+**OutlineCreate/Update 扩展**：字段 + 校验同上表；`OutlineUpdate.parent_id`/`chapter_id` 传 `""` = 清除（置 None，对齐 PlotPointUpdate.arc_id 先例）。
 
-**ORM 加列**（`infrastructure/database/models/outline.py`）：
+**ORM 加列**（`infrastructure/database/models/outline.py`）：`level`（`String(16)`，NOT NULL，默认 `chapter`）、`parent_id`（自引用 FK→outlines.id，SET NULL，索引）、`chapter_id`（FK→chapters.id，SET NULL，索引）。
 
-```python
-level: Mapped[str] = mapped_column(String(16), nullable=False, default="chapter")
-parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("outlines.id", ondelete="SET NULL"), nullable=True, index=True)
-chapter_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True)
-```
-
-**迁移**（`database.py` `ensure_outline_columns(conn)`，沿用 F35/F43-P2 幂等模式）：
-
-```text
-① PRAGMA table_info(outlines) → 无 level → ALTER ADD COLUMN level VARCHAR(16) DEFAULT 'chapter'
-② → 无 parent_id → ALTER ADD COLUMN parent_id INTEGER
-③ → 无 chapter_id → ALTER ADD COLUMN chapter_id INTEGER
-```
-
-表不存在 → no-op，等 `create_all` 建新表。在 `create_tables()` 后接线（与 ensure_map_columns 同点）。
+**迁移**：`ensure_outline_columns(conn)` 沿用幂等模式（探测缺失列后 ALTER 追加 level/parent_id/chapter_id），表不存在 → no-op；接线点与 `ensure_map_columns` 相同。
 
 **校验依赖注入**：`OutlineService.__init__` 加 `chapter_repo: ChapterRepositoryProtocol | None = None`（可选注入，校验 chapter_id 用）；`deps.py` 装配传真实 repo，既有测试构造不传 → 跳过 chapter 校验（向后兼容，对齐 MapService 先例）。parent 层级校验用 `repository.get(parent_id)` 查父大纲 level。
 
-#### 2.9 时间线单事件检查（P4，零字段新增）
+#### 2.9 时间线单事件检查（零字段新增）
 
-F12 双序数据（time_value/narrative_position）+ `TimelineView` + `check_consistency` 已就绪。本批仅新增**单事件检查**（决策点 3.A）：
+F12 双序数据（time_value/narrative_position）+ `TimelineView` + `check_consistency` 已就绪。新增**单事件检查**（D-23）：
 
 **EventCheckReport 响应模型**（`domain/models/timeline.py` 新增）：
 
@@ -309,25 +275,25 @@ class EventCheckReport(BaseModel):
 
 **check_event 方法**（`TimelineService` 新增）：取该事件 + 其叙事相邻事件（prev/next），复用相邻对扫描分类逻辑，返回该事件作为 prev 或 next 的逆序对。
 
-- 复用 `check_consistency` 的相邻对分类（§5.3 同款）：`prev.time > next.time` 且 next 标记 flashback → flashbacks；prev 标记 flashforward → flashbacks；否则 conflicts。
+- 复用 `check_consistency` 的相邻对分类：`prev.time > next.time` 且 next 标记 flashback → flashbacks；prev 标记 flashforward → flashbacks；否则 conflicts。
 - 单事件最多参与两对（与 prev、与 next），返回这两对中该事件涉及的全部冲突。
 
-#### 2.10 删除后引用残留清理语义（P5，零字段新增）
+#### 2.10 删除后引用残留清理语义（零字段新增）
 
-**背景（P5 事实核查）**：生产环境 SQLite `PRAGMA foreign_keys=OFF`（`core/database.py` 仅设 WAL + busy_timeout）→ 所有 ORM `ForeignKey(ondelete=...)` 为**休眠声明**，删除父行后引用行原样残留。测试 fixture 用 `PRAGMA foreign_keys=ON`（in-memory）→ 测试全绿 = 测试环境 ≠ 生产环境。ORM 均无 `relationship()`，删除走 `session.delete(orm)`。
+**前提（生产环境事实）**：生产环境 SQLite `PRAGMA foreign_keys=OFF`（`core/database.py` 仅设 WAL + busy_timeout）→ 所有 ORM `ForeignKey(ondelete=...)` 为**休眠声明**，删除父行后引用行原样残留。测试 fixture 用 `PRAGMA foreign_keys=ON`（in-memory）→ 测试全绿 = 测试环境 ≠ 生产环境。ORM 均无 `relationship()`，删除走 `session.delete(orm)`。
 
-**清理矩阵**（本批显式实现；语义与 ORM 声明一致，CASCADE 类显式 DELETE 子行、SET NULL 类显式 UPDATE 置 NULL）：
+**清理矩阵**（显式实现；语义与 ORM 声明一致，CASCADE 类显式 DELETE 子行、SET NULL 类显式 UPDATE 置 NULL）：
 
 | 删除对象 | 清理目标表 | 语义 | 实现位置 |
 |---------|-----------|------|---------|
-| 角色 | knowledge_relations（`source_type='character' AND target_type='character'` 的 from/to 双向行） | CASCADE → DELETE（带 (type,id) 对过滤，#495） | character_repo.hard_delete |
+| 角色 | knowledge_relations（`source_type='character' AND target_type='character'` 的 from/to 双向行） | CASCADE → DELETE（带 (type,id) 对过滤） | character_repo.hard_delete |
 | 角色 | map_pins.ref_id（type=role） | SET NULL | map_service 钩子（新）或 character 侧 |
 | 大纲 | outlines.parent_id（子大纲） | SET NULL | outline_repo.hard_delete |
 | 大纲 | plot_points.outline_id | CASCADE → DELETE | outline_repo.hard_delete |
 | 时间线事件 | foreshadowings.event_id | SET NULL | timeline_repo.hard_delete |
 | 时间线事件 | map_pins.ref_id（type=event） | SET NULL | map_service 钩子（新）或 timeline 侧 |
 | 世界观条目 | map_pins.location_id | SET NULL（既有 clear_location_pins） | world_service → map_service 钩子 |
-| 世界观条目 | maps.root_location_id | SET NULL（本批新增） | map_service 钩子扩展 |
+| 世界观条目 | maps.root_location_id | SET NULL（新增） | map_service 钩子扩展 |
 | 世界观条目 | 子条目 parent_id（cascade/reparent 既有） | 既有 F35 语义 | world_service |
 | 写作章节 | outlines.chapter_id | SET NULL | chapter_repo.delete_chapter |
 | 写作章节 | timeline_events.source_chapter_id | SET NULL | chapter_repo.delete_chapter |
@@ -337,8 +303,8 @@ class EventCheckReport(BaseModel):
 
 **设计约定**：
 - **同一事务**：清理语句与主删除在同一 `session.commit()` 内（沿用 `map_repo.delete_by_project` 单事务样板），部分失败 → 整体回滚（删除不生效）。
-- **钩子模式**：map_pins 关联清理走 `MapService` 新钩子（镜像 `clear_location_pins` 既有模式），由删除方 service 注入调用；`world_service` 已注入 `location_cleanup`，本批扩展其覆盖面（maps.root_location_id）+ 补 reparent 路径调用。
-- **无字段新增、无迁移**：本批零 schema 变更（全部清理是既有列的 UPDATE/DELETE）。
+- **钩子模式**：map_pins 关联清理走 `MapService` 新钩子（镜像 `clear_location_pins` 既有模式），由删除方 service 注入调用；`world_service` 已注入 `location_cleanup`，扩展其覆盖面（maps.root_location_id）+ 补 reparent 路径调用。
+- **无字段新增、无迁移**：零 schema 变更（全部清理是既有列的 UPDATE/DELETE）。
 
 ---
 
@@ -346,28 +312,28 @@ class EventCheckReport(BaseModel):
 
 ### 3.1 端点总览表
 
-P0 已消费的 PATCH/DELETE 端点不变（§3.2 请求体扩展 extra）。P1 新增消费 + 后端极小改动：
+既有 PATCH/DELETE 端点不变（§3.2 请求体扩展 extra）。本模块新增消费 + 后端扩展：
 
 | 操作 | 端点 | 说明 |
 |------|------|------|
-| 角色创建（P1 扩展） | `POST /api/v1/projects/{id}/characters` | body 加 `extra`（透传，后端 DTO 扩展） |
-| 角色编辑（P1 扩展） | `PATCH /api/v1/characters/{id}` | body 加 `extra`（exclude_unset：传 dict 整体替换；不传不修改） |
-| 世界观复制（P1 消费 + 扩展） | `POST /api/v1/projects/{target}/world-settings/copy` | body `WorldCopyRequest` 加 `self_only`（F37 端点复用，零新端点） |
-| 世界观树（P1 消费） | `GET /api/v1/projects/{id}/world-settings` | 既有响应已含 `parent_id`/`category`/`content`，前端建树（F35 已合） |
+| 角色创建（扩展） | `POST /api/v1/projects/{id}/characters` | body 加 `extra`（透传，后端 DTO 扩展） |
+| 角色编辑（扩展） | `PATCH /api/v1/characters/{id}` | body 加 `extra`（exclude_unset：传 dict 整体替换；不传不修改） |
+| 世界观复制（消费 + 扩展） | `POST /api/v1/projects/{target}/world-settings/copy` | body `WorldCopyRequest` 加 `self_only`（F37 端点复用，零新端点） |
+| 世界观树（消费） | `GET /api/v1/projects/{id}/world-settings` | 既有响应已含 `parent_id`/`category`/`content`，前端建树（F35 既有） |
 
-其余 P0 端点（PATCH/DELETE 六分类扁平 + 项目）零变更。
+其余端点（PATCH/DELETE 六分类扁平 + 项目）零变更。
 
-### 3.2 角色创建/更新 body（P1 扩展）
+### 3.2 角色创建/更新 body（扩展）
 
 | 场景 | body | 后端模型 |
 |------|------|---------|
-| 角色创建 | `{ name, personality, background, goals, extra: { role_rank: 'major', groups: ['主角团','门派甲'] } }` | CharacterCreateBody（P1 加 `extra`） |
-| 角色编辑 | `{ name?, personality?, ..., extra: { role_rank, groups } }` | CharacterUpdate（P1 加 `extra`，exclude_unset 整体替换） |
+| 角色创建 | `{ name, personality, background, goals, extra: { role_rank: 'major', groups: ['主角团','门派甲'] } }` | CharacterCreateBody（加 `extra`） |
+| 角色编辑 | `{ name?, personality?, ..., extra: { role_rank, groups } }` | CharacterUpdate（加 `extra`，exclude_unset 整体替换） |
 
-- **编辑时前端总是发送完整 `extra`**（role_rank + groups 合并）——避免整体替换语义下丢字段（P1 前端契约：buildBody 组装 `extra: { role_rank, groups }`）。
+- **编辑时前端总是发送完整 `extra`**（role_rank + groups 合并）——避免整体替换语义下丢字段（前端契约：buildBody 组装 `extra: { role_rank, groups }`）。
 - 兼容：旧数据 `extra` 缺失 → 前端 `?? {}` 兜底；PATCH 不传 extra → 后端不修改（既有行为）。
 
-### 3.3 世界观复制（P1 消费 F37 + self_only 扩展）
+### 3.3 世界观复制（消费 F37 + self_only 扩展）
 
 请求：
 
@@ -415,9 +381,9 @@ Content-Type: application/json
 | 等级未选保存 | 保存按钮 disabled（canSave gate），不触发请求 |
 | 目标项目列表为空（单项目） | 复制按钮 disabled + tooltip「需至少两个项目」 |
 
-### 3.5 地图工作台 API（P2，F36 端点扩展）
+### 3.5 地图工作台 API（F36 端点扩展）
 
-P2 前端消费 F36 maps/map_pins 端点（§3.1 表不变），后端 DTO 扩展：
+前端消费 F36 maps/map_pins 端点（§3.1 表不变），后端 DTO 扩展：
 
 #### 3.5.1 pin 端点扩展（type + ref_id）
 
@@ -432,8 +398,8 @@ P2 前端消费 F36 maps/map_pins 端点（§3.1 表不变），后端 DTO 扩�
 ```python
 class MapPinCreate(BaseModel):
     location_id: uuid.UUID | None = None      # F36 既有：type=location 用
-    ref_id: uuid.UUID | None = None           # P2 新增：type=role/event 用
-    type: str = "location"                    # P2 新增：location/role/event/other
+    ref_id: uuid.UUID | None = None           # type=role/event 用
+    type: str = "location"                    # location/role/event/other
     x: float = Field(ge=0, le=100)
     y: float = Field(ge=0, le=100)
     label: str = ""
@@ -464,14 +430,14 @@ class WorldMapUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     root_location_id: uuid.UUID | None = None   # F36 既有
-    bg_source: str | None = None                 # P2 新增：shape/image/ai
-    extra: dict | None = None                    # P2 新增：{"shapes": [...]}
+    bg_source: str | None = None                 # shape/image/ai
+    extra: dict | None = None                    # {"shapes": [...]}
 ```
 
 - `bg_source=shape` 创建地图：file 缺省 → image_path 存空串 `""`；`bg_source=image` 且无 file → 422（MapAssetError 语义扩展）。
 - shapes 保存走 `PATCH /maps/{id}` body `extra: {shapes: [...]}`（整体替换 shapes 数组）。
 
-#### 3.5.3 异常映射（P2 新增）
+#### 3.5.3 异常映射（新增）
 
 | 异常 | 状态码 | detail |
 |------|--------|--------|
@@ -479,7 +445,7 @@ class WorldMapUpdate(BaseModel):
 | MapBgSourceError | 422 | bg_source 非法 / image 模式缺图片 |
 | 既有 F36 异常（§3.3 F36 spec） | 404/422/500 | 不变 |
 
-#### 3.6 大纲端点扩展（P3，level/parent_id/chapter_id 透传）
+#### 3.6 大纲端点扩展（level/parent_id/chapter_id 透传）
 
 | 操作 | 端点 | 变更 |
 |------|------|------|
@@ -494,9 +460,9 @@ class OutlineCreateBody(BaseModel):
     name: str
     description: str = ""
     sort_order: int = 0
-    level: str = "chapter"                    # P3：overall/volume/chapter
-    parent_id: uuid.UUID | None = None        # P3：父大纲
-    chapter_id: uuid.UUID | None = None       # P3：关联章节
+    level: str = "chapter"                    # overall/volume/chapter
+    parent_id: uuid.UUID | None = None        # 父大纲
+    chapter_id: uuid.UUID | None = None       # 关联章节
 ```
 
 **body 示例**：
@@ -513,7 +479,7 @@ POST /api/v1/projects/p1/outlines
 {"name": "试剑大典", "level": "chapter", "parent_id": "<volume-id>", "chapter_id": "<chapter-id>"}
 ```
 
-**异常映射（P3 新增）**：
+**异常映射（新增）**：
 
 | 异常 | 状态码 | detail |
 |------|--------|--------|
@@ -521,7 +487,7 @@ POST /api/v1/projects/p1/outlines
 | OutlineHierarchyError | 422 | 层级约束违反（overall 挂父 / volume 非挂 overall / chapter 非挂 volume） |
 | OutlineChapterRefError | 422 | chapter_id 仅 chapter 可设 / 章节不存在或跨项目 |
 
-#### 3.7 时间线单事件检查端点（P4 新增）
+#### 3.7 时间线单事件检查端点（新增）
 
 | 操作 | 端点 | 说明 |
 |------|------|------|
@@ -529,7 +495,7 @@ POST /api/v1/projects/p1/outlines
 
 - 事件不存在 → 404「事件不存在」。
 - `time_value` 为 None → `checked=false`，conflicts/flashbacks 均空，consistent=true（不参与检查，非冲突）。
-- 复用 `TimelineConflict` 模型（§2.6），零新冲突类型。
+- 复用 `TimelineConflict` 模型（§2.9），零新冲突类型。
 
 响应示例：
 
@@ -543,9 +509,9 @@ POST /api/v1/projects/p1/outlines
 }
 ```
 
-#### 3.8 删除端点内部清理增强（P5，API 面零变更）
+#### 3.8 删除端点内部清理增强（API 面零变更）
 
-**P5 不新增端点、不改请求/响应形状**——既有 DELETE 端点（六分类 + 章节 + 项目）行为增强：删除成功时在同一事务内显式清理引用残留（§2.10 矩阵）。API 消费方（前端/CLI）无感知。
+**不新增端点、不改请求/响应形状**——既有 DELETE 端点（六分类 + 章节 + 项目）行为增强：删除成功时在同一事务内显式清理引用残留（§2.10 矩阵）。API 消费方（前端/CLI）无感知。
 
 | 端点 | 行为增强（删除成功后） |
 |------|----------------------|
@@ -554,20 +520,20 @@ POST /api/v1/projects/p1/outlines
 | `DELETE /api/v1/timeline/events/{id}` | foreshadowings.event_id 置空；map_pins.ref_id(type=event) 置空 |
 | `DELETE /api/v1/world-settings/{id}` | cascade/reparent/单删 三路径均触发 location_cleanup 钩子（pin.location_id + maps.root_location_id 置空） |
 | `DELETE /api/v1/chapters/{id}` | 6 处引用清理（§2.10） |
-| `DELETE /api/v1/maps/{id}` | 既有显式级联删 pins（D10=b，零变更） |
+| `DELETE /api/v1/maps/{id}` | 既有显式级联删 pins（零变更） |
 
 - **失败语义不变**：清理失败 → 事务回滚 → DELETE 返回既有错误（404/500），不产生半删状态。
 - **返回形状不变**：仍为 204（成功）/ 404（不存在）——清理是内部行为，不改变响应。
 
 ## 4. CLI 命令签名
 
-**无变更**。本批为前端 GUI 批次 + 后端 API 扩展（pin type/ref_id 透传、maps bg_source/extra 透传），CLI 面不动（F7 约定 CLI 保持现状；pin type/ref_id 的 CLI 写入经既有 `--location` 路径不变，新增 `--type`/`--ref` 登记 #251 候选，本批不做）。
+**无变更**。本模块为前端 GUI + 后端 API 扩展（pin type/ref_id 透传、maps bg_source/extra 透传），CLI 面不动（F7 约定 CLI 保持现状；pin type/ref_id 的 CLI 写入经既有 `--location` 路径不变，`--type`/`--ref` 仍为后续候选）。
 
 ---
 
-## 5. 关键差异节（前端交互型 + 后端扩展 — 本模块类型）
+## 5. 关键差异节（前端交互 + 后端扩展）
 
-### 5.1 角色等级必填（D1，P1 新增）
+### 5.1 角色等级必填（D1）
 
 - 创建/编辑对话框角色分类渲染「等级」下拉（shadcn Select，`data-testid="library-create-rank"`），选项 = 五档 `lib.rank.*`。
 - **必填无默认**（D1 铁律）：初始 value 空串（占位「选择等级」）；`canSave` gate 增加 `rank !== ''`——名称/标题必填 + 等级必填同时满足才可保存。
@@ -575,58 +541,57 @@ POST /api/v1/projects/p1/outlines
 - 保存 body：`extra: { role_rank: rank, groups }`（与标签合并）。
 - 列表行渲染等级徽标：`data-testid="lib-rank-<id>"`，文本 = `lib.rank.<key>` 映射（缺省不渲染）。
 
-### 5.2 角色分组标签（D2，P1 新增）
+### 5.2 角色分组标签（D2）
 
 - 创建/编辑对话框角色分类渲染 TagEditor（§2.3）：已选 chips（`data-testid="lib-tag-chip-<tag>"` + × 移除）+ 建议标签按钮（`lib-tag-suggest-<tag>`）+ 输入框（`lib-tag-input`，回车/逗号创建）。
 - 建议标签 = 当前项目角色 `extra.groups` 并集（列表加载后聚合，`useMemo`）。
 - 保存 body：`extra: { role_rank, groups }`（groups = 去重保序 string[]）。
 - 列表行渲染标签 chips（只读，`data-testid="lib-tags-<id>"`）。
 
-### 5.3 世界观树渲染（D3，P1 新增）
+### 5.3 世界观树渲染（D3）
 
 - 世界观 tab 列表区改为树视图：`items`（含 `parent_id`）前端建树（顶层 = parent_id null/缺失），递归渲染 `.tree-node`/`.tree-row`。
 - 展开/收起：toggle（`data-testid="world-tree-toggle-<id>"`）；有子节点才渲染 toggle（叶子不渲染）。
-- 行内操作按钮（D12 悬停显示，P0 编辑/删除复用）：`lib-edit-<id>` / `lib-delete-<id>`（P0 testid 不变）+ 新增复制 `world-copy-<id>`。
+- 行内操作按钮（D12 悬停显示）：`lib-edit-<id>` / `lib-delete-<id>`（testid 不变）+ 新增复制 `world-copy-<id>`。
 - 树节点文案：名称 + 分类徽标（category 非空时）；空树 → 既有 `library-tab-empty` 空态（零变更）。
 - **构建规则**：顶层按创建顺序（items 顺序）；子级按 parent_id 分组保序；孤儿（parent_id 指向不存在节点）降级为顶层（防御）。
 
-### 5.4 世界观分类筛选（D3，P1 新增）
+### 5.4 世界观分类筛选（D3）
 
 - 工具栏 chips（世界观 tab 专属）：默认分组 `['地图','势力','功法','门派','秘境']` + 当前列表数据中出现的自定义 `category`（去重，自动进 chips）。
-- **无「全部」选项**（D3 拍板）：未选任何 chip = 展示所有（默认态）；点 chip = 筛选该分类；再点同 chip = 取消筛选（回到展示所有——toggle 语义，无需「全部」按钮）。
+- **无「全部」选项**（D3）：未选任何 chip = 展示所有（默认态）；点 chip = 筛选该分类；再点同 chip = 取消筛选（回到展示所有——toggle 语义，无需「全部」按钮）。
 - 筛选交互：树视图按 category 过滤**顶层节点**（含其子树整体显示/隐藏——树结构不拆散）。
 - chips：`data-testid="world-cat-filter-<category>"`，激活态 aria-pressed。
 
-### 5.5 世界观复制 GUI（P1 新增）
+### 5.5 世界观复制 GUI
 
 - 行内复制按钮（树节点悬停）`world-copy-<id>` → CopyDialog：
   - 范围 chips：`world-copy-scope-subtree`（本体+全部子级，默认）/ `world-copy-scope-self`（仅本体）
   - 目标项目 Select：`world-copy-target`（排除当前项目）
-  - 确认 `world-copy-ok` / 取消 `world-copy-cancel`（#195：遮罩不关闭）
+  - 确认 `world-copy-ok` / 取消 `world-copy-cancel`（遮罩不关闭）
 - 顶部整体复制按钮（工具栏）`world-copy-all` → 同一 CopyDialog（范围固定「全部」，chips 隐藏）。
 - 确认 → `POST /api/v1/projects/{target}/world-settings/copy`（§3.3 body）→ 结果 toast（§3.4）。
 - 复制对话框为空态（无其他项目）→ 确认按钮 disabled。
 
-### 5.6 世界观复制后端 self_only（F37 极小扩展）
+### 5.6 世界观复制后端 self_only（F37 扩展）
 
-```
-copy(source, target, root=None, self_only=False):
-  ③ 复制集合确定：
-     root=None            → list_all_active(source)          （整体，既有）
-     root + self_only     → [root]                           （仅本体，P1 新增）
-     root + not self_only → list_descendants(root)           （子树，既有）
-  ④-⑧ 其余步骤（冲突预筛/落库/地图/pins/报告）零改动——copy_set 缩小后自动适配
-```
+`copy(source, target, root=None, self_only=False)` 的复制集合确定：
+
+- `root=None` → `list_all_active(source)`（整体复制）
+- `root + self_only` → `[root]`（仅本体）
+- `root + not self_only` → `list_descendants(root)`（子树，含自身全部后代）
+
+其余步骤（冲突预筛/落库/地图/pins/报告）不变——`copy_set` 缩小后自动适配。
 
 - 名称冲突预筛用 `get_by_parent_and_name(target, parent_new, name)`——仅本体复制时 parent_new=None（置顶层）。
 - `self_only=True` + `root=None` → router 层 422（§3.3 表）。
 
-### 5.7 P0 遗留 E2E 契约（P1 前置必补）
+### 5.7 设定库 CRUD E2E 契约
 
-- e2e-library.spec.ts 追加（编辑保存 / 删除确认 / 取消）：真实内核 + 真实渲染，`PYTHONUTF8=1` + build renderer dist（inkflow-e2e-testing 流程）。
-- 用例（§9.3 E2E 表）：编辑预填 → PATCH → 列表刷新 + 已保存指示；删除确认框 D11 文案 → DELETE → 条目消失 + toast；取消零请求。
+- `e2e-library.spec.ts` 追加（编辑保存 / 删除确认 / 取消）：真实内核 + 真实渲染，`PYTHONUTF8=1` + build renderer dist（inkflow-e2e-testing 流程）。
+- 用例（§9.3 E2E 表）：编辑预填 → PATCH → 列表刷新 + 已保存指示；删除确认框（D11 文案）→ DELETE → 条目消失 + toast；取消零请求。
 
-### 5.8 地图工作台布局（D4/D5/D7，P2 新增）
+### 5.8 地图工作台布局（D4/D5/D7）
 
 世界观 tab 挂接地图视图，布局（参照原型 §3，`data-testid="map-workbench"`）：
 
@@ -640,13 +605,13 @@ copy(source, target, root=None, self_only=False):
 └─────────────────────────────┴────────────────────────────────────┘
 ```
 
-- **入口**：世界观 tab 从「树列表」升级为「地图工作台」——左侧世界观树保留（P1 树渲染），右侧新增画布 + pin 列表。
+- **入口**：世界观 tab 从「树列表」升级为「地图工作台」——左侧世界观树保留，右侧新增画布 + pin 列表。
 - **地图节点识别**：世界观树节点若 `root_location_id` 挂有地图（前端拉 `GET /projects/{pid}/maps` 建 `location_id → map` 映射），渲染 🗺 图标 + pin 数徽标（`data-testid="world-map-badge-<id>"`）。
-- **maps 拉取时机（#973）**：拉取 effect 依赖 `[currentProjectId, reloadKey, workbenchActive]`——挂载/项目切换、reloadKey 变化（与同页其他列表对齐）、进入/退出工作台（`setWorkbenchActive` 两处入口）均重拉，外部界面（CLI/HTTP/MCP/agent）建图对已挂载 GUI 可见；失败置空 + `pushToast('err', errorMessage(err))`（勿静默）。
+- **maps 拉取时机**：拉取 effect 依赖 `[currentProjectId, reloadKey, workbenchActive]`——挂载/项目切换、reloadKey 变化（与同页其他列表对齐）、进入/退出工作台（`setWorkbenchActive` 两处入口）均重拉，外部界面（CLI/HTTP/MCP/agent）建图对已挂载 GUI 可见；失败置空 + `pushToast('err', errorMessage(err))`（勿静默）。
 - **切换画布**：点击地图节点 → `setActiveMapId` → 画布渲染该地图的底图 + pins。
 - **无地图的节点**：仍显示为普通树节点（可编辑/删除/复制），不触发画布切换。
 
-### 5.9 面包屑导航（D7，P2 新增）
+### 5.9 面包屑导航（D7）
 
 `data-testid="map-breadcrumb"`，四级逐级可回跳：
 
@@ -661,7 +626,7 @@ copy(source, target, root=None, self_only=False):
 - 层级 1/2 回跳 = 退出地图工作台（关闭画布/pin 列表，世界观 tab 回普通树视图）；层级 3 回跳 = 留在工作台但清空选中地图（空态提示「选择左侧地图节点」）。
 - testid：`map-bc-lib` / `map-bc-world` / `map-bc-maplist` / `map-bc-current`。
 
-### 5.10 三底图切换 + pin 独立叠加层（D5，P2 新增）
+### 5.10 三底图切换 + pin 独立叠加层（D5）
 
 底图工具栏 `data-testid="map-bg-tools"`，三态 chips + 简图形状按钮：
 
@@ -671,17 +636,17 @@ copy(source, target, root=None, self_only=False):
 - AI 底图：`map-bg-ai` 选中 → 画布渲染「✨ 即将推出」禁用占位（`map-ai-placeholder`），无生成逻辑。
 - 简图模式工具栏追加 ＋方框/＋椭圆/＋文字：`map-shape-add-rect` / `map-shape-add-ellipse` / `map-shape-add-text`（仅 bg_source=shape 时渲染）。
 
-### 5.11 简图形状（D5，P2 新增）
+### 5.11 简图形状（D5）
 
 - 形状渲染：`.map-shape`（绝对定位 div，`left/top/width/height` 百分比）；`type=rect` 矩形框、`ellipse` 圆角 50%、`text` 纯文本。
 - 添加：点 ＋方框/＋椭圆 → push `{type:'rect'|'ellipse', x:35, y:35, w:24, h:16, label:'新区域'}`；＋文字 → `{type:'text', x:45, y:45, label:'新文字'}`。
 - 拖拽：mousedown → 计算偏移 → mousemove 更新 x/y（百分比）→ mouseup 提交 `PATCH /maps/{id} extra:{shapes}`。
 - 选中：点击形状 → `selectedShape` 高亮（`.selected` dashed outline）+ 显示删除按钮 `shape-del`。
-- 删除：点 × → 移除该 shape → 提交 PATCH。删除钮锚位 = 形状框内右上（`right-1 top-1 z-10`，#978：原框外 `-right-2 -top-2` 与 NE 把手热区重合）；四角 resize 把手 `h-4 w-4`（#978 自 12px 扩大，钮与把手仅 ~4px 微重叠且 z-10 归钮）。
+- 删除：点 × → 移除该 shape → 提交 PATCH。删除钮锚位 = 形状框内右上（`right-1 top-1 z-10`；锚在形外右上会与 NE 把手热区重合）；四角 resize 把手 `h-4 w-4`（把手自 12px 扩大，钮与把手仅 ~4px 微重叠且 z-10 归钮）。
 - shapes 持久化：**任何增删/拖拽结束 → `PATCH /maps/{id}` body `{extra: {shapes: [...]}}`（整体替换）**。
 - testid：形状 `map-shape-<id>` / 删除 `map-shape-del-<id>` / resize 把手 `map-shape-resize-<id>-<nw|ne|sw|se>`。
 
-### 5.12 一图多标记（D6，P2 新增）
+### 5.12 一图多标记（D6）
 
 **点击画布添加**：
 
@@ -695,7 +660,7 @@ copy(source, target, root=None, self_only=False):
 | 标记名称（必填） | `pin-name` | label，1-50 字符去空白 |
 | 标记类型 | `pin-type` | shadcn Select 四档：地点/角色/事件/其他（`lib.pinType.*`） |
 | 关联实体（可搜索） | `pin-ref` | 按类型搜索关联实体（见下） |
-| 保存 / 取消 | `pin-save` / `pin-cancel` | #195 遮罩不关闭 |
+| 保存 / 取消 | `pin-save` / `pin-cancel` | 遮罩不关闭 |
 
 - **关联实体搜索**：`type=location` → 搜地点（world-settings 列表）；`type=role` → 搜角色（characters）；`type=event` → 搜事件（timeline events）；`type=other` → 无关联字段（隐藏）。
 - 关联实体搜索 = 复用前端已加载的六分类列表数据（本地过滤，零额外端点）；选中后存 `location_id`（location 型）或 `ref_id`（role/event 型）。
@@ -712,33 +677,20 @@ copy(source, target, root=None, self_only=False):
 
 - pin 绝对定位（`left/top` 百分比），`data-testid="map-pin-<id>"`。
 - pin 头图标按类型：`location`=点/`role`=人/`event`=事/`other`=·（原型 §5 图标语义）。
-- #979：图标右侧渲染 `pin.label`（`text-[12px] truncate max-w-[140px]`，对齐原型「圆点+文字」）；容器 `pointer-events-auto` + `onClick` stopPropagation（复用形状层防冒泡先例）→ 选中该 pin（`data-selected="true"`，互斥单选），**不再**冒泡触发画布加 pin；画布空白点击加 pin 逻辑不变。
-- #979 双向联动：`MapWorkbench` 持 `selectedPinId`；列表行 `map-pin-row-<id>`（点击行 = 选中，滚动定位 `scrollIntoView({block:'nearest'})`；选中行 `data-selected="true"`）。
+- 图标右侧渲染 `pin.label`（`text-[12px] truncate max-w-[140px]`，对齐原型「圆点+文字」）；容器 `pointer-events-auto` + `onClick` stopPropagation（复用形状层防冒泡先例）→ 选中该 pin（`data-selected="true"`，互斥单选），**不再**冒泡触发画布加 pin；画布空白点击加 pin 逻辑不变。
+- 双向联动：`MapWorkbench` 持 `selectedPinId`；列表行 `map-pin-row-<id>`（点击行 = 选中，滚动定位 `scrollIntoView({block:'nearest'})`；选中行 `data-selected="true"`）。
 
-### 5.13 后端 service 扩展（P2，F36 service 增量）
+### 5.13 后端 service 扩展（F36 service 增量）
 
 `map_service.py` 扩展（对齐 §2.7）：
 
-```text
-add_pin(map_id, type='location', location_id=None, ref_id=None, x, y, label):
-  ① map 存在（既有）
-  ② type 校验：type 非法 → MapBgSourceError（或新错误）→ 422
-  ③ location 型：location_id → world_repo.get 校验同项目（既有 MapPinLocationNotFoundError）
-     role 型：ref_id → character_repo.get 校验同项目活动角色（新 MapPinRefNotFoundError）
-     event 型：ref_id → timeline_repo.get 校验同项目活动事件（新 MapPinRefNotFoundError）
-     other 型：两者均 NULL
-  ④ 落库（MapPin 加 type/ref_id 字段）
+- `add_pin(map_id, type='location', location_id=None, ref_id=None, x, y, label)`：type 非法 → 422；`location` 型校验 `location_id` 指向同项目地点（既有 `MapPinLocationNotFoundError`）；`role`/`event` 型校验 `ref_id` 指向同项目活动角色/事件（新 `MapPinRefNotFoundError`）；`other` 型两列均 NULL
+- `update_pin`：`type`/`ref_id` 进入 exclude_unset 合并（对齐 `location_id` 既有语义）
+- `create_map`：`bg_source` 参数（默认 image）；shape 模式 file 可空 → `image_path=''`；image 模式 file 必填 → 缺图 422
+- `update_map`：`bg_source`/`extra` 进入 `WorldMapUpdate` exclude_unset 合并
+- `character_repo` / `timeline_repo` 注入 `MapService.__init__`（可选，默认 None）——`deps.py` 装配时传入真实 repo，既有测试构造不传 → 跳过校验（向后兼容）
 
-update_pin(pin_id, update):  type/ref_id 进入 exclude_unset 合并（对齐 location_id 既有语义）
-
-create_map(...):  bg_source 参数（默认 image）；shape 模式 file 可空 → image_path=''；
-                  image 模式 file 必填 → 缺图 422
-update_map(...):  bg_source/extra 进入 WorldMapUpdate exclude_unset 合并
-```
-
-- `character_repo` / `timeline_repo` 注入 `MapService.__init__`（可选，默认 None）——`deps.py` 装配时传入真实 repo，既有测试构造不传 → 跳过校验（向后兼容）。
-
-### 5.14 大纲三级树渲染（D8，P3 新增）
+### 5.14 大纲三级树渲染（D8）
 
 大纲 tab 列表区从平铺升级为三级树（`data-testid="outline-tree"`），层级 = overall（顶层）→ volume → chapter → 情节点：
 
@@ -746,16 +698,16 @@ update_map(...):  bg_source/extra 进入 WorldMapUpdate exclude_unset 合并
 - **节点渲染**：overall 卡片（`outline-overall-<id>`）+ 卷（`outline-volume-<id>`）+ 章（`outline-chapter-<id>`）+ 情节点（`outline-point-<id>`）。
 - **展开/收起**：toggle（`outline-toggle-<id>`）——overall/volume/chapter 三级均支持；有子节点才渲染 toggle（叶子不渲染）。
 - **各层新增**：overall 节点「＋卷」按钮（`outline-add-volume-<parentId>`）；volume 节点「＋章」按钮（`outline-add-chapter-<parentId>`）；chapter 节点「＋情节点」按钮（`outline-add-point-<chapterId>`）。
-- **情节点拉取**：chapter 首次展开时 `GET /outlines/{chapterId}/plot-points` 按需拉取（前端本地缓存）；情节点行内编辑/删除（复用 P0 情节点编辑/删除，`outline-point-edit-<id>`/`outline-point-del-<id>`）。
-- **大纲行内操作**：编辑/删除按钮沿用 P0 `lib-edit-<id>`/`lib-delete-<id>`（D12 悬停显示）；overall/volume/chapter 三级均可编辑/删除。
+- **情节点拉取**：chapter 首次展开时 `GET /outlines/{chapterId}/plot-points` 按需拉取（前端本地缓存）；情节点行内编辑/删除（复用情节点编辑/删除，`outline-point-edit-<id>`/`outline-point-del-<id>`）。
+- **大纲行内操作**：编辑/删除按钮沿用 `lib-edit-<id>`/`lib-delete-<id>`（D12 悬停显示）；overall/volume/chapter 三级均可编辑/删除。
 
-### 5.15 章关联徽标（D9，P3 新增）
+### 5.15 章关联徽标（D9）
 
 - chapter 节点若 `chapter_id` 非空 → 渲染 📎 徽标（`outline-chapter-ref-<id>`，含关联章节标题）；未关联 → 渲染「关联章节」按钮（`outline-chapter-link-<id>`）。
-- 「关联章节」按钮点击 → 本批仅 toast 提示「请选择要关联的写作章节」（**选择器后置**，D9 拍板），不打开章节选择器。
+- 「关联章节」按钮点击 → 仅 toast 提示「请选择要关联的写作章节」（**选择器后置**，D9），不打开章节选择器。
 - 章节标题来源：前端加载项目章节列表（`GET /projects/{pid}/chapters`）建 `chapter_id → title` 映射；未加载到 → 徽标仅显示 📎 图标（无标题）。
 
-### 5.16 时间线双序切换（D10，P4 新增）
+### 5.16 时间线双序切换（D10）
 
 时间线 tab 工具栏（`data-testid="timeline-toolbar"`）加双序切换 chips：
 
@@ -764,7 +716,7 @@ update_map(...):  bg_source/extra 进入 WorldMapUpdate exclude_unset 合并
 - **前端数据获取改造**：timeline 分类从「仅取 event_timeline」改为「取完整 TimelineView」（存 event_timeline + narrative_order 两个数组），切换仅本地切换显示数组，零额外请求。
 - 图例：`tl-legend`（「点=叙事顺序 · 时间轴=世界内时间」）。
 
-### 5.17 两级检查（D10，P4 新增）
+### 5.17 两级检查（D10）
 
 **整体检查**（工具栏按钮 `tl-check-all`）：
 
@@ -775,61 +727,24 @@ update_map(...):  bg_source/extra 进入 WorldMapUpdate exclude_unset 合并
 - 点击 → `GET /timeline/events/{id}/check` → 结果 toast：checked=false → 「该事件无时间信息，跳过检查」；consistent=true → 「与上下文一致」；否则列出该事件参与的第一条冲突 message。
 - 单事件检查按钮渲染在每个事件行内（`tl-check-one-<id>`）。
 
-### 5.18 删除后引用残留清理（P5，同步实现）
+### 5.18 删除后引用残留清理
 
-**触发时机（Q1=A 拍板）**：删除端点调用的 service 方法内、repo 显式清理语句与主删除**同一事务**——不做异步 job、不引入调度器。
+**触发时机**：删除端点调用的 service 方法内、repo 显式清理语句与主删除**同一事务**——不做异步 job、不引入调度器。
 
-**实现模式**（沿用既有样板）：
-
-```text
-# CASCADE 类（先删子行）：
-character_repo.hard_delete(cid):
-  ① DELETE knowledge_relations WHERE (source_type='character' AND source_id=cid)
-     OR (target_type='character' AND target_id=cid)   # #495：原 character_relations 表已并入
-  ② DELETE characters WHERE id=cid
-  ③ commit（同一事务）
-
-# SET NULL 类（先置空）：
-outline_repo.hard_delete(oid):
-  ① UPDATE outlines SET parent_id=NULL WHERE parent_id=oid
-  ② DELETE plot_points WHERE outline_id=oid        # CASCADE 类
-  ③ DELETE outlines WHERE id=oid
-  ④ commit
-
-chapter_repo.delete_chapter(chid):
-  ① UPDATE outlines SET chapter_id=NULL WHERE chapter_id=chid
-  ② UPDATE timeline_events SET source_chapter_id=NULL WHERE source_chapter_id=chid
-  ③ DELETE audit_logs WHERE chapter_id=chid
-  ④ DELETE chapter_summaries WHERE chapter_id=chid
-  ⑤ UPDATE agent_runs SET chapter_id=NULL WHERE chapter_id=chid
-  ⑥ UPDATE drafts SET chapter_id=NULL WHERE chapter_id=chid
-  ⑦ DELETE chapters WHERE id=chid
-  ⑧ commit
-```
+**清理语句**：CASCADE 类先删子行（角色↔角色关系 / 情节点 / 审计日志 / 章节摘要），SET NULL 类先置空引用列（子大纲 parent_id / 章节引用 6 处 / 伏笔 event_id / pin 关联列），最后删主行——矩阵见 §2.10。
 
 **map_pins 关联清理（钩子模式）**：
 
-```text
-# MapService 新钩子（镜像 clear_location_pins）：
-clear_ref_pins(ref_type: 'role'|'event', ref_ids: list[int]) -> int:
-  UPDATE map_pins SET ref_id=NULL WHERE type=:ref_type AND ref_id IN (:ref_ids)
+- `MapService.clear_ref_pins(ref_type: 'role' | 'event', ref_ids) -> int`：`UPDATE map_pins SET ref_id=NULL WHERE type=:ref_type AND ref_id IN (:ref_ids)`（镜像 `clear_location_pins`）
+- 接线：`character_service.delete_character` → `clear_ref_pins('role', [cid])`；`timeline_service.delete_event` → `clear_ref_pins('event', [eid])`；`world_service.delete_setting` 三路径（cascade/reparent/单删）均调用 `location_cleanup`，`clear_location_pins` 扩展为同时置空 `maps.root_location_id`
 
-# 接线：
-character_service.delete_character  → 注入 map_cleanup 钩子 → clear_ref_pins('role', [cid])
-timeline_service.delete_event       → 注入 map_cleanup 钩子 → clear_ref_pins('event', [eid])
+**前端文案对齐真删**：`lib.delete.confirm` =「点击确认后立即移除，不可恢复」。消费方零改动（library.tsx / projects.tsx / MapWorkbench.tsx 均引用同一 key）；既有测试断言同步更新。
 
-# world 侧（扩展既有 location_cleanup 覆盖面）：
-clear_location_pins(location_ids) 扩展 → 除 pin.location_id 外，UPDATE maps SET root_location_id=NULL
-world_service.delete_setting 三路径（cascade/reparent/单删）均调用钩子
-```
-
-**前端文案对齐（Q2=B 拍板）**：`lib.delete.confirm` 由「点击确认后立即移除（后台逻辑删除，30 天后彻底清除）」改为「点击确认后立即移除，不可恢复」。消费方零改动（library.tsx / projects.tsx / MapWorkbench.tsx 均引用同一 key）；测试断言同步更新（library.test.tsx:654 / projects.test.tsx:458）。
-
-**删除后刷新（前端）**：删除成功 → `setReloadKey` → 六分类列表刷新（既有）。**本批不补地图 pin 列表/地图列表的自动重拉**（仅依赖 activeMapId/currentProjectId 的 effect 不随 reloadKey 触发——登记 §10，非本批范围；用户重新选择地图或切换项目时自然刷新）。
+**删除后刷新（前端）**：删除成功 → `setReloadKey` → 六分类列表刷新（既有）。地图 pin 列表/地图列表的自动重拉不在本段范围内（仅依赖 activeMapId/currentProjectId 的 effect 不随 reloadKey 触发——见 §10；用户重新选择地图或切换项目时自然刷新）。
 
 ## 6. 组织规则（i18n 键）
 
-P0 key 表不变。P1 新增（zh.ts / en.ts 同步）：
+**角色等级 / 分组标签 / 世界观分类 / 复制**（zh.ts / en.ts 同步）：
 
 | key | zh | en | 说明 |
 |-----|----|----|------|
@@ -856,7 +771,7 @@ P0 key 表不变。P1 新增（zh.ts / en.ts 同步）：
 | `lib.copy.skipped` | 跳过同名 {n} 条 | {n} skipped (duplicate names) | warnings 非空时追加提示 |
 | `lib.copy.needTwo` | 需至少两个项目才能复制 | Need at least two projects | 空目标 disabled 提示 |
 
-P2 新增（地图工作台；zh.ts / en.ts 同步）：
+**地图工作台**（zh.ts / en.ts 同步）：
 
 | key | zh | en | 说明 |
 |-----|----|----|------|
@@ -889,7 +804,7 @@ P2 新增（地图工作台；zh.ts / en.ts 同步）：
 | `lib.shape.newLabel` | 新区域 | New area | 方框/椭圆默认 label |
 | `lib.shape.newText` | 新文字 | New text | 文字默认 label |
 
-P3+P4 新增（大纲三级 + 章关联 + 时间线双序；zh.ts / en.ts 同步）：
+**大纲三级 / 章关联 / 时间线双序**（zh.ts / en.ts 同步）：
 
 | key | zh | en | 说明 |
 |-----|----|----|------|
@@ -916,17 +831,19 @@ P3+P4 新增（大纲三级 + 章关联 + 时间线双序；zh.ts / en.ts 同步
 | `lib.tlCheckSkip` | 该事件无时间信息，跳过检查 | No time info, skipped | 单事件跳过 toast |
 | `lib.tlCheckEventOK` | 与上下文一致 | Consistent with context | 单事件通过 toast |
 
-P5 变更（删除确认文案对齐真删，Q2=B 拍板；zh.ts / en.ts 同步）：
+**删除确认**（zh.ts / en.ts 同步）：
 
-| key | 旧值 | 新值（zh / en） | 说明 |
-|-----|------|----------------|------|
-| `lib.delete.confirm` | 点击确认后立即移除（后台逻辑删除，30 天后彻底清除） | `点击确认后立即移除，不可恢复` / `Confirmed — removed immediately and cannot be restored` | 对齐 #211 真删语义；**3 个消费方共用**（library 六分类 / projects 项目删除 / MapWorkbench pin 删除） |
+| key | zh | en | 说明 |
+|-----|----|----|------|
+| `lib.delete.confirm` | 点击确认后立即移除，不可恢复 | Confirmed — removed immediately and cannot be restored | 真删语义；**3 个消费方共用**（library 六分类 / projects 项目删除 / MapWorkbench pin 删除） |
 
-> **无新增 key**：P5 仅修改既有 `lib.delete.confirm` 值，不增删键。
+> 仅变更 `lib.delete.confirm` 值，不增删键。
 
 ## 7. 边界情况与错误处理
 
-P0 表（E1-E12）不变。P1 追加：
+边界表按功能域分组；编号沿用既有契约号（E1-E12 用于六分类 CRUD 基础场景，本节不重复）。
+
+**角色等级与分组标签**：
 
 | # | 场景 | 行为 |
 |---|------|------|
@@ -945,7 +862,7 @@ P0 表（E1-E12）不变。P1 追加：
 | E25 | 角色 PATCH 不带 extra（其他客户端） | 后端不修改 extra（exclude_unset 既有语义，兼容） |
 | E26 | extra 非 dict（脏数据/手工写入） | 后端 LenientJSON 兜底 + 前端 `?? {}` 防御 |
 
-P2 追加：
+**地图工作台**：
 
 | # | 场景 | 行为 |
 |---|------|------|
@@ -964,7 +881,7 @@ P2 追加：
 | E39 | 未选任何地图进入工作台 | 画布显示 `lib.worldMapSelectTip` 空态；面包屑止于「地图视图」 |
 | E40 | pin 列表类型筛选 | 前端本地过滤（四档 chips），无匹配显示空态 |
 
-P3+P4 追加：
+**大纲三级与时间线**：
 
 | # | 场景 | 行为 |
 |---|------|------|
@@ -974,7 +891,7 @@ P3+P4 追加：
 | E44 | chapter parent 非 volume（同项目） | 422 OutlineHierarchyError |
 | E45 | chapter_id 非空但 level ≠ chapter | 422 OutlineChapterRefError |
 | E46 | chapter_id 指向不存在/跨项目/软删章节 | 422 OutlineChapterRefError |
-| E47 | 孤立章（level=chapter 且 parent 空） | 新建/更新 → 422（决策点 2.A 强制树形）；**存量行**渲染降级为顶层（数据库向后兼容） |
+| E47 | 孤立章（level=chapter 且 parent 空） | 新建/更新 → 422（D-21 强制树形）；**存量行**渲染降级为顶层（数据库向后兼容） |
 | E48 | chapter_id 清除（PATCH `""`） | 置 None，📎 徽标消失 → 「关联章节」按钮 |
 | E49 | 大纲三级树空 / 单层 / 深链 | 空 → 既有空态；单层无 toggle；深链直接渲染 |
 | E50 | 情节点拉取失败（网络） | chapter 展开显示「情节点加载失败」轻提示 + 重试 |
@@ -984,7 +901,7 @@ P3+P4 追加：
 | E54 | 单事件检查有冲突 | toast 显示第一条冲突 message（含修正建议） |
 | E55 | 单事件检查事件不存在 | 404（事件已删除），前端 err toast |
 
-P5 追加（删除后引用残留清理）：
+**删除后引用残留清理**：
 
 | # | 场景 | 行为 |
 |---|------|------|
@@ -996,133 +913,13 @@ P5 追加（删除后引用残留清理）：
 | E61 | 清理失败（DB 异常） | 事务回滚 → 主删除不生效 → DELETE 返回既有错误（无半删状态） |
 | E62 | 删除确认文案（真删对齐） | `lib.delete.confirm` 显示「点击确认后立即移除，不可恢复」（3 个消费方共用；测试断言同步更新） |
 
-## 8. 文件结构
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `frontend/packages/renderer/src/pages/library.tsx` | 角色行等级徽标+标签 chips（5.1/5.2）；世界观树视图+分类筛选+复制按钮+CopyDialog 装配（5.3-5.5）；world 分类 CATS 端点复用 |
-| MODIFY | `frontend/packages/renderer/src/components/LibraryCreateDialog.tsx` | 角色分类加等级下拉（5.1）+ TagEditor（5.2）；buildBody 加 extra 组装 |
-| NEW | `frontend/packages/renderer/src/components/TagEditor.tsx` | 标签编辑器（2.3） |
-| NEW | `frontend/packages/renderer/src/components/CopyDialog.tsx` | 复制对话框（5.5；范围 chips + 目标项目 Select） |
-| MODIFY | `frontend/packages/renderer/src/i18n/zh.ts` / `en.ts` | §6 新 key 表 |
-| MODIFY | `frontend/packages/renderer/src/pages/library.test.tsx` | 追加 P1 契约（§9.2 R1-R12） |
-| MODIFY | `backend/src/inkflow/domain/models/character.py` | CharacterCreate/Update 加 extra（2.4） |
-| MODIFY | `backend/src/inkflow/api/routers/characters.py` | CharacterCreateBody 加 extra + 透传（2.4） |
-| MODIFY | `backend/src/inkflow/domain/services/character_service.py` | create_character 加 extra 参数（2.4） |
-| MODIFY | `backend/src/inkflow/domain/models/copy.py` | WorldCopyRequest 加 self_only（2.5） |
-| MODIFY | `backend/src/inkflow/domain/services/copy_service.py` | copy 加 self_only 参数 + 复制集合分支（5.6） |
-| MODIFY | `backend/src/inkflow/api/routers/world_settings.py` | copy 端点透传 self_only + 互斥 422（2.5/3.3） |
-| MODIFY | `backend/tests/unit/domain/models/test_character_models.py` | extra 字段契约 |
-| MODIFY | `backend/tests/unit/api/routers/test_character_api.py` | 创建/更新带 extra 透传契约 |
-| MODIFY | `backend/tests/unit/domain/services/test_character_service.py` | create_character extra 参数契约 |
-| MODIFY | `backend/tests/unit/api/routers/test_copy_api.py` | self_only 请求契约 + 422 互斥 |
-| MODIFY | `backend/tests/unit/domain/services/test_copy_service.py` | self_only 复制集合分支契约 |
-| MODIFY | `tests/e2e/e2e-library.spec.ts` | P0 遗留编辑/删除 E2E 契约（§9.3） |
-
-P2 追加（地图工作台 + 后端扩展）：
-
-**前端**：
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `frontend/packages/renderer/src/pages/library.tsx` | 世界观 tab 挂接地图工作台（5.8）：地图节点识别 + activeMapId + 面包屑（5.9）+ 底图工具栏（5.10）+ 画布 + pin 列表装配 |
-| NEW | `frontend/packages/renderer/src/components/MapWorkbench.tsx` | 地图工作台主组件（面包屑 + 左树 + 右画布 + pin 列表） |
-| NEW | `frontend/packages/renderer/src/components/PinDialog.tsx` | pin 对话框（5.12：名称 + 类型 + 关联实体搜索） |
-| NEW | `frontend/packages/renderer/src/components/MapCanvas.tsx` | 画布（底图渲染 + shapes 拖拽 + 点击添加 pin + pin 叠加层） |
-| MODIFY | `frontend/packages/renderer/src/i18n/zh.ts` / `en.ts` | §6 P2 新 key 表 |
-| MODIFY | `frontend/packages/renderer/src/pages/library-p2.test.tsx`（新兄弟文件） | P2 契约（§9.4） |
-
-**后端**：
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `backend/src/inkflow/domain/models/map.py` | MapPin 加 type/ref_id；MapPinCreate/Update 加 type/ref_id；WorldMap 加 bg_source/extra；WorldMapUpdate 加 bg_source/extra |
-| MODIFY | `backend/src/inkflow/domain/ports/map_errors.py` | MapPinRefNotFoundError + MapBgSourceError（422 类） |
-| MODIFY | `backend/src/inkflow/domain/services/map_service.py` | add_pin/update_pin 加 type/ref_id + 关联校验（character_repo/timeline_repo 可选注入）；create_map/update_map 加 bg_source/extra |
-| MODIFY | `backend/src/inkflow/domain/ports/map_repository.py` | MapPin 加 type/ref_id 透传（协议签名不变，实体加字段） |
-| MODIFY | `backend/src/inkflow/infrastructure/database/models/map.py` | MapORM 加 bg_source/extra；MapPinORM 加 type/ref_id |
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/map_repo.py` | ORM ↔ 领域映射补 type/ref_id/bg_source/extra |
-| MODIFY | `backend/src/inkflow/api/routers/maps.py` | add_pin/update_pin 透传 type/ref_id；create_map 加 bg_source Form；update_map 透传 bg_source/extra |
-| MODIFY | `backend/src/inkflow/api/deps.py` | get_map_service 注入 character_repo/timeline_repo |
-| MODIFY | `backend/src/inkflow/core/database.py` | `ensure_map_columns(conn)`（§2.7.3）+ lifespan 接线 |
-| NEW | `backend/tests/unit/domain/ports/test_map_p2.py` | P2 后端契约（§9.5 B1-B7）：models 字段 + service 校验 + api 透传 + repo 往返 + 迁移 |
-
-> **测试文件拆分（900 行护栏）**：library.test.tsx 已 ~788 行，P2 前端契约估算 ~400 行 → 拆 `library-p2.test.tsx` 兄弟文件（自带全套基础设施，对齐 P1 `library-p1.test.tsx` 先例）；后端契约新拆 `test_map_p2.py`（test_map_service.py 已 830 行，追加会超 900 护栏）。
-> **ci.yml 登记**：前端无新测试文件目录（同 pages/ 目录，既有 job glob 覆盖）；后端 unit 测试由 `pytest tests/unit/` 全目录跑（非显式文件列表）→ 新文件 `test_map_p2.py` 自动覆盖，零登记。
-
-P3+P4 追加（大纲三级 + 章关联 + 时间线双序 + 单事件检查）：
-
-**前端**：
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `frontend/packages/renderer/src/pages/library.tsx` | 大纲 tab 挂接 OutlineTree（5.14/5.15）；时间线 tab 挂接 TimelineView（5.16/5.17）+ 完整 TimelineView 获取改造 |
-| NEW | `frontend/packages/renderer/src/components/OutlineTree.tsx` | 大纲三级树（overall/volume/chapter/情节点 + 展开收起 + 各层新增 + 章关联徽标） |
-| NEW | `frontend/packages/renderer/src/components/TimelineView.tsx` | 时间线双序切换 + 两级检查（工具栏整体 + 行内单事件） |
-| MODIFY | `frontend/packages/renderer/src/i18n/zh.ts` / `en.ts` | §6 P3+P4 新 key 表 |
-| NEW | `frontend/packages/renderer/src/pages/library-p3.test.tsx` | P3 前端契约（§9.6 O 系列） |
-| NEW | `frontend/packages/renderer/src/pages/library-p4.test.tsx` | P4 前端契约（§9.6 T 系列） |
-
-**后端**：
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `backend/src/inkflow/domain/models/outline.py` | Outline/OutlineCreate/OutlineUpdate 加 level/parent_id/chapter_id + 校验 |
-| MODIFY | `backend/src/inkflow/domain/ports/outline_errors.py` | OutlineLevelError/OutlineHierarchyError/OutlineChapterRefError（422 类） |
-| MODIFY | `backend/src/inkflow/domain/services/outline_service.py` | create_outline/update_outline 加 level/parent_id/chapter_id + 层级校验 + chapter_repo 注入 |
-| MODIFY | `backend/src/inkflow/infrastructure/database/models/outline.py` | OutlineORM 加 level/parent_id/chapter_id |
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/outline_repo.py` | ORM↔领域映射补 level/parent_id/chapter_id |
-| MODIFY | `backend/src/inkflow/api/routers/outlines.py` | OutlineCreateBody 加字段 + create/update 透传 |
-| MODIFY | `backend/src/inkflow/api/deps.py` | get_outline_service 注入 chapter_repo |
-| MODIFY | `backend/src/inkflow/core/database.py` | ensure_outline_columns + lifespan 接线 |
-| MODIFY | `backend/src/inkflow/domain/models/timeline.py` | EventCheckReport 模型 |
-| MODIFY | `backend/src/inkflow/domain/services/timeline_service.py` | check_event 方法 |
-| MODIFY | `backend/src/inkflow/api/routers/timeline.py` | GET /timeline/events/{id}/check 端点 |
-| NEW | `backend/tests/unit/domain/ports/test_outline_p3.py` | P3 后端契约（§9.7 O 系列） |
-| MODIFY | `backend/tests/unit/domain/services/test_timeline_check.py` | P4 单事件检查契约（§9.7 T 系列） |
-
-> **测试文件拆分（900 行护栏，本批）**：`library.tsx` 已 847 行 → 大纲/时间线渲染拆独立组件 `OutlineTree.tsx`/`TimelineView.tsx`；前端契约拆 `library-p3.test.tsx`/`library-p4.test.tsx`；后端 `test_outline_service.py`(626)/`test_outline_api.py`(740) 追加会超护栏 → 新拆 `test_outline_p3.py`；`test_timeline_check.py`(396) 追加单事件检查契约安全。
-
-P5 追加（删除后引用残留清理 + 文案对齐）：
-
-**后端**：
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/character_repo.py` | hard_delete 显式删 `knowledge_relations` 角色↔角色行（from/to 双向，带 type 过滤；#495 前为 character_relations） |
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/outline_repo.py` | hard_delete 显式置空子大纲 parent_id + 删 plot_points |
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/timeline_repo.py` | hard_delete 显式置空 foreshadowings.event_id |
-| MODIFY | `backend/src/inkflow/infrastructure/database/repositories/chapter_repo.py` | delete_chapter 显式清理 6 处引用（§2.10） |
-| MODIFY | `backend/src/inkflow/domain/services/map_service.py` | 新钩子 clear_ref_pins（role/event）；clear_location_pins 扩展 maps.root_location_id |
-| MODIFY | `backend/src/inkflow/domain/services/character_service.py` | delete_character 注入 map_cleanup 钩子 → clear_ref_pins('role') |
-| MODIFY | `backend/src/inkflow/domain/services/timeline_service.py` | delete_event 注入 map_cleanup 钩子 → clear_ref_pins('event') |
-| MODIFY | `backend/src/inkflow/domain/services/world_service.py` | delete_setting reparent 路径补 location_cleanup 钩子 |
-| MODIFY | `backend/src/inkflow/api/deps.py` | 装配 character/timeline service 的 map_cleanup 钩子 |
-| MODIFY | `backend/tests/unit/infrastructure/database/test_character_repo.py` | hard_delete 级联删关系契约（真实 SQLite 轨） |
-| MODIFY | `backend/tests/unit/infrastructure/database/test_outline_repo.py` | hard_delete 子大纲 parent_id + 情节点清理契约 |
-| MODIFY | `backend/tests/unit/infrastructure/database/test_timeline_repo.py` | hard_delete 伏笔 event_id 清理契约 |
-| MODIFY | `backend/tests/unit/infrastructure/database/test_chapter_repo.py` | delete_chapter 6 处引用清理契约 |
-| MODIFY | `backend/tests/unit/domain/services/test_map_service.py` | clear_ref_pins 新钩子 + clear_location_pins 扩展契约 |
-| MODIFY | `backend/tests/unit/domain/services/test_world_service.py` | reparent 路径补钩子契约 |
-| MODIFY | `backend/tests/unit/api/routers/test_character_api.py` / `test_outline_api.py` / `test_timeline_api.py` / `test_chapter_api.py` | DELETE 端点清理语义契约（mock 断言） |
-
-**前端**：
-
-| 操作 | 文件 | 变更 |
-|------|------|------|
-| MODIFY | `frontend/packages/renderer/src/i18n/zh.ts` / `en.ts` | `lib.delete.confirm` 文案变更（§6） |
-| MODIFY | `frontend/packages/renderer/src/pages/library.test.tsx` | 删除文案断言更新（L654：新文案） |
-| MODIFY | `frontend/packages/renderer/src/pages/projects.test.tsx` | 删除文案断言更新（L458：新文案） |
-
-> **测试文件拆分（900 行护栏，P5）**：后端契约追加到既有 repo 测试文件（test_character_repo.py 552 / test_outline_repo.py / test_timeline_repo.py / test_chapter_repo.py / test_map_service.py / test_world_service.py）——追加量 ≤ 每文件 150 行，需开工前实测行数；超限则新拆 `test_delete_cleanup_p5.py` 兄弟文件（真实 SQLite 轨）。前端文案断言为既有行修改（非追加），无拆分风险。
-
 ## 9. 测试策略
 
 ### 9.1 层次与工具
 
-- **前端单元/组件契约**（Vitest + RTL，RED 批先行——F15 起 TDD 硬纪律）：本批主测试层（library.test.tsx 追加）。
-- **后端单元契约**（pytest + unittest.mock.patch，RED 批同批）：extra 透传 + self_only 分支——本批后端极小改动仍需契约（F15 起前端/后端一律 RED 先行）。
-- **E2E**（Playwright Electron，P0 遗留必补项）：e2e-library.spec.ts 追加编辑/删除契约（inkflow-e2e-testing 流程：`PYTHONUTF8=1` + build renderer dist）。
+- **前端单元/组件契约**（Vitest + RTL，RED 批先行）：主测试层（library.test.tsx 追加）。
+- **后端单元契约**（pytest + unittest.mock.patch）：extra 透传 + self_only 分支——后端改动仍需契约（RED 先行）。
+- **E2E**（Playwright Electron，真实内核）：e2e-library.spec.ts 追加编辑/删除契约（inkflow-e2e-testing 流程：`PYTHONUTF8=1` + build renderer dist）。
 
 ### 9.2 RED 契约用例（library.test.tsx 追加，R 系列）
 
@@ -1142,7 +939,7 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | R12 | 顶部整体复制：`world-copy-all` → body 无 root_setting_id | 工具栏按钮 → CopyDialog（无范围 chips）→ 确认 → body `{source_project_id}` |
 | R13 | 复制失败 → err toast + 对话框保持；单项目 → 复制 disabled | reject → err toast + CopyDialog 仍在；projects 仅 1 个 → `world-copy-all` disabled |
 
-### 9.3 E2E 契约（e2e-library.spec.ts 追加，P0 遗留必补）
+### 9.3 E2E 契约（e2e-library.spec.ts 追加）
 
 | # | 用例 | 断言要点 |
 |---|------|---------|
@@ -1152,16 +949,16 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 
 ### 9.4 覆盖率
 
-- 前端：library.test.tsx 追加 ≈13 用例（R1-R13）；TagEditor/CopyDialog 由消费方契约覆盖（不单列，对齐 P0 ConfirmDialog 先例）。
+- 前端：library.test.tsx 追加 ≈13 用例（R1-R13）；TagEditor/CopyDialog 由消费方契约覆盖（不单列，对齐 ConfirmDialog 先例）。
 - 后端：character models/api/service + copy api/service 各追加 extra/self_only 断言；目标模块 ≥80% 保持。
 
-### 9.5 P2 测试策略（地图工作台 + 后端扩展）
+### 9.5 地图工作台测试策略（前端 + 后端扩展）
 
 **层次**：
 
-- **前端单元/组件契约**（Vitest + RTL，RED 批先行）：新拆 `library-p2.test.tsx` 兄弟文件（§8），MapWorkbench/PinDialog/MapCanvas 由消费方契约覆盖（对齐 P0 ConfirmDialog 先例，不单列）。
-- **后端单元契约**（pytest + unittest.mock.patch，RED 批同批）：**新拆 `test_map_p2.py`**（§8）装 map models/service/api/repo 的 type/ref_id/bg_source/extra 扩展契约（独立文件——test_map_service.py 已 830 行，追加会超 900 护栏）。
-- **E2E**：本批不补地图 E2E（任务书未强制；地图交互 E2E 登记 P3 批次前置必补，对齐 P0 spec §14 Q3 先例）。
+- **前端单元/组件契约**（Vitest + RTL，RED 批先行）：新拆 `library-p2.test.tsx` 兄弟文件，MapWorkbench/PinDialog/MapCanvas 由消费方契约覆盖（对齐 ConfirmDialog 先例，不单列）。
+- **后端单元契约**（pytest + unittest.mock.patch）：**新拆 `test_map_p2.py`** 装 map models/service/api/repo 的 type/ref_id/bg_source/extra 扩展契约（独立文件——test_map_service.py 已 830 行，追加会超 900 护栏）。
+- **E2E**：地图工作台端到端契约见 §9.8。
 
 **前端 RED 契约（library-p2.test.tsx，M 系列）**：
 
@@ -1181,13 +978,13 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | M12 | 简图 shapes：添加方框/椭圆/文字 | 点 `map-shape-add-rect` → `map-shape-*` 出现；shapes PATCH body `extra.shapes` |
 | M13 | 简图 shapes 删除 | 点 `map-shape-del-<id>` → shape 消失 + PATCH |
 
-**rc4 缺陷修复契约（0.13.0，library-map-workbench-fixes.test.tsx，#973/#978/#979）**：
+**地图工作台回归契约（library-map-workbench-fixes.test.tsx）**：
 
 | # | 用例 | 断言要点 |
 |---|------|---------|
-| K1-K3 | #973 maps 快照刷新 | 进工作台重拉 maps（外部建图可见）；拉取失败 pushToast err（勿静默）；reloadKey 纳入依赖（分类保存重拉） |
-| S1 | #978 删除钮重叠 | 删除钮锚位 = 形内右上（`right-1 top-1 z-10`，旧 `-right-2 -top-2` 退役）+ 四角把手 `h-4 w-4`；删除功能回归（jsdom 无盒模型 → className 锚位组合断言） |
-| P1-P3 | #979 pin 标签/点击 | 画布 pin 可见 label + `pointer-events-auto`；点 pin stopPropagation（不新增 pin，画布空白点击加 pin 保持）；选中双向联动（画布/列表行 `data-selected` + `map-pin-row-<id>`） |
+| K1-K3 | maps 快照刷新 | 进工作台重拉 maps（外部建图可见）；拉取失败 pushToast err（勿静默）；reloadKey 纳入依赖（分类保存重拉） |
+| S1 | 删除钮重叠 | 删除钮锚位 = 形内右上（`right-1 top-1 z-10`，旧 `-right-2 -top-2` 退役）+ 四角把手 `h-4 w-4`；删除功能回归（jsdom 无盒模型 → className 锚位组合断言） |
+| P1-P3 | pin 标签/点击 | 画布 pin 可见 label + `pointer-events-auto`；点 pin stopPropagation（不新增 pin，画布空白点击加 pin 保持）；选中双向联动（画布/列表行 `data-selected` + `map-pin-row-<id>`） |
 
 **后端 RED 契约（test_map_p2.py，B 系列）**：
 
@@ -1201,11 +998,11 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | B6 | api | POST pins 透传 type/ref_id；PATCH map 透传 bg_source/extra |
 | B7 | repo | MapPin ORM ↔ 领域往返含 type/ref_id；Map ORM 往返含 bg_source/extra |
 
-> **向后兼容约束（GREEN 必守）**：`MapPin` 领域实体加 `type`/`ref_id` 必须带默认值（`type="location"`, `ref_id=None`）；`WorldMap` 加 `bg_source`/`extra` 必须带默认值（`bg_source="image"`, `extra={}`）——否则 `copy_service.copy`（L227 构造 `MapPin(location_id/x/y/label)`，只传旧字段）与既有 F36 测试构造 TypeError。
+> **向后兼容约束（GREEN 必守）**：`MapPin` 领域实体加 `type`/`ref_id` 必须带默认值（`type="location"`, `ref_id=None`）；`WorldMap` 加 `bg_source`/`extra` 必须带默认值（`bg_source="image"`, `extra={}`）——否则 `copy_service.copy`（构造 `MapPin(location_id/x/y/label)`，只传旧字段）与既有 F36 测试构造 TypeError。
 
-### 9.6 P3+P4 前端 RED 契约（Vitest + RTL）
+### 9.6 大纲与时间线前端 RED 契约（Vitest + RTL）
 
-**P3 大纲三级 + 章关联（library-p3.test.tsx，O 系列）**：
+**大纲三级 + 章关联（library-p3.test.tsx，O 系列）**：
 
 | # | 用例 | 断言要点 |
 |---|------|---------|
@@ -1218,7 +1015,7 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | O7 | 关联章节按钮点击 toast | 点 `outline-chapter-link-<id>` → toast「请选择要关联的写作章节」（选择器后置） |
 | O8 | 情节点拉取 + 渲染 | chapter 展开 → `GET /outlines/{id}/plot-points` → `outline-point-*` 渲染 |
 
-**P4 时间线双序 + 两级检查（library-p4.test.tsx，T 系列）**：
+**时间线双序 + 两级检查（library-p4.test.tsx，T 系列）**：
 
 | # | 用例 | 断言要点 |
 |---|------|---------|
@@ -1231,9 +1028,9 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | T7 | 单事件检查冲突 toast | check 返回冲突 → toast 显示第一条 message |
 | T8 | 单事件检查跳过（无时间） | check 返回 checked=false → toast「该事件无时间信息，跳过检查」 |
 
-### 9.7 P3+P4 后端 RED 契约（pytest + unittest.mock.patch）
+### 9.7 大纲与时间线后端 RED 契约（pytest + unittest.mock.patch）
 
-**P3 大纲扩展（test_outline_p3.py，O 系列）**：
+**大纲扩展（test_outline_p3.py，O 系列）**：
 
 | # | 层 | 契约 |
 |---|----|------|
@@ -1244,12 +1041,12 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | OB5 | service | create_outline level=chapter + parent 非 volume → OutlineHierarchyError |
 | OB6 | service | create_outline level=chapter + chapter_id 指向不存在章节 → OutlineChapterRefError |
 | OB7 | service | create_outline level=overall + chapter_id 非空 → OutlineChapterRefError |
-| OB8 | service | 孤立章（chapter + parent 空）→ 422（章必须挂卷，2026-08-31 强制树形） |
+| OB8 | service | 孤立章（chapter + parent 空）→ 422（章必须挂卷，强制树形） |
 | OB9 | api | POST outlines 透传 level/parent_id/chapter_id；PATCH 透传 + `""` 清除 |
 | OB10 | repo | Outline ORM↔领域往返含 level/parent_id/chapter_id |
 | OB11 | database | ensure_outline_columns 迁移（旧表加列 + 幂等 + 表不存在 no-op） |
 
-**P4 单事件检查（test_timeline_check.py 追加，T 系列）**：
+**单事件检查（test_timeline_check.py 追加，T 系列）**：
 
 | # | 层 | 契约 |
 |---|----|------|
@@ -1259,9 +1056,9 @@ P5 追加（删除后引用残留清理 + 文案对齐）：
 | TB4 | service | check_event 事件不存在 → None（router 转 404） |
 | TB5 | api | GET /timeline/events/{id}/check 返回 EventCheckReport |
 
-### 9.8 P2 遗留地图 E2E（本批必补，§10 已登记）
+### 9.8 地图工作台 E2E
 
-P2 spec §9.5 登记「地图 E2E = P3 前置必补」。本批补 P2 遗留地图 E2E（e2e-library.spec.ts 追加，`PYTHONUTF8=1` + build renderer dist）：
+地图工作台端到端契约（e2e-library.spec.ts 追加，`PYTHONUTF8=1` + build renderer dist）：
 
 | # | 用例 | 断言要点 |
 |---|------|---------|
@@ -1269,11 +1066,11 @@ P2 spec §9.5 登记「地图 E2E = P3 前置必补」。本批补 P2 遗留地�
 | E2E-M2 | 一图多标记 | 点击画布添加 pin → POST → pin 列表刷新 |
 | E2E-M3 | 三底图切换 | 切换 bg_source → PATCH + pins 保留 |
 
-> P3/P4 大纲/时间线 E2E 不在本批（任务书未强制，登记后续批次）。
+> 大纲/时间线 E2E 不在本节范围。
 
-### 9.9 P5 后端 RED 契约（删除引用残留清理，C 系列）
+### 9.9 删除清理 RED 契约（后端 C 系列 / 前端 X 系列）
 
-**层次**：repo 层真实 SQLite 轨（`PRAGMA foreign_keys=OFF` 镜像生产——测试 fixture 不用 ON，证明显式清理有效）+ service/API 层 mock 轨。RED 批 = C 系列全 FAIL 实证。
+**层次**：repo 层真实 SQLite 轨（`PRAGMA foreign_keys=OFF` 镜像生产——测试 fixture 不用 ON，证明显式清理有效）+ service/API 层 mock 轨。
 
 | # | 层 | 契约 | 预期 RED 形态 |
 |---|----|------|-------------|
@@ -1288,142 +1085,81 @@ P2 spec §9.5 登记「地图 E2E = P3 前置必补」。本批补 P2 遗留地�
 | C9 | service | world_service.delete_setting reparent 路径触发 location_cleanup | 现未调 → assert_awaited FAIL |
 | C10 | api | DELETE /characters/{id} 清理语义（mock svc + 断言） | 现有实现无清理 → 断言 FAIL |
 
-**前端 RED 契约（文案对齐，D 系列）**：
+**前端 RED 契约（文案对齐，X 系列）**：
 
 | # | 用例 | 断言要点 | 预期 RED 形态 |
 |---|------|---------|-------------|
-| D1 | library.test.tsx L654 删除文案 | ConfirmDialog 显示「点击确认后立即移除，不可恢复」 | 现断言旧文案 → FAIL |
-| D2 | projects.test.tsx L458 删除文案 | 项目删除弹窗显示新文案 | 现断言旧文案 → FAIL |
+| X1 | library.test.tsx 删除文案 | ConfirmDialog 显示「点击确认后立即移除，不可恢复」 | 现断言旧文案 → FAIL |
+| X2 | projects.test.tsx 删除文案 | 项目删除弹窗显示新文案 | 现断言旧文案 → FAIL |
 
-> **RED 验证注意（P5 特有）**：repo 层 C 系列必须用 `PRAGMA foreign_keys=OFF` 的真实 SQLite（镜像生产），不能复用既有 fixture 的 ON（否则 FK 级联掩盖 RED——测试会假绿）。C5/C7/C8 是「新钩子/新接线」类契约（方法不存在 → AttributeError/断言 FAIL），镜像规则 1c/1k 形态。
+> **RED 验证注意**：repo 层 C 系列必须用 `PRAGMA foreign_keys=OFF` 的真实 SQLite（镜像生产），不能复用既有 fixture 的 ON（否则 FK 级联掩盖 RED——测试会假绿）。C5/C7/C8 是「新钩子/新接线」类契约（方法不存在 → AttributeError/断言 FAIL），镜像规则 1c/1k 形态。
 
 ## 10. 不在范围内
 
-P0 表更新（已入范围的 P1 行移除）+ P1 新行：
-
-| 项 | 归属 | 原因 |
-|----|------|------|
-| ~~角色等级必填 + 标签多选（D1/D2）~~ | ✅ 本批 P1 | 已入范围（§2.2/§2.3/§5.1/§5.2） |
-| ~~世界观树/分类筛选/复制 GUI（D3/D4）~~ | ✅ 本批 P1 | 已入范围（§5.3-§5.5） |
-| ~~世界观 reparent/复制交互~~ | ✅ 本批 P1 | 复制 GUI 已入范围；reparent（拖拽/改挂）仍不在——后端 `?reparent_to=` 端点已就绪但 GUI 交互未拍板，归 P2+ 候选 |
-| 角色等级筛选 chips（原型 rankFilter） | P2+ 候选 | 任务书 P1 范围未列；与 D3 分类筛选语义不同，需另拍板（含「全部」与否） |
-| 标签管理页（增删改标签本体） | 无归属 | 标签是角色 extra 数据，无独立实体；管理页需新后端模型，Phase 2+ |
-| ~~地图工作台（D5-D7）~~ | ✅ 本批 P2 | 已入范围（§2.7/§3.5/§5.8-5.13） |
-| AI 底图生成 | 后置（D5 拍板） | 仅占位「即将推出」，无 LLM 生成逻辑 |
-| 内置绘图引擎（笔刷/图层） | 未来（F36 §10 同） | 简图是简单绝对定位 div，非专业绘图 |
-| pin 关联势力/功法等其它实体 | P2+ 候选 | 本批仅角色/事件/地点三类（D6 拍板） |
-| ~~地图 E2E 契约~~ | ✅ 本批 P3+P4 | P2 遗留必补已入范围（§9.8 E2E-M1..M3） |
-| CLI pin type/ref_id 写入 | #251 | 本批 CLI 面不动 |
-| ~~大纲三级 + 章关联（D8/D9）~~ | ✅ 本批 P3 | 已入范围（§2.8/§3.6/§5.14-5.15） |
-| ~~时间线双序 + 两级检查（D10）~~ | ✅ 本批 P4 | 已入范围（§2.9/§3.7/§5.16-5.17） |
-| ~~删除 30 天清理 job（#211 对齐）~~ | ✅ 本批 P5 | 已入范围并重定位为「删除后引用残留清理」（真删语义下无 30 天窗口；§2.10/§3.8/§5.18） |
-| 异步后台清理 job / 调度器 | 无归属 | Q1=A 拍板：同步清理（删除方法内同一事务）；项目无调度器基建，异步收益低 |
-| 地图 pin 列表/地图列表自动重拉（删除后） | P6+ 候选 | 仅依赖 activeMapId/currentProjectId 的 effect 不随 reloadKey 触发；用户重选地图/切项目自然刷新（§5.18 登记） |
-| RAG 分类编辑/删除 | 无归属 | 无 PATCH/DELETE 端点（extractions/runs 为运行记录） |
-| 项目硬删除/恢复（force/restore） | 无归属 | GUI 不暴露危险操作，软删语义由确认文案表达（D6） |
-| ~~E2E 编辑/删除契约~~ | ✅ 本批 P1 | P0 遗留必补项已入范围（§9.3） |
-
----
+| 项 | 原因 / 归属 |
+|----|------|
+| 角色等级筛选 chips（原型 rankFilter） | 与分类筛选语义不同，需单独决策（含「全部」与否） |
+| 标签管理页（增删改标签本体） | 标签是角色 extra 数据，无独立实体；管理页需新后端模型 |
+| AI 底图生成 | 仅占位「即将推出」，无 LLM 生成逻辑 |
+| 内置绘图引擎（笔刷/图层） | 简图是简单绝对定位 div，非专业绘图 |
+| pin 关联势力/功法等其它实体 | 仅角色/事件/地点三类（见决策表） |
+| CLI pin type/ref_id 写入 | CLI 面不动（既有 `--location` 路径不变） |
+| 异步后台清理 job / 调度器 | 同步清理（删除方法内同一事务）；项目无调度器基建 |
+| 地图 pin 列表 / 地图列表自动重拉（删除后） | 仅依赖 activeMapId/currentProjectId 的 effect 不随 reloadKey 触发；用户重选地图/切项目自然刷新 |
+| 世界观 reparent 交互（拖拽/改挂） | 后端 `?reparent_to=` 端点已就绪，GUI 交互未定义 |
+| RAG 分类编辑/删除 | 无 PATCH/DELETE 端点（extractions/runs 为运行记录） |
+| 项目硬删除/恢复（force/restore） | GUI 不暴露危险操作，软删语义由确认文案表达 |
 
 ## 11. 依赖关系
 
-| 依赖 | 状态 | 说明 |
-|------|------|------|
-| #284（设定库 GUI 升级总 issue） | ✅ OPEN→关闭 | 本批为 **P5 最后一批**；PR body `Closes #284`（全部批次完成才关 issue——spec §13 M 门禁） |
-| P0 批次（PR #301） | ✅ 已合 | 编辑/删除/保存指示/ConfirmDialog 基座（v1.0 交付物，本批复用） |
-| P1 批次（PR #306） | ✅ 已合 | 角色等级/标签/世界观树/复制（v1.1 交付物，本批世界观树渲染复用） |
-| P2 批次（PR #311） | ✅ 已合 | 地图工作台（v1.2 交付物，本批沿用） |
-| P3+P4 批次（PR #319） | ✅ 已合 | 大纲三级/章关联/时间线双序/两级检查（v1.3 交付物，本批沿用） |
-| F35 世界观树（parent_id） | ✅ 已合 | 后端 parent_id/ancestors/descendants + list 参数（前端纯渲染） |
-| F36 地图（#174） | ✅ 已合 | maps/map_pins 表 + pins 端点 + 图片资产（P2 已扩展 type/ref_id/bg_source/extra；本批 clear_ref_pins 新钩子 + clear_location_pins 扩展） |
-| F11 大纲（outlines/plot_points/story_arcs） | ✅ 已合 | 本批扩展 level/parent_id/chapter_id（加列级）；P5 补 hard_delete 显式清理 |
-| F12 时间线（timeline_events + TimelineView + check） | ✅ 已合 | 本批消费双视图 + 新增单事件检查端点；P5 补 hard_delete 显式清理 |
-| F3 章节（#3，chapters 表） | ✅ 已合 | 章关联目标（chapter_id → chapters.id）；P5 补 delete_chapter 6 处引用清理 |
-| #196 创建对话框 | ✅ 已合 | LibraryCreateDialog 双模式基座 |
-| #189 已保存指示模式 | ✅ 已合 | 编辑保存反馈复用（P0 已接） |
-| #195 遮罩不关闭拍板 | ✅ 已合 | PinDialog/ConfirmDialog 遵守 |
-| #312 删除语义统一（F10） | ✅ 已合 | 普通实体软删→真删（#211 落地）；**本批 P5 = 真删后的引用残留清理**（原「30 天清理 job」在真删语义下重定位） |
-| 角色 extra 列（LenientJSON） | ✅ 已有 | 无迁移（P1 已透传） |
-
----
+| 依赖 | 说明 |
+|------|------|
+| F35 世界观树（parent_id） | 后端 parent_id/ancestors/descendants + list 参数（前端纯渲染） |
+| F36 地图 | maps/map_pins 表 + pins 端点 + 图片资产；本模块扩展 type/ref_id/bg_source/extra + 清理钩子 |
+| F37 世界观复制 | `WorldCopyRequest` + `copy_service.copy`（本模块扩展 `self_only`） |
+| F11 大纲（outlines/plot_points/story_arcs） | 扩展 level/parent_id/chapter_id（加列级）；hard_delete 显式清理 |
+| F12 时间线（timeline_events + TimelineView + check） | 消费双视图 + 单事件检查端点；hard_delete 显式清理 |
+| F3 章节（chapters 表） | 章关联目标（chapter_id → chapters.id）；delete_chapter 6 处引用清理 |
+| F10 世界观删除语义 | 普通实体真删；本节清理即真删后的引用残留 |
+| 角色 extra 列（LenientJSON） | 无迁移 |
 
 ## 12. 关键架构决策记录
 
-P0 表（D-1..D-6）+ P1 表（D-7..D-13）不变。P2 追加：
+全 spec 唯一决策落点，正文以 `Dn` 引用。
 
-| # | 决策 | 方案 | 备选否决 |
-|---|------|------|---------|
-| D-14 | pin 关联角色/事件 = `type` 枚举 + `ref_id` 关联列；`location_id` 保留为 `type=location` 兼容别名 | 单一关联语义清晰；location_id 零破坏（F36 端点/CLI/测试不动）；type 推导目标表 | A-2 三列（location_id/role_id/event_id 冗余同步易错）；A-3 废弃 location_id 迁移（破坏 F36 全链） |
-| D-15 | shapes 存 `maps.extra` JSON（LenientJSON）而非新表 | 对齐角色 extra 先例；形状是画布附属无独立查询；零新表 | 新表 map_shapes（独立查询 YAGNI） |
-| D-16 | image_path 语义放宽（shape 存空串）而非 ALTER 改 NOT NULL | SQLite ALTER 无法改列约束；空串语义清晰（shape=无图）；service 按 bg_source 校验 | 重建表迁移（破坏面大）；占位路径 hack（脏） |
-| D-17 | 角色/事件关联校验 = MapService 可选注入 character_repo/timeline_repo（默认 None） | 向后兼容（既有 F36 测试构造不传→跳过校验）；deps 装配传真实 repo | 硬注入（破坏既有测试构造） |
-| D-18 | pin 独立叠加层 = 数据正交（pins 独立表，与 bg_source/shapes 无 FK） | D5 拍板「切换底图不影响标记」；前端只 PATCH bg_source，pins 零触碰 | pins 挂 bg_source 下（切换即失效，违反 D5） |
-| D-19 | 大纲三级 = `level` 字段标记（overall/volume/chapter）+ `parent_id` 自引用（非独立 volume/chapter 实体） | 单一 outlines 表加列即可；对齐决策文档 §4「level 字段标记」推荐；情节点挂 outline 不变 | 独立 volume/chapter 实体表（复用 F3 Volume/Chapter 会混淆写作侧语义，且迁移重） |
-| D-20 | 旧大纲历史 level 默认 `chapter`（孤立章） | 情节点天然挂其下（零迁移）；存量孤立章渲染降级顶层（数据库向后兼容）；**2026-08-31 起新建 chapter 须挂 volume（决策点 2.A）** | 默认 overall（情节点挂 overall 违反「章→情节点」结构） |
-| D-21 | 三级层级严格校验（overall 无父 / volume→overall / chapter→volume） | D8 明确三级；后端轻校验防脏数据；**2026-08-31 起孤立章 parent 空非法（强制树形）** | 宽松（parent 只校验同项目存在）——层级错乱风险 |
-| D-22 | 章关联 = `chapter_id` FK→chapters（仅 level=chapter 可设）+ 选择器后置 | D9 拍板「选择器后置」；仅 chapter 可关联符合「章关联写作章节」语义；FK SET NULL 章节删除不破坏大纲 | 任意 level 可关联（语义模糊）；本批实现选择器（D9 拍板后置，不做） |
-| D-23 | 单事件检查 = 独立端点 `GET /timeline/events/{id}/check`（复用相邻对扫描） | RESTful 清晰；复用 check_consistency 分类逻辑（零新冲突类型）；前端行内按需调用 | 复用 check + `?event_id=` 参数（语义混在整体检查端点）；纯前端筛选（依赖整体 check 全量返回，开销大） |
-
-P5 追加：
-
-| # | 决策 | 方案 | 备选否决 |
-|---|------|------|---------|
-| D-24 | 清理 job = **同步**（删除方法内同一事务）而非异步后台 job | Q1=A 拍板；真删无延迟窗口、删除低频、项目无调度器基建 → 同步最简单且一致性强；复用 clear_arc_of_points/clear_location_pins 既有样板 | 异步 job（需调度器基建，收益低）；30 天定时清理（#211 真删后无软删窗口，语义失效） |
-| D-25 | 前端删除文案对齐真删（`lib.delete.confirm` → 「立即移除，不可恢复」） | Q2=B 拍板；#211 真删后「后台逻辑删除，30 天后彻底清除」过时误导；3 个消费方共用同一 key，改动局部化 | 保留旧文案（与真删矛盾）；按消费方拆分 key（过度工程） |
-| D-26 | 范围含写作章节（delete_chapter 清理 6 处引用） | Q3=B 拍板；M4 门禁「章关联」= outline.chapter_id 必须覆盖；agent_runs/drafts 的 String(36) 无 FK 列一并置空（模型注释「服务层承担」与实现脱节，本批补齐） | 仅设定实体 5 类（章关联残留，M4 不可达） |
-
----
+| 决策点 | 选择 | 理由 | 备选（否决） |
+|--------|------|------|------------|
+| D1 角色等级 | 五档枚举必填、无默认值（下拉初始空 → 保存按钮 disabled） | 等级是角色分类的必填属性，静默默认会错分 | `—` |
+| D2 分组标签 | 自由文本多选存 `extra.groups`（去重保序）；建议标签 = 项目内已用标签并集（数据驱动） | 标签无独立实体（属角色 extra 数据）；管理页需独立后端模型，后置 | 独立 tag 实体 + 关联表 |
+| D3 世界观树与分类筛选 | `parent_id` 前端建树（顶层 = parent_id 空）；分类 chips 无「全部」项，点选筛选、再点取消（toggle） | 树结构不拆散（筛选按顶层节点整体显隐）；未选 chip 即「全部」，无需额外按钮 | 保留「全部」chip（与 toggle 冗余）；后端分页树（规模不需要） |
+| D4 地图工作台布局 | 左世界观树 + 右底图工具栏/画布/pin 列表双栏；点地图节点切换画布 | 复用世界观树，画布与标记列表同屏 | `—` |
+| D5 底图与标记叠加 | `maps.bg_source` 三态（shape/image/ai）互斥展示，切底图只改该字段；pins 独立表，切换底图零影响；AI 底图仅占位不实现生成 | 数据正交：切换底图 pins/shapes 均保留；AI 生成超出本模块 | pins 挂 `bg_source` 之下（切换即失效） |
+| D6 pin 类型与关联实体 | 四类型（地点/角色/事件/其他）+ 三类关联（地点/角色/事件）；`other` 无关联 | 四类覆盖设定库实体范围 | 每类实体各做一型（势力/功法等，后续候选） |
+| D7 面包屑导航 | 四级（设定库 / 世界观 / 地图视图 / {地图名}），逐级可回跳 | 层级即状态：层级 1/2 退出工作台，层级 3 清空选中地图 | `—` |
+| D8 大纲三级 | `level` 字段标记（overall/volume/chapter）+ `parent_id` 自引用，非独立 volume/chapter 实体表 | 单一 outlines 表加列即可；情节点挂 `outline_id` 不变 | 独立 volume/chapter 实体表（与写作侧 Volume/Chapter 语义混淆，迁移重） |
+| D9 章关联 | `chapter_id` FK→chapters（仅 `level=chapter` 可设）；章节选择器交互后置，仅渲染按钮 + 📎 徽标 | 「章关联写作章节」语义要求仅 chapter 可关联；FK SET NULL 使章节删除不破坏大纲 | 任意 level 可关联（语义模糊）；实现章节选择器 |
+| D10 时间线双序 + 两级检查 | 一次取 `TimelineView`（event_timeline + narrative_order），切换仅本地换数组；整体检查 + 行内单事件检查 | 零额外请求；整体查全局逆序，单事件查邻域 | 每次切换重新请求；仅整体检查（定位成本高） |
+| D11 删除语义 | 真删（立即移除，不可恢复），确认文案同步 | 无需软删窗口与清理 job | 软删 + 定时清理（运维负担） |
+| D12 行内操作按钮 | 悬停显示编辑/删除/复制（testid 不变） | 列表密度优先 | 常驻按钮（视觉噪音） |
+| D-14 pin 关联存储 | `type` 枚举 + `ref_id` 统一关联列；`location_id` 保留为 `type=location` 兼容别名 | 单一关联语义清晰；location_id 零破坏（F36 端点/CLI/测试不动）；type 推导目标表 | 三列并列（location_id/role_id/event_id 冗余同步易错）；废弃 location_id 迁移（破坏 F36 全链） |
+| D-15 简图形状存储 | shapes 存 `maps.extra` JSON（LenientJSON），不建新表 | 对齐角色 extra 先例；形状是画布附属无独立查询 | 新表 map_shapes（独立查询无需求） |
+| D-16 image_path 语义放宽 | 简图模式存空串 `""`，service 按 `bg_source` 校验；不改 NOT NULL 约束 | SQLite ALTER 无法改列约束；空串语义清晰（shape=无图） | 重建表迁移（破坏面大）；占位路径 hack（脏） |
+| D-17 关联校验注入 | `MapService` 可选注入 `character_repo`/`timeline_repo`（默认 None，无注入跳过校验） | 向后兼容既有 F36 测试构造；`deps.py` 装配真实 repo | 硬注入（破坏既有测试构造） |
+| D-20 旧大纲默认 level | 历史行默认 `chapter`（孤立章），存量渲染降级顶层 | 情节点天然挂其下（零迁移）；仅作数据库向后兼容 | 默认 overall（情节点挂 overall 违反章→情节点结构） |
+| D-21 层级严格校验 | overall 无父 / volume→overall / chapter→volume；孤立章 parent 空 → 422 | 三级结构明确；后端轻校验防脏数据 | 宽松校验（parent 只查同项目存在）——层级错乱 |
+| D-23 单事件检查端点 | `GET /timeline/events/{id}/check` 独立端点，复用相邻对扫描分类 | RESTful 清晰；复用 `check_consistency` 分类（零新冲突类型） | 复用 check + `?event_id=`（语义混在整体检查）；纯前端筛选（依赖全局返回） |
+| D-24 清理时机 | 同步：删除方法内、与主删除同一事务 | 真删无延迟窗口、删除低频、项目无调度器基建 → 同步最简单且一致性强；复用 `clear_arc_of_points`/`clear_location_pins` 样板 | 异步 job（需调度器基建，收益低）；定时清理（真删后无窗口，语义失效） |
+| D-25 删除确认文案 | `lib.delete.confirm` →「立即移除，不可恢复」，3 个消费方共用同一 key | 真删后旧文案（后台逻辑删除，30 天后彻底清除）过时误导；改动局部化 | 保留旧文案（与真删矛盾）；按消费方拆 key（过度工程） |
+| D-26 清理范围含写作章节 | `delete_chapter` 清理 6 处引用（含 agent_runs/drafts 的 `String(36)` 无 FK 列） | 章关联（outline.chapter_id）必须可达；模型注释「服务层承担」与实现脱节需补齐 | 仅设定实体五类（章关联残留） |
 
 ## 13. 验收标准
 
 | # | 验收项 | 验证方式 |
 |---|--------|---------|
-| M1 | f43 spec v1.4 合入（与实现同 PR；头部版本行 + Spec 变更行 + P5 章节 + 跨节同步） | PR diff 核对 + `git log origin/main -- specs/f43-setting-library-gui/spec.md` |
-| M2 | RED 批全 FAIL 有实证（后端 C1-C10 + 前端 D1-D2 契约；测试输出存档） | 测试输出存档（RED 日志） |
-| M3 | 后端测试全绿（既有 + C 系列；真实 SQLite foreign_keys=OFF 轨） | `backend/.venv pytest backend/tests/unit/ -q` 全绿（GREEN 后本地实证） |
+| M2 | RED 批全 FAIL 有实证（后端 C1-C10 + 前端 X1-X2 契约） | RED 日志存档 |
+| M3 | 后端测试全绿（既有 + C 系列；真实 SQLite foreign_keys=OFF 轨） | `backend/.venv pytest backend/tests/unit/ -q` |
 | M4 | 删除设定实体后引用残留被清理（地图 pin / 章关联 / 关系 / 情节点 / 伏笔锚点） | repo C1-C4 + 手动核对（删除角色 → 关联 pin/chapterRef 清理） |
-| M5 | 清理时机正确（同步，删除方法内同一事务——Q1=A） | C5-C9 断言 + 代码走查（无调度器/无异步入口） |
-| M6 | 前端文案对齐真删（`lib.delete.confirm` = 「立即移除，不可恢复」） | D1-D2 + `pnpm --filter renderer test` 全绿（GREEN 后本地实证） |
-| M7 | 前端测试全绿（既有 + D 系列） | `pnpm --filter renderer test` 全绿 |
-| M8 | PR 合入 + CI 全绿（statusCheckRollup 对照）；PR body `Closes #284`（最后一批） | gh pr checks 轮询 + gh pr view |
-| M9 | issue #284 关闭（最后一批）；worktree 清理 + 状态标记 ✅ | gh issue view 284 |
-| M10 | 角色等级必填 + 枚举校验（#833）：创建/修改角色缺 `extra.role_rank` 或非法值 → 422；AI 工具 `create_character` 补 role_rank 必填参数并透传 `extra['role_rank']`；CLI `character create` 加 `--role-rank` | RED 契约全 FAIL 实证 + 后端测试全绿（`uv run pytest backend/tests/unit/domain/ports/test_character_role_rank.py` + 全量） |
-
----
-
-## 14. 待澄清问题
-
-无阻塞级待澄清——本批交互/存储/范围全部由任务书 + 决策文档 D4/D5/D6/D7 + F36 既有实现指定。以下为已拍板留痕：
-
-- **Q1（✅ 已确认，决策文档 D5 + 用户拍板 A-1/B-1/C-1）**：pin 关联模型 = `type` 枚举 + `ref_id` 统一关联列（location_id 保留为 type=location 兼容别名）；shapes 存 `maps.extra` JSON；image_path 语义放宽（shape 存空串，非 ALTER 改约束）。正文 §2.7/D-14/D-15/D-16 已落实。
-- **Q2（✅ 已确认，决策文档 D5）**：AI 底图占位后置，本批不实现生成逻辑。正文 §5.10/§10 已落实。
-- **Q3（✅ 已确认，决策文档 D6）**：标记类型四档（地点/角色/事件/其他），关联实体三类（角色/事件/地点）；pin 删除沿用 F36 真删语义。正文 §2.7.1/§5.12/§11 已落实。
-- **Q4（✅ 已确认，决策文档 D7）**：面包屑四级（设定库/世界观/地图视图/{地图名}），逐级可回跳。正文 §5.9 已落实。
-- **Q5（✅ 已确认，用户拍板「P2 前后端混合」）**：P2 非纯前端——需后端扩展（pins type/ref_id、maps bg_source/extra、简图创建、迁移），任务书「前端为主」已修正为「前后端混合」。正文 §1.2/§2.7/§8 已落实。
-- **Q6（✅ 已确认，用户拍板 1.A）**：大纲三级 level 默认值 = `chapter`（旧大纲 → 孤立章，情节点零迁移）。正文 §1.3/§2.8/D-20 已落实。
-- **Q7（✅ 已确认，用户拍板 2.A，2026-08-31 修订）**：三级层级严格约束（overall 无父 / volume→overall / chapter→volume；**孤立章 parent 空非法——章节必须挂卷**）。正文 §1.3/§2.8/D-21 已落实。
-- **Q8（✅ 已确认，用户拍板 3.A）**：单事件检查 = 独立端点 `GET /timeline/events/{id}/check`（复用相邻对扫描）。正文 §2.9/§3.7/D-23 已落实。
-- **Q9（✅ 已确认，用户拍板 1.A = 同步清理，2026-08-13）**：清理 job 形态 = 同步（删除方法内同一事务），非异步后台 job、无调度器。正文 §1.3/§2.10/§3.8/§5.18/D-24 已落实。
-- **Q10（✅ 已确认，用户拍板 2.B = 文案对齐真删，2026-08-13）**：`lib.delete.confirm` 由「后台逻辑删除，30 天后彻底清除」改为「点击确认后立即移除，不可恢复」。正文 §1.3/§5.18/§6/D-25 已落实。
-- **Q11（✅ 已确认，用户拍板 3.B = 含写作章节，2026-08-13）**：范围含写作章节删除的 6 处引用清理（outlines/timeline_events/audit_logs/chapter_summaries/agent_runs/drafts）。正文 §1.3/§2.10/§3.8/§5.18/D-26 已落实。
-
----
-
-## 跨节同步声明（v1.4 修订必查）
-
-| # | 位置 | 同步点 |
-|---|------|--------|
-| 1 | 头部 | 版本 v1.4 + Spec 变更行 + 估算 2-3 人天 + 阶段改「P5 最后一批」 |
-| 2 | §1.1/§1.2/§1.3 | P5 交付物表（7 项）+ 边界声明（同步清理/清理矩阵/文案/含章节/零新端点） |
-| 3 | §2.10 | 删除后引用残留清理语义（清理矩阵 + 设计约定） |
-| 4 | §3.8 | 删除端点内部清理增强（API 面零变更） |
-| 5 | §5.18 | 关键差异节（同步实现模式 + 钩子接线 + 文案对齐 + 删除后刷新） |
-| 6 | §6 | i18n 变更表（lib.delete.confirm 新值，无新增 key） |
-| 7 | §7 | E56-E62 边界表 |
-| 8 | §8 | 文件结构（后端 9 + 测试 8 + 前端 3） |
-| 9 | §9.9 | P5 RED 契约 C1-C10 + 前端 D1-D2 + foreign_keys=OFF 验证注意 |
-| 10 | §10/§11/§12/§13/§14 | 不在范围更新 / 依赖表 / D-24..D-26 / M1-M9（Closes #284）/ Q9-Q11 |
-
----
-
-*（Spec v1.4 完。实现阶段：Plan → RED（后端 C1-C10 + 前端 D1-D2 契约全 FAIL 实证存档，真实 SQLite foreign_keys=OFF 轨）→ Codex GREEN（唯一编码执行者）→ QA（后端全绿 + 手动核对删除清理：删除角色 → 关联 pin/chapterRef 清理）→ PR `feat(gui): 设定库 P5 删除清理与文案对齐（#284）` body `Closes #284`——**最后一批，允许关闭 issue**。）*
+| M5 | 清理时机正确（同步，删除方法内同一事务） | C5-C9 断言 + 代码走查（无调度器/无异步入口） |
+| M6 | 前端文案表达真删（`lib.delete.confirm` =「立即移除，不可恢复」） | X1-X2 + `pnpm --filter renderer test` |
+| M7 | 前端测试全绿（既有 + X 系列） | `pnpm --filter renderer test` |
+| M10 | 角色等级必填 + 枚举校验：创建/修改角色缺 `extra.role_rank` 或非法值 → 422；AI 工具 `create_character` 带 role_rank 必填参数并透传；CLI `character create --role-rank` | RED 契约全 FAIL 实证 + `uv run pytest backend/tests/unit/domain/ports/test_character_role_rank.py` + 全量 |
